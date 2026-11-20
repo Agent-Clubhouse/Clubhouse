@@ -1,0 +1,11 @@
+--- src/main/services/registered-agent-display-page.ts
++++ src/main/services/registered-agent-display-page.ts
+@@ -153,7 +153,7 @@
+             if (agent.parentAgentId !== selectedId || agent.id === selectedId) { unknownRows++; complete = false; continue; }
+             const related = agent.parentProjectPath === undefined && data.rootNamespace ? data.rootNamespace === selectedDirectory
+               : relatedParent(agent.parentProjectPath === undefined ? project.path : agent.parentProjectPath, relevantAliases);
+-            if (related === false) continue;
++            if (related === false) { /* MUTANT: adopt unrelated same-ID parent. */ }
+             if (related === undefined) { unknownRows++; complete = false; continue; }
+           }
+           if (!localId(agent.id) || counts.get(agent.id) !== 1) { unknownRows++; complete = false; continue; }

@@ -1,0 +1,1403 @@
+diff --git a/docs/implementation-notes/3733-continuation.md b/docs/implementation-notes/3733-continuation.md
+new file mode 100644
+index 000000000..3f307a7ae
+--- /dev/null
++++ b/docs/implementation-notes/3733-continuation.md
+@@ -0,0 +1,57 @@
++# Remote Details parity continuation — unfinished, no full acceptance
++
++Repository: Agent-Clubhouse/Clubhouse. Issue #3733 remains open. PR #3735 was only the partial foundation and merged; do not rewrite it or infer closure. No current full-parity PR. This note accompanies normal remote feature branches, not a Clubhouse worktree handoff. Sender retains ownership until a verified Mini receiver fetches the exact supplied SHA and explicitly accepts. Delivery alone is not takeover.
++
++## Branches and immutable dispositions
++
++Assigned accepted feature root: `origin/lane-full-remote-details/full-parity` at `f1220c2a2324d62021a222d24f0e637a8416ecc0` (tree `9a4d27b940f2046c0896ec9876ef85fe86f492ad`). Do not advance from component verdicts alone.
++
++Active cohesive work: `origin/lane-full-remote-details/connections-complete`, based on reviewed `2482e8bc2a93f55bcd39d4cd9f5fdcfff8053467`. The commit containing this note is WIP, not an independently approved freeze. Use `git rev-parse HEAD` on the fetched branch for its exact preservation SHA. Earlier pushed implementation `76a890b44` adds the unwired bounded inventory/source projection; current changes add development endpoint/UI continuation. Do not open a PR or claim full Connections/Details parity from passing development checks.
++
++Latest component acceptance: `2482e8bc2a93f55bcd39d4cd9f5fdcfff8053467` (tree `1d52067db1dd1726c17c0a0f6af12aa6ac46f023`), source identity correction atop normal durable saved/qualified-memory consumer `96fd884772c9b76b8f755aeebdfc1b2767b2eaf2`. Review was bounded: 8 files/332 PASS, tsc0, 16 mutation/restoration controls; canonical-role callbacks and parts of lifecycle modeled, no live-host proof. Rejected `133c9fe78869e2147ed99213052b630708b1d66a` and test-only actual-reader baseline `087e598ef220c7ffc899964136bef9737537ce84` remain history. Native ID equality never joins independently project-qualified manual/controller/native records; source defaults remain separate from effective authority.
++
++Other newer accepted components already in 2482 ancestry: source/metadata consumer `96fd88477`; helper composition `120f220e3`; observed-directory join `cdf20d328`; fresh per-root metadata `88b10c73e`; host-memory helper `f90369af9`; phase-local dedup `ae055159f`; metadata helper `39eedb6e2`; cold normal manual consumer `23acd59e3`. These are limited helper/consumer verdicts, not blanket runtime/security/authority/full-matrix acceptance. `18e4` and failed `0faddcc84` remain unaccepted history. Latest-main integration remains separate; 2482/root do not imply latest-main composition.
++
++## Active implementation and boundaries
++
++`registered-agent-display-page.ts`: private selected helper/Dispatcher saved relationship inventory. Fixed registered-project file, max16 roots/page,4096 registry visits plus4096 agent-row visits,<=4MiB registry plus8MiB initial root-primary budget,4MiB/file,50 matching endpoints maximum,64 distinct parent directory alias probes. Project/agent primary evidence and observed-directory tuples retained privately; no ordinary project/agent load/recovery/collection/writes. Stable project IDs and custom display names survive reused agent IDs. Missing/unreadable/limited is distinct from verified empty; pages are independent observations, not a cross-page snapshot. Directory dev/ino checks are not continuous locks, historical ABA/incarnation/runtime/permission proof.
++
++`configured-registered-connections-display.ts`: default/max8 related endpoints/page; source-specific shared automatic starting switches; disposed/unknown versus configured; optional trusted passive already-loaded cache getter only AFTER a fresh relevant root receipt before EACH callback; final aggregate receipts retained for full endpoint assembly. Saved and host-memory fields remain separate. Callback receipts/maps/paths/namespaces never enter DTOs. Currentness rereads are separate from the initial byte budget and have no hard I/O deadline.
++
++WIP continuation: additive allowlisted source + numeric offsets on EXISTING paired/pinned eligible-desktop agent Details GET. No new discovery/path/write/phone authority. Optional `connectionPages:1` and echoed selected source/page distinguish older summary-only hosts. UI has Overview and independent binding/saved-source/helper/Dispatcher inventory pages; Next replaces prior evidence. Transport/selection/source/currentness fences must survive through client and rendering. Keep source/project/role identity separate from native binding identity. This wiring is not final proof or review. Aggregate byte/row exhaustion now yields continuation at the deferred supported root, rather than permanently omitting it. A single oversized/unreadable file remains explicitly limited/unavailable. Current full-Details assembly still runs other cards for a source page; remaining global resource bounds must be audited, not implicitly certified.
++
++## Observed development evidence (no exact final-head verdict transfer)
++
++Local guarded logs named `3733-connections-complete-*` in the original workspace QA-report directory. These paths are provenance references, not a claim that the Mini has those laptop files. Essential results are summarized here; formal review needs a separately sealed exact-head package.
++
++- Initial inventory development: 3 FAIL/2 PASS (wrong Dispatcher project-ID fixture and nonconfigurable ESM fs spy); test-only repair followed by5 PASS, then10 PASS.
++- At64c48a03b: development4 actual10 PASS and tsc0.
++- Inventory + configured-source projection development5 actual2 files/20 PASS and tsc0 before subsequent endpoint edits.
++- Initial endpoint/UI development6 actual2 FAIL/115 PASS: old-host overview copy mismatch and test querying duplicated denial text. Preserved failure, not pass evidence.
++- Development7 actual1 FAIL/118 PASS: real offline copy state was incorrectly derived from supplied Details status after navigation reset. Corrected to use actual transport state; do not blame infrastructure.
++- Development10 actual10 files/306 PASS, including current inventory continuation and final-assembly controls; formal exact freeze/proof/review still pending.
++- Development8 actual3 files/191 PASS (Main selected-page final receipts, Card pages, renderer page controls). Tsc development3/4/5 passed on their respective earlier working trees; not final exact-head proof.
++- Initial route/client development actual1 FAIL/15 PASS/815 SKIP: the existing route-table Details regex did not admit a query, returning404 before the handler. The query-aware regex was then corrected: successor actual2files16 PASS/815 SKIP. Exact4ee96d3d9 tsc0 observed. These remain development evidence, not a sealed final-head proof or independent acceptance. No production dependency changes or installs. No GitHub job cancellations.
++
++## Finite remaining implementation checklist
++
++Use the accompanying fresh source-only local-versus-2482 checklist. Do not repeat already implemented lifecycle transport, old-host Settings fallback, current provider metadata, historical association, Actions presentation or Changes checkpoint/file paging as missing features.
++
++1. Finish cohesive Connections: supported cold helper/Canvas/group/tool/user/Dispatcher-wide origins; source-specific suspension/current eligibility with independent saved/memory/runtime evidence; bounded continuation; correct source/project/role identities and host-aware navigation; shared bounded inventory. Current WIP is incomplete: Canvas/group/tool cold readers and selected helper's parent source need completion; arbitrary source collect/inspect or normal initialization is forbidden. Do not substitute unsupported/empty for readable host evidence.
++2. Reuse inventory for structured helper status/project IDs/custom labels, Disposed fold/date, host-aware Open, runtime failed/Needs-you, extra work pages and sleeping inline presentation; selected-list continuation for Actions/canvas/managed/MCP beyond100. Changes already has50-path paging.
++3. Whole no-chat Dispatcher applicable card surface from existing bound host role evidence; never invent controller/chat ID or initialize/wake. Preserve offline/denied/old-host/never-created distinctions.
++4. Complete selected provider/subagent historical inventories beyond64 reports/children and2000-tail activity; preserve generation/app/native/provider/auth fences and no-report vs empty/partial. Never invent provider facts that were not reported.
++5. Small normal-card deltas: known0 usage, view-only elapsed clock/summary, honest selected last activity, unmanaged legacy migration/failure notices.
++6. Changes representation: known/partial aggregate additions/deletions, safe live/branch renames, link-own destination metadata without following contents. Preserve conservative reviewed text projection, no Git filter/process/hooks/lazy-fetch/network/object writes.
++7. Deferred resolved-card focus, bounded authorized unopened/omitted board navigation, grouped Skills/MCP with selected wires names/kinds. No Actions workflow/prompt/step-args/management expansion.
++8. Latest-main composition, complete role/provider/version/state field matrix, exact final source/contract/unit/renderer/RED/tsc/CI and independent review before PR. No accepted-slice test counts or source equality substitute for exact composed proof.
++
++Rough remaining estimate supplied to parent:20–40 focused agent-hours plus review/CI/guard queues, substantial uncertainty; not a wall-clock promise. Deadline does not authorize weakening scope/security/review or declaring WIP complete.
++
++## Reproduction and transfer constraints
++
++No installs. Existing dependency tree may be reused only if package-lock SHA256 equals `bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d`; the Mini must verify its own compatible dependencies and resource gate. Run Vitest maxWorkers2 under `~/.clubhouse/orch/desktop-test-gate.sh full-details 4 -- ...`; tsc gate minimum6. Refusal75 is not a test result; wait>=60s, max30min. No Electron/Playwright/E2E/live native CLI probes or GitHub cancellations.
++
++Preserve per-selected desktop/pin/role/target/project/run/app/native/display/provider/revocation and post-await/final serialization fences. No secrets/raw config/env/private definitions/unrelated agents, recovery/migration/sweep/timer/write/init fallback, grants/access changes, provider/network/tunnel/install/release/reset authority. Keep custom settings/text/agent identities. No worktree-Handoff API. No main/default/protected push, release, restart or deletion authority.
++
++#3611 phone/Go/TestFlight MERGE hold was superseded by explicit user instruction and landed; do NOT reinstate it. #3706 containing-desktop PUBLIC RELEASE HOLD remains. No live-phone/full-duplex/public-release acceptance follows from any source or unit verdict.
+diff --git a/docs/implementation-notes/3733-finite-local-delta-checklist.txt b/docs/implementation-notes/3733-finite-local-delta-checklist.txt
+new file mode 100644
+index 000000000..b6a5bbab1
+--- /dev/null
++++ b/docs/implementation-notes/3733-finite-local-delta-checklist.txt
+@@ -0,0 +1,70 @@
++Fresh local-to-2482 closeout delta audit — implementation checklist, NOT acceptance
++
++Target2482e8bc2a93f55bcd39d4cd9f5fdcfff8053467/tree1d52067db1dd1726c17c0a0f6af12aa6ac46f023. Original baseline596e7bc2bf6ba4766de7af120bb624f28981992a. Read original assignment/report and actual local/remote/host source, not just slice inventories. All references below are relative to target2482 unless explicitly original. No edits/tests/live/CI/network/settings/access actions. Findings are source-derived and unexecuted. Full#3733 remains OPEN; f122 assigned root unchanged.
++
++Baseline qualification: compared original596 local source with target local source. SettingsCard, SetupCard, OrchestrationCards, OrchestrateCard, AgentMapPanel, McpCard, ProviderSkillsCard and no-chat Dispatcher selector/placeholder are unchanged. Local AgentDetails changes are the remote-container split and shared canvas presentation; HelpersCard moves its summary to a shared pure function; Actions moves grouping/row presentation to shared functions; Changes shares FileList with the remote representation. Thus below compares original local user behavior with the real final remote path, with those shared extractions accounted for. It does not use unreachable legacy remote branches inside LocalAgentDetails as evidence.
++
++Do not repeat the old missing-card implementation list. RemoteAgentDetailsView now consumes actual host cards; Effort/current-vs-next CLI, managed names/waiting/attribution, passive Actions summaries, scoped Changes, historical provider association, current bridge evidence and initial canvas membership all have concrete paths. The finite remaining milestones are:
++
++1. A usable whole Dispatcher surface when no chat identity is available — ACTUAL MISSING SURFACE
++
++Local reference: AgentDetails:355,405-420 and Settings/Actions/OtherMachines cards. Target selector remoteDispatcherTarget.ts:17-35 requires snapshot.dispatcher.agent.id; DispatcherView.tsx:88-91 routes missing identity to RemoteDispatcherDetails.tsx:20-37, which renders only presence/link explanation and no card container or host Details read. Having a connected host and known machine/presence alone cannot reach its otherwise supported Settings/Actions/Other-machines surface. This remains true regardless of accepted host service slices.
++
++Checklist: keep presence explanation, add the applicable read-only card surface where an existing authorized host identity/evidence can actually be bound. No fake chat/controller ID, no create/wake/init, no use of another local Dispatcher. If a selected-machine-to-existing-role read is needed, specify its host-owned strict identity and existing desktop/pin/role authorization contract separately; the current agent-id GET cannot be called with an invented ID. Genuinely offline/denied/old-host/missing identity must stay unavailable/stale as policy permits, not zero or a fabricated sleeping agent. Offline does not require a current read from an unreachable host. Revocation must not authorize reuse of earlier private cards.
++
++Discriminator: same selected machine in connected+chat, connected+no chat but existing role evidence, saved off, never-created role, snapshot unavailable, offline, forbidden and old-host cases. Available supported safe fields survive the no-chat selection; unknown identity yields explicit card-level limitations. No route creates state. Internal agent cards intentionally absent on Dispatcher remain absent.
++
++2. Complete readable helper work/state rows and navigation — ACTUAL FIELD/PRESENTATION GAPS
++
++Local HelpersCard.tsx:178-246 has waiting task/warning, helper name, real project display label, status/Needs you, branch/work and safe failure line;227-239 opens the helper in its project;272-297 has a separate collapsed Disposed section/date. OrchestrationCards:86-114 also supplies these read-only facts inline on a sleeping orchestrator when Details is hidden. Host remote-agent-details.ts:125-153 instead emits flat strings, path.basename(projectPath), no helper/project navigation identities or Disposed fold. It classifies non-creating/non-handoff/non-running helpers as Sleeping, missing runtime-only failed/needs-you distinctions supplied locally by rail/detailed status. It checks work for only8 helpers/2 seconds admission and leaves the rest unqueryable. Remote Evidence is static CardRow text.
++
++Checklist: structured selected-helper rows with safe status/error/project label, disposed grouping/date and host-aware Open; retain pending starts as a separate readable group; supply additional bounded work checks on demand instead of only permanent omission. Preserve strict selected parent/direct membership and all final receipts. Use actual host lifecycle/detailed observations where present, unknown where absent; do not infer Sleeping from a failed start. Reuse shared work/state formatting and keep writes (approve/decline/dispose/sleep/wake) separately restricted. Inline sleeping presentation is missing remotely when the local inline card is the only visible surface; it needs a read-only counterpart if that same surface is in closeout scope.
++
++Producer locations: helper-index.ts returns config+projectPath; strict project inventory must supply selected display identity; existing agentDisplayState and annex-server.ts:1060-1088 have lifecycle/detailed-status evidence. Coordinate inventory work with owner rather than duplicate it. Discriminator: two projects with same basename/custom display names; live Needs-you, runtime CLI failure without creation failure, handed-off, creating, disposed;9+ checkable helpers; open a helper on the correct host/project; sleeping/narrow surface. No lifecycle command fires.
++
++3. Reach all selected list information through bounded continuation — ACTUAL DATA-ACCESS GAP
++
++Non-Connections host rows stop at100 (shared/remote-agent-details.ts:8; actions/details-read.ts:21-35; remote-details-cards.ts:16-26; helper/managed rows). Selected managed setup also has a100-ID admission cap (remote-managed-settings.ts:14-18), which can make that summary unavailable rather than provide continuation. RemoteDetailsEvidence.tsx:10 only says to view the complete list on the host. Local helper/action/canvas lists can expose all applicable selected entries. There is no non-Changes row continuation query in the current Details contract. Changes already has50-row Previous/Next; do not reimplement that as missing.
++
++Checklist: integrate selected-card continuation/expansion with the owner's shared bounded inventory work for helpers, related Action relationship rows, canvas memberships, and long selected managed/MCP lists. Keep stable selected opaque identities, totals/omissions, currentness and per-page permission/run fences; no global scan or collection fallback. Discriminator:101+ selected rows, an Action in multiple relationships, page transition during selected removal/reconnect/permission loss, and final row retrieval. Omission notices remain useful but alone do not deliver available information.
++
++4. Complete provider/subagent evidence beyond tail/current-open bounds — ACTUAL BOUNDED COMPLETENESS GAP, NOT LOST CURRENT METADATA
++
++Local AgentDetails:221-225,376-387 and AgentMapPanel use the chat view model's full available child status/activity/tool count/duration/tokens and stream jump. Target remoteChatBackend.ts:54-75 reads at most2000 events; useRemoteDetailsChat.ts:33-45 limits overlay to the current display generation and retained transcript; shared/chat/details-evidence.ts:31 caps lists at64. Current-open recorder observations restore initial model/effort/MCP/skills/etc outside the tail, but do not restore all old subagent activity/timing, a65th child/report, or resumed-history usage. ProviderEvidenceNotes honestly declares omissions; it supplies no continuation. Remote Subagents uses the same component once evidence is ready, so grouping itself is already shared.
++
++Checklist: selected-session history/report continuation or equivalently complete bounded summaries for host-available omitted child activity/report inventories; preserve full/ids_only/none and no-report/explicit-empty distinctions. Keep generation/session/native/provider/auth fences; do not read unrelated sessions or revive stale facts. Discriminator: initial select/reconnect after>2000 events and>64 reported names/children, child born and finished outside tail, same-native reopen, resumed history. Recover facts actually available to the host or explicitly retain partial provenance; do not present a cap as full parity. A provider that never reports a field is a genuine capability limitation, not an implementation task to invent it.
++
++5. Fix remaining Session/Settings truthfulness and notice deltas — SMALL ACTUAL GAPS; CORE READERS ALREADY EXIST
++
++(a) RemoteAgentDetailsView.tsx:159/214 uses token truthiness. A known total0 with no reported cost yields Not reported rather than0; use presence/knownness. Source contract accepts zero (shared/chat/details-evidence.ts:54-57). Discriminator known0, absent, partial input/output, zero-cost, usage-none.
++(b) Local AgentDetails:149-157,251,269 has an elapsed clock and duration in summary. Remote:155-159,212-216 computes Running from Date.now only on incidental renders and omits it from live summary. Reuse a view-only clock; static host spawn time is already supplied. Discriminator advance clock with no host events, then stop/revoke.
++(c) Local Last session derives Ended from lastSleep or selected summary.lastActiveAt (AgentDetails:271,438-447; useLastSession:92-98). remote-session-history.ts:12-17,43-56 emits Ended only from lastSleep, although normalized selected events have last activity. Where safely known, expose selected last activity with honest labeling/provenance rather than losing it or calling it a verified sleep time. Do not reintroduce configured-provider fallback, fabricated duration, or missing=zero.
++(d) Local unmanaged SettingsCard:241-246,466-472 displays existing legacy persona/skills migration notice and migration-failure reason. readRemoteAgentSettings only calls readRemoteManagedSettings for managed agents (remote-agent-settings.ts:95-107); the unmanaged path does not project these notices. Add selected passive safe notice evidence where available; switch/dismiss/restart remains optional editing. Managed Built from/waiting/template attribution/migration rows already exist in remote-managed-settings.ts:49-63; do not schedule those again as missing.
++
++6. Finish Changes read-only representation, keeping its security restrictions — ACTUAL REPRESENTATION GAPS
++
++Local ChangesSummary:23-31 shows file totals/+added/-removed; FileList/BranchBody:85,101-104,125-138 show rename/link metadata and read all files. RemoteChangesCard:52 shows path count only; producer read-only-repository-changes.ts:109 performs rename detection only for two saved non-branch trees, so branch/live worktree renames remain delete+add. Symlink mode120000 is always unsafe (:159), while local displays the link's own destination metadata. Local does NOT follow symlink target contents; do not invent that requirement.
++
++Checklist: truthful aggregate known/partial diffstat; equivalent branch/live rename representation where safely obtainable; bounded sanitized metadata for a link itself if allowed by the selected read contract, retaining refusal rather than following it. Existing scoped files/diffs/session/turn/checkpoint exclusions/shared-folder notices/paging already have real implementations. Review-all management/revert/undo/overwrite buttons are not required writes. Discriminator rename in branch/live/saved turn, changed link itself, known versus unknown counts across pages, no-base/non-Git/no-checkpoint and filtered/protected text. No Git object writes/filter execution/network or local fallback.
++
++7. Complete existing read-only navigation/presentation, without new management scope — ACTUAL CONSUMER GAPS
++
++Deferred focus: local AgentDetails:295-305 keys handled focus by nonce AND resolved card. RemoteAgentDetailsView:134-140 records nonce alone. A Subagents focus request during initial loading falls back to Session, then never opens Subagents when hydration supplies it. Discriminator issue focus before delayed capability/report hydration, confirm eventual requested card/child, no stale host selection.
++
++Canvas: real initial selected membership and correct-host guarded jump already exist. agent-canvases.ts:120-134 disables navigation when the current snapshot omits the board even though the host membership read succeeded. Checklist a bounded authorized selected-board navigation read if the existing host contract permits it; no copied retained snapshot as fresh provenance or direct hydrate/save bypass. Keep unavailable if no admissible board data exists, and distinguish that from a missing UI handler. Discriminator known host membership on unopened/omitted board, colliding local/other-host IDs, source replacement, selection change and guarded hydration. Coordinate paging with milestone3.
++
++Skills/MCP: local ProviderSkillsCard:43-55 groups Installed/Set up and McpCard:197-218 groups servers/configured-only/Wired to names+kinds. Remote has the underlying managed delivery/current bridge/provider facts but uses flat rows (remote-agent-details:164-181; RemoteAgentDetailsView:198-211) and no selected MCP Wires subgroup. Consume safe selected fields from existing/shared Connection work where appropriate; reuse grouped presentation, not new raw definitions or authorities. Discriminator mixed configured/delivered/provider-empty/unknown, managed missing-env names only, current-run handshake and selected non-Dispatcher wire kinds.
++
++Actions relationship groups/name/enabled/description/outcome/time already share actual presentation; only continuation is a definite card-data gap here. Local action-click opens ActionCard/management/history, remote rows are non-clickable. Do not silently expand this audit into exporting workflows/prompts/step args or management APIs. If read-only Action modal drilldown is desired beyond card parity, define that extra selected safe-display scope explicitly; edit/run/delete are optional and are not a closeout prerequisite inferred here.
++
++8. Evidence-only closeout, not another missing implementation — UNVERIFIED STATES
++
++Lifecycle transport is now implemented: agent-display-state.ts:17-30, annex-server.ts:237-239/1060-1088 and annexClientStore.ts:494-505 propagate waking/error/creating/spawning. Remote renderer tests supplying these statuses are not by themselves producer-to-view proof, but the old source gap is closed. Preserve as coverage-only: actual start/wake success/failure and initial snapshot/live transition to Details, without implying an unobserved restart/incidence.
++
++Old-host fallback is already implemented: RemoteAgentDetailsView:181 leaves durable RemoteSettingsCard free to use its older supported endpoint when Details unavailable; tests:302-309 cover it. Existing plain Action rows, legacy absent provider fields, unsupported/unavailable provider state, Changes summary fallback and no local config/git/actions fallback also exist. Do not implement fictional host fields when old hosts genuinely cannot supply them.
++
++Available source assertions (NOT rerun/credited as new exact-head passes): RemoteAgentDetailsView.test.tsx:121-175,245-269,280-389 covers cut/current reports, replacement/readOnly/error, offline/late host, omissions, canvas and same-session reconnect/liveness; RemoteChangesCard.test.tsx:32-89 covers opaque diff/paging/legacy/refusal; agent-canvases.test.ts:99-151 covers collisions/omissions/source identity. These cover portions, not the original complete role/provider/version/state matrix.
++
++Finite final discriminator set for an authorized future validation lane: normal managed chat with inherited provider/current-vs-next; unmanaged CLI plus partial503 settings; sleeping selected historical session with valid/absent/conflicting association and cold native environment; helper runtime failure/needs-you/handoff/disposed across projects; attested/failed/unbound Quick; Dispatcher chat on/off versus no-chat machine selection; cut transcript/list continuation; and old-host/unavailable/forbidden/offline/same-session reconnect/host-collision transitions. For each compare the same locally available user-visible fields, safe unknowns, section applicability and read-only interactions. Preserve exact source/proof/model/live distinctions; do not turn a synthetic error Agent into actual lifecycle evidence or a prior slice pass into whole-head acceptance.
++
++Scheduling: milestones1 and2 are cohesive user-visible surfaces;3 is a consumer integration dependency on owner's shared bounded inventory;4 is a separate session-evidence completeness unit;5 is a small display/notice unit;6 is read-only Changes representation;7 is shared read-only navigation/presentation;8 is final evidence. Owner retains Connections implementation and shared inventory ownership; this reviewer makes no edits or duplicate test assignments. Existing permission/host/pin/revocation/post-await/read-only restrictions remain. #3611 merge hold is superseded; #3706 public release hold remains. No full-parity/PR/root/latest-main acceptance.
+diff --git a/src/main/ipc/annex-client-handlers.ts b/src/main/ipc/annex-client-handlers.ts
+index 3a75e57a2..b8cbff4df 100644
+--- a/src/main/ipc/annex-client-handlers.ts
++++ b/src/main/ipc/annex-client-handlers.ts
+@@ -181,8 +181,8 @@ export function registerAnnexClientHandlers(): void {
+     (_event, machine, agentId) => annexClient.requestAgentSettings(machine, agentId),
+   ));
+   ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_DETAILS, withValidatedArgs(
+-    [stringArg(), stringArg({ maxLength: 240 })],
+-    (_event, machine, agentId) => annexClient.requestAgentDetails(machine, agentId),
++    [stringArg(), stringArg({ maxLength: 240 }), objectArg({ optional: true })],
++    (_event, machine, agentId, query) => annexClient.requestAgentDetails(machine, agentId, query as import('../../shared/remote-details-query').RemoteDetailsQuery | undefined),
+   ));
+   ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_CHANGES, withValidatedArgs(
+     [stringArg(), stringArg({ maxLength: 240 }), objectArg()],
+diff --git a/src/main/services/annex-client.test.ts b/src/main/services/annex-client.test.ts
+index f1da04573..ba2199e44 100644
+--- a/src/main/services/annex-client.test.ts
++++ b/src/main/services/annex-client.test.ts
+@@ -3327,7 +3327,7 @@ describe('annex-client', () => {
+         }, destroy: vi.fn() });
+         return req;
+       }) as any);
+-      const pending = annexClient[method](FP, 'a1', { scope: 'branch' });
++      const pending = annexClient[method](FP, 'a1', method === 'requestAgentChanges' ? { scope: 'branch' } : undefined);
+       annexClient._receiveSatelliteDisconnectForTesting(FP);
+       vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
+       annexClient.connect(FP);
+@@ -3336,6 +3336,22 @@ describe('annex-client', () => {
+       expect(await pending).toEqual({ status: 'offline' });
+     });
+ 
++    it('binds bounded selected-source Details pages and refuses malformed/old-host page responses', async () => {
++      const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
++      const query = { card: 'connections' as const, source: 'helpers' as const, offset: 8, projectOffset: 16 };
++      const value = { version: 1, connectionPages: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
++        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id === 'connections' && { connectionPage: { source: 'helpers', offset: 8, projectOffset: 16, known: 9, complete: true, next: null } }) })) };
++      answers.push({ status: 200, body: value });
++      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
++      expect(requests[0]).toMatchObject({ method: 'GET' }); expect(requests[0].url).toContain('/agents/a1/details?card=connections&source=helpers&offset=8&projectOffset=16');
++      const before = requests.length;
++      expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, offset: 4097 })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
++      answers.push({ status: 200, body: { ...value, cards: value.cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { ...c.connectionPage, offset: 0 } } : c) } });
++      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
++      answers.push({ status: 200, body: { ...value, connectionPages: undefined, cards: value.cards.map((c) => ({ ...c, connectionPage: undefined })) } });
++      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
++    });
++
+     it('reads bounded exact-agent Details and treats old/refused/malformed contracts explicitly', async () => {
+       const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
+       const value = { version: 1, agentId: 'a?/#', readOnly: true, readAt: 1, providerId: 'codex-cli', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+diff --git a/src/main/services/annex-client.ts b/src/main/services/annex-client.ts
+index 76c3c5167..6316ce3c5 100644
+--- a/src/main/services/annex-client.ts
++++ b/src/main/services/annex-client.ts
+@@ -1,3 +1,4 @@
++import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
+ import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
+ import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
+ import { isRemoteAgentChanges, isRemoteChangesQuery, REMOTE_CHANGES_MAX_BYTES, type RemoteAgentChanges } from '../../shared/remote-agent-changes';
+@@ -2475,18 +2476,27 @@ export async function requestAgentSettings(machine: string, agentId: string): Pr
+ }
+ 
+ /** Same pinned paired-desktop read, with a bounded allowlisted Details response. */
+-export async function requestAgentDetails(machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentDetails>> {
++export async function requestAgentDetails(machine: string, agentId: string, query?: RemoteDetailsQuery): Promise<ControllerReadResult<RemoteAgentDetails>> {
++  if (query !== undefined && !isRemoteDetailsQuery(query)) return { status: 'error' };
++  // Capture the page identity before transport awaits; no caller object can retarget the response.
++  const page = query && { ...query };
++  const params = page ? new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset ?? 0), projectOffset: String(page.projectOffset ?? 0) }) : undefined;
+   const sat = satelliteFor(machine);
+   if (!sat || sat.state !== 'connected') return { status: 'offline' };
+   const epoch = connectionEpochs.get(sat.id) ?? 0;
+   const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
+   try {
+-    const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/details`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
++    const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/details${params ? `?${params}` : ''}`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
+     if (!current()) return { status: 'offline' };
+     if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
+     if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
+     if (res.status !== 200 || !isRemoteAgentDetails(res.body, agentId)) return { status: 'error' };
++    if (page) {
++      const response = res.body.cards.find((card) => card.id === 'connections')?.connectionPage;
++      if (!response) return { status: res.body.connectionPages === 1 ? 'error' : 'unavailable' }; // Older host ignored the additive page query.
++      if (response.source !== page.source || response.offset !== (page.offset ?? 0) || response.projectOffset !== (page.projectOffset ?? 0)) return { status: 'error' };
++    }
+     return { status: 'ok', value: res.body };
+   } catch {
+     // telemetry-exempt: a bounded display status; remote errors are never shown verbatim.
+diff --git a/src/main/services/annex-server.test.ts b/src/main/services/annex-server.test.ts
+index 16cb676ad..4d65c7111 100644
+--- a/src/main/services/annex-server.test.ts
++++ b/src/main/services/annex-server.test.ts
+@@ -726,6 +726,21 @@ describe('annex-server', () => {
+       expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+       expect(ptyManagerModule.write).not.toHaveBeenCalled();
+     });
++    it('allows bounded source continuation only under the same GET desktop authority and rejects extra/duplicate fields before work', async () => {
++      vi.mocked(readRemoteAgentDetails).mockImplementation(async (id, authorized, query) => {
++        expect(id).toBe('a1'); expect(authorized()).toBe(true); expect(query).toEqual({ card: 'connections', source: 'helpers', offset: 8, projectOffset: 16 });
++        return { status: 200, body: { readOnly: true } };
++      });
++      const { port } = await startAndPair();
++      const paged = route + '?card=connections&source=helpers&offset=8&projectOffset=16';
++      expect((await request(port, 'GET', paged)).status).toBe(200);
++      vi.mocked(readRemoteAgentDetails).mockClear();
++      for (const query of ['card=connections&source=helpers&offset=4097', 'card=connections&source=helpers&offset=', 'card=connections&source=helpers&offset=01', 'card=connections&source=helpers&source=incoming', 'card=connections&source=helpers&projectPath=/private', 'card=connections&source=collect', 'card=settings&source=helpers', 'card=connections&source=outgoing&projectOffset=16']) expect((await request(port, 'GET', route + '?' + query)).status).toBe(400);
++      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
++      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, paged)).status).toBe(404);
++      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' }); expect((await request(port, 'GET', paged)).status).toBe(403);
++      expect(readRemoteAgentDetails).not.toHaveBeenCalled(); expect(agentSystem.spawnAgent).not.toHaveBeenCalled(); expect(ptyManagerModule.write).not.toHaveBeenCalled();
++    });
+     it.each([undefined, 'phone', 'unknown'])('rejects ineligible device kind %s before any Details work', async (kind) => {
+       const { port } = await startAndPair();
+       vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind } as never);
+diff --git a/src/main/services/annex-server.ts b/src/main/services/annex-server.ts
+index 259edf717..64c928f60 100644
+--- a/src/main/services/annex-server.ts
++++ b/src/main/services/annex-server.ts
+@@ -1,3 +1,4 @@
++import { isRemoteDetailsQuery } from '../../shared/remote-details-query';
+ import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
+ import { readRemoteAgentSettings } from './remote-agent-settings';
+ import { resolveReadOnlyQuickChatTarget } from './read-only-quick-target';
+@@ -4087,13 +4088,18 @@ async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: Re
+   catch { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
+   if (!agentId || agentId.length > 240) { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
+   const params = new URL(ctx.url, 'http://localhost').searchParams;
++  const detailsQuery = params.size ? { card: params.get('card'), source: params.get('source'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('projectOffset') && { projectOffset: Number(params.get('projectOffset')) }) } : undefined;
++  if (match[2] === 'details' && detailsQuery !== undefined && ([...params.keys()].some((key) => !['card', 'source', 'offset', 'projectOffset'].includes(key))
++    || [...params.keys()].some((key) => params.getAll(key).length !== 1) || ['offset', 'projectOffset'].some((key) => params.has(key) && !/^(0|[1-9]\d{0,3})$/.test(params.get(key)!)) || !isRemoteDetailsQuery(detailsQuery))) {
++    sendJson(ctx.res, 400, { error: 'invalid_details_query' }); return;
++  }
+   const changesQuery = { scope: params.get('scope'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('fileKey') && { fileKey: params.get('fileKey') }) };
+   if (match[2] === 'changes' && ([...params.keys()].some((key) => !['scope', 'offset', 'fileKey'].includes(key))
+     || [...params.keys()].some((key) => params.getAll(key).length !== 1) || params.has('offset') && !/^(0|[1-9]\d{0,4})$/.test(params.get('offset')!) || !isRemoteChangesQuery(changesQuery))) {
+     sendJson(ctx.res, 400, { error: 'invalid_changes_query' }); return;
+   }
+   const result = match[2] === 'changes' && isRemoteChangesQuery(changesQuery) ? await readRemoteAgentChanges(agentId, changesQuery, authorized) : match[2] === 'details'
+-    ? await readRemoteAgentDetails(agentId, authorized)
++    ? await readRemoteAgentDetails(agentId, authorized, detailsQuery && isRemoteDetailsQuery(detailsQuery) ? detailsQuery : undefined)
+     : await readRemoteAgentSettings(agentId, authorized);
+   if (!authorized()) { sendJson(ctx.res, 403, { error: 'settings_read_refused' }); return; }
+   ctx.res.setHeader('Cache-Control', 'no-store');
+@@ -4804,7 +4810,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
+   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents$/, handler: handleProjectAgentsRoute },
+   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/buffer$/, handler: handleAgentBufferRoute },
+   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/settings-details$/, handler: handleAgentSettingsDetailsRoute },
+-  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/(details)$/, handler: handleAgentSettingsDetailsRoute },
++  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/?]+)\/(details)(\?.*)?$/, handler: handleAgentSettingsDetailsRoute },
+   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/?]+)\/(changes)(\?.*)?$/, handler: handleAgentSettingsDetailsRoute },
+   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/tree(\?.*)?$/, handler: handleProjectFilesTreeRoute },
+   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/read(\?.*)?$/, handler: handleProjectFilesReadRoute },
+diff --git a/src/main/services/configured-registered-connections-display.test.ts b/src/main/services/configured-registered-connections-display.test.ts
+new file mode 100644
+index 000000000..19f7dc027
+--- /dev/null
++++ b/src/main/services/configured-registered-connections-display.test.ts
+@@ -0,0 +1,91 @@
++import { afterEach, beforeEach, expect, it, vi } from 'vitest';
++import * as fs from 'fs/promises';
++import * as os from 'os';
++import * as path from 'path';
++const m = vi.hoisted(() => ({ home: '', allowed: true }));
++vi.mock('electron', () => ({ app: { getPath: () => m.home } }));
++vi.mock('./agent-config', () => { throw new Error('Ordinary agent owner must not be loaded'); });
++vi.mock('./project-store', () => { throw new Error('Ordinary project owner must not be loaded'); });
++import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
++import { AUTOMATIC_CONNECTION_SWITCHES } from '../../shared/connection-grants';
++import { getBaseDirPath } from './base-dir';
++import { projectConnectionEndpointFieldsForDisplay } from './connection-endpoint-fields-display';
++import { readConfiguredRegisteredConnectionsForDisplay as readPage } from './configured-registered-connections-display';
++import type { DisplayReceipt } from './display-settings';
++let root: string, a: string, b: string;
++const agent = (id: string, extra = {}) => ({ id, name: 'Name ' + id, color: 'blue', createdAt: '2026-11-20', ...extra });
++const put = (folder: string, rows: unknown[]) => fs.writeFile(path.join(folder, '.clubhouse', 'agents.json'), JSON.stringify(rows));
++const selected = (dispatcher = false) => {
++  const fields = projectConnectionEndpointFieldsForDisplay('parent', agent('parent'));
++  if (fields.state !== 'ok') throw new Error('fixture');
++  return { agentId: 'parent', projectId: dispatcher ? DISPATCHER_PROJECT_ID : 'a', projectPath: a, receipt: { current: () => m.allowed }, fields: fields.value };
++};
++const read = (options = {}) => readPage(selected(), 'helper-children', { authorized: () => m.allowed, receipts: [], ...options });
++beforeEach(async () => {
++  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-configured-display-'))); m.home = root; m.allowed = true; a = path.join(root, 'a'); b = path.join(root, 'b');
++  for (const p of [a, b]) await fs.mkdir(path.join(p, '.clubhouse'), { recursive: true });
++  await fs.mkdir(getBaseDirPath(), { recursive: true });
++  await fs.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'a', name: 'First custom project', path: a }, { id: 'b', name: 'Second custom project', path: b }] }));
++  await put(a, [agent('parent')]); await put(b, []);
++});
++afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
++it('retains project-qualified reused IDs, safe fields and source-specific defaults without a live binding claim', async () => {
++  await put(a, [agent('parent'), agent('same', { parentAgentId: 'parent' })]);
++  await put(b, [agent('same', { name: 'Other project helper', parentAgentId: 'parent', parentProjectPath: a, env: { password: 'PRIVATE_CREDENTIAL' } }), agent('unrelated', { parentAgentId: 'other', name: 'PRIVATE_UNRELATED' })]);
++  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 2, entries: [
++    { endpoint: { agentId: 'same', projectId: 'a', projectName: { value: 'First custom project' } }, source: 'helper', applicability: 'configured' },
++    { endpoint: { agentId: 'same', projectId: 'b', projectName: { value: 'Second custom project' } }, source: 'helper', applicability: 'configured' },
++  ] } });
++  if (result.state !== 'ok') throw new Error('fixture'); expect(result.value.entries[0].directions).toEqual([
++    { from: 'selected', disabledTools: [...AUTOMATIC_CONNECTION_SWITCHES.parentToHelper.disabledTools], enabledTools: [...AUTOMATIC_CONNECTION_SWITCHES.parentToHelper.enabledTools] },
++    { from: 'endpoint', disabledTools: [...AUTOMATIC_CONNECTION_SWITCHES.helperToParent.disabledTools], enabledTools: [...AUTOMATIC_CONNECTION_SWITCHES.helperToParent.enabledTools] },
++  ]);
++  expect(JSON.stringify(result)).not.toMatch(/PRIVATE_|namespace|projectPath|"env"/); expect(JSON.stringify(result)).not.toContain(root);
++});
++it('reaches the ninth configured relationship through bounded continuation', async () => {
++  await put(b, Array.from({ length: 9 }, (_, i) => agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: a })));
++  const first = read(); expect(first).toMatchObject({ state: 'ok', value: { knownMatches: 9, next: { projectOffset: 0, matchOffset: 8 } } });
++  if (first.state !== 'ok') throw new Error('fixture'); expect(first.value.entries).toHaveLength(8);
++  expect(read(first.value.next!)).toMatchObject({ state: 'ok', value: { next: null, entries: [{ endpoint: { agentId: 'child-8' } }] } });
++});
++it('keeps disposed history and unknown applicability separate from configured directions', async () => {
++  await put(b, [agent('gone', { parentAgentId: 'parent', parentProjectPath: a, disposedAt: '2026-11-20' }), agent('bad', { parentAgentId: 'parent', parentProjectPath: a, disposedAt: 99 })]);
++  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { entries: [{ applicability: 'disposed', directions: [] }, { applicability: 'unknown', directions: [] }] } });
++});
++it('reads Dispatcher-wide automatic policy only, including configured directions while runtime evidence is absent', async () => {
++  await put(b, [agent('on', { orchestration: { connectToDispatcher: true } }), agent('off', { orchestration: { connectToDispatcher: false } }), agent('helper', { parentAgentId: 'parent', orchestration: { connectToDispatcher: true } })]);
++  expect(readPage(selected(true), 'dispatcher-auto', { authorized: () => true, receipts: [] })).toMatchObject({ state: 'ok', value: { entries: [{ endpoint: { agentId: 'on' }, source: 'dispatcher-auto', applicability: 'configured', directions: [{ from: 'selected' }, { from: 'endpoint' }] }] } });
++});
++it.each(['same-root', 'later-root', 'registry', 'revoke'] as const)('refuses the next cache callback after a %s mutation, with final output withheld', async (mutation) => {
++  await put(a, [agent('parent'), agent('one', { parentAgentId: 'parent' }), ...(mutation === 'same-root' ? [agent('two', { parentAgentId: 'parent' })] : [])]);
++  await put(b, [agent('three', { parentAgentId: 'parent', parentProjectPath: a })]);
++  const native = await import('fs'); const calls: string[] = [], receipts: DisplayReceipt[] = [];
++  const result = read({ receipts, readLoadedCache: (folder: string, id: string, options: { expectedProjectNamespace?: string }) => {
++    expect(options.expectedProjectNamespace).toMatch(/^ino:/); calls.push(folder + ':' + id);
++    if (calls.length === 1) {
++      if (mutation === 'same-root') native.writeFileSync(path.join(a, '.clubhouse', 'agents.json'), '[]');
++      if (mutation === 'later-root') native.writeFileSync(path.join(b, '.clubhouse', 'agents.json'), '[]');
++      if (mutation === 'registry') native.writeFileSync(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'a', name: 'First custom project', path: a }] }));
++      if (mutation === 'revoke') m.allowed = false;
++    }
++    return { scope: 'host-session-cache', availability: 'not-loaded', observedAt: Date.now() };
++  } });
++  expect.soft(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect.soft(JSON.stringify(result)).not.toContain('Name ');
++  expect.soft(calls).toEqual([a + ':one']);
++});
++it('admits a legitimate second root with fresh namespace evidence and keeps cache provenance independent', async () => {
++  await put(a, [agent('parent'), agent('one', { parentAgentId: 'parent' })]); await put(b, [agent('two', { parentAgentId: 'parent', parentProjectPath: a })]);
++  const calls: string[] = [], receipts: DisplayReceipt[] = []; let cacheCurrent = true;
++  const result = read({ receipts, readLoadedCache: (folder: string, id: string, options: { receipts: DisplayReceipt[]; expectedProjectNamespace?: string }) => {
++    expect(options.expectedProjectNamespace).toMatch(/^ino:/); calls.push(folder + ':' + id); options.receipts.push({ current: () => cacheCurrent });
++    return { scope: 'host-session-cache', availability: 'not-loaded', observedAt: Date.now() };
++  } });
++  expect(result).toMatchObject({ state: 'ok', value: { entries: [{ hostCache: { value: { availability: 'not-loaded' } } }, { hostCache: { value: { availability: 'not-loaded' } } }] } });
++  expect(calls).toEqual([a + ':one', b + ':two']); expect(receipts.every((r) => r.current())).toBe(true);
++  cacheCurrent = false; expect(receipts.some((r) => !r.current())).toBe(true);
++});
++it('validates page size before any callback and preserves partial primary fields independently of cache errors', async () => {
++  const cache = vi.fn(() => { throw new Error('unavailable'); }); expect(read({ limit: 9, readLoadedCache: cache }).state).toBe('unavailable'); expect(cache).not.toHaveBeenCalled();
++  await put(b, [agent('one', { parentAgentId: 'parent', parentProjectPath: a })]);
++  expect(read({ limit: 1, readLoadedCache: cache })).toMatchObject({ state: 'ok', value: { entries: [{ endpoint: { agentId: 'one' }, hostCache: { state: 'unavailable' } }] } }); expect(cache).toHaveBeenCalledTimes(1);
++});
+diff --git a/src/main/services/configured-registered-connections-display.ts b/src/main/services/configured-registered-connections-display.ts
+new file mode 100644
+index 000000000..e4724f47a
+--- /dev/null
++++ b/src/main/services/configured-registered-connections-display.ts
+@@ -0,0 +1,84 @@
++/** Saved helper/Dispatcher directions from a bounded registered relationship page.
++ * No binding-source collect/inspect, ordinary loader, initialization or lifecycle call.
++ */
++import { AUTOMATIC_CONNECTION_SWITCHES } from '../../shared/connection-grants';
++import type { AgentConnectionCacheDisplay } from './agent-config';
++import type { ConnectionEndpointFields } from './connection-endpoint-fields-display';
++import type { DisplayReceipt, DisplayValue } from './display-settings';
++import { readRegisteredAgentDisplayPage, type RegisteredDisplayAgent, type RegisteredDisplayRoot, type RegisteredDisplaySelection, type RegisteredAgentDisplayPage } from './registered-agent-display-page';
++
++export const CONFIGURED_REGISTERED_PAGE_SIZE = 8;
++export interface ConfiguredRegisteredConnection {
++  endpoint: RegisteredDisplayAgent;
++  source: 'helper' | 'dispatcher-auto';
++  /** Saved applicability, never a live binding, MCP handshake or effective grant. */
++  applicability: 'configured' | 'disposed' | 'unknown';
++  directions: Array<{ from: 'selected' | 'endpoint'; disabledTools: string[]; enabledTools: string[] }>;
++  hostCache?: DisplayValue<AgentConnectionCacheDisplay>;
++}
++export interface ConfiguredRegisteredConnectionPage extends Omit<RegisteredAgentDisplayPage, 'entries'> {
++  entries: ConfiguredRegisteredConnection[];
++}
++const current = (r: DisplayReceipt) => { try { return r.current(); } catch { return false; } };
++/** Detached receipt list only; no primary, path map or returned field object retained. */
++function combine(rs: readonly DisplayReceipt[]): DisplayReceipt {
++  const captured = [...new Set(rs)]; return { current: () => captured.every(current) };
++}
++
++/** Internal caller supplies already admitted selected fields and exact target/role receipt.
++ * Default8/max8 related endpoints per request,16 registered roots,4096 registry visits +4096 agent-row visits,
++ * <=4MiB registry +8MiB initial root primary budget and64 directory alias probes. With cache enabled,
++ * each of at most8 callbacks is preceded by the relevant root receipt; initial
++ * and final aggregate receipts remain separate. Currentness rereads are not part
++ * of the initial byte budget and have no hard I/O deadline. Pages are independent.
++ * Only a trusted synchronous passive cache getter may be supplied. No callback
++ * is a registration, runtime, permission or transport authorization substitute.
++ */
++export function readConfiguredRegisteredConnectionsForDisplay(selected: RegisteredDisplaySelection & { fields: ConnectionEndpointFields }, purpose: 'helper-children' | 'dispatcher-auto', options: {
++  authorized(): boolean;
++  receipts: DisplayReceipt[];
++  projectOffset?: number;
++  matchOffset?: number;
++  limit?: number;
++  readLoadedCache?: (projectPath: string, agentId: string, options: { receipts: DisplayReceipt[]; expectedProjectNamespace?: string }) => AgentConnectionCacheDisplay;
++}): DisplayValue<ConfiguredRegisteredConnectionPage> {
++  const inputs = [{ field: 'Selected configured registered relationships', source: 'primary' as const, observedAt: Date.now() }];
++  const unavailable = (reason: 'invalid' | 'changed'): DisplayValue<ConfiguredRegisteredConnectionPage> => ({ state: 'unavailable', reason, inputs });
++  const limit = options.limit ?? CONFIGURED_REGISTERED_PAGE_SIZE;
++  if (!selected || selected.fields?.id !== selected.agentId || !Number.isInteger(limit) || limit < 1 || limit > CONFIGURED_REGISTERED_PAGE_SIZE
++    || !Array.isArray(options.receipts) || options.readLoadedCache !== undefined && typeof options.readLoadedCache !== 'function') return unavailable('invalid');
++  // Capture primitives before the first authority callback. Returned settings
++  // cannot later retarget this observation or alter its applicability.
++  const selectedDisposed = selected.fields.disposed.state === 'ok' ? selected.fields.disposed.value : undefined;
++  const selectedId = selected.agentId, selectedProject = selected.projectId, selectedPath = selected.projectPath, target = selected.receipt;
++  const authorized = options.authorized, receipts = options.receipts, readCache = options.readLoadedCache;
++  const admitted = () => { try { return authorized() && current(target); } catch { return false; } };
++  if (!admitted()) return unavailable('changed');
++  const evidenceStart = receipts.length, roots = new Map<string, RegisteredDisplayRoot>();
++  const page = readRegisteredAgentDisplayPage({ agentId: selectedId, projectId: selectedProject, projectPath: selectedPath, receipt: target }, purpose,
++    { authorized, receipts, projectOffset: options.projectOffset, matchOffset: options.matchOffset, limit, rootEvidence: roots });
++  if (page.state !== 'ok') return page;
++  const result: ConfiguredRegisteredConnectionPage = { ...page.value, entries: page.value.entries.map((endpoint) => {
++    const disposed = endpoint.fields.disposed.state === 'ok' ? endpoint.fields.disposed.value : undefined;
++    const applicability = disposed || selectedDisposed ? 'disposed' : disposed === false && selectedDisposed === false ? 'configured' : 'unknown';
++    const first = purpose === 'helper-children' ? AUTOMATIC_CONNECTION_SWITCHES.parentToHelper : AUTOMATIC_CONNECTION_SWITCHES.dispatcherToAgent;
++    const second = purpose === 'helper-children' ? AUTOMATIC_CONNECTION_SWITCHES.helperToParent : AUTOMATIC_CONNECTION_SWITCHES.agentToDispatcher;
++    return { endpoint, source: purpose === 'helper-children' ? 'helper' : 'dispatcher-auto', applicability,
++      directions: applicability === 'configured' ? [{ from: 'selected', disabledTools: [...first.disabledTools], enabledTools: [...first.enabledTools] },
++        { from: 'endpoint', disabledTools: [...second.disabledTools], enabledTools: [...second.enabledTools] }] : [] };
++  }) };
++  if (readCache) for (const entry of result.entries) {
++    // A prior callback may change another primary in this same or a later
++    // project. Check THIS exact admitted root immediately before EACH getter.
++    const root = roots.get(entry.endpoint.projectId);
++    if (!admitted() || !root || !current(root.receipt)) return unavailable('changed');
++    const cacheInputs = [{ field: 'Related agent host-session fields', source: 'host-cache' as const, observedAt: Date.now() }];
++    if (!root.namespace) { entry.hostCache = { state: 'unavailable', reason: 'unreadable', inputs: cacheInputs }; continue; }
++    try { entry.hostCache = { state: 'ok', value: readCache(root.projectPath, entry.endpoint.agentId, { receipts, expectedProjectNamespace: root.namespace }), inputs: cacheInputs }; }
++    catch { entry.hostCache = { state: 'unavailable', reason: 'unreadable', inputs: cacheInputs }; }
++  }
++  // Retain ALL page/cache evidence for the endpoint's final serialization fence.
++  const final = combine([target, ...receipts.slice(evidenceStart)]); receipts.push(final);
++  if (!admitted() || !final.current()) return unavailable('changed');
++  return { state: 'ok', value: result, inputs: page.inputs };
++}
+diff --git a/src/main/services/read-only-agent-target-witness.ts b/src/main/services/read-only-agent-target-witness.ts
+index 9a36621da..9c604e784 100644
+--- a/src/main/services/read-only-agent-target-witness.ts
++++ b/src/main/services/read-only-agent-target-witness.ts
+@@ -11,14 +11,17 @@ type RecordValue = Record<string, unknown>;
+ const record = (v: unknown): v is RecordValue => !!v && typeof v === 'object' && !Array.isArray(v);
+ 
+ export interface ReadOnlyMetadataBudget { remainingBytes: number; remainingFiles: number }
+-export class ReadOnlyMetadataLimitError extends Error { readonly code = 'metadata_limit'; }
++export class ReadOnlyMetadataLimitError extends Error {
++  readonly code = 'metadata_limit';
++  constructor(message: string, readonly reason: 'aggregate' | 'file' | 'other' = 'other') { super(message); }
++}
+ /** Per-query bookkeeping only; callers still admit the related registered roots. */
+ export const createReadOnlyMetadataBudget = (): ReadOnlyMetadataBudget => ({ remainingBytes: 8 * 1024 * 1024, remainingFiles: 32 });
+ function metadataAdmission(budget: ReadOnlyMetadataBudget | undefined, bytes: number, file: boolean): void {
+   if (!budget) return;
+   if (!Number.isSafeInteger(budget.remainingBytes) || budget.remainingBytes < 0 || budget.remainingBytes > 8 * 1024 * 1024
+     || !Number.isSafeInteger(budget.remainingFiles) || budget.remainingFiles < 0 || budget.remainingFiles > 32
+-    || budget.remainingBytes < bytes || file && !budget.remainingFiles) throw new ReadOnlyMetadataLimitError('Metadata read limit reached.');
++    || budget.remainingBytes < bytes || file && !budget.remainingFiles) throw new ReadOnlyMetadataLimitError('Metadata read limit reached.', 'aggregate');
+   budget.remainingBytes -= bytes;
+   if (file) budget.remainingFiles--;
+ }
+@@ -38,7 +41,7 @@ function inventory(root: string, relative: string, maxBytes = MAX_INVENTORY_BYTE
+   }
+   const leaf = chain.get(file)!;
+   if (!leaf.isFile()) throw new Error('Inventory witness unavailable.');
+-  if (leaf.size > BigInt(maxBytes)) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.');
++  if (leaf.size > BigInt(maxBytes)) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.', 'file');
+   const same = (a: fs.BigIntStats, b: fs.BigIntStats) => a.dev === b.dev && a.ino === b.ino;
+   const verify = () => {
+     for (const [member, original] of chain) {
+@@ -51,7 +54,7 @@ function inventory(root: string, relative: string, maxBytes = MAX_INVENTORY_BYTE
+   try {
+     const before = fs.fstatSync(fd, { bigint: true });
+     if (!before.isFile() || !same(leaf, before)) throw new Error('Inventory changed while opening.');
+-    if (before.size > BigInt(maxBytes)) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.');
++    if (before.size > BigInt(maxBytes)) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.', 'file');
+     verify();
+     metadataAdmission(budget, Number(before.size) + 1, false);
+     const bytes = Buffer.alloc(Number(before.size) + 1);
+@@ -59,7 +62,7 @@ function inventory(root: string, relative: string, maxBytes = MAX_INVENTORY_BYTE
+     while (size < bytes.length) { const n = fs.readSync(fd, bytes, size, bytes.length - size, size); if (!n) break; size += n; }
+     const after = fs.fstatSync(fd, { bigint: true });
+     verify();
+-    if (size > maxBytes) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.');
++    if (size > maxBytes) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.', 'file');
+     if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) throw new Error('Inventory changed while reading.');
+     const digest = createHash('sha256').update(bytes.subarray(0, size)).digest('hex');
+     const identity = [...chain.values()].map((stat) => `${stat.dev}:${stat.ino}`).join('/');
+diff --git a/src/main/services/registered-agent-display-page.test.ts b/src/main/services/registered-agent-display-page.test.ts
+new file mode 100644
+index 000000000..98414fc98
+--- /dev/null
++++ b/src/main/services/registered-agent-display-page.test.ts
+@@ -0,0 +1,117 @@
++import { afterEach, beforeEach, expect, it, vi } from 'vitest';
++import * as fs from 'fs';
++import * as fsp from 'fs/promises';
++import * as os from 'os';
++import * as path from 'path';
++const m = vi.hoisted(() => ({ home: '', allowed: true }));
++vi.mock('electron', () => ({ app: { getPath: () => m.home } }));
++vi.mock('fs', async (original) => { const actual = await original<typeof import('fs')>(); return { ...actual, openSync: vi.fn(actual.openSync) }; });
++vi.mock('./agent-config', () => { throw new Error('Display inventory imported the ordinary owner'); });
++vi.mock('./project-store', () => { throw new Error('Display inventory imported the ordinary project store'); });
++import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
++import { getBaseDirPath } from './base-dir';
++import { readRegisteredAgentDisplayPage } from './registered-agent-display-page';
++import type { DisplayReceipt } from './display-settings';
++let root: string, a: string, b: string;
++const agent = (id: string, extra = {}) => ({ id, name: 'Name ' + id, color: 'blue', createdAt: '2026-11-20', ...extra });
++const put = (folder: string, rows: unknown[]) => fsp.writeFile(path.join(folder, '.clubhouse', 'agents.json'), JSON.stringify(rows));
++const selection = () => ({ agentId: 'parent', projectId: 'a', projectPath: a, receipt: { current: () => m.allowed } });
++const read = (options = {}) => readRegisteredAgentDisplayPage(selection(), 'helper-children', { authorized: () => m.allowed, receipts: [], ...options });
++beforeEach(async () => {
++  root = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-registered-display-'))); m.home = root; m.allowed = true; vi.mocked(fs.openSync).mockClear(); a = path.join(root, 'a'); b = path.join(root, 'b');
++  for (const p of [a, b]) await fsp.mkdir(path.join(p, '.clubhouse'), { recursive: true });
++  await fsp.mkdir(getBaseDirPath(), { recursive: true });
++  await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'a', name: 'Project A', path: a }, { id: 'b', name: 'Custom B', path: b }] }));
++  await put(a, [agent('parent')]); await put(b, []);
++});
++afterEach(async () => { await fsp.rm(root, { recursive: true, force: true }); });
++it('projects only applicable selected helpers and private root evidence, without raw configuration or ordinary loaders', async () => {
++  await put(b, [agent('helper', { parentAgentId: 'parent', parentProjectPath: a, instructions: 'PRIVATE_INSTRUCTIONS', env: { secret: 'PRIVATE_CREDENTIAL' } }), agent('unrelated', { parentAgentId: 'other', name: 'PRIVATE_UNRELATED_NAME' })]);
++  const roots = new Map(), receipts: DisplayReceipt[] = [], result = read({ rootEvidence: roots, receipts });
++  expect(result).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, entries: [{ agentId: 'helper', projectId: 'b', projectName: { value: 'Custom B' }, parentAgentId: 'parent' }], next: null } });
++  expect(roots.size).toBe(1); expect(roots.get('b')).toMatchObject({ projectPath: b }); expect(receipts.every((r) => r.current())).toBe(true);
++  expect(JSON.stringify(result)).not.toMatch(/PRIVATE_|instructions|env|projectPath|namespace/); expect(JSON.stringify(result)).not.toContain(root);
++  await put(b, []); expect(receipts.some((r) => !r.current())).toBe(true); expect(roots.get('b').receipt.current()).toBe(false);
++});
++it('continues selected helper matches while preserving independently observed page boundaries', async () => {
++  await put(a, [agent('parent'), ...Array.from({ length: 51 }, (_, i) => agent('helper-' + i, { parentAgentId: 'parent' }))]);
++  const first = read(); expect(first).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 51, next: { projectOffset: 0, matchOffset: 50 } } });
++  if (first.state !== 'ok') throw new Error('fixture'); expect(first.value.entries).toHaveLength(50);
++  const last = read(first.value.next!); expect(last).toMatchObject({ state: 'ok', value: { entries: [{ agentId: 'helper-50' }], knownMatches: 51, next: null } });
++});
++it('keeps configured Dispatcher applicability separate from ordinary unrelated fields and unknown policies', async () => {
++  await put(b, [agent('on', { orchestration: { connectToDispatcher: true } }), agent('off', { orchestration: { connectToDispatcher: false } }), agent('disposed', { disposedAt: '2026-11-20', orchestration: { connectToDispatcher: true } }), agent('bad', { orchestration: { connectToDispatcher: 'bad' } })]);
++  const result = readRegisteredAgentDisplayPage({ ...selection(), agentId: 'controller', projectId: DISPATCHER_PROJECT_ID }, 'dispatcher-auto', { authorized: () => true, receipts: [] });
++  expect(result).toMatchObject({ state: 'ok', value: { complete: false, unknownRows: 1, entries: [{ agentId: 'on' }] } });
++  expect(JSON.stringify(result)).not.toContain('Name off'); expect(JSON.stringify(result)).not.toContain('Name bad');
++});
++it('refuses denied or prefilled-root-map reads before opening a metadata file', () => {
++  const open = vi.spyOn(fs, 'openSync'); m.allowed = false; expect(read().state).toBe('unavailable'); expect(open).not.toHaveBeenCalled();
++  m.allowed = true; expect(read({ rootEvidence: new Map([['bad', {}]]) }).state).toBe('unavailable'); expect(open).not.toHaveBeenCalled(); open.mockRestore();
++});
++it('does not read a primary body beyond admission limits or turn its missing helper evidence into empty', async () => {
++  await put(b, [agent('large', { parentAgentId: 'parent', parentProjectPath: a, unused: 'x'.repeat(4 * 1024 * 1024) })]);
++  const actual = await vi.importActual<typeof import('fs')>('fs'); const opened: string[] = [], real = actual.openSync; const spy = vi.spyOn(fs, 'openSync').mockImplementation(((...args: Parameters<typeof fs.openSync>) => { opened.push(String(args[0])); return real(...args); }) as typeof fs.openSync);
++  const result = read(); spy.mockRestore(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, unavailableProjects: 1, entries: [] } }); expect(opened).not.toContain(path.join(b, '.clubhouse', 'agents.json'));
++});
++
++it('captures selection facts before authorization callbacks and withholds an in-read revocation', async () => {
++  await put(b, [agent('wanted', { parentAgentId: 'parent', parentProjectPath: a }), agent('PRIVATE_OTHER_HELPER', { parentAgentId: 'different', parentProjectPath: b })]);
++  const selected = selection(); let called = false;
++  const result = readRegisteredAgentDisplayPage(selected, 'helper-children', { receipts: [], authorized: () => { if (!called) { called = true; selected.agentId = 'different'; selected.projectId = 'b'; selected.projectPath = b; } return true; } });
++  expect(result).toMatchObject({ state: 'ok', value: { entries: [{ agentId: 'wanted' }], complete: true } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_OTHER_HELPER');
++  const actual = (await vi.importActual<typeof import('fs')>('fs')).openSync;
++  const open = vi.spyOn(fs, 'openSync').mockImplementation(((...args: Parameters<typeof fs.openSync>) => { const fd = actual(...args); m.allowed = false; return fd; }) as typeof fs.openSync);
++  m.allowed = true; expect(read().state).toBe('unavailable'); expect(m.allowed).toBe(false); open.mockRestore();
++});
++it('admits only a bounded number of distinct parent alias probes and labels the remaining association unknown', async () => {
++  const aliases = Array.from({ length: 65 }, (_, i) => a + (path.sep + '.' + path.sep).repeat(i + 1));
++  await put(b, aliases.map((alias, i) => agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: alias })));
++  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, knownMatches: 64, unknownRows: 1 } });
++  if (result.state !== 'ok') throw new Error('fixture'); expect(result.value.entries).toHaveLength(50);
++});
++it('charges both inventory passes before traversing an oversized row collection', async () => {
++  await put(b, Array.from({ length: 2049 }, (_, i) => agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: a })));
++  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, unavailableProjects: 1, knownMatches: 0, entries: [] } });
++});
++it('continues registered-root pages and treats a shifted page as changed rather than verified empty', async () => {
++  const projects = [{ id: 'a', name: 'Project A', path: a }];
++  for (let i = 0; i < 16; i++) { const folder = path.join(root, 'project-' + i); await fsp.mkdir(path.join(folder, '.clubhouse'), { recursive: true }); await put(folder, [agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: a })]); projects.push({ id: 'p' + i, name: 'Project ' + i, path: folder }); }
++  await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects }));
++  const first = read(); expect(first).toMatchObject({ state: 'ok', value: { knownMatches: 15, next: { projectOffset: 16, matchOffset: 0 } } });
++  const last = read({ projectOffset: 16 }); expect(last).toMatchObject({ state: 'ok', value: { entries: [{ agentId: 'child-15' }], next: null } });
++  expect(read({ projectOffset: 17 })).toMatchObject({ state: 'unavailable', reason: 'changed' });
++});
++it('keeps malformed relationship data partial while preserving known helpers, missing files and explicit false values', async () => {
++  await put(b, [agent('known', { parentAgentId: 'parent', parentProjectPath: a, orchestration: { connectToDispatcher: false } }), agent('bad', { parentAgentId: 'parent', parentProjectPath: {} })]);
++  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, unknownRows: 1, entries: [{ agentId: 'known', fields: { connectToDispatcher: { state: 'ok', value: false } } }] } });
++  await fsp.unlink(path.join(b, '.clubhouse', 'agents.json')); expect(read()).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 0 } });
++  await fsp.writeFile(path.join(b, '.clubhouse', 'agents.json.bak'), '[]'); expect(read()).toMatchObject({ state: 'ok', value: { complete: false, unavailableProjects: 1 } });
++});
++it('keeps a full bounded registry from consuming every related-agent row admission', async () => {
++  const projects = [{ id: 'a', name: 'Selected', path: a }, { id: 'b', name: 'Other', path: b }, ...Array.from({ length: 4094 }, (_, i) => ({ id: 'p' + i, name: 'Project ' + i, path: path.join(root, 'not-opened-' + i) }))];
++  await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects })); await put(b, [agent('known', { parentAgentId: 'parent', parentProjectPath: a })]);
++  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { knownMatches: 1, entries: [{ agentId: 'known' }], next: { projectOffset: 16, matchOffset: 0 } } });
++});
++it('continues at a deferred root after the aggregate byte budget, without permanently losing later supported records', async () => {
++  const projects = [{ id: 'a', name: 'Selected', path: a }];
++  for (let i = 0; i < 3; i++) {
++    const folder = path.join(root, 'large-' + i); await fsp.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
++    await put(folder, [agent('large-' + i, { parentAgentId: 'parent', parentProjectPath: a, unused: 'x'.repeat(3 * 1024 * 1024) })]); projects.push({ id: 'large-' + i, name: 'Large ' + i, path: folder });
++  }
++  await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects }));
++  const first = read(); expect(first).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 2, unavailableProjects: 0, next: { projectOffset: 3, matchOffset: 0 } } });
++  if (first.state !== 'ok') throw new Error('fixture'); expect(first.value.entries.map((entry) => entry.agentId)).toEqual(['large-0', 'large-1']);
++  const last = read(first.value.next!); expect(last).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, entries: [{ agentId: 'large-2' }], next: null } });
++});
++
++it('continues a supported later root when earlier roots exhausted this page agent-row budget', async () => {
++  await put(b, Array.from({ length: 2048 }, (_, i) => agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: a })));
++  const first = read(); expect(first).toMatchObject({ state: 'ok', value: { complete: true, unavailableProjects: 0, knownMatches: 0, next: { projectOffset: 1, matchOffset: 0 } } });
++  const last = read({ projectOffset: 1, matchOffset: 2000 }); expect(last).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 2048, next: null } });
++  if (last.state !== 'ok') throw new Error('fixture'); expect(last.value.entries).toHaveLength(48); expect(last.value.entries[47].agentId).toBe('child-2047');
++});
++it('does not adopt another project’s same-ID parent or probe unrelated relationship aliases', async () => {
++  await put(b, [agent('safe', { parentAgentId: 'parent', parentProjectPath: a }), agent('wrong', { name: 'PRIVATE_OTHER_PARENT_CHILD', parentAgentId: 'parent', parentProjectPath: b }), agent('unrelated', { name: 'PRIVATE_OTHER_RELATIONSHIP', parentAgentId: 'unrelated', parentProjectPath: '/unadmitted/never-probe' })]);
++  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, entries: [{ agentId: 'safe' }] } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
++});
+diff --git a/src/main/services/registered-agent-display-page.ts b/src/main/services/registered-agent-display-page.ts
+new file mode 100644
+index 000000000..ce654f61e
+--- /dev/null
++++ b/src/main/services/registered-agent-display-page.ts
+@@ -0,0 +1,195 @@
++/** Internal selected relationship inventory for Connections. No ordinary loaders or raw config retention. */
++import * as fs from 'fs';
++import * as path from 'path';
++import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
++import type { DisplayInput, DisplayReceipt, DisplayValue } from './display-settings';
++import { getBaseDirPath } from './base-dir';
++import { createReadOnlyMetadataBudget, readReadOnlyPrimaryMetadata, ReadOnlyMetadataLimitError } from './read-only-agent-target-witness';
++import { projectConnectionEndpointFieldsForDisplay, type ConnectionEndpointFields } from './connection-endpoint-fields-display';
++import { display } from './remote-details-presentation';
++
++export const REGISTERED_DISPLAY_PROJECTS = 16;
++export const REGISTERED_DISPLAY_ROWS = 4096;
++export const REGISTERED_DISPLAY_MATCHES = 50;
++export const REGISTERED_DISPLAY_ALIAS_PROBES = 64;
++interface Project { id: string; path: string; name: DisplayValue<string> }
++export interface RegisteredDisplayAgent {
++  agentId: string;
++  projectId: string;
++  projectName: DisplayValue<string>;
++  fields: ConnectionEndpointFields;
++  /** Included only after the selected parent/project relationship is established. */
++  parentAgentId?: string;
++}
++export interface RegisteredDisplayRoot { projectPath: string; namespace?: string; receipt: DisplayReceipt }
++export interface RegisteredAgentDisplayPage {
++  entries: RegisteredDisplayAgent[];
++  /** Completeness of this root page; next may still identify more registered roots. */
++  complete: boolean;
++  knownMatches: number;
++  unknownRows: number;
++  unavailableProjects: number;
++  /** More registered roots, or more matching entries within the same root page. */
++  next: { projectOffset: number; matchOffset: number } | null;
++  projectOffset: number;
++  matchOffset: number;
++  observedAt: number;
++}
++export interface RegisteredDisplaySelection {
++  agentId: string;
++  projectId: string;
++  projectPath: string;
++  /** Strict selected target/role admission; caller separately retains transport/run authority. */
++  receipt: DisplayReceipt;
++}
++const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
++const id = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !/[\x00-\x1f\x7f]/.test(v);
++const localId = (v: unknown): v is string => id(v) && !v.includes('@') && !v.includes('||');
++const folder = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 4096 && path.isAbsolute(v) && !v.includes('\0');
++const current = (receipt: DisplayReceipt) => { try { return receipt.current(); } catch { return false; } };
++/** Keep receipts in a separate lexical scope; no parsed root/agent document is captured. */
++function combine(receipts: readonly DisplayReceipt[]): DisplayReceipt {
++  const captured = [...new Set(receipts)]; return { current: () => captured.every(current) };
++}
++function profile(base: string): DisplayReceipt { return { current: () => getBaseDirPath() === base }; }
++function directoryKey(file: string): string {
++  const stat = fs.statSync(file, { bigint: true });
++  if (!stat.isDirectory() || stat.ino <= 0n) throw new Error('Directory association unavailable.');
++  return `ino:${stat.dev}:${stat.ino}`;
++}
++function directoryReceipt(file: string, admitted: string): DisplayReceipt {
++  return { current: () => { try { return directoryKey(file) === admitted; } catch { return false; } } };
++}
++
++/** The public view is allowlisted. Private observed-root data goes only into an empty host-owned Map.
++ * The Map and receipt are not wire DTOs, cached registration, runtime or permission authority.
++ * Pages are separate observations; caller must not infer a cross-page snapshot from offsets. */
++export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelection, purpose: 'helper-children' | 'dispatcher-auto', options: {
++  authorized(): boolean;
++  receipts: DisplayReceipt[];
++  projectOffset?: number;
++  matchOffset?: number;
++  limit?: number;
++  rootEvidence?: Map<string, RegisteredDisplayRoot>;
++}): DisplayValue<RegisteredAgentDisplayPage> {
++  const observedAt = Date.now(), inputs: DisplayInput[] = [{ field: 'Selected registered relationship inventory', source: 'primary', observedAt }];
++  const unknown = (reason: 'invalid' | 'unreadable' | 'limit' | 'changed'): DisplayValue<RegisteredAgentDisplayPage> => ({ state: 'unavailable', reason, inputs });
++  const projectOffset = options.projectOffset ?? 0, matchOffset = options.matchOffset ?? 0, limit = options.limit ?? REGISTERED_DISPLAY_MATCHES, rootsOut = options.rootEvidence;
++  if (!selected || !localId(selected.agentId) || !id(selected.projectId) || !folder(selected.projectPath) || typeof selected.receipt?.current !== 'function'
++    || !Array.isArray(options.receipts) || rootsOut !== undefined && (!(rootsOut instanceof Map) || rootsOut.size)
++    || !Number.isInteger(projectOffset) || projectOffset < 0 || projectOffset > REGISTERED_DISPLAY_ROWS
++    || !Number.isInteger(matchOffset) || matchOffset < 0 || matchOffset > REGISTERED_DISPLAY_ROWS
++    || !Number.isInteger(limit) || limit < 1 || limit > REGISTERED_DISPLAY_MATCHES
++    || !['helper-children', 'dispatcher-auto'].includes(purpose)
++    || (purpose === 'dispatcher-auto') !== (selected.projectId === DISPATCHER_PROJECT_ID)) return unknown('invalid');
++  const selectedId = selected.agentId, selectedProjectId = selected.projectId, selectedPath = selected.projectPath, selectedReceipt = selected.receipt;
++  const authorized = options.authorized, receipts = options.receipts;
++  const admitted = () => { try { return authorized() && current(selectedReceipt); } catch { return false; } };
++  if (!admitted()) return unknown('changed');
++  const base = getBaseDirPath(), budget = createReadOnlyMetadataBudget(), evidence: DisplayReceipt[] = [selectedReceipt, profile(base)];
++  const localRoots = new Map<string, RegisteredDisplayRoot>(), entries: RegisteredDisplayAgent[] = [];
++  let knownMatches = 0, unknownRows = 0, unavailableProjects = 0, complete = true, rowsLeft = REGISTERED_DISPLAY_ROWS;
++  let deferredProject: number | undefined;
++  try {
++    const snapshot = readReadOnlyPrimaryMetadata(base, 'projects.json', { budget: createReadOnlyMetadataBudget() }); evidence.push(snapshot.receipt);
++    const raw = Array.isArray(snapshot.raw) ? snapshot.raw : record(snapshot.raw) && snapshot.raw.version === 1 ? snapshot.raw.projects : undefined;
++    if (!Array.isArray(raw)) return unknown('unreadable');
++    if (raw.length > REGISTERED_DISPLAY_ROWS) return unknown('limit');
++    // Registry admission and root-row visits have separate ceilings. A full
++    // valid registry must not permanently consume every root's display budget.
++    const projects: Project[] = [], ids = new Set<string>(), paths = new Set<string>();
++    let selectedRegistered = false;
++    for (const value of raw) {
++      if (!record(value) || !id(value.id) || !folder(value.path) || ids.has(value.id) || paths.has(value.path)) return unknown('unreadable');
++      ids.add(value.id); paths.add(value.path);
++      if (value.id === selectedProjectId && value.path === selectedPath) selectedRegistered = true;
++      const label = typeof value.displayName === 'string' && value.displayName ? value.displayName : value.name;
++      const name: DisplayValue<string> = typeof label === 'string' && label.length <= 1024 ? { state: 'ok', value: display(label, 240), inputs }
++        : { state: 'unavailable', reason: typeof label === 'string' ? 'limit' : 'invalid', inputs };
++      projects.push({ id: value.id, path: value.path, name });
++    }
++    if (purpose === 'helper-children' && !selectedRegistered) return unknown('changed');
++    if (!admitted() || !snapshot.receipt.current()) return unknown('changed');
++    if (projectOffset > 0 && projectOffset >= projects.length) return unknown('changed');
++    let selectedDirectory: string | undefined, selectedDirectoryReceipt: DisplayReceipt | undefined;
++    const aliases = new Map<string, { key: string | null; receipt?: DisplayReceipt }>();
++    if (purpose === 'helper-children') {
++      try { selectedDirectory = directoryKey(selectedPath); selectedDirectoryReceipt = directoryReceipt(selectedPath, selectedDirectory); evidence.push(selectedDirectoryReceipt); }
++      catch { return unknown('unreadable'); }
++    }
++    const relatedParent = (parent: unknown, relevant: Set<DisplayReceipt>): boolean | undefined => {
++      if (!folder(parent)) return undefined;
++      if (parent === selectedPath) return true;
++      // An unregistered UNC/network spelling is not an admitted alias probe.
++      if ((parent.startsWith('\\\\') || parent.startsWith('//')) && !paths.has(parent)) return undefined;
++      if (aliases.has(parent)) { const found = aliases.get(parent)!; if (found.receipt) relevant.add(found.receipt); return found.key === null ? undefined : found.key === selectedDirectory; }
++      if (aliases.size >= REGISTERED_DISPLAY_ALIAS_PROBES || !admitted()) return undefined;
++      try { const found = directoryKey(parent), receipt = directoryReceipt(parent, found); aliases.set(parent, { key: found, receipt }); evidence.push(receipt); relevant.add(receipt); return found === selectedDirectory; }
++      catch { aliases.set(parent, { key: null }); return undefined; }
++    };
++    const rootPage = projects.slice(projectOffset, projectOffset + REGISTERED_DISPLAY_PROJECTS), namespaces = new Set<string>();
++    for (const [index, project] of rootPage.entries()) {
++      if (!admitted()) return unknown('changed');
++      try {
++        const data = readReadOnlyPrimaryMetadata(project.path, '.clubhouse/agents.json', { budget }); evidence.push(data.receipt);
++        if (!Array.isArray(data.raw)) { unavailableProjects++; complete = false; continue; }
++        // Both duplicate-ID admission and relationship projection visit every row.
++        if (data.raw.length * 2 > rowsLeft) {
++          if (data.raw.length * 2 <= REGISTERED_DISPLAY_ROWS && index > 0) { deferredProject = projectOffset + index; break; }
++          unavailableProjects++; complete = false; continue;
++        }
++        rowsLeft -= data.raw.length * 2;
++        if (data.rootNamespace && namespaces.has(data.rootNamespace)) return unknown('unreadable');
++        if (data.rootNamespace) namespaces.add(data.rootNamespace);
++        const counts = new Map<string, number>();
++        for (const agent of data.raw) if (record(agent) && localId(agent.id)) counts.set(agent.id, (counts.get(agent.id) ?? 0) + 1);
++        const relevantAliases = new Set<DisplayReceipt>(), emittedBefore = entries.length;
++        if (selectedDirectoryReceipt) relevantAliases.add(selectedDirectoryReceipt);
++        for (const agent of data.raw) {
++          if (!record(agent)) { unknownRows++; complete = false; continue; }
++          if (purpose === 'helper-children') {
++            if (agent.parentAgentId === undefined) continue;
++            if (typeof agent.parentAgentId === 'string' && agent.parentAgentId !== selectedId) continue;
++            if (agent.parentAgentId !== selectedId || agent.id === selectedId) { unknownRows++; complete = false; continue; }
++            const related = agent.parentProjectPath === undefined && data.rootNamespace ? data.rootNamespace === selectedDirectory
++              : relatedParent(agent.parentProjectPath === undefined ? project.path : agent.parentProjectPath, relevantAliases);
++            if (related === false) continue;
++            if (related === undefined) { unknownRows++; complete = false; continue; }
++          }
++          if (!localId(agent.id) || counts.get(agent.id) !== 1) { unknownRows++; complete = false; continue; }
++          const projected = projectConnectionEndpointFieldsForDisplay(agent.id, agent);
++          if (projected.state !== 'ok') { unknownRows++; complete = false; continue; }
++          const fields = projected.value;
++          if (purpose === 'dispatcher-auto') {
++            if (agent.id === selectedId || fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value
++              || fields.disposed.state === 'ok' && fields.disposed.value || fields.helper.state === 'ok' && fields.helper.value) continue;
++            if (fields.connectToDispatcher.state !== 'ok' || fields.disposed.state !== 'ok' || fields.helper.state !== 'ok') { unknownRows++; complete = false; continue; }
++          }
++          knownMatches++;
++          if (knownMatches <= matchOffset || entries.length >= limit) continue;
++          const stamp = <T>(value: DisplayValue<T>): DisplayValue<T> => ({ ...value, inputs: value.inputs.map((input) => ({ ...input, source: 'primary', observedAt })) });
++          entries.push({ agentId: agent.id, projectId: project.id, projectName: project.name,
++            fields: { ...fields, name: fields.name.state === 'ok' ? { ...stamp(fields.name), state: 'ok', value: display(fields.name.value, 240) } : stamp(fields.name),
++              helper: stamp(fields.helper), disposed: stamp(fields.disposed), connectToDispatcher: stamp(fields.connectToDispatcher) },
++            ...(purpose === 'helper-children' && { parentAgentId: selectedId }) });
++        }
++        if (entries.length > emittedBefore) localRoots.set(project.id, { projectPath: project.path, namespace: data.rootNamespace,
++          receipt: combine([selectedReceipt, profile(base), snapshot.receipt, data.receipt, ...relevantAliases]) });
++      } catch (error) {
++        // A fresh request can read the deferred root with a new aggregate
++        // budget. File-size/schema refusals remain explicit, not an endless
++        // next-page retry of the same oversized file.
++        if (error instanceof ReadOnlyMetadataLimitError && error.reason === 'aggregate' && index > 0) { deferredProject = projectOffset + index; break; }
++        unavailableProjects++; complete = false;
++      }
++    }
++    const receipt = combine(evidence); receipts.push(receipt);
++    if (!admitted() || !receipt.current()) return unknown('changed');
++    if (matchOffset > 0 && matchOffset >= knownMatches) return unknown('changed');
++    if (rootsOut) for (const [key, value] of localRoots) rootsOut.set(key, value);
++    const next = knownMatches > matchOffset + entries.length ? { projectOffset, matchOffset: matchOffset + entries.length }
++      : deferredProject !== undefined ? { projectOffset: deferredProject, matchOffset: 0 }
++        : projectOffset + rootPage.length < projects.length ? { projectOffset: projectOffset + rootPage.length, matchOffset: 0 } : null;
++    return { state: 'ok', inputs, value: { entries, complete, knownMatches, unknownRows, unavailableProjects, next, projectOffset, matchOffset, observedAt } };
++  } catch (error) { return unknown(error instanceof ReadOnlyMetadataLimitError ? 'limit' : 'unreadable'); }
++}
+diff --git a/src/main/services/remote-agent-details.test.ts b/src/main/services/remote-agent-details.test.ts
+index bb79572f6..357bbbad8 100644
+--- a/src/main/services/remote-agent-details.test.ts
++++ b/src/main/services/remote-agent-details.test.ts
+@@ -923,3 +923,31 @@ describe('whole Details joins configured sources only through admitted endpoint
+     } finally { capture.mockRestore(); stop(); sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); resetAllSettingsStoresForTests(); getPath.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+   });
+ });
++
++describe('selected registered Connections pages at final Details assembly', () => {
++  it.each(['unchanged', 'related-primary-late', 'selected-removed', 'run-change', 'revoked'] as const)('keeps source continuation and final selected evidence fences: %s', async (mode) => {
++    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-registered-page-'))), a = path.join(root, 'a'), b = path.join(root, 'b');
++    for (const folder of [a, b]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
++    m.base = root; m.realConnections = true; m.realWitness = true;
++    const selected = { ...agent(), worktreePath: a, orchestrator: 'codex-cli' as const }, p = { ...project, path: a };
++    await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [p, { id: 'other-project', name: 'Other custom project', path: b }] }));
++    await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), JSON.stringify([selected]));
++    const relatedFile = path.join(b, '.clubhouse', 'agents.json'), children = Array.from({ length: 9 }, (_, i) => ({ id: 'helper-' + i, name: 'Helper ' + i, parentAgentId: 'a1', parentProjectPath: a, env: { token: 'PRIVATE_CREDENTIAL' } }));
++    await fs.writeFile(relatedFile, JSON.stringify(children)); m.target.mockResolvedValue({ agent: selected, project: p });
++    let allowed = true, reached = false, observed = false;
++    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
++    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((r) => r.label === 'Helper 8 · Other custom project'); });
++    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'related-primary-late') await fs.writeFile(relatedFile, '[]'); if (mode === 'selected-removed') await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), '[]'); if (mode === 'run-change') m.registration.mockReturnValue({ nonce: 'replacement-run' }); if (mode === 'revoked') allowed = false; return []; });
++    try {
++      const response = await readRemoteAgentDetails('a1', () => allowed, { card: 'connections', source: 'helpers', offset: 8, projectOffset: 0 });
++      expect(reached).toBe(true); expect(observed).toBe(true);
++      if (mode === 'unchanged') {
++        expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
++        const body = response.body as RemoteAgentDetails, c = body.cards.find((c) => c.id === 'connections'); expect(body.connectionPages).toBe(1);
++        expect(c?.connectionPage).toMatchObject({ source: 'helpers', offset: 8, known: 9, next: null }); expect(c?.rows.some((r) => r.label.includes('Helper 0'))).toBe(false); expect(JSON.stringify(c)).not.toMatch(/PRIVATE_|projectPath|namespace/);
++      } else {
++        expect.soft(response.status).toBe(mode === 'revoked' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('providerId'); expect.soft(response.body).not.toHaveProperty('settings');
++      }
++    } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
++  });
++});
+diff --git a/src/main/services/remote-agent-details.ts b/src/main/services/remote-agent-details.ts
+index 6bb8eae16..92a86c461 100644
+--- a/src/main/services/remote-agent-details.ts
++++ b/src/main/services/remote-agent-details.ts
+@@ -1,3 +1,6 @@
++import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
++import { readConfiguredRegisteredConnectionsForDisplay } from './configured-registered-connections-display';
++import { projectConnectionEndpointFieldsForDisplay } from './connection-endpoint-fields-display';
+ /** Read-only host projections for the selected agent's Details cards (#3733). */
+ import { readHistoricalSessionCard } from './remote-session-history';
+ import { card, row, section, display } from './remote-details-presentation';
+@@ -33,12 +36,14 @@ import { captureDisplayProvider } from './display-provider';
+ import { readAgentConnectionCacheForDisplay } from './agent-config';
+ 
+ /** No caller-supplied paths, store objects, instructions, action prompts or MCP definitions leave here. */
+-export async function readRemoteAgentDetails(agentId: string, authorized: () => boolean): Promise<{ status: number; body: unknown }> {
++export async function readRemoteAgentDetails(agentId: string, authorized: () => boolean, query?: RemoteDetailsQuery): Promise<{ status: number; body: unknown }> {
+   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });
+   if (!authorized()) return refused();
++  if (query !== undefined && !isRemoteDetailsQuery(query)) return { status: 400, body: { error: 'invalid_details_query' } };
++  query = query && { ...query };
+   try {
+     const quick = await resolveReadOnlyQuickTarget(agentId, authorized);
+-    if (quick) return readRemoteQuickDetails(quick, authorized);
++    if (quick) return query ? { status: 404, body: { error: 'details_page_unavailable' } } : readRemoteQuickDetails(quick, authorized);
+     let target: AgentConfigTarget;
+     try { target = await resolveAgentConfigTarget(agentId, undefined, { strict: true }); }
+     catch (error) { return !authorized() ? refused() : error instanceof Error && error.message === 'No registered agent matches that reference.'
+@@ -75,7 +80,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () =>
+     const byId = Object.fromEntries(cards.map((c) => [c.id, c])) as Record<RemoteDetailsCardId, RemoteDetailsCard>;
+     if (dispatcher) for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes'] as const) byId[id].state = 'not-applicable';
+     if (agent.parentAgentId) byId.dispatcher.state = 'not-applicable';
+-    const result: RemoteAgentDetails = { version: 1, readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
++    const result: RemoteAgentDetails = { version: 1, connectionPages: 1, readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
+     const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });
+     if (!authorized()) return refused();
+     // A failed freshness/authority check is a refusal of this assembly, not
+@@ -155,17 +160,25 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () =>
+     });
+     await read('dispatcher', (c) => readDispatcherCard(c, target, readPolicy().fields.connectToDispatcher, { receipts: dispatcherReceipts, authorized, controller }));
+     await read('connections', async (c) => {
++      const registeredFor = (chosen: AgentConfigTarget): ReturnType<typeof readConfiguredRegisteredConnectionsForDisplay> | undefined => {
++        if (query?.source !== 'helpers' && query?.source !== 'dispatcher-auto') return undefined;
++        const fields = projectConnectionEndpointFieldsForDisplay(chosen.agent.id, chosen.agent);
++        if (fields.state !== 'ok' || (query.source === 'dispatcher-auto') !== dispatcher) return undefined;
++        const receipt = captureReadOnlyConfigTargetWitness(chosen); connectionReceipts.push(receipt);
++        return readConfiguredRegisteredConnectionsForDisplay({ agentId: chosen.agent.id, projectId: chosen.project.id, projectPath: chosen.project.path, receipt, fields: fields.value },
++          query.source === 'helpers' ? 'helper-children' : 'dispatcher-auto', { authorized, receipts: connectionReceipts, projectOffset: query.projectOffset, matchOffset: query.offset, readLoadedCache: readAgentConnectionCacheForDisplay });
++      };
+       if (!dispatcher) {
+         const connect = readPolicy().fields.connectToDispatcher;
+         const canonical = connect.state === 'ok' && connect.value ? await controller() : undefined;
+         if (!authorized()) return;
+         const automatic = configuredDispatcherDirections({ id: agentId, name: agent.name }, connect, canonical && { id: canonical.agent.id, name: canonical.agent.name });
+-        return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: agent.name, projectPath: project.path, connectToDispatcher: connect, automatic, automaticControllerProjectPath: canonical?.project.path, endpoint: !agent.parentAgentId ? { target: targetWitness, readCache: readAgentConnectionCacheForDisplay } : undefined, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
++        return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, page: query, registered: registeredFor(target), name: agent.name, projectPath: project.path, connectToDispatcher: connect, automatic, automaticControllerProjectPath: canonical?.project.path, endpoint: !agent.parentAgentId ? { target: targetWitness, readCache: readAgentConnectionCacheForDisplay } : undefined, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
+       }
+       const canonical = await controller();
+       if (!authorized()) return;
+       if (!canonical) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The host Dispatcher’s canonical connection identity is unavailable. Connections cannot be verified until its host identity is available.'); return; }
+-      return readConnectionCard(c, canonical.agent.id, { receipts: connectionReceipts, authorized, dispatcher: true, name: canonical.agent.name, projectPath: canonical.project.path });
++      return readConnectionCard(c, canonical.agent.id, { receipts: connectionReceipts, authorized, page: query, registered: registeredFor(canonical), dispatcher: true, name: canonical.agent.name, projectPath: canonical.project.path });
+     });
+     await read('actions', (c) => readActionCard(c, agentId, project.id, dispatcher, { agentName: agent.name, projectName: project.displayName || project.name }));
+     await read('skills-mcp', async (c) => {
+diff --git a/src/main/services/remote-connection-card.test.ts b/src/main/services/remote-connection-card.test.ts
+index d7ddff998..b79b04c5a 100644
+--- a/src/main/services/remote-connection-card.test.ts
++++ b/src/main/services/remote-connection-card.test.ts
+@@ -246,3 +246,28 @@ it('charges automatic source fields even when known binding rows fill the displa
+   expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe(12); // 2 host + 34×3 binding + 2×4 automatic fields.
+   expect.soft(c.rows.some((r) => r.label.endsWith('automatic starting switches'))).toBe(false); expect.soft(m.legacy).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
+ });
++
++it('continues actual outgoing binding records without dropping late fields behind the Details row cap', async () => {
++  for (let i = 0; i < 41; i++) bindingManager.bind(selected, { targetId: 'terminal-' + i, targetKind: 'terminal', label: 'Bound terminal ' + i });
++  const first = await read(false, { page: { card: 'connections', source: 'outgoing', offset: 0 } });
++  expect(first.c.connectionPage).toMatchObject({ source: 'outgoing', offset: 0, known: 41, next: { offset: 8, projectOffset: 0 } });
++  expect(first.c.rows).toHaveLength(24); expect(first.c.omitted).toBe(0);
++  const last = await read(false, { page: { card: 'connections', source: 'outgoing', offset: 40 } });
++  expect(last.c.connectionPage).toMatchObject({ known: 41, next: null }); expect(last.c.rows[0].label).toBe('Bound terminal 40'); expect(last.c.omitted).toBe(0);
++  expect([...first.receipts, ...last.receipts].every((r) => r.current())).toBe(true);
++});
++it('renders project-qualified configured helpers independently of colliding native binding names and private paths', async () => {
++  const { readConfiguredRegisteredConnectionsForDisplay } = await import('./configured-registered-connections-display');
++  const { projectConnectionEndpointFieldsForDisplay } = await import('./connection-endpoint-fields-display');
++  const p = path.join(root, 'project'); await fs.promises.mkdir(path.join(p, '.clubhouse'), { recursive: true });
++  await put('projects.json', { version: 1, projects: [{ id: 'p', name: 'Custom project', path: p }] });
++  const config = { id: selected, name: 'Selected' }, child = { id: 'reused', name: 'Saved helper name', parentAgentId: selected };
++  await fs.promises.writeFile(path.join(p, '.clubhouse', 'agents.json'), JSON.stringify([config, child]));
++  const fields = projectConnectionEndpointFieldsForDisplay(selected, config); if (fields.state !== 'ok') throw new Error('fixture');
++  const receipts: Array<{ current(): boolean }> = [], registered = readConfiguredRegisteredConnectionsForDisplay({ agentId: selected, projectId: 'p', projectPath: p, fields: fields.value, receipt: { current: () => true } }, 'helper-children', { authorized: () => true, receipts });
++  expect(registered.state).toBe('ok'); bindingManager.bind(selected, { targetId: 'reused', targetKind: 'agent', label: 'PRIVATE_NATIVE_COLLISION' });
++  const before = await disk(), result = await read(false, { page: { card: 'connections', source: 'helpers' }, registered });
++  expect(result.c.connectionPage).toMatchObject({ source: 'helpers', known: 1, complete: true, next: null });
++  expect(result.c.rows[0]).toMatchObject({ label: 'Saved helper name · Custom project', value: expect.stringContaining('project p') });
++  expect(result.c.rows.filter((r) => r.label.endsWith('starting switches'))).toHaveLength(2); expect(JSON.stringify(result.c)).not.toMatch(/PRIVATE_|namespace|projectPath/); expect(JSON.stringify(result.c)).not.toContain(root); expect(await disk()).toEqual(before);
++});
+diff --git a/src/main/services/remote-connection-card.ts b/src/main/services/remote-connection-card.ts
+index d7e584622..ca192ee16 100644
+--- a/src/main/services/remote-connection-card.ts
++++ b/src/main/services/remote-connection-card.ts
+@@ -1,3 +1,5 @@
++import type { RemoteDetailsQuery } from '../../shared/remote-details-query';
++import type { ConfiguredRegisteredConnectionPage } from './configured-registered-connections-display';
+ /** Selected Connections evidence only. No generic source/federation/credential readers. */
+ import { createHash } from 'crypto';
+ import { parseAgentAddress, formatAgentAddress } from '../../shared/agent-address';
+@@ -27,6 +29,8 @@ import { row, display } from './remote-details-presentation';
+ 
+ export interface ConnectionCardReadOptions {
+   receipts: DisplayReceipt[];
++  page?: RemoteDetailsQuery;
++  registered?: DisplayValue<ConfiguredRegisteredConnectionPage>;
+   authorized(): boolean;
+   dispatcher?: boolean;
+   /** Strictly admitted durable project only; Quick runs do not use saved durable links. */
+@@ -107,25 +111,30 @@ const kindWords = (kind: Pair['kind']) => kind === 'group-project' ? 'group proj
+ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: string, options: ConnectionCardReadOptions): Promise<void> {
+   if (!options.authorized()) throw new Error('revoked');
+   if (!selected || selected.length > 200) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The selected connection identity exceeds the host display limit.'); return; }
++  if (options.page?.source === 'helpers' || options.page?.source === 'dispatcher-auto') {
++    renderRegisteredConnections(c, options.registered, options.page); return;
++  }
++  const pageSource = options.page?.source, pageOffset = options.page?.offset ?? 0;
++  const includes = (source: string) => !pageSource || pageSource === source;
+   const refs = referenceNames(selected, options.name);
+   const endpointTarget = options.endpoint?.target, endpointCache = options.endpoint?.readCache, projectPath = options.projectPath;
+-  const automatic = options.automatic?.state === 'ok' ? options.automatic.value : [], controllerProject = options.automaticControllerProjectPath;
++  const automatic = !pageSource && options.automatic?.state === 'ok' ? options.automatic.value : [], controllerProject = options.automaticControllerProjectPath;
+   const hasAutomaticPair = (from: string, to: string) => automatic.some((pair) => pair.agentId === from && pair.targetId === to);
+   const nativeKey = (from: string, to: string) => `${from}\0${to}`;
+   let endpointProjects: Map<string, string> | undefined;
+   try {
+-    const outgoing = bindingManager.readBindingsForDisplay(selected, { direction: 'outgoing', receipts: options.receipts });
+-    const incoming = bindingManager.readBindingsForDisplay(selected, { direction: 'incoming', receipts: options.receipts });
+-    const directions = readConnectionDirectionsForDisplay(selected, { receipts: options.receipts });
+-    const sources = readCachedConnectionSourcesForDisplay(selected, { receipts: options.receipts });
++    const outgoing = bindingManager.readBindingsForDisplay(selected, { direction: 'outgoing', offset: pageSource === 'outgoing' ? pageOffset : 0, receipts: options.receipts });
++    const incoming = bindingManager.readBindingsForDisplay(selected, { direction: 'incoming', offset: pageSource === 'incoming' ? pageOffset : 0, receipts: options.receipts });
++    const directions = readConnectionDirectionsForDisplay(selected, { offset: pageSource === 'directions' ? pageOffset : 0, receipts: options.receipts });
++    const sources = readCachedConnectionSourcesForDisplay(selected, { offset: pageSource === 'sources' ? pageOffset : 0, receipts: options.receipts });
+     let manual: ReturnType<typeof readSavedDispatcherLinksForDisplay> | undefined;
+     let manualMemory: ReturnType<typeof readDispatcherLinkMemoryForDisplay> | undefined;
+     let endpointMetadata: ReturnType<typeof readSavedDispatcherEndpointMetadataForDisplay> | undefined;
+-    if (projectPath && !options.dispatcher && !options.family?.parentId) {
++    if (includes('manual-dispatcher') && projectPath && !options.dispatcher && !options.family?.parentId) {
+       // Saved metadata and process-known state have different provenance. A
+       // failed source field cannot erase independently readable bindings.
+       try {
+-        manual = readSavedDispatcherLinksForDisplay(selected, projectPath, { receipts: options.receipts });
++        manual = readSavedDispatcherLinksForDisplay(selected, projectPath, { offset: pageOffset, receipts: options.receipts });
+       } catch { manual = { state: 'unavailable', reason: 'unreadable', inputs: [] }; }
+       if (manual.state === 'ok') {
+         try { manualMemory = readDispatcherLinkMemoryForDisplay(selected, projectPath, manual.value.rows, { receipts: options.receipts }); }
+@@ -138,15 +147,23 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected:
+       }
+     }
+ 
++    if (pageSource) {
++      const source = pageSource === 'outgoing' ? outgoing : pageSource === 'incoming' ? incoming : pageSource === 'directions' ? directions : pageSource === 'sources' ? sources : manual;
++      if (source?.state === 'ok') {
++        const total = source.value.total;
++        c.connectionPage = { source: pageSource, offset: pageOffset, projectOffset: 0, known: total, complete: !('complete' in source.value) || source.value.complete === true,
++          next: pageOffset + 8 < total ? { offset: pageOffset + 8, projectOffset: 0 } : null };
++      } else { c.state = 'error'; c.notes.push('The selected source page is unavailable; no empty page is inferred.'); }
++    }
+     const outComplete = outgoing.state === 'ok' && outgoing.value.nextOffset === null;
+     const inComplete = incoming.state === 'ok' && incoming.value.nextOffset === null;
+     const savedComplete = directions.state === 'ok' && directions.value.nextOffset === null;
+     const pairs = new Map<string, Pair>();
+     const key = (from: string, to: string, kind: Pair['kind'], partition = '') => `${from}\0${to}\0${kind}\0${partition}`;
+     const ensure = (from: string, to: string, kind: Pair['kind'], partition = ''): Pair => { if (typeof from !== 'string' || !from || from.length > 512 || typeof to !== 'string' || !to || to.length > 512 || from !== selected && (to !== selected || kind !== 'agent')) throw new Error('connection_scope'); const id = key(from, to, kind, partition); let p = pairs.get(id); if (!p) { p = { from, to, kind, sources: [] }; pairs.set(id, p); } return p; };
+-    for (const page of [outgoing, incoming]) if (page.state === 'ok') for (const b of page.value.rows) ensure(b.agentId, b.targetId, b.targetKind).binding = b;
++    for (const [origin, page] of [['outgoing', outgoing], ['incoming', incoming]] as const) if ((includes(origin) || pageSource === 'sources') && page.state === 'ok') for (const b of pageSource && pageSource !== 'sources' ? page.value.rows.slice(0, 8) : page.value.rows) ensure(b.agentId, b.targetId, b.targetKind).binding = b;
+     let limitedSourceDetails = 0, untypedIncomingSources = 0;
+-    if (sources.state === 'ok') for (const p of sources.value.pairs) for (const source of p.sources) {
++    if (includes('sources') && sources.state === 'ok') for (const p of pageSource ? sources.value.pairs.slice(0, 8) : sources.value.pairs) for (const source of p.sources) {
+       const b = value(source.binding);
+       if (b && (b.agentId !== p.agentId || b.targetId !== p.targetId)) throw new Error('connection_source_scope');
+       let pair: Pair;
+@@ -164,9 +181,10 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected:
+       }
+       pair.sources.push(source);
+     }
++    if (pageSource === 'sources') for (const [key, pair] of pairs) if (!pair.sources.length) pairs.delete(key);
+     if (limitedSourceDetails) c.notes.push(`Details unavailable for ${limitedSourceDetails} retained source record${limitedSourceDetails === 1 ? '' : 's'}; independently known connection fields are preserved.`);
+     if (untypedIncomingSources) c.notes.push(`${untypedIncomingSources} incoming source record${untypedIncomingSources === 1 ? ' lacks' : 's lack'} an independently admitted target kind; its connection details are unavailable.`);
+-    if (manual?.state === 'ok') for (const link of manual.value.rows) {
++    if (manual?.state === 'ok') for (const link of pageSource ? manual.value.rows.slice(0, 8) : manual.value.rows) {
+       const collision = hasAutomaticPair(link.agentId, link.targetId);
+       const pair = ensure(link.agentId, link.targetId, 'agent', collision ? 'manual' : ''); pair.manual = link;
+       if (collision) {
+@@ -179,7 +197,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected:
+       }
+       if (manualMemory?.state === 'ok') pair.manualMemory = manualMemory.value.rows.find((state) => state.agentId === link.agentId && state.targetId === link.targetId);
+     }
+-    if (directions.state === 'ok') for (const d of directions.value.rows) {
++    if (includes('directions') && directions.state === 'ok') for (const d of pageSource ? directions.value.rows.slice(0, 8) : directions.value.rows) {
+       const from = formatAgentAddress({ agentId: d.from.agentId, machine: d.from.machineId }), to = formatAgentAddress({ agentId: d.to.agentId, machine: d.to.machineId });
+       const active = value(d.userLink) === true || value(d.cardLink) === true || !!value(d.makers)?.length;
+       const uncertain = d.userLink.state !== 'ok' || d.cardLink.state !== 'ok' || d.makers.state !== 'ok';
+@@ -348,9 +366,38 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected:
+       if (incomplete) c.notes.push(`${incomplete} registered source inventories are partial or unavailable; additional source ownership may be missing.`);
+       if (sources.value.omitted) c.notes.push(`${sources.value.omitted} additional cached source pairs are outside this bounded page.`);
+     }
+-    if (!pairs.size && outComplete && inComplete && savedComplete && sources.state === 'ok' && sources.value.complete && sources.value.sourceStates.length && manual?.state !== 'unavailable' && options.automatic?.state !== 'unavailable') c.notes.push('No binding or active saved direction was reported in the available host records.');
++    if (!pageSource && !pairs.size && outComplete && inComplete && savedComplete && sources.state === 'ok' && sources.value.complete && sources.value.sourceStates.length && manual?.state !== 'unavailable' && options.automatic?.state !== 'unavailable') c.notes.push('No binding or active saved direction was reported in the available host records.');
++    if (pageSource) c.notes.push('This page shows one selected source or binding inventory. Other sources are independent; pages are fresh observations, not one frozen snapshot.');
+     c.notes.push('Names, bindings and source ownership use saved or retained host records. Additional configured connections may be missing from this retained view. Other agents’ current availability and effective tool authority are not confirmed here.');
+-    if (!pairs.size && (!outComplete || !inComplete || !savedComplete || sources.state !== 'ok' || !sources.value.complete || !sources.value.sourceStates.length || !!untypedIncomingSources || manual?.state === 'unavailable' || options.automatic?.state === 'unavailable')) { c.state = 'error'; c.summary = 'Connection information incomplete'; }
++    if (!pageSource && !pairs.size && (!outComplete || !inComplete || !savedComplete || sources.state !== 'ok' || !sources.value.complete || !sources.value.sourceStates.length || !!untypedIncomingSources || manual?.state === 'unavailable' || options.automatic?.state === 'unavailable')) { c.state = 'error'; c.summary = 'Connection information incomplete'; }
+     if (!options.authorized()) throw new Error('revoked');
+   } finally { c.notes.push(...refs.finish(options.receipts)); }
+ }
++
++/** Project-qualified configured source rows stay separate from native-ID records.
++ * Source defaults describe saved composition, never effective permission or MCP Connected. */
++function renderRegisteredConnections(c: RemoteDetailsCard, read: DisplayValue<ConfiguredRegisteredConnectionPage> | undefined, query: RemoteDetailsQuery): void {
++  if (read?.state !== 'ok') { c.state = 'error'; c.summary = 'Configured relationships unavailable'; c.notes.push('The selected registered relationship page is unavailable; no empty list is inferred.'); return; }
++  const page = read.value;
++  c.connectionPage = { source: query.source, offset: page.matchOffset, projectOffset: page.projectOffset, known: page.knownMatches, complete: page.complete,
++    next: page.next ? { offset: page.next.matchOffset, projectOffset: page.next.projectOffset } : null };
++  c.summary = `${page.knownMatches} known configured relationships in this project page${page.complete ? '' : ' · partial'}`;
++  for (const entry of page.entries) {
++    const endpoint = entry.endpoint, fields = endpointCardFields({ agentId: '', targetId: endpoint.agentId, relationship: 'recorded',
++      endpoint: { state: 'ok', value: { record: 'registered-primary', fields: endpoint.fields }, inputs: [] }, hostCache: entry.hostCache });
++    const name = fields.displayName || endpoint.agentId, projectName = endpoint.projectName.state === 'ok' ? endpoint.projectName.value : 'Project name unavailable';
++    // Include both stable project identity and display label when names collide.
++    const label = `${name} · ${projectName}`;
++    row(c, label, `${entry.source === 'helper' ? 'Direct helper' : 'Automatic Dispatcher source'} · ${entry.applicability === 'configured' ? 'two configured directions' : entry.applicability === 'disposed' ? 'disposed; no configured directions' : 'configured applicability unknown'} · project ${endpoint.projectId}`);
++    row(c, `${label} saved settings`, fields.saved);
++    if (fields.memory) row(c, `${label} host memory`, fields.memory);
++    for (const direction of entry.directions) {
++      const tools = localDirectionTools(undefined, direction.disabledTools, direction.enabledTools);
++      row(c, `${label} ${direction.from === 'selected' ? 'outgoing' : 'incoming'} starting switches`, `Source defaults · On: ${labels(tools.allowed)}; Off: ${labels(tools.disabled)} · not effective tool authority`);
++    }
++  }
++  if (page.unknownRows) c.notes.push(`${page.unknownRows} relationship records could not be classified safely in this project page.`);
++  if (page.unavailableProjects) c.notes.push(`${page.unavailableProjects} project inventories are unavailable or exceed this read's bounds.`);
++  c.notes.push('Saved configured relationships are project-qualified and separate from native-ID bindings. Host-memory observations are shown separately. No current run, MCP handshake, reachability or effective tool authority is established.');
++  c.notes.push('At most eight related endpoints are shown per page. Pages are separately authorized observations; changing inventories can shift continuation.');
++}
+diff --git a/src/preload/annexClient.ts b/src/preload/annexClient.ts
+index 63831231c..416151cbd 100644
+--- a/src/preload/annexClient.ts
++++ b/src/preload/annexClient.ts
+@@ -1,3 +1,4 @@
++import type { RemoteDetailsQuery } from '../shared/remote-details-query';
+ import { ipcRenderer } from 'electron';
+ import type { RemoteAgentSettings } from '../shared/remote-agent-settings';
+ import type { RemoteAgentDetails } from '../shared/remote-agent-details';
+@@ -45,8 +46,8 @@ export const annexClient = {
+   /** A page of a satellite chat agent's transcript and state (#2390). */
+   agentSettings: (machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentSettings>> =>
+     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_SETTINGS, machine, agentId),
+-  agentDetails: (machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentDetails>> =>
+-    ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DETAILS, machine, agentId),
++  agentDetails: (machine: string, agentId: string, query?: RemoteDetailsQuery): Promise<ControllerReadResult<RemoteAgentDetails>> =>
++    ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DETAILS, machine, agentId, query),
+   agentChanges: (machine: string, agentId: string, query: RemoteChangesQuery): Promise<ControllerReadResult<RemoteAgentChanges>> =>
+     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_CHANGES, machine, agentId, query),
+   controllerChatPage: (machine: string, opts: ControllerChatQuery = {}): Promise<ControllerReadResult<ControllerChatPage>> =>
+diff --git a/src/renderer/features/agents/details/RemoteAgentDetailsView.tsx b/src/renderer/features/agents/details/RemoteAgentDetailsView.tsx
+index c29ce4464..4ae1b967e 100644
+--- a/src/renderer/features/agents/details/RemoteAgentDetailsView.tsx
++++ b/src/renderer/features/agents/details/RemoteAgentDetailsView.tsx
+@@ -1,3 +1,4 @@
++import { RemoteConnectionsCard } from './RemoteConnectionsCard';
+ import { RemoteActionsEvidence } from './RemoteActionsEvidence';
+ /** Remote container: host reads and shared presentation only; no local config, git or action hooks. */
+ import { useEffect, useMemo, useRef, useState } from 'react';
+@@ -189,7 +190,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
+       {hydrated.evidence && hydrated.partial && <CardNote>Provider-reported subagents include this runtime’s earlier reports. Tool activity and timings still depend on the loaded transcript and may be incomplete.</CardNote>}
+       <SubagentList agent={agent} state={session} map={map} selected={selectedSub} onSelect={setSelectedSub} onShowInStream={(id) => onShowInStream?.(id)} missedSubagentId={missedSubagentId} />
+     </DetailsCard>}
+-    {basic('connections', 'Connections')}
++    <RemoteConnectionsCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} dispatcher={dispatcher} open={open('connections')} onToggle={() => toggleCard('connections')} />
+     {dispatcher && <DetailsCard id="other-machines" title="Other machines" summary={otherMachines ? otherMachinesSummary(otherMachines) : 'not shared here'} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
+       {(!connected || snapshotUnavailable) && <CardNote>Last host snapshot; these states may be stale.</CardNote>}
+       {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host} hasn’t shared its other machines here.</CardNote>}
+diff --git a/src/renderer/features/agents/details/RemoteConnectionsCard.test.tsx b/src/renderer/features/agents/details/RemoteConnectionsCard.test.tsx
+new file mode 100644
+index 000000000..295800e4f
+--- /dev/null
++++ b/src/renderer/features/agents/details/RemoteConnectionsCard.test.tsx
+@@ -0,0 +1,51 @@
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
++import { beforeEach, expect, it, vi } from 'vitest';
++import type { Agent } from '../../../../shared/types';
++import type { RemoteAgentDetails, RemoteDetailsCard } from '../../../../shared/remote-agent-details';
++import { useAnnexClientStore } from '../../../stores/annexClientStore';
++import { RemoteConnectionsCard } from './RemoteConnectionsCard';
++const agent = { id: 'remote||sat||a1', projectId: 'remote||sat||p1', name: 'Remote', kind: 'durable', status: 'running' } as Agent;
++const card: RemoteDetailsCard = { id: 'connections', title: 'Connections', state: 'ok', summary: 'Overview records', rows: [{ label: 'Overview', value: 'Selected host records' }], notes: [], omitted: 0, observedAt: 1 };
++const details = { agentId: 'a1', connectionPages: 1, readAt: 1, cards: [card] } as RemoteAgentDetails;
++const request = vi.fn();
++const show = (extra = {}) => render(<RemoteConnectionsCard agent={agent} details={details} status="ok" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} {...extra} />);
++beforeEach(() => {
++  request.mockReset();
++  useAnnexClientStore.setState({ satellites: [{ id: 'sat', state: 'connected', snapshot: {} }] as never });
++  Object.assign(window.clubhouse.annexClient, { agentDetails: request });
++  request.mockImplementation(async (_host, _id, query) => ({ status: 'ok', value: { ...details, cards: [{ ...card, summary: 'Selected source page', rows: [{ label: query.offset ? 'Final helper' : 'First helper', value: 'Scoped source' }], connectionPage: { source: query.source, offset: query.offset ?? 0, projectOffset: query.projectOffset ?? 0, known: 9, complete: false, next: query.offset ? null : { offset: 8, projectOffset: 0 } } }] } }));
++});
++it('shows the existing overview without probing, then reads and replaces bounded selected-source pages', async () => {
++  show(); expect(screen.getByText('Selected host records')).toBeInTheDocument(); expect(request).not.toHaveBeenCalled();
++  fireEvent.click(screen.getByRole('button', { name: 'Helper relationships' })); await screen.findByText('First helper');
++  expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'helpers', offset: 0, projectOffset: 0 });
++  fireEvent.click(screen.getByRole('button', { name: 'Next', exact: true })); await screen.findByText('Final helper');
++  expect(screen.queryByText('First helper')).not.toBeInTheDocument(); expect(screen.getByText(/additional records may be unavailable/)).toBeInTheDocument();
++  fireEvent.click(screen.getByRole('button', { name: 'Previous', exact: true })); await screen.findByText('First helper');
++  fireEvent.click(screen.getByRole('button', { name: 'Saved switches' })); await waitFor(() => expect(request).toHaveBeenLastCalledWith('sat', 'a1', { card: 'connections', source: 'directions', offset: 0, projectOffset: 0 }));
++});
++it('withholds a delayed previous-source page and all prior evidence after denial, selection or offline transition', async () => {
++  let finish!: (value: unknown) => void; request.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
++  const view = show(); fireEvent.click(screen.getByRole('button', { name: 'Helper relationships' })); await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
++  fireEvent.click(screen.getByRole('button', { name: 'Saved switches' })); await screen.findByText('First helper');
++  await act(async () => finish({ status: 'ok', value: { ...details, cards: [{ ...card, rows: [{ label: 'PRIVATE_STALE_SOURCE', value: 'late' }], connectionPage: { source: 'helpers', offset: 0, projectOffset: 0, known: 1, complete: true, next: null } }] } }));
++  expect(screen.queryByText('PRIVATE_STALE_SOURCE')).not.toBeInTheDocument();
++  view.rerender(<RemoteConnectionsCard agent={agent} details={null} status="forbidden" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} />);
++  expect(screen.queryByText('First helper')).not.toBeInTheDocument(); expect(screen.getByTestId('details-card-connections')).toHaveTextContent('does not allow');
++  act(() => useAnnexClientStore.setState({ satellites: [{ id: 'sat', state: 'disconnected' }] as never })); expect(screen.getByTestId('details-card-connections')).toHaveTextContent('Host offline');
++});
++it('does not query old hosts or malformed remote identities, while preserving authorized old-host overview', async () => {
++  const view = show({ details: { ...details, connectionPages: undefined } }); expect(screen.getByText('Selected host records')).toBeInTheDocument(); expect(screen.getByText(/needs a host update|needs a host|host update/)).toBeInTheDocument(); expect(request).not.toHaveBeenCalled();
++  view.rerender(<RemoteConnectionsCard agent={{ ...agent, id: 'a1' }} details={details} status="ok" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} />);
++  expect(screen.queryByText('Selected host records')).not.toBeInTheDocument(); expect(request).not.toHaveBeenCalled();
++});
++it('offers the canonical Dispatcher inventory independently of normal durable manual/helper sources', () => {
++  show({ dispatcher: true }); expect(screen.getByRole('button', { name: 'Automatic agent links' })).toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Helper relationships' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Saved Dispatcher links' })).not.toBeInTheDocument();
++});
++it('rejects a successful response for a different page instead of rendering its records', async () => {
++  request.mockResolvedValue({ status: 'ok', value: { ...details, cards: [{ ...card, rows: [{ label: 'PRIVATE_WRONG_PAGE', value: 'wrong' }], connectionPage: { source: 'incoming', offset: 0, projectOffset: 0, known: 1, complete: true, next: null } }] } });
++  show(); fireEvent.click(screen.getByRole('button', { name: 'Helper relationships' }));
++  await waitFor(() => expect(request).toHaveBeenCalledTimes(1)); await act(async () => { await Promise.resolve(); });
++  expect.soft(screen.queryByText('PRIVATE_WRONG_PAGE')).not.toBeInTheDocument();
++  expect.soft(screen.getByTestId('details-card-connections')).toHaveTextContent('did not return the selected source page');
++});
+diff --git a/src/renderer/features/agents/details/RemoteConnectionsCard.tsx b/src/renderer/features/agents/details/RemoteConnectionsCard.tsx
+new file mode 100644
+index 000000000..e72da7309
+--- /dev/null
++++ b/src/renderer/features/agents/details/RemoteConnectionsCard.tsx
+@@ -0,0 +1,70 @@
++import { useEffect, useRef, useState } from 'react';
++import type { Agent } from '../../../../shared/types';
++import type { RemoteAgentDetails } from '../../../../shared/remote-agent-details';
++import type { ControllerReadResult } from '../../../../shared/controller-chat';
++import type { RemoteDetailsQuery, RemoteConnectionPageSource } from '../../../../shared/remote-details-query';
++import { useAnnexClientStore } from '../../../stores/annexClientStore';
++import { remoteDetailsAddress } from './remote-details-address';
++import { DetailsCard, CardNote } from './DetailsCard';
++import { Evidence } from './RemoteDetailsEvidence';
++
++type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
++const label: Record<RemoteConnectionPageSource, string> = { outgoing: 'Outgoing bindings', incoming: 'Incoming bindings', directions: 'Saved switches', sources: 'Retained sources', 'manual-dispatcher': 'Saved Dispatcher links', helpers: 'Helper relationships', 'dispatcher-auto': 'Automatic agent links' };
++const message = (status: Result['status']) => status === 'offline' ? 'Host offline. Reconnect to read connection pages.'
++  : status === 'forbidden' ? 'The host does not allow this Details read.' : status === 'unavailable' ? 'This host does not share this connection page. It may need an update.'
++    : status === 'error' ? 'Couldn’t read this connection page from the host. Refresh to try again.' : status === 'rate_limited' ? 'The host is busy. Try again shortly.' : 'Loading connections from the host…';
++
++export function RemoteConnectionsCard({ agent, details, status, freshnessKey, dispatcher, open, onToggle }: {
++  agent: Agent; details: RemoteAgentDetails | null; status: Result['status']; freshnessKey: string; dispatcher: boolean; open: boolean; onToggle(): void;
++}) {
++  const address = remoteDetailsAddress(agent.id), satelliteId = address?.satelliteId, agentId = address?.agentId;
++  const satellite = useAnnexClientStore((s) => s.satellites.find((h) => h.id === satelliteId));
++  const connected = satellite?.state === 'connected', snapshot = satellite?.snapshot;
++  const transport = useRef({ connected, generation: 0 });
++  if (transport.current.connected !== connected) transport.current = { connected, generation: transport.current.generation + 1 };
++  const identity = `${agent.id}:${freshnessKey}:${details?.readAt ?? ''}:${transport.current.generation}`;
++  const [navigation, setNavigation] = useState<{ identity: string; query: RemoteDetailsQuery; previous: RemoteDetailsQuery[] } | null>(null);
++  const selected = navigation?.identity === identity ? navigation : null, query = selected?.query;
++  const [retry, setRetry] = useState(0);
++  const key = `${identity}:${query?.source ?? ''}:${query?.projectOffset ?? 0}:${query?.offset ?? 0}:${retry}`;
++  const [read, setRead] = useState<{ key: string; snapshot: typeof snapshot; result: Result } | null>(null);
++  const eligible = connected && status === 'ok' && !!details && details.agentId === agentId;
++  useEffect(() => {
++    if (!open || !eligible || !query || !satelliteId || !agentId || details?.connectionPages !== 1) return;
++    let active = true;
++    Promise.resolve().then(() => window.clubhouse.annexClient.agentDetails(satelliteId, agentId, query)).then(
++      (result) => { if (active) setRead({ key, snapshot, result }); },
++      // telemetry-exempt: display status only; no raw host errors/local fallback.
++      () => { if (active) setRead({ key, snapshot, result: { status: 'error' } }); },
++    );
++    return () => { active = false; };
++  }, [open, eligible, query, satelliteId, agentId, details?.connectionPages, key, snapshot]);
++  const result: Result = !address ? { status: 'unavailable' } : !connected ? { status: 'offline' } : !eligible ? { status: status === 'ok' ? 'loading' : status } as Result
++    : read?.key === key && read.snapshot === snapshot ? read.result : { status: 'loading' };
++  const candidate = result.status === 'ok' && result.value.agentId === agentId ? result.value.cards.find((c) => c.id === 'connections') : undefined;
++  const page = candidate?.connectionPage;
++  const current = query && page?.source === query.source && page.offset === (query.offset ?? 0) && page.projectOffset === (query.projectOffset ?? 0) ? candidate : undefined;
++  const overview = eligible ? details?.cards.find((c) => c.id === 'connections') : undefined;
++  const card = query ? current : overview;
++  const sources: RemoteConnectionPageSource[] = ['outgoing', 'incoming', 'directions', 'sources', ...(dispatcher ? ['dispatcher-auto' as const] : agent.kind === 'durable' ? [...(!agent.parentAgentId ? ['manual-dispatcher' as const] : []), 'helpers' as const] : [])];
++  const select = (source: RemoteConnectionPageSource) => setNavigation({ identity, query: { card: 'connections', source, offset: 0, projectOffset: 0 }, previous: [] });
++  const overviewStatus = !address ? 'unavailable' : !connected ? 'offline' : status;
++  const overviewMessage = overviewStatus === 'unavailable' ? 'This host does not share these details, or this agent is no longer available. The host may need an update.' : message(overviewStatus);
++  return <DetailsCard id="connections" title="Connections" summary={card?.summary || (query ? message(result.status) : overviewMessage)} open={open} onToggle={onToggle}>
++    {eligible && agent.kind === 'durable' && details?.connectionPages === 1 && <div className="flex flex-wrap gap-3 pl-[33px] pr-3.5 pb-2 text-xs" aria-label="Connection inventories">
++      <button type="button" aria-pressed={!query} onClick={() => setNavigation(null)}>Overview</button>
++      {sources.map((source) => <button type="button" key={source} aria-pressed={query?.source === source} onClick={() => select(source)}>{label[source]}</button>)}
++    </div>}
++    {card ? <Evidence card={card} /> : <CardNote>{query && result.status === 'ok' ? 'The host did not return the selected source page.' : query ? message(result.status) : overviewMessage}</CardNote>}
++    {eligible && agent.kind === 'durable' && details?.connectionPages !== 1 && <CardNote>This host shares the summary only. Selected source continuation needs a host update.</CardNote>}
++    {query && current && page && <>
++      <CardNote>{page.known} known records in this inventory page{page.complete ? '' : ' · additional records may be unavailable'}. Pages are separate host observations.</CardNote>
++      <div className="flex gap-3 pl-[33px] text-xs">
++        <button type="button" onClick={() => select(query.source)}>First page</button>
++        <button type="button" disabled={!selected?.previous.length} onClick={() => selected && setNavigation({ identity, query: selected.previous[selected.previous.length - 1], previous: selected.previous.slice(0, -1) })}>Previous</button>
++        <button type="button" disabled={!page.next} onClick={() => selected && page.next && setNavigation({ identity, query: { ...selected.query, ...page.next }, previous: [...selected.previous.slice(-31), selected.query] })}>Next</button>
++      </div>
++    </>}
++    {query && <button type="button" className="pl-[33px] text-xs" onClick={() => setRetry((n) => n + 1)}>Refresh connection page</button>}
++  </DetailsCard>;
++}
+diff --git a/src/shared/remote-agent-details.ts b/src/shared/remote-agent-details.ts
+index 9f2a3bab9..5f97d9b85 100644
+--- a/src/shared/remote-agent-details.ts
++++ b/src/shared/remote-agent-details.ts
+@@ -1,3 +1,4 @@
++import { isRemoteConnectionPage, type RemoteConnectionPage } from './remote-details-query';
+ import { ACTION_OUTCOMES, ACTION_RELATIONSHIPS, isActionRunTime, type RemoteActionRow } from './agent-action-groups';
+ import { isRemoteAgentSettings, type RemoteAgentSettings } from './remote-agent-settings';
+ import type { AgentStatus } from './types';
+@@ -26,9 +27,13 @@ export interface RemoteDetailsCard {
+   /** Rows outside the bounded result are counted, never silently hidden. */
+   omitted: number;
+   observedAt: number;
++  /** Optional bounded selected-source page. Older hosts omit it. */
++  connectionPage?: RemoteConnectionPage;
+ }
+ export interface RemoteAgentDetails {
+   version: 1;
++  /** Additive selected-source continuation support, independent of older Details hosts. */
++  connectionPages?: 1;
+   agentId: string;
+   readOnly: true;
+   readAt: number;
+@@ -51,7 +56,7 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is
+   if (!value || typeof value !== 'object') return false;
+   const v = value as RemoteAgentDetails;
+   const text = (s: unknown) => typeof s === 'string' && s.length <= 2048;
+-  return v.version === 1 && v.agentId === agentId && v.readOnly === true
++  return v.version === 1 && (v.connectionPages === undefined || v.connectionPages === 1) && v.agentId === agentId && v.readOnly === true
+     && Number.isFinite(v.readAt) && v.readAt > 0 && text(v.providerId) && !!v.providerId && (v.providerLabel === undefined || text(v.providerLabel) && !!v.providerLabel) && typeof v.running === 'boolean'
+     && ['running', 'sleeping', 'waking', 'creating', 'spawning', 'error'].includes(v.status)
+     && (v.spawnedAt === null || Number.isFinite(v.spawnedAt) && v.spawnedAt > 0)
+@@ -69,6 +74,7 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is
+       && ['ok', 'error', 'unsupported', 'not-applicable'].includes(c.state)
+       && Number.isSafeInteger(c.omitted) && c.omitted >= 0
+       && Number.isFinite(c.observedAt) && c.observedAt > 0
++      && (c.connectionPage === undefined || c.id === 'connections' && isRemoteConnectionPage(c.connectionPage))
+       && Array.isArray(c.notes) && c.notes.length <= 20 && c.notes.every(text)
+       && Array.isArray(c.rows) && c.rows.length <= REMOTE_DETAILS_MAX_ROWS
+       && c.rows.every((r) => !!r && typeof r === 'object' && text(r.label) && text(r.value)
+diff --git a/src/shared/remote-details-query.test.ts b/src/shared/remote-details-query.test.ts
+new file mode 100644
+index 000000000..f0fdca65d
+--- /dev/null
++++ b/src/shared/remote-details-query.test.ts
+@@ -0,0 +1,13 @@
++import { expect, it } from 'vitest';
++import { isRemoteDetailsQuery, isRemoteConnectionPage, REMOTE_CONNECTION_PAGE_SOURCES } from './remote-details-query';
++it('admits only bounded selected-source continuation, with no paths, discovery, or duplicate/extra fields', () => {
++  for (const source of REMOTE_CONNECTION_PAGE_SOURCES) expect(isRemoteDetailsQuery({ card: 'connections', source, offset: 4096 })).toBe(true);
++  for (const extra of [{ offset: -1 }, { offset: 4097 }, { offset: 1.5 }, { offset: '1' }, { projectOffset: 1 }, { projectPath: '/private' }, { agentId: 'other' }, { source: 'collect' }, { card: 'settings' }])
++    expect(isRemoteDetailsQuery({ card: 'connections', source: 'sources', ...extra })).toBe(false);
++  expect(isRemoteDetailsQuery({ card: 'connections', source: 'helpers', projectOffset: 16, offset: 8 })).toBe(true);
++});
++it('binds the returned page to a forward bounded continuation and explicit completeness', () => {
++  const page = { source: 'helpers', projectOffset: 0, offset: 8, next: { projectOffset: 16, offset: 0 }, known: 19, complete: false };
++  expect(isRemoteConnectionPage(page)).toBe(true);
++  for (const extra of [{ next: { projectOffset: 0, offset: 8 } }, { next: { projectOffset: 0, offset: 0 } }, { next: { projectOffset: 16, offset: 4097 } }, { next: { projectOffset: 16, offset: 0, private: true } }, { known: -1 }, { complete: undefined }, { raw: 'PRIVATE' }]) expect(isRemoteConnectionPage({ ...page, ...extra })).toBe(false);
++});
+diff --git a/src/shared/remote-details-query.ts b/src/shared/remote-details-query.ts
+new file mode 100644
+index 000000000..e2b36639e
+--- /dev/null
++++ b/src/shared/remote-details-query.ts
+@@ -0,0 +1,33 @@
++/** Selected Connections pages over the existing paired-desktop Details GET. */
++export const REMOTE_CONNECTION_PAGE_SOURCES = ['outgoing', 'incoming', 'directions', 'sources', 'manual-dispatcher', 'helpers', 'dispatcher-auto'] as const;
++export type RemoteConnectionPageSource = typeof REMOTE_CONNECTION_PAGE_SOURCES[number];
++export interface RemoteDetailsQuery { card: 'connections'; source: RemoteConnectionPageSource; offset?: number; projectOffset?: number }
++export interface RemoteConnectionPage {
++  source: RemoteConnectionPageSource;
++  offset: number;
++  projectOffset: number;
++  next: { offset: number; projectOffset: number } | null;
++  /** Number of known matching records in THIS root page, not a global total. */
++  known: number;
++  complete: boolean;
++}
++const offset = (v: unknown) => Number.isInteger(v) && Number(v) >= 0 && Number(v) <= 4096;
++export function isRemoteDetailsQuery(value: unknown): value is RemoteDetailsQuery {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
++  const v = value as RemoteDetailsQuery;
++  return Object.keys(v).every((key) => ['card', 'source', 'offset', 'projectOffset'].includes(key)) && v.card === 'connections'
++    && REMOTE_CONNECTION_PAGE_SOURCES.includes(v.source) && (v.offset === undefined || offset(v.offset))
++    && (v.projectOffset === undefined || offset(v.projectOffset))
++    && (!v.projectOffset || v.source === 'helpers' || v.source === 'dispatcher-auto');
++}
++export function isRemoteConnectionPage(value: unknown): value is RemoteConnectionPage {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
++  const v = value as RemoteConnectionPage;
++  return Object.keys(v).every((key) => ['source', 'offset', 'projectOffset', 'next', 'known', 'complete'].includes(key))
++    && isRemoteDetailsQuery({ card: 'connections', source: v.source, offset: v.offset, projectOffset: v.projectOffset })
++    && offset(v.offset) && offset(v.projectOffset) && Number.isSafeInteger(v.known) && v.known >= 0 && typeof v.complete === 'boolean'
++    && (v.next === null || !!v.next && typeof v.next === 'object' && !Array.isArray(v.next)
++      && Object.keys(v.next).every((key) => ['offset', 'projectOffset'].includes(key)) && offset(v.next.offset) && offset(v.next.projectOffset)
++      && (v.next.projectOffset > v.projectOffset || v.next.projectOffset === v.projectOffset && v.next.offset > v.offset)
++      && (v.next.projectOffset === 0 || v.source === 'helpers' || v.source === 'dispatcher-auto'));
++}

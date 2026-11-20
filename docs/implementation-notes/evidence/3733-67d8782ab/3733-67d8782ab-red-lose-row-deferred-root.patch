@@ -1,0 +1,11 @@
+--- src/main/services/registered-agent-display-page.ts
++++ src/main/services/registered-agent-display-page.ts
+@@ -135,7 +135,7 @@
+         if (!Array.isArray(data.raw)) { unavailableProjects++; complete = false; continue; }
+         // Both duplicate-ID admission and relationship projection visit every row.
+         if (data.raw.length * 2 > rowsLeft) {
+-          if (data.raw.length * 2 <= REGISTERED_DISPLAY_ROWS && index > 0) { deferredProject = projectOffset + index; break; }
++          if (false) { deferredProject = projectOffset + index; break; }
+           unavailableProjects++; complete = false; continue;
+         }
+         rowsLeft -= data.raw.length * 2;

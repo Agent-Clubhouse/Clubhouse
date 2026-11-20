@@ -1,0 +1,24 @@
+{
+  "head": "67d8782abdcd97bfaa19b88d2e7809e84a3d3358",
+  "tree": "9714c66da6676bf22799abb930afcab171e190eb",
+  "prefix": "3733-67d8782ab",
+  "root": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-complete",
+  "reports": "/Users/masonallen/source/Clubhouse/.clubhouse/qa-reports",
+  "green": [
+    "src/main/services/registered-agent-display-page.test.ts",
+    "src/main/services/configured-registered-connections-display.test.ts",
+    "src/main/services/remote-agent-details.test.ts",
+    "src/main/services/remote-connection-card.test.ts",
+    "src/shared/remote-details-query.test.ts",
+    "src/shared/remote-agent-details.test.ts",
+    "src/renderer/features/agents/details/RemoteConnectionsCard.test.tsx",
+    "src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx",
+    "src/main/services/connection-endpoint-metadata-display.test.ts",
+    "src/main/services/read-only-agent-target-witness.test.ts"
+  ],
+  "routeFiles": [
+    "src/main/services/annex-server.test.ts",
+    "src/main/services/annex-client.test.ts"
+  ],
+  "routePattern": "remote full Details authority|selected-source Details pages|bounded exact-agent Details|in-place disconnect/reconnect epoch|schema-valid prior Details"
+}

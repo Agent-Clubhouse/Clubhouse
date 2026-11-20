@@ -1,0 +1,11 @@
+--- src/main/services/configured-registered-connections-display.ts
++++ src/main/services/configured-registered-connections-display.ts
+@@ -71,7 +71,7 @@
+     // A prior callback may change another primary in this same or a later
+     // project. Check THIS exact admitted root immediately before EACH getter.
+     const root = roots.get(entry.endpoint.projectId);
+-    if (!admitted() || !root || !current(root.receipt)) return unavailable('changed');
++    if (!admitted() || !root) return unavailable('changed');
+     const cacheInputs = [{ field: 'Related agent host-session fields', source: 'host-cache' as const, observedAt: Date.now() }];
+     if (!root.namespace) { entry.hostCache = { state: 'unavailable', reason: 'unreadable', inputs: cacheInputs }; continue; }
+     try { entry.hostCache = { state: 'ok', value: readCache(root.projectPath, entry.endpoint.agentId, { receipts, expectedProjectNamespace: root.namespace }), inputs: cacheInputs }; }
