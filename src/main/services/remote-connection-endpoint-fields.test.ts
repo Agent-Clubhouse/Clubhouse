@@ -53,7 +53,7 @@ beforeEach(async () => {
 });
 afterEach(async () => { bindingManager._resetForTesting(); _resetPersistedBindingSourcesForTesting(); clearAgentConfigCache(); await fsp.rm(root, { recursive: true, force: true }); });
 
-it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'dispatcher-inapplicable', 'helper-inapplicable'] as const)('integrates real selected source, primary and owner cache fields into a read-only Connections card: %s', async (kind) => {
+it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'dispatcher-inapplicable', 'helper-inapplicable', 'revoked-before-metadata'] as const)('integrates real selected source, primary and owner cache fields into a read-only Connections card: %s', async (kind) => {
   bindingManager._resetForTesting(); _resetPersistedBindingSourcesForTesting();
   const selectedProject = path.join(root, 'selected'); await fsp.mkdir(path.join(selectedProject, '.clubhouse'), { recursive: true });
   const selected = { ...agent(), id: 'selected', name: 'Selected', ...(kind === 'helper-inapplicable' ? { parentAgentId: 'parent' } : {}) }, selectedRecord = { id: 's', name: 'Selected project', path: selectedProject };
@@ -68,10 +68,16 @@ it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'd
   const snapshot = async (folder = root): Promise<unknown> => Object.fromEntries(await Promise.all((await actual.readdir(folder)).sort().map(async (name) => { const child = path.join(folder, name), stat = await actual.stat(child); return [name, stat.isDirectory() ? { ino: stat.ino, children: await snapshot(child) } : { ino: stat.ino, mtimeMs: stat.mtimeMs, bytes: (await actual.readFile(child)).toString('base64') }]; })));
   const before = await snapshot(); resetObservation(); const c = card('connections', 'Connections'), receipts: DisplayReceipt[] = [];
   const source = await import('./dispatcher-endpoint-associations-display'), sourceRead = vi.spyOn(source, 'readSavedDispatcherEndpointMetadataForDisplay'), cacheRead = vi.fn(readAgentConnectionCacheForDisplay);
-  try { await readPassiveConnectionCard(c, 'selected', { receipts, authorized: () => true, projectPath: selectedProject, name: 'Selected', dispatcher: kind === 'dispatcher-inapplicable', family: kind === 'helper-inapplicable' ? { parentId: 'parent', helperIds: new Set() } : undefined, endpoint: { target, readCache: cacheRead } }); if (kind === 'dispatcher-inapplicable' || kind === 'helper-inapplicable') expect.soft(sourceRead).not.toHaveBeenCalled(); }
-  finally { sourceRead.mockRestore(); }
+  let allowed = true, revoked = false; const paths = new Map<number, string>(), actualSync = await vi.importActual<typeof import('fs')>('fs');
+  const opens = vi.spyOn(fs, 'openSync').mockImplementation(((...args: Parameters<typeof actualSync.openSync>) => { const fd = actualSync.openSync(...args); paths.set(fd, String(args[0])); return fd; }) as typeof fs.openSync);
+  const reads = vi.spyOn(fs, 'readSync').mockImplementation(((...args: Parameters<typeof actualSync.readSync>) => { const n = actualSync.readSync(...args); if (kind === 'revoked-before-metadata' && !revoked && paths.get(Number(args[0])) === path.join(getBaseDirPath(), 'dispatcher-connections.json') && n > 0) { revoked = true; allowed = false; } return n; }) as typeof fs.readSync);
+  try { await readPassiveConnectionCard(c, 'selected', { receipts, authorized: () => allowed, projectPath: selectedProject, name: 'Selected', dispatcher: kind === 'dispatcher-inapplicable', family: kind === 'helper-inapplicable' ? { parentId: 'parent', helperIds: new Set() } : undefined, endpoint: { target, readCache: cacheRead } }); if (kind === 'dispatcher-inapplicable' || kind === 'helper-inapplicable') expect.soft(sourceRead).not.toHaveBeenCalled(); }
+  finally { sourceRead.mockRestore(); reads.mockRestore(); opens.mockRestore(); }
   if (kind === 'dispatcher-inapplicable' || kind === 'helper-inapplicable') {
     expect.soft(cacheRead).not.toHaveBeenCalled(); expect.soft(JSON.stringify(c)).not.toMatch(/Selected cache name|saved target|host memory target/); expect.soft(await snapshot()).toEqual(before); expect.soft(m.external).not.toHaveBeenCalled(); return;
+  }
+  if (kind === 'revoked-before-metadata') {
+    expect(revoked).toBe(true); expect.soft(cacheRead).not.toHaveBeenCalled(); expect.soft([...paths.values()]).not.toContain(file()); expect.soft(JSON.stringify(c)).not.toContain('Selected cache name'); expect.soft(await snapshot()).toEqual(before); expect.soft(m.external).not.toHaveBeenCalled(); return;
   }
   const label = kind === 'changed-directory' ? 'New registered primary' : kind === 'saved-and-memory' ? 'Host accepted custom name' : 'Selected cache name';
   expect(c.rows.some((r) => r.label === label)).toBe(true); expect(c.rows.find((r) => r.label === label + ' saved target')?.value).toContain(kind === 'changed-directory' ? 'New registered primary' : 'Selected cache name');
