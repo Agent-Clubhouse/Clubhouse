@@ -20,7 +20,8 @@ def snapshot():
     files = set(git("diff", "--name-only", BASE, "HEAD").splitlines())
     files.update(["package-lock.json", "tsconfig.json", "vitest.config.ts",
                   "src/main/services/provider-quota.ts", "src/main/services/helper-burn-pressure.ts",
-                  "src/shared/helper-burn-pressure.ts", "src/main/services/agent-helpers.ts"])
+                  "src/shared/helper-burn-pressure.ts", "src/shared/agent-helpers.ts",
+                  "src/main/services/clubhouse-mcp/tools/helper-tools.ts", "src/main/services/actions/quick-routing.ts"])
     status = git("status", "--porcelain", "--untracked-files=all")
     return {
         "atUtc": datetime.now(timezone.utc).isoformat(), "head": git("rev-parse", "HEAD"),
