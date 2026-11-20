@@ -49,6 +49,7 @@ it.each(['bytes', 'entries', 'combined-removals', 'duplicate', 'empty-path', 're
   else if (mode === 'combined-removals') await putStore([link()], Array.from({ length: SAVED_LINK_DISPLAY_SCAN }, (_, i) => ({ agentId: `other-${i}`, targetId: 'other-target' })));
   else if (mode === 'duplicate') await putStore([link(), link()]);
   else await putStore([mode === 'invalid-scope' ? { agentId: null, targetId: 'other' } : link(mode === 'empty-path' ? { agentProjectPath: '' } : mode === 'relative-path' ? { targetProjectPath: '../relative' } : { createdAt: 'bad' })]);
+  if (mode === 'entries') expect((await fs.stat(path.join(root, store))).size).toBeLessThan(1024 * 1024);
   const { result } = read();
   if (mode === 'combined-removals') expect(result).toMatchObject({ state: 'ok', value: { rows: [{ removalRecorded: { state: 'unavailable', reason: 'limit' } }] } });
   else expect(result.state).toBe('unavailable');
