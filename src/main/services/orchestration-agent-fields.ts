@@ -33,4 +33,3 @@ export function projectOrchestrationAgentFieldsForDisplay(agent: { orchestration
   const { fields, sources } = resolveAgentOrchestrationDisplay(agent);
   return { fields, sources };
 }
-
