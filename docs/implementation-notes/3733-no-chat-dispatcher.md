@@ -1,5 +1,7 @@
 # #3733 finite matrix section 1: no-chat selected remote Dispatcher
 
+**Provenance correction:** the original per-component WeakSet/object-identity admission below was independently rejected: IPC may reserialize retained data and remount loses its memory. Its freshness claim is superseded by [the authoritative receipt successor](3733-authoritative-snapshot-receipt.md). Earlier test counts here describe the predecessor only.
+
 Base: approved `5077d3a380936f1f64fbc24f5f87c0d68ab68590`.
 Isolated branch: `DetailsSessionDisplay/no-chat-dispatcher`.
 

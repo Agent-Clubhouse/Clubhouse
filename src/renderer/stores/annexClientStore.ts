@@ -44,6 +44,8 @@ export interface SatelliteConnection {
   mainPort: number;
   pairingPort: number;
   snapshot: SatelliteSnapshot | null;
+  /** Main-only positive receipt for a snapshot from the current pinned socket; absent for retained/unattested snapshots. */
+  snapshotReceipt?: string;
   lastError: string | null;
   /** This connection's satellite can't build a snapshot yet, and is retrying. */
   snapshotUnavailable?: boolean;
@@ -710,6 +712,8 @@ export function initAnnexClientListener(): () => void {
       }
     } else if (type === 'session:paused') {
       useAnnexClientStore.setState((state) => ({
+        // The main process drops admission on this same socket event; keep cached snapshot data unchanged.
+        satellites: state.satellites.map((sat) => sat.id === satelliteId ? { ...sat, snapshotReceipt: undefined } : sat),
         satellitePaused: { ...state.satellitePaused, [satelliteId]: true },
       }));
     } else if (type === 'session:resumed') {

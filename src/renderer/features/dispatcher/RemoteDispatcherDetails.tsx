@@ -1,5 +1,3 @@
-import { useRef } from 'react';
-import type { SatelliteSnapshot } from '../../../shared/types';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { CardNote, CardRow, DetailsCard } from '../agents/details/DetailsCard';
 import { OtherMachinesList, otherMachinesSummary, presenceLinkText } from './OtherMachinesList';
@@ -30,21 +28,12 @@ export function RemoteDispatcherDetails({ machineId }: { machineId: string }) {
   const remote = presence?.remotes.find((r) => r.machineId.toLowerCase() === machine);
   const satellite = useAnnexClientStore((s) => s.satellites.find((sat) => sat.fingerprint.toLowerCase() === machine));
   const connected = satellite?.state === 'connected';
-  const invalidated = useRef(new WeakSet<SatelliteSnapshot>());
-  const admitted = useRef<{ machine: string; snapshot: SatelliteSnapshot } | null>(null);
-  let limitation = satellite?.needsPairing ? 'Pairing with this host is unavailable. Access must be renewed before reading host details.'
+  const limitation = satellite?.needsPairing ? 'Pairing with this host is unavailable. Access must be renewed before reading host details.'
     : !connected ? 'This computer has no connected read from the selected host.'
       : satellite.snapshotUnavailable || !satellite.snapshot ? 'The host snapshot is unavailable. Earlier private fields are withheld.'
-        : satellite.snapshot.sessionPaused ? 'Host sharing is paused. Earlier private fields are withheld.' : null;
-  // A reconnect or renewed pairing cannot make an earlier private snapshot fresh.
-  if (limitation) {
-    if (satellite?.snapshot) invalidated.current.add(satellite.snapshot);
-    if (admitted.current?.machine === machine) invalidated.current.add(admitted.current.snapshot);
-  } else if (satellite?.snapshot && invalidated.current.has(satellite.snapshot)) {
-    limitation = 'Waiting for a new host snapshot after connection or access changed. Earlier private fields are withheld.';
-  }
+        : satellite.snapshot.sessionPaused ? 'Host sharing is paused. Earlier private fields are withheld.'
+          : !satellite.snapshotReceipt ? 'Waiting for a confirmed host snapshot. Earlier private fields are withheld.' : null;
   const snapshot = limitation ? null : satellite?.snapshot;
-  if (snapshot) admitted.current = { machine, snapshot };
   const omitted = (field: string) => !!snapshot?.snapshotTruncated && (!snapshot.snapshotTruncated.omitted || snapshot.snapshotTruncated.omitted.includes(field));
   const enabled = !omitted('dispatcher') ? snapshot?.dispatcher?.enabled : undefined;
   const peers = !omitted('dispatcherPresence') ? snapshot?.dispatcherPresence?.remotes : undefined;

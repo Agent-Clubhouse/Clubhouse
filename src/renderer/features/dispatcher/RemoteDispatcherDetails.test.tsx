@@ -13,7 +13,7 @@ const snapshot = (extra: Partial<SatelliteSnapshot> = {}): SatelliteSnapshot => 
   dispatcher: { enabled: true, agent: null }, dispatcherPresence: { remotes: [remote('HOST_PRIVATE_PEER')] }, ...extra,
 });
 const satellite = (extra: Partial<SatelliteConnection> = {}): SatelliteConnection => ({
-  id: 'sat', alias: 'Selected host', fingerprint: 'TARGET', state: 'connected', snapshot: snapshot(), icon: '', color: 'blue', host: 'target', mainPort: 1, pairingPort: 2, lastError: null, ...extra,
+  id: 'sat', alias: 'Selected host', fingerprint: 'TARGET', state: 'connected', snapshot: snapshot(), snapshotReceipt: 'main-receipt-a', icon: '', color: 'blue', host: 'target', mainPort: 1, pairingPort: 2, lastError: null, ...extra,
 });
 const setHost = (extra: Partial<SatelliteConnection> = {}) => useAnnexClientStore.setState({ satellites: [satellite(extra)] });
 const forbiddenCalls: unknown[] = [];
@@ -99,19 +99,38 @@ describe('no-chat remote Dispatcher observations', () => {
     expect(screen.getByTestId('details-card-connections')).toHaveTextContent('published controller-link observation');
   });
 
-  it('waits for a new snapshot after access returns instead of reviving the retained private list', () => {
+  it('requires a main receipt across deserialized duplicates, access return, remount, selection and state broadcasts', () => {
     const retained = snapshot();
     setHost({ snapshot: retained });
-    render(<RemoteDispatcherDetails machineId="target" />);
+    let view = render(<RemoteDispatcherDetails machineId="target" />);
     expect(screen.getByTestId('other-machine-HOST_PRIVATE_PEER')).toBeInTheDocument();
-    act(() => setHost({ snapshot: retained, needsPairing: true }));
+    act(() => setHost({ snapshot: retained, needsPairing: true, snapshotReceipt: undefined }));
     expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
-    act(() => setHost({ snapshot: retained }));
+    // An authoritative connection-state rebroadcast carries its retained data but no receipt.
+    const rebroadcast = JSON.parse(JSON.stringify(satellite({ snapshot: retained, snapshotReceipt: undefined })));
+    act(() => useAnnexClientStore.setState({ satellites: [rebroadcast] }));
     expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
-    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Waiting for a new host snapshot');
-    act(() => setHost({ snapshot: snapshot({ dispatcherPresence: { remotes: [remote('NEW_HOST_PEER')] } }) }));
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Waiting for a confirmed host snapshot');
+    view.unmount();
+    view = render(<RemoteDispatcherDetails machineId="target" />);
+    expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
+    view.rerender(<RemoteDispatcherDetails machineId="other" />);
+    view.rerender(<RemoteDispatcherDetails machineId="target" />);
+    expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
+    // Even fresh-looking/re-serialized snapshot content cannot mint a receipt in the renderer.
+    act(() => setHost({ snapshot: JSON.parse(JSON.stringify(snapshot({ lastSeq: 2 }))), snapshotReceipt: undefined }));
+    expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
+    act(() => setHost({ snapshot: snapshot({ dispatcherPresence: { remotes: [remote('NEW_HOST_PEER')] } }), snapshotReceipt: 'main-receipt-b' }));
     expect(screen.getByTestId('other-machine-NEW_HOST_PEER')).toBeInTheDocument();
     expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
+  });
+
+  it('withholds private fields from old local readers without a positive receipt', () => {
+    setHost({ snapshotReceipt: undefined });
+    render(<RemoteDispatcherDetails machineId="target" />);
+    expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('unavailable');
+    expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Waiting for a confirmed host snapshot');
   });
 
   it('does not reuse copied fields marked omitted in the host snapshot', () => {

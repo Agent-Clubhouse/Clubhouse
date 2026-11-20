@@ -2518,6 +2518,82 @@ describe('annex-client', () => {
       res.emit('end');
     }
 
+    describe('local positive snapshot receipts', () => {
+      const payload = (lastSeq = 1) => ({ protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq,
+        dispatcher: { enabled: true, agent: null }, dispatcherPresence: { remotes: [] } });
+      const send = (index: number, type: string, body: object) => sockets[index].handlers.message(Buffer.from(JSON.stringify({ type, payload: body })));
+      const current = () => annexClient.getSatellite(FP)!;
+      const publicBroadcast = () => vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).at(-1)![1] as Array<{ snapshotReceipt?: string }>;
+
+      it('mints only on accepted current-socket snapshots, not cached serialization or ignored older frames', async () => {
+        await discover(); sockets[0].handlers.open();
+        expect(current().snapshotReceipt).toBeUndefined();
+        send(0, 'snapshot', { ...payload(10), snapshotReceipt: 'HOST_FORGED' });
+        const receipt = current().snapshotReceipt;
+        expect(receipt).toEqual(expect.any(String));
+        expect(receipt).not.toBe('HOST_FORGED');
+        expect(JSON.parse(JSON.stringify(annexClient.getSatellites()))[0].snapshotReceipt).toBe(receipt);
+        send(0, 'snapshot', payload(1));
+        expect(current().snapshotReceipt).toBe(receipt);
+        expect(publicBroadcast()[0].snapshotReceipt).toBe(receipt);
+        send(0, 'snapshot', payload(11));
+        expect(current().snapshotReceipt).not.toBe(receipt);
+      });
+
+      it('keeps offline caches but cannot reattest them on pairing return, transport open, old-socket messages or state broadcasts', async () => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload(10));
+        const receipt = current().snapshotReceipt;
+        sockets[0].handlers.close(1008, Buffer.from('peer_not_paired'));
+        expect(current()).toMatchObject({ needsPairing: true, state: 'disconnected', snapshot: { lastSeq: 10 } });
+        expect(current().snapshotReceipt).toBeUndefined();
+        expect(publicBroadcast()[0].snapshotReceipt).toBeUndefined();
+        annexClient.connect(FP); sockets[1].handlers.open();
+        expect(current()).toMatchObject({ state: 'connected', snapshot: { lastSeq: 10 } });
+        expect(current().needsPairing).toBeUndefined();
+        expect(current().snapshotReceipt).toBeUndefined();
+        expect(JSON.parse(JSON.stringify(publicBroadcast()))[0].snapshotReceipt).toBeUndefined();
+        send(0, 'snapshot', payload(99));
+        expect(current().snapshotReceipt).toBeUndefined();
+        send(1, 'snapshot', payload(1)); // A new socket's valid first snapshot can restart its sequence.
+        expect(current().snapshot).toMatchObject({ lastSeq: 1 });
+        expect(current().snapshotReceipt).toEqual(expect.any(String));
+        expect(current().snapshotReceipt).not.toBe(receipt);
+      });
+
+      it('does not expose a receipt on a closing socket even before its close callback', async () => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        expect(current().snapshotReceipt).toEqual(expect.any(String));
+        Object.assign(sockets[0], { readyState: 2 });
+        expect(current().snapshotReceipt).toBeUndefined();
+        expect(current().snapshot).toMatchObject({ lastSeq: 1 });
+      });
+
+      it('drops admission on snapshot failure while preserving its cache, then requires a real new snapshot', async () => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const receipt = current().snapshotReceipt;
+        send(0, 'error', { message: 'snapshot_failed' });
+        expect(current()).toMatchObject({ state: 'connected', snapshotUnavailable: true, snapshot: { lastSeq: 1 } });
+        expect(current().snapshotReceipt).toBeUndefined();
+        expect(publicBroadcast()[0].snapshotReceipt).toBeUndefined();
+        send(0, 'snapshot', payload());
+        expect(current().snapshotReceipt).toEqual(expect.any(String));
+        expect(current().snapshotReceipt).not.toBe(receipt);
+      });
+
+      it('does not restore admission on resume or a paused snapshot', async () => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        send(0, 'session:paused', {});
+        expect(current().snapshotReceipt).toBeUndefined();
+        expect(current().snapshot).toMatchObject({ lastSeq: 1 });
+        send(0, 'session:resumed', {});
+        expect(current().snapshotReceipt).toBeUndefined();
+        send(0, 'snapshot', { ...payload(2), sessionPaused: true });
+        expect(current().snapshotReceipt).toBeUndefined();
+        send(0, 'snapshot', payload(3));
+        expect(current().snapshotReceipt).toEqual(expect.any(String));
+      });
+    });
+
     it('opens the WebSocket with options pinned to the stored certificate, and no token', async () => {
       await discover();
       expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'SATELLITE-PEM', fingerprint: 'AB:CD' });

@@ -84,7 +84,7 @@ describe('DispatcherView', () => {
   it('shows a selected Dispatcher’s status until this computer has its chat, then the chat', () => {
     const chat = { id: 'chat', projectId: DISPATCHER_PROJECT_ID, name: 'Tael', kind: 'durable', status: 'running', executionMode: 'chat' };
     useRemoteDispatcherSelection.getState().select('fp1');
-    useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', fingerprint: 'fp1', state: 'connected', snapshot: { dispatcher: { enabled: false, agent: null }, dispatcherPresence: { remotes: [] } } }] } as never);
+    useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', fingerprint: 'fp1', state: 'connected', snapshotReceipt: 'main-snapshot-receipt', snapshot: { dispatcher: { enabled: false, agent: null }, dispatcherPresence: { remotes: [] } } }] } as never);
     render(<DispatcherView />);
     expect(screen.getByTestId('remote-dispatcher-details')).toBeInTheDocument();
     expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('Turned off · host snapshot');
