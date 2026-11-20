@@ -1007,6 +1007,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.pendingDispatch = next;
     this.armHeldWarning();
     let failed = false;
+    let submitted = false;
     const pending = Symbol();
     let federation: ReturnType<typeof prepareFederationInput>[] = [];
     let rollbackAssignment: (() => Promise<void>) | undefined;
@@ -1039,6 +1040,7 @@ export class ChatAgentRuntime implements AgentRuntime {
           this.logQueueChange('dispatched', next);
           federation = prepareFederationInputs(this.agentId, next.federationInputs ?? []);
           this.pendingTurns.add(pending);
+          submitted = true;
           const delivered = await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
           if (this.session !== session) {
             this.pendingTurns.delete(pending);
@@ -1067,15 +1069,18 @@ export class ChatAgentRuntime implements AgentRuntime {
         this.pendingTurns.delete(pending);
         if (this.session === session && this.pendingTrace === next.trace) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
       }
+      this.settleQueued(next, submitted ? 'unknown' : 'dropped');
       if (this.session !== session) return;
       // Like a failed plain send, this one message fails and the session stays (#3103).
       // telemetry-exempt: the user sees the notice; logged locally with the reason.
       this.logQueueChange('dropped', next, 'send_failed');
-      this.settleQueued(next, 'dropped');
       // telemetry-exempt: shown to the user as a notice below.
       await this.emitQueueState([next.messageId], 'failed');
       const reason = err instanceof Error ? err.message : String(err);
-      await this.emit({ type: 'notice', data: { level: 'warn', code: 'queued_send_failed', message: `A queued message could not be sent: ${reason}` } });
+      const message = submitted
+        ? `A queued message was submitted, but delivery could not be confirmed: ${reason}`
+        : `A queued message could not be sent: ${reason}`;
+      await this.emit({ type: 'notice', data: { level: 'warn', code: 'queued_send_failed', message } });
       failed = true;
     } finally {
       if (this.pendingDispatch === next) this.pendingDispatch = undefined;

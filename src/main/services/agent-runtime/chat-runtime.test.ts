@@ -2362,13 +2362,13 @@ describe('federation input follows actual runtime dispatch (#3553)', () => {
       vi.spyOn(driver.last, 'send').mockRejectedValueOnce(new Error('queued provider send failed'));
       driver.last.emit({ type: 'turn_ended', data: {} });
       await flush();
-      expect.soft(settled).toHaveBeenCalledExactlyOnceWith('dropped');
+      expect.soft(settled).toHaveBeenCalledExactlyOnceWith('unknown');
       expect.soft(runtime.isRunning()).toBe(true);
       expect.soft(transcript).toContainEqual(expect.objectContaining({ type: 'queue_state', data: expect.objectContaining({
         transition: { messageIds: [failed.messageId], status: 'failed' },
       }) }));
       expect.soft(transcript).toContainEqual(expect.objectContaining({ type: 'notice', data: expect.objectContaining({
-        code: 'queued_send_failed', message: 'A queued message could not be sent: queued provider send failed',
+        code: 'queued_send_failed', message: 'A queued message was submitted, but delivery could not be confirmed: queued provider send failed',
       }) }));
       expect(driver.last.sent).toEqual([{ content: [{ type: 'text', text: 'next queued item' }], delivery: 'prompt' }]);
       expect(runtime.getQueueState().queuedMessageIds).toEqual([]);

@@ -414,6 +414,22 @@ describe('Settings > Actions', () => {
     expect(within(run).queryByText('Sent the message to pm')).toBeNull();
   });
 
+  it('Q4 shows submitted but unconfirmed receipt without a queued badge or a non-delivery claim', async () => {
+    const detail = 'The message was submitted, but delivery could not be confirmed';
+    list = [action({ steps: [{ kind: 'message', agentId: 'pm', text: 'Plan the day' }] })];
+    window.clubhouse.actions.history = vi.fn(async () => [{
+      id: 'r1', actionId: 'a1', trigger: { kind: 'manual' as const, at: 1 }, chain: [], startedAt: 1, endedAt: 2,
+      outcome: 'failed' as const, reason: detail, steps: [{ kind: 'message' as const, outcome: 'failed' as const, detail, agentId: 'pm' }],
+    }]);
+    render(<ActionsSettingsView />);
+    fireEvent.click(await screen.findByText('Morning plan'));
+    const run = await screen.findByTestId('action-run');
+    expect(within(run).getAllByText(detail).length).toBeGreaterThan(0);
+    expect(within(run).queryByText('The action fired. The message was queued, not confirmed delivered.')).toBeNull();
+    expect(within(run).queryByText('Queued message dropped before delivery')).toBeNull();
+    expect(within(run).queryByText('Sent the message to pm')).toBeNull();
+  });
+
   it('filters by owner and by turned off', () => {
     const all = [action({}), action({ id: 'b', owner: { kind: 'agent', agentId: 'x' } }), action({ id: 'c', enabled: false })];
     expect(filterActions(all, 'you').map((a) => a.id)).toEqual(['a1', 'c']);

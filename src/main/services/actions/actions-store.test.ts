@@ -18,6 +18,16 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 import { createRunHistory, purgeStoredGroupProjectActions, sanitizeActions, settleInterruptedRuns, storedGroupProjectActions } from './actions-store';
 
 describe('actions store', () => {
+  it('Q4 retains an unconfirmed submitted receipt using existing persisted fields', () => {
+    const detail = 'The message was submitted, but delivery could not be confirmed';
+    const run = { id: 'unknown', actionId: 'a', trigger: { kind: 'manual', at: 1 }, chain: [], startedAt: 1, endedAt: 2,
+      outcome: 'failed', reason: detail, steps: [{ kind: 'message', outcome: 'failed', detail, agentId: 'pm' }] };
+    const saved = JSON.parse(JSON.stringify({ version: 1, runs: { a: [run] } }));
+    const restored = migrations.get('action-history.json')!(saved);
+    expect(restored).toEqual(saved);
+    expect(JSON.stringify(restored)).not.toContain('"delivery"');
+    expect(JSON.stringify(restored)).not.toContain('dropped before delivery');
+  });
   it('purges a group’s Actions and pending state durably, including when replayed before startup', async () => {
     const group = { id: 'a', name: 'Group action', owner: { kind: 'group_project', groupProjectId: 'gp1' } };
     const other = { id: 'b', name: 'Other', owner: { kind: 'group_project', groupProjectId: 'gp2' } };

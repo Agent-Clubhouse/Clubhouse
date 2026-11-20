@@ -39,7 +39,8 @@ import type {
 
 export type AgentRuntimeKind = 'pty' | 'chat';
 
-export type ActionQueueSettlement = 'delivered' | 'expired' | 'replaced' | 'dropped';
+/** Internal callback: unknown means submitted to the driver, without a confirmed outcome. */
+export type ActionQueueSettlement = 'delivered' | 'expired' | 'replaced' | 'dropped' | 'unknown';
 
 export interface RuntimeActionQueue {
   actionId: string;

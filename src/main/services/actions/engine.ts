@@ -192,7 +192,8 @@ export type RunReasonCode =
   | 'step_threw'
   | 'delivery_expired'
   | 'delivery_replaced'
-  | 'delivery_dropped';
+  | 'delivery_dropped'
+  | 'delivery_unknown';
 
 /** Every observation names the action and its owner. */
 interface ObservedAction {
@@ -1448,7 +1449,7 @@ export class ActionsEngine {
 
     let failure: string | undefined;
     let failureCode: RunReasonCode | undefined;
-    let deliveryLoss: { outcome: 'expired' | 'cancelled'; reason: string; code: RunReasonCode } | undefined;
+    let deliveryLoss: { outcome: 'expired' | 'cancelled' | 'failed'; reason: string; code: RunReasonCode } | undefined;
     // What it watches is checked again on every run too: a mechanical failure, like a step.
     const sourceRefused = this.deps.rights.checkSource(action.owner, action.trigger);
     if (sourceRefused) {
@@ -1487,17 +1488,25 @@ export class ActionsEngine {
         settlement = delivery;
         const receipt = run.steps[stepIndex];
         if (!receipt) return;
-        receipt.delivery = delivery;
-        receipt.detail = delivery === 'delivered' ? 'Delivered the queued message'
-          : delivery === 'expired' ? 'Queued message expired before delivery'
-            : delivery === 'replaced' ? 'Queued message replaced by a newer message from this action'
-              : 'Queued message dropped before delivery';
+        if (delivery === 'unknown') {
+          // Keep the unconfirmed outcome internal. History and IPC use the
+          // existing failed result, with no queued badge or new delivery enum.
+          delete receipt.delivery;
+          receipt.outcome = 'failed';
+          receipt.detail = 'The message was submitted, but delivery could not be confirmed';
+        } else {
+          receipt.delivery = delivery;
+          receipt.detail = delivery === 'delivered' ? 'Delivered the queued message'
+            : delivery === 'expired' ? 'Queued message expired before delivery'
+              : delivery === 'replaced' ? 'Queued message replaced by a newer message from this action'
+                : 'Queued message dropped before delivery';
+        }
         run.deliveryUpdatedAt = this.now();
         if (delivery !== 'delivered') {
           deliveryLoss = deliveryLoss?.outcome === 'expired' ? deliveryLoss : {
-            outcome: delivery === 'expired' ? 'expired' : 'cancelled',
+            outcome: delivery === 'unknown' ? 'failed' : delivery === 'expired' ? 'expired' : 'cancelled',
             reason: receipt.detail,
-            code: delivery === 'expired' ? 'delivery_expired' : delivery === 'replaced' ? 'delivery_replaced' : 'delivery_dropped',
+            code: delivery === 'unknown' ? 'delivery_unknown' : delivery === 'expired' ? 'delivery_expired' : delivery === 'replaced' ? 'delivery_replaced' : 'delivery_dropped',
           };
           if (run.outcome !== 'running' && run.outcome !== 'failed') {
             run.outcome = deliveryLoss.outcome;
