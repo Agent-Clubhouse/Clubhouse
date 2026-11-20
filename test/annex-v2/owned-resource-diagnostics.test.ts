@@ -191,6 +191,10 @@ describe('owned diagnostic nominal-window evaluator', () => {
     ['duplicate event', (events) => [...events, events[3]]],
     ['reversed events', (events) => [...events].reverse()],
     ['signaled exit', (events) => events.map((entry) => entry.kind === 'native-exit' ? { ...entry, code: null, signal: 'SIGTERM' } : entry)],
+    ['null native code', (events) => events.map((entry) => entry.kind === 'native-exit' ? { ...entry, code: null } : entry)],
+    ['unknown native code', (events) => events.map((entry) => entry.kind === 'native-exit' ? { ...entry, code: 'unknown' } : entry)],
+    ['error-bearing stopped ack', (events) => events.map((entry) => entry.kind === 'runtime-stopped'
+      ? { ...entry, response: { type: 'stopped', __vitest_worker_response__: true, error: 'fixture-stop-failure' } } : entry)],
     ['premature exit', (events) => events.map((entry) => entry.kind === 'native-exit' ? { ...entry, premature: true } : entry)],
     ['replaced pool', (events) => events.map((entry) => entry.kind === 'pool-created' ? { ...entry, instances: 2 } : entry)],
     ['wrong identity', (events) => events.map((entry) => ({ ...entry, cliPid: 99 }))],
@@ -219,7 +223,8 @@ describe('owned diagnostic nominal-window evaluator', () => {
 
   it.each([
     { phase: 'live' }, { installed: false }, { sealed: false }, { pending: 1 },
-    { attempts: [{ afterSeal: true }] }, { accepts: [{ port: 1 }] },
+    { attempts: [{ host: '127.0.0.1', port: 1, allowed: false, outcome: 'denied', afterSeal: true }] },
+    { accepts: [{ port: 1 }] },
   ])('requires the actual intact phase-exit audit %j', (change) => {
     const input = fixture();
     expect(() => evaluateOwnedResourceDiagnostics({ ...input, finalAudit: { ...input.finalAudit, ...change } })).toThrow(/phase-exit/);
