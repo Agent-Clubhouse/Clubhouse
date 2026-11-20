@@ -44,6 +44,24 @@ describe('remote full Details host evidence', () => {
       subagents: [{ subagentId: 'initial-sub', name: 'Initial reviewer', status: 'completed' as const, toolCount: 4, usage: { total: 42 } }],
       sessionUsage: { costUsd: 0, tokens: { total: 123 } }, context: { used: 100, size: 200_000 },
     }, observedAt: { cliVersion: 2000, model: 2000, effort: 2000, level: 1000, capabilities: 1000, mcpServers: 2000, skills: 2000, subagents: 2500, sessionUsage: 2600, context: 2600 }, omitted: {} });
+  it('carries the real transcript cursor/receipt into explicit older Details reads without replacing current provider facts', async () => {
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: evidence() } });
+    const historyBinding = { version: 1, projectId: 'p1', agentId: 'a1', sessionId: 's1', providerId: 'claude-code', driver: 'claude_agent_sdk', nativeSessionId: 'n1', displayRunId: 'runtime-a', startSeq: 1, subagents: 'full' };
+    chatPage.mockImplementation(async (_host, _id, query) => page('tail', { agentId: 'a1', sessionId: 's1', currentSessionId: 's1', state: 'idle', displayRunId: 'runtime-a', historyBinding,
+      truncated: !query.beforeSeq, nextBeforeSeq: query.beforeSeq ? null : 3000,
+      events: query.beforeSeq ? [{ v: 2, agentId: 'a1', sessionId: 's1', seq: 100, ts: 100, type: 'subagent', data: { subagentId: 'archived-child', name: 'Archived actual-pipeline child', status: 'completed' } }]
+        : [{ v: 2, agentId: 'a1', sessionId: 's1', seq: 3000, ts: 3000, type: 'notice', data: { level: 'info', message: 'tail' } }],
+    }));
+    useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'session' });
+    render(<AgentDetails agent={agent} />);
+    const older = await screen.findByRole('button', { name: 'Read older session history' });
+    expect(chatPage).toHaveBeenCalledTimes(1);
+    fireEvent.click(older);
+    await screen.findByText(/Child report: Archived actual-pipeline child/);
+    expect(chatPage).toHaveBeenLastCalledWith('sat', 'a1', { beforeSeq: 3000, limit: 200 });
+    expect(screen.getByTestId('details-card-settings')).toHaveTextContent('INITIAL_VERSION');
+    expect(useChatStore.getState().agents[agent.id].subagents['archived-child']).toBeUndefined();
+  });
   it('resolves a pending Subagents focus after hydration, expands the requested child, and handles it once', async () => {
     read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: evidence() } });
     let finish!: (value: ReturnType<typeof page>) => void;

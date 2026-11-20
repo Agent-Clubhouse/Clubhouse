@@ -2557,6 +2557,50 @@ describe('annex-server', () => {
   });
 
   describe('mobile transport contract', () => {
+    it.each(['stable', 'phone', 'tracked Quick collision', 'project removed', 'agent disposed', 'provider changed', 'same-native reopen', 'revoked'] as const)('binds ordinary durable older pages to the exact project/runtime after awaited reads: %s', async (mode) => {
+      const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-history-receipt-'));
+      const profile = path.join(root, 'profile'), projectPath = path.join(root, 'project');
+      await fsp.mkdir(profile); await fsp.mkdir(path.join(projectPath, '.clubhouse'), { recursive: true });
+      const project = { id: 'history-project', name: 'History project', path: projectPath };
+      const config = { id: 'history-agent', name: 'History agent', color: 'blue', createdAt: '2026-01-01' };
+      const projectsFile = path.join(profile, 'projects.json'), agentsFile = path.join(projectPath, '.clubhouse', 'agents.json');
+      await fsp.writeFile(projectsFile, JSON.stringify({ version: 1, projects: [project] }));
+      await fsp.writeFile(agentsFile, JSON.stringify([config]));
+      const base = vi.spyOn(baseDir, 'getBaseDirPath').mockReturnValue(profile);
+      vi.mocked(projectStore.list).mockReturnValue([project] as never);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([config] as never);
+      let generation = 'history-open-a';
+      const events = Array.from({ length: 2205 }, (_, i) => ({ v: 2, agentId: config.id, sessionId: 'history-session', seq: i + 1, ts: i + 1, type: 'notice', data: { level: 'info', message: 'ARCHIVED_SELECTED_EVENT' } }));
+      const evidence = () => ({ version: 1, runId: generation, agentId: config.id, sessionId: 'history-session', nativeSessionId: 'same-native', providerId: 'claude-code', driver: 'claude_agent_sdk',
+        startSeq: 1, startedAt: 1, lastSeq: 2205, readAt: 3000, completeFromStart: true, values: { capabilities: { subagents: 'full', usage: 'tokens', limits: false } }, observedAt: { capabilities: 1 }, omitted: {} });
+      agentRegistry.register(config.id, { projectPath, orchestrator: 'claude-code', runtime: 'chat', nonce: 'unexported-nonce' });
+      registerChatRuntime({ kind: 'chat', agentId: config.id, isRunning: () => true, getState: () => 'idle', getSessionId: () => 'history-session', getNativeSessionId: () => 'same-native',
+        getDisplayRunId: () => generation, getDetailsEvidence: evidence, getCapabilities: () => ({ subagents: 'full' }), readTranscript: async () => {
+          if (mode === 'project removed') await fsp.writeFile(projectsFile, JSON.stringify({ version: 1, projects: [] }));
+          if (mode === 'agent disposed') await fsp.writeFile(agentsFile, JSON.stringify([{ ...config, disposedAt: '2026-11-20' }]));
+          if (mode === 'provider changed') agentRegistry.get(config.id)!.orchestrator = 'copilot';
+          if (mode === 'same-native reopen') generation = 'history-open-b';
+          if (mode === 'revoked') vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop', networkPending: true });
+          return { events };
+        } } as never);
+      try {
+        const { port, token } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: mode === 'phone' ? 'phone' : 'desktop' });
+        if (mode === 'tracked Quick collision') annexServer._testing.trackedQuickAgents.set(config.id, { projectPath } as never);
+        const response = await request(port, 'GET', `/api/v1/mobile/agents/${config.id}/chat?beforeSeq=206&limit=200`, undefined, authHeaders(token));
+        expect(response.status).toBe(['stable', 'phone', 'tracked Quick collision'].includes(mode) ? 200 : mode === 'revoked' ? 403 : 409);
+        if (response.status === 200) {
+          const body = JSON.parse(response.body);
+          expect(body.events).toHaveLength(200);
+          expect(body).toMatchObject({ nextBeforeSeq: 6, truncated: true });
+          if (mode === 'stable') expect(body.historyBinding).toMatchObject({ projectId: project.id, agentId: config.id, sessionId: 'history-session', nativeSessionId: 'same-native', displayRunId: generation, startSeq: 1 });
+          else expect(body.historyBinding).toBeUndefined();
+          expect(response.body).not.toContain('unexported-nonce');
+          expect(JSON.stringify(body.historyBinding ?? null)).not.toContain(projectPath);
+        } else expect(response.body).not.toContain('ARCHIVED_SELECTED_EVENT');
+      } finally { base.mockRestore(); clearChatRuntimes(); agentRegistry.untrack(config.id); annexServer._testing.trackedQuickAgents.delete(config.id); await fsp.rm(root, { recursive: true, force: true }); }
+    });
+
     it.each(['transcript-native', 'transcript-same-native', 'folders-native', 'folders-same-native', 'stable'] as const)('refuses same-object runtime generation replacement across awaited page work: %s', async (mode) => {
       vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
       vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'A', color: 'blue', createdAt: '2026-01-01' }] as never);
@@ -2690,6 +2734,10 @@ describe('annex-server', () => {
         expect(response.status).toBe(mode === 'same' ? 200 : mode === 'phone' || mode === 'historical-session' ? 404 : mode === 'revoked-during-read' ? 403 : mode === 'replaced-during-read' || mode === 'removed-during-read' ? 409 : 500);
         if (mode === 'same') {
           expect(JSON.parse(response.body)).toMatchObject({ sessionId: 's', displayRunId: 'direct-display', readOnly: false });
+          expect(JSON.parse(response.body).historyBinding).toBeUndefined();
+          const older = await request(port, 'GET', route + '?beforeSeq=2');
+          expect(older.status).toBe(404);
+          expect(older.body).toContain('quick_session_unavailable');
           expect(annexServer._testing.trackedQuickAgents.has('direct-quick')).toBe(false);
           const caps = await request(port, 'GET', '/api/v1/mobile/capabilities');
           const command = await request(port, 'POST', '/api/v1/mobile/commands', { version: 1, epoch: JSON.parse(caps.body).epoch, commandId: 'direct-read-is-not-write', type: 'chat.send', agentId: 'direct-quick', sessionId: 's', text: 'must not send' });

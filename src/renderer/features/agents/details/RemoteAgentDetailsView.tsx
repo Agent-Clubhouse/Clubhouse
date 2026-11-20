@@ -1,4 +1,5 @@
 import { useNow } from './useNow';
+import { RemoteSessionHistory } from './RemoteSessionHistory';
 import { RemoteConnectionsCard } from './RemoteConnectionsCard';
 import { RemoteActionsEvidence } from './RemoteActionsEvidence';
 /** Remote container: host reads and shared presentation only; no local config, git or action hooks. */
@@ -224,6 +225,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       {asleep && !details && agent.lastSleep && <><CardNote>Last loaded host snapshot; these sleep fields may be stale.</CardNote><CardRow label="Ended">{formatAgo(Date.parse(agent.lastSleep.at))}</CardRow><CardRow label="Why">{describeSleep(agent.lastSleep)}</CardRow></>}
       {runtimeUnconfirmed && <CardNote>Current run state is not confirmed. Refreshing the host’s lifecycle evidence.</CardNote>}
       {sessionCard ? <Evidence card={{ ...sessionCard, rows: (sessionRows ?? []).filter((r) => !runtimeUnconfirmed || r.label !== 'Status') }} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
+      <RemoteSessionHistory agent={agent} details={details} ready={!!session && !runtimeUnconfirmed} generation={transport.current.generation} />
     </DetailsCard>}
     {!dispatcher && basic('canvases', 'Canvases')}
   </aside>;

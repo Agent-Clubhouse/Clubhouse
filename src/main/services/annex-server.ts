@@ -18,6 +18,7 @@ import { legacyDefaultsNotCopied } from './legacy-defaults';
 import { accessFromLegacy, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
 import { agentAccess, getPermissionMode, quickAgentAccess } from './free-agent-settings';
 import { waitForAgentStopped } from './agent-system';
+import { captureRemoteSessionHistoryBinding } from './remote-session-history-binding';
 import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture, providerNextWake, verifyProviderStartPreview } from './agent-provider-control';
 import { providerStartReceipt } from './provider-start-receipt';
 import { withAgentTransition } from './agent-transition';
@@ -4156,6 +4157,8 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     const admittedDesktopRead = desktopDetailsAuthorized(ctx);
     const readAuthorized = () => mobileCommands.epoch === epoch && stillAuthorized(ctx.principal, authorizerDeps)
       && (!(quickRead || admittedDesktopRead) || desktopDetailsAuthorized(ctx));
+    const historyBinding = !quickRead && !trackedQuickAgents.has(agentId) && durable && admittedDesktopRead && admittedLive
+      ? captureRemoteSessionHistoryBinding({ agent: durable.config, project: durable.project }, runtime!, readAuthorized) : undefined;
     const events = quickRead ? (await runtime!.readTranscript({ passive: true, tail: 2001 })).events ?? []
       : live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId: requestedSession });
     if (!readAuthorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
@@ -4190,6 +4193,7 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
         // Display-only identity, never the launch nonce; only the runtime that
         // supplied this page may attest it after the preceding awaits.
         displayRunId: live && admittedDesktopRead ? admittedDisplayId ?? null : null,
+        ...(historyBinding && { historyBinding: historyBinding.value }),
         state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
         lastSeq: current[current.length - 1]?.seq ?? 0,
         contentRoots,
@@ -4206,6 +4210,11 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     if (page.ok === false) {
       sendJson(ctx.res, 503, page.failure);
       return;
+    }
+    if (!readAuthorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
+    if (historyBinding && !historyBinding.current()) {
+      const allowed = readAuthorized();
+      sendJson(ctx.res, allowed ? 409 : 403, { error: allowed ? 'chat_read_changed' : 'authorization_revoked' }); return;
     }
     ctx.res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(page.body) });
     ctx.res.end(page.body);
