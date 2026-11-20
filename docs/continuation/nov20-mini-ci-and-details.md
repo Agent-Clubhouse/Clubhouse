@@ -30,3 +30,9 @@ Current WIP is `Clubhouse-Orchestrator/3733-mini-continuation` at `532f2ee4b523b
 A separate 11-suite composition run passed 429 tests at `bc7eff9710a6e43a976665f4fa05e1f449e066e0`. Counts above cover overlapping suites on different heads. Final composed matrix, latest-main integration, full CI and live acceptance are open. Individual slice review does not close #3733. Public distribution remains on hold.
 
 Next work includes qualified helper rows and continuation, selected durable session history, no-chat role-read authority and omitted-board navigation assessment, other bounded inventories, and exact-head composition review. The existing desktop Details gate, selected identities, currentness and revocation remain prerequisites for rendering private data. Preserve the existing partial or unavailable state wherever the host cannot attest a field.
+
+## 04:42 Pacific verification
+
+Auto completed hosted validation on the checkpoint head `722f89beaf38ece7922ac550b14240f4de20701b`. Windows stable-mode persistence, the quota generation suite and the Annex rename shard passed. The run finished with 33 successful jobs and four skips. All three PRs above were verified open on their listed heads.
+
+The Mini Details integration reached `b7b40600b462ba533f6cb61ff375d12da5f35ece`. It includes accessible Canvas membership scope and omission reasons at `88f21e81019e2c230427c52214734f680cba7de2`, and qualified helper rows with eight-row continuation at `39241905098a5824bda6bc793c10794d9a06370e`. Independent review caught in-place helper registration changes that the first candidate missed. The successor captured immutable run fields and passed 300 focused cases plus 14 selected transport checks. Board content omitted from an authorized snapshot remains unavailable. Final composition and complete parity are still pending.
