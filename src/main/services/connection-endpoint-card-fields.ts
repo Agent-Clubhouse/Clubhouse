@@ -25,7 +25,8 @@ export function endpointCardFields(row: SavedDispatcherEndpointMetadataRow): End
   if (row.relationship !== 'recorded') return { saved: row.relationship === 'different-selected-project'
     ? 'Saved link project does not match this selected agent' : 'No matching saved link association' };
   const endpoint = row.endpoint;
-  if (!endpoint || endpoint.state !== 'ok') return { saved: endpoint?.reason === 'limit' ? 'Saved target details exceed this read’s limit' : 'Saved target details unavailable' };
+  if (!endpoint) return { saved: 'Saved target details unavailable' };
+  if (endpoint.state !== 'ok') return { saved: endpoint.reason === 'limit' ? 'Saved target details exceed this read’s limit' : 'Saved target details unavailable' };
   if (endpoint.value.record !== 'registered-primary') return { saved: endpoint.value.record === 'project-not-registered'
     ? 'Target project not found in saved project records' : 'No matching target in saved agent records' };
   const fields = endpoint.value.fields, savedName = name(fields), result: EndpointCardFields = { primaryAdmitted: true, savedName, displayName: savedName, nameOrigin: savedName ? 'saved' : undefined, saved: describe(fields) };
