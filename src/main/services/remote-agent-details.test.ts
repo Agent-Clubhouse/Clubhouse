@@ -41,8 +41,8 @@ vi.mock('./orchestration-display', async (original) => { const actual = await or
   if (m.realPolicy) return actual.readOrchestrationForDisplay(target, options);
   const policy = m.policies().get(target.agent.id) ?? ORCHESTRATION_DEFAULTS;
   return { fields: Object.fromEntries(Object.entries(ORCHESTRATION_DEFAULTS).map(([key]) => [key, { state: 'ok', value: policy[key], inputs: [] }])), sources: policy.sources ?? {}, globalCap: { state: 'ok', value: 20, inputs: [] }, autoEffective: { state: 'ok', value: policy.autoEffective ?? { effective: false, source: 'default' }, inputs: [] } };
-} }));
-vi.mock('./orchestration-settings', () => ({ getGlobalHelperCap: () => 20 }));
+} }; });
+vi.mock('./orchestration-settings', async (original) => ({ ...await original<typeof import('./orchestration-settings')>(), getGlobalHelperCap: () => 20 }));
 vi.mock('./helper-index', () => ({ listHelpersEverywhere: m.helpers }));
 vi.mock('./read-only-helper-work', () => ({ readOnlyHelperWork: m.work, HELPER_TRANSFORM_UNAVAILABLE: 'Custom Git filters or text transforms are not run for helper work.' }));
 vi.mock('./helper-start-requests', () => ({ readStartRequestsForDisplay: () => ({ state: 'ok', value: m.requests(), inputs: [] }) }));
