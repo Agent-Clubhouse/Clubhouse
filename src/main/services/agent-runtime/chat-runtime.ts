@@ -792,6 +792,13 @@ export class ChatAgentRuntime implements AgentRuntime {
       }
       throw error;
     }
+    if (this.session !== session) {
+      // The old provider can finish after stop/clear. Preserve its actual
+      // receipt, but never publish it into a replacement conversation or
+      // re-accept its provenance after that conversation was cleared.
+      if (pending) this.pendingTurns.delete(pending);
+      return { delivery: delivered, messageId };
+    }
     for (const context of federation) context?.accepted(delivered);
     if (pending && delivered !== 'prompt' && delivered !== 'queued') this.pendingTurns.delete(pending);
     if (wanted === 'prompt' && delivered !== 'prompt' && this.pendingTrace === traceContext) {
@@ -1033,6 +1040,13 @@ export class ChatAgentRuntime implements AgentRuntime {
           federation = prepareFederationInputs(this.agentId, next.federationInputs ?? []);
           this.pendingTurns.add(pending);
           const delivered = await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+          if (this.session !== session) {
+            this.pendingTurns.delete(pending);
+            // This item already reached send(): its late success is a real
+            // receipt for the old dispatch, not a cancellation of delivery.
+            this.settleQueued(next, 'delivered');
+            return;
+          }
           for (const context of federation) context?.accepted(delivered);
           this.settleQueued(next, 'delivered');
           if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
