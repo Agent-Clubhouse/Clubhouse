@@ -142,6 +142,7 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
         // role-owned. Both directory + primary receipts remain final fences;
         // this tuple is no runtime/permission or historical-incarnation proof.
         if (purpose === 'dispatcher-auto' && data.rootNamespace && data.rootNamespace === selectedDirectory) continue;
+        if (purpose === 'dispatcher-auto' && !data.rootNamespace) { unavailableProjects++; complete = false; continue; }
         if (!Array.isArray(data.raw)) { unavailableProjects++; complete = false; continue; }
         // Both duplicate-ID admission and relationship projection visit every row.
         if (data.raw.length * 2 > rowsLeft) {
