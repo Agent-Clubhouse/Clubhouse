@@ -81,7 +81,12 @@ it.each(['name', 'policy', 'disposed', 'helper'] as const)('invalidates late sel
   if (kind === 'policy') selected!.orchestration = { connectToDispatcher: false };
   if (kind === 'disposed') selected!.disposedAt = '2026-11-19T01:00:00Z';
   if (kind === 'helper') selected!.parentAgentId = 'parent';
-  const fresh = read(); expect(fresh.availability).toBe('loaded'); expect(receipts[0].current()).toBe(false); assertNoReadEffects();
+  const fresh = read(); expect(fresh.availability).toBe('loaded');
+  if (kind === 'name') expect(fresh).toMatchObject({ fields: { value: { name: { value: 'Changed cache name' } } } });
+  if (kind === 'policy') expect(fresh).toMatchObject({ fields: { value: { connectToDispatcher: { value: false } } } });
+  if (kind === 'disposed') expect(fresh).toMatchObject({ fields: { value: { disposed: { value: true } } } });
+  if (kind === 'helper') expect(fresh).toMatchObject({ fields: { value: { helper: { value: true } } } });
+  expect(receipts[0].current()).toBe(false); assertNoReadEffects();
 });
 it('detaches returned field objects and ignores unrelated private definition changes in its selected safe signature', async () => {
   await warm(); const receipts: DisplayReceipt[] = [], result = read(receipts); expect(result.fields?.state).toBe('ok');
