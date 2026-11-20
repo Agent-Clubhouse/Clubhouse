@@ -90,6 +90,12 @@
       "bytes": 9742,
       "sha256": "cbd66c7898538e5621e17cc9f0783d97024b2c238babb623738811b82a668bfe",
       "originalSourceSha256": "cbd66c7898538e5621e17cc9f0783d97024b2c238babb623738811b82a668bfe"
+    },
+    {
+      "path": "reports/3733-af8b9cfa9-cg-baseline-static-milestone.txt",
+      "bytes": 5828,
+      "sha256": "88fe4be352f6120f85fdb0b0975e44d7080f12821f30b4919323d8eb8781fd7c",
+      "originalSourceSha256": "88fe4be352f6120f85fdb0b0975e44d7080f12821f30b4919323d8eb8781fd7c"
     }
   ],
   "copyNote": "Only redundant blank lines at EOF normalized in Git copies; original reports unchanged. Original and copied hashes retained."
