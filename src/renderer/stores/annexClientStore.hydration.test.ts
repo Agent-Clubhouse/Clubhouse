@@ -612,4 +612,25 @@ describe('satellite catalog reconciliation (#3695)', () => {
     expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
   });
 
+  it.each(['list', 'read'])('HY2: conflicting cached row order through %s preserves current order and defers', async (source) => {
+    const rows = [{ id: '1', views: [] }, { id: '2', views: [] }, { id: '3', views: [] }];
+    const cached = snapshot({ canvasState: { project: { canvases: rows, activeCanvasId: '1' } } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    const order = () => (catalog().remoteCanvasState[projectId].canvases as Array<{ id: string }>).map((row) => row.id);
+    expect(order()).toEqual(['1', '2', '3']);
+    catalog().updateRemoteCanvasState(projectId, { canvases: [rows[1], rows[0], rows[2]], activeCanvasId: '1' });
+    expect(order()).toEqual(['2', '1', '3']);
+    const updated = structuredClone(cached);
+    updated.canvasState!.project.canvases = [rows[0], rows[2], rows[1]];
+    if (source === 'list') changed(list(updated));
+    else {
+      read.mockResolvedValueOnce(list(updated));
+      await useAnnexClientStore.getState().loadSatellites();
+    }
+    expect(order()).toEqual(['2', '1', '3']);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
 });
