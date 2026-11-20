@@ -16,7 +16,7 @@ const identifier = (v: unknown): v is string => typeof v === 'string' && v.lengt
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const input = (field: string) => [{ field: `Related agent ${field}`, source: 'agent' as const, observedAt: Date.now() }];
 const known = <T>(value: T, field: string): DisplayValue<T> => ({ state: 'ok', value, inputs: input(field) });
-const unavailable = <T>(field: string): DisplayValue<T> => ({ state: 'unavailable', reason: 'invalid', inputs: input(field) });
+const unavailable = <T>(field: string, reason: 'invalid' | 'limit' = 'invalid'): DisplayValue<T> => ({ state: 'unavailable', reason, inputs: input(field) });
 
 /** No unrelated row, raw config, provider, instructions, paths or global settings are returned. */
 export function projectConnectionEndpointFieldsForDisplay(expectedId: string, raw: unknown): DisplayValue<ConnectionEndpointFields> {
@@ -29,7 +29,7 @@ export function projectConnectionEndpointFieldsForDisplay(expectedId: string, ra
     : typeof disposedAt === 'string' ? known(!!disposedAt, 'disposed flag') : unavailable('disposed flag');
   const policy = projectOrchestrationAgentFieldsForDisplay({ parentAgentId: parent, orchestration: ownDisplayValue(raw, 'orchestration') });
   const connectToDispatcher = helper.state === 'ok' ? policy.fields.connectToDispatcher : unavailable<boolean>('Dispatcher connection');
-  return known({ id: expectedId, name: typeof name === 'string' && name.length <= 1024 ? known(name, 'name') : unavailable<string>('name'),
+  return known({ id: expectedId, name: typeof name !== 'string' ? unavailable<string>('name') : name.length > 1024 ? unavailable<string>('name', 'limit') : known(name, 'name'),
     helper, disposed, connectToDispatcher,
     ...(connectToDispatcher.state === 'ok' ? { connectSource: policy.sources.connectToDispatcher } : {}) }, 'saved fields');
 }
