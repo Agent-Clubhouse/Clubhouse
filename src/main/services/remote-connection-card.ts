@@ -74,7 +74,7 @@ function toolsFor(pair: Pair, savedComplete: boolean): string {
   }
   if (pair.saved) return `Saved disabled: ${disabled === undefined ? 'unavailable' : labels(disabled)}; starting on: ${enabled === undefined ? 'unavailable' : labels(enabled)}`;
   if (pair.manual && savedComplete && !pair.binding && !pair.sources.length) {
-    const defaults = localDirectionTools();
+    const defaults = localDirectionTools(undefined);
     return `Configured manual link defaults · On: ${labels(defaults.allowed)}; Off: ${labels(defaults.disabled)}`;
   }
   if (!pair.binding && pair.sources.length) return `Retained starting lists: ${pair.sources.map((source) => { const b = value(source.binding); const off = value(b?.disabledTools), on = value(b?.enabledTools); return `${CONNECTION_SOURCE_LABELS[connectionSourceKind(source.sourceId)]}: disabled ${off === undefined ? 'unavailable' : labels(off)}, starting on ${on === undefined ? 'unavailable' : labels(on)}`; }).join(' · ')}`;
