@@ -39,7 +39,8 @@
 
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import type { DisplayReceipt, DisplayValue } from './display-settings';
 import { getBaseDirPath } from './base-dir';
 import { listDurable, onAgentConfigChanged, peekDurableConfigsChecked } from './agent-config';
 import { pathExists } from './fs-utils';
@@ -203,6 +204,54 @@ let pendingSaved = true;
 let writesProven = false;
 /** The probe failed, so nothing can rule out a removal the last session couldn't record. */
 let writesBlocked = false;
+
+/** Recorded owner state only, never a write probe, source restore or grant. */
+export interface DispatcherLinkMemoryDisplay {
+  scope: 'process-known-dispatcher-links';
+  storeWrites: 'unobserved' | 'recorded-writable' | 'recorded-blocked';
+  rows: Array<Pair & { pendingRemoval: DisplayValue<boolean>; removalSaved: DisplayValue<boolean | null> }>;
+}
+const linkDisplayId = (v: unknown): v is string => typeof v === 'string' && v.length <= 200 && !!v.trim() && !/[\x00-\x1f\x7f]/.test(v);
+const linkDisplayProject = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 4096 && path.isAbsolute(v) && !v.includes('\0');
+function knownLinkMemory(projectPath: string, selected: string, pairs: readonly Pair[]): DispatcherLinkMemoryDisplay {
+  const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs: [] });
+  const unavailable = <T>(): DisplayValue<T> => ({ state: 'unavailable', reason: 'invalid', inputs: [] });
+  return {
+    scope: 'process-known-dispatcher-links',
+    storeWrites: writesBlocked ? 'recorded-blocked' : writesProven ? 'recorded-writable' : 'unobserved',
+    rows: pairs.map(({ agentId, targetId }) => {
+      const removal = pendingRemovals.get(pairKey({ agentId, targetId }));
+      // A reused native ID cannot borrow a prior project's pending record.
+      const associated = !removal || (agentId === selected ? removal.agentProjectPath : removal.targetProjectPath) === projectPath;
+      return { agentId, targetId, pendingRemoval: associated ? known(!!removal) : unavailable<boolean>(),
+        removalSaved: associated ? known(removal ? pendingSaved : null) : unavailable<boolean | null>() };
+    }),
+  };
+}
+const linkMemorySignature = (value: DispatcherLinkMemoryDisplay) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+function linkMemoryReceipt(selected: string, projectPath: string, pairs: Pair[], baseDir: string, admitted: string): DisplayReceipt {
+  return { current: () => { try { return getBaseDirPath() === baseDir && linkMemorySignature(knownLinkMemory(projectPath, selected, pairs)) === admitted; } catch { return false; } } };
+}
+/**
+ * Only caller-admitted selected pairs, bounded before copying. No global map
+ * traversal, disk access, lock, initialization, retry, notification or probe.
+ * A false pending value means no process-known record, NOT verified disk absence.
+ */
+export function readDispatcherLinkMemoryForDisplay(selected: string, projectPath: string, pairs: readonly Pair[], options: { receipts?: DisplayReceipt[] } = {}): DisplayValue<DispatcherLinkMemoryDisplay> {
+  const inputs = [{ field: 'Process-known selected Dispatcher link state', source: 'host-cache' as const, observedAt: Date.now() }];
+  if (!linkDisplayId(selected) || !linkDisplayProject(projectPath) || !Array.isArray(pairs)) return { state: 'unavailable', reason: 'invalid', inputs };
+  if (pairs.length > 100) return { state: 'unavailable', reason: 'limit', inputs };
+  const admitted: Pair[] = [], seen = new Set<string>();
+  for (const pair of pairs) {
+    if (!pair || !linkDisplayId(pair.agentId) || !linkDisplayId(pair.targetId) || pair.agentId === pair.targetId || pair.agentId !== selected && pair.targetId !== selected) return { state: 'unavailable', reason: 'invalid', inputs };
+    const k = pairKey(pair); if (seen.has(k)) return { state: 'unavailable', reason: 'invalid', inputs };
+    seen.add(k); admitted.push({ agentId: pair.agentId, targetId: pair.targetId });
+  }
+  const value = knownLinkMemory(projectPath, selected, admitted), baseDir = getBaseDirPath();
+  if (!linkDisplayProject(baseDir)) return { state: 'unavailable', reason: 'invalid', inputs };
+  options.receipts?.push(linkMemoryReceipt(selected, projectPath, admitted, baseDir, linkMemorySignature(value)));
+  return { state: 'ok', value, inputs };
+}
 
 function isPendingRemoval(value: unknown): value is PendingRemoval {
   const record = value as Record<string, unknown> | null;
