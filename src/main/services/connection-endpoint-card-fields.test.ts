@@ -39,6 +39,6 @@ it('uses shared helper-policy semantics rather than inferring tool or connection
 });
 it('keeps verified blank name distinct from unavailable and uses existing display redaction/truncation', () => {
   expect(endpointCardFields(row({ name: '' })).saved).toContain('Blank name'); expect(endpointCardFields(row({ name: '' })).savedName).toBeUndefined();
-  expect(endpointCardFields(row({ name: 'x'.repeat(1025) })).saved).toContain('Name unavailable');
+  expect(endpointCardFields(row({ name: 'x'.repeat(1025) })).saved).toContain('Name exceeds this read’s limit');
   const result = endpointCardFields(row({ name: 'apiKey=PRIVATE_CREDENTIAL' }, { name: 'x'.repeat(300) })); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_CREDENTIAL'); expect.soft(result.memory).toContain('[text truncated]');
 });

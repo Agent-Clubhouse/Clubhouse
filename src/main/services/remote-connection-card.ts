@@ -116,7 +116,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
         try { manualMemory = readDispatcherLinkMemoryForDisplay(selected, projectPath, manual.value.rows, { receipts: options.receipts }); }
         catch { manualMemory = { state: 'unavailable', reason: 'unreadable', inputs: [] }; }
         if (endpointTarget && manual.value.rows.length) {
-          endpointMetadata = readSavedDispatcherEndpointMetadataForDisplay({ agentId: selected, projectPath: projectPath, target: endpointTargetReceipt(options.authorized, endpointTarget) }, manual.value.rows,
+          endpointMetadata = readSavedDispatcherEndpointMetadataForDisplay({ agentId: selected, projectPath, target: endpointTargetReceipt(options.authorized, endpointTarget) }, manual.value.rows,
             { receipts: options.receipts, readLoadedCache: endpointCache });
         }
       }
@@ -154,7 +154,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       const pair = ensure(link.agentId, link.targetId, 'agent'); pair.manual = link;
       if (endpointTarget) {
         const metadata = endpointMetadata?.state === 'ok' ? endpointMetadata.value.rows.find((row) => row.agentId === link.agentId && row.targetId === link.targetId) : undefined;
-        pair.manualFields = metadata ? endpointCardFields(metadata) : { saved: endpointMetadata?.state === 'unavailable' && endpointMetadata.reason === 'limit' ? 'Saved target metadata exceeds this read’s limit' : 'Saved target metadata unavailable' };
+        pair.manualFields = metadata ? endpointCardFields(metadata) : { saved: endpointMetadata?.state === 'unavailable' && endpointMetadata.reason === 'limit' ? 'Saved target details exceed this read’s limit' : 'Saved target details unavailable' };
       }
       if (manualMemory?.state === 'ok') pair.manualMemory = manualMemory.value.rows.find((state) => state.agentId === link.agentId && state.targetId === link.targetId);
     }

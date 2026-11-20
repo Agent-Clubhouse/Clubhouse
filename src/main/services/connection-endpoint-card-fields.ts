@@ -14,7 +14,7 @@ function describe(fields: ConnectionEndpointFields): string {
   const helper = known(fields.helper), disposed = known(fields.disposed), connect = known(fields.connectToDispatcher);
   const origin = connect === undefined ? '' : fields.connectSource === 'agent' ? ' · explicit setting'
     : fields.connectSource === 'default' ? helper === true ? ' · helper policy' : ' · follows Orchestrate' : ' · origin unavailable';
-  return [name(fields) ?? (fields.name.state === 'ok' && fields.name.value === '' ? 'Blank name' : 'Name unavailable'),
+  return [name(fields) ?? (fields.name.state === 'ok' && fields.name.value === '' ? 'Blank name' : fields.name.state === 'unavailable' && fields.name.reason === 'limit' ? 'Name exceeds this read’s limit' : 'Name unavailable'),
     helper === undefined ? 'helper role unavailable' : helper ? 'configured helper' : 'not marked as a helper',
     disposed === undefined ? 'disposal status unavailable' : disposed ? 'marked disposed' : 'not marked disposed',
     connect === undefined ? 'Connect to Dispatcher unavailable' : `Connect to Dispatcher ${connect ? 'On' : 'Off'}${origin}`].join(' · ');
@@ -25,9 +25,9 @@ export function endpointCardFields(row: SavedDispatcherEndpointMetadataRow): End
   if (row.relationship !== 'recorded') return { saved: row.relationship === 'different-selected-project'
     ? 'Saved link project does not match this selected agent' : 'No matching saved link association' };
   const endpoint = row.endpoint;
-  if (!endpoint || endpoint.state !== 'ok') return { saved: endpoint?.reason === 'limit' ? 'Saved target metadata exceeds this read’s limit' : 'Saved target metadata unavailable' };
+  if (!endpoint || endpoint.state !== 'ok') return { saved: endpoint?.reason === 'limit' ? 'Saved target details exceed this read’s limit' : 'Saved target details unavailable' };
   if (endpoint.value.record !== 'registered-primary') return { saved: endpoint.value.record === 'project-not-registered'
-    ? 'Saved target project is not registered' : 'Target ID not found in the verified primary' };
+    ? 'Target project not found in saved project records' : 'No matching target in saved agent records' };
   const fields = endpoint.value.fields, savedName = name(fields), result: EndpointCardFields = { primaryAdmitted: true, savedName, displayName: savedName, nameOrigin: savedName ? 'saved' : undefined, saved: describe(fields) };
   const cache = row.hostCache;
   if (!cache) return result;
@@ -35,7 +35,7 @@ export function endpointCardFields(row: SavedDispatcherEndpointMetadataRow): End
   if (cache.value.availability !== 'loaded' || cache.value.fields?.state !== 'ok') {
     const status = cache.value.availability;
     return { ...result, memory: status === 'not-loaded' ? 'Host memory not loaded'
-      : status === 'not-in-loaded-index' ? 'Target ID not found in the loaded host index'
+      : status === 'not-in-loaded-index' ? 'Target not found in host memory'
         : status === 'namespace-unconfirmed' ? 'Host memory project association unconfirmed'
           : status === 'changed' ? 'Host memory changed during this read' : 'Host memory fields unavailable' };
   }
