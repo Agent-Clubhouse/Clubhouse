@@ -1,0 +1,56 @@
+Bounded APPROVE — exact PG1 corrected paging/generation composition
+Sourcefee2d0c192d505b53983d49f16be430c1245c6f2/tree9e106a525de0792ddd506b66604f0c6c1119a517, lane-full-remote-details/connections-dispatcher-identity.
+Evidence6f9fe0e21497609cb8c3ba4dcbfc92b81c3eb61e/tree38df78115256f26f46cb2b496d7f93f307f73474, lane-full-remote-details/proof-connections-pages-67d.
+Independent source/artifact inspection only. No execution, source edits, live actions, CI/PR/merge/release or ownership transfer. Approval is this bounded complete67+017 paging/generation composition with PG1 corrected, not full#3733/root/latest-main acceptance.
+
+PG1 disposition
+Closed within inspected contract. The native-ID omission no longer silently reports a complete empty inventory:
+- exact admitted canonical role folder is excluded from ordinary source inventory.
+- observed registered aliases are excluded only after their bounded primary read establishes the same directory namespace as the admitted canonical directory.
+- different/unproven same-native-ID normal Connect-on primary remains project-qualified, identityAmbiguous:true, unknown count/completefalse. Configured adapter emits applicabilityunknown/directions[] and actualCard explicitly explains unavailable endpoint association; summary counts policy/helper records rather than claiming all are configured relationships.
+- other distinct-ID records and8-entry continuation remain available.
+Owner confirmed ordinary dispatcherWiresForProject's nativeID skip as a restore limitation; this implementation does not invent configured two-way/default/effective directions for the ambiguous record. It preserves useful saved primary/host-memory observations without promoting them to role/runtime/permission authority.
+
+Alias/currentness and unknown boundaries
+Canonical directory stat dev/positiveino is joined to the registered-primary reader's realpath/lstat root tuple, whose path chain is verified around the held PRIMARY FILE descriptor. Selected directory, strict role/primary, registry and observed alias-primary receipts are all retained to final currentness. There is no held root-directory handle, continuous path lock, historical incarnation or universal ABA guarantee.
+Real alias retarget control removes the registered alias and redirects it to a different actual directory after the first read; canonical role receipt remains current while at least one retained source receipt becomes invalid. Restored GREEN executes this sequence. The alias-adoption mutant fails the earlier HARD result assertion, so its later retarget checks are unreached; do not claim RED exercised those later assertions.
+If canonical stat identity is unsupported, return unavailable; if a registered root lacks a usable namespace, leave it explicitly partial/unavailable rather than adopt it. Unsupported-inode test uses real files with mocked stat inode0. Its RED fails the first registered-root partial-state assertion before the canonical-unsupported second assertion; GREEN independently covers both. This is not observed behavior on an actual unsupported filesystem.
+No new root/cache loading, operational source collection, lifecycle write or directory mutation is performed by the reader. Fixture mutations are intentional test controls, not reader side effects.
+
+Exact composition/source verification
+Eight changed paths from rejected017: three production projectors, four test files and a note. All other tracked entries remain equal; eight critical runtime/query/client/server/schema/renderer/witness blobs independently match017, including Main/Quick generation captures and final fences. Corrective fee commit adds one unsupported-namespace refusal and tests/note atop previously inspectedb576; no broader cold WIP enters scope.
+The complete67 paging consumer had been inspected in the017 review; that rejection remains historical. This exact successor remedies PG1 and repeats selected risk controls/whole targeted GREEN. No assertion that67 was previously accepted, no automatic parent count/verdict transfer.
+Retained bounds/authority: fixed source/card query enums, offsets0..4096, existing eligible paired/pinned desktop read gate and final auth/role/run/selected/source receipts, client+renderer echo and host/snapshot fencing. Max16 roots/4096 registry visits/4096 two-pass agent visits,4MiB/file,8MiB initial root-primary+4MiB registry,64alias probes,8related endpoints/page. Receipt rereads separately bounded by retained evidence; no hard I/O deadline/universal heap claim. Pages remain fresh independent observations; full Details still assembles other cards.
+
+Exact artifact/linkage verification
+Directory docs/implementation-notes/evidence/3733-fee2d0c19/.
+Manifest SHA256501b1e5393dbab516e3df2105865cf4ecc783cc538476f31f152e8869bdf49bb,61 required/listed artifact hashes all match (62files includingmanifest).
+Fourteen control source changes independently reconstructed from exactfee source: all original/mutated/restoredSHA256s agree, patch bytes match, exact source restored clean. All17 admitted launches (14RED+GREEN+route/client+tsc) bind103committed fixture identities equalbefore/after, ANNEX_MOBILE_FIXTURES absent, actual gateSTART/END. No formal75. Driver stdout b8172a9b803685a949c9d25f0d4b552ef40c63fc455d3b21f667d751206ee17a matches closed driverexit0 receipt.
+Remote readbacks confirm exact source/evidence refs above. Before/after seals are not continuous monitoring.
+
+Observed validation, not rerun by reviewer
+11files357PASS/no skips; separate2file route/client16PASS815intentionallyunselected; tsc--noEmit0. Not canonical/full831route-suite/CI/E2E.
+14RED results in control order:
+native-ID omission2FAIL;canonical-role adoption2FAIL;canonical-alias adoption1FAIL;unsupported-root adoption1FAIL;ambiguous-configured-direction1FAIL;hidden ambiguity1FAIL;match-offset2FAIL;byte-deferral1FAIL;row-deferral1FAIL;final-source1FAIL2PASS;Mainfinalgeneration2FAIL3PASS;Mainlatecapture1FAIL;Quickfinalgeneration2FAIL3PASS;Quicklatecapture1FAIL.
+Scope of controls:
+- actual primary/registry/role witnesses and selected field/Card composition; cached role identity/lifecycle/runtime and later action/canvas callbacks modeled.
+- same-ID/page count/entry identity and continuation assertions separated; independent records remain.
+- actual late normal-primary edit in modeled later Action callback reaches stale200/no-cards/settings/provider soft failures under removed final receipt; unchanged200 and revoked403/no-cards retain.
+- actualCard ambiguity omission mutant reaches missing explanation; no renderer/live host/native-process proof.
+- Main/Quick same-object/app/native/registration hard prestates +early/late modeled generation control retains exact placement/final-fence discrimination; stable/unsupported200 and revoked403 remain independent.
+- byte-deferral RED stops first boundary; restored GREEN retrieves later root. Earlier017 parent-project hardstop before standalone PRIVATE assertion and cache-root final-withholding versus extra-callback distinctions remain historical, not upgraded.
+
+Baseline/history
+Repairedbf6b3fd01b717b5690b982217993a3d6abceb81a/treefd0b115bc3f8abb1621e355ee3f4d9d19990506e: production017 unchanged,3FAIL24SKIP with reached separated identity/count/continuation and synthetic canonical-worker exclusion assertions. Manifest99bc877... and all four original hashes now verify in portable package.
+The previously missing original runner survived/tmp; copied bytes SHA25625d55aaeb099b59de809604b43c886e8dff3001467a70a8132f04625f1b1596e matches original manifest. This resolves missing-file availability via CURRENT location linkage; it is not recreated launch provenance/retroactive sealing. Wrapper0 means expected failing child capture only; baseline earlier75 excluded.
+Originalf9 combined array matcher also expected1entry when its legitimate page had8: preserve that limitation and original failures; do not credit it alone as identity discrimination. Earlier225/alias18/development compiler counts do not transfer to final357.
+017/57d source rejection and original48baseline on9a9WIP (NOT executed67) remain intact. Fresh-cwd zero-test tls failures and unchanged67 overlay failure remain unresolved-mechanism/current-linkage history, not generalized infrastructure or portability claims.
+
+Remaining gates/scope
+Assignedf122 root unchanged; no full parity, new latest-main integration, PR/CI, runtime eligibility, effective grants, MCP handshake, live host/phone, operational restore, public release or Mini active takeover accepted.
+Cold tool/Canvas/zone/group/user/helper-parent origins, Quick paging, suspension/current eligibility, navigation/folds and finite nonConnections/provider matrix remain separate unfinished work. #3706 public release hold stays; superseded#3611 merge hold not reinstated. No duplicate validation requested.
+
+Source:
+https://github.com/Agent-Clubhouse/Clubhouse/tree/fee2d0c192d505b53983d49f16be430c1245c6f2
+Evidence:
+https://github.com/Agent-Clubhouse/Clubhouse/blob/6f9fe0e21497609cb8c3ba4dcbfc92b81c3eb61e/docs/implementation-notes/evidence/3733-fee2d0c19/3733-fee2d0c19-report.md

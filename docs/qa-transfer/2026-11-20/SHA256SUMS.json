@@ -78,6 +78,12 @@
       "originalSourceSha256": "c4ddd8856dfc938dd7502c30103eeca2d0e87ae54b82892f56b5aca02f474f90",
       "bytes": 3867,
       "sha256": "ab9a273e2f30ac7d73679f3c45ab96c9ef58ab134692135e05d690a25a8a1a2b"
+    },
+    {
+      "path": "reports/3733-fee2d0c19-independent-pg1-successor-verdict.txt",
+      "originalSourceSha256": "4661d714abce376182cd853e95596f58c9de1be54cb39563440c8bc03bdb571e",
+      "bytes": 9118,
+      "sha256": "e24d17cdc91edede6588ba37be6fb88e75ed75f9a0fca7805bdb2df7ec7f75ed"
     }
   ],
   "copyNote": "Only redundant blank lines at EOF normalized in Git copies; original reports unchanged. Original and copied hashes retained."
