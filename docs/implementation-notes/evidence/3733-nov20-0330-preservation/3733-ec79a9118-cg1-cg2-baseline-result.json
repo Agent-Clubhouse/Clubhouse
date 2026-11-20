@@ -1,0 +1,11 @@
+{
+  "head": "ec79a9118f5ad85ba66ec80ce0e058b65bf64d3c",
+  "tree": "0652a945026c0c6328a24a9fee474b864ff098eb",
+  "testExit": 1,
+  "expectedFailureCapture": true,
+  "onlyTestPaths": [
+    "src/main/services/saved-group-connections-display.test.ts"
+  ],
+  "productionTreeEqualBase": true,
+  "logSHA256": "9083dc9bdf4b03b12216e5aafa3adcd380f9afff4b4c56ba1bf3c837b7ee1e40"
+}

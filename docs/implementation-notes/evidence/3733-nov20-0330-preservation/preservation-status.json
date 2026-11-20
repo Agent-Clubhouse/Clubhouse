@@ -1,0 +1,43 @@
+{
+  "capturedAt": "2026-11-20T11:32:23.657415+00:00",
+  "sourceBranch": "origin/lane-full-remote-details/cold-group-cg1",
+  "sourceHead": "af8b9cfa95bbbcb640d29477c6b1572be77bfd86",
+  "sourceTree": "4ba7589e69e9190e1e29fdf725529170fe662a8f",
+  "status": "UNREVIEWED correction; full exact cold proof not yet launched. f122 assigned root unchanged. Rejected463 formal proof never launched.",
+  "worktrees": 89,
+  "historicalOverlays": [
+    {
+      "head": "2056515cff3b038ffec342ea2e104b2a51b57e40",
+      "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/205",
+      "patch": "historical-205-CURRENT-overlay.patch",
+      "linkage": "CURRENT preservation, not contemporaneous launch receipt; no reexecution/restoration"
+    },
+    {
+      "head": "8dbddb4ea17284dba0d96377d0b5d1b4c3d59df4",
+      "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/8db",
+      "patch": "historical-8db-CURRENT-overlay.patch",
+      "linkage": "CURRENT preservation, not contemporaneous launch receipt; no reexecution/restoration"
+    },
+    {
+      "head": "a2729f1c85f0acf5d2432ead8c8d8f6bbb59f4bc",
+      "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/a272",
+      "patch": "historical-a272-CURRENT-overlay.patch",
+      "linkage": "CURRENT preservation, not contemporaneous launch receipt; no reexecution/restoration"
+    },
+    {
+      "head": "36bc86d65ae4ffbf2e08f85129a5407b7da042c2",
+      "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/helper36-baseline",
+      "patch": "historical-helper36-baseline-CURRENT-overlay.patch",
+      "linkage": "CURRENT preservation, not contemporaneous launch receipt; no reexecution/restoration"
+    },
+    {
+      "head": "866633d79fbdd4d143537977dea45836a30a7010",
+      "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/security866",
+      "patch": "historical-security866-CURRENT-overlay.patch",
+      "linkage": "CURRENT preservation, not contemporaneous launch receipt; no reexecution/restoration"
+    }
+  ],
+  "developmentLogs": "CURRENT content linkage only. Working-tree/development counts do not establish exact source acceptance. Original failed TS/75/refusals retained; none transferred.",
+  "baselines": "Four original explicit8-artifact manifests plus each manifest; expected-failure driver0, not product pass. Immutable original linkage preserved.",
+  "ownership": "Sender ACTIVE; Mini frozen67/d95 custody only; no active remaining-work takeover yet."
+}

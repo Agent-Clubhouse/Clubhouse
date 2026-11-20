@@ -1,0 +1,2 @@
+2026-11-20T10:33:44Z START full-details idle=77% unused=9585M avail=29654M freepct=76 comp=7522M swap=1836M pid=61727 cmd=node_modules/.bin/tsc --noEmit
+2026-11-20T10:33:54Z END full-details rc=0

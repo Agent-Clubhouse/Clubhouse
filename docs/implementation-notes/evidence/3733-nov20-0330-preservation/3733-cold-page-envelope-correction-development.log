@@ -1,0 +1,14 @@
+2026-11-20T11:02:46Z START full-details idle=66% unused=8470M avail=30034M freepct=77 comp=7490M swap=1836M pid=79293 cmd=node_modules/.bin/vitest run src/main/services/remote-connection-card.test.ts src/main/services/remote-agent-details.test.ts src/main/services/remote-quick-details.test.ts src/renderer/features/agents/details/RemoteConnectionsCard.test.tsx src/shared/remote-agent-details.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-cold-origins
+
+
+ Test Files  5 passed (5)
+      Tests  279 passed (279)
+   Start at  03:02:46
+   Duration  2.77s (transform 1.60s, setup 74ms, import 2.16s, tests 2.72s, environment 208ms)
+
+2026-11-20T11:02:49Z END full-details rc=0

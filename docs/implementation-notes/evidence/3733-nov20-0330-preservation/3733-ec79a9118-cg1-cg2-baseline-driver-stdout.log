@@ -1,0 +1,68 @@
+2026-11-20T11:19:35Z START full-details idle=72% unused=6004M avail=27248M freepct=77 comp=7449M swap=1836M pid=90248 cmd=node_modules/.bin/vitest run src/main/services/saved-group-connections-display.test.ts --maxWorkers=2 --testNamePattern unknown automatic group applicability|host-relative reach
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-cold-origins
+
+ ❯ |main| src/main/services/saved-group-connections-display.test.ts (19 tests | 4 failed | 8 skipped) 116ms
+   × distinguishes unknown automatic group applicability from known empty: cold-host 20ms
+   × distinguishes unknown automatic group applicability from known empty: unknown-helper 8ms
+   × distinguishes unknown automatic group applicability from known empty: unknown-disposed 8ms
+   × keeps host-relative reach separate from saved explicit group membership: other-host-local 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/saved-group-connections-display.test.ts > distinguishes unknown automatic group applicability from known empty: cold-host
+ FAIL  |main| src/main/services/saved-group-connections-display.test.ts > distinguishes unknown automatic group applicability from known empty: unknown-helper
+ FAIL  |main| src/main/services/saved-group-connections-display.test.ts > distinguishes unknown automatic group applicability from known empty: unknown-disposed
+AssertionError: expected { state: 'ok', …(2) } to match object { state: 'ok', value: { …(3) } }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "state": "ok",
+    "value": {
+-     "complete": false,
++     "complete": true,
+      "knownMatches": 0,
+-     "unknownRows": 1,
++     "unknownRows": 0,
+    },
+  }
+
+ ❯ src/main/services/saved-group-connections-display.test.ts:90:23
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |main| src/main/services/saved-group-connections-display.test.ts > keeps host-relative reach separate from saved explicit group membership: other-host-local
+AssertionError: expected { groupId: 'reach', …(8) } to match object { groupId: 'reach', …(2) }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "applicability": "out-of-scope",
++   "applicability": "configured",
+    "groupId": "reach",
+    "membership": "explicit",
+  }
+
+ ❯ src/main/services/saved-group-connections-display.test.ts:102:37
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 7 passed | 8 skipped (19)
+   Start at  03:19:35
+   Duration  299ms (transform 84ms, setup 5ms, import 101ms, tests 116ms, environment 0ms)
+
+2026-11-20T11:19:35Z END full-details rc=1
+
+EXPECTED_FAILURE_CAPTURED ec79a9118f5ad85ba66ec80ce0e058b65bf64d3c 0652a945026c0c6328a24a9fee474b864ff098eb

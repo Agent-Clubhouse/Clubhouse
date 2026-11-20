@@ -1,0 +1,14 @@
+2026-11-20T07:03:02Z START full-details idle=89% unused=12G avail=31779M freepct=77 comp=7105M swap=1892M pid=7726 cmd=node_modules/.bin/vitest run src/main/services/configured-dispatcher-directions.test.ts src/main/services/remote-connection-card.test.ts src/main/services/remote-agent-details.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/cold-dispatcher-automatic
+
+
+ Test Files  3 passed (3)
+      Tests  183 passed (183)
+   Start at  23:03:03
+   Duration  1.20s (transform 1.22s, setup 12ms, import 1.61s, tests 518ms, environment 0ms)
+
+2026-11-20T07:03:04Z END full-details rc=0

@@ -1,0 +1,47 @@
+diff --git a/src/main/services/remote-agent-details.test.ts b/src/main/services/remote-agent-details.test.ts
+index d8fff09b6..24dcc8b5b 100644
+--- a/src/main/services/remote-agent-details.test.ts
++++ b/src/main/services/remote-agent-details.test.ts
+@@ -1066,3 +1066,20 @@ describe('selected saved group membership in full Details', () => {
+     } finally { capture.mockRestore(); identity.resetForTests(); home.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+   });
+ });
++
++describe('selected Connections envelope admission', () => {
++  it('preserves every requested source field under unrelated full-card pressure', async () => {
++    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-source-envelope-'))), a = path.join(root, 'a'), b = path.join(root, 'b'); for (const f of [a, b]) await fs.mkdir(path.join(f, '.clubhouse'), { recursive: true }); m.base = root; m.realConnections = true; m.realWitness = true;
++    const selected = { ...agent(), worktreePath: a }, p = { ...project, name: '😀'.repeat(120), path: a }; await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [p, { id: 'p-other', name: 'Other project', path: b }] })); await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), JSON.stringify([selected])); await fs.writeFile(path.join(b, '.clubhouse', 'agents.json'), JSON.stringify(Array.from({ length: 8 }, (_, i) => ({ id: 'target-' + i, name: i + '😀'.repeat(120) }))));
++    const sourceFile = path.join(a, '.clubhouse', '.local', 'orchestrator-connections.json'); await fs.mkdir(path.dirname(sourceFile)); await fs.writeFile(sourceFile, JSON.stringify({ version: 1, connections: Array.from({ length: 8 }, (_, i) => ({ ownerId: selected.id, agentId: selected.id, targetId: 'target-' + i, targetKind: 'agent', targetProjectPath: b, scope: 'granted', createdAt: '2026-11-20T00:00:00Z' })) }));
++    m.target.mockResolvedValue({ agent: selected, project: p });
++    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard; let before = 0;
++    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); expect(args[0].omitted).toBe(0); before = args[0].rows.length; });
++    const presentation = await import('./remote-details-presentation'), actualSection = presentation.section;
++    const pressure = vi.spyOn(presentation, 'section').mockImplementation(async (c, run) => { await actualSection(c, run); if (c.id !== 'connections') c.rows = Array.from({ length: 100 }, () => ({ label: '😀'.repeat(1024), value: 'x'.repeat(2048) })); });
++    try {
++      const response = await readRemoteAgentDetails(selected.id, () => true, { card: 'connections', source: 'tool-records' }); expect(before).toBe(40); expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, selected.id)).toBe(true);
++      const body = response.body as RemoteAgentDetails, c = body.cards.find((c) => c.id === 'connections')!; expect.soft(c.omitted).toBe(0); expect.soft(c.rows).toHaveLength(before); expect(Buffer.byteLength(JSON.stringify(body))).toBeLessThanOrEqual(256 * 1024);
++    } finally { pressure.mockRestore(); capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
++  });
++});
+diff --git a/src/main/services/remote-connection-card.test.ts b/src/main/services/remote-connection-card.test.ts
+index 7e4b54188..b8c2d9581 100644
+--- a/src/main/services/remote-connection-card.test.ts
++++ b/src/main/services/remote-connection-card.test.ts
+@@ -297,3 +297,17 @@ it('keeps same-ID ordinary Dispatcher metadata visible with explicit ambiguity a
+   expect(result.c.rows.some((r) => r.label.endsWith('starting switches') || r.value.includes('two configured directions'))).toBe(false); expect(JSON.stringify(result.c)).not.toContain(root); expect(receipts.every((r) => r.current())).toBe(true);
+   await fs.promises.writeFile(normalFile, '[]'); expect(role.current()).toBe(true); expect(receipts.some((r) => !r.current())).toBe(true);
+ });
++
++it('continues every retained target-kind variant without losing fields to the card row budget', async () => {
++  const kinds = ['browser', 'agent', 'terminal', 'group-project', 'plugin'] as const, collects: Array<ReturnType<typeof vi.fn>> = [];
++  for (const kind of kinds) { const collect = vi.fn(async () => Array.from({ length: 8 }, (_, i) => wire(selected, 'variant-' + i, { targetKind: kind, targetName: 'Variant target ' + i }))); collects.push(collect); registerPersistedBindingSource({ id: 'variant-' + kind, collect }); }
++  await rebuildPersistedBindings(); for (const collect of collects) collect.mockClear();
++  const cached = readCachedConnectionSourcesForDisplay(selected); expect(cached.state).toBe('ok'); if (cached.state !== 'ok') throw new Error('fixture'); expect(cached.value.pairs).toHaveLength(8); expect(cached.value.pairs.every((p) => p.sources.length === 5 && p.sources.every((s) => s.binding.state === 'ok'))).toBe(true);
++  const seen = new Set<string>(); let offset = 0;
++  for (let page = 0; page < 10; page++) {
++    const result = await read(false, { page: { card: 'connections', source: 'sources', offset } }); expect(result.c.state).toBe('ok'); expect.soft(result.c.omitted).toBe(0);
++    for (const row of result.c.rows) if (/^Variant target \d+$/.test(row.label)) seen.add(row.label + ':' + row.value.split(' · ')[0]);
++    const next = result.c.connectionPage?.next; if (!next) break; expect(next.offset).toBeGreaterThan(offset); offset = next.offset;
++  }
++  expect.soft(seen.size).toBe(40); for (const collect of collects) expect(collect).not.toHaveBeenCalled(); expect(m.legacy).not.toHaveBeenCalled();
++});

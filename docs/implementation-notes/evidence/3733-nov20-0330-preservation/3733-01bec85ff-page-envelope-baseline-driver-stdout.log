@@ -1,0 +1,89 @@
+2026-11-20T11:00:56Z START full-details idle=81% unused=8400M avail=29973M freepct=77 comp=7496M swap=1836M pid=78483 cmd=node_modules/.bin/vitest run src/main/services/remote-connection-card.test.ts src/main/services/remote-agent-details.test.ts --maxWorkers=2 --testNamePattern retained target-kind variant|requested source field
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-cold-origins
+
+ ❯ |main| src/main/services/remote-connection-card.test.ts (53 tests | 1 failed | 52 skipped) 12ms
+   × continues every retained target-kind variant without losing fields to the card row budget 12ms
+ ❯ |main| src/main/services/remote-agent-details.test.ts (168 tests | 1 failed | 167 skipped) 456ms
+     × preserves every requested source field under unrelated full-card pressure 455ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected Connections envelope admission > preserves every requested source field under unrelated full-card pressure
+AssertionError: expected 9 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 9
+
+ ❯ src/main/services/remote-agent-details.test.ts:1082:133
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected Connections envelope admission > preserves every requested source field under unrelated full-card pressure
+AssertionError: expected [ { …(2) }, { …(2) }, { …(2) }, …(28) ] to have a length of 40 but got 31
+
+- Expected
++ Received
+
+- 40
++ 31
+
+ ❯ src/main/services/remote-agent-details.test.ts:1082:162
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |main| src/main/services/remote-connection-card.test.ts > continues every retained target-kind variant without losing fields to the card row budget
+AssertionError: expected 20 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 20
+
+ ❯ src/main/services/remote-connection-card.test.ts:308:166
+    306|   const seen = new Set<string>(); let offset = 0;
+    307|   for (let page = 0; page < 10; page++) {
+    308|     const result = await read(false, { page: { card: 'connections', so…
+       |                                                                                                                                                                      ^
+    309|     for (const row of result.c.rows) if (/^Variant target \d+$/.test(r…
+    310|     const next = result.c.connectionPage?.next; if (!next) break; expe…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |main| src/main/services/remote-connection-card.test.ts > continues every retained target-kind variant without losing fields to the card row budget
+AssertionError: expected 34 to be 40 // Object.is equality
+
+- Expected
++ Received
+
+- 40
++ 34
+
+ ❯ src/main/services/remote-connection-card.test.ts:312:26
+    310|     const next = result.c.connectionPage?.next; if (!next) break; expe…
+    311|   }
+    312|   expect.soft(seen.size).toBe(40); for (const collect of collects) exp…
+       |                          ^
+    313| });
+    314|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 219 skipped (221)
+   Start at  03:00:56
+   Duration  1.32s (transform 1.32s, setup 8ms, import 1.73s, tests 468ms, environment 0ms)
+
+2026-11-20T11:00:57Z END full-details rc=1
+
+EXPECTED_FAILURE_CAPTURED 01bec85ff0b0c662e1fb57d812f27cfe239d2e21 f7b616d9b0ddaa4097eef9fc10f1a20c9ae7dcce

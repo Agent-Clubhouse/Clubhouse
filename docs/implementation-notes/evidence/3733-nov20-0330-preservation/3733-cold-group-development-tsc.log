@@ -1,0 +1,5 @@
+2026-11-20T10:39:15Z START full-details idle=88% unused=10G avail=29708M freepct=77 comp=7510M swap=1836M pid=65864 cmd=node_modules/.bin/tsc --noEmit
+src/main/services/saved-group-connections-display.ts(106,135): error TS2339: Property 'filter' does not exist on type 'unknown'.
+src/main/services/saved-group-connections-display.ts(106,143): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/main/services/saved-group-connections-display.ts(110,102): error TS2339: Property 'length' does not exist on type 'unknown'.
+2026-11-20T10:39:24Z END full-details rc=2

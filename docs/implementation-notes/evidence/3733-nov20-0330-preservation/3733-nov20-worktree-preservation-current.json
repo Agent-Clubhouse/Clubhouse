@@ -1,0 +1,803 @@
+[
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details",
+    "branch": "lane-full-remote-details/full-parity",
+    "sha": "f1220c2a2324d62021a222d24f0e637a8416ecc0",
+    "upstream": "origin/lane-full-remote-details/full-parity",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/association-import-check",
+    "branch": "",
+    "sha": "f582218695643c4ee3897fe47a4170d8aec94244",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/automatic-manual-identity-baseline",
+    "branch": "lane-full-remote-details/automatic-manual-identity-baseline",
+    "sha": "087e598ef220c7ffc899964136bef9737537ce84",
+    "upstream": "origin/lane-full-remote-details/automatic-manual-identity-baseline",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/automatic-manual-identity-correction",
+    "branch": "lane-full-remote-details/automatic-manual-identity-correction",
+    "sha": "2482e8bc2a93f55bcd39d4cd9f5fdcfff8053467",
+    "upstream": "origin/lane-full-remote-details/automatic-manual-identity-correction",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/changes-security",
+    "branch": "lane-full-remote-details/changes-security",
+    "sha": "cbf93616eafbadd4151de453d13fb04f63c16b5a",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/cold-dispatcher-automatic",
+    "branch": "lane-full-remote-details/cold-dispatcher-automatic",
+    "sha": "133c9fe78869e2147ed99213052b630708b1d66a",
+    "upstream": "origin/lane-full-remote-details/cold-dispatcher-automatic",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/cold-dispatcher-source",
+    "branch": "lane-full-remote-details/cold-dispatcher-source",
+    "sha": "180c0edc3a0fb136162c5787842bfa79d0e6a554",
+    "upstream": "origin/lane-full-remote-details/cold-dispatcher-source",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connection-host-cache",
+    "branch": "lane-full-remote-details/connection-host-cache",
+    "sha": "e51dc6dbd8c4a6f226eaf3c3cb0d6152021a91ad",
+    "upstream": "origin/lane-full-remote-details/connection-host-cache",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connection-host-cache-current",
+    "branch": "lane-full-remote-details/connection-host-cache-current",
+    "sha": "f90369af9968157b05e2817f0b9981f92bfbf25e",
+    "upstream": "origin/lane-full-remote-details/connection-host-cache-current",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connection-metadata-inventory",
+    "branch": "lane-full-remote-details/connection-metadata-inventory",
+    "sha": "39eedb6e2bc1a0c708a74de1b20eb4e1f960fcc4",
+    "upstream": "origin/lane-full-remote-details/connection-metadata-inventory",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connection-policy-fields",
+    "branch": "lane-full-remote-details/connection-policy-fields",
+    "sha": "599a9c5fc0ee58123ac7eb2f193f8533b0df74d6",
+    "upstream": "origin/lane-full-remote-details/connection-policy-fields",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-cold-origins",
+    "branch": "lane-full-remote-details/cold-group-cg1",
+    "sha": "ec79a9118f5ad85ba66ec80ce0e058b65bf64d3c",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "M src/main/services/saved-group-connections-display.test.ts\n M src/main/services/saved-group-connections-display.ts",
+    "remoteContains": false
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-complete",
+    "branch": "lane-full-remote-details/connections-pg1-final-proof-run",
+    "sha": "fee2d0c192d505b53983d49f16be430c1245c6f2",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-dispatcher-identity",
+    "branch": "lane-full-remote-details/connections-dispatcher-identity",
+    "sha": "fee2d0c192d505b53983d49f16be430c1245c6f2",
+    "upstream": "origin/lane-full-remote-details/connections-dispatcher-identity",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-full",
+    "branch": "lane-full-remote-details/connections-groups",
+    "sha": "8dbfc56863eca53bcc2cacb1a70b6566a5eb0997",
+    "upstream": "origin/lane-full-remote-details/connections-groups",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction",
+    "branch": "lane-full-remote-details/connections-generation-correction",
+    "sha": "017f7ec9dae90361f09c6c5c8858b3534c95a281",
+    "upstream": "origin/lane-full-remote-details/connections-generation-correction",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-pages-proof",
+    "branch": "lane-full-remote-details/proof-connections-pages-67d",
+    "sha": "6f9fe0e21497609cb8c3ba4dcbfc92b81c3eb61e",
+    "upstream": "origin/lane-full-remote-details/proof-connections-pages-67d",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-passive-composition",
+    "branch": "lane-full-remote-details/connections-passive-composition",
+    "sha": "feedaaf011f8434550fefef97a02f92213b2ea05",
+    "upstream": "origin/lane-full-remote-details/connections-passive-composition",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-pg1-baseline",
+    "branch": "lane-full-remote-details/connections-pg1-baseline",
+    "sha": "bf6b3fd01b717b5690b982217993a3d6abceb81a",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-rc1-baseline",
+    "branch": "lane-full-remote-details/connections-rc1-baseline",
+    "sha": "5012e918ad622628459223cfadfde840a58534cf",
+    "upstream": "origin/lane-full-remote-details/connections-rc1-baseline",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-rc1-correction",
+    "branch": "lane-full-remote-details/connections-rc1-correction",
+    "sha": "f1220c2a2324d62021a222d24f0e637a8416ecc0",
+    "upstream": "origin/lane-full-remote-details/connections-rc1-correction",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/description-framing-correction",
+    "branch": "lane-full-remote-details/description-framing-correction",
+    "sha": "baa8a7de5b7e2c9c57858622776717575f1248be",
+    "upstream": "origin/lane-full-remote-details/description-framing-correction",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-access-composition",
+    "branch": "lane-full-remote-details/dispatcher-access-composition",
+    "sha": "e79d1780b0b3ede003e1c4a65fcf8f7e30eb3664",
+    "upstream": "origin/lane-full-remote-details/dispatcher-access-composition",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-association-dedup",
+    "branch": "lane-full-remote-details/dispatcher-association-dedup",
+    "sha": "ae055159f1c505bad9b3ec486e68d2893383eab1",
+    "upstream": "origin/lane-full-remote-details/dispatcher-association-dedup",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-cache-directory-association",
+    "branch": "lane-full-remote-details/dispatcher-cache-directory-association",
+    "sha": "0854424a0f6d07a8c7ae5292f84e49d8152071de",
+    "upstream": "origin/lane-full-remote-details/dispatcher-cache-directory-association",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-cache-directory-join",
+    "branch": "lane-full-remote-details/dispatcher-cache-directory-join",
+    "sha": "cdf20d3282c62ea3ec7a2782378605ff29d3023d",
+    "upstream": "origin/lane-full-remote-details/dispatcher-cache-directory-join",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-cache-root-baseline",
+    "branch": "lane-full-remote-details/dispatcher-cache-root-baseline",
+    "sha": "3c4675df286084b8add22d85d32ec0a3b9e22e10",
+    "upstream": "origin/lane-full-remote-details/dispatcher-cache-root-baseline",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-cache-root-correction",
+    "branch": "lane-full-remote-details/dispatcher-cache-root-correction",
+    "sha": "88b10c73e265a67189383a42a78eecd3cd936e7b",
+    "upstream": "origin/lane-full-remote-details/dispatcher-cache-root-correction",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-card-composition",
+    "branch": "lane-full-remote-details/dispatcher-card-composition",
+    "sha": "c1f5c2cbb997b2cd6b8db58e5ac7eb1d3ddc898c",
+    "upstream": "origin/lane-full-remote-details/dispatcher-card-composition",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-cold-composition",
+    "branch": "lane-full-remote-details/dispatcher-cold-composition",
+    "sha": "23acd59e3fe557927b5ec5087fd54285450cd0b1",
+    "upstream": "origin/lane-full-remote-details/dispatcher-cold-composition",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-directory-evidence-composition",
+    "branch": "lane-full-remote-details/dispatcher-directory-evidence-composition",
+    "sha": "120f220e3be87e47d5db39e2997ebd11f15cda73",
+    "upstream": "origin/lane-full-remote-details/dispatcher-directory-evidence-composition",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-endpoint-associations",
+    "branch": "lane-full-remote-details/dispatcher-endpoint-associations",
+    "sha": "e83e9a4373663b32f020ea951d11b58d92781080",
+    "upstream": "origin/lane-full-remote-details/dispatcher-endpoint-associations",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-endpoint-cache-evidence",
+    "branch": "lane-full-remote-details/dispatcher-endpoint-cache-evidence",
+    "sha": "b0d925214d31f3ccbc43de2c88d7c3c19f5ae7d5",
+    "upstream": "origin/lane-full-remote-details/dispatcher-endpoint-cache-evidence",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-endpoint-card-fields",
+    "branch": "lane-full-remote-details/dispatcher-endpoint-card-fields",
+    "sha": "96fd884772c9b76b8f755aeebdfc1b2767b2eaf2",
+    "upstream": "origin/lane-full-remote-details/dispatcher-endpoint-card-fields",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-endpoint-evidence-composition",
+    "branch": "lane-full-remote-details/dispatcher-endpoint-evidence-composition",
+    "sha": "18e4ca037b820622d55689de625de0bfede2c709",
+    "upstream": "origin/lane-full-remote-details/dispatcher-endpoint-evidence-composition",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/dispatcher-link-memory",
+    "branch": "lane-full-remote-details/dispatcher-link-memory",
+    "sha": "9f2ff01c047222409c22d2b18e21d1b60576e3ee",
+    "upstream": "origin/lane-full-remote-details/dispatcher-link-memory",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/helper-access-display",
+    "branch": "lane-full-remote-details/helper-access-display",
+    "sha": "12e04e33ab869e930d720b72f80806112c5a10a9",
+    "upstream": "origin/lane-full-remote-details/helper-access-display",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/helper-h3",
+    "branch": "lane-full-remote-details/helper-h3",
+    "sha": "c43ee7d9929cdb676ba1ccde438716d763fdf5cc",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/main-ae565-integration",
+    "branch": "lane-full-remote-details/main-ae565-integration",
+    "sha": "58943bbab06d97ff49272adc7bbbf7ea489ef4b4",
+    "upstream": "origin/lane-full-remote-details/main-ae565-integration",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/managed-evidence-receipts",
+    "branch": "lane-full-remote-details/managed-evidence-receipts",
+    "sha": "d4a555c00c92060a1113c950cb64369deb735515",
+    "upstream": "origin/lane-full-remote-details/managed-evidence-receipts",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/managed-receipts-correction",
+    "branch": "lane-full-remote-details/managed-receipts-correction",
+    "sha": "7bcf812cc08136733e19acf09c67c3cd37057741",
+    "upstream": "origin/lane-full-remote-details/managed-receipts-correction",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/orchestration-followups",
+    "branch": "lane-full-remote-details/orchestration-followups",
+    "sha": "c3e8ec695b443bebeded0607b58d3928c43aeb1a",
+    "upstream": "origin/lane-full-remote-details/orchestration-followups",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-cache-detached",
+    "branch": "lane-full-remote-details/passive-cache-detached",
+    "sha": "7742f7d9c32fdc02736a70cc93bd59c6a890319a",
+    "upstream": "origin/lane-full-remote-details/passive-cache-detached",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-cache-loadedness",
+    "branch": "lane-full-remote-details/passive-cache-loadedness",
+    "sha": "65a4d584ebd86bd7c3f1a85301f9eec2256e8f38",
+    "upstream": "origin/lane-full-remote-details/passive-cache-loadedness",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-connection-directions",
+    "branch": "lane-full-remote-details/passive-connection-directions",
+    "sha": "dee743237894a8edcee078d71d213eba097418af",
+    "upstream": "origin/lane-full-remote-details/passive-connection-directions",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-connections-consumer",
+    "branch": "lane-full-remote-details/passive-connections-consumer",
+    "sha": "9d6ad70290812e7d91077b648aec2e9f522dfc02",
+    "upstream": "origin/lane-full-remote-details/passive-connections-consumer",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-dispatcher-descriptions",
+    "branch": "lane-full-remote-details/passive-dispatcher-descriptions",
+    "sha": "6014aff74ce342ccb0edadb618a3853873008dd9",
+    "upstream": "origin/lane-full-remote-details/passive-dispatcher-descriptions",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-dispatcher-state",
+    "branch": "lane-full-remote-details/passive-dispatcher-state",
+    "sha": "a5ff17016ef82a3b80c4f7047f580b8d993af529",
+    "upstream": "origin/lane-full-remote-details/passive-dispatcher-state",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-global-details",
+    "branch": "lane-full-remote-details/passive-global-details",
+    "sha": "2396f75f9f9f5e0ae7dfbe0a5b5e5e2d2b51fb9b",
+    "upstream": "origin/lane-full-remote-details/passive-global-details",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-live-bindings",
+    "branch": "lane-full-remote-details/passive-live-bindings",
+    "sha": "0b8be4d1a56602744fcac17bdac575a958de629e",
+    "upstream": "origin/lane-full-remote-details/passive-live-bindings",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-managed-details",
+    "branch": "lane-full-remote-details/passive-managed-details",
+    "sha": "ab651b294ad7a4cc73dc438e7c378dfec81e29c0",
+    "upstream": "origin/lane-full-remote-details/passive-managed-details",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-orchestration",
+    "branch": "lane-full-remote-details/passive-orchestration",
+    "sha": "b9adc90d5ee383e33a3b59919962c77bed128ad6",
+    "upstream": "origin/lane-full-remote-details/passive-orchestration",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-own-pairing",
+    "branch": "lane-full-remote-details/passive-own-pairing",
+    "sha": "fabca83c55f410662b87336a8146b83d38fa8c95",
+    "upstream": "origin/lane-full-remote-details/passive-own-pairing",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-pause-router",
+    "branch": "lane-full-remote-details/passive-pause-router",
+    "sha": "2f5cbcbe6feef1c1911c6b9989161dc0dca3de13",
+    "upstream": "origin/lane-full-remote-details/passive-pause-router",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-peer-display",
+    "branch": "lane-full-remote-details/passive-peer-display",
+    "sha": "d856deda51e1a5d602bb7d64ff27c7699e8ef852",
+    "upstream": "origin/lane-full-remote-details/passive-peer-display",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-peer-pairing",
+    "branch": "lane-full-remote-details/passive-peer-pairing",
+    "sha": "4446dfdbf0256ea036976e62cc74686d77a1dbe6",
+    "upstream": "origin/lane-full-remote-details/passive-peer-pairing",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-request-pause",
+    "branch": "lane-full-remote-details/passive-request-pause",
+    "sha": "4182081e353e9fb04372ea26e425d01d75b5b030",
+    "upstream": "origin/lane-full-remote-details/passive-request-pause",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-role-final",
+    "branch": "lane-full-remote-details/passive-role-final",
+    "sha": "2186aaba3da7bd6e90cb0e1035e680f54cd91cd2",
+    "upstream": "origin/lane-full-remote-details/passive-role-final",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-settings-adapters",
+    "branch": "lane-full-remote-details/passive-settings-adapters",
+    "sha": "81abeef84ee3edee19876e1e3b1c4fae2cdb8fcf",
+    "upstream": "origin/lane-full-remote-details/passive-settings-adapters",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-settings-composition",
+    "branch": "lane-full-remote-details/passive-settings-composition",
+    "sha": "8dc9bfa8f19149ded289882d584bc02f8e33948f",
+    "upstream": "origin/lane-full-remote-details/passive-settings-composition",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-settings-endpoint",
+    "branch": "lane-full-remote-details/passive-settings-endpoint",
+    "sha": "76a5b389d69675b571324976c6495fb2705d00de",
+    "upstream": "origin/lane-full-remote-details/passive-settings-endpoint",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-settings-fields",
+    "branch": "lane-full-remote-details/passive-settings-fields",
+    "sha": "40325317ceaa17c86e48ab4d3d9a22f20dcd90b6",
+    "upstream": "origin/lane-full-remote-details/passive-settings-fields",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/passive-source-cache",
+    "branch": "lane-full-remote-details/passive-source-cache",
+    "sha": "e9087be75eb99a6c38fed6820dad55f0b65c6bc6",
+    "upstream": "origin/lane-full-remote-details/passive-source-cache",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/peer-display-key-bound",
+    "branch": "lane-full-remote-details/peer-display-key-bound",
+    "sha": "5b1a67ff2ce689e483a5f155130f324a1fa7c3cc",
+    "upstream": "origin/lane-full-remote-details/peer-display-key-bound",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/provider-label-compat",
+    "branch": "lane-full-remote-details/provider-label-compat",
+    "sha": "286ddeabd1534df467b4a6db8c30e05e0f130e4f",
+    "upstream": "origin/lane-full-remote-details/provider-label-compat",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/provider-read-fence",
+    "branch": "lane-full-remote-details/provider-read-fence",
+    "sha": "540fe04fb114997c63d7d70a7abdc1b12b141aa5",
+    "upstream": "origin/lane-full-remote-details/provider-read-fence",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/quick-foundation",
+    "branch": "lane-full-remote-details/quick-foundation",
+    "sha": "d2091ea2ae9e62d42f36b83deae47f110ad0bbf5",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/quick-template-composition",
+    "branch": "lane-full-remote-details/quick-template-composition",
+    "sha": "0eb69b3c3f141d287390d3b980c110498da09c22",
+    "upstream": "origin/lane-full-remote-details/quick-template-composition",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/quick-template-passive",
+    "branch": "lane-full-remote-details/quick-template-passive",
+    "sha": "743819cd2100521e88c9b0cfb15d1ee6e14b7144",
+    "upstream": "origin/lane-full-remote-details/quick-template-passive",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/settings-epoch",
+    "branch": "lane-full-remote-details/settings-epoch-fixture",
+    "sha": "ca797e14f60897494465c595bfda537042eb1094",
+    "upstream": "origin/lane-full-remote-details/settings-epoch-fixture",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/settings-sc1-baseline",
+    "branch": "lane-full-remote-details/settings-sc1-baseline",
+    "sha": "1d228e43d977754d809304931fbb8719c917ccc5",
+    "upstream": "origin/lane-full-remote-details/settings-sc1-baseline",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/settings-sc1-correction",
+    "branch": "lane-full-remote-details/settings-sc1-correction",
+    "sha": "b917c6611fcca6104b68a1abf7c3902304a50ebc",
+    "upstream": "origin/lane-full-remote-details/settings-sc1-correction",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/source-cache-sc1",
+    "branch": "lane-full-remote-details/source-cache-sc1",
+    "sha": "21cbea6eb9641ef79d0bf875e37278685b8df1dd",
+    "upstream": "origin/lane-full-remote-details/source-cache-sc1",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/source-cache-sc1-correction",
+    "branch": "lane-full-remote-details/source-cache-sc1-correction",
+    "sha": "5c634ccef16c395bbd6ea0383117b4ee76e59bac",
+    "upstream": "origin/lane-full-remote-details/source-cache-sc1-correction",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/205",
+    "branch": "",
+    "sha": "2056515cff3b038ffec342ea2e104b2a51b57e40",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "M src/main/services/read-only-repository-changes.test.ts",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/36b",
+    "branch": "",
+    "sha": "36bc86d65ae4ffbf2e08f85129a5407b7da042c2",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/62f",
+    "branch": "",
+    "sha": "62f184d48f6cebb81b80d6f30671c30e1ebde0b3",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/866",
+    "branch": "",
+    "sha": "866633d79fbdd4d143537977dea45836a30a7010",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/8db",
+    "branch": "",
+    "sha": "8dbddb4ea17284dba0d96377d0b5d1b4c3d59df4",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "M src/main/services/read-only-repository-changes.test.ts",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/a272",
+    "branch": "",
+    "sha": "a2729f1c85f0acf5d2432ead8c8d8f6bbb59f4bc",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "M src/main/services/read-only-repository-changes.test.ts",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/b8",
+    "branch": "",
+    "sha": "b8b01a6590a130c14e0014d1ae2bf6b05ca3dea4",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/dab",
+    "branch": "",
+    "sha": "dab72fdbf1e2b115f4839a6bdf06c733ac649a44",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/e284",
+    "branch": "",
+    "sha": "e284a832d3a105af362f0703c7382f239e66f28f",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/f84",
+    "branch": "",
+    "sha": "f84cbb47dbc655ba687823afaa7f6bd79ba36a97",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/helper36-baseline",
+    "branch": "",
+    "sha": "36bc86d65ae4ffbf2e08f85129a5407b7da042c2",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "M src/main/services/read-only-helper-work.test.ts\n M src/main/services/remote-agent-details.test.ts",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/integrated6d",
+    "branch": "lane-full-remote-details/provider-integration-fixtures",
+    "sha": "9de74a72f55b485a701d04ab34c278d371b2d2e2",
+    "upstream": "origin/lane-full-remote-details/provider-integration-fixtures",
+    "ahead": "0",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/provider-label6c",
+    "branch": "",
+    "sha": "6cba4a8339d85a09cfb3dc2974ee02677535bd34",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/provider9350",
+    "branch": "",
+    "sha": "9350abb3020b04b625bc0da81d8fc510e825f514",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "",
+    "remoteContains": true
+  },
+  {
+    "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/proofs/security866",
+    "branch": "",
+    "sha": "866633d79fbdd4d143537977dea45836a30a7010",
+    "upstream": "",
+    "ahead": "NO_UPSTREAM",
+    "dirty": "M src/main/services/read-only-repository-changes.test.ts\n M src/main/services/remote-agent-changes.test.ts",
+    "remoteContains": true
+  }
+]

@@ -1,0 +1,19 @@
+diff --git a/src/main/services/read-only-repository-changes.test.ts b/src/main/services/read-only-repository-changes.test.ts
+index 44d2aacdd..b09c38d10 100644
+--- a/src/main/services/read-only-repository-changes.test.ts
++++ b/src/main/services/read-only-repository-changes.test.ts
+@@ -89,6 +89,14 @@ describe('passive repository comparison', () => {
+     'const apiKey: string = "PRIVATE_TYPED_VALUE";',
+     'const apiKey = Buffer.from("PRIVATE_FACTORY_VALUE");',
+     'const apiKey = "PRIVATE_PREFIX" + "PRIVATE_TAIL";',
++    'const apiKey = ("PRIVATE_PAREN_VALUE");',
++    'const apiKey = "PREFIX" /* comment */ + "PRIVATE_COMMENT_TAIL";',
++    'const apiKey = "PREFIX" // comment\n + "PRIVATE_LINE_COMMENT_TAIL";',
++    'const apiKey = condition ? "PRIVATE_TRUE_VALUE" : "PRIVATE_FALSE_VALUE";',
++    'const apiKey = storedValue || "PRIVATE_FALLBACK_VALUE";',
++    'const apiKey = "PREFIX" /* comment */ .concat("PRIVATE_METHOD_TAIL");',
++    'apiKey += "PRIVATE_APPEND_VALUE";',
++    'apiKey ??= ("PRIVATE_ASSIGN_VALUE");',
+     'const apiKey = `PRIVATE_TEMPLATE${other}`;',
+     'const apiKey = "PRIVATE_UNFINISHED',
+   ])('withholds ambiguous credential initializer text while preserving file change metadata: %s', async (secret) => {

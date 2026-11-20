@@ -1,0 +1,42 @@
+2026-11-20T07:02:21Z START full-details idle=89% unused=13G avail=31886M freepct=77 comp=7105M swap=1892M pid=7490 cmd=node_modules/.bin/vitest run src/main/services/configured-dispatcher-directions.test.ts src/main/services/remote-connection-card.test.ts src/main/services/remote-agent-details.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/cold-dispatcher-automatic
+
+ ❯ |main| src/main/services/remote-agent-details.test.ts (128 tests | 2 failed) 422ms
+     × uses passive admitted policy/controller and final receipts: on 10ms
+     × uses passive admitted policy/controller and final receipts: off 16ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: on
+AssertionError: expected 'Unavailable from host metadata' to be 'On' // Object.is equality
+
+Expected: "On"
+Received: "Unavailable from host metadata"
+
+ ❯ src/main/services/remote-agent-details.test.ts:878:87
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: off
+AssertionError: expected 'Unavailable from host metadata' to be 'Off' // Object.is equality
+
+Expected: "Off"
+Received: "Unavailable from host metadata"
+
+ ❯ src/main/services/remote-agent-details.test.ts:878:87
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  2 failed | 180 passed (182)
+   Start at  23:02:21
+   Duration  1.22s (transform 1.26s, setup 11ms, import 1.65s, tests 524ms, environment 0ms)
+
+2026-11-20T07:02:23Z END full-details rc=1

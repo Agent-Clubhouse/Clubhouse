@@ -1,0 +1,97 @@
+2026-11-20T10:59:52Z START full-details idle=88% unused=8235M avail=29972M freepct=77 comp=7497M swap=1836M pid=77708 cmd=node_modules/.bin/vitest run src/main/services/remote-connection-card.test.ts src/main/services/remote-agent-details.test.ts --maxWorkers=2 --testNamePattern retained target-kind variant|requested source field
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-cold-origins
+
+ ❯ |main| src/main/services/remote-connection-card.test.ts (53 tests | 1 failed | 52 skipped) 12ms
+   × continues every retained target-kind variant without losing fields to the card row budget 11ms
+ ❯ |main| src/main/services/remote-agent-details.test.ts (168 tests | 1 failed | 167 skipped) 8840ms
+     × preserves every requested source field under unrelated full-card pressure 8839ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected Connections envelope admission > preserves every requested source field under unrelated full-card pressure
+AssertionError: expected 9 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 9
+
+ ❯ src/main/services/remote-agent-details.test.ts:1082:133
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected Connections envelope admission > preserves every requested source field under unrelated full-card pressure
+AssertionError: expected [ { …(2) }, { …(2) }, { …(2) }, …(28) ] to have a length of 40 but got 31
+
+- Expected
++ Received
+
+- 40
++ 31
+
+ ❯ src/main/services/remote-agent-details.test.ts:1082:162
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected Connections envelope admission > preserves every requested source field under unrelated full-card pressure
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/main/services/remote-agent-details.test.ts:1071:3
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |main| src/main/services/remote-connection-card.test.ts > continues every retained target-kind variant without losing fields to the card row budget
+AssertionError: expected 20 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 20
+
+ ❯ src/main/services/remote-connection-card.test.ts:308:166
+    306|   const seen = new Set<string>(); let offset = 0;
+    307|   for (let page = 0; page < 10; page++) {
+    308|     const result = await read(false, { page: { card: 'connections', so…
+       |                                                                                                                                                                      ^
+    309|     for (const row of result.c.rows) if (/^Variant target \d+$/.test(r…
+    310|     const next = result.c.connectionPage?.next; if (!next) break; expe…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |main| src/main/services/remote-connection-card.test.ts > continues every retained target-kind variant without losing fields to the card row budget
+AssertionError: expected 34 to be 40 // Object.is equality
+
+- Expected
++ Received
+
+- 40
++ 34
+
+ ❯ src/main/services/remote-connection-card.test.ts:312:26
+    310|     const next = result.c.connectionPage?.next; if (!next) break; expe…
+    311|   }
+    312|   expect.soft(seen.size).toBe(40); for (const collect of collects) exp…
+       |                          ^
+    313| });
+    314|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 219 skipped (221)
+   Start at  02:59:53
+   Duration  9.71s (transform 1.35s, setup 9ms, import 1.75s, tests 8.85s, environment 0ms)
+
+2026-11-20T11:00:02Z END full-details rc=1
+
+EXPECTED_FAILURE_CAPTURED 86f34688a787fd468f161415a3a4168e79069d4a 095e7bf88349b674a21f0c25a737013516000c77

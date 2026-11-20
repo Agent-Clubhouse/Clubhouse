@@ -1,0 +1,48 @@
+2026-11-20T11:15:41Z START full-details idle=75% unused=7353M avail=29346M freepct=77 comp=7468M swap=1836M pid=86887 cmd=node_modules/.bin/vitest run src/main/services/saved-group-connections-display.test.ts --maxWorkers=2 --testNamePattern unknown automatic group applicability
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-cold-origins
+
+ ❯ |main| src/main/services/saved-group-connections-display.test.ts (16 tests | 3 failed | 8 skipped) 82ms
+   × distinguishes unknown automatic group applicability from known empty: cold-host 20ms
+   × distinguishes unknown automatic group applicability from known empty: unknown-helper 8ms
+   × distinguishes unknown automatic group applicability from known empty: unknown-disposed 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/saved-group-connections-display.test.ts > distinguishes unknown automatic group applicability from known empty: cold-host
+ FAIL  |main| src/main/services/saved-group-connections-display.test.ts > distinguishes unknown automatic group applicability from known empty: unknown-helper
+ FAIL  |main| src/main/services/saved-group-connections-display.test.ts > distinguishes unknown automatic group applicability from known empty: unknown-disposed
+AssertionError: expected { state: 'ok', …(2) } to match object { state: 'ok', value: { …(3) } }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "state": "ok",
+    "value": {
+-     "complete": false,
++     "complete": true,
+      "knownMatches": 0,
+-     "unknownRows": 1,
++     "unknownRows": 0,
+    },
+  }
+
+ ❯ src/main/services/saved-group-connections-display.test.ts:90:23
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 5 passed | 8 skipped (16)
+   Start at  03:15:41
+   Duration  261ms (transform 75ms, setup 5ms, import 94ms, tests 82ms, environment 0ms)
+
+2026-11-20T11:15:41Z END full-details rc=1
+
+EXPECTED_FAILURE_CAPTURED 1472b73e91c6e0f3fecf5e90f3eeaf278cab519f 6373f1befab537be2a8feb872c94e5fe608f84b6

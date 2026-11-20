@@ -1,0 +1,12 @@
+{
+  "head": "86f34688a787fd468f161415a3a4168e79069d4a",
+  "tree": "095e7bf88349b674a21f0c25a737013516000c77",
+  "testExit": 1,
+  "expectedFailureCapture": true,
+  "onlyTestPaths": [
+    "src/main/services/remote-agent-details.test.ts",
+    "src/main/services/remote-connection-card.test.ts"
+  ],
+  "productionTreeEqualBase": true,
+  "logSHA256": "05172e6b1e5f6d6428ff090beee47c09fbb1ae8f42929ccf4cde51697370b2ad"
+}

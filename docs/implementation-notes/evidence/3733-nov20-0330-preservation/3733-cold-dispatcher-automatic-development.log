@@ -1,0 +1,38 @@
+2026-11-20T07:00:10Z START full-details idle=89% unused=13G avail=31774M freepct=77 comp=7121M swap=1892M pid=6794 cmd=node_modules/.bin/vitest run src/main/services/configured-dispatcher-directions.test.ts src/main/services/remote-connection-card.test.ts src/main/services/remote-agent-details.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/cold-dispatcher-automatic
+
+ ❯ |main| src/main/services/remote-agent-details.test.ts (119 tests | 1 failed) 339ms
+     × composes selected passive Dispatcher metadata and final receipts: switch-off 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: switch-off
+AssertionError: expected [ [ 'a1', undefined, …(1) ], …(1) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ src/main/services/remote-agent-details.test.ts:170:97
+    168|         const unknown = ['missing-source', 'legacy-source', 'broken-in…
+    169|         expect(card.state).toBe(mode === 'switch-off' ? 'not-applicabl…
+    170|         if (mode === 'switch-off') { expect(card.rows).toEqual([]); ex…
+       |                                                                                                 ^
+    171|         else if (mode === 'connected-off') { expect(card.summary).toBe…
+    172|         else {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 172 passed (173)
+   Start at  23:00:10
+   Duration  1.16s (transform 1.26s, setup 13ms, import 1.64s, tests 438ms, environment 0ms)
+
+2026-11-20T07:00:12Z END full-details rc=1
