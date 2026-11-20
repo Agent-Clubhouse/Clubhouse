@@ -47,7 +47,10 @@ it('refuses a real same-path edit during its descriptor read and closes the admi
   expect(() => readReadOnlyPrimaryMetadata(root, '.clubhouse/agents.json')).toThrow(); expect(changed).toBe(true); expect(fd).toBeTypeOf('number'); expect(() => actual.fstatSync(fd!)).toThrow();
 });
 it('rejects non-file metadata and caller-provided arbitrary filenames before decoding', async () => {
-  await fs.promises.mkdir(file()); expect(() => readReadOnlyPrimaryMetadata(root, '.clubhouse/agents.json')).toThrow(); expect(() => readReadOnlyPrimaryMetadata(root, '../unrelated.json' as never)).toThrow(); expect(() => readReadOnlyPrimaryMetadata('../unrelated', 'projects.json')).toThrow();
+  await fs.promises.mkdir(file()); expect(() => readReadOnlyPrimaryMetadata(root, '.clubhouse/agents.json')).toThrow();
+  await fs.promises.writeFile(path.join(root, 'private-readable.json'), '[]');
+  expect(() => readReadOnlyPrimaryMetadata(root, 'private-readable.json' as never)).toThrow();
+  expect(() => readReadOnlyPrimaryMetadata(root, '../unrelated.json' as never)).toThrow(); expect(() => readReadOnlyPrimaryMetadata('../unrelated', 'projects.json')).toThrow();
 });
 
 it('requires an explicit aggregate budget at the internal API boundary', async () => { await put([]); expect(() => readRawMetadata(root, '.clubhouse/agents.json', {} as never)).toThrow(ReadOnlyMetadataLimitError); });
