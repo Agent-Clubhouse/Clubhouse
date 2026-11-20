@@ -914,4 +914,40 @@ describe('satellite catalog reconciliation (#3695)', () => {
     expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
   });
 
+  it('HY4: a live omitted digest entry cannot erase deferred evidence after bulletin invalidation removed its current key', async () => {
+    const cached = snapshot({ groupProjects: [{ id: 'group' }], bulletinDigests: { group: [{ id: 'old' }] } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const key = `${satellite.id}::group`;
+    expect(catalog().remoteBulletinDigests[key]).toEqual([{ id: 'old' }]);
+    catalog().addRemoteBulletinMessage(satellite.id, 'group', { id: 'event' });
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    const updated = { ...cached, bulletinDigests: { group: [{ id: 'cached-new' }] } };
+    changed(list(updated));
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...cached, bulletinDigests: {} });
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY4: omitted membership entry cannot vacuously reset an observed-gap conflict after current membership disappeared', async () => {
+    const member = { agentId: 'agent', agentName: 'Synthetic', status: 'running' };
+    const cached = snapshot({ groupProjects: [{ id: 'group' }], groupProjectMembers: { group: [member] } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    const off = start(); await tick();
+    const key = `${satellite.id}::group`;
+    expect(catalog().remoteGroupProjectMembers[key]).toEqual([member]);
+    off();
+    useRemoteProjectStore.setState({ remoteGroupProjectMembers: {} });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    expect(catalog().remoteGroupProjectMembers[key]).toBeUndefined();
+    changed(list({ ...cached, groupProjectMembers: { group: [{ ...member, agentName: 'Cached' }] } }));
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...cached, groupProjectMembers: {} });
+    expect(catalog().remoteGroupProjectMembers[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
 });
