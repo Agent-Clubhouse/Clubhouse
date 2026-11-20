@@ -172,6 +172,12 @@ it.each(['saved', 'unqualified-cached-name', 'pending-not-saved', 'owner-saved-c
     expect.soft(c.rows.find((row) => row.label === 'manual-target sources')?.value).toContain('Made by the Dispatcher (saved record');
     const removal = c.rows.find((row) => row.label === 'manual-target saved Dispatcher link')?.value;
     expect.soft(removal).toBe('No removal record in saved settings');
+    const eligibility = c.rows.find((row) => row.label === 'manual-target manual source eligibility')?.value;
+    expect.soft(eligibility).toContain('Restriction evidence: Host Dispatcher off; Selected Connect to Dispatcher off');
+    expect.soft(eligibility).toContain('Current endpoint eligibility and active/suspended status unknown');
+    if (mode === 'owner-unavailable') expect.soft(eligibility).toContain('Pending removal unknown');
+    else if (mode === 'pending-not-saved' || mode === 'owner-saved-copy-missing') expect.soft(eligibility).toContain('Removal pending in host memory');
+    else expect.soft(eligibility).toContain('No pending removal in host memory');
     const availability = c.rows.find((row) => row.label === 'manual-target Dispatcher availability')?.value;
     if (mode === 'pending-not-saved') expect.soft(availability).toContain('Removal queued; last save failed');
     if (mode === 'owner-saved-copy-missing') expect.soft(availability).toContain('Removal queued; save was reported successful');
@@ -310,4 +316,18 @@ it('continues every retained target-kind variant without losing fields to the ca
     const next = result.c.connectionPage?.next; if (!next) break; expect(next.offset).toBeGreaterThan(offset); offset = next.offset;
   }
   expect.soft(seen.size).toBe(40); for (const collect of collects) expect(collect).not.toHaveBeenCalled(); expect(m.legacy).not.toHaveBeenCalled();
+});
+
+
+it('keeps manual source eligibility unknown when saved switches permit it, and rechecks observed restrictions', async () => {
+  const projectPath = path.join(root, 'selected-project');
+  await put('dispatcher-connections.json', { version: 1, connections: [{ agentId: selected, targetId: 'manual-target', agentProjectPath: projectPath, targetProjectPath: '/other-project', createdAt: at, createdBy: 'controller' }], removedByUser: [] });
+  m.ownOn = true; const before = await disk();
+  const { c, receipts } = await read(false, { projectPath, connectToDispatcher: { state: 'ok', value: true, inputs: [] } });
+  const evidence = c.rows.find((row) => row.label === 'manual-target manual source eligibility')?.value;
+  expect(evidence).toContain('No restriction confirmed by the available selected records');
+  expect(evidence).toContain('Current endpoint eligibility and active/suspended status unknown');
+  expect(evidence).toContain('Other sources and recorded bindings are independent');
+  expect(receipts.every((r) => r.current())).toBe(true); expect(await disk()).toEqual(before); expect(m.legacy).not.toHaveBeenCalled();
+  m.ownOn = false; expect(receipts.some((r) => !r.current())).toBe(true);
 });

@@ -38,6 +38,7 @@ import { helpersSummary, workSummary } from '../../shared/helper-work-summary';
 import { captureReadOnlyConfigTargetWitness } from './read-only-config-target';
 import { captureDisplayProvider } from './display-provider';
 import { readAgentConnectionCacheForDisplay } from './agent-config';
+import { readSelectedOutgoingWiresForDisplay } from './selected-outgoing-wires-display';
 
 /** No caller-supplied paths, store objects, instructions, action prompts or MCP definitions leave here. */
 export async function readRemoteAgentDetails(agentId: string, authorized: () => boolean, query?: RemoteDetailsQuery): Promise<{ status: number; body: unknown }> {
@@ -100,6 +101,8 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       byId.settings.omitted += settingsRead.display.omitted;
       if (settingsRead.display.state !== 'ok') { byId.settings.state = settingsRead.display.state; byId.settings.summary = settingsRead.display.summary; }
     }
+
+    if (!dispatcher && !query) result.outgoingWires = readSelectedOutgoingWiresForDisplay(agentId, { authorized, target: targetWitness, receipts: connectionReceipts });
 
     // Sequential sections keep disk/git pressure bounded. Check authority around every section.
     const read = async (id: RemoteDetailsCardId, run: (c: RemoteDetailsCard) => Promise<void> | void) => {
