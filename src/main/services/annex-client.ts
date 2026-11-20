@@ -2484,9 +2484,9 @@ async function controllerChatRead<T>(machine: string, path: string): Promise<Con
 /** A read-only host summary. Older hosts have no route; never fall back to local files or a write. */
 export async function requestAgentSettings(machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentSettings>> {
   const sat = satelliteFor(machine);
-  if (!sat || sat.state !== 'connected') return { status: 'offline' };
+  if (!sat || !canRequestSatellite(sat.fingerprint)) return { status: 'offline' };
   const epoch = connectionEpochs.get(sat.id) ?? 0;
-  const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
+  const current = () => satelliteFor(machine) === sat && canRequestSatellite(sat.fingerprint) && (connectionEpochs.get(sat.id) ?? 0) === epoch;
   try {
     const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/settings-details`, undefined, { maxResponseBytes: REMOTE_SETTINGS_MAX_BYTES });
     if (!current()) return { status: 'offline' };

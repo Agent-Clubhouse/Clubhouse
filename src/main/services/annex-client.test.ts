@@ -3857,6 +3857,11 @@ describe('annex-client', () => {
     describe('one reverse event stream', () => {
       const peer = { fingerprint: FP, publicKey: 'key', alias: 'Reverse peer', icon: '', color: '', role: 'member' as const,
         kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN', knownHosts: [] as string[], mainPort: 9000 };
+      const settingsValue = {
+        version: 1, readOnly: true, agentId: 'settings-target', provider: 'Fixture provider', model: 'Default model',
+        runtime: 'chat', access: 'Ask first', executionPolicy: 'Existing level defaults', autoSleep: null, context: null,
+        setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null },
+      };
       let handlers: annexControl.SubscriptionHandlers[];
       let handles: Array<{ id: string; close: ReturnType<typeof vi.fn>; send: ReturnType<typeof vi.fn> }>;
       let changed: () => void;
@@ -3914,11 +3919,7 @@ describe('annex-client', () => {
       });
 
       it('current read surfaces: reverse Settings display uses authorized request availability without a direct socket', async () => {
-        const value = {
-          version: 1, readOnly: true, agentId: 'settings-target', provider: 'Fixture provider', model: 'Default model',
-          runtime: 'chat', access: 'Ask first', executionPolicy: 'Existing level defaults', autoSleep: null, context: null,
-          setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null },
-        };
+        const value = settingsValue;
         request.mockResolvedValueOnce({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
         expect(annexClient.isMachineConnected(FP)).toBe(true);
         expect(annexClient.isMachineDirectConnected(FP)).toBe(false);
@@ -3929,6 +3930,72 @@ describe('annex-client', () => {
         expect(request).toHaveBeenCalledExactlyOnceWith(FP, expect.objectContaining({
           method: 'GET', path: '/api/v1/agents/settings-target/settings-details',
         }), expect.objectContaining({ maxResponseBytes: 64 * 1024 }));
+      });
+
+      it.each(['no-capability', 'disabled', 'paused', 'missing'] as const)('Settings refuses %s without a request or alternate dial', async (reason) => {
+        if (reason === 'no-capability') vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: true });
+        if (reason === 'disabled') vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), enableClient: false });
+        if (reason === 'paused') annexClient.disconnect(FP);
+        expect(await annexClient.requestAgentSettings(reason === 'missing' ? 'missing' : FP, settingsValue.agentId)).toEqual({ status: 'offline' });
+        expect(request).not.toHaveBeenCalled();
+        expect(https.request).not.toHaveBeenCalled();
+      });
+
+      it.each([403, 404, 405] as const)('Settings keeps reverse host refusal %s without retry or fallback', async (status) => {
+        request.mockResolvedValueOnce({ status, headers: {}, body: Buffer.from('{"error":"host_refused"}') });
+        expect(await annexClient.requestAgentSettings(FP, settingsValue.agentId)).toEqual({ status: status === 403 ? 'forbidden' : 'unavailable' });
+        expect(request).toHaveBeenCalledOnce();
+        expect(https.request).not.toHaveBeenCalled();
+      });
+
+      it('Settings rejects a wrong-agent reverse response', async () => {
+        request.mockResolvedValueOnce({ status: 200, headers: {}, body: Buffer.from(JSON.stringify({ ...settingsValue, agentId: 'other' })) });
+        expect(await annexClient.requestAgentSettings(FP, settingsValue.agentId)).toEqual({ status: 'error' });
+        expect(request).toHaveBeenCalledOnce();
+        expect(https.request).not.toHaveBeenCalled();
+      });
+
+      it.each(['readiness', 're-pin', 're-pair', 'disconnect', 'stop'] as const)('Settings discards an in-flight reverse response after %s authority loss', async (reason) => {
+        let finish!: (response: Awaited<ReturnType<typeof annexControl.request>>) => void;
+        request.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+        const pending = annexClient.requestAgentSettings(FP, settingsValue.agentId);
+        expect(request).toHaveBeenCalledOnce();
+        const signal = request.mock.calls[0][2]?.signal;
+        expect(signal?.aborted).toBe(false);
+        if (reason === 'readiness') {
+          // No notification or epoch change: the final guard must read current readiness.
+          vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: true });
+        } else if (reason === 're-pin' || reason === 're-pair') {
+          vi.mocked(annexPeers.getPeer).mockReturnValue({ ...peer,
+            ...(reason === 're-pin' ? { tlsCertificateFingerprint: 'NEW-PIN' } : { pairingId: 'new-pairing' }) });
+          changed();
+        } else if (reason === 'disconnect') annexClient.disconnect(FP);
+        else annexClient.stopClient();
+        expect(signal?.aborted).toBe(reason !== 'readiness');
+        finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(settingsValue)) });
+        expect(await pending).toEqual({ status: 'offline' });
+        expect(request).toHaveBeenCalledOnce();
+        expect(https.request).not.toHaveBeenCalled();
+      });
+
+      it.each(['retired-stream', 'replaced-record', 'direct-handoff'] as const)('Settings rejects a late response from its %s even while the peer remains available', async (reason) => {
+        let finish!: (response: Awaited<ReturnType<typeof annexControl.request>>) => void;
+        request.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+        const pending = annexClient.requestAgentSettings(FP, settingsValue.agentId);
+        expect(request).toHaveBeenCalledOnce();
+        if (reason === 'retired-stream') handlers[0].onEnd('closed');
+        else if (reason === 'replaced-record') annexClient._addConnectedSatelliteForTesting(FP);
+        else {
+          vi.mocked(annexPeers.getPeer).mockReturnValue({ ...peer, knownHosts: ['127.0.0.2'] });
+          annexClient.connect(FP);
+          await vi.waitFor(() => expect(annexClient.isMachineDirectConnected(FP)).toBe(true));
+        }
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+        expect(request.mock.calls[0][2]?.signal?.aborted).toBe(false);
+        finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(settingsValue)) });
+        expect(await pending).toEqual({ status: 'offline' });
+        expect(request).toHaveBeenCalledOnce();
+        expect(https.request).not.toHaveBeenCalled();
       });
 
       it.each(['revoke', 're-pin', 'disable', 'disconnect', 'forget', 'stop'] as const)('retires before late callbacks on %s and never resurrects the old stream', (reason) => {

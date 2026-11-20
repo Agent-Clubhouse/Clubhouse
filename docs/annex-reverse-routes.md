@@ -118,6 +118,14 @@ Settings keeps a separate direct observation so `via=reverse` stays accurate.
 Request-only peers do not acquire subscription or terminal-control capability.
 Old peers without reverse capability keep their direct/offline behavior.
 
+The read-only Settings details adapter uses the same authenticated request
+availability, including request-ready reverse connections before a snapshot.
+Its fixed GET keeps the 64 KiB receive limit and host-summary schema checks.
+After the read it rechecks availability, satellite identity and connection epoch;
+retired or replaced responses remain unusable even if the peer is connected again.
+Host refusals and older-host missing routes never cause an alternate request or
+local-file fallback.
+
 Snapshot ordering and asynchronous icon/canvas guards use a stream identity,
 not a WebSocket. A new stream gets a fresh snapshot; late callbacks from the old
 one cannot replace it. Direct becoming available replaces the reverse
