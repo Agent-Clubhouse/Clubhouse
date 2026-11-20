@@ -1,5 +1,7 @@
 # #3733 selected-machine Dispatcher role read: staged host composition
 
+**HTTP follow-up:** the accepted staged reader is now connected only to the explicit same-gate HTTP adapter described in [3733-selected-role-http.md](3733-selected-role-http.md). This document records the prior staged/source-only phase. No client/UI or public snapshot wiring was added.
+
 Base: `532f2ee4b523be23516146defc73acc7cc4d1efa`.
 Branch: `DetailsSessionDisplay/role-read-design`.
 Status: host selector staged for independent authority/source review; **no route, client method, IPC registration, renderer binding or snapshot-bus data added**. Existing no-chat unavailable/deferred fields remain unchanged.

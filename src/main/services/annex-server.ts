@@ -1,3 +1,4 @@
+import { readSelectedDispatcherDetails } from './selected-dispatcher-details';
 import { isRemoteDetailsQuery } from '../../shared/remote-details-query';
 import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
 import { readRemoteAgentSettings } from './remote-agent-settings';
@@ -4107,6 +4108,28 @@ async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: Re
   sendJson(ctx.res, result.status, result.body);
 }
 
+/** Selected role metadata only: the exact ordinary Details desktop gate, not controller-history authority. */
+async function handleSelectedDispatcherDetailsRoute(ctx: AnnexRouteContext): Promise<void> {
+  ctx.res.setHeader('Cache-Control', 'no-store');
+  if (ctx.requireMtls()) return;
+  const authorized = () => desktopDetailsAuthorized(ctx);
+  if (!authorized()) { sendJson(ctx.res, 403, { error: 'desktop_controller_required' }); return; }
+  // Selection belongs to this pinned host. No caller id, address, role, path or page query is accepted.
+  if (new URL(ctx.url, 'http://localhost').searchParams.size) {
+    sendJson(ctx.res, 400, { error: 'invalid_dispatcher_details_query' }); return;
+  }
+  const result = await readSelectedDispatcherDetails(authorized);
+  if (!authorized()) { sendJson(ctx.res, 403, { error: 'details_read_refused' }); return; }
+  if (result.status === 200) {
+    let current = false;
+    try { current = result.receipt?.current() === true; }
+    catch { /* telemetry-exempt: a final admission failure withholds all private evidence. */ }
+    if (!current) { sendJson(ctx.res, 409, { error: 'dispatcher_role_changed' }); return; }
+  }
+  if (result.status === 429) ctx.res.setHeader('Retry-After', '1');
+  sendJson(ctx.res, result.status, result.body);
+}
+
 /** A separate read surface: controller history never enters phone routes or event replay. */
 async function handleControllerChatRoute(ctx: AnnexRouteContext, sessions = false): Promise<void> {
   if (ctx.requireMtls()) return;
@@ -4809,6 +4832,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents$/, handler: handleProjectAgentsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/buffer$/, handler: handleAgentBufferRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/dispatcher\/details(\?.*)?$/, handler: handleSelectedDispatcherDetailsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/settings-details$/, handler: handleAgentSettingsDetailsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/?]+)\/(details)(\?.*)?$/, handler: handleAgentSettingsDetailsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/?]+)\/(changes)(\?.*)?$/, handler: handleAgentSettingsDetailsRoute },

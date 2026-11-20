@@ -46,7 +46,11 @@ describe('staged selected-host Dispatcher Details', () => {
   it('delegates the exact canonical primary target to ordinary Details under the same gate', async () => {
     const allowed = vi.fn(() => true);
     const before = await fs.readFile(primary, 'utf8');
-    expect(await readSelectedDispatcherDetails(allowed)).toEqual({ status: 200, body: { version: 1, role: 'dispatcher', agentId: 'role1', details: details() } });
+    const result = await readSelectedDispatcherDetails(allowed);
+    expect(result.body).toEqual({ version: 1, role: 'dispatcher', agentId: 'role1', details: details() });
+    expect(result.status).toBe(200);
+    expect(result.receipt?.current()).toBe(true);
+    expect(JSON.stringify(result.body)).not.toMatch(/receipt|current|dispatcher-chat/);
     expect(m.resolve).toHaveBeenCalledExactlyOnceWith('role1', undefined, { strict: true });
     expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', allowed);
     expect(await fs.readFile(primary, 'utf8')).toBe(before);

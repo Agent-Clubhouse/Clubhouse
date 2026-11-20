@@ -1,4 +1,4 @@
-/** Staged host-only composition. No route, IPC API or snapshot producer invokes it yet. */
+/** Host-only composition for the explicit desktop Details adapter; never a snapshot or client/UI lookup. */
 import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
 import type { DisplayReceipt } from './display-settings';
 import { dispatcherControllerForDisplay } from './remote-dispatcher-card';
@@ -13,11 +13,11 @@ export interface SelectedDispatcherDetails {
 }
 
 /**
- * The future pinned desktop adapter must supply the SAME desktopDetailsAuthorized
+ * The pinned desktop adapter must supply the SAME desktopDetailsAuthorized
  * callback as ordinary agent Details, before and after this call. No caller-
  * supplied id, address, role, path or controller/mobile grant is accepted here.
  */
-export async function readSelectedDispatcherDetails(authorized?: () => boolean): Promise<{ status: number; body: unknown }> {
+export async function readSelectedDispatcherDetails(authorized?: () => boolean): Promise<{ status: number; body: unknown; receipt?: DisplayReceipt }> {
   const allowed = authorized ?? (() => false);
   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });
   const changed = () => ({ status: 409, body: { error: 'dispatcher_role_changed' } });
@@ -46,7 +46,8 @@ export async function readSelectedDispatcherDetails(authorized?: () => boolean):
     }
     if (!allowed()) return refused();
     if (!current()) return changed();
-    return { status: 200, body };
+    // Internal-only final receipt: the HTTP adapter must recheck this after its await and serialize body only.
+    return { status: 200, body, receipt: { current } };
   } catch {
     // telemetry-exempt: staged read returns bounded status, never raw host errors or partial private evidence.
     return allowed() ? { status: 500, body: { error: 'dispatcher_details_failed' } } : refused();

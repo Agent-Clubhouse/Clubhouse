@@ -1,3 +1,8 @@
+import * as selectedDispatcherDetails from './selected-dispatcher-details';
+import * as agentConfigReader from './agent-config-reader';
+import * as dispatcherMetadataService from './dispatcher/dispatcher-service';
+import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
+import { REMOTE_DETAILS_CARD_IDS, type RemoteAgentDetails } from '../../shared/remote-agent-details';
 import { readRemoteAgentSettings } from './remote-agent-settings';
 import { readRemoteAgentDetails } from './remote-agent-details';
 import { readRemoteAgentChanges } from './remote-agent-changes';
@@ -632,6 +637,220 @@ describe('annex-server', () => {
       expect((await request(port, 'GET', '/api/v1/mobile/agents/controller/chat')).status).toBe(404);
       expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
       expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('selected-role desktop Details HTTP authority (#3733)', () => {
+    const route = '/api/v1/dispatcher/details';
+    const id = 'http-dispatcher';
+    let root: string, primary: string, roleId: string | null;
+    const body = (): RemoteAgentDetails => ({ version: 1, agentId: id, readOnly: true, readAt: 1, providerId: 'HOST_METADATA_PROVIDER', running: false, status: 'sleeping', spawnedAt: null,
+      sessionId: null, nativeSessionId: null, settings: null, cards: REMOTE_DETAILS_CARD_IDS.map((cardId) => ({ id: cardId, title: cardId, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) });
+    beforeEach(async () => {
+      root = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-selected-role-http-')));
+      const folder = path.join(root, 'dispatcher');
+      await fsp.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+      const config = { id, name: 'Host Dispatcher', color: 'indigo', createdAt: '2026-11-20', orchestrator: 'claude-code' };
+      primary = path.join(folder, '.clubhouse', 'agents.json');
+      await fsp.writeFile(primary, JSON.stringify([config]));
+      roleId = id;
+      vi.spyOn(baseDir, 'getBaseDirPath').mockReturnValue(root);
+      vi.spyOn(dispatcherMetadataService, 'getDispatcherAgentId').mockImplementation(() => roleId);
+      vi.spyOn(dispatcherMetadataService, 'getDispatcherChatAgentId').mockReturnValue(null);
+      vi.spyOn(dispatcherMetadataService, 'getDispatcherState').mockReturnValue({ ...DISPATCHER_OFF, config, agentId: id, path: folder });
+      vi.spyOn(agentConfigReader, 'resolveAgentConfigTarget').mockResolvedValue({ agent: config, project: { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: folder } });
+      vi.spyOn(dispatcherMetadataService, 'initDispatcher').mockResolvedValue();
+      vi.spyOn(dispatcherMetadataService, 'wakeDispatcherController').mockResolvedValue();
+      vi.spyOn(dispatcherMetadataService, 'setDispatcherEnabled').mockResolvedValue(DISPATCHER_OFF);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+      vi.mocked(readRemoteAgentDetails).mockResolvedValue({ status: 200, body: body() });
+    });
+    afterEach(async () => {
+      expect(dispatcherMetadataService.initDispatcher).not.toHaveBeenCalled();
+      expect(dispatcherMetadataService.wakeDispatcherController).not.toHaveBeenCalled();
+      expect(dispatcherMetadataService.setDispatcherEnabled).not.toHaveBeenCalled();
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+      expect(ptyManagerModule.write).not.toHaveBeenCalled();
+      annexServer.stop();
+      await fsp.rm(root, { recursive: true, force: true });
+    });
+
+    let requestNumber = 0;
+    function reverseMetadataRequest() {
+      const frames: Array<Record<string, unknown>> = [];
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, bufferedAmount: 0,
+        send(data: string, cb?: () => void) { frames.push(JSON.parse(data)); if (cb) queueMicrotask(cb); },
+        ping: vi.fn(), terminate: vi.fn(), close: vi.fn(),
+      });
+      annexControl._attachForTesting(ws as never, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint, 'out');
+      annexControl._sendHelloForTesting(TEST_CONTROLLER.fingerprint);
+      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })), false);
+      const requestId = `selected-role-${++requestNumber}`;
+      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'request', id: requestId, method: 'GET', path: route })), false);
+      return { ws, frames, requestId };
+    }
+
+    it.each(['controller', 'member'] as const)('serves only the ordinary role metadata to a pinned desktop %s, including while off', async (role) => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop', role });
+      const headers = vi.spyOn(http.ServerResponse.prototype, 'setHeader');
+      const { port } = await startAndPair();
+      const before = await fsp.readFile(primary, 'utf8');
+      const result = await request(port, 'GET', route);
+      expect(result.status).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ version: 1, role: 'dispatcher', agentId: id, details: body() });
+      expect(headers).toHaveBeenCalledWith('Cache-Control', 'no-store');
+      expect(agentConfigReader.resolveAgentConfigTarget).toHaveBeenCalledExactlyOnceWith(id, undefined, { strict: true });
+      expect(readRemoteAgentDetails).toHaveBeenCalledExactlyOnceWith(id, expect.any(Function));
+      expect(await fsp.readFile(primary, 'utf8')).toBe(before);
+    });
+
+    it.each([
+      ['anonymous', {}, 401], ['removed', {}, 401], ['wrong-pin', {}, 401], ['unpaired-pin', { tlsCertificateFingerprint: undefined }, 401],
+      ['opposite-direction', { role: 'satellite' }, 403], ['phone', { kind: 'phone' }, 403], ['unclassified', { kind: undefined }, 403],
+      ['unknown-kind', { kind: 'unknown' }, 403], ['pending', { role: 'member', networkPending: true }, 403],
+    ] as const)('refuses %s before any role/configuration/Details lookup', async (mode, extra, status) => {
+      const { port } = await startAndPair();
+      if (mode === 'anonymous') asUnpaired();
+      else if (mode === 'removed') vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+      else if (mode === 'wrong-pin') vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValueOnce('wrong-pin');
+      else vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop', ...extra } as never);
+      expect((await request(port, 'GET', route)).status).toBe(status);
+      expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+
+    it('refuses a session-only principal even if the persistent peer is classified desktop', async () => {
+      const { port } = await startAndPair();
+      const publicKey = nodeCrypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+      vi.mocked(annexIdentity.computeFingerprint).mockReturnValue(TEST_CONTROLLER.fingerprint);
+      vi.mocked(annexTls.extractPeerCertificateDer).mockReturnValue(Buffer.from('isolated-session-certificate'));
+      const paired = await request(port, 'POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, pairingMode: 'session' });
+      expect(paired.status).toBe(200);
+      expect(annexServer.sessionOnlyPeers()).toHaveLength(1);
+      expect((await request(port, 'GET', route)).status).toBe(403);
+      expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+
+    it('has no mutation/mobile alias or caller-selected identity/path/page inputs', async () => {
+      const { port } = await startAndPair();
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route, { agentId: 'unrelated' })).status).toBe(404);
+      expect((await request(port, 'GET', '/api/v1/mobile/dispatcher/details')).status).toBe(404);
+      for (const query of ['agentId=unrelated', 'machine=other', 'address=role@other', 'path=/private', 'card=connections&source=helpers']) {
+        expect((await request(port, 'GET', `${route}?${query}`)).status).toBe(400);
+      }
+      expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+
+    it('keeps an unbound role unavailable rather than creating or selecting another role', async () => {
+      roleId = null;
+      const { port } = await startAndPair();
+      const result = await request(port, 'GET', route);
+      expect(result.status).toBe(404);
+      expect(JSON.parse(result.body)).toEqual({ error: 'dispatcher_role_unavailable' });
+      expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+
+    it.each(['role', 'primary'] as const)('rejects a changed role/target generation during ordinary Details: %s', async (change) => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async () => {
+        await Promise.resolve();
+        if (change === 'role') roleId = 'replacement';
+        else await fsp.writeFile(primary, '[]');
+        return { status: 200, body: body() };
+      });
+      const { port } = await startAndPair(), result = await request(port, 'GET', route);
+      expect(result.status).toBe(409);
+      expect(result.body).not.toContain('HOST_METADATA_PROVIDER');
+    });
+
+    it.each(['removed', 'pin', 'kind', 'pending', 'direction'] as const)('discards late metadata after principal %s changes', async (change) => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (_id, authorized) => {
+        expect(authorized()).toBe(true);
+        await Promise.resolve();
+        vi.mocked(annexPeers.getPeer).mockReturnValue(change === 'removed' ? undefined : { ...TEST_CONTROLLER, kind: change === 'kind' ? 'phone' : 'desktop',
+          role: change === 'direction' ? 'satellite' : 'controller', networkPending: change === 'pending', tlsCertificateFingerprint: change === 'pin' ? 'replaced' : TEST_CONTROLLER.tlsCertificateFingerprint });
+        expect(authorized()).toBe(false);
+        return { status: 200, body: body() };
+      });
+      const { port } = await startAndPair(), result = await request(port, 'GET', route);
+      expect(result.status).toBe(403);
+      expect(result.body).not.toContain('HOST_METADATA_PROVIDER');
+    });
+
+    it.each(['role', 'primary'] as const)('rechecks the SAME receipt after the selector completed: %s', async (change) => {
+      const reader = selectedDispatcherDetails.readSelectedDispatcherDetails;
+      vi.spyOn(selectedDispatcherDetails, 'readSelectedDispatcherDetails').mockImplementation(async (authorized) => {
+        const result = await reader(authorized);
+        expect(result.status).toBe(200);
+        if (change === 'role') roleId = 'replacement-after-selector';
+        else await fsp.writeFile(primary, '[]');
+        return result;
+      });
+      const { port } = await startAndPair(), result = await request(port, 'GET', route);
+      expect(result.status).toBe(409);
+      expect(result.body).not.toContain('HOST_METADATA_PROVIDER');
+    });
+
+    it.each(['missing', 'unreadable'] as const)('withholds metadata without a usable final admission receipt: %s', async (mode) => {
+      vi.spyOn(selectedDispatcherDetails, 'readSelectedDispatcherDetails').mockResolvedValue({ status: 200, body: { private: 'PRIVATE_UNATTESTED_RESULT' },
+        ...(mode === 'unreadable' && { receipt: { current: () => { throw new Error('PRIVATE_RECEIPT_ERROR'); } } }),
+      });
+      const { port } = await startAndPair(), result = await request(port, 'GET', route);
+      expect(result.status).toBe(409);
+      expect(result.body).not.toContain('PRIVATE_');
+    });
+
+    it('rechecks in the HTTP adapter even if a selected-role reader returns after revocation', async () => {
+      vi.spyOn(selectedDispatcherDetails, 'readSelectedDispatcherDetails').mockImplementation(async () => {
+        await Promise.resolve();
+        vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+        return { status: 200, body: { version: 1, role: 'dispatcher', agentId: id, details: body() }, receipt: { current: () => true } };
+      });
+      const { port } = await startAndPair(), result = await request(port, 'GET', route);
+      expect(result.status).toBe(403);
+      expect(result.body).not.toContain('HOST_METADATA_PROVIDER');
+    });
+
+    it.each(['member', 'controller', 'phone-member', 'pending-member'] as const)('preserves reverse-link principal scope: %s', async (mode) => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, role: mode === 'controller' ? 'controller' : 'member', kind: mode === 'phone-member' ? 'phone' : 'desktop', networkPending: mode === 'pending-member' });
+      await startAndPair();
+      const { frames, requestId } = reverseMetadataRequest();
+      await vi.waitFor(() => expect(frames.some((frame) => frame.id === requestId)).toBe(true));
+      const response = frames.find((frame) => frame.id === requestId)!;
+      expect(response.status).toBe(mode === 'member' ? 200 : 403);
+      if (mode !== 'member') expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
+    });
+
+    it('does not deliver private role metadata after its reverse link closes during the read', async () => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, role: 'member', kind: 'desktop' });
+      let release!: () => void, finished = false;
+      const pending = new Promise<void>((resolve) => { release = resolve; });
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async () => { await pending; finished = true; return { status: 200, body: body() }; });
+      await startAndPair();
+      const { ws, frames, requestId } = reverseMetadataRequest();
+      await vi.waitFor(() => expect(readRemoteAgentDetails).toHaveBeenCalledTimes(1));
+      ws.readyState = 3; ws.emit('close', 1000, Buffer.from('isolated-link-close'));
+      release();
+      await vi.waitFor(() => expect(finished).toBe(true));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(frames.some((frame) => frame.id === requestId && frame.type === 'response')).toBe(false);
+    });
+
+    it('keeps mobile-off and controller-conversation scopes separate and publishes no role Details on snapshots', async () => {
+      const { port } = await startAndPair();
+      expect((await request(port, 'GET', route)).status).toBe(200);
+      expect((await request(port, 'GET', '/api/v1/mobile/dispatcher/settings')).status).toBe(404);
+      expect((await request(port, 'GET', '/api/v1/network/dispatcher/controller/chat')).status).toBe(403);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as never);
+      const snapshot = await annexServer._testing.buildSnapshot();
+      expect(JSON.stringify(snapshot)).not.toContain('HOST_METADATA_PROVIDER');
+      expect(snapshot).not.toHaveProperty('selectedDispatcherDetails');
     });
   });
 
