@@ -739,3 +739,55 @@ describe('actual selected Connections receipts at the complete Details boundary'
     }
   });
 });
+
+
+describe('cold manual Dispatcher link evidence at final Details assembly', () => {
+  it.each(['unchanged', 'primary-late', 'owner-only-late', 'revoked-and-primary'] as const)('keeps independent saved and process-known final receipts: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-manual-link-')));
+    const getPath = vi.spyOn(app, 'getPath').mockReturnValue(root), projectPath = path.join(root, 'selected-project');
+    const source = await import('./dispatcher-saved-links-display'), owner = await import('./dispatcher-connections');
+    const { bindingManager } = await import('./clubhouse-mcp/binding-manager'); const sources = await import('./persisted-bindings');
+    m.base = root; m.realConnections = true; resetAllSettingsStoresForTests(); owner._resetDispatcherConnectionsForTesting(); bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting();
+    m.target.mockResolvedValue({ agent: agent(), project: { ...project, path: projectPath } });
+    const file = path.join(root, 'dispatcher-connections.json'), pending = path.join(root, 'dispatcher-connections.pending-removals.json');
+    const pair = { agentId: 'a1', targetId: 'manual-target' };
+    const putLinks = (version = 1, targetId = pair.targetId) => fs.writeFile(file, JSON.stringify({ version, connections: [{ ...pair, targetId, agentProjectPath: projectPath, targetProjectPath: '/other-project', createdBy: 'controller', createdAt: '2026-11-19T00:00:00Z', PRIVATE_ARGS: 'PRIVATE_CONFIG' }], removedByUser: [] }));
+    await putLinks();
+    const primary: Array<{ current(): boolean }> = [], memory: Array<{ current(): boolean }> = [];
+    expect(source.readSavedDispatcherLinksForDisplay('a1', projectPath, { receipts: primary })).toMatchObject({ state: 'ok', value: { total: 1 } });
+    expect(owner.readDispatcherLinkMemoryForDisplay('a1', projectPath, [pair], { receipts: memory })).toMatchObject({ state: 'ok', value: { rows: [{ pendingRemoval: { value: false } }] } });
+    expect([...primary, ...memory].every((receipt) => receipt.current())).toBe(true);
+    let allowed = true, entered = false, removed: boolean | undefined;
+    m.canvases.mockImplementation(async () => {
+      entered = true;
+      if (mode === 'primary-late' || mode === 'revoked-and-primary') await putLinks(1, 'changed-target');
+      if (mode === 'owner-only-late') {
+        // Actual owner admission/removal. Restore committed semantic fields and
+        // delete its saved queue file so ONLY the independent owner receipt
+        // changes; no mocked current() result or local fallback is involved.
+        await putLinks(2); removed = await owner.recordUserRemoval(pair); await putLinks(); await fs.unlink(pending);
+      }
+      if (mode === 'revoked-and-primary') allowed = false;
+      return [];
+    });
+    try {
+      const response = await readRemoteAgentDetails('a1', () => allowed); expect(entered).toBe(true); expect(m.connectionFixture).not.toHaveBeenCalled();
+      if (mode === 'owner-only-late') {
+        expect(removed).toBe(true); expect(primary.every((receipt) => receipt.current())).toBe(true); expect(memory.some((receipt) => !receipt.current())).toBe(true);
+        expect(source.readSavedDispatcherLinksForDisplay('a1', projectPath)).toMatchObject({ state: 'ok', value: { rows: [{ removalRecorded: { value: false } }] } });
+        expect(owner.readDispatcherLinkMemoryForDisplay('a1', projectPath, [pair])).toMatchObject({ state: 'ok', value: { rows: [{ pendingRemoval: { value: true }, removalSaved: { value: true } }] } });
+      }
+      if (mode === 'primary-late' || mode === 'revoked-and-primary') { expect(primary.some((receipt) => !receipt.current())).toBe(true); expect(memory.every((receipt) => receipt.current())).toBe(true); }
+      if (mode === 'unchanged') {
+        expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+        expect((response.body as RemoteAgentDetails).cards.find((card) => card.id === 'connections')?.rows.find((row) => row.label === 'manual-target saved Dispatcher link')?.value).toBe('No removal record in saved metadata');
+        expect(JSON.stringify(response.body)).not.toMatch(/PRIVATE_|createdBy|targetProjectPath/);
+      } else {
+        expect.soft(response.status).toBe(mode === 'revoked-and-primary' ? 403 : 409); expect.soft(response.body).toEqual({ error: mode === 'revoked-and-primary' ? 'details_read_refused' : 'connection_evidence_changed' });
+        expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId');
+      }
+    } finally {
+      m.realConnections = false; m.base = ''; owner._resetDispatcherConnectionsForTesting(); sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); resetAllSettingsStoresForTests(); getPath.mockRestore(); await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});

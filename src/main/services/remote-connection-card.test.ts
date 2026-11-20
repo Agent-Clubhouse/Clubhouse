@@ -3,7 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { app } from 'electron';
-const m = vi.hoisted(() => ({ names: new Map<string, string>(), satellites: new Map<string, Record<string, unknown>>(), side: vi.fn(), legacy: vi.fn(() => { throw new Error('legacy side-effectful reader'); }), ownOn: false }));
+const m = vi.hoisted(() => ({ base: '', failPendingSave: false, names: new Map<string, string>(), satellites: new Map<string, Record<string, unknown>>(), side: vi.fn(), legacy: vi.fn(() => { throw new Error('legacy side-effectful reader'); }), ownOn: false }));
+// Real temporary files, with an explicit modeled rename refusal only while
+// deliberately creating the owner's unsaved pending state during setup.
+vi.mock('fs/promises', async (original) => { const actual = await original<typeof import('fs/promises')>(); return { ...actual, rename: vi.fn((...args: Parameters<typeof actual.rename>) => m.failPendingSave && String(args[1]).endsWith('dispatcher-connections.pending-removals.json') ? Promise.reject(new Error('fixture rejects pending save')) : actual.rename(...args)) }; });
+vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
 vi.mock('./log-service', () => ({ appLog: m.side }));
 vi.mock('./annex-network-profile', () => ({ annexEphemeralSession: () => false }));
 vi.mock('./annex-device-signal', () => ({ devicesChanged: m.side, onDevicesChanged: m.side }));
@@ -17,6 +21,7 @@ vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherAgentId: () => 
 vi.mock('./dispatcher/dispatcher-settings', () => ({ readDispatcherEnablementForDisplay: (options: { receipts: Array<{ current(): boolean }> }) => { const admitted = m.ownOn; options.receipts.push({ current: () => m.ownOn === admitted }); return { enabled: { state: 'ok', value: admitted, inputs: [] }, reason: { state: 'unavailable', inputs: [] } }; } }));
 vi.mock('./connection-sources', () => ({ listConnectionSources: m.legacy }));
 vi.mock('./connection-grants-store', () => ({ getConnectionDirection: m.legacy, listConnectionDirectionsForInspection: m.legacy }));
+import { recordUserRemoval, _resetDispatcherConnectionsForTesting } from './dispatcher-connections';
 import { readPassiveConnectionCard } from './remote-connection-card';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { registerPersistedBindingSource, rebuildPersistedBindings, claimSourceBinding, markSourceRemovedByUser, readCachedConnectionSourcesForDisplay, _resetPersistedBindingSourcesForTesting, type PersistedBinding } from './persisted-bindings';
@@ -33,11 +38,11 @@ const selected = 'selected-agent', machine = 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:a
 let root: string; const stops: Array<() => void> = [], stores = new Set<ReturnType<typeof createFederationRequestStore>>();
 const wire = (agentId = selected, targetId = 'target-agent', extra: Record<string, unknown> = {}): PersistedBinding => ({ agentId, targetId, targetKind: 'agent', label: 'Target label', agentName: 'Source name', targetName: 'Target name', instructions: { '*': 'PRIVATE_INSTRUCTIONS' }, ...extra });
 const put = (file: string, value: unknown) => fs.promises.writeFile(path.join(root, file), JSON.stringify(value));
-const disk = async () => Object.fromEntries(await Promise.all((await fs.promises.readdir(root)).sort().map(async (name) => { const f = path.join(root, name), stat = await fs.promises.stat(f); return [name, { bytes: (await fs.promises.readFile(f)).toString('base64'), ino: stat.ino, mtimeMs: stat.mtimeMs }]; })));
+const disk = async (folder = root): Promise<unknown> => Object.fromEntries(await Promise.all((await fs.promises.readdir(folder)).sort().map(async (name) => { const f = path.join(folder, name), stat = await fs.promises.stat(f); return [name, stat.isDirectory() ? { ino: stat.ino, children: await disk(f) } : { bytes: (await fs.promises.readFile(f)).toString('base64'), ino: stat.ino, mtimeMs: stat.mtimeMs }]; })));
 const direction = (target = 'target-agent', foreign = false, extra: Record<string, unknown> = {}) => ({ from: { agentId: selected }, to: { agentId: target, ...(foreign && { machineId: machine }) }, disabledTools: [], link: { createdAt: at }, updatedAt: at, ...extra });
-const read = async (dispatcher = false) => { const c = card('connections', 'Connections'), receipts: Array<{ current(): boolean }> = []; await section(c, () => readPassiveConnectionCard(c, selected, { receipts, authorized: () => true, dispatcher, name: 'Selected' })); return { c, receipts }; };
-beforeEach(async () => { root = await fs.promises.realpath(await fs.promises.mkdtemp(path.join(os.tmpdir(), 'clubhouse-connection-card-'))); vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); peers.resetForTests(); bindingManager._resetForTesting(); bindingManager.setConnectionToolsSource(null, null); bindingManager.setConnectionInstructionsSource(null); _resetPersistedBindingSourcesForTesting(); m.names.clear(); m.satellites.clear(); m.side.mockClear(); m.legacy.mockClear(); m.ownOn = false; });
-afterEach(async () => { for (const stop of stops.splice(0)) stop(); stores.clear(); resetAllSettingsStoresForTests(); peers.resetForTests(); _resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); vi.restoreAllMocks(); await fs.promises.rm(root, { recursive: true, force: true }); });
+const read = async (dispatcher = false, extra: Partial<Parameters<typeof readPassiveConnectionCard>[2]> = {}) => { const c = card('connections', 'Connections'), receipts: Array<{ current(): boolean }> = []; await section(c, () => readPassiveConnectionCard(c, selected, { receipts, authorized: () => true, dispatcher, name: 'Selected', ...extra })); return { c, receipts }; };
+beforeEach(async () => { root = await fs.promises.realpath(await fs.promises.mkdtemp(path.join(os.tmpdir(), 'clubhouse-connection-card-'))); vi.spyOn(app, 'getPath').mockReturnValue(root); m.base = root; m.failPendingSave = false; _resetDispatcherConnectionsForTesting(); resetAllSettingsStoresForTests(); peers.resetForTests(); bindingManager._resetForTesting(); bindingManager.setConnectionToolsSource(null, null); bindingManager.setConnectionInstructionsSource(null); _resetPersistedBindingSourcesForTesting(); m.names.clear(); m.satellites.clear(); m.side.mockClear(); m.legacy.mockClear(); m.ownOn = false; });
+afterEach(async () => { _resetDispatcherConnectionsForTesting(); for (const stop of stops.splice(0)) stop(); stores.clear(); resetAllSettingsStoresForTests(); peers.resetForTests(); _resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); vi.restoreAllMocks(); await fs.promises.rm(root, { recursive: true, force: true }); });
 it('projects actual selected binding/source/direction records without raw instructions, unrelated agents, legacy readers or writes', async () => {
   const collect = vi.fn(async () => [wire(), wire('sender-agent', selected), wire('PRIVATE_OTHER_AGENT', 'PRIVATE_OTHER_TARGET', { label: 'PRIVATE_OTHER_LABEL' })]); registerPersistedBindingSource({ id: 'orchestrator-connections', collect }); await rebuildPersistedBindings(); collect.mockClear();
   await put('connection-grants.json', { version: 1, directions: [direction('target-agent', false, { disabledTools: ['read_output'], PRIVATE_CONFIG: 'PRIVATE_CONFIG' })] });
@@ -139,4 +144,35 @@ it.each([true, false])('does not guess incoming widget identity from an untyped 
   const module = await import('./persisted-bindings');
   vi.spyOn(module, 'readCachedConnectionSourcesForDisplay').mockReturnValue({ state: 'ok', inputs: [], value: { scope: 'registered-cache-only', complete: true, sourceStates: [{ sourceId: 'canvas-wires', state: 'known' }], pairs: [{ agentId: 'PRIVATE_WIDGET_OWNER', targetId: selected, sources: [{ sourceId: 'canvas-wires', provenance: 'last-reconciled', verified: false, removedByUser: false, copies: 1, binding: { state: 'unavailable', inputs: [], reason: 'limit' } }] }], total: 1, offset: 0, omitted: 0, nextOffset: null } });
   const { c } = await read(); expect.soft(c.state).toBe(hasKnown ? 'ok' : 'error'); expect.soft(c.rows.some((row) => row.label === 'Known connection')).toBe(hasKnown); expect.soft(c.notes.join(' ')).toContain('an independently admitted target kind'); expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_WIDGET_OWNER');
+});
+
+it.each(['saved', 'pending-not-saved', 'primary-unavailable', 'owner-unavailable', 'primary-late', 'owner-late'] as const)('composes cold saved Dispatcher records and independent owner evidence: %s', async (mode) => {
+  const projectPath = path.join(root, 'selected-project'), file = 'dispatcher-connections.json', pending = 'dispatcher-connections.pending-removals.json';
+  const link = { agentId: selected, targetId: 'manual-target', agentProjectPath: projectPath, targetProjectPath: '/other-project', createdAt: at, createdBy: 'controller', PRIVATE_ARGS: 'PRIVATE_CONFIG' };
+  const putLinks = (version = 1, targetId = 'manual-target') => put(file, { version, connections: [{ ...link, targetId }], removedByUser: [] });
+  if (mode === 'pending-not-saved') {
+    await putLinks(2); m.failPendingSave = true;
+    expect(await recordUserRemoval({ agentId: selected, targetId: 'manual-target' })).toBe(true); m.failPendingSave = false; await putLinks();
+  } else if (mode === 'primary-unavailable') {
+    bindingManager.bind(selected, wire()); await fs.promises.writeFile(path.join(root, file), '{broken');
+  } else await putLinks();
+  if (mode === 'owner-unavailable') { const owner = await import('./dispatcher-connections'); vi.spyOn(owner, 'readDispatcherLinkMemoryForDisplay').mockImplementation(() => { throw new Error('PRIVATE_OWNER_ERROR'); }); }
+  m.side.mockClear(); m.legacy.mockClear(); const before = await disk(), { c, receipts } = await read(false, { projectPath, connectToDispatcher: { state: 'ok', value: false, inputs: [] } });
+  expect.soft(c.state).toBe('ok'); expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|agentProjectPath|targetProjectPath|createdBy|"current"\s*:|receipts/);
+  if (mode === 'primary-unavailable') {
+    expect.soft(c.rows.some((row) => row.label === 'Target name')).toBe(true); expect.soft(c.notes.join(' ')).toContain('Saved manual Dispatcher link metadata is unavailable');
+  } else {
+    expect.soft(c.rows.some((row) => row.label === 'manual-target')).toBe(true);
+    expect.soft(c.rows.find((row) => row.label === 'manual-target sources')?.value).toContain('Made by the Dispatcher (saved record');
+    const removal = c.rows.find((row) => row.label === 'manual-target saved Dispatcher link')?.value;
+    expect.soft(removal).toBe('No removal record in saved metadata');
+    const availability = c.rows.find((row) => row.label === 'manual-target Dispatcher availability')?.value;
+    if (mode === 'pending-not-saved') expect.soft(availability).toContain('Removal queued; owner last save failed');
+    if (mode === 'owner-unavailable') expect.soft(availability).toContain('Process-known removal association unavailable');
+    expect.soft(c.rows.find((row) => row.label === 'manual-target Dispatcher availability')?.value).toContain('This agent’s Connect to Dispatcher is off');
+    if (mode === 'saved') expect.soft(c.rows.find((row) => row.label === 'manual-target outgoing switches')?.value).toContain('Configured manual link defaults');
+  }
+  expect.soft(receipts.every((receipt) => receipt.current())).toBe(true); expect.soft(m.legacy).not.toHaveBeenCalled(); expect.soft(m.side).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
+  if (mode === 'primary-late') { await putLinks(1, 'changed-target'); expect(receipts.some((receipt) => !receipt.current())).toBe(true); }
+  if (mode === 'owner-late') { await putLinks(2); expect(await recordUserRemoval({ agentId: selected, targetId: 'manual-target' })).toBe(true); await putLinks(); expect(receipts.some((receipt) => !receipt.current())).toBe(true); }
 });
