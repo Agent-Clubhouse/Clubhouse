@@ -153,11 +153,11 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     });
     await read('dispatcher', (c) => readDispatcherCard(c, target, readPolicy().fields.connectToDispatcher, { receipts: dispatcherReceipts, authorized, controller }));
     await read('connections', async (c) => {
-      if (!dispatcher) return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: agent.name, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
+      if (!dispatcher) return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: agent.name, projectPath: project.path, connectToDispatcher: readPolicy().fields.connectToDispatcher, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
       const canonical = await controller();
       if (!authorized()) return;
       if (!canonical) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The host Dispatcher’s canonical connection identity is unavailable. Connections cannot be verified until its host identity is available.'); return; }
-      return readConnectionCard(c, canonical.agent.id, { receipts: connectionReceipts, authorized, dispatcher: true, name: canonical.agent.name });
+      return readConnectionCard(c, canonical.agent.id, { receipts: connectionReceipts, authorized, dispatcher: true, name: canonical.agent.name, projectPath: canonical.project.path });
     });
     await read('actions', (c) => readActionCard(c, agentId, project.id, dispatcher, { agentName: agent.name, projectName: project.displayName || project.name }));
     await read('skills-mcp', async (c) => {
