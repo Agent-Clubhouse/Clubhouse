@@ -44,7 +44,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
   query = query && { ...query };
   try {
     const quick = await resolveReadOnlyQuickTarget(agentId, authorized);
-    if (quick) return query ? { status: 404, body: { error: 'details_page_unavailable' } } : readRemoteQuickDetails(quick, authorized);
+    if (quick) return readRemoteQuickDetails(quick, authorized, query);
     let target: AgentConfigTarget;
     try { target = await resolveAgentConfigTarget(agentId, undefined, { strict: true }); }
     catch (error) { return !authorized() ? refused() : error instanceof Error && error.message === 'No registered agent matches that reference.'

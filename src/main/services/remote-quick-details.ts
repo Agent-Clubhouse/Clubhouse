@@ -1,3 +1,4 @@
+import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
 /** Quick runs are retained launch identities, never synthetic durable configs. */
 import { REMOTE_DETAILS_CARD_IDS, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails, type RemoteDetailsCard } from '../../shared/remote-agent-details';
 import { accessFromLegacy, accessLabel } from '../../shared/agent-access';
@@ -14,9 +15,12 @@ import { managedAgents } from './managed-agents';
 import { quickRuntimeDisplay, quickRuntimeIsCurrent } from './quick-agent-events';
 import type { DisplayReceipt } from './display-settings';
 
-export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, authorized: () => boolean): Promise<{ status: number; body: unknown }> {
+export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, authorized: () => boolean, query?: RemoteDetailsQuery): Promise<{ status: number; body: unknown }> {
   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });
   if (!authorized()) return refused();
+  if (query !== undefined && !isRemoteDetailsQuery(query)) return { status: 400, body: { error: 'invalid_details_query' } };
+  if (query && !['outgoing', 'incoming', 'directions', 'sources'].includes(query.source)) return { status: 404, body: { error: 'quick_source_not_applicable' } };
+  query = query && { ...query };
   try {
     const { run, project } = target, agentId = run.agentId, selected = run.display;
     const setupReceipts: DisplayReceipt[] = [];
@@ -36,7 +40,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
     const cards = REMOTE_DETAILS_CARD_IDS.map((id) => card(id, ({ settings: 'Settings', dispatcher: 'Dispatcher', orchestrate: 'Orchestration', connections: 'Connections', actions: 'Actions', 'skills-mcp': 'Skills and MCP', session: running ? 'Session' : 'Last session', canvases: 'Canvases', changes: 'Changes' })[id]));
     const byId = Object.fromEntries(cards.map((c) => [c.id, c])) as Record<typeof REMOTE_DETAILS_CARD_IDS[number], RemoteDetailsCard>;
     byId.dispatcher.state = byId.orchestrate.state = 'not-applicable';
-    const result: RemoteAgentDetails = { version: 1, readOnly: true, readAt: Date.now(), agentId, providerId, providerLabel: providerId === 'unknown' ? 'Not reported by host' : display(providerName(providerId)), running, status, spawnedAt: run.startedAt, sessionId, nativeSessionId, settings: null, cards };
+    const result: RemoteAgentDetails = { version: 1, connectionPages: 1, connectionPageSources: running && bound ? ['outgoing', 'incoming', 'directions', 'sources'] : [], readOnly: true, readAt: Date.now(), agentId, providerId, providerLabel: providerId === 'unknown' ? 'Not reported by host' : display(providerName(providerId)), running, status, spawnedAt: run.startedAt, sessionId, nativeSessionId, settings: null, cards };
     const checked = async <T>(work: Promise<T>) => { const value = await work; if (!authorized()) throw new Error('revoked'); return value; };
     const read = async (id: typeof REMOTE_DETAILS_CARD_IDS[number], fn: (c: RemoteDetailsCard) => Promise<void> | void) => {
       if (!authorized()) throw new Error('revoked');
@@ -96,7 +100,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
     });
     await read('connections', (c) => {
       if (!running || !bound) { c.state = 'error'; c.summary = 'Connection run association unavailable'; c.notes.push('The host cannot associate current connection records with this stopped or unconfirmed quick run.'); return; }
-      return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: run.name });
+      return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, page: query, name: run.name });
     });
     await read('actions', (c) => readActionCard(c, agentId, project.id, false, { agentName: run.name, projectName: project.displayName || project.name }));
     await read('canvases', (c) => readCanvasCard(c, agentId, project.id));

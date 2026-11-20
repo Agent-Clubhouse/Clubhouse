@@ -56,3 +56,8 @@ it('offers new saved-source views only when the admitted host explicitly adverti
   expect(screen.queryByRole('button', { name: 'Outgoing bindings' })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Saved tool links' }));
   await waitFor(() => expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'tool-records', offset: 0, projectOffset: 0 }));
 });
+it('offers only explicitly supported live Quick inventories and no durable source readers', async () => {
+  show({ agent: { ...agent, kind: 'quick' }, details: { ...details, connectionPageSources: ['outgoing', 'incoming', 'directions', 'sources'] } });
+  expect(screen.queryByRole('button', { name: 'Saved tool links' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Saved Dispatcher links' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Helper relationships' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Outgoing bindings' })); await waitFor(() => expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'outgoing', offset: 0, projectOffset: 0 }));
+});

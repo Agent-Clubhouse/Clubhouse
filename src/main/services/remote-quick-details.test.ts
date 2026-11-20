@@ -374,3 +374,31 @@ it('keeps current Quick bindings while refusing inapplicable saved durable Dispa
   try { const result = await read(); expect.soft(result.cards.find((card) => card.id === 'connections')?.rows.some((row) => row.label === 'Current receiver')).toBe(true); expect.soft(savedRead).not.toHaveBeenCalled(); expect.soft(memoryRead).not.toHaveBeenCalled(); expect.soft(JSON.stringify(result)).not.toMatch(/PRIVATE_INAPPLICABLE_TARGET|PRIVATE_RUN_NONCE/); }
   finally { m.realConnections = false; bindings.bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting(); }
 });
+
+describe('attested Quick Connections continuation', () => {
+  it.each(['unchanged', 'binding-late', 'replacement', 'finished', 'revoked'] as const)('binds the final source page to this exact Quick run: %s', async (mode) => {
+    const { bindingManager } = await import('./clubhouse-mcp/binding-manager'), sources = await import('./persisted-bindings');
+    m.realConnections = true; bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting(); bindingManager.setConnectionToolsSource(null, null); bindingManager.setConnectionInstructionsSource(null);
+    const run = start(), registration: AgentRegistration = { projectPath: project, cwd: project, runtime: 'pty', orchestrator: 'codex-cli', nonce: 'PRIVATE_CURRENT_QUICK_NONCE' };
+    m.registration.mockReturnValue(registration); m.running.mockReturnValue(true); m.runtime.mockReturnValue({ kind: 'pty' }); noteQuickAgentRuntime(run, registration, () => m.registration() === registration);
+    for (let i = 0; i < 41; i++) bindingManager.bind('quick', { targetId: 'terminal-' + i, targetKind: 'terminal', label: 'Quick terminal ' + i });
+    let allowed = true, reached = false, observed = false;
+    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
+    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((row) => row.label === 'Quick terminal 40'); });
+    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'binding-late') bindingManager.updateBinding('quick', 'terminal-40', { label: 'Changed terminal' }); if (mode === 'replacement') m.registration.mockReturnValue({ ...registration, nonce: 'replacement' }); if (mode === 'finished') finishQuickAgentRun(run, 'completed'); if (mode === 'revoked') allowed = false; return []; });
+    try {
+      const target = await resolveReadOnlyQuickTarget('quick', () => allowed); expect(target).not.toBeNull();
+      const response = await readRemoteQuickDetails(target!, () => allowed, { card: 'connections', source: 'outgoing', offset: 40 });
+      expect(reached).toBe(true); expect(observed).toBe(true);
+      if (mode === 'unchanged') {
+        expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'quick')).toBe(true); const body = response.body as RemoteAgentDetails;
+        expect(body.connectionPageSources).toEqual(['outgoing', 'incoming', 'directions', 'sources']); expect(body.cards.find((c) => c.id === 'connections')?.connectionPage).toMatchObject({ source: 'outgoing', offset: 40, known: 41, next: null }); expect(JSON.stringify(body)).not.toContain('PRIVATE_CURRENT_QUICK_NONCE');
+      } else { expect.soft(response.status).toBe(mode === 'revoked' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); }
+    } finally { capture.mockRestore(); m.realConnections = false; bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting(); }
+  });
+  it('does not advertise run-owned connection pages for an unattested or stopped Quick launch and refuses durable-only source queries', async () => {
+    start(); const target = await resolveReadOnlyQuickTarget('quick', () => true); expect(target).not.toBeNull();
+    const response = await readRemoteQuickDetails(target!, () => true); expect(response.status).toBe(200); expect((response.body as RemoteAgentDetails).connectionPageSources).toEqual([]);
+    const denied = await readRemoteQuickDetails(target!, () => true, { card: 'connections', source: 'tool-records' }); expect(denied.status).toBe(404); expect(denied.body).not.toHaveProperty('cards'); expect(m.durable).not.toHaveBeenCalled();
+  });
+});

@@ -52,12 +52,12 @@ export function RemoteConnectionsCard({ agent, details, status, freshnessKey, di
   const overviewStatus = !address ? 'unavailable' : !connected ? 'offline' : status;
   const overviewMessage = overviewStatus === 'unavailable' ? 'This host does not share these details, or this agent is no longer available. The host may need an update.' : message(overviewStatus);
   return <DetailsCard id="connections" title="Connections" summary={card?.summary || (query ? message(result.status) : overviewMessage)} open={open} onToggle={onToggle}>
-    {eligible && agent.kind === 'durable' && details?.connectionPages === 1 && <div className="flex flex-wrap gap-3 pl-[33px] pr-3.5 pb-2 text-xs" aria-label="Connection inventories">
+    {eligible && details?.connectionPages === 1 && <div className="flex flex-wrap gap-3 pl-[33px] pr-3.5 pb-2 text-xs" aria-label="Connection inventories">
       <button type="button" aria-pressed={!query} onClick={() => setNavigation(null)}>Overview</button>
       {sources.map((source) => <button type="button" key={source} aria-pressed={query?.source === source} onClick={() => select(source)}>{label[source]}</button>)}
     </div>}
     {card ? <Evidence card={card} /> : <CardNote>{query && result.status === 'ok' ? 'The host did not return the selected source page.' : query ? message(result.status) : overviewMessage}</CardNote>}
-    {eligible && agent.kind === 'durable' && details?.connectionPages !== 1 && <CardNote>This host shares the summary only. Selected source continuation needs a host update.</CardNote>}
+    {eligible && details?.connectionPages !== 1 && <CardNote>This host shares the summary only. Selected source continuation needs a host update.</CardNote>}
     {query && current && page && <>
       <CardNote>{page.known} known records in this inventory page{page.complete ? '' : ' · additional records may be unavailable'}. Pages are separate host observations.</CardNote>
       <div className="flex gap-3 pl-[33px] text-xs">
