@@ -21,3 +21,10 @@ it('retains unknown malformed fields while using the shared local policy model',
   const result = projectLoadedConnectionEndpointFieldsForDisplay('target', { id: 'target', name: 'Known', parentAgentId: 7, disposedAt: 7, orchestration: { connectToDispatcher: 'PRIVATE_BAD' } });
   expect(result).toMatchObject({ state: 'ok', value: { name: { value: 'Known' }, helper: { state: 'unavailable' }, disposed: { state: 'unavailable' }, connectToDispatcher: { state: 'unavailable' } } }); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_');
 });
+it('reports an explicit display limit for oversized names while retaining independent known flags', () => {
+  const raw = { id: 'target', name: 'x'.repeat(1025), orchestration: { connectToDispatcher: false } };
+  for (const result of [projectConnectionEndpointFieldsForDisplay('target', raw), projectLoadedConnectionEndpointFieldsForDisplay('target', raw)]) {
+    expect(result).toMatchObject({ state: 'ok', value: { name: { state: 'unavailable', reason: 'limit' }, helper: { value: false }, connectToDispatcher: { value: false } } });
+    expect(JSON.stringify(result)).not.toContain(raw.name);
+  }
+});
