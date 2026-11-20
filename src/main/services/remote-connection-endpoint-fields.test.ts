@@ -118,6 +118,9 @@ it.each(['cross-project-outgoing', 'cross-project-two-way', 'matching-role-folde
   await fsp.writeFile(path.join(getBaseDirPath(), 'dispatcher-connections.json'), JSON.stringify({ version: 1, connections: links, removedByUser: [] }));
   if (mode === 'cross-project-native-override') await fsp.writeFile(path.join(root, 'connection-grants.json'), JSON.stringify({ version: 1, directions: [{ from: { agentId: selected.id }, to: { agentId: manualId }, disabledTools: ['read_output'], enabledTools: [], link: { createdAt: '2026-11-19T00:00:00Z' }, updatedAt: '2026-11-19T00:00:00Z' }] }));
   if (mode === 'cross-project-native-override') { const { readConnectionDirectionsForDisplay } = await import('./connection-directions-display'); expect(readConnectionDirectionsForDisplay(selected.id)).toMatchObject({ state: 'ok', value: { total: 1, rows: [{ disabledTools: { state: 'ok', value: ['read_output'] } }] } }); }
+  const { bindingFor } = await import('./dispatcher-connections');
+  const originalManual = bindingFor({ agent: selected, projectPath: selectedProject, projectName: 'Selected' } as never, { agent: same ? controller : related, projectPath: manualProject, projectName: 'Related' } as never);
+  expect(originalManual.disabledTools ?? []).not.toContain('clear_agent'); expect(originalManual.enabledTools ?? []).not.toContain('wake_agent');
   const selectedReceipt = captureReadOnlyAgentTargetWitness({ agent: selected, project: selectedRecord }), roleReceipt = captureReadOnlyRoleTargetWitness({ agent: controller, project: { id: 'dispatcher', name: 'Dispatcher', path: roleProject } }, () => true);
   expect(selectedReceipt.current()).toBe(true); expect(roleReceipt.current()).toBe(true); expect(project).not.toBe(roleProject);
   const saved = readSavedDispatcherLinksForDisplay(selected.id, selectedProject); expect(saved).toMatchObject({ state: 'ok', value: { total: links.length } });
@@ -161,5 +164,5 @@ it.each(['cross-project-outgoing', 'cross-project-two-way', 'matching-role-folde
     expect.soft(c.rows.filter((r) => r.label.includes('(automatic Dispatcher)') && /(?:outgoing|incoming) switches$/.test(r.label)).every((r) => r.value.includes('association is unconfirmed'))).toBe(true);
   }
   if (mode === 'reverse-cross-project') { const manual = c.rows.filter((r) => r.label.startsWith(related.name) && r.value.startsWith('agent ·')); expect.soft(manual).toHaveLength(1); expect.soft(manual.every((r) => r.value.includes('sends to this agent') && !r.value.includes('two-way records'))).toBe(true); }
-  expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|rootNamespace|targetProjectPath/);
+  expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|rootNamespace|targetProjectPath/); expect.soft(JSON.stringify(c)).not.toContain(root);
 });
