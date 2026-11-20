@@ -156,3 +156,28 @@ it('keeps excessive selected pair admission ahead of source reads and optional c
   const reader = vi.fn(readAgentConnectionCacheForDisplay), result = query(reader, [], Array.from({ length: 51 }, (_, i) => pair(`target-${i}`)));
   expect(result).toMatchObject({ state: 'unavailable', reason: 'limit' }); expect.soft(reader).not.toHaveBeenCalled(); assertNoReadEffects();
 });
+it.each(['registered-project-removed', 'endpoint-primary-removed'] as const)('SCOPT1 refuses the next root cache lookup after earlier work changes its %s admission evidence', async (kind) => {
+  await warm(); await warmSecond();
+  const pairs = [pair(), pair('other')], admitted: DisplayReceipt[] = [];
+  const initial = query(readAgentConnectionCacheForDisplay, admitted, pairs);
+  expect(initial).toMatchObject({ state: 'ok', value: { rows: [
+    { endpoint: { value: { record: 'registered-primary' } }, hostCache: { value: { availability: 'loaded' } } },
+    { endpoint: { value: { record: 'registered-primary' } }, hostCache: { value: { availability: 'loaded' } } },
+  ] } });
+  expect(admitted.every((r) => r.current())).toBe(true);
+  const sourceBefore = fs.readFileSync(source(), 'utf8'), calls: string[] = [];
+  const reader: typeof readAgentConnectionCacheForDisplay = (folder, id, options) => {
+    const result = readAgentConnectionCacheForDisplay(folder, id, options); expect(result.availability).toBe('loaded'); calls.push(id);
+    if (id === 'target') {
+      if (kind === 'registered-project-removed') fs.writeFileSync(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 's', name: 'Selected', path: selectedProject }, { id: 't', name: 'Target', path: project }] }));
+      else fs.unlinkSync(path.join(otherProject, '.clubhouse', 'agents.json'));
+    }
+    return result;
+  };
+  const result = query(reader, [], pairs);
+  expect(m.selected).toBe(true); expect(fs.readFileSync(source(), 'utf8')).toBe(sourceBefore);
+  if (kind === 'registered-project-removed') expect(JSON.parse(fs.readFileSync(path.join(getBaseDirPath(), 'projects.json'), 'utf8')).projects.some((p: { path: string }) => p.path === otherProject)).toBe(false);
+  else expect(fs.existsSync(path.join(otherProject, '.clubhouse', 'agents.json'))).toBe(false);
+  expect(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect(JSON.stringify(result)).not.toMatch(/Selected cache name|Other host name/);
+  expect.soft(calls).not.toContain('other'); expect.soft(calls).toEqual(['target']);
+});
