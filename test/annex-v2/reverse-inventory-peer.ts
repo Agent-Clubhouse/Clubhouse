@@ -122,7 +122,7 @@ import { ChatAgentRuntime, clearChatRuntimes, registerChatRuntime } from '../../
 import { FakeChatDriver } from '../../src/main/services/agent-runtime/fake-chat-driver';
 import { MINIMAL_CHAT_CAPABILITIES, type ChatEventDraft } from '../../src/shared/chat';
 import type { ControlRequestInput } from '../../src/main/services/annex-control';
-import { ClaudeCodeProvider, registerProvider } from '../../src/main/orchestrators';
+import { ClaudeCodeProvider, getProvider, registerProvider } from '../../src/main/orchestrators';
 import { groupProjectHost } from '../../src/main/services/group-project-host';
 import { flushAllGroupProjects } from '../../src/main/services/group-project-registry';
 import { getBulletinBoard, flushAllBulletinBoards } from '../../src/main/services/group-project-bulletin';
@@ -321,7 +321,10 @@ export async function createInventoryPeer(alias: string) {
       };
     },
     prepareControllerReads() {
-      if (!remote || controllerReadsCleanup) throw new Error('Controller read fixture is not ready');
+      if (!remote) throw new Error('Controller read fixture is not ready');
+      controllerReadsCleanup?.();
+      controllerPublication = 'ready';
+      if (!getProvider('claude-code')) registerProvider(new ClaudeCodeProvider());
       // Model application publication only; pinned membership and the read grant matcher stay real.
       const selector = vi.spyOn(dispatcher, 'getDispatcherAgentId').mockReturnValue(agent.id);
       const originalPublication = federation.remoteFederationController;

@@ -107,8 +107,8 @@ describe('full-server audit inventory over one A to B forward', () => {
       : b.call<Awaited<ReturnType<InventoryPeer['controllerSessions']>>>('controllerSessions');
     const publication = (who: 'A' | 'B', state: Parameters<InventoryPeer['controllerPublication']>[0]) =>
       who === 'A' ? b.call('controllerPublication', state) : Promise.resolve(a.controllerPublication(state));
-    beforeAll(async () => { a.prepareControllerReads(); await b.call('prepareControllerReads'); });
-    afterAll(async () => { a.finishControllerReads(); await b.call('finishControllerReads'); });
+    beforeEach(async () => { a.prepareControllerReads(); await b.call('prepareControllerReads'); });
+    afterEach(async () => { a.finishControllerReads(); await b.call('finishControllerReads'); });
 
     it.each(['A', 'B'] as const)('%s reads controller history and saved sessions through the real pinned route and desktop adapter', async (who) => {
       const seq = await emitOnTarget(who, { type: 'agent_message', data: { messageId: `controller-route-${who}`, text: `Owned controller read ${who}` } });
@@ -117,7 +117,9 @@ describe('full-server audit inventory over one A to B forward', () => {
       expect(raw.headers['cache-control']).toBe('no-store');
       expect(json(raw)).toMatchObject({
         readOnly: true, agentId: target(who).agentId,
-        events: expect.arrayContaining([expect.objectContaining({ seq, data: { text: `Owned controller read ${who}` } })]),
+        events: expect.arrayContaining([expect.objectContaining({
+          seq, type: 'agent_message', data: expect.objectContaining({ messageId: `controller-route-${who}`, text: `Owned controller read ${who}` }),
+        })]),
       });
       expect(await controllerPage(who)).toMatchObject({ status: 'ok', value: json(raw) });
       const saved = await wire(who, { method: 'GET', path: `${controllerPath}/sessions` });
