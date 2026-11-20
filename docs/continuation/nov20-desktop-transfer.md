@@ -88,3 +88,9 @@ Existing reviewable decision remains durable per-group/member quarantine (recomm
 Actual Mini bp83o0 acceptance via Tael d31f9bc1 covers parked policy-decision follow-through on exacte234. Sender stops duplicate parked-decision tracking only. User decision remains pending; no duplicate question, policy choice, schema change, live action, replay or implementation is authorized now. Upon an actual decision Mini may sequence only the expressly authorized correction and independent review.0bb remains withheld; both options and writer/rollback requirements remain.
 
 Settings/Auto/3744 PR coordination and current CI failures remain Mini-owned. No source-side duplicate fixes, blind reruns or waivers. Details correction remains active source-owned, with04:30 transferable freeze target.
+
+## Mini-owned CI update (reported by Navi)
+
+Settings PR3745 published reviewed correction530a2d9b6bb7bd58096292dba2d5dc3c50445176; successor102 renderer +30 import tests passed, hosted run44729152182 in progress at report, not green/merged. Auto PR3746 published reviewed fixture correction6583169291278fd7fc0ae971a479bc6224700dca; full nonwrite fixture68/68 passed, no old-head CI transfer. Windows Annex rename failure cause remains unproven. PR3744 bounded diagnostic remains Mini-owned. No duplicate sender coordination, activation, merge, release or waiver.
+
+Mini additionally verified historical Detailsaf8b9cfa95bbbcb640d29477c6b1572be77bfd86/tree4ba7589e69e9190e1e29fdf725529170fe662a8f and pinnedproof0a6fec0f4491fb9616bae389e874151999dc60ce/treec0ed6b234e81645b0e5e90ec84b6ac86917a6aae, manifestdc88364b99c146e666c1b6f5ddc4347324943b5f3b7b631041ef394372e5a780/all71 artifacts. Development custody only; active correction/proof stays source-owned, no root advance.
