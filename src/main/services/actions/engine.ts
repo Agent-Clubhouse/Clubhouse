@@ -192,8 +192,7 @@ export type RunReasonCode =
   | 'step_threw'
   | 'delivery_expired'
   | 'delivery_replaced'
-  | 'delivery_dropped'
-  | 'delivery_unknown';
+  | 'delivery_dropped';
 
 /** Every observation names the action and its owner. */
 interface ObservedAction {
@@ -1506,7 +1505,7 @@ export class ActionsEngine {
           deliveryLoss = deliveryLoss?.outcome === 'expired' ? deliveryLoss : {
             outcome: delivery === 'unknown' ? 'failed' : delivery === 'expired' ? 'expired' : 'cancelled',
             reason: receipt.detail,
-            code: delivery === 'unknown' ? 'delivery_unknown' : delivery === 'expired' ? 'delivery_expired' : delivery === 'replaced' ? 'delivery_replaced' : 'delivery_dropped',
+            code: delivery === 'unknown' ? 'step_failed' : delivery === 'expired' ? 'delivery_expired' : delivery === 'replaced' ? 'delivery_replaced' : 'delivery_dropped',
           };
           if (run.outcome !== 'running' && run.outcome !== 'failed') {
             run.outcome = deliveryLoss.outcome;
