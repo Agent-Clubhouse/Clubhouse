@@ -28,7 +28,7 @@ export function endpointCardFields(row: SavedDispatcherEndpointMetadataRow): End
   if (!endpoint || endpoint.state !== 'ok') return { saved: endpoint?.reason === 'limit' ? 'Saved target metadata exceeds this read’s limit' : 'Saved target metadata unavailable' };
   if (endpoint.value.record !== 'registered-primary') return { saved: endpoint.value.record === 'project-not-registered'
     ? 'Saved target project is not registered' : 'Target ID not found in the verified primary' };
-  const fields = endpoint.value.fields, result: EndpointCardFields = { primaryAdmitted: true, savedName: name(fields), displayName: name(fields), nameOrigin: name(fields) ? 'saved' : undefined, saved: describe(fields) };
+  const fields = endpoint.value.fields, savedName = name(fields), result: EndpointCardFields = { primaryAdmitted: true, savedName, displayName: savedName, nameOrigin: savedName ? 'saved' : undefined, saved: describe(fields) };
   const cache = row.hostCache;
   if (!cache) return result;
   if (cache.state !== 'ok') return { ...result, memory: 'Host memory fields unavailable' };

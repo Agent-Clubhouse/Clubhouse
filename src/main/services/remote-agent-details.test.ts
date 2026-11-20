@@ -798,3 +798,39 @@ describe('cold manual Dispatcher link evidence at final Details assembly', () =>
     }
   });
 });
+describe('admitted endpoint target fields at complete normal Details assembly', () => {
+  it.each(['unchanged', 'related-primary-late', 'revoked-and-related-primary'] as const)('delivers qualified primary fields and preserves final refusal: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-endpoint-fields-'))), a = path.join(root, 'selected'), b = path.join(root, 'related');
+    for (const folder of [a, b]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+    m.base = root; m.realConnections = true; m.realWitness = true;
+    const selected = { ...agent(), orchestrator: 'codex-cli' as const, worktreePath: a }, selectedProject = { ...project, path: a };
+    await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [selectedProject, { id: 'p-related', name: 'Related project', path: b }] }));
+    await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), JSON.stringify([selected]));
+    const related = { id: 'qualified-target', name: 'Qualified target', color: 'blue', createdAt: '2026-11-19', orchestrator: 'codex-cli', orchestration: { connectToDispatcher: false }, instructions: 'PRIVATE_RELATED_INSTRUCTIONS', env: { key: 'PRIVATE_RELATED_KEY' } };
+    const relatedFile = path.join(b, '.clubhouse', 'agents.json'); await fs.writeFile(relatedFile, JSON.stringify([related]));
+    await fs.writeFile(path.join(root, 'dispatcher-connections.json'), JSON.stringify({ version: 1, connections: [{ agentId: 'a1', targetId: related.id, agentProjectPath: a, targetProjectPath: b, createdBy: 'a1', createdAt: '2026-11-19T00:00:00Z' }], removedByUser: [] }));
+    m.target.mockResolvedValue({ agent: selected, project: selectedProject });
+    const saved = await import('./dispatcher-saved-links-display'), parentReceipts: Array<{ current(): boolean }> = [];
+    expect(saved.readSavedDispatcherLinksForDisplay('a1', a, { receipts: parentReceipts })).toMatchObject({ state: 'ok', value: { total: 1 } }); expect(parentReceipts.every((r) => r.current())).toBe(true);
+    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
+    let captured: import('../../shared/remote-agent-details').RemoteDetailsCard | undefined, allowed = true;
+    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); captured = args[0]; });
+    m.canvases.mockImplementationOnce(async () => {
+      expect(captured?.rows.some((r) => r.label === 'Qualified target')).toBe(true); expect(captured?.rows.find((r) => r.label === 'Qualified target saved target')?.value).toContain('Connect to Dispatcher Off');
+      expect(captured?.rows.find((r) => r.label === 'Qualified target host memory target')?.value).toBe('Host memory not loaded');
+      if (mode !== 'unchanged') await fs.writeFile(relatedFile, JSON.stringify([{ ...related, name: 'Changed related primary' }]));
+      expect(parentReceipts.every((r) => r.current())).toBe(true); // Old manual-record receipts cannot see target-file changes.
+      if (mode === 'revoked-and-related-primary') allowed = false;
+      return [];
+    });
+    try {
+      const response = await readRemoteAgentDetails('a1', () => allowed);
+      if (mode === 'unchanged') {
+        expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+        const c = (response.body as RemoteAgentDetails).cards.find((c) => c.id === 'connections'); expect(c?.rows.some((r) => r.label === 'Qualified target')).toBe(true); expect(JSON.stringify(c)).not.toMatch(/PRIVATE_|expectedProjectNamespace|rootNamespace|agentProjectPath|targetProjectPath/); expect(JSON.stringify(c)).not.toContain(root);
+      } else {
+        expect.soft(response.status).toBe(mode === 'revoked-and-related-primary' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId');
+      }
+    } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+});

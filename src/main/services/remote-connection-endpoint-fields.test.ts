@@ -53,7 +53,7 @@ beforeEach(async () => {
 });
 afterEach(async () => { bindingManager._resetForTesting(); _resetPersistedBindingSourcesForTesting(); clearAgentConfigCache(); await fsp.rm(root, { recursive: true, force: true }); });
 
-it.each(['saved-and-memory', 'cold-cache', 'changed-directory'] as const)('integrates real selected source, primary and owner cache fields into a read-only Connections card: %s', async (kind) => {
+it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late'] as const)('integrates real selected source, primary and owner cache fields into a read-only Connections card: %s', async (kind) => {
   bindingManager._resetForTesting(); _resetPersistedBindingSourcesForTesting();
   const selectedProject = path.join(root, 'selected'); await fsp.mkdir(path.join(selectedProject, '.clubhouse'), { recursive: true });
   const selected = { ...agent(), id: 'selected', name: 'Selected' }, selectedRecord = { id: 's', name: 'Selected project', path: selectedProject };
@@ -64,13 +64,16 @@ it.each(['saved-and-memory', 'cold-cache', 'changed-directory'] as const)('integ
   if (kind === 'saved-and-memory') (await getDurableConfig(project, 'target'))!.name = 'Host accepted custom name';
   if (kind === 'changed-directory') { const actual = await vi.importActual<typeof import('fs')>('fs'); actual.renameSync(project, project + '-retired'); actual.mkdirSync(path.join(project, '.clubhouse'), { recursive: true }); actual.writeFileSync(file(), JSON.stringify([agent({ name: 'New registered primary' })])); }
   const target = captureReadOnlyAgentTargetWitness({ agent: selected, project: selectedRecord }); expect(target.current()).toBe(true);
-  resetObservation(); const c = card('connections', 'Connections'), receipts: DisplayReceipt[] = [];
+  const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+  const snapshot = async (folder = root): Promise<unknown> => Object.fromEntries(await Promise.all((await actual.readdir(folder)).sort().map(async (name) => { const child = path.join(folder, name), stat = await actual.stat(child); return [name, stat.isDirectory() ? { ino: stat.ino, children: await snapshot(child) } : { ino: stat.ino, mtimeMs: stat.mtimeMs, bytes: (await actual.readFile(child)).toString('base64') }]; })));
+  const before = await snapshot(); resetObservation(); const c = card('connections', 'Connections'), receipts: DisplayReceipt[] = [];
   await readPassiveConnectionCard(c, 'selected', { receipts, authorized: () => true, projectPath: selectedProject, name: 'Selected', endpoint: { target, readCache: readAgentConnectionCacheForDisplay } });
   const label = kind === 'changed-directory' ? 'New registered primary' : kind === 'saved-and-memory' ? 'Host accepted custom name' : 'Selected cache name';
   expect(c.rows.some((r) => r.label === label)).toBe(true); expect(c.rows.find((r) => r.label === label + ' saved target')?.value).toContain(kind === 'changed-directory' ? 'New registered primary' : 'Selected cache name');
   const memory = c.rows.find((r) => r.label === label + ' host memory target')?.value;
-  expect.soft(memory).toContain(kind === 'saved-and-memory' ? 'Host accepted custom name' : kind === 'cold-cache' ? 'Host memory not loaded' : 'Host memory project association unconfirmed');
+  expect.soft(memory).toContain(kind === 'saved-and-memory' ? 'Host accepted custom name' : kind === 'cold-cache' ? 'Host memory not loaded' : kind === 'cache-late' ? 'Selected cache name' : 'Host memory project association unconfirmed');
   expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|expectedProjectNamespace|rootNamespace|agentProjectPath|targetProjectPath|"current"/); expect.soft(JSON.stringify(c)).not.toContain(root); expect.soft(c.notes.join(' ')).toContain('do not confirm that this link works now');
-  expect(receipts.every((r) => r.current())).toBe(true); expect.soft(m.external).not.toHaveBeenCalled();
+  expect(receipts.every((r) => r.current())).toBe(true); if (kind === 'cache-late') { (await getDurableConfig(project, 'target'))!.name = 'Changed after card read'; expect(receipts.some((r) => !r.current())).toBe(true); } expect.soft(m.external).not.toHaveBeenCalled();
+  expect.soft(await snapshot()).toEqual(before);
   for (const fn of [fsp.writeFile, fsp.rename, fsp.mkdir, fs.watch]) expect.soft(fn).not.toHaveBeenCalled();
 });
