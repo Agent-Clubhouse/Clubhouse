@@ -31,7 +31,8 @@ beforeEach(async () => {
   await putAgents(c, [{ id: 'target', name: 'PRIVATE_OTHER_PROJECT_NAME' }]); await putSource([saved()]);
 });
 afterEach(async () => { await fs.promises.rm(root, { recursive: true, force: true }); });
-it('derives the other registered project only from the exact selected saved relationship and returns safe metadata without paths or callbacks', () => {
+it('derives the other registered project only from the exact selected saved relationship and returns safe metadata without paths or callbacks', async () => {
+  await putSource([saved(), saved({ agentId: 'PRIVATE_UNRELATED_AGENT', targetId: 'PRIVATE_UNRELATED_TARGET', agentProjectPath: c, targetProjectPath: c, createdBy: 'PRIVATE_UNRELATED_MAKER' })]);
   const receipts: DisplayReceipt[] = [], result = query([pair()], receipts);
   expect(result).toMatchObject({ state: 'ok', value: { scope: 'saved-dispatcher-endpoint-metadata', rows: [{ ...pair(), relationship: 'recorded', endpoint: { state: 'ok', value: { record: 'registered-primary', fields: { id: 'target', name: { value: 'Expected B name' }, connectToDispatcher: { value: true } } } } }] } });
   expect.soft(JSON.stringify(result)).not.toMatch(/PRIVATE_|projectPath|current|instructions|authority/); expect.soft(JSON.stringify(result)).not.toContain(root); expect.soft(JSON.stringify(receipts)).toBe('[{},{}]');
@@ -64,6 +65,11 @@ it('withholds association metadata when the source path changes during the regis
 it('keeps selected role/target evidence independent before reading endpoints and after return', async () => {
   m.selected = false; expect(query()).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect(opened()).toEqual([]);
   m.selected = true; const receipts: DisplayReceipt[] = []; query([pair()], receipts); expect(receipts.every((r) => r.current())).toBe(true); m.selected = false; expect(receipts.every((r) => r.current())).toBe(false);
+});
+it('pins the host profile even when no requested pair has saved endpoint metadata', async () => {
+  await putSource([]); const receipts: DisplayReceipt[] = [];
+  expect(query([pair()], receipts)).toMatchObject({ state: 'ok', value: { rows: [{ relationship: 'not-recorded' }] } });
+  expect(receipts.every((r) => r.current())).toBe(true); m.base = a; expect(receipts.every((r) => r.current())).toBe(false);
 });
 it('retains actual endpoint file witnesses through later assembly without aliasing caller pairs or returned fields', async () => {
   const pairs = [pair()], receipts: DisplayReceipt[] = [], result = query(pairs, receipts); expect(result.state).toBe('ok');
