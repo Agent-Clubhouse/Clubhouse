@@ -27,7 +27,7 @@ vi.mock('fs', async (original) => { const actual = await original<typeof import(
 vi.mock('fs/promises', async (original) => { const actual = await original<typeof import('fs/promises')>(); return { ...actual,
   readFile: vi.fn(actual.readFile), writeFile: vi.fn(actual.writeFile), stat: vi.fn(actual.stat), rename: vi.fn(actual.rename), mkdir: vi.fn(actual.mkdir),
 }; });
-import { clearAgentConfigCache, initializeDurableProject, getDurableConfig, readAgentConnectionCacheForDisplay, updateDurableConfig } from './agent-config';
+import { clearAgentConfigCache, initializeDurableProject, getDurableConfig, peekCachedDurableConfig, readAgentConnectionCacheForDisplay, updateDurableConfig, flushAgentConfig } from './agent-config';
 import type { DisplayReceipt } from './display-settings';
 let root: string, project: string;
 const file = () => path.join(project, '.clubhouse', 'agents.json');
@@ -93,7 +93,22 @@ it('does not copy or inspect raw private definition properties while projecting 
   await warm(); const selected = await getDurableConfig(project, 'target'); expect(selected).not.toBeNull();
   const privateRead = vi.fn(() => { throw new Error('PRIVATE_DEFINITION_MUST_NOT_BE_READ'); });
   Object.defineProperty(selected!, 'instructions', { configurable: true, enumerable: true, get: privateRead });
-  const receipts: DisplayReceipt[] = []; expect(read(receipts).availability).toBe('loaded'); expect(receipts[0].current()).toBe(true); expect.soft(privateRead).not.toHaveBeenCalled(); assertNoReadEffects();
+  const receipts: DisplayReceipt[] = [], result = read(receipts); expect.soft(result.availability).toBe('loaded'); expect.soft(privateRead).not.toHaveBeenCalled(); expect.soft(receipts).toHaveLength(1); if (receipts[0]) expect.soft(receipts[0].current()).toBe(true); assertNoReadEffects();
+});
+it('keeps stable selected fields current when only their observation time advances', async () => {
+  await warm(); let clock = 1000; vi.spyOn(Date, 'now').mockImplementation(() => clock++);
+  const receipts: DisplayReceipt[] = []; expect(read(receipts).availability).toBe('loaded'); expect(receipts[0].current()).toBe(true); expect(receipts[0].current()).toBe(true); assertNoReadEffects();
+});
+it('withholds a loaded index whose owner namespace was not re-established after a real cache-clear commit race', async () => {
+  await warm();
+  // Real owner API, intentional temporary-fixture write. The commit callback
+  // retires the original cache; writeAgents then creates an index without the
+  // old directory identity. Presence alone must not certify its namespace.
+  await updateDurableConfig(project, 'target', { model: 'fixture-namespace-unknown' }, async () => { clearAgentConfigCache(project); });
+  await flushAgentConfig(project); await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(peekCachedDurableConfig(project, 'target')).toMatchObject({ model: 'fixture-namespace-unknown' }); resetObservation();
+  const receipts: DisplayReceipt[] = [], result = read(receipts);
+  expect.soft(result).toMatchObject({ availability: 'namespace-unconfirmed' }); expect.soft(result.fields).toBeUndefined(); expect.soft(receipts).toEqual([]); assertNoReadEffects();
 });
 it('invalidates a cleared/reloaded cache even when ID and all projected fields are reused', async () => {
   await warm(); const receipts: DisplayReceipt[] = []; const before = read(receipts); expect(before.availability).toBe('loaded'); expect(receipts[0].current()).toBe(true);
