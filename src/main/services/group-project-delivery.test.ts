@@ -440,6 +440,42 @@ it('retains dropped turn-end notices when a later post advances the receipt', as
   expect(sentTexts(dev).at(-1)).toContain('2 new messages');
 });
 
+it('Q5 does not acknowledge an unconfirmed notice when a later post is delivered', async () => {
+  const dev = runtime('dev', 'chat', 'running');
+  dev.sendMessage.mockResolvedValueOnce({ delivery: 'queued' });
+  await post('qa', 'general', 'unconfirmed first');
+  await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  const uncertainSeq = seq;
+  const options = dev.sendMessage.mock.calls[0][1] as { actionQueue: { onSettled: (s: string) => void } };
+  options.actionQueue.onSettled('unknown');
+  expect(receipts.get('gp1dev')).toBeLessThan(uncertainSeq);
+  dev.state = 'idle';
+  await post('qa', 'general', 'later confirmed');
+  await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  expect(dev.sendMessage).toHaveBeenCalledTimes(2);
+  expect(sentTexts(dev).at(-1)).toContain('1 new message');
+  // A later successful notice is not proof that this earlier notice arrived.
+  expect(receipts.get('gp1dev')).toBeLessThan(uncertainSeq);
+});
+
+it.each([false, true])('Q5 does not blindly replay an unconfirmed notice on reconnect with delivery reset %s', async (reset) => {
+  const dev = runtime('dev', 'chat', 'running');
+  dev.sendMessage.mockResolvedValueOnce({ delivery: 'queued' });
+  await post('qa', 'general', 'unconfirmed first');
+  await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  const uncertainSeq = seq;
+  const options = dev.sendMessage.mock.calls[0][1] as { actionQueue: { onSettled: (s: string) => void } };
+  options.actionQueue.onSettled('unknown');
+  expect(receipts.get('gp1dev')).toBeLessThan(uncertainSeq);
+  expect(dev.sendMessage).toHaveBeenCalledTimes(1);
+  if (reset) { _resetDeliveryForTesting(); watchGroupProjectDelivery(); }
+  dev.state = 'idle';
+  for (const fn of fx.connected) fn('dev');
+  await vi.advanceTimersByTimeAsync(WAKE_SUMMARY_DELAY_MS);
+  // The first attempt might have arrived: unread recovery must not assume it did not.
+  expect(dev.sendMessage).toHaveBeenCalledTimes(1);
+});
+
 it('retains rejected sends when a later post advances the receipt', async () => {
   const dev = runtime('dev');
   dev.sendMessage.mockRejectedValueOnce(new Error('temporarily unavailable'));
