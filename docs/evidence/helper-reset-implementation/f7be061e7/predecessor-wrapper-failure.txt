@@ -1,0 +1,22 @@
+2026-11-20T08:48:48Z START auto-reset-implementation idle=77% unused=11G avail=31935M freepct=78 comp=6894M swap=1836M pid=80043 cmd=python3 docs/evidence/helper-reset-implementation/sealed-validation.py --output-stem /Users/masonallen/.clubhouse/orch/evidence/auto-reset-implementation/c29c0c9ab/tests -- node node_modules/vitest/vitest.mjs run --project main --project shared --project renderer src/main/services/helper-auto-budget-policy.test.ts src/main/services/helper-auto-policy.test.ts src/main/services/helper-auto-replay.test.ts src/main/services/helper-burn-pressure.test.ts src/main/services/helper-routing.test.ts src/main/services/helper-routing-generation.test.ts src/main/services/orchestration-settings.test.ts src/main/services/provider-quota.test.ts src/main/services/mobile-control.test.ts src/main/services/settings-audit.test.ts src/shared/helper-auto-budget.test.ts src/shared/helper-routing.test.ts src/shared/telemetry/attributes.test.ts src/main/telemetry/helper-usage.test.ts src/renderer/features/settings/HelperPresetsSection.test.tsx --maxWorkers=2
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/docs/evidence/helper-reset-implementation/sealed-validation.py", line 72, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/docs/evidence/helper-reset-implementation/sealed-validation.py", line 46, in main
+    before = snapshot()
+             ^^^^^^^^^^
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/docs/evidence/helper-reset-implementation/sealed-validation.py", line 28, in snapshot
+    "sourceSha256": {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in sorted(files)},
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/docs/evidence/helper-reset-implementation/sealed-validation.py", line 28, in <dictcomp>
+    "sourceSha256": {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in sorted(files)},
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/masonallen/.pyenv/versions/3.11.9/lib/python3.11/pathlib.py", line 1050, in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/masonallen/.pyenv/versions/3.11.9/lib/python3.11/pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/src/main/services/agent-helpers.ts'
+2026-11-20T08:48:48Z END auto-reset-implementation rc=1

@@ -1,0 +1,4 @@
+2026-11-20T08:21:14Z START auto-reset-implementation idle=51% unused=702M avail=25948M freepct=76 comp=6006M swap=1836M pid=61101 cmd=node node_modules/typescript/bin/tsc --noEmit --project tsconfig.json
+src/main/services/helper-auto-policy.ts(267,34): error TS2367: This comparison appears to be unintentional because the types '"reset_aware" | "reserve_only"' and '"invalid"' have no overlap.
+src/main/services/helper-routing.ts(1086,83): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any' return type.
+2026-11-20T08:21:24Z END auto-reset-implementation rc=2

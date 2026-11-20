@@ -1,0 +1,35 @@
+{
+  "implementationHead": "f7be061e73006cf094403dbc0e8b2739087d3e67",
+  "implementationTree": "9eb1ae175523d98110af907478f821a405e37c62",
+  "sourceBranch": "auto-reset-policy-design/implement-reset-aware-auto",
+  "sourceBase": "f386b143fda60d969c705dcb397c9458b6ae0035",
+  "ownerChecks": {
+    "featureTests": 990,
+    "files": 15,
+    "protocolPassed": 4,
+    "protocolIntentionallyUnselected": 64,
+    "fullRootTypecheck": "passed ES2020, excludes tests as configured",
+    "lint": "0 errors; existing warnings"
+  },
+  "independentReview": "pending",
+  "liveActivation": false,
+  "releaseApproval": false,
+  "filesSha256": {
+    "development-typecheck-failure.txt": "d9f4c8d4798732df33158827eef1f7ebf36df7721af071cbf0bbe310328fd062",
+    "first-gate-refusal.txt": "be12749c7b34a4d1d1cb90e9ea32935d5eb7e75515f3e3c89c719ad1ba60f198",
+    "lint.gate.txt": "6c1f191a954744e6a66da9433c46f78d3b2f37077f3b75c1e37f313cb51b5c26",
+    "lint.json": "ec3f58aec33adf5fb446516e5d54f486af467946d6154f9b1f06967b42ba5777",
+    "lint.raw.txt": "b490ab353a988f082204e8096fa6c97030db70fd6d9cca0f7947c140bd3a929c",
+    "predecessor-wrapper-failure.txt": "41bb0560b1e77b0f6993e1aa11ab060e985ec8e302a1c382131f2e0ff24aa34b",
+    "protocol-gate-refusal.txt": "be12749c7b34a4d1d1cb90e9ea32935d5eb7e75515f3e3c89c719ad1ba60f198",
+    "protocol-retry.gate.txt": "9a2b289f18fd2c881b42ecef53373587d0903e093068ff62aa3dc379a923916b",
+    "protocol.json": "8761668d6fadaca3109bf797f973af10d35b693a9ab3c257b37b792d497b610f",
+    "protocol.raw.txt": "92b3f0baea2b2a7fbf3ab9954c87da46f44957c09c2ef592f33148f4c7a2e4a6",
+    "tests.gate.txt": "3d49734e7624d57c94fb5612adf4cd6778a4da73d13bd7e536fbf003a1c86e65",
+    "tests.json": "bd1fdfef2097b020cb6bb168270c78d94ef6583cad037caf9f0bf4536e7c386c",
+    "tests.raw.txt": "fdc98926e37de46454edf5a7cc7fa1362c5abe74dc6f507d8465fa72beffc210",
+    "types.gate.txt": "efdac232ac6249e9ea097a8115fcfdf810fd11d9c3ca6524307ff81aef2578d9",
+    "types.json": "dcf874e5ebe4758008f47d6bcdc2d448fdcc2f907400494bb997ef8493b0ee87",
+    "types.raw.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}
