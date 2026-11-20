@@ -950,4 +950,17 @@ describe('satellite catalog reconciliation (#3695)', () => {
     expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
   });
 
+  it.each(['canvasState', 'bulletinDigests', 'groupProjectMembers'])('HY4-cache: still-visible omitted %s key is not a cached deletion', async (field) => {
+    const cached = snapshot({ groupProjects: [{ id: 'group' }], canvasState: { project: { canvases: [{ id: 'canvas', views: [] }], activeCanvasId: 'canvas' } }, bulletinDigests: { group: [{ id: 'old' }] }, groupProjectMembers: { group: [{ agentId: 'agent', agentName: 'Synthetic', status: 'running' }] } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const row = () => field === 'canvasState' ? catalog().remoteCanvasState[projectId]
+      : field === 'bulletinDigests' ? catalog().remoteBulletinDigests[`${satellite.id}::group`]
+      : catalog().remoteGroupProjectMembers[`${satellite.id}::group`];
+    const before = structuredClone(row());
+    expect(before).toBeDefined();
+    changed(list({ ...cached, [field]: {} }));
+    expect(row()).toEqual(before);
+  });
+
 });
