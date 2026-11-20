@@ -135,3 +135,18 @@ it('invalidates actual same-cache agent replacement after a refused same-provide
 it.each([['', 'target'], ['relative-root', 'target'], ['/host/project', 'x'.repeat(201)], ['/host/project', '']])('rejects invalid point admission without I/O or retaining a receipt: %j', (projectPath, id) => {
   const receipts: DisplayReceipt[] = []; expect(readAgentConnectionCacheForDisplay(projectPath, id, { receipts })).toMatchObject({ availability: 'invalid' }); expect.soft(receipts).toEqual([]); assertNoReadEffects();
 });
+it('matches a private admitted root namespace before projecting fields without adding cache I/O', async () => {
+  await warm(); const actual = await vi.importActual<typeof import('fs')>('fs'); const stat = actual.statSync(project, { bigint: true });
+  const expectedProjectNamespace = `ino:${stat.dev}:${stat.ino}`, receipts: DisplayReceipt[] = []; resetObservation();
+  const result = readAgentConnectionCacheForDisplay(project, 'target', { receipts, expectedProjectNamespace });
+  expect(result).toMatchObject({ availability: 'loaded', fields: { value: { name: { value: 'Selected cache name' } } } });
+  expect.soft(JSON.stringify(result)).not.toContain(expectedProjectNamespace); expect.soft(JSON.stringify(receipts)).toBe('[{}]'); expect(receipts[0].current()).toBe(true); assertNoReadEffects();
+});
+it('withholds a private mismatched admitted namespace without returning fields or a cache receipt', async () => {
+  await warm(); const receipts: DisplayReceipt[] = []; const result = readAgentConnectionCacheForDisplay(project, 'target', { receipts, expectedProjectNamespace: 'ino:1:999999999999999999' });
+  expect.soft(result).toMatchObject({ availability: 'namespace-unconfirmed' }); expect.soft(result.fields).toBeUndefined(); expect.soft(receipts).toEqual([]); assertNoReadEffects();
+});
+it.each(['', 'x'.repeat(8193), null, 7])('bounds private expected namespaces before cache lookup: %j', (expected) => {
+  const receipts: DisplayReceipt[] = [], result = readAgentConnectionCacheForDisplay(project, 'target', { receipts, expectedProjectNamespace: expected as string });
+  expect.soft(result).toMatchObject({ availability: 'invalid' }); expect.soft(receipts).toEqual([]); assertNoReadEffects();
+});

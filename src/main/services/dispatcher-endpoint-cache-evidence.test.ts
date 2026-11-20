@@ -217,3 +217,28 @@ it('requires admitted directory association before adopting cached fields after 
   expect.soft(result.value.rows[0].hostCache).toMatchObject({ state: 'ok', value: { availability: 'namespace-unconfirmed' } });
   expect.soft(JSON.stringify(result.value.rows[0].hostCache)).not.toContain('Selected cache name');
 });
+it('preserves primary fields but avoids cache adoption when the held root cannot supply a usable inode tuple', async () => {
+  await warm(); const actual = await vi.importActual<typeof import('fs')>('fs');
+  // Model a host lacking a usable inode. Real primary parser/descriptor IO is
+  // retained; only root lstat identity is unavailable in this fixture.
+  vi.mocked(fs.lstatSync).mockImplementation(((...args: Parameters<typeof actual.lstatSync>) => {
+    const stats = actual.lstatSync(...args);
+    return String(args[0]) === project && args[1] && typeof args[1] === 'object' && args[1].bigint
+      ? new Proxy(stats, { get: (target, key, receiver) => key === 'ino' ? 0n : Reflect.get(target, key, receiver) }) : stats;
+  }) as typeof fs.lstatSync);
+  try {
+    const reader = vi.fn(readAgentConnectionCacheForDisplay), result = query(reader);
+    expect(result).toMatchObject({ state: 'ok', value: { rows: [{ endpoint: { value: { record: 'registered-primary', fields: { name: { value: 'Selected cache name' } } } }, hostCache: { state: 'unavailable', reason: 'unreadable' } }] } });
+    expect.soft(reader).not.toHaveBeenCalled(); noWrites();
+  } finally { vi.mocked(fs.lstatSync).mockImplementation(actual.lstatSync); }
+});
+it('withholds cache evidence if a later read replaces an earlier admitted directory before final assembly', async () => {
+  await warm(); await warmSecond(); let calls = 0;
+  const reader: typeof readAgentConnectionCacheForDisplay = (folder, id, options) => {
+    const result = readAgentConnectionCacheForDisplay(folder, id, options); expect(result.availability).toBe('loaded'); calls++;
+    if (calls === 2) { fs.renameSync(project, project + '-retired'); fs.mkdirSync(path.join(project, '.clubhouse'), { recursive: true }); fs.writeFileSync(file(), JSON.stringify([agent()])); }
+    return result;
+  };
+  const result = query(reader, [], [pair(), pair('other')]); expect(calls).toBe(2);
+  expect.soft(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect.soft(JSON.stringify(result)).not.toMatch(/Selected cache name|Other host name/);
+});

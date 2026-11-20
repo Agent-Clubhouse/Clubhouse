@@ -183,3 +183,15 @@ it('refuses a reused private project-receipt sink before any inventory reads', (
   const roots = new Map<string, ConnectionEndpointProjectReceipt>([[b, { current: () => true, cacheNamespace: () => undefined }]]);
   expect(readConnectionEndpointMetadataForDisplay([request()], { receipts: [], projectReceipts: roots })).toMatchObject({ state: 'unavailable', reason: 'invalid' }); expect(opened()).toEqual([]);
 });
+it('retains the held primary root tuple privately without retargeting it through later pathname replacement', async () => {
+  const roots = new Map<string, ConnectionEndpointProjectReceipt>();
+  expect(readConnectionEndpointMetadataForDisplay([request()], { receipts: [], projectReceipts: roots }).state).toBe('ok');
+  const original = fs.statSync(b, { bigint: true }), receipt = roots.get(b)!;
+  expect(receipt.current()).toBe(true); vi.mocked(fs.openSync).mockClear();
+  const namespace = receipt.cacheNamespace(); expect(namespace).toBe(`ino:${original.dev}:${original.ino}`); expect.soft(opened()).toEqual([]); expect.soft(JSON.stringify(receipt)).toBe('{}');
+  fs.renameSync(b, b + '-retired'); fs.mkdirSync(path.join(b, '.clubhouse'), { recursive: true }); await put(b, [row('target', 'Replacement primary')]);
+  const replacement = fs.statSync(b, { bigint: true }); expect(`${replacement.dev}:${replacement.ino}`).not.toBe(`${original.dev}:${original.ino}`);
+  expect.soft(receipt.current()).toBe(false); expect.soft(receipt.cacheNamespace()).toBe(namespace);
+  const fresh = new Map<string, ConnectionEndpointProjectReceipt>(); readConnectionEndpointMetadataForDisplay([request()], { receipts: [], projectReceipts: fresh });
+  expect(fresh.get(b)?.cacheNamespace()).toBe(`ino:${replacement.dev}:${replacement.ino}`);
+});
