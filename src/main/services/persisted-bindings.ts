@@ -39,7 +39,9 @@
  * the source instead.
  */
 
-import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { bindingManager, isBindingDisplayKind, projectBindingRowForDisplay, type BindingDisplayRow } from './clubhouse-mcp/binding-manager';
+import { createHash } from 'crypto';
+import type { DisplayInput, DisplayReceipt, DisplayValue } from './display-settings';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import type { StartingSwitches } from '../../shared/connection-grants';
 import { appLog } from './log-service';
@@ -166,6 +168,126 @@ const guidanceSourceInstances = new Map<string, PersistedBindingSource>();
 let inspectedGuidance = new WeakMap<PersistedBindingSource, { bindings: Map<string, PersistedBinding[]>; unverified: Set<string> }>();
 let restoreGuidance: (() => void) | null = null;
 let sourceRegistryVersion = 0;
+
+export const SOURCE_DISPLAY_REGISTRY_LIMIT = 64;
+export const SOURCE_DISPLAY_KEY_LIMIT = 4096;
+export const SOURCE_DISPLAY_ORIGINAL_LIMIT = 512;
+export const SOURCE_DISPLAY_IDENTITY_LIMIT = 512;
+export const SOURCE_DISPLAY_PAGE = 50;
+export interface CachedSourceDisplay {
+  sourceId: string;
+  provenance: 'last-reconciled' | 'last-inspected' | 'claimed-cache';
+  /** Absence from this retained cache's unverified list only; not authority/current origin. */
+  verified: boolean;
+  removedByUser: boolean;
+  copies: number | null;
+  binding: DisplayValue<BindingDisplayRow>;
+}
+export interface CachedSourcePage {
+  scope: 'registered-cache-only';
+  /** All registered cache scopes examined; never fresh committed-store completeness. */
+  complete: boolean;
+  pairs: Array<{ agentId: string; targetId: string; sources: CachedSourceDisplay[] }>;
+  sourceStates: Array<{ sourceId: string; state: 'known' | 'partial' | 'unavailable'; reason?: 'uninitialized' | 'limit' | 'unverified' }>;
+  total: number;
+  offset: number;
+  omitted: number;
+  nextOffset: number | null;
+}
+const sourceDisplayId = (v: unknown, max = 200): v is string => typeof v === 'string' && !!v && v.length <= max;
+const sourceDisplayOffset = (v: unknown): v is number => Number.isInteger(v) && Number(v) >= 0 && Number(v) <= SOURCE_DISPLAY_KEY_LIMIT;
+function projectCachedSourcesForDisplay(agentId: string, offset: number): DisplayValue<CachedSourcePage> {
+  const inputs: DisplayInput[] = [{ field: 'Retained selected connection source metadata', source: 'host-cache', observedAt: Date.now() }];
+  const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs });
+  const unknown = <T>(reason: 'invalid' | 'limit' = 'invalid'): DisplayValue<T> => ({ state: 'unavailable', reason, inputs });
+  if (!sourceDisplayId(agentId) || !sourceDisplayOffset(offset)) return unknown();
+  if (sources.size > SOURCE_DISPLAY_REGISTRY_LIMIT) return unknown('limit');
+  const sourceStates: CachedSourcePage['sourceStates'] = [];
+  type View = { sourceId: string; provenance: CachedSourceDisplay['provenance']; originals: Map<string, PersistedBinding[]> | undefined; unverified: Set<string> | undefined };
+  const pairs = new Map<string, Array<{ view: View; verified: boolean }>>(); let keysScanned = 0, identityScanned = 0;
+  for (const [id, source] of sources) {
+    if (!sourceDisplayId(id, 128) || id !== source.id) return unknown();
+    const inspected = inspectedGuidance.get(source), current = guidanceSourceInstances.get(id) === source, listed = current ? lastListedBySource.get(id) : undefined;
+    const claimed = current ? guidanceBySource.get(id) : undefined;
+    const originals = listed ? claimed : inspected?.bindings ?? claimed;
+    const unverified = inspected?.unverified;
+    const partial = !listed && !inspected;
+    const provenance = listed ? 'last-reconciled' : inspected ? 'last-inspected' : 'claimed-cache';
+    if (!listed && !inspected && !claimed) { sourceStates.push({ sourceId: id, state: 'unavailable', reason: 'uninitialized' }); continue; }
+    const size = listed ? listed.size : (originals?.size ?? 0) + (unverified?.size ?? 0);
+    if (size > SOURCE_DISPLAY_KEY_LIMIT - keysScanned) { sourceStates.push({ sourceId: id, state: 'unavailable', reason: 'limit' }); continue; }
+    keysScanned += size; const sourceState: CachedSourcePage['sourceStates'][number] = { sourceId: id, state: partial ? 'partial' : 'known', ...(partial && { reason: 'uninitialized' }) }; sourceStates.push(sourceState);
+    const view: View = { sourceId: id, provenance, originals, unverified };
+    const seen = new Set<string>();
+    // Streaming cache iterators only. No collectors/inspectors, Set copies,
+    // global guidance serialization, lifecycle callbacks or repair work.
+    const add = (key: string): boolean => {
+      if (typeof key !== 'string' || key.length > 1025) return false;
+      if (seen.has(key)) return true; seen.add(key);
+      const separator = key.indexOf('\0');
+      if (separator < 1 || key.indexOf('\0', separator + 1) !== -1) return false;
+      const from = key.slice(0, separator), to = key.slice(separator + 1);
+      if (!sourceDisplayId(from, 512) || !sourceDisplayId(to, 512)) return false;
+      if (from !== agentId && to !== agentId) return true;
+      // A widget may legitimately have the same raw ID as the selected agent.
+      // An incoming cache key alone cannot establish a selected relationship.
+      // Inspect bounded identities only; unknown/ambiguous scopes disclose no
+      // owner IDs or original text and keep source coverage explicitly partial.
+      if (from !== agentId) {
+        const copies = originals?.get(key);
+        const uncertain = (reason: 'unverified' | 'limit') => { sourceState.state = 'partial'; sourceState.reason = reason; return true; };
+        if (!Array.isArray(copies) || !copies.length) return uncertain('unverified');
+        if (copies.length > 100 || copies.length > SOURCE_DISPLAY_IDENTITY_LIMIT - identityScanned) return uncertain('limit');
+        identityScanned += copies.length;
+        if (!copies.every((b) => !!b && b.agentId === from && b.targetId === to && isBindingDisplayKind(b.targetKind))) return uncertain('unverified');
+        if (copies.every((b) => b.targetKind !== 'agent')) return true;
+        if (!copies.every((b) => b.targetKind === 'agent')) return uncertain('unverified');
+      }
+      const refs = pairs.get(key) ?? []; refs.push({ view, verified: !partial && !unverified?.has(key) }); pairs.set(key, refs); return true;
+    };
+    if (listed) { for (const key of listed) if (!add(key)) return unknown(); }
+    else {
+      if (originals) for (const key of originals.keys()) if (!add(key)) return unknown();
+      if (unverified) for (const key of unverified) if (!add(key)) return unknown();
+    }
+  }
+  const page: CachedSourcePage['pairs'] = []; let index = 0, originalsScanned = 0;
+  for (const [key, refs] of pairs) {
+    const position = index++; if (position < offset || position >= offset + SOURCE_DISPLAY_PAGE) continue;
+    const separator = key.indexOf('\0'), from = key.slice(0, separator), to = key.slice(separator + 1);
+    const fields: CachedSourceDisplay[] = [];
+    for (const { view, verified } of refs) {
+      const originals = view.originals?.get(key); let binding: DisplayValue<BindingDisplayRow> = unknown(), copies: number | null = null;
+      if (originals !== undefined && !Array.isArray(originals)) binding = unknown();
+      else if (originals) {
+        copies = originals.length;
+        if (originals.length > 100 || originals.length > SOURCE_DISPLAY_ORIGINAL_LIMIT - originalsScanned) binding = unknown('limit');
+        else {
+          originalsScanned += originals.length;
+          const last = originals[originals.length - 1];
+          if (last && originals.every((b) => !!b && b.agentId === from && b.targetId === to && isBindingDisplayKind(b.targetKind) && b.targetKind === last.targetKind)) binding = known(projectBindingRowForDisplay(last, inputs));
+        }
+      }
+      fields.push({ sourceId: view.sourceId, provenance: view.provenance, verified, removedByUser: removedByUser.has(key) || removedFromSource.has(`${view.sourceId}\u0001${key}`), copies, binding });
+    }
+    page.push({ agentId: from, targetId: to, sources: fields });
+  }
+  return known({ scope: 'registered-cache-only', complete: sourceStates.every((source) => source.state === 'known'), pairs: page, sourceStates, total: pairs.size, offset, omitted: pairs.size - page.length, nextOffset: offset + page.length < pairs.size ? offset + page.length : null });
+}
+const cachedSourceSignature = (value: DisplayValue<CachedSourcePage>): string => createHash('sha256').update(JSON.stringify(value, (key, v) => key === 'inputs' ? undefined : v)).digest('hex');
+/** Only bounded selected key/page/hash and primitive registry revision. No raw
+ * source instance/cache/originals/instructions/caller reference is retained. */
+function cachedSourceReceipt(agentId: string, offset: number, registry: number, key: string): DisplayReceipt {
+  return { current: () => { try { return registry === sourceRegistryVersion && cachedSourceSignature(projectCachedSourcesForDisplay(agentId, offset)) === key; } catch { return false; } } };
+}
+/** Cache provenance only, never a fresh committed source/permission assertion.
+ * Uninitialized sources remain explicit; cold supported stores need their own
+ * bounded passive selected readers before full card parity can be claimed. */
+export function readCachedConnectionSourcesForDisplay(agentId: string, options: { offset?: number; receipts?: DisplayReceipt[] } = {}): DisplayValue<CachedSourcePage> {
+  const offset = options.offset ?? 0, value = projectCachedSourcesForDisplay(agentId, offset);
+  if (sourceDisplayId(agentId) && sourceDisplayOffset(offset)) options.receipts?.push(cachedSourceReceipt(agentId, offset, sourceRegistryVersion, cachedSourceSignature(value)));
+  return value;
+}
 
 /** Registration and cached provenance for a direction; inspection never runs stateful collectors. */
 export function getConnectionGuidanceSourceVersion(agentId: string, targetId: string): string {

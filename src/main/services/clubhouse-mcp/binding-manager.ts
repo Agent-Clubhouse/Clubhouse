@@ -36,7 +36,19 @@ export interface BindingDisplayRow {
 export interface BindingDisplayPage { rows: BindingDisplayRow[]; total: number; offset: number; omitted: number; nextOffset: number | null }
 const bindingSelectedId = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 200;
 const bindingOffset = (v: unknown): v is number => Number.isInteger(v) && Number(v) >= 0 && Number(v) <= BINDING_DISPLAY_SCAN;
-const bindingKind = (v: unknown): v is BindingTargetKind => v === 'agent' || v === 'browser' || v === 'terminal' || v === 'group-project' || v === 'plugin';
+export const isBindingDisplayKind = (v: unknown): v is BindingTargetKind => v === 'agent' || v === 'browser' || v === 'terminal' || v === 'group-project' || v === 'plugin';
+/** Safe allowlist only. The owner must first validate selected scope and row identity. */
+export function projectBindingRowForDisplay(binding: McpBinding, inputs: DisplayInput[]): BindingDisplayRow {
+  const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs });
+  const unknown = <T>(reason: 'invalid' | 'limit' = 'invalid'): DisplayValue<T> => ({ state: 'unavailable', reason, inputs });
+  const text = (v: unknown): DisplayValue<string> => typeof v !== 'string' ? unknown() : v.length > 1024 ? unknown('limit') : known(v);
+  const optional = (v: unknown): DisplayValue<string | null> => v === undefined || v === '' ? known(null) : text(v);
+  const tools = (v: unknown): DisplayValue<string[]> => v === undefined ? known([]) : !Array.isArray(v) ? unknown()
+    : v.length > 100 ? unknown('limit') : v.every((tool) => typeof tool === 'string' && !!tool && tool.length <= 100) ? known([...new Set(v as string[])]) : unknown();
+  return { agentId: binding.agentId, targetId: binding.targetId, targetKind: binding.targetKind,
+    label: text(binding.label), agentName: optional(binding.agentName), targetName: optional(binding.targetName), projectName: optional(binding.projectName),
+    disabledTools: tools(binding.disabledTools), enabledTools: tools(binding.enabledTools) };
+}
 function projectBindingDisplay(bindings: ReadonlyMap<string, McpBinding[]>, agentId: string, direction: BindingDisplayDirection, offset: number): DisplayValue<BindingDisplayPage> {
   const inputs: DisplayInput[] = [{ field: `Existing ${direction === 'incoming' ? 'incoming' : 'outgoing'} binding metadata`, source: 'host-cache', observedAt: Date.now() }];
   const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs });
@@ -54,17 +66,11 @@ function projectBindingDisplay(bindings: ReadonlyMap<string, McpBinding[]>, agen
     if (direction === 'incoming' && owner === agentId) continue;
     for (const binding of list) {
       if (!binding || typeof binding !== 'object' || Array.isArray(binding)) return unknown();
-      if (direction === 'incoming' && (binding.targetId !== agentId || bindingKind(binding.targetKind) && binding.targetKind !== 'agent')) continue;
-      if (typeof binding.agentId !== 'string' || !binding.agentId || binding.agentId.length > 512 || binding.agentId !== owner || typeof binding.targetId !== 'string' || !binding.targetId || binding.targetId.length > 512 || !bindingKind(binding.targetKind)) return unknown();
+      if (direction === 'incoming' && (binding.targetId !== agentId || isBindingDisplayKind(binding.targetKind) && binding.targetKind !== 'agent')) continue;
+      if (typeof binding.agentId !== 'string' || !binding.agentId || binding.agentId.length > 512 || binding.agentId !== owner || typeof binding.targetId !== 'string' || !binding.targetId || binding.targetId.length > 512 || !isBindingDisplayKind(binding.targetKind)) return unknown();
       const key = `${binding.agentId}\0${binding.targetId}`; if (keys.has(key)) return unknown(); keys.add(key);
       const index = total++; if (index < offset || index >= offset + BINDING_DISPLAY_PAGE) continue;
-      const text = (v: unknown): DisplayValue<string> => typeof v !== 'string' ? unknown() : v.length > 1024 ? unknown('limit') : known(v);
-      const optional = (v: unknown): DisplayValue<string | null> => v === undefined || v === '' ? known(null) : text(v);
-      const tools = (v: unknown): DisplayValue<string[]> => v === undefined ? known([]) : !Array.isArray(v) ? unknown()
-        : v.length > 100 ? unknown('limit') : v.every((tool) => typeof tool === 'string' && !!tool && tool.length <= 100) ? known([...new Set(v as string[])]) : unknown();
-      rows.push({ agentId: binding.agentId, targetId: binding.targetId, targetKind: binding.targetKind,
-        label: text(binding.label), agentName: optional(binding.agentName), targetName: optional(binding.targetName), projectName: optional(binding.projectName),
-        disabledTools: tools(binding.disabledTools), enabledTools: tools(binding.enabledTools) });
+      rows.push(projectBindingRowForDisplay(binding, inputs));
     }
   }
   return known({ rows, total, offset, omitted: total - rows.length, nextOffset: offset + rows.length < total ? offset + rows.length : null });
