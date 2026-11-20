@@ -10,7 +10,7 @@ vi.mock('./agent-system', () => ({ resolveOrchestrator: m.external }));
 vi.mock('./agent-transition', () => ({ withAgentActivity: (_id: string, work: () => unknown) => work(), noteProviderSelection: vi.fn() }));
 vi.mock('./free-agent-settings', () => ({ accessForNewAgent: m.external, agentAccess: m.external, getPermissionMode: m.external }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-vi.mock('../telemetry/persist', () => ({ persist: new Proxy({}, { get: () => vi.fn() }) }));
+vi.mock('../telemetry/persist', () => ({ persist: { timed: (_store: string, work: () => unknown) => work(), recovery: vi.fn(), barrierWait: vi.fn() } }));
 vi.mock('./settings-audit', () => ({ auditChanged: vi.fn(), auditChanges: vi.fn() }));
 vi.mock('./context-window', () => ({ contextWindowCheck: m.external }));
 vi.mock('./managed-agents/legacy-migration', () => ({ legacyClubhouseModeEnabled: () => false }));
@@ -92,11 +92,12 @@ it('invalidates a cleared/reloaded cache even when ID and all projected fields a
 it('invalidates actual same-cache agent replacement after a refused same-provider persistence rollback', async () => {
   await warm(); const receipts: DisplayReceipt[] = []; expect(read(receipts).availability).toBe('loaded'); const before = await getDurableConfig(project, 'target'); expect(receipts[0].current()).toBe(true);
   const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
-  vi.mocked(fsp.rename).mockImplementation(async (from, to) => { if (String(to) === file()) throw Object.assign(new Error('Intentional fixture rename refusal'), { code: 'EROFS' }); return actual.rename(from, to); });
-  // Change a non-displayed setting: an identical update is correctly a no-op.
-  // Same provider remains selected; the intended rename refusal triggers the
-  // real rollback clone/index replacement while displayed fields stay equal.
-  await expect(updateDurableConfig(project, 'target', { orchestrator: 'codex-cli', model: 'fixture-other-model' }, async () => {})).rejects.toThrow();
+  let refused = 0;
+  vi.mocked(fsp.rename).mockImplementation(async (from, to) => { if (String(to) === file()) { refused++; throw Object.assign(new Error('Intentional fixture rename refusal'), { code: 'EROFS' }); } return actual.rename(from, to); });
+  // Change a non-displayed setting with the same provider. Telemetry executes
+  // its real operation callback; the rename refusal must actually be reached.
+  await expect(updateDurableConfig(project, 'target', { orchestrator: 'codex-cli', model: 'fixture-other-model' }, async () => {})).rejects.toThrow('Intentional fixture rename refusal');
+  expect(refused).toBe(1);
   const after = await getDurableConfig(project, 'target'); expect(after).not.toBe(before); expect(after?.orchestrator).toBe(before?.orchestrator); expect(after?.name).toBe(before?.name);
   resetObservation(); expect(read()).toMatchObject({ availability: 'loaded', fields: { value: { name: { value: 'Selected cache name' } } } }); expect(receipts[0].current()).toBe(false); assertNoReadEffects();
 });
