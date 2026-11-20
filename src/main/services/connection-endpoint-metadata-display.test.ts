@@ -89,6 +89,13 @@ it('charges nonmatching registry/agent rows and keeps a previous independent res
   expect((await fs.promises.stat(file(b))).size).toBeLessThan(4 * 1024 * 1024);
   expect(query([request('target', a), request('target', b)])).toMatchObject({ state: 'ok', value: [{ state: 'ok', value: { record: 'registered-primary' } }, { state: 'unavailable', reason: 'limit' }] });
 });
+it('charges aggregate file body allocations before reading a second individually valid large primary', async () => {
+  const empty = JSON.stringify([row('target', 'Large saved metadata', { unused: '' })]);
+  const bytes = empty.replace('"unused":""', `"unused":"${'x'.repeat(4 * 1024 * 1024 - empty.length - 1)}"`);
+  await fs.promises.writeFile(file(a), bytes); await fs.promises.writeFile(file(b), bytes);
+  expect((await fs.promises.stat(file(a))).size).toBe(4 * 1024 * 1024 - 1);
+  expect(query([request('target', a), request('target', b)])).toMatchObject({ state: 'ok', value: [{ state: 'ok', value: { fields: { name: { value: 'Large saved metadata' } } } }, { state: 'unavailable', reason: 'limit' }] });
+});
 it('does not open roots beyond the separate related-project limit', async () => {
   const projects = [];
   for (let i = 0; i < CONNECTION_METADATA_ROOTS + 1; i++) {
@@ -134,4 +141,15 @@ it('does not recover corrupt primary bytes, remove temps or adopt a readable bac
   const before = await Promise.all(['', '.bak', '.tmp-pending'].map((suffix) => fs.promises.readFile(file(b) + suffix)));
   const result = query(); expect(result).toMatchObject({ state: 'ok', value: [{ state: 'unavailable' }] }); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_');
   expect.soft(await Promise.all(['', '.bak', '.tmp-pending'].map((suffix) => fs.promises.readFile(file(b) + suffix)))).toEqual(before); expect.soft(m.generic).not.toHaveBeenCalled();
+});
+it('keeps a corrupt registry unavailable without recovery or reading any project primary', async () => {
+  const registryFile = path.join(m.base, 'projects.json');
+  await fs.promises.writeFile(registryFile, '{broken'); await fs.promises.writeFile(registryFile + '.bak', JSON.stringify([{ id: 'b', path: b }])); await fs.promises.writeFile(registryFile + '.tmp-pending', 'keep');
+  expect(query()).toMatchObject({ state: 'ok', value: [{ state: 'unavailable', reason: 'unreadable' }] });
+  expect.soft(opened()).not.toContain(file(b)); expect.soft(await fs.promises.readFile(registryFile, 'utf8')).toBe('{broken'); expect.soft(await fs.promises.readFile(registryFile + '.tmp-pending', 'utf8')).toBe('keep'); expect.soft(m.generic).not.toHaveBeenCalled();
+});
+it('invalidates the private witness on host profile replacement without serializing the receipt or project roots', () => {
+  const receipts: DisplayReceipt[] = [], result = query([request()], receipts);
+  expect(receipts[0].current()).toBe(true); m.base = a;
+  expect.soft(receipts[0].current()).toBe(false); expect.soft(JSON.stringify(result)).not.toContain(root); expect.soft(JSON.stringify(receipts)).toBe('[{}]');
 });
