@@ -144,16 +144,17 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       const waiting = projectPendingHelperStarts(c, requests);
       result.helperPages = 1;
       result.helperPage = await readSelectedHelperPage(target, helpers, requests, { offset: query?.card === 'orchestrate' ? query.offset ?? 0 : 0, authorized, target: targetWitness, receipts: helperReceipts });
-      if (!helpers) { c.state = 'error'; c.notes.push('The selected helper inventory is unavailable; live and disposed totals are unknown.'); return; }
+      if (!helpers || result.helperPage.state === 'unavailable') { c.state = 'error'; c.notes.push('The selected helper inventory is unavailable; live and disposed totals are unknown.'); return; }
       const live = helpers.filter((h) => !isDisposedAgent(h.config));
       const summary = helpersSummary(live.length, enabled ? limit : undefined, live.filter((h) => h.config.creation?.state === 'creating').length, waiting);
       row(c, 'Helpers', waiting === undefined ? `${live.length ? summary : 'No live helpers'} · pending starts unavailable` : summary);
       if (helpers.length > live.length) row(c, 'Disposed helpers', helpers.length - live.length);
       for (const entry of helpers) {
         const h = entry.config, structured = result.helperPage.rows.find((row) => row.key === createHash('sha256').update(JSON.stringify([entry.projectPath, h.id])).digest('hex'));
-        const recordedState = structured?.status ?? (isDisposedAgent(h) ? 'disposed' : h.creation?.state === 'failed' ? 'failed' : h.creation?.state === 'creating' ? 'creating' : 'State not checked in this helper page');
+        const recordedState = structured?.status ?? (isDisposedAgent(h) ? 'disposed' : h.creation?.state === 'failed' ? 'failed' : h.creation?.state === 'creating' ? 'creating' : h.handoff ? 'handed-off' : 'State not checked in this helper page');
         const state = recordedState === 'disposed' ? 'Disposed' : recordedState === 'handed-off' ? 'Handed off' : recordedState === 'creating' ? 'Starting' : recordedState;
-        row(c, h.name, [state, h.branch, structured?.disposedAt, structured?.work.state === 'recorded' ? structured.work.text : structured?.work.state === 'unavailable' && structured.work.reason === 'read-failed' ? 'couldn’t check' : 'Work not checked (selected helper page)', structured?.projectName].filter(Boolean).join(' · '));
+        const disposedAt = structured?.disposedAt ?? (isDisposedAgent(h) && Number.isFinite(Date.parse(h.disposedAt)) ? h.disposedAt : undefined);
+        row(c, h.name, [state, h.branch, disposedAt, structured?.work.state === 'recorded' ? structured.work.text : structured?.work.state === 'unavailable' && structured.work.reason === 'read-failed' ? 'couldn’t check' : 'Work not checked (selected helper page)', structured?.projectName].filter(Boolean).join(' · '));
       }
       c.notes.push('Structured helper rows and bounded work continuation are shared separately; each selected page checks at most eight helpers.');
       if (agent.parentAgentId && !helpers.length && requests.state === 'ok' && !requests.value.length) c.state = 'not-applicable';

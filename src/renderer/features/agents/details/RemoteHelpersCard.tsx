@@ -47,7 +47,7 @@ export function RemoteHelpersCard({ agent, details, status, freshnessKey, open, 
   const row = (r: RemoteHelperRow) => {
     const why = page && result.status === 'ok' ? remoteHelperOpenUnavailable(agent, r) : 'Refresh current helper evidence before opening.';
     const failure = r.failure === 'creation' ? 'Couldn’t create its working folder.' : r.failure === 'runtime' ? 'Its CLI reported a failure.' : r.failure === 'unknown' ? 'Runtime failure status unavailable.' : null;
-    const work = r.work.state === 'recorded' ? r.work.text : `Work unavailable (${r.work.reason.replace(/-/g, ' ')}).`;
+    const work = r.work.state === 'recorded' ? r.work.text : r.work.reason === 'admission-limit' ? 'Work not checked yet. Refresh this page to retry.' : r.work.reason === 'read-failed' ? 'Couldn’t check work.' : r.work.reason === 'identity' ? 'Work unavailable: helper identity unconfirmed.' : 'Work not applicable.';
     return <li key={r.key} className="pl-[33px] pr-3.5 py-1 text-xs" data-testid="remote-helper-row" data-state={r.status}>
       <div className="flex gap-2"><span className="font-medium truncate">{r.name}</span><span className="ml-auto">{statusLabel[r.status]}</span></div>
       <div>{r.projectName ?? 'Project identity unavailable'}</div>
@@ -57,6 +57,7 @@ export function RemoteHelpersCard({ agent, details, status, freshnessKey, open, 
       {why && <span className="ml-2">{why}</span>}
     </li>;
   };
+  if (card?.state === 'not-applicable') return null;
   return <DetailsCard id="orchestrate" title="Orchestration" summary={card?.summary || message(result.status)} open={open} onToggle={onToggle}>
     {card && (!selected || page) && <Evidence card={page ? { ...card, rows: card.rows.filter((r) => policyLabels.has(r.label)), notes: [], omitted: 0 } : card} />}
     {!page ? <CardNote>{result.status === 'ok' ? 'This host shares the legacy helper summary only. Structured helper rows and work pages need a host update.' : message(result.status)}</CardNote> : <>

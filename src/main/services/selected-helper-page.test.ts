@@ -3,6 +3,12 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 const m = vi.hoisted(() => ({ base: '', target: vi.fn(), work: vi.fn(), running: new Set<string>(), registrations: new Map<string, { projectPath: string; cwd?: string; runtime: string }>(), runtimes: new Map<string, { kind: string; getState(): string }>() }));
+vi.mock('../orchestrators', () => ({ getProvider: vi.fn() }));
+vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./clubhouse-mcp/orchestration-gate', () => ({ setOrchestrationEnabled: vi.fn() }));
+vi.mock('./clubhouse-mcp/dispatcher-gate', () => ({ setDispatcherAgent: vi.fn() }));
+vi.mock('./clubhouse-mcp/mcp-call-gate', () => ({ forgetMcpCaller: vi.fn() }));
+vi.mock('./managed-agents/delivery-records', () => ({ dropRunningSnapshot: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: m.target }));
 vi.mock('./read-only-helper-work', () => ({ readOnlyHelperWork: m.work }));
@@ -65,3 +71,23 @@ it('retains parent/helper inventory and runtime currentness across awaits with r
   await fs.writeFile(file(other), JSON.stringify(helpers.map((h, i) => i === 0 ? { ...h.config, parentAgentId: 'another' } : h.config))); expect(receipts.some((r) => !r.current())).toBe(true);
 });
 it.each([-8, 1, 4097, 8.1])('refuses malformed or unbounded helper page offset %s', async (offset) => { await expect(read(offset)).rejects.toThrow(); expect(m.work).not.toHaveBeenCalled(); });
+
+it.each(['nonce', 'provider', 'runtime', 'project', 'cwd', 'run'] as const)('invalidates immutable helper run identity after actual in-place %s mutation', async (mode) => {
+  const actual = await vi.importActual<typeof import('./agent-registry')>('./agent-registry');
+  const facade = await import('./agent-registry');
+  const get = vi.spyOn(facade.agentRegistry, 'get').mockImplementation((id) => actual.agentRegistry.get(id));
+  const registration: import('./agent-registry').AgentRegistration = { projectPath: other, cwd: other, runtime: 'chat', orchestrator: 'codex-cli', nonce: 'before' };
+  let run = 'before'; const runtime = { kind: 'chat', getState: () => 'idle', getSessionId: () => run, getNativeSessionId: () => 'native', getDisplayRunId: () => run };
+  actual.agentRegistry.register('helper-0', registration); m.running.add('helper-0'); m.runtimes.set('helper-0', runtime);
+  try {
+    const { receipts } = await read(); expect(receipts.every((r) => r.current())).toBe(true);
+    if (mode === 'nonce') actual.agentRegistry.setNonce('helper-0', 'after');
+    if (mode === 'runtime') actual.agentRegistry.setRuntime('helper-0', 'pty');
+    if (mode === 'provider') registration.orchestrator = 'claude-code';
+    if (mode === 'project') registration.projectPath = home;
+    if (mode === 'cwd') registration.cwd = home;
+    if (mode === 'run') run = 'after';
+    expect(actual.agentRegistry.get('helper-0')).toBe(registration);
+    expect(receipts.some((r) => !r.current())).toBe(true);
+  } finally { actual.agentRegistry.untrack('helper-0'); get.mockRestore(); }
+});

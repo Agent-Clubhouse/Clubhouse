@@ -66,11 +66,15 @@ export async function readSelectedHelperPage(parent: AgentConfigTarget, helpers:
       const observe = () => {
         const reg = agentRegistry.get(h.id), running = isAgentRunning(h.id), runtime = getAgentRuntime(h.id);
         const bound = !!reg && reg.projectPath === helper.project.path && (reg.cwd || reg.projectPath) === (h.worktreePath || helper.project.path) && (!runtime || runtime.kind === reg.runtime);
-        return { reg, runtime, running, bound, lifecycle: bound ? agentDisplayState(h, running) : null,
-          chat: bound && runtime?.kind === 'chat' ? runtime.getState() : null };
+        return { reg, runtime, running, bound,
+          registration: reg ? { nonce: reg.nonce ?? null, projectPath: reg.projectPath, cwd: reg.cwd ?? null, provider: reg.orchestrator, runtime: reg.runtime } : null,
+          run: bound && runtime?.kind === 'chat' ? { sessionId: runtime.getSessionId?.() ?? null, nativeSessionId: runtime.getNativeSessionId?.() ?? null, displayRunId: runtime.getDisplayRunId?.() ?? null } : null,
+          lifecycle: bound ? agentDisplayState(h, running) : null, chat: bound && runtime?.kind === 'chat' ? runtime.getState() : null };
       };
-      const observed = observe(), signature = key({ running: observed.running, bound: observed.bound, lifecycle: observed.lifecycle, chat: observed.chat });
-      options.receipts.push({ current: () => { try { const now = observe(); return witness.current() && now.reg === observed.reg && now.runtime === observed.runtime && key({ running: now.running, bound: now.bound, lifecycle: now.lifecycle, chat: now.chat }) === signature; } catch { return false; } } });
+      // The registry setters mutate the same object: copy scalars now, never compare mutable aliases later.
+      const stamp = (o: ReturnType<typeof observe>) => key({ registration: o.registration, run: o.run, running: o.running, bound: o.bound, lifecycle: o.lifecycle, chat: o.chat });
+      const observed = observe(), signature = stamp(observed);
+      options.receipts.push({ current: () => { try { const now = observe(); return witness.current() && now.reg === observed.reg && now.runtime === observed.runtime && stamp(now) === signature; } catch { return false; } } });
       if (!h.handoff && !h.creation) {
         if (observed.bound && observed.lifecycle) {
           row.statusSource = 'current-run'; row.failure = observed.lifecycle.status === 'error' || observed.chat === 'error' ? 'runtime' : null;
@@ -89,7 +93,7 @@ export async function readSelectedHelperPage(parent: AgentConfigTarget, helpers:
     }
   }
   page.notes = [...new Set(page.notes)];
-  page.notes.push('Only eight direct selected helpers per page. Pages are separate current observations in strict host inventory order; work checks have a two-second admission budget, not a hard I/O deadline.');
-  page.notes.push('Runtime failure and Needs you require a current registration bound to the exact helper project. Otherwise the runtime outcome is unknown; no sleeping or successful-start claim is inferred.');
+  page.notes.push('Work is checked for up to eight direct helpers in each page. Some checks may be deferred when the host is busy; refresh to retry. Pages are separate host observations in inventory order.');
+  page.notes.push('Current helper status is shown only when the host can associate it with this helper. Otherwise its runtime outcome remains unavailable.');
   check(); return page;
 }

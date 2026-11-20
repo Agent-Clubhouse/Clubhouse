@@ -661,7 +661,7 @@ describe('host selected-agent Details projections', () => {
     expect(value.helperPage?.rows[0].target).toBeUndefined(); expect(m.work).not.toHaveBeenCalled();
   });
   it('keeps disposed and live handed-off helpers distinct with their real timestamps', async () => {
-    m.helpers.mockResolvedValue([{ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Disposed helper', disposedAt: '2026-11-18T12:00:00Z' } }, { projectPath: project.path, config: { ...agent(), id: 'handoff', name: 'Handed helper', handoff: { at: '2026-11-19' } } }]);
+    m.helpers.mockResolvedValue([{ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Disposed helper', parentAgentId: 'a1', disposedAt: '2026-11-18T12:00:00Z' } }, { projectPath: project.path, config: { ...agent(), id: 'handoff', name: 'Handed helper', parentAgentId: 'a1', handoff: { at: '2026-11-19' } } }]);
     const rows = (await read()).cards.find((c) => c.id === 'orchestrate')!.rows;
     expect(rows.find((r) => r.label === 'Disposed helper')?.value).toContain('Disposed · feature · 2026-11-18T12:00:00Z');
     expect(rows.find((r) => r.label === 'Handed helper')?.value).toContain('Handed off');
@@ -1140,4 +1140,14 @@ describe('structured selected helper pages at the complete Details boundary', ()
     m.helpers.mockRejectedValue(new Error('PRIVATE_INVENTORY'));
     const value = await read(); expect(value.helperPage).toMatchObject({ state: 'unavailable', total: null, liveCount: null, disposedCount: null, pendingCount: 0, rows: [] }); expect(JSON.stringify(value)).not.toContain('PRIVATE_INVENTORY');
   });
+});
+
+it('preserves valid saved disposed dates and handoff words in legacy summaries outside the selected helper page', async () => {
+  const helpers = Array.from({ length: 9 }, (_, i) => ({ projectPath: project.path, config: { ...agent(), id: `valid-${i}`, name: `Valid ${i}`, parentAgentId: 'a1' } }));
+  helpers.push({ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Disposed beyond page', parentAgentId: 'a1', disposedAt: '2026-11-18T12:00:00Z' } } as never);
+  helpers.push({ projectPath: project.path, config: { ...agent(), id: 'handoff', name: 'Handed beyond page', parentAgentId: 'a1', handoff: { at: '2026-11-19' } } } as never);
+  m.helpers.mockResolvedValue(helpers); const value = await read(), rows = value.cards.find((c) => c.id === 'orchestrate')!.rows;
+  expect(value.helperPage?.rows).toHaveLength(8); expect(value.helperPage).toMatchObject({ total: 11, liveCount: 10, disposedCount: 1 });
+  expect(rows.find((r) => r.label === 'Disposed beyond page')?.value).toContain('Disposed · feature · 2026-11-18T12:00:00Z');
+  expect(rows.find((r) => r.label === 'Handed beyond page')?.value).toContain('Handed off');
 });

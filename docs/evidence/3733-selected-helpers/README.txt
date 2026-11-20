@@ -122,3 +122,26 @@ incarnation generation beyond currently qualified selected host/project identity
 no new aggregate inventory budget. No cross-host probes, management writes,
 permission changes, restarts, PR updates or merge. Future generic/Canvas
 continuation stays separate; membership must never imply board-content access.
+
+QA follow-up / successor controls
+Initial023d exact-head run:295PASS/1FAIL in8suites. Failure log preserved at
+/tmp/nov20autoci-helpers-exact.log. The older disposed/handoff test fixture
+omitted parentAgentId on both entries, contradicting strict helper-index output.
+The parent fence is preserved; those fixtures are corrected to the real source
+shape. Separately, valid disposed dates and handoff words outside the selected
+8-row typed page must remain in legacy flat summaries. Production fallback now
+retains those saved fields; a new valid beyond-page regression keeps that API
+contract. Missing/invalid parent source entries do not gain typed identity,
+runtime/work or navigation through this fallback.
+
+QA also identified AgentRegistry.setNonce/setRuntime mutating one object.
+Pointer comparison alone missed nonce/provider/session-run changes. Bounded red
+using the actual registry singleton and actual setter methods:3FAIL (nonce,
+provider,run),3PASS (runtime,project,cwd),9SKIP; log preserved at
+/tmp/nov20autoci-helpers-registration-red.log. Successor captures immutable
+registration scalar values (nonce,project,cwd,provider,runtime) and chat
+session/native/display-run identifiers into the receipt signature while also
+checking original object identity. No auth nonce or runtime object is serialized.
+These are actual registry mutation semantics, with unrelated dependency ports
+stubbed for the test; no live host lifecycle is claimed. Final successor SHA
+and exact-head results are reported independently from023d and development passes.
