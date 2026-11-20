@@ -265,7 +265,15 @@ describe('AgentDetails for a remote Dispatcher', () => {
 
   beforeEach(() => {
     useAnnexClientStore.setState({ satellites: [satellite] });
-    Object.assign(window.clubhouse.annexClient, { agentDetails: vi.fn(async () => ({ status: 'unavailable' })) });
+    Object.assign(window.clubhouse.annexClient, {
+      agentDetails: vi.fn(async () => ({ status: 'unavailable' })),
+      agentSettings: vi.fn(async () => ({ status: 'unavailable' })),
+    });
+    vi.spyOn(window.clubhouse.agent, 'getDurableConfig');
+    vi.spyOn(window.clubhouse.agent, 'updateDurable');
+    vi.spyOn(window.clubhouse.annexClient, 'agentSpawn');
+    vi.spyOn(window.clubhouse.annexClient, 'agentWake');
+    vi.spyOn(window.clubhouse.annexClient, 'agentKill');
     window.clubhouse.actions.list = vi.fn(async () => []);
     window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
     window.clubhouse.dispatcher.getPresence = vi.fn(async () => ({ remotes: [
@@ -282,6 +290,9 @@ describe('AgentDetails for a remote Dispatcher', () => {
       ...createChatViewState(remote.id), sessionId: 's1', provider: 'claude-code', driver: 'claude_agent_sdk' as const,
       capabilities: { usage: 'session', subagents: 'native', limits: false } as never,
     };
+    let finish!: (result: { status: 'unavailable' }) => void;
+    const hostRead = vi.fn(() => new Promise<{ status: 'unavailable' }>((resolve) => { finish = resolve; }));
+    Object.assign(window.clubhouse.annexClient, { agentDetails: hostRead });
     render(<AgentDetails agent={{ ...remote, projectId: namespacedProjectId('sat', projectId) }} chat={chat} />);
     for (const card of ['settings', 'connections', 'other-machines', 'actions']) {
       expect(screen.getByTestId(`details-card-${card}`)).toBeInTheDocument();
@@ -291,18 +302,38 @@ describe('AgentDetails for a remote Dispatcher', () => {
       expect(screen.queryByTestId(`details-card-${card}`)).not.toBeInTheDocument();
     }
     expect(screen.getByTestId('other-machine-remote-peer')).toHaveTextContent('Studio on Desk');
-    await act(async () => {});
+    // Keep the host response pending explicitly: Connections has its own loading copy.
+    await waitFor(() => expect(hostRead).toHaveBeenCalledTimes(1));
+    expect(hostRead).toHaveBeenCalledWith('sat', hostAgent.id);
+    expect(window.clubhouse.annexClient.agentSettings).not.toHaveBeenCalled();
+    expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('Loading connections from the host…');
+    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('Loading connections from the host…');
+    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Loading details from the host…');
+    expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Loading details from the host…');
+    await act(async () => { finish({ status: 'unavailable' }); });
+    await waitFor(() => expect(window.clubhouse.annexClient.agentSettings).toHaveBeenCalledWith('sat', hostAgent.id));
+    for (const card of ['connections', 'actions']) {
+      expect(screen.getByTestId(`details-card-${card}-summary`)).toHaveTextContent('This host does not share these details');
+      expect(screen.getByTestId(`details-card-${card}`)).toHaveTextContent('host may need an update.');
+      expect(screen.getByTestId(`details-card-${card}`)).not.toHaveTextContent('Loading');
+    }
+    expect(screen.getByTestId('details-card-settings')).toHaveTextContent('This host doesn’t share these settings.');
+    expect(screen.getByTestId('other-machine-remote-peer')).toHaveTextContent('Studio on Desk');
     expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
-    expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('Loading details');
-    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('Loading details');
-    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Loading details');
-    expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Loading details');
     expect(screen.getByTestId('details-settings-remote')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add connection' })).not.toBeInTheDocument();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
     expect(window.clubhouse.mcpBinding.getConnectionGrants).not.toHaveBeenCalled();
     expect(window.clubhouse.git.branchChanges).not.toHaveBeenCalled();
+    expect(window.clubhouse.dispatcher.getPresence).not.toHaveBeenCalled();
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+    expect(window.clubhouse.agent.updateDurable).not.toHaveBeenCalled();
+    expect(window.clubhouse.annexClient.agentSpawn).not.toHaveBeenCalled();
+    expect(window.clubhouse.annexClient.agentWake).not.toHaveBeenCalled();
+    expect(window.clubhouse.annexClient.agentKill).not.toHaveBeenCalled();
+    expect(hostRead).toHaveBeenCalledTimes(1);
+    expect(window.clubhouse.annexClient.agentSettings).toHaveBeenCalledTimes(1);
   });
 
   it('recognizes the namespaced Dispatcher project while its host is offline without a snapshot', () => {

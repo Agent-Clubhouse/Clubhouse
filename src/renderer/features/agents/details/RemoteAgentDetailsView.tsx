@@ -132,10 +132,13 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   }
   for (const c of details?.cards ?? []) if (c.state === 'not-applicable') available.delete(c.id);
   const focusTarget = requested && available.has(requested) ? requested : dispatcher ? 'actions' : 'session';
-  const handled = useRef<number | null>(null);
+  const handled = useRef<string | null>(null);
   useEffect(() => {
-    if (!focus || focus.agentId !== agent.id || handled.current === focus.nonce) return;
-    handled.current = focus.nonce;
+    if (!focus || focus.agentId !== agent.id) return;
+    // Re-resolve the same request when delayed host evidence makes its card available.
+    const key = `${agent.id}:${focus.nonce}:${focusTarget}`;
+    if (handled.current === key) return;
+    handled.current = key;
     if (focusTarget === 'settings') useAgentDetailsStore.getState().setSettingsOpen(true);
     else if (focusTarget) setOpenCards((s) => new Set(s).add(focusTarget));
     if (focus.subagentId) setSelectedSub(focus.subagentId);
