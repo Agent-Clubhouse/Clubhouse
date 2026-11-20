@@ -1,0 +1,56 @@
+2026-11-20T02:05:34Z START diagnose-navi-queue idle=86% unused=12G avail=32650M freepct=79 comp=5581M swap=1892M pid=16234 cmd=./node_modules/.bin/vitest run --project main src/main/services/agent-runtime/chat-runtime.test.ts src/main/services/actions/engine.test.ts --maxWorkers=2 -t Q4 late rejection|Q4 unknown receipt
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <source-workspace>
+
+ ❯ |main| src/main/services/actions/engine.test.ts (162 tests | 2 failed | 160 skipped) 8ms
+     × Q4 unknown receipt before step completion records confirmation failure without retry or a new delivery enum 7ms
+     × Q4 unknown receipt after step completion records confirmation failure without retry or a new delivery enum 0ms
+ ❯ |main| src/main/services/agent-runtime/chat-runtime.test.ts (158 tests | 2 failed | 154 skipped) 13ms
+     × Q4 late rejection of a submitted queued request after stop stays unconfirmed without replay 5ms
+     × Q4 late rejection of a submitted queued request after clear stays unconfirmed without replay 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/actions/engine.test.ts > queued delivery receipts > Q4 unknown receipt before step completion records confirmation failure without retry or a new delivery enum
+ FAIL  |main| src/main/services/actions/engine.test.ts > queued delivery receipts > Q4 unknown receipt after step completion records confirmation failure without retry or a new delivery enum
+AssertionError: expected 'cancelled' to be 'failed' // Object.is equality
+
+Expected: "failed"
+Received: "cancelled"
+
+ ❯ src/main/services/actions/engine.test.ts:662:25
+    660|     await h.clock.advance(1000);
+    661|     const run = h.history(a.id).find((entry) => entry.id === runId)!;
+    662|     expect(run.outcome).toBe('failed');
+       |                         ^
+    663|     expect(run.steps[0]).toMatchObject({ outcome: 'failed', detail: 'T…
+    664|     expect(run.steps[0].delivery).toBeUndefined();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 late rejection of a submitted queued request after stop stays unconfirmed without replay
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 late rejection of a submitted queued request after clear stays unconfirmed without replay
+AssertionError: expected "vi.fn()" to be called once with arguments: [ 'unknown' ]
+
+Number of calls: 0
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2201:48
+    2199|         if (directResult) await directResult;
+    2200|         await flush();
+    2201|         if (path === 'queued') expect(settled).toHaveBeenCalledExactly…
+       |                                                ^
+    2202|         expect(federationTurnInputs(runtime.agentId)).toEqual([]);
+    2203|         expect(runtime.hasPendingWork()).toBe(false);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 2 passed | 314 skipped (320)
+   Start at  18:05:34
+   Duration  568ms (transform 722ms, setup 9ms, import 937ms, tests 21ms, environment 0ms)
+
+2026-11-20T02:05:35Z END diagnose-navi-queue rc=1

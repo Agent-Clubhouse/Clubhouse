@@ -1,0 +1,15 @@
+2026-11-20T02:12:55Z START diagnose-navi-queue idle=88% unused=13G avail=31770M freepct=77 comp=6914M swap=1892M pid=22057 cmd=./node_modules/.bin/eslint src/main/services/agent-runtime/chat-runtime.ts src/main/services/agent-runtime/chat-runtime.test.ts src/main/services/actions/engine.ts src/main/services/actions/engine.test.ts src/main/services/actions/actions-store.test.ts src/renderer/features/actions/ActionsSettingsView.test.tsx src/shared/chat/runtime.ts
+
+<source-workspace>/src/main/services/agent-runtime/chat-runtime.test.ts
+  1870:9  warning  'runtimeRef' is never reassigned. Use 'const' instead       prefer-const
+  2168:5  error    Unexpected newline between function and ( of function call  no-unexpected-multiline
+
+<source-workspace>/src/main/services/agent-runtime/chat-runtime.ts
+   393:7   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1381:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1389:34  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1497:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+
+✖ 6 problems (1 error, 5 warnings)
+
+2026-11-20T02:12:57Z END diagnose-navi-queue rc=1

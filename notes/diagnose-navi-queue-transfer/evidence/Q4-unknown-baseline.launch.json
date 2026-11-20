@@ -1,0 +1,47 @@
+{
+  "startedAt": "2026-11-20T02:05:33.358751+00:00",
+  "cwd": "<source-workspace>",
+  "command": [
+    "<source-resource-guard>",
+    "diagnose-navi-queue",
+    "4",
+    "--",
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/agent-runtime/chat-runtime.test.ts",
+    "src/main/services/actions/engine.test.ts",
+    "--maxWorkers=2",
+    "-t",
+    "Q4 late rejection|Q4 unknown receipt"
+  ],
+  "before": {
+    "head": "6eebd1544a10e4e98b7f69dec7fcbc82a61cc106",
+    "tree": "52e5b6b4f9104ab6bd0bef7b793bebf53cd53f08",
+    "status": "",
+    "sources": {
+      "src/main/services/agent-runtime/chat-runtime.ts": "c6c00a9e186828da5aa8c4d14807c9aa7c4ff3d360be0ac83279bb86e3cab1c0",
+      "src/main/services/agent-runtime/chat-runtime.test.ts": "e53760abd2e8871bc5ea6d3d6346d65feef102c1c9004c74c2b380678dfaeb66",
+      "src/main/services/actions/engine.ts": "07c767b1d00cbfe21072225592fc2b90b9b5eadc2ffc2a01caf2c7aaa66e33e8",
+      "src/main/services/actions/engine.test.ts": "afa50b2aac2552f0fecf5901c229b776c5bc07c59b379bc0b4bc141eee0a3db1",
+      "src/shared/chat/runtime.ts": "e7eb7337a0df8efc8ff810070652812382eacbaf3c8674603481a97638d2d33b"
+    }
+  },
+  "finishedAt": "2026-11-20T02:05:35.057366+00:00",
+  "exitCode": 1,
+  "after": {
+    "head": "6eebd1544a10e4e98b7f69dec7fcbc82a61cc106",
+    "tree": "52e5b6b4f9104ab6bd0bef7b793bebf53cd53f08",
+    "status": "",
+    "sources": {
+      "src/main/services/agent-runtime/chat-runtime.ts": "c6c00a9e186828da5aa8c4d14807c9aa7c4ff3d360be0ac83279bb86e3cab1c0",
+      "src/main/services/agent-runtime/chat-runtime.test.ts": "e53760abd2e8871bc5ea6d3d6346d65feef102c1c9004c74c2b380678dfaeb66",
+      "src/main/services/actions/engine.ts": "07c767b1d00cbfe21072225592fc2b90b9b5eadc2ffc2a01caf2c7aaa66e33e8",
+      "src/main/services/actions/engine.test.ts": "afa50b2aac2552f0fecf5901c229b776c5bc07c59b379bc0b4bc141eee0a3db1",
+      "src/shared/chat/runtime.ts": "e7eb7337a0df8efc8ff810070652812382eacbaf3c8674603481a97638d2d33b"
+    }
+  },
+  "stdout": "<source-evidence>/session-ownership/Q4-unknown-baseline.log",
+  "stdoutSha256": "a008c239b2eabc294fb2b9d2b5b3b3bc2ffb28997e844bca39c617f5bd4b16b2"
+}

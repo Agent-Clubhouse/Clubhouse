@@ -1,0 +1,50 @@
+{
+  "startedAt": "2026-11-20T02:12:55.143532+00:00",
+  "cwd": "<source-workspace>",
+  "command": [
+    "<source-resource-guard>",
+    "diagnose-navi-queue",
+    "4",
+    "--",
+    "./node_modules/.bin/eslint",
+    "src/main/services/agent-runtime/chat-runtime.ts",
+    "src/main/services/agent-runtime/chat-runtime.test.ts",
+    "src/main/services/actions/engine.ts",
+    "src/main/services/actions/engine.test.ts",
+    "src/main/services/actions/actions-store.test.ts",
+    "src/renderer/features/actions/ActionsSettingsView.test.tsx",
+    "src/shared/chat/runtime.ts"
+  ],
+  "before": {
+    "head": "54b85f5cb7fcdb25c51d2d782a8a5484f54bb940",
+    "tree": "c117801da07dd4a9d52fc39104d96e80f1c774d4",
+    "status": "",
+    "sources": {
+      "src/main/services/agent-runtime/chat-runtime.ts": "394b3beecd64f794e30fe407bf93a0fdf2cfebdab8d34ad7f336a994a334032e",
+      "src/main/services/agent-runtime/chat-runtime.test.ts": "4069166d4245aa8528109bb2cfcff0f3590daca1ca575c3240761fd394fd6690",
+      "src/main/services/actions/engine.ts": "90cb8c4cab081d210d19462516c7c908317d4b160f33e1c7e3da6312f2efb3c2",
+      "src/main/services/actions/engine.test.ts": "afa50b2aac2552f0fecf5901c229b776c5bc07c59b379bc0b4bc141eee0a3db1",
+      "src/main/services/actions/actions-store.test.ts": "a4bfdc9060a2f75974ea06eb45415aa5c75bc01c244258a6405fa8e7f5ac75ad",
+      "src/renderer/features/actions/ActionsSettingsView.test.tsx": "749d58a65e1119c1b018a21427bcee18fdfdb8c565d98c041f69bb4185f4b7db",
+      "src/shared/chat/runtime.ts": "22d0c72b3fa2375c327b72f94c8553f2b891af8405013a20c53b3c0bceb5b8bc"
+    }
+  },
+  "finishedAt": "2026-11-20T02:12:57.003370+00:00",
+  "exitCode": 1,
+  "after": {
+    "head": "54b85f5cb7fcdb25c51d2d782a8a5484f54bb940",
+    "tree": "c117801da07dd4a9d52fc39104d96e80f1c774d4",
+    "status": "",
+    "sources": {
+      "src/main/services/agent-runtime/chat-runtime.ts": "394b3beecd64f794e30fe407bf93a0fdf2cfebdab8d34ad7f336a994a334032e",
+      "src/main/services/agent-runtime/chat-runtime.test.ts": "4069166d4245aa8528109bb2cfcff0f3590daca1ca575c3240761fd394fd6690",
+      "src/main/services/actions/engine.ts": "90cb8c4cab081d210d19462516c7c908317d4b160f33e1c7e3da6312f2efb3c2",
+      "src/main/services/actions/engine.test.ts": "afa50b2aac2552f0fecf5901c229b776c5bc07c59b379bc0b4bc141eee0a3db1",
+      "src/main/services/actions/actions-store.test.ts": "a4bfdc9060a2f75974ea06eb45415aa5c75bc01c244258a6405fa8e7f5ac75ad",
+      "src/renderer/features/actions/ActionsSettingsView.test.tsx": "749d58a65e1119c1b018a21427bcee18fdfdb8c565d98c041f69bb4185f4b7db",
+      "src/shared/chat/runtime.ts": "22d0c72b3fa2375c327b72f94c8553f2b891af8405013a20c53b3c0bceb5b8bc"
+    }
+  },
+  "stdout": "<source-evidence>/session-ownership/final54-lint-attempt1.log",
+  "stdoutSha256": "55044597a3f03ed6014172a21309905806cd0e12e06ff86457dad79f9f77ad73"
+}

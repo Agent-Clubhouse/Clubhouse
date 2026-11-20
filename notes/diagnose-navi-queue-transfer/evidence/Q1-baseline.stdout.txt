@@ -1,0 +1,60 @@
+2026-11-20T01:43:34Z START diagnose-navi-queue idle=79% unused=7096M avail=28975M freepct=80 comp=4827M swap=1892M pid=89754 cmd=./node_modules/.bin/vitest run --project main src/main/services/agent-runtime/chat-runtime.test.ts --maxWorkers=2 -t Q1 does not let an early turn
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <source-workspace>
+
+ ❯ |main| src/main/services/agent-runtime/chat-runtime.test.ts (136 tests | 1 failed | 135 skipped) 10ms
+     × Q1 does not let an early turn consume the token of a dispatch still activating 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q1 does not let an early turn consume the token of a dispatch still activating
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2178:45
+    2176|       rejectActivation(new Error('first activation failed'));
+    2177|       await firstResult;
+    2178|       expect.soft(runtime.hasPendingWork()).toBe(false);
+       |                                             ^
+    2179|       await expect(runtime.sendMessage('next independent prompt', { so…
+    2180|       expect(driver.last.sent).toHaveLength(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q1 does not let an early turn consume the token of a dispatch still activating
+AssertionError: expected { delivery: 'queued', …(1) } to match object { delivery: 'prompt' }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "delivery": "prompt",
++   "delivery": "queued",
+  }
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2179:87
+    2177|       await firstResult;
+    2178|       expect.soft(runtime.hasPendingWork()).toBe(false);
+    2179|       await expect(runtime.sendMessage('next independent prompt', { so…
+       |                                                                                       ^
+    2180|       expect(driver.last.sent).toHaveLength(2);
+    2181|     } finally { rejectActivation(new Error('test cleanup')); await run…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 135 skipped (136)
+   Start at  17:43:34
+   Duration  618ms (transform 417ms, setup 5ms, import 516ms, tests 10ms, environment 0ms)
+
+2026-11-20T01:43:35Z END diagnose-navi-queue rc=1

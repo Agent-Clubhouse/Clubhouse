@@ -1,0 +1,14 @@
+2026-11-20T02:13:46Z START diagnose-navi-queue idle=82% unused=12G avail=31693M freepct=77 comp=6907M swap=1892M pid=22540 cmd=./node_modules/.bin/vitest run --project main --project renderer src/main/services/agent-runtime/chat-runtime.test.ts src/main/services/dispatcher-federation-context.test.ts src/main/services/dispatcher-federation-local-work.test.ts src/main/orchestrators/adapters/codex-chat-driver.test.ts src/main/services/actions/engine.test.ts src/main/services/actions/actions-store.test.ts src/renderer/features/actions/ActionsSettingsView.test.tsx --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <source-workspace>
+
+
+ Test Files  7 passed (7)
+      Tests  516 passed (516)
+   Start at  18:13:46
+   Duration  6.67s (transform 970ms, setup 66ms, import 1.29s, tests 8.10s, environment 189ms)
+
+2026-11-20T02:13:53Z END diagnose-navi-queue rc=0

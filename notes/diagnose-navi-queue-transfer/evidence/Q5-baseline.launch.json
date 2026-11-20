@@ -1,0 +1,46 @@
+{
+  "startedAt": "2026-11-20T02:20:51.317094+00:00",
+  "cwd": "<source-workspace>",
+  "command": [
+    "<source-resource-guard>",
+    "diagnose-navi-queue",
+    "4",
+    "--",
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/group-project-delivery.test.ts",
+    "--maxWorkers=2",
+    "-t",
+    "Q5 does not"
+  ],
+  "before": {
+    "head": "edce1d072a674bc4d3673296a13b18ad54f535e5",
+    "tree": "2b9a22e58819be378f83720fceab563fcab3a6de",
+    "status": "",
+    "sources": {
+      "src/main/services/group-project-delivery.ts": "025a6fe24183b395a45b47aa19e414270853c9aee3175fd68285a2c5403ca016",
+      "src/main/services/group-project-delivery.test.ts": "d96f705b23c6dd7ea81c41b0fc7f05093af22bea30e1fccaeb27404c6eb05443",
+      "src/main/services/group-project-notification-store.ts": "fa6e5b26054ea5cfc74de3a1edaff15bd9017b326129c264965441183a1498af",
+      "src/main/services/agent-runtime/chat-runtime.ts": "394b3beecd64f794e30fe407bf93a0fdf2cfebdab8d34ad7f336a994a334032e",
+      "src/shared/chat/runtime.ts": "22d0c72b3fa2375c327b72f94c8553f2b891af8405013a20c53b3c0bceb5b8bc"
+    }
+  },
+  "finishedAt": "2026-11-20T02:20:52.520893+00:00",
+  "exitCode": 1,
+  "after": {
+    "head": "edce1d072a674bc4d3673296a13b18ad54f535e5",
+    "tree": "2b9a22e58819be378f83720fceab563fcab3a6de",
+    "status": "",
+    "sources": {
+      "src/main/services/group-project-delivery.ts": "025a6fe24183b395a45b47aa19e414270853c9aee3175fd68285a2c5403ca016",
+      "src/main/services/group-project-delivery.test.ts": "d96f705b23c6dd7ea81c41b0fc7f05093af22bea30e1fccaeb27404c6eb05443",
+      "src/main/services/group-project-notification-store.ts": "fa6e5b26054ea5cfc74de3a1edaff15bd9017b326129c264965441183a1498af",
+      "src/main/services/agent-runtime/chat-runtime.ts": "394b3beecd64f794e30fe407bf93a0fdf2cfebdab8d34ad7f336a994a334032e",
+      "src/shared/chat/runtime.ts": "22d0c72b3fa2375c327b72f94c8553f2b891af8405013a20c53b3c0bceb5b8bc"
+    }
+  },
+  "stdout": "<source-evidence>/group-unknown/Q5-baseline-attempt1.log",
+  "stdoutSha256": "03b6accbca658be673e21f141182d87551b02fd88cdc758896ef997a8e0d3b02"
+}

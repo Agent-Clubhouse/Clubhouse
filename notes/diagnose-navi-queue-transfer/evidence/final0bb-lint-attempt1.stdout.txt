@@ -1,0 +1,14 @@
+2026-11-20T02:14:03Z START diagnose-navi-queue idle=87% unused=12G avail=31667M freepct=77 comp=6905M swap=1892M pid=22850 cmd=./node_modules/.bin/eslint src/main/services/agent-runtime/chat-runtime.ts src/main/services/agent-runtime/chat-runtime.test.ts src/main/services/actions/engine.ts src/main/services/actions/engine.test.ts src/main/services/actions/actions-store.test.ts src/renderer/features/actions/ActionsSettingsView.test.tsx src/shared/chat/runtime.ts
+
+<source-workspace>/src/main/services/agent-runtime/chat-runtime.test.ts
+  1870:9  warning  'runtimeRef' is never reassigned. Use 'const' instead  prefer-const
+
+<source-workspace>/src/main/services/agent-runtime/chat-runtime.ts
+   393:7   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1381:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1389:34  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1497:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+
+✖ 5 problems (0 errors, 5 warnings)
+
+2026-11-20T02:14:04Z END diagnose-navi-queue rc=0

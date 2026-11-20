@@ -1,0 +1,32 @@
+{
+  "correctsHistoricalClaim": "ActionsEngine is the sole production settlement consumer. That claim and the earlier omitted Group handler were inaccurate.",
+  "preservedHistoricalManifest": "<source-evidence>/session-ownership/manifest.json",
+  "preservedHistoricalManifestSha256": "4f09816c8fa953cd2fff6e88fbf717d683c6763bd18473abaccade015724f5a6",
+  "auditHead": "edce1d072a674bc4d3673296a13b18ad54f535e5",
+  "auditScope": "All tracked repository references to onSettled, ActionQueueSettlement, RuntimeActionQueue and deliveryChanged, plus production actionQueue forwarding/call paths. Does not claim arbitrary third-party dynamic code coverage.",
+  "handlers": [
+    {
+      "path": "src/main/services/actions/engine.ts",
+      "handler": "ActionsEngine.deliveryChanged",
+      "forwarders": [
+        "src/main/services/actions/steps.ts messageOptions/deliver",
+        "src/main/services/clubhouse-mcp/tools/dispatcher-delivery.ts messageOptions spread"
+      ]
+    },
+    {
+      "path": "src/main/services/group-project-delivery.ts",
+      "handler": "deliver actionQueue.onSettled, inferred parameter type; omitted by the earlier type-centric inventory"
+    }
+  ],
+  "invoker": {
+    "path": "src/main/services/agent-runtime/chat-runtime.ts",
+    "handler": "settleQueued captures and deletes onSettled before invoking; queues copy RuntimeActionQueue"
+  },
+  "declaration": "src/shared/chat/runtime.ts ActionQueueSettlement/RuntimeActionQueue/RuntimeSendOptions.actionQueue",
+  "notAdditionalHandlers": [
+    "Dispatcher delivery forwards callback options, not a new settlement owner.",
+    "PTY runtime uses immediate input delivery and has no client queued settlement callback.",
+    "Test fixtures and permission settlement handlers are not additional production ActionQueueSettlement owners."
+  ],
+  "newContractGapSourceOnly": "Group idle branch ignores RuntimeSendResult.delivery and acknowledges immediately, without an actionQueue callback. The runtime can return queued in the pre-turn gap despite idle state. This schedule was not executed in the Q5 baseline."
+}

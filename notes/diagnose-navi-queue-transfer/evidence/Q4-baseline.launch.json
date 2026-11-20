@@ -1,0 +1,40 @@
+{
+  "startedAt": "2026-11-20T02:01:17.376611+00:00",
+  "cwd": "<source-workspace>",
+  "command": [
+    "<source-resource-guard>",
+    "diagnose-navi-queue",
+    "4",
+    "--",
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/agent-runtime/chat-runtime.test.ts",
+    "--maxWorkers=2",
+    "-t",
+    "Q4 isolates late"
+  ],
+  "before": {
+    "head": "e264b0b2fcb8fc2127202799b6b37273970e13eb",
+    "tree": "f9c73598cfc1bacd2f16da1d4592625ba236fb40",
+    "status": "",
+    "sources": {
+      "src/main/services/agent-runtime/chat-runtime.ts": "2ad3e14b8cd0320ea8461d77076b24dea66e95390f136f6d2d2fb2718d96b1dd",
+      "src/main/services/agent-runtime/chat-runtime.test.ts": "3157e1788bab35319149ef795153653e8c6652bc1fe3e5b96e95863eaa94710c"
+    }
+  },
+  "finishedAt": "2026-11-20T02:01:19.201975+00:00",
+  "exitCode": 1,
+  "after": {
+    "head": "e264b0b2fcb8fc2127202799b6b37273970e13eb",
+    "tree": "f9c73598cfc1bacd2f16da1d4592625ba236fb40",
+    "status": "",
+    "sources": {
+      "src/main/services/agent-runtime/chat-runtime.ts": "2ad3e14b8cd0320ea8461d77076b24dea66e95390f136f6d2d2fb2718d96b1dd",
+      "src/main/services/agent-runtime/chat-runtime.test.ts": "3157e1788bab35319149ef795153653e8c6652bc1fe3e5b96e95863eaa94710c"
+    }
+  },
+  "stdout": "<source-evidence>/session-ownership/Q4-baseline.log",
+  "stdoutSha256": "1c0ab91a2a71239ba1fac98a38d118597a0c6c3416480abc730569a47836571a"
+}

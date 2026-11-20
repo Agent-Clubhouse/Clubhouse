@@ -1,0 +1,47 @@
+{
+  "status": "DECISION REQUIRED; NOT IMPLEMENTED OR APPROVED",
+  "recommendation": "Phase-one durable per-group/member quarantine; keep 0bb withheld until the explicit policy and exact correction are reviewed.",
+  "facts": {
+    "acknowledgment": "One monotonic notified[group,agent] number. markNotified takes max. It cannot encode an uncertain earlier sequence and a confirmed later sequence.",
+    "recovery": "onConnected reads all relevant board posts after the saved cursor. Watcher/member state is in memory; restart loses it.",
+    "unknown": "Current group callback neither acknowledges nor retains unknown, then clears queued.",
+    "compatibility": "Current validator accepts only notified/wakes/urgent in its returned object, discarding unrecognized fields, and old writers rewrite that object. An additive uncertainty field is not safe against old writers. Existing corrupt-store recovery baselines at current board sequence; that policy must not silently clear uncertainty."
+  },
+  "options": [
+    {
+      "name": "Durable quarantine (recommended smallest safe initial scope)",
+      "behavior": "One affected group/member has at most one unresolved notice batch. Hold later automatic notice handoffs while an earlier batch lacks a terminal receipt; on unknown or recovery of incomplete intent, pause across reconnect/restart. Board data and manual reads remain available.",
+      "durability": "Save a local dispatch intent with group/member, batch generation, message IDs/sequence range and prior success cursor BEFORE handing it to the runtime. A crash before a terminal receipt becomes uncertain, even if the batch may actually have remained unsubmitted. Do not store message bodies. Atomically save known outcome/cursor and clear only the matching intent.",
+      "ordering": "Do not advance the confirmed cursor past an uncertain batch. Later posts remain on the authoritative board, held for a later summary. To avoid unrecorded gaps, do not submit a later batch while an earlier batch is unresolved; preserving replacement/coalescing needs a proven replaced-before-submission outcome, otherwise hold it.",
+      "userExperience": "Group/member details show: Notice delivery unconfirmed; automatic notices are paused. Board posts remain readable. This pauses only that group/member, not the agent or all groups.",
+      "resolution": "Initial scope: local human user only, using an explicit Retry once action with a possible-duplicate warning. No automatic retry on reconnect or restart; no agent can resolve uncertainty. If that one retry returns confirmed acceptance, clear the barrier and resume unread notices; if unconfirmed again, keep it paused. If member is asleep or access refuses delivery, preserve the hold and use existing gated wake/access flows; no new wake authority.",
+      "noNewWaiverSemantics": "Do not add a skip/waive/confirm-received action initially. A manual board read is not currently a notice acknowledgment. If users need skip or attestation, it must be separately specified and recorded distinctly from provider confirmation.",
+      "persistenceFailure": "If intent cannot be saved, do not submit. If an outcome cannot be saved, retain/block as uncertain; do not acknowledge or replay. On malformed/unreadable uncertainty data, fail closed with visible status; do not reuse current baseline-to-latest recovery to erase the gap.",
+      "restart": "Recovered incomplete or unknown intent stays quarantined. New member/upgrade baseline semantics must remain separate from unresolved intent. Definite pre-submission dropped/expired/replaced outcomes remain eligible for existing safe recovery, rather than being mislabeled unknown.",
+      "migrationCompatibility": "Version the local notification receipt format, preserving existing cursors and budgets without replaying old board history. Add no replicated board/Annex/public delivery enums. Old-reader/writer rollback is unsafe because current old readers strip unknown fields; require an explicit supported writer-version/rollback policy while uncertainty exists. No claim that an old binary can retroactively be made fail closed.",
+      "tradeoff": "Less state/ordering complexity than a ledger, but later notices may be delayed and crash-before-submission ambiguity can pause unnecessarily. No exactly-once provider execution guarantee."
+    },
+    {
+      "name": "Per-notice or range outcome ledger",
+      "behavior": "Record confirmed, uncertain and not-yet-attempted batches/IDs separately, allowing later confirmed notices without erasing earlier uncertainty. Skip uncertain IDs during automatic reconnect recovery; known unsubmitted entries may use existing recovery.",
+      "durability": "Write intent and outcomes durably around handoffs; retain holes in the success frontier and separately track scanning/coverage. Later confirmed receipts must survive restart to avoid replaying them when an earlier gap remains.",
+      "resolution": "Local-user retry once per uncertain item/batch, with explicit possible-duplicate warning; other resolution policies such as waiver require separately recorded semantics.",
+      "compatibility": "Larger local persisted model and migration, merge/replacement/coalescing bookkeeping, compaction and unresolved-record retention, UI and downgrade policy. No public board schema change is inherently required, but local schema and supported-writer policy are still required.",
+      "tradeoff": "Better liveness for later posts, with materially larger implementation/review surface and lifecycle/persistence test matrix."
+    }
+  ],
+  "idleReturnedQueuedHandling": "Under either approved policy, use one receipt-aware owner path for busy and idle states. Pass a settlement callback even when idle; inspect actual returned delivery. A returned queued result must not acknowledge immediately. A known returned immediate acceptance may acknowledge only within the approved ordering policy; unknown quarantines or enters the ledger. Existing state/busy precheck is not proof of immediate delivery.",
+  "runtimeNarrowing": "No existing settlement value truthfully represents submitted-but-unconfirmed. Mapping to delivered falsely acknowledges; dropped/expired/replaced falsely classifies or enables blind recovery; ignoring it is Q5. Limiting unknown to Actions or returning to old Group behavior preserves the defect, not the requested contract. Runtime-only changes cannot guarantee both truthful acknowledgment and no blind replay. Splitting/defering the global settlement change is possible only as an explicit scope deferral with those limitations; it is not a safe compatibility repair or acceptance of 0bb.",
+  "routineAfterPolicyApproval": [
+    "Use existing membership/access checks and board authority; no new grant, wake or retry authority.",
+    "Serialize durable intent/outcome transitions per group/member; use batch generations so old callbacks cannot clear a newer hold.",
+    "Handle every current settlement variant explicitly and make future callback variants exhaustively checked in both owners.",
+    "Keep uncertainty metadata local and omit message bodies; prune only through approved resolution or existing confirmed membership/group deletion semantics.",
+    "Add exact later-post/reconnect/real temporary-directory persistence/crash-window controls only after the policy scope is authorized."
+  ],
+  "preciseUserDecision": "May I implement the smaller durable per-group/member quarantine policy: pause later automatic notices across reconnect/restart after an unconfirmed handoff, show the hold to the local user, permit only an explicit user-approved single retry with a duplicate warning, and introduce a versioned local receipt format with a defined supported-writer/rollback policy? Or must later notifications continue automatically while an earlier one is uncertain, requiring the larger per-notice ledger?",
+  "scopeNotAuthorized": [
+    "No production change, local schema migration, new resolver UI/API, retry action or live notification setting change has been implemented.",
+    "Public/replicated schemas, grants and agent control remain outside this proposal."
+  ]
+}

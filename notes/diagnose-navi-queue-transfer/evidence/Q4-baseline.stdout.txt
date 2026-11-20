@@ -1,0 +1,233 @@
+2026-11-20T02:01:18Z START diagnose-navi-queue idle=83% unused=13G avail=33248M freepct=79 comp=5593M swap=1892M pid=13065 cmd=./node_modules/.bin/vitest run --project main src/main/services/agent-runtime/chat-runtime.test.ts --maxWorkers=2 -t Q4 isolates late
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <source-workspace>
+
+ ❯ |main| src/main/services/agent-runtime/chat-runtime.test.ts (154 tests | 7 failed | 146 skipped) 21ms
+     × Q4 isolates late direct success after stop when the provider reports prompt 8ms
+     × Q4 isolates late direct success after stop when the provider reports queued 3ms
+     × Q4 isolates late direct success after clear when the provider reports prompt 4ms
+     × Q4 isolates late direct success after clear when the provider reports queued 1ms
+     × Q4 isolates late queued success after stop when the provider reports prompt 2ms
+     × Q4 isolates late queued success after stop when the provider reports queued 1ms
+     × Q4 isolates late queued success after clear when the provider reports queued 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late direct success after stop when the provider reports prompt
+AssertionError: expected [ { v: 2, agentId: 'agent-1', …(5) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "agentId": "agent-1",
++     "data": {
++       "content": [
++         {
++           "text": "late old input",
++           "type": "text",
++         },
++       ],
++       "delivery": "prompt",
++       "messageId": "id-2",
++       "source": "mcp",
++     },
++     "seq": 5,
++     "sessionId": "id-1",
++     "ts": 1000,
++     "type": "user_message",
++     "v": 2,
++   },
++ ]
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2211:116
+    2209|       if (path === 'queued') expect(settled).toHaveBeenCalledExactlyOn…
+    2210|       expect.soft(federationTurnInputs(runtime.agentId)).toEqual([]);
+    2211|       expect.soft(transcript.slice(boundary).filter((e) => e.type === …
+       |                                                                                                                    ^
+    2212|       expect(runtime.hasPendingWork()).toBe(false);
+    2213|       if (change === 'clear') {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late direct success after stop when the provider reports prompt
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late direct success after stop when the provider reports queued
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late queued success after stop when the provider reports prompt
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late queued success after stop when the provider reports queued
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2212:40
+    2210|       expect.soft(federationTurnInputs(runtime.agentId)).toEqual([]);
+    2211|       expect.soft(transcript.slice(boundary).filter((e) => e.type === …
+    2212|       expect(runtime.hasPendingWork()).toBe(false);
+       |                                        ^
+    2213|       if (change === 'clear') {
+    2214|         expect(driver.last.sent).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/12]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late direct success after stop when the provider reports queued
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late direct success after clear when the provider reports queued
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late queued success after stop when the provider reports queued
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late queued success after clear when the provider reports queued
+AssertionError: expected [ { id: 'old-late', cause: { …(2) } } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "cause": {
++       "depth": 4,
++       "rootId": "old-late",
++     },
++     "id": "old-late",
++   },
++ ]
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2210:58
+    2208|       await flush();
+    2209|       if (path === 'queued') expect(settled).toHaveBeenCalledExactlyOn…
+    2210|       expect.soft(federationTurnInputs(runtime.agentId)).toEqual([]);
+       |                                                          ^
+    2211|       expect.soft(transcript.slice(boundary).filter((e) => e.type === …
+    2212|       expect(runtime.hasPendingWork()).toBe(false);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/12]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late direct success after stop when the provider reports queued
+AssertionError: expected [ { v: 2, agentId: 'agent-1', …(5) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "agentId": "agent-1",
++     "data": {
++       "content": [
++         {
++           "text": "late old input",
++           "type": "text",
++         },
++       ],
++       "delivery": "queued",
++       "messageId": "id-2",
++       "source": "mcp",
++     },
++     "seq": 5,
++     "sessionId": "id-1",
++     "ts": 1000,
++     "type": "user_message",
++     "v": 2,
++   },
++ ]
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2211:116
+    2209|       if (path === 'queued') expect(settled).toHaveBeenCalledExactlyOn…
+    2210|       expect.soft(federationTurnInputs(runtime.agentId)).toEqual([]);
+    2211|       expect.soft(transcript.slice(boundary).filter((e) => e.type === …
+       |                                                                                                                    ^
+    2212|       expect(runtime.hasPendingWork()).toBe(false);
+    2213|       if (change === 'clear') {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/12]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late direct success after clear when the provider reports prompt
+AssertionError: expected [ { v: 2, agentId: 'agent-1', …(5) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "agentId": "agent-1",
++     "data": {
++       "content": [
++         {
++           "text": "late old input",
++           "type": "text",
++         },
++       ],
++       "delivery": "prompt",
++       "messageId": "id-2",
++       "source": "mcp",
++     },
++     "seq": 5,
++     "sessionId": "id-3",
++     "ts": 1000,
++     "type": "user_message",
++     "v": 2,
++   },
++ ]
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2211:116
+    2209|       if (path === 'queued') expect(settled).toHaveBeenCalledExactlyOn…
+    2210|       expect.soft(federationTurnInputs(runtime.agentId)).toEqual([]);
+    2211|       expect.soft(transcript.slice(boundary).filter((e) => e.type === …
+       |                                                                                                                    ^
+    2212|       expect(runtime.hasPendingWork()).toBe(false);
+    2213|       if (change === 'clear') {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/12]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q4 isolates late direct success after clear when the provider reports queued
+AssertionError: expected [ { v: 2, agentId: 'agent-1', …(5) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "agentId": "agent-1",
++     "data": {
++       "content": [
++         {
++           "text": "late old input",
++           "type": "text",
++         },
++       ],
++       "delivery": "queued",
++       "messageId": "id-2",
++       "source": "mcp",
++     },
++     "seq": 5,
++     "sessionId": "id-3",
++     "ts": 1000,
++     "type": "user_message",
++     "v": 2,
++   },
++ ]
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2211:116
+    2209|       if (path === 'queued') expect(settled).toHaveBeenCalledExactlyOn…
+    2210|       expect.soft(federationTurnInputs(runtime.agentId)).toEqual([]);
+    2211|       expect.soft(transcript.slice(boundary).filter((e) => e.type === …
+       |                                                                                                                    ^
+    2212|       expect(runtime.hasPendingWork()).toBe(false);
+    2213|       if (change === 'clear') {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/12]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed | 1 passed | 146 skipped (154)
+   Start at  18:01:18
+   Duration  593ms (transform 388ms, setup 6ms, import 479ms, tests 21ms, environment 0ms)
+
+2026-11-20T02:01:19Z END diagnose-navi-queue rc=1

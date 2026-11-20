@@ -1,0 +1,44 @@
+Independent Q5 baseline and bounded policy analysis — NO CORRECTION APPROVAL
+
+Head edce1d072a674bc4d3673296a13b18ad54f535e5
+Tree 2b9a22e58819be378f83720fceab563fcab3a6de
+Base withheld 0bb43aba9db9504bd5141f1387a512cf97a9b8ba
+Read-only source/artifact review. No execution, source changes, live action, schema/retry-policy implementation, new access or authorization.
+
+Exact linkage
+=============
+Full Git delta from 0bb changes only group-project-delivery.test.ts, +36 lines. All production entries are unchanged. Saved Q5-test-only.patch equals complete diff. Five saved source files equal exact Git; atomic Q5-baseline-attempt1.launch.json binds clean identical before/after head/tree and five source SHA256s matched to Git. Closed raw stdout SHA256 03b6accbca658be673e21f141182d87551b02fd88cdc758896ef997a8e0d3b02 verifies. Launch 02:20:51–52Z, maxWorkers2, actual exit1. No completed successor manifest or broad test result claimed.
+
+Actual results and assertion reach
+==================================
+One file, 3 FAILED / 36 SKIPPED (39 total). These are three expected-failure controls, not a product pass.
+
+1. Later post: initial queued notice seq1, manually invoke actual module's callback with unknown, assert cursor remains below1 (passes); change mocked runtime idle, post second notice, advance coalescing; assert exactly two sends and latest text only one new message (both pass). FINAL hard cursor assertion fails: actual cursor2 is not less than1. This demonstrates advancement across the unconfirmed first notice without including it in the newer delivered batch. All preceding assertions reached; none hidden behind an earlier failure.
+2. Reconnect, retained delivery memory: initial unknown callback, cursor below1 and exactly one send pass; invoke connected callback and advance wake-summary timer. FINAL hard assertion expects one send but sees two. It demonstrates an automatic second send in this model, not whether a real provider processed the first request.
+3. Reconnect after _resetDeliveryForTesting/watchGroupProjectDelivery: same setup passes, final send-count sees two. This resets delivery watcher/member memory while keeping the fixture receipt/board/runtime mocks. It is not an app/process restart, on-disk persistence reload or actual memory-GC test.
+
+The actual production delivery module, subscription/coalescing/reconnect/callback logic runs; runtime send, host/board/membership, grant dependencies and notification store are modeled. Receipt store is an in-memory Map, not actual group-project-notification-receipts.json. Callback unknown is invoked by the test; it is not an integrated real runtime failure. Synthetic notice text only, no observed production loss/duplicate/user content. No historical Navi trigger attribution.
+
+Complete callback path review
+=============================
+At this exact tree, production callback handlers are:
+- ActionsEngine.deliveryChanged in actions/engine.ts:1486, forwarded by actions/steps.ts:140–148 and Dispatcher delivery messageOptions (clubhouse-mcp/tools/dispatcher-delivery.ts:240–241).
+- Group-project delivery onSettled in group-project-delivery.ts:388–395.
+ChatAgentRuntime.settleQueued is the invoker; RuntimeActionQueue/ActionQueueSettlement is the shared internal declaration. This corrects the earlier sole-Actions-consumer claim. Source-reference text artifacts use HEAD labels, but independent Git inspection at the named freeze verifies these paths; text labeling alone is not immutable execution proof.
+
+Existing cursor cannot represent an uncertain gap
+================================================
+group-project-notification-store.ts:14 stores only notified[group,agent] number plus wake/urgent budgets. markNotified:124–125 monotonically advances max(previous,seq). It cannot encode “seq1 uncertain; seq2 delivered” or distinguish an uncertain submission from unread/not-attempted. Holding cursor below1 alone lets onConnected:482–503 re-read/resend seq1; advancing it to2 prevents replay but loses truthful uncertainty/possible undelivered seq1. Re-merging unknown into asleep would likewise request replay of a possibly accepted message. Falsely acknowledging unknown as delivered is not a safe fix.
+
+Bounded options requiring scope/policy decision, NOT approved implementation:
+- Durable per-member delivery quarantine: record uncertainty separately from the success cursor, suppress automatic recovery/replay and prevent later successful batches from silently clearing the gap. Smaller change in representation, but explicitly suspends that member's notice progression and needs honest surfaced status/resolution semantics. A transient in-memory flag is insufficient across app restart; changing persistence must be authorized and fail closed if the uncertainty record cannot be saved.
+- Per-notice/range ledger: separately retain confirmed/uncertain/not-attempted states, permit later confirmed notices without erasing an earlier gap. More complex batching/coalescing, ordering, migration/compaction and restart behavior; requires explicit compatibility and lifecycle design.
+Neither option follows automatically from the urgent runtime fix authorization. Decide the desired later-post/reconnect/resume behavior and who may resolve uncertainty before implementation; no schema/retry-policy expansion is authorized by this audit. Known not-submitted dropped/expired behavior can remain distinct from submitted/unknown. Do not describe whichever policy is chosen as exactly-once provider execution.
+
+Additional idle-branch source gap (not executed here)
+===================================================
+group-project-delivery.ts:401–404 calls runtime.sendMessage then acknowledges regardless of its returned delivery. The new preturn runtime reservation may client-queue even while runtime state is idle/starting, so the delivery module's busy=false branch can acknowledge before that queue is delivered. It also supplies no actionQueue callback there. A source-level policy/consumer fix must address this path alongside the busy branch; simply adding an unknown case at391 does not cover it. No executed baseline, production false acknowledgment or historical incident claim for this separate schedule.
+
+Disposition
+===========
+Q5 is independently linked to the recorded model baseline, with precise storage/runtime limits above. 0bb remains withheld. Durable quarantine versus ledger and related idle-return semantics need an authorized policy/scope decision and exact successor review; no plan approval, schema edits or live tests performed. Q1–Q4/runtime/Actions positives remain scoped and separate. 9f review remains queued behind urgent work.

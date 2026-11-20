@@ -1,0 +1,46 @@
+2026-11-20T02:20:52Z START diagnose-navi-queue idle=88% unused=12G avail=30988M freepct=77 comp=6876M swap=1892M pid=27956 cmd=./node_modules/.bin/vitest run --project main src/main/services/group-project-delivery.test.ts --maxWorkers=2 -t Q5 does not
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <source-workspace>
+
+ ❯ |main| src/main/services/group-project-delivery.test.ts (39 tests | 3 failed | 36 skipped) 8ms
+   × Q5 does not acknowledge an unconfirmed notice when a later post is delivered 5ms
+   × Q5 does not blindly replay an unconfirmed notice on reconnect with delivery reset false 1ms
+   × Q5 does not blindly replay an unconfirmed notice on reconnect with delivery reset true 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/group-project-delivery.test.ts > Q5 does not acknowledge an unconfirmed notice when a later post is delivered
+AssertionError: expected 2 to be less than 1
+ ❯ src/main/services/group-project-delivery.test.ts:458:34
+    456|   expect(sentTexts(dev).at(-1)).toContain('1 new message');
+    457|   // A later successful notice is not proof that this earlier notice a…
+    458|   expect(receipts.get('gp1dev')).toBeLessThan(uncertainSeq);
+       |                                  ^
+    459| });
+    460|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |main| src/main/services/group-project-delivery.test.ts > Q5 does not blindly replay an unconfirmed notice on reconnect with delivery reset false
+ FAIL  |main| src/main/services/group-project-delivery.test.ts > Q5 does not blindly replay an unconfirmed notice on reconnect with delivery reset true
+AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times
+ ❯ src/main/services/group-project-delivery.test.ts:476:27
+    474|   await vi.advanceTimersByTimeAsync(WAKE_SUMMARY_DELAY_MS);
+    475|   // The first attempt might have arrived: unread recovery must not as…
+    476|   expect(dev.sendMessage).toHaveBeenCalledTimes(1);
+       |                           ^
+    477| });
+    478|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 36 skipped (39)
+   Start at  18:20:52
+   Duration  173ms (transform 71ms, setup 4ms, import 88ms, tests 8ms, environment 0ms)
+
+2026-11-20T02:20:52Z END diagnose-navi-queue rc=1

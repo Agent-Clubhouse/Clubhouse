@@ -1,0 +1,40 @@
+{
+  "startedAt": "2026-11-20T01:58:37.477897+00:00",
+  "cwd": "<source-workspace>",
+  "command": [
+    "<source-resource-guard>",
+    "diagnose-navi-queue",
+    "4",
+    "--",
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/agent-runtime/chat-runtime.test.ts",
+    "--maxWorkers=2",
+    "-t",
+    "Q3 keeps replacement drain ownership"
+  ],
+  "before": {
+    "head": "15afe8c33929a1d8c9827bdf5f0ac2c2042bc045",
+    "tree": "1e4182e566898e8d8a8a2d04dd4c8767728857f1",
+    "status": "",
+    "sources": {
+      "src/main/services/agent-runtime/chat-runtime.ts": "1cd0b9074e4161c105f2c6e0f3888eb432ce63cc4afd62ad61806250fc48ace3",
+      "src/main/services/agent-runtime/chat-runtime.test.ts": "7522a46cd4d02e9e51894693103ad965f26974c6db006b835e13030c916d48b1"
+    }
+  },
+  "finishedAt": "2026-11-20T01:58:39.241744+00:00",
+  "exitCode": 1,
+  "after": {
+    "head": "15afe8c33929a1d8c9827bdf5f0ac2c2042bc045",
+    "tree": "1e4182e566898e8d8a8a2d04dd4c8767728857f1",
+    "status": "",
+    "sources": {
+      "src/main/services/agent-runtime/chat-runtime.ts": "1cd0b9074e4161c105f2c6e0f3888eb432ce63cc4afd62ad61806250fc48ace3",
+      "src/main/services/agent-runtime/chat-runtime.test.ts": "7522a46cd4d02e9e51894693103ad965f26974c6db006b835e13030c916d48b1"
+    }
+  },
+  "stdout": "<source-evidence>/session-ownership/Q3-baseline.log",
+  "stdoutSha256": "301211f19c5dfef7f8af7507d384df5f885ee0b29b574777285f9f580acbf0cc"
+}

@@ -1,0 +1,72 @@
+Independent urgent queue final-candidate review — REQUEST CHANGES
+
+Head 0bb43aba9db9504bd5141f1387a512cf97a9b8ba
+Tree 4afc5313dd0f4a2236a4ee98f667aa0ccddb3311
+Branch diagnose-navi-queue/session-drain-ownership
+Compared full main ae56577af786b0db79f21d137d0b334a5f7847dc and withheld ccd51f5076efc068ea13314e4890e47e7cb50d8a.
+Read-only source and saved artifacts. No tests/proof scripts executed, code/checkout/settings/grants changed, live queue/recovery action, network, PR or deployment.
+
+Verdict
+=======
+Withhold exact 0bb acceptance for Q5, the missed production group-notice settlement consumer. Q1–Q4 corrections and exact recorded proof are positive within their exercised runtime/Actions scope; no blanket settlement compatibility or no-replay guarantee follows. Q5 is source-derived, not an executed counterexample, observed lost notice, historical Navi cause or disclosure claim. Parent has relayed it for isolated baseline/policy resolution before broader semantics change.
+
+Q5 — ActionQueueSettlement is also consumed by group-project delivery
+====================================================================
+src/main/services/group-project-delivery.ts:384–395 passes actionQueue.onSettled, so “sole production consumer is ActionsEngine” is incorrect. The callback acknowledges delivered; expired/dropped are merged back into state.asleep; unknown matches neither branch, then clears state.queued because it is not replaced. New runtime sends unknown for every submitted queued rejection, including source group_project, not merely Actions.
+
+Consequences requiring discrimination/policy: an unconfirmed notice is neither acknowledged nor retained in the existing asleep batch. A later post's flush (291–320) merges asleep (now absent), can send only that newer notice, then acknowledge advances the maximum board sequence (360–363) past the old unconfirmed notice. The old notice can be lost from subsequent unread recovery. Conversely, if reconnect occurs first, onConnected (470–503) reads from the unadvanced persisted cursor and can resend that unconfirmed old notice. These are source-derived schedules, not executed proof. No new reader/host action was performed by reviewer.
+
+Existing test group-project-delivery.test.ts:432–440 specifically protects dropped notices merging into a later post. No corresponding unknown case, later-post/reconnect policy or group-project suite is in this seven-file exact proof. The supplied inventory omits this callback. The new callback enum therefore changes an existing caller's behavior outside the purported sole Actions consumer.
+
+Required resolution: inventory all callback producers/consumers; capture an isolated baseline on preserved 0bb with actual group-delivery owner/model boundary and unknown plus later-post/reconnect schedules; choose an explicit compatibility policy that does not falsely acknowledge confirmed delivery or blindly replay an uncertain submission. A durable acknowledgment/retry policy extension may need a scope/product decision; do not infer it from runtime fix authorization. A revised no-replay claim may be limited to exercised runtime/Actions controls, but that alone does not repair lost in-memory group-notice handling.
+
+Q1–Q4 source disposition (bounded positives)
+=============================================
+Full main delta is seven files: runtime and its tests, Actions engine and tests, store test, renderer Actions test, internal shared runtime callback type. Full complete-change-from-main.patch equals Git diff; session-ownership.patch equals full ccd..0bb diff. Earlier direct-send cleanup and admission changes are retained.
+
+Q1: reserve direct prompt before first preprompt await; pending preturn admission forces later input into client queue even with empty causal context, preventing unidentified simultaneous starts. Started turns still steer and native queued attribution remains unknown. Direct failure releases only its token, preserves original error and attempts same-session recovery drain without replacing the original exception. No accepted causal token is cleared indiscriminately. Actual local-work store serializes updates; activation reordering tests remain modeled runtime-boundary negatives.
+
+Q2: queued failure cleanup now releases token/trace in finally despite rollback failure and settles once; submitted but unconfirmed is unknown, while not-yet-submitted is dropped. Same-session queued failure notice explicitly says submitted but delivery could not be confirmed; later input progresses. This refines the old Q2 dropped expectation rather than claiming rejected send invocation proves no delivery.
+
+Q3: draining and queueWaitingForWork now retain owning ChatDriverSession rather than booleans. Admission/hasPendingWork/duplicate-drain guards apply only to current session. Old drain finally clears reservation only if it still owns it; old work wait callback clears only its own owner and never drains replacement. Thus new-session prompt can proceed while old activation is held, and old completion cannot release a newer drain. This weakness existed at ae565; new admission exposed/amplified it, not an entirely new defect.
+
+Q4 success: after direct provider await, stale session returns the provider's actual delivery/messageId but deletes its token, without accepting old provenance or emitting old user input into current transcript. Queued stale success settles delivered once as an actual returned result and avoids current-session acceptance/queue event. This is provider-returned prompt/queued evidence, not invocation-alone acceptance, proof of completed model work or a guarantee the provider cancels on close.
+
+Q4 no result/rejection: direct path preserves rejection and no stale publication. Queued path settles unknown once before stale-session return, rather than abandoning callback or claiming dropped-before-delivery. settleQueued removes the callback before invoking it; callback errors are locally diagnosed. No new timeout for a never-settling driver promise. Existing granted authority/provider lifecycle policies are unchanged by these edits.
+
+Actions/history/UI/telemetry inspected
+=====================================
+Internal ActionQueueSettlement adds unknown; public ActionStepResult.delivery and action-history v1 do not. Actions engine maps unknown to existing failed step with explicit “The message was submitted, but delivery could not be confirmed”, removes queued delivery, records a deliveryUpdatedAt and uses existing step_failed reason. Callback before step result is buffered/reapplied; callback after completion updates history. Existing multi-step expiry precedence remains in deliveryLoss handling; do not broaden single-step test claims to every aggregate outcome policy. No retry/replay branch is added by this engine delta.
+
+Independently verified these five blobs identical to BOTH main and ccd: src/shared/actions/types.ts, actions/actions-store.ts, renderer/actions/ActionCard.tsx, telemetry/actions-telemetry.ts and preload/actions.ts. RunReasonCode declaration is also identical. Thus failed predecessor delivery_unknown is absent from final public reason types; step_failed matches unchanged closed telemetry schema.
+
+Final positive tests cover before/after engine settlement, failed outcome/detail, no delivery in object/JSON and one step call; store test round-trips a modeled receipt through existing v1 sanitizer/migration; renderer test consumes a modeled failed history row and shows explicit confirmation failure without queued badge, sent claim or dropped-before-delivery claim. These demonstrate scoped object/history/UI compatibility, not actual filesystem persistence or every other callback owner. Actions steps.ts forwards the callback; group-project-delivery.ts is the missed second production consumer, Q5 above.
+
+Exact package/proof verification
+================================
+<source-evidence>/session-ownership/manifest.json SHA256 4f09816c8fa953cd2fff6e88fbf717d683c6763bd18473abaccade015724f5a6 verifies, with all 99 artifact byte counts/hashes. All 63 sources/<head-prefix>/<path> snapshots independently equal their immutable Git blobs across nine preserved heads. Complete main/ccd patches verify, not just named blob receipts.
+
+All three final0bb launch records have identical clean before/after exact head/tree plus all seven recorded source hashes matched to Git. Raw stdout hashes match launch/manifest:
+- Tests 02:13:45–53Z (gate 46–53): SEVEN files / 516 PASSED, no skips, exit0; maxWorkers2, runtime/context/local-work/Codex driver/Actions engine/store/renderer. Group-project delivery is absent.
+- TypeScript noEmit 02:13:53–02:14:02Z, exit0.
+- Lint 02:14:02–04Z, exit0, actual stdout 0 errors / 5 warnings at unchanged prefer-const/catch-report sites.
+These are independently readable exact-head receipts, not reviewer reruns or proof of Q5. This package does not supply the separate #3733 103-fixture identity/RED-restoration scheme; none is invented.
+
+Preserved failed validation history:
+- 2938697b9 exact test attempt1 exit75 is resource refusal; attempt2 seven files/516 pass, then tsc exit2 TS2345 at actions-telemetry.ts129 due new delivery_unknown closed-enum mismatch. Failed overall; no success/count transfer. Snapshot and log linkage preserved.
+- 54b85f5cb tests516/tsc0 then lint exit1 (1 error / 5 warnings), failed overall. Final0bb repeats every required job successfully on its own head.
+- Development iteration logs, refusals and incomplete intermediate byte coverage remain historical, not acceptance proof. Original 298 unavailable assertion stdout is still unavailable.
+
+Baseline attribution/assertion limits retained
+===============================================
+Prior independent reports remain external and fully relayed; package preserves the exact baseline raw artifacts/launch records:
+- 15afe Q3: clean atomic production ccd/test-only source linkage; 1 FAIL/145 SKIP. Clear and old dropped-once pass; FIRST new-session send hardfails queued vs prompt. Later FIFO/old-completion/new-drain/no-pending assertions unreached in RED, reached in final positive model.
+- e264 Q4: production379 intermediate, not ccd byte-equal. 7 FAIL/1 PASS/146 SKIP. Twelve assertion failures across seven cases: four direct stale publications, four queued-result causal repopulations, four stopped pending tokens. Queued-clear/prompt negative passes. Direct actual modeled receipt/queued delivered-once assertions pass; stopped cases hard-stop at pending, clear cases reach next-input tests.
+- 6eeb unknown: production4bc intermediate; 4 FAIL/2 PASS/314 SKIP. Queued stop/clear first hard callback0 failure leaves later provenance/no-replay assertions unreached; engine first hard cancelled-vs-failed leaves later detail/JSON/no-retry unreached. Two direct late-rejection controls fully pass. No baseline tsc proof for proposed unknown literal.
+- Earlier Q1 activation/provider and Q2 298 baselines have saved raw stdout/test bytes but no atomic launch-source hash capture; immutable saved source/current hashing is not retroactive launch proof. Their source/model and hard-stop limits remain as recorded in ccd report.
+
+Final runtime tests reach Q3 old completion while replacement drain held, FIFO/no old send/exact once/no pending; Q4 all eight late successful paths and four late reject paths; Q1/Q2 retained admission/error behavior, early turn/FIFO, stop/replace/preprompt/preparation, client/native steering and trace attribution. Those are deterministic FakeChatDriver and activation/rollback models with runtime/context plumbing. They are not observed real Codex/Copilot/Claude process cancellation, persistence failure, live UI, host/TLS enforcement or historical incident cause.
+
+Scope and handoff
+================
+Q5 and exact source schedules sent to parent; owner preparing isolated compatibility evidence/policy. No correction to 0bb or broader owner behavior approved by this report. Existing local diag redaction/nonthrowing boundary remains; no universal arbitrary-error secret guarantee or new payload telemetry. User-performed Stop/Resume recovery remains separate. No PR/deployment/release approval, no new live action authority; #3733/9f helper queue is separate and remains behind urgent successor review.

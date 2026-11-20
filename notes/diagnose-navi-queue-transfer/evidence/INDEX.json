@@ -1,0 +1,305 @@
+{
+  "preparedAtUtc": "2026-11-20T08:45:39.946908+00:00",
+  "repository": "https://github.com/Agent-Clubhouse/Clubhouse.git",
+  "notesBranch": "diagnose-navi-queue/mini-preservation",
+  "notesUpstream": "origin/diagnose-navi-queue/mini-preservation",
+  "notesCommitBinding": "The containing Git commit binds this inventory. Sender reports its exact SHA; verified receiver fetch and explicit acceptance are still required.",
+  "frozenRemoteHeadsVerifiedBeforePreparation": {
+    "diagnose-navi-queue/pending-token-cleanup": "298f292f4da6e6b5b301bb1e3ba8e6e5ff8cf400",
+    "diagnose-navi-queue/dispatch-ownership": "ccd51f5076efc068ea13314e4890e47e7cb50d8a",
+    "diagnose-navi-queue/session-drain-ownership": "0bb43aba9db9504bd5141f1387a512cf97a9b8ba",
+    "diagnose-navi-queue/group-unknown-baseline": "edce1d072a674bc4d3673296a13b18ad54f535e5"
+  },
+  "status": "UNFINISHED / NOT APPROVED. Q5 decision pending. Sender retains preservation ownership; no verified Mini acceptance.",
+  "policy": "Preservation only. No new implementation, schema, retry policy, live action, PR or deployment.",
+  "evidenceHandling": "Portable derivatives of existing saved synthetic test outputs/launch records and source-only review/policy records. Absolute laptop workspace/repo/QA/evidence/resource-guard/home/temp prefixes replaced with placeholders. No missing output was reconstructed. Original launch stdoutSha256 is the ORIGINAL artifact hash; verify portable bytes with this index, not that field.",
+  "omitted": "No live telemetry/session transcripts, native session identifiers, installed app/ASAR, credentials, dependency caches or generated app data are uploaded. Full source snapshots/patches are redundant with reachable immutable Git blobs.",
+  "earlierLimits": "Original 298 assertion stdout is unavailable. Q1/Q2 earlier logs do not have atomic launch-source linkage. Final 0bb positives exclude Group delivery. Q5 uses receipt Map and watcher/member reset, not disk/process restart. Review reports preserve hard-failure assertion reach and aggregate-outcome qualifications.",
+  "originalLocalPackageManifestHashes": {
+    "session-ownership": "4f09816c8fa953cd2fff6e88fbf717d683c6763bd18473abaccade015724f5a6",
+    "group-unknown": "4f240e45eb4aadb61616e1a12697e7736bed1472c5219fe635a4ea956180bdc8"
+  },
+  "files": {
+    "final0bb-tests-attempt1.stdout.txt": {
+      "sourceLabel": "session-ownership/final0bb-tests-attempt1.log",
+      "originalSha256": "85ce2e6c5a5275c734f5a87a519b3e3d01210299c515e8e560d8248be5075e9a",
+      "portableSha256": "034f606a10a4a55f758d54fb1accb1cc10ac1c87455fdd1c01aaf6afca07b642",
+      "originalBytes": 1270,
+      "portableBytes": 1216,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "final0bb-tests-attempt1.launch.json": {
+      "sourceLabel": "session-ownership/final0bb-tests-attempt1.launch.json",
+      "originalSha256": "516a37b80636ae9851b884fcd810d2da958ebedd7f8ded9622ba54a52b8bb143",
+      "portableSha256": "29d474831b09b89083cc226722fe3f870ae6d1e7ec388592b0230a7646488b65",
+      "originalBytes": 3140,
+      "portableBytes": 3010,
+      "derivative": "Path-prefix substitutions only; not a new execution.",
+      "verifiedOriginalLaunch": {
+        "head": "0bb43aba9db9504bd5141f1387a512cf97a9b8ba",
+        "tree": "4afc5313dd0f4a2236a4ee98f667aa0ccddb3311",
+        "exitCode": 0,
+        "beforeAfterIdenticalAndClean": true,
+        "sourceHashesMatchGit": true,
+        "originalStdoutHashMatches": true,
+        "portableStdoutFile": "final0bb-tests-attempt1.stdout.txt"
+      }
+    },
+    "final0bb-typecheck-attempt1.stdout.txt": {
+      "sourceLabel": "session-ownership/final0bb-typecheck-attempt1.log",
+      "originalSha256": "c1687f3ed2030c802bb5f0c7a0e0a6897665f2749a95d8f3260e3bbf3fc10951",
+      "portableSha256": "c1687f3ed2030c802bb5f0c7a0e0a6897665f2749a95d8f3260e3bbf3fc10951",
+      "originalBytes": 210,
+      "portableBytes": 210,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "final0bb-typecheck-attempt1.launch.json": {
+      "sourceLabel": "session-ownership/final0bb-typecheck-attempt1.launch.json",
+      "originalSha256": "513279b2949ad815899730243adb9b3a54ca07c658f3d818635380c278ba8a91",
+      "portableSha256": "293f8feddc1e3165b8d9e052898d293c137852484d196394e251ed65f4dd8e76",
+      "originalBytes": 2639,
+      "portableBytes": 2509,
+      "derivative": "Path-prefix substitutions only; not a new execution.",
+      "verifiedOriginalLaunch": {
+        "head": "0bb43aba9db9504bd5141f1387a512cf97a9b8ba",
+        "tree": "4afc5313dd0f4a2236a4ee98f667aa0ccddb3311",
+        "exitCode": 0,
+        "beforeAfterIdenticalAndClean": true,
+        "sourceHashesMatchGit": true,
+        "originalStdoutHashMatches": true,
+        "portableStdoutFile": "final0bb-typecheck-attempt1.stdout.txt"
+      }
+    },
+    "final0bb-lint-attempt1.stdout.txt": {
+      "sourceLabel": "session-ownership/final0bb-lint-attempt1.log",
+      "originalSha256": "1f9439674c9e0739fa95563dd841ec16c1e967b03bc8ef3f06483988934a0478",
+      "portableSha256": "be728d31d3d92b18b683cb027c7975d0d97dba76329756bbe17d237fa5f4e561",
+      "originalBytes": 1728,
+      "portableBytes": 1620,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "final0bb-lint-attempt1.launch.json": {
+      "sourceLabel": "session-ownership/final0bb-lint-attempt1.launch.json",
+      "originalSha256": "012eb76c5900b7b92eea8e1ff3cf66a111e013aff9d3b35225f41e2118c62755",
+      "portableSha256": "8c1f44f09cf8b01a51017039bc7197018467f546b50bd1229c70bd74cf4a8a8d",
+      "originalBytes": 2982,
+      "portableBytes": 2852,
+      "derivative": "Path-prefix substitutions only; not a new execution.",
+      "verifiedOriginalLaunch": {
+        "head": "0bb43aba9db9504bd5141f1387a512cf97a9b8ba",
+        "tree": "4afc5313dd0f4a2236a4ee98f667aa0ccddb3311",
+        "exitCode": 0,
+        "beforeAfterIdenticalAndClean": true,
+        "sourceHashesMatchGit": true,
+        "originalStdoutHashMatches": true,
+        "portableStdoutFile": "final0bb-lint-attempt1.stdout.txt"
+      }
+    },
+    "Q3-baseline.stdout.txt": {
+      "sourceLabel": "session-ownership/Q3-baseline.log",
+      "originalSha256": "301211f19c5dfef7f8af7507d384df5f885ee0b29b574777285f9f580acbf0cc",
+      "portableSha256": "2402591cb8dce5c445ef389b1b1a61b4fae731976f7e7407f87acf3e90141729",
+      "originalBytes": 2289,
+      "portableBytes": 2235,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "Q3-baseline.launch.json": {
+      "sourceLabel": "session-ownership/Q3-baseline.launch.json",
+      "originalSha256": "3fc8ecc6fcb0db8a0b46c46edd44dd590b76a147bb44a3f6c7084507fbfd44d8",
+      "portableSha256": "6458065917af0b306cc5cf3c7b71ee8ac20435ea1ebe69210b8dfac850f13a9b",
+      "originalBytes": 1594,
+      "portableBytes": 1464,
+      "derivative": "Path-prefix substitutions only; not a new execution.",
+      "verifiedOriginalLaunch": {
+        "head": "15afe8c33929a1d8c9827bdf5f0ac2c2042bc045",
+        "tree": "1e4182e566898e8d8a8a2d04dd4c8767728857f1",
+        "exitCode": 1,
+        "beforeAfterIdenticalAndClean": true,
+        "sourceHashesMatchGit": true,
+        "originalStdoutHashMatches": true,
+        "portableStdoutFile": "Q3-baseline.stdout.txt"
+      }
+    },
+    "Q4-baseline.stdout.txt": {
+      "sourceLabel": "session-ownership/Q4-baseline.log",
+      "originalSha256": "1c0ab91a2a71239ba1fac98a38d118597a0c6c3416480abc730569a47836571a",
+      "portableSha256": "6ca5c5de837df1f07aa451e66c95abdafeb8908eff12d39b926fc0a8026e1b3a",
+      "originalBytes": 10134,
+      "portableBytes": 10080,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "Q4-baseline.launch.json": {
+      "sourceLabel": "session-ownership/Q4-baseline.launch.json",
+      "originalSha256": "0ca69d2740640540741ac2b790f8dc653a03c880c913997338ba0c4c616d7297",
+      "portableSha256": "bc07cd822514146d11a4259dc2dc481800100d77437d4898954ef1eb40789ee4",
+      "originalBytes": 1574,
+      "portableBytes": 1444,
+      "derivative": "Path-prefix substitutions only; not a new execution.",
+      "verifiedOriginalLaunch": {
+        "head": "e264b0b2fcb8fc2127202799b6b37273970e13eb",
+        "tree": "f9c73598cfc1bacd2f16da1d4592625ba236fb40",
+        "exitCode": 1,
+        "beforeAfterIdenticalAndClean": true,
+        "sourceHashesMatchGit": true,
+        "originalStdoutHashMatches": true,
+        "portableStdoutFile": "Q4-baseline.stdout.txt"
+      }
+    },
+    "Q4-unknown-baseline.stdout.txt": {
+      "sourceLabel": "session-ownership/Q4-unknown-baseline.log",
+      "originalSha256": "a008c239b2eabc294fb2b9d2b5b3b3bc2ffb28997e844bca39c617f5bd4b16b2",
+      "portableSha256": "44e60d0f8e0ab93f8a498bec64e8a3ee78beb5fa9a099acbda4f3fc1d03fa18b",
+      "originalBytes": 3790,
+      "portableBytes": 3736,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "Q4-unknown-baseline.launch.json": {
+      "sourceLabel": "session-ownership/Q4-unknown-baseline.launch.json",
+      "originalSha256": "2daab4e74ac249fce970ab9aa94a64525fb5a5e22b4404d6fbac1a2c22b7718c",
+      "portableSha256": "0ca2ff6290daeb51801370e5bd23773975788021cf89da2614fdf0d1a0fc171d",
+      "originalBytes": 2320,
+      "portableBytes": 2190,
+      "derivative": "Path-prefix substitutions only; not a new execution.",
+      "verifiedOriginalLaunch": {
+        "head": "6eebd1544a10e4e98b7f69dec7fcbc82a61cc106",
+        "tree": "52e5b6b4f9104ab6bd0bef7b793bebf53cd53f08",
+        "exitCode": 1,
+        "beforeAfterIdenticalAndClean": true,
+        "sourceHashesMatchGit": true,
+        "originalStdoutHashMatches": true,
+        "portableStdoutFile": "Q4-unknown-baseline.stdout.txt"
+      }
+    },
+    "final-typecheck-attempt1.stdout.txt": {
+      "sourceLabel": "session-ownership/final-typecheck-attempt1.log",
+      "originalSha256": "826b0081545d10cdc9c8fe2fc061dcd2c8ea5b539725cbe96f0426ccd838f9be",
+      "portableSha256": "826b0081545d10cdc9c8fe2fc061dcd2c8ea5b539725cbe96f0426ccd838f9be",
+      "originalBytes": 849,
+      "portableBytes": 849,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "final-typecheck-attempt1.launch.json": {
+      "sourceLabel": "session-ownership/final-typecheck-attempt1.launch.json",
+      "originalSha256": "9e78f840f18bea44ce8c60fd53e9d8fb973502f1d72e67604e794a0ff3c4ebe1",
+      "portableSha256": "e82952ec607d04c3908e1da8f46341d2767bf70162652071eec5a9d6be28d5d0",
+      "originalBytes": 2636,
+      "portableBytes": 2506,
+      "derivative": "Path-prefix substitutions only; not a new execution.",
+      "verifiedOriginalLaunch": {
+        "head": "2938697b9f94558f7c3fefcec962aff60039df52",
+        "tree": "6253d4fbf7812e86dc52b69916b84d1b10d75250",
+        "exitCode": 2,
+        "beforeAfterIdenticalAndClean": true,
+        "sourceHashesMatchGit": true,
+        "originalStdoutHashMatches": true,
+        "portableStdoutFile": "final-typecheck-attempt1.stdout.txt"
+      }
+    },
+    "final54-lint-attempt1.stdout.txt": {
+      "sourceLabel": "session-ownership/final54-lint-attempt1.log",
+      "originalSha256": "55044597a3f03ed6014172a21309905806cd0e12e06ff86457dad79f9f77ad73",
+      "portableSha256": "e64187e2382be66f3b273a1fa04578d4d78310956c23fe78141a91a160b8d57b",
+      "originalBytes": 1835,
+      "portableBytes": 1727,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "final54-lint-attempt1.launch.json": {
+      "sourceLabel": "session-ownership/final54-lint-attempt1.launch.json",
+      "originalSha256": "cac6e7aefe72cf9b6be2216d2253509463964a634657afe964629efb0b2c4ad6",
+      "portableSha256": "d40a5493b5a07e6977645c33b457624405f9b4870916798ae162d64af67fac31",
+      "originalBytes": 2981,
+      "portableBytes": 2851,
+      "derivative": "Path-prefix substitutions only; not a new execution.",
+      "verifiedOriginalLaunch": {
+        "head": "54b85f5cb7fcdb25c51d2d782a8a5484f54bb940",
+        "tree": "c117801da07dd4a9d52fc39104d96e80f1c774d4",
+        "exitCode": 1,
+        "beforeAfterIdenticalAndClean": true,
+        "sourceHashesMatchGit": true,
+        "originalStdoutHashMatches": true,
+        "portableStdoutFile": "final54-lint-attempt1.stdout.txt"
+      }
+    },
+    "Q5-baseline.stdout.txt": {
+      "sourceLabel": "group-unknown/Q5-baseline-attempt1.log",
+      "originalSha256": "03b6accbca658be673e21f141182d87551b02fd88cdc758896ef997a8e0d3b02",
+      "portableSha256": "147c32f074f530337345144285d6078f7b370a3757db85bc58d889634ef715dc",
+      "originalBytes": 2800,
+      "portableBytes": 2746,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "Q5-baseline.launch.json": {
+      "sourceLabel": "group-unknown/Q5-baseline-attempt1.launch.json",
+      "originalSha256": "781054aefc9a30ba1b48f836d9d5f7de11b1d50a10ff98e838cd8d0b97d49569",
+      "portableSha256": "be1a5365d657bfd1ffa7de0276d5fa95a5e8add0489f5ae58ae9848b09a55441",
+      "originalBytes": 2274,
+      "portableBytes": 2144,
+      "derivative": "Path-prefix substitutions only; not a new execution.",
+      "verifiedOriginalLaunch": {
+        "head": "edce1d072a674bc4d3673296a13b18ad54f535e5",
+        "tree": "2b9a22e58819be378f83720fceab563fcab3a6de",
+        "exitCode": 1,
+        "beforeAfterIdenticalAndClean": true,
+        "sourceHashesMatchGit": true,
+        "originalStdoutHashMatches": true,
+        "portableStdoutFile": "Q5-baseline.stdout.txt"
+      }
+    },
+    "Q1-baseline.stdout.txt": {
+      "sourceLabel": "successor/Q1-baseline.log",
+      "originalSha256": "9cdc53182cfd1fe6ccbc70a4b25f6c6add1d1a5e3cd7fb024ea84c8b3a3f4c65",
+      "portableSha256": "0ff9ef69d3e4555384aed2f3aac947ff00c3144856ff40c42d1f7348eab1f188",
+      "originalBytes": 3067,
+      "portableBytes": 3013,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "Q1-provider-baseline.stdout.txt": {
+      "sourceLabel": "successor/Q1-provider-baseline.log",
+      "originalSha256": "06746c290af1aa43b6a64bfd64eda7ce4d5fec3591d539c116f842a3a6e2a1de",
+      "portableSha256": "d794d915bdf2f7b6c95b44fb0c7867459ca0c9a16e3aafd04bf16013357541e8",
+      "originalBytes": 3117,
+      "portableBytes": 3063,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "Q2-baseline.stdout.txt": {
+      "sourceLabel": "successor/Q2-baseline.log",
+      "originalSha256": "a2af40a9fb6d3ca32c1168785aa1d285e9154a46edd936a9ebfa8e2414749eb2",
+      "portableSha256": "4077a611f5159cac0752c2bd0b4b7da493f17d457d75d3fa8184f4030a078ccf",
+      "originalBytes": 13851,
+      "portableBytes": 13797,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "Q5-policy-proposal.json": {
+      "sourceLabel": "group-unknown/Q5-policy-proposal.json",
+      "originalSha256": "7b4c63807c7a262d183ec9589bc66d35bcf2914b157b5ffae46d16f1ff122e47",
+      "portableSha256": "7b4c63807c7a262d183ec9589bc66d35bcf2914b157b5ffae46d16f1ff122e47",
+      "originalBytes": 8156,
+      "portableBytes": 8156,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "inventory-correction.json": {
+      "sourceLabel": "group-unknown/inventory-correction.json",
+      "originalSha256": "8f43c8de5f3ab398dfb23f2205d59cc241ec413126c600eb3cd51d357bfb5b40",
+      "portableSha256": "91f5bd87e37f54675321d52d7e42da9588214656d2c22d31f572c4af5ccad461",
+      "originalBytes": 2127,
+      "portableBytes": 2082,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "qa-0bb-review.txt": {
+      "sourceLabel": "qa-reports/navi-queue-0bb43aba9-independent-bounded-review.txt",
+      "originalSha256": "bccc9695bc04ad865bf005260e04193b73e4af7863e2377dce25c43d69ccae4e",
+      "portableSha256": "1de59b1a23ba2d4e26b11f13e10b26a52dcf96c70d863022d7c742a6fe17c0cc",
+      "originalBytes": 12337,
+      "portableBytes": 12292,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    },
+    "qa-edce-review.txt": {
+      "sourceLabel": "qa-reports/navi-queue-edce1d072-q5-baseline-policy-inspection.txt",
+      "originalSha256": "5061716cb00bc576c62663756ab3c5283b4dbef9bc74edae3764b22a9e463988",
+      "portableSha256": "5061716cb00bc576c62663756ab3c5283b4dbef9bc74edae3764b22a9e463988",
+      "originalBytes": 6682,
+      "portableBytes": 6682,
+      "derivative": "Path-prefix substitutions only; not a new execution."
+    }
+  }
+}

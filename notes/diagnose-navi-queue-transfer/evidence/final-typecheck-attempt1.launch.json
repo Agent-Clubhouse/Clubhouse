@@ -1,0 +1,44 @@
+{
+  "startedAt": "2026-11-20T02:11:06.534115+00:00",
+  "cwd": "<source-workspace>",
+  "command": [
+    "<source-resource-guard>",
+    "diagnose-navi-queue",
+    "6",
+    "--",
+    "./node_modules/.bin/tsc",
+    "--noEmit"
+  ],
+  "before": {
+    "head": "2938697b9f94558f7c3fefcec962aff60039df52",
+    "tree": "6253d4fbf7812e86dc52b69916b84d1b10d75250",
+    "status": "",
+    "sources": {
+      "src/main/services/agent-runtime/chat-runtime.ts": "394b3beecd64f794e30fe407bf93a0fdf2cfebdab8d34ad7f336a994a334032e",
+      "src/main/services/agent-runtime/chat-runtime.test.ts": "4069166d4245aa8528109bb2cfcff0f3590daca1ca575c3240761fd394fd6690",
+      "src/main/services/actions/engine.ts": "8feeab4e018f5823ff55062022b3d2f67ffaa31fa5dd237f9223959304f5ee7a",
+      "src/main/services/actions/engine.test.ts": "afa50b2aac2552f0fecf5901c229b776c5bc07c59b379bc0b4bc141eee0a3db1",
+      "src/main/services/actions/actions-store.test.ts": "a4bfdc9060a2f75974ea06eb45415aa5c75bc01c244258a6405fa8e7f5ac75ad",
+      "src/renderer/features/actions/ActionsSettingsView.test.tsx": "749d58a65e1119c1b018a21427bcee18fdfdb8c565d98c041f69bb4185f4b7db",
+      "src/shared/chat/runtime.ts": "22d0c72b3fa2375c327b72f94c8553f2b891af8405013a20c53b3c0bceb5b8bc"
+    }
+  },
+  "finishedAt": "2026-11-20T02:11:17.287854+00:00",
+  "exitCode": 2,
+  "after": {
+    "head": "2938697b9f94558f7c3fefcec962aff60039df52",
+    "tree": "6253d4fbf7812e86dc52b69916b84d1b10d75250",
+    "status": "",
+    "sources": {
+      "src/main/services/agent-runtime/chat-runtime.ts": "394b3beecd64f794e30fe407bf93a0fdf2cfebdab8d34ad7f336a994a334032e",
+      "src/main/services/agent-runtime/chat-runtime.test.ts": "4069166d4245aa8528109bb2cfcff0f3590daca1ca575c3240761fd394fd6690",
+      "src/main/services/actions/engine.ts": "8feeab4e018f5823ff55062022b3d2f67ffaa31fa5dd237f9223959304f5ee7a",
+      "src/main/services/actions/engine.test.ts": "afa50b2aac2552f0fecf5901c229b776c5bc07c59b379bc0b4bc141eee0a3db1",
+      "src/main/services/actions/actions-store.test.ts": "a4bfdc9060a2f75974ea06eb45415aa5c75bc01c244258a6405fa8e7f5ac75ad",
+      "src/renderer/features/actions/ActionsSettingsView.test.tsx": "749d58a65e1119c1b018a21427bcee18fdfdb8c565d98c041f69bb4185f4b7db",
+      "src/shared/chat/runtime.ts": "22d0c72b3fa2375c327b72f94c8553f2b891af8405013a20c53b3c0bceb5b8bc"
+    }
+  },
+  "stdout": "<source-evidence>/session-ownership/final-typecheck-attempt1.log",
+  "stdoutSha256": "826b0081545d10cdc9c8fe2fc061dcd2c8ea5b539725cbe96f0426ccd838f9be"
+}

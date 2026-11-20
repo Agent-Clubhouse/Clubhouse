@@ -1,0 +1,4 @@
+2026-11-20T02:11:07Z START diagnose-navi-queue idle=80% unused=844M avail=25329M freepct=75 comp=6924M swap=1892M pid=20900 cmd=./node_modules/.bin/tsc --noEmit
+src/main/telemetry/actions-telemetry.ts(129,39): error TS2345: Argument of type '"none" | RunReasonCode' is not assignable to parameter of type '"none" | "throttled" | "rights_refused" | "overlap" | "self_trigger" | "chain_limit" | "hourly_limit" | "delivery_expired" | "delivery_replaced" | "delivery_dropped" | "lifetime_limit" | ... 7 more ... | "step_threw"'.
+  Type '"delivery_unknown"' is not assignable to type '"none" | "throttled" | "rights_refused" | "overlap" | "self_trigger" | "chain_limit" | "hourly_limit" | "delivery_expired" | "delivery_replaced" | "delivery_dropped" | "lifetime_limit" | ... 7 more ... | "step_threw"'.
+2026-11-20T02:11:17Z END diagnose-navi-queue rc=2

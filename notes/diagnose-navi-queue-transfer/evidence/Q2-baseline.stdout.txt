@@ -1,0 +1,576 @@
+2026-11-20T01:45:28Z START diagnose-navi-queue idle=78% unused=5709M avail=27660M freepct=79 comp=4720M swap=1892M pid=92122 cmd=./node_modules/.bin/vitest run --project main src/main/services/agent-runtime/chat-runtime.test.ts --maxWorkers=2 -t Q2 settles a queued send
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <source-workspace>
+
+ ❯ |main| src/main/services/agent-runtime/chat-runtime.test.ts (137 tests | 1 failed | 136 skipped) 13ms
+     × Q2 settles a queued send when rollback fails and continues with the next item 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q2 settles a queued send when rollback fails and continues with the next item
+AssertionError: expected "vi.fn()" to be called once with arguments: [ 'dropped' ]
+
+Number of calls: 0
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2201:28
+    2199|       driver.last.emit({ type: 'turn_ended', data: {} });
+    2200|       await flush();
+    2201|       expect.soft(settled).toHaveBeenCalledExactlyOnceWith('dropped');
+       |                            ^
+    2202|       expect.soft(runtime.isRunning()).toBe(true);
+    2203|       expect.soft(transcript).toContainEqual(expect.objectContaining({…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q2 settles a queued send when rollback fails and continues with the next item
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2202:40
+    2200|       await flush();
+    2201|       expect.soft(settled).toHaveBeenCalledExactlyOnceWith('dropped');
+    2202|       expect.soft(runtime.isRunning()).toBe(true);
+       |                                        ^
+    2203|       expect.soft(transcript).toContainEqual(expect.objectContaining({…
+    2204|         transition: { messageIds: [failed.messageId], status: 'failed'…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q2 settles a queued send when rollback fails and continues with the next item
+AssertionError: expected [ …(14) ] to deep equally contain ObjectContaining{…}
+
+- Expected:
+ObjectContaining {
+  "data": ObjectContaining {
+    "transition": {
+      "messageIds": [
+        "id-3",
+      ],
+      "status": "failed",
+    },
+  },
+  "type": "queue_state",
+}
+
++ Received:
+[
+  {
+    "agentId": "agent-1",
+    "data": {
+      "capabilities": {
+        "effortSwitch": "none",
+        "images": false,
+        "interrupt": true,
+        "limits": false,
+        "liveLevels": [],
+        "login": "terminal",
+        "modelSwitch": "none",
+        "planApproval": false,
+        "questions": false,
+        "queue": "client",
+        "resume": "none",
+        "slashCommands": false,
+        "steer": true,
+        "subagents": "none",
+        "systemPrompt": false,
+        "usage": "none",
+      },
+      "cwd": "/repo",
+      "driver": "codex_app_server",
+      "level": "ask",
+      "nativeSessionId": "native-1",
+      "provider": "claude-code",
+      "resumed": false,
+    },
+    "seq": 1,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_started",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "state": "idle",
+    },
+    "seq": 2,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {},
+    "seq": 3,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "turnId": "id-2",
+    "type": "turn_started",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "state": "running",
+    },
+    "seq": 4,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "content": [
+        {
+          "text": "queued failure",
+          "type": "text",
+        },
+      ],
+      "delivery": "queued",
+      "messageId": "id-3",
+      "source": "action",
+    },
+    "seq": 5,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "user_message",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "queuedMessageIds": [
+        "id-3",
+      ],
+      "transition": {
+        "messageIds": [
+          "id-3",
+        ],
+        "status": "queued",
+      },
+    },
+    "seq": 6,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "queue_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "content": [
+        {
+          "text": "next queued item",
+          "type": "text",
+        },
+      ],
+      "delivery": "queued",
+      "messageId": "id-4",
+      "source": "user",
+    },
+    "seq": 7,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "user_message",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "queuedMessageIds": [
+        "id-3",
+        "id-4",
+      ],
+      "transition": {
+        "messageIds": [
+          "id-4",
+        ],
+        "status": "queued",
+      },
+    },
+    "seq": 8,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "queue_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {},
+    "seq": 9,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "turnId": "id-2",
+    "type": "turn_ended",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "state": "idle",
+    },
+    "seq": 10,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "queuedMessageIds": [
+        "id-4",
+      ],
+      "transition": {
+        "messageIds": [
+          "id-3",
+        ],
+        "status": "dispatching",
+      },
+    },
+    "seq": 11,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "queue_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "code": "driver_stream_failed",
+      "fatal": true,
+      "message": "queued rollback failed",
+    },
+    "seq": 12,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "error",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "exitCode": 0,
+      "reason": "process_exit",
+    },
+    "seq": 13,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_ended",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "state": "sleeping",
+    },
+    "seq": 14,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_state",
+    "v": 2,
+  },
+]
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2203:31
+    2201|       expect.soft(settled).toHaveBeenCalledExactlyOnceWith('dropped');
+    2202|       expect.soft(runtime.isRunning()).toBe(true);
+    2203|       expect.soft(transcript).toContainEqual(expect.objectContaining({…
+       |                               ^
+    2204|         transition: { messageIds: [failed.messageId], status: 'failed'…
+    2205|       }) }));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q2 settles a queued send when rollback fails and continues with the next item
+AssertionError: expected [ …(14) ] to deep equally contain ObjectContaining{…}
+
+- Expected:
+ObjectContaining {
+  "data": ObjectContaining {
+    "code": "queued_send_failed",
+    "message": "A queued message could not be sent: queued provider send failed",
+  },
+  "type": "notice",
+}
+
++ Received:
+[
+  {
+    "agentId": "agent-1",
+    "data": {
+      "capabilities": {
+        "effortSwitch": "none",
+        "images": false,
+        "interrupt": true,
+        "limits": false,
+        "liveLevels": [],
+        "login": "terminal",
+        "modelSwitch": "none",
+        "planApproval": false,
+        "questions": false,
+        "queue": "client",
+        "resume": "none",
+        "slashCommands": false,
+        "steer": true,
+        "subagents": "none",
+        "systemPrompt": false,
+        "usage": "none",
+      },
+      "cwd": "/repo",
+      "driver": "codex_app_server",
+      "level": "ask",
+      "nativeSessionId": "native-1",
+      "provider": "claude-code",
+      "resumed": false,
+    },
+    "seq": 1,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_started",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "state": "idle",
+    },
+    "seq": 2,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {},
+    "seq": 3,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "turnId": "id-2",
+    "type": "turn_started",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "state": "running",
+    },
+    "seq": 4,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "content": [
+        {
+          "text": "queued failure",
+          "type": "text",
+        },
+      ],
+      "delivery": "queued",
+      "messageId": "id-3",
+      "source": "action",
+    },
+    "seq": 5,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "user_message",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "queuedMessageIds": [
+        "id-3",
+      ],
+      "transition": {
+        "messageIds": [
+          "id-3",
+        ],
+        "status": "queued",
+      },
+    },
+    "seq": 6,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "queue_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "content": [
+        {
+          "text": "next queued item",
+          "type": "text",
+        },
+      ],
+      "delivery": "queued",
+      "messageId": "id-4",
+      "source": "user",
+    },
+    "seq": 7,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "user_message",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "queuedMessageIds": [
+        "id-3",
+        "id-4",
+      ],
+      "transition": {
+        "messageIds": [
+          "id-4",
+        ],
+        "status": "queued",
+      },
+    },
+    "seq": 8,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "queue_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {},
+    "seq": 9,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "turnId": "id-2",
+    "type": "turn_ended",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "state": "idle",
+    },
+    "seq": 10,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "queuedMessageIds": [
+        "id-4",
+      ],
+      "transition": {
+        "messageIds": [
+          "id-3",
+        ],
+        "status": "dispatching",
+      },
+    },
+    "seq": 11,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "queue_state",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "code": "driver_stream_failed",
+      "fatal": true,
+      "message": "queued rollback failed",
+    },
+    "seq": 12,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "error",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "exitCode": 0,
+      "reason": "process_exit",
+    },
+    "seq": 13,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_ended",
+    "v": 2,
+  },
+  {
+    "agentId": "agent-1",
+    "data": {
+      "state": "sleeping",
+    },
+    "seq": 14,
+    "sessionId": "id-1",
+    "ts": 1000,
+    "type": "session_state",
+    "v": 2,
+  },
+]
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2206:31
+    2204|         transition: { messageIds: [failed.messageId], status: 'failed'…
+    2205|       }) }));
+    2206|       expect.soft(transcript).toContainEqual(expect.objectContaining({…
+       |                               ^
+    2207|         code: 'queued_send_failed', message: 'A queued message could n…
+    2208|       }) }));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q2 settles a queued send when rollback fails and continues with the next item
+AssertionError: expected [] to deeply equal [ { content: [ { …(2) } ], …(1) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "content": [
+-       {
+-         "text": "next queued item",
+-         "type": "text",
+-       },
+-     ],
+-     "delivery": "prompt",
+-   },
+- ]
++ []
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2209:32
+    2207|         code: 'queued_send_failed', message: 'A queued message could n…
+    2208|       }) }));
+    2209|       expect(driver.last.sent).toEqual([{ content: [{ type: 'text', te…
+       |                                ^
+    2210|       expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+    2211|       driver.last.emit({ type: 'turn_started', data: {} });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 136 skipped (137)
+   Start at  17:45:28
+   Duration  546ms (transform 366ms, setup 4ms, import 452ms, tests 13ms, environment 0ms)
+
+2026-11-20T01:45:29Z END diagnose-navi-queue rc=1

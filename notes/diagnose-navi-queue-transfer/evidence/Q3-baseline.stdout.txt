@@ -1,0 +1,41 @@
+2026-11-20T01:58:38Z START diagnose-navi-queue idle=60% unused=8727M avail=29823M freepct=79 comp=5615M swap=1892M pid=9784 cmd=./node_modules/.bin/vitest run --project main src/main/services/agent-runtime/chat-runtime.test.ts --maxWorkers=2 -t Q3 keeps replacement drain ownership
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <source-workspace>
+
+ ❯ |main| src/main/services/agent-runtime/chat-runtime.test.ts (146 tests | 1 failed | 145 skipped) 9ms
+     × Q3 keeps replacement drain ownership separate from an old queued activation 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/agent-runtime/chat-runtime.test.ts > federation input follows actual runtime dispatch (#3553) > Q3 keeps replacement drain ownership separate from an old queued activation
+AssertionError: expected { delivery: 'queued', …(1) } to match object { delivery: 'prompt' }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "delivery": "prompt",
++   "delivery": "queued",
+  }
+
+ ❯ src/main/services/agent-runtime/chat-runtime.test.ts:2188:73
+    2186|       expect(settled).toHaveBeenCalledExactlyOnceWith('dropped');
+    2187|       activation.mockResolvedValueOnce(async () => {}).mockReturnValue…
+    2188|       await expect(runtime.sendMessage('new first', { source: 'user' }…
+       |                                                                         ^
+    2189|       await expect(runtime.sendMessage('new second', { source: 'user',…
+    2190|       driver.last.emit({ type: 'turn_started', data: {} });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 145 skipped (146)
+   Start at  17:58:38
+   Duration  595ms (transform 405ms, setup 5ms, import 497ms, tests 9ms, environment 0ms)
+
+2026-11-20T01:58:39Z END diagnose-navi-queue rc=1
