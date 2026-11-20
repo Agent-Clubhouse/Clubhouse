@@ -48,7 +48,19 @@ export async function readHistoricalSessionCard(c: RemoteDetailsCard, agent: Dur
   else if (known(stats.fileBytes) && stats.fileBytes === stats.bytesRead) c.notes.push('The provider read the complete file for this summary.');
   else c.notes.push('The provider did not report whether this historical transcript read was complete.');
   if (!raw?.length) { c.notes.push('The recorded provider did not return a readable historical transcript. Usage is unknown.'); return; }
-  const events = normalizeSessionEvents(raw);
+  // Native JSONL may store ISO timestamps. The ordinary normalizer invents a
+  // clock value for missing timestamps; that is useful for ordering, but is
+  // not historical activity evidence. NaN keeps those events untimed here.
+  const events = normalizeSessionEvents(raw.map((event) => {
+    const timestamp = typeof event.timestamp === 'number' ? event.timestamp
+      : typeof event.timestamp === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(event.timestamp) ? Date.parse(event.timestamp) : NaN;
+    return { ...event, timestamp: Number.isFinite(timestamp) && timestamp > 0 && timestamp <= 8.64e15 ? timestamp : NaN };
+  }));
+  const lastActivity = events.reduce((latest, event) => Number.isFinite(event.timestamp) ? Math.max(latest, event.timestamp) : latest, 0);
+  if (lastActivity) {
+    row(c, 'Last activity', new Date(lastActivity).toISOString());
+    c.notes.push('Last activity is the latest explicit timestamp among parsed events in this selected provider transcript read. It is not a verified sleep or end time; unread or untimed events may be missing.');
+  }
   const results = events.filter((event) => event.type === 'result');
   const lastResult = results[results.length - 1];
   row(c, 'Duration', known(lastResult?.durationMs) ? formatShortDuration(lastResult.durationMs) : 'Not reported');

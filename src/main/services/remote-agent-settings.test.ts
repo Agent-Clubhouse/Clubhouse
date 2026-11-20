@@ -38,6 +38,29 @@ beforeEach(() => {
   mocks.instructions.mockResolvedValue({ instructions: { text: 'private-instruction\nsecond', truncated: false } });
 });
 describe('host Settings summary', () => {
+  it.each(['same', 'marker-changed', 'revoked'] as const)('fences unmanaged notices with the real selected primary inventory: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-settings-notice-final-')));
+    mocks.base = root; mocks.realWitness = true;
+    const folder = path.join(root, 'project'); await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+    const selected = { ...config(), managed: undefined, persona: 'qa', managedMigrationFailure: { at: '2026-11-19', code: 'invalid', message: 'PRIVATE_REASON' } };
+    const project = { id: 'p', name: 'Host project', path: folder };
+    const file = path.join(folder, '.clubhouse', 'agents.json'), primary = JSON.stringify([selected]);
+    await fs.writeFile(file, primary); await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify([project]));
+    mocks.resolve.mockResolvedValue({ agent: JSON.parse(primary)[0], project }); let allowed = true;
+    mocks.instructions.mockImplementation(async () => {
+      if (mode === 'marker-changed') await fs.writeFile(file, JSON.stringify([{ ...selected, managedMigrationFailure: undefined }]));
+      if (mode === 'revoked') allowed = false;
+      return { instructions: { text: '', truncated: false } };
+    });
+    try {
+      const result = await readRemoteAgentSettings('a1', () => allowed);
+      expect(result.status).toBe(mode === 'same' ? 200 : mode === 'revoked' ? 403 : 409);
+      if (mode === 'same') {
+        expect(result.display?.rows.some((r) => r.label === 'Migration failed')).toBe(true);
+        expect(await fs.readFile(file, 'utf8')).toBe(primary);
+      } else { expect(result).not.toHaveProperty('display'); expect(JSON.stringify(result)).not.toMatch(/Legacy|Migration|PRIVATE_REASON/); }
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it.each(['ordinary-same', 'ordinary-removed', 'role-same', 'role-disposed', 'role-cleared', 'role-backup-only', 'role-revoked'] as const)('keeps real primary target admission across asynchronous setup reads: %s', async (mode) => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-settings-target-final-'))); mocks.base = root; mocks.realWitness = true;
     const role = mode.startsWith('role-'); mocks.role = role ? 'a1' : null;
@@ -102,6 +125,29 @@ describe('host Settings summary', () => {
     const result = await readRemoteAgentSettings('a1', () => true);
     expect(result).toMatchObject({ status: 200, body: { setup: { managed: false, instructions: 'Custom, 2 lines', skills: null, mcps: null } } });
     expect(JSON.stringify(result)).not.toContain('private-instruction');
+  });
+  it.each(['agent_transition_busy', 'invalid', 'failed', '/PRIVATE/code'] as const)('projects only safe passive unmanaged migration reason categories: %s', async (code) => {
+    mocks.resolve.mockResolvedValue({ agent: { ...config(), managed: undefined, persona: '/PRIVATE/persona',
+      managedMigrationFailure: { at: '/PRIVATE/time', code, message: 'PRIVATE_REASON /host/secret token=PRIVATE_TOKEN\nPRIVATE_STACK' },
+    }, project: { id: 'p', path: '/host' } });
+    const result = await readRemoteAgentSettings('a1', () => true);
+    expect(result.status).toBe(200);
+    expect(result.display?.rows).toContainEqual({ label: 'Legacy setup', value: 'A legacy persona is still recorded for this unmanaged agent.' });
+    expect(result.display?.rows).toContainEqual({ label: 'Migration failed', value: `Clubhouse could not switch this agent to managed when it updated. ${code === 'agent_transition_busy' ? 'It was changing state at the time.' : code === 'invalid' ? 'The saved setup could not be converted.' : 'The reason is available on the host.'}` });
+    expect(result.display?.notes.join(' ')).toContain('selected saved metadata');
+    expect(JSON.stringify(result)).not.toMatch(/PRIVATE_|\/host|\/PRIVATE/);
+    expect(mocks.status).not.toHaveBeenCalled(); expect(mocks.entries).not.toHaveBeenCalled(); expect(mocks.template).not.toHaveBeenCalled();
+  });
+  it.each(['plain', 'retired-mode', 'dispatcher', 'managed'] as const)('does not invent unmanaged legacy notices for %s', async (mode) => {
+    const marker = { persona: 'qa', managedMigrationFailure: { at: '2026-11-19', code: 'invalid', message: 'PRIVATE_REASON' } };
+    mocks.resolve.mockResolvedValue({ agent: { ...config(), ...(mode === 'managed' ? marker : { managed: undefined }),
+      ...(mode === 'dispatcher' && marker), ...(mode === 'retired-mode' && { clubhouseModeOverride: true }),
+    }, project: { id: mode === 'dispatcher' ? DISPATCHER_PROJECT_ID : 'p', path: '/host' } });
+    mocks.status.mockResolvedValue({ waiting: false, changes: [] });
+    const result = await readRemoteAgentSettings('a1', () => true);
+    expect(result.status).toBe(200);
+    expect(result.display?.rows.some((r) => ['Legacy setup', 'Migration failed'].includes(r.label))).toBe(false);
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_REASON');
   });
   it('does not accept names or disclose a response after lookup authorization is revoked', async () => {
     expect((await readRemoteAgentSettings('Host', () => true)).status).toBe(404);

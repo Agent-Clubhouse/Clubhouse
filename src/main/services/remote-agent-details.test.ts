@@ -455,6 +455,39 @@ describe('host selected-agent Details projections', () => {
     expect(value.cards.find((c) => c.id === 'session')?.rows).toContainEqual({ label: 'Last CLI', value: 'Host Current Claude' });
     expect(value.cards.find((c) => c.id === 'session')?.rows).toContainEqual({ label: 'Cost', value: '$1.25' });
   });
+  it.each(['complete', 'truncated', 'unknown-completeness', 'sleep-record'] as const)('labels selected explicit historical activity without inventing a sleep time: %s', async (mode) => {
+    m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last',
+      sessionHistory: [{ sessionId: 'other', orchestrator: 'codex-cli', lastActiveAt: '2099-01-01T00:00:00Z' }, { sessionId: 'selected-last', orchestrator: 'claude-code' }],
+      ...(mode === 'sleep-record' && { lastSleep: { at: '2026-11-19T03:00:00Z', reason: 'user' } }),
+    }, project });
+    m.historical.mockImplementation(async (_id, _cwd, options) => {
+      if (mode !== 'unknown-completeness') Object.assign(options.stats, { truncated: mode === 'truncated', fileBytes: 100, bytesRead: 100 });
+      return [
+        { type: 'user', message: 'PRIVATE_HISTORY', timestamp: '2026-11-19T01:00:00Z' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'PRIVATE_HISTORY' }] }, timestamp: Date.parse('2026-11-19T02:00:00Z') },
+        { type: 'result', duration_ms: 0, timestamp: '2026-11-19T01:30:00+00:00' },
+        { type: 'result' },
+        { type: 'not-a-normalized-event', timestamp: '2099-01-01T00:00:00Z' },
+      ];
+    });
+    const c = (await read()).cards.find((c) => c.id === 'session')!;
+    expect(c.rows).toContainEqual({ label: 'Last activity', value: '2026-11-19T02:00:00.000Z' });
+    expect(c.rows.filter((r) => r.label === 'Ended')).toEqual(mode === 'sleep-record' ? [{ label: 'Ended', value: '2026-11-19T03:00:00Z' }] : []);
+    expect(c.notes.join(' ')).toContain('not a verified sleep or end time');
+    expect(c.notes.join(' ')).toContain(mode === 'truncated' ? 'truncated' : mode === 'unknown-completeness' ? 'did not report whether' : 'complete file');
+    expect(c.rows).toContainEqual({ label: 'Duration', value: 'Not reported' });
+    expect(c.rows).toContainEqual({ label: 'Cost', value: 'Not reported' });
+    expect(JSON.stringify(c)).not.toMatch(/PRIVATE_HISTORY|2099/);
+    expect(m.historical).toHaveBeenCalledWith('selected-last', '/host/selected', expect.objectContaining({ passiveLookup: true, maxBytes: 2097152 }));
+    expect(m.transcript).not.toHaveBeenCalled();
+  });
+  it.each([undefined, 'invalid', '2026-11-19T01:00:00', 0, -1, NaN, Infinity, 8.64e15 + 1])('does not present synthetic or invalid historical timestamps as activity: %s', async (timestamp) => {
+    m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last', sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'claude-code' }] }, project });
+    m.historical.mockResolvedValue([{ type: 'user', message: 'PRIVATE_HISTORY', timestamp }, { type: 'result' }]);
+    const c = (await read()).cards.find((c) => c.id === 'session')!;
+    expect(c.rows.some((r) => ['Last activity', 'Ended'].includes(r.label))).toBe(false);
+    expect(c.rows).toContainEqual({ label: 'Duration', value: 'Not reported' });
+  });
   it.each(['missing', 'unrelated', 'unset', 'conflicting', 'partly-unset'] as const)('keeps historical provider attribution unknown with %s association', async (mode) => {
     const record = { sessionId: 'selected-last', orchestrator: 'claude-code' };
     const sessionHistory = mode === 'missing' ? undefined : mode === 'unrelated' ? [{ ...record, sessionId: 'other' }] : mode === 'unset' ? [{ sessionId: 'selected-last' }] : [record, mode === 'conflicting' ? { ...record, orchestrator: 'codex-cli' } : { sessionId: 'selected-last' }];
@@ -527,7 +560,7 @@ describe('host selected-agent Details projections', () => {
       m.envCached.mockImplementation(shell.isShellEnvironmentCached);
       const folder = path.join(root, 'projects', '-host-selected'); await fs.mkdir(folder, { recursive: true });
       const file = path.join(folder, 'selected-last.jsonl');
-      const result = (duration_ms: number, total_cost_usd: number) => JSON.stringify({ type: 'result', duration_ms, total_cost_usd });
+      const result = (duration_ms: number, total_cost_usd: number) => JSON.stringify({ type: 'result', duration_ms, total_cost_usd, timestamp: '2026-11-19T02:00:00Z' });
       const filler = JSON.stringify({ type: 'user', message: 'PRIVATE_HISTORY_TEXT'.repeat(512) });
       const text = [result(1000, 10), ...(mode === 'truncated' ? Array(400).fill(filler) : []), result(0, 0), ''].join('\n');
       await fs.writeFile(file, text); const before = await fs.stat(file); const entries = await fs.readdir(folder);
@@ -547,6 +580,7 @@ describe('host selected-agent Details projections', () => {
       if (mode === 'truncated') { expect(Buffer.byteLength(text)).toBeGreaterThan(2097152); expect(options.stats?.truncated).toBe(true); }
       expect(c.rows).toContainEqual({ label: 'Duration', value: '0s' }); expect(c.rows).toContainEqual({ label: 'Cost', value: '$0.00' });
       expect(c.rows.some((r) => r.label === 'Ended')).toBe(false); expect(JSON.stringify(c)).not.toContain('PRIVATE_HISTORY_TEXT');
+      expect(c.rows).toContainEqual({ label: 'Last activity', value: '2026-11-19T02:00:00.000Z' });
       expect(await fs.readFile(file, 'utf8')).toBe(text); expect(await fs.readdir(folder)).toEqual(entries);
       const after = await fs.stat(file); expect({ size: after.size, mtimeMs: after.mtimeMs, ino: after.ino }).toEqual({ size: before.size, mtimeMs: before.mtimeMs, ino: before.ino });
       expect(liveProbes.model).not.toHaveBeenCalled(); expect(liveProbes.quota).not.toHaveBeenCalled();
@@ -563,7 +597,7 @@ describe('host selected-agent Details projections', () => {
       m.target.mockResolvedValue({ agent: selected, project: selectedProject }); let allowed = true;
       const transcript = async () => {
         if (mode === 'inventory') await fs.writeFile(file, JSON.stringify([{ ...selected, sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'codex-cli' }] }])); else allowed = false;
-        return [{ type: 'result', total_cost_usd: 42 }];
+        return [{ type: 'result', total_cost_usd: 42, timestamp: '2026-11-19T02:00:00Z' }];
       };
       m.historical.mockImplementation(transcript); m.transcript.mockImplementation(transcript);
       const response = await readRemoteAgentDetails('a1', () => allowed);
