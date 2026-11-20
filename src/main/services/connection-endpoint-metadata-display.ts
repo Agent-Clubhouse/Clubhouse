@@ -77,7 +77,7 @@ export function readConnectionEndpointMetadataForDisplay(requests: readonly Admi
     const ids = new Set<string>(), normalized = new Set<string>();
     registered = new Set();
     for (const row of rows) {
-      if (!record(row) || !identifier(row.id) || !folder(row.path) || ids.has(row.id) || normalized.has(path.resolve(row.path))) throw new Error('Ambiguous registered-project primary.');
+      if (!record(row) || !identifier(row.id) || typeof row.name !== 'string' || !folder(row.path) || ids.has(row.id) || normalized.has(path.resolve(row.path))) throw new Error('Ambiguous registered-project primary.');
       ids.add(row.id); normalized.add(path.resolve(row.path)); registered.add(row.path);
     }
   } catch (error) {
