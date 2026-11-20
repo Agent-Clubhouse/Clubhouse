@@ -806,7 +806,12 @@ describe('satellite catalog reconciliation (#3695)', () => {
     const updated = structuredClone(cached);
     if (field === 'canvasState') updated.canvasState!.project.activeCanvasId = 'other';
     if (field === 'appCanvasState') updated.appCanvasState!.activeCanvasId = 'other';
-    if (field === 'groupProjects') updated.groupProjects = [{ id: 'other-group' }];
+    if (field === 'groupProjects') {
+      updated.groupProjects = [{ id: 'other-group' }];
+      // Positive recovery supplies actual typed evidence for the new visible ID.
+      updated.bulletinDigests = { 'other-group': [] };
+      updated.groupProjectMembers = { 'other-group': [] };
+    }
     if (field === 'bulletinDigests') updated.bulletinDigests = { group: [{ id: 'new-message' }] };
     if (field === 'groupProjectMembers') updated.groupProjectMembers = { group: [{ agentId: 'new-agent', agentName: 'Synthetic', status: 'running' }] };
     changed(list(updated));
@@ -961,6 +966,124 @@ describe('satellite catalog reconciliation (#3695)', () => {
     expect(before).toBeDefined();
     changed(list({ ...cached, [field]: {} }));
     expect(row()).toEqual(before);
+  });
+
+  const fullPartialSnapshot = () => snapshot({
+    pendingPermissions: [], groupProjects: [{ id: 'group' }],
+    canvasState: { project: { canvases: [{ id: 'canvas', views: [] }], activeCanvasId: 'canvas' } },
+    bulletinDigests: { group: [{ id: 'old' }] },
+    groupProjectMembers: { group: [{ agentId: 'agent', agentName: 'Old', status: 'running' }] },
+  });
+
+  it.each(['bulletinDigests', 'groupProjectMembers', 'canvasState'])('HY4: missing directory/map/key and invalid %s entry cannot reset; own typed empty can', async (field) => {
+    const cached = fullPartialSnapshot();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    const off = start(); await tick(); off();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const updated = structuredClone(cached);
+    if (field === 'canvasState') updated.canvasState!.project.activeCanvasId = 'new';
+    if (field === 'bulletinDigests') updated.bulletinDigests = { group: [{ id: 'cached-new' }] };
+    if (field === 'groupProjectMembers') updated.groupProjectMembers = { group: [{ agentId: 'new', agentName: 'New', status: 'running' }] };
+    changed(list(updated));
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    const missingDirectory = structuredClone(updated);
+    if (field === 'canvasState') delete (missingDirectory as Partial<SatelliteSnapshot>).projects;
+    else delete missingDirectory.groupProjects;
+    send('snapshot', missingDirectory);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    const missingMap = structuredClone(updated);
+    delete missingMap[field as keyof SatelliteSnapshot];
+    send('snapshot', missingMap);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...updated, [field]: {} });
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...updated, [field]: { [field === 'canvasState' ? 'project' : 'group']: null } });
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    const empty = field === 'canvasState' ? { project: { canvases: [], activeCanvasId: '' } } : { group: [] };
+    send('snapshot', { ...updated, [field]: empty });
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+    if (field === 'canvasState') expect(catalog().remoteCanvasState[projectId]).toEqual(empty.project);
+    if (field === 'bulletinDigests') expect(catalog().remoteBulletinDigests[`${satellite.id}::group`]).toEqual([]);
+    if (field === 'groupProjectMembers') expect(catalog().remoteGroupProjectMembers[`${satellite.id}::group`]).toEqual([]);
+  });
+
+  it.each(['visible removal', 'fail-closed hideAll visibility'])('HY4: %s evicts only that host; stale rows cannot reappear without typed admission', async () => {
+    const cached = fullPartialSnapshot();
+    read.mockResolvedValueOnce([...list(structuredClone(cached)), { ...satellite, id: 'other', snapshot: structuredClone(cached) }]);
+    start(); await tick();
+    const key = `${satellite.id}::group`;
+    const otherCanvas = catalog().remoteCanvasState[namespacedProjectId('other', 'project')];
+    const otherDigest = catalog().remoteBulletinDigests['other::group'];
+    catalog().addRemoteBulletinMessage(satellite.id, 'group', {});
+    changed([...list({ ...cached, bulletinDigests: { group: [{ id: 'withheld' }] } }), { ...satellite, id: 'other', snapshot: structuredClone(cached) }]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    // The renderer sees explicit visible[], not the reason (removal or hideAll).
+    // Neither case is evidence of physical deletion on the host.
+    send('snapshot', { ...cached, projects: [], agents: {}, groupProjects: [], canvasState: {}, bulletinDigests: {}, groupProjectMembers: {} });
+    expect(catalog().satelliteProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteGroupProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteCanvasState[projectId]).toBeUndefined();
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    expect(catalog().remoteGroupProjectMembers[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+    expect(catalog().remoteCanvasState[namespacedProjectId('other', 'project')]).toBe(otherCanvas);
+    expect(catalog().remoteBulletinDigests['other::group']).toBe(otherDigest);
+    const noPayload = { ...cached, canvasState: {}, bulletinDigests: {}, groupProjectMembers: {} };
+    changed([...list(noPayload), { ...satellite, id: 'other', snapshot: structuredClone(cached) }]);
+    expect(catalog().satelliteProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteGroupProjects[satellite.id]).toEqual([]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', noPayload);
+    expect(catalog().remoteCanvasState[projectId]).toBeUndefined();
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    expect(catalog().remoteGroupProjectMembers[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    const fresh = fullPartialSnapshot();
+    fresh.canvasState!.project = { canvases: [{ id: 'fresh', views: [] }], activeCanvasId: 'fresh' };
+    fresh.bulletinDigests = { group: [{ id: 'fresh' }] };
+    fresh.groupProjectMembers = { group: [{ agentId: 'fresh', agentName: 'Fresh', status: 'running' }] };
+    send('snapshot', fresh);
+    expect(catalog().remoteCanvasState[projectId].activeCanvasId).toBe('fresh');
+    expect(catalog().remoteBulletinDigests[key]).toEqual([{ id: 'fresh' }]);
+    expect(catalog().remoteGroupProjectMembers[key]).toMatchObject([{ agentId: 'fresh' }]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+    expect(catalog().remoteBulletinDigests['other::group']).toBe(otherDigest);
+  });
+
+  it('HY4: cached-only shrink never performs authority cleanup, and authority reappearance without payload evicts old retained data', async () => {
+    const cached = fullPartialSnapshot();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const key = `${satellite.id}::group`;
+    changed(list({ ...cached, projects: [], groupProjects: [], canvasState: {}, bulletinDigests: {}, groupProjectMembers: {} }));
+    expect(catalog().satelliteProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteGroupProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteCanvasState[projectId]).toBeDefined();
+    expect(catalog().remoteBulletinDigests[key]).toEqual([{ id: 'old' }]);
+    expect(catalog().remoteGroupProjectMembers[key]).toBeDefined();
+    send('snapshot', { ...cached, canvasState: {}, bulletinDigests: {}, groupProjectMembers: {} });
+    expect(catalog().remoteCanvasState[projectId]).toBeUndefined();
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    expect(catalog().remoteGroupProjectMembers[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', cached);
+    expect(catalog().remoteCanvasState[projectId]).toBeDefined();
+    expect(catalog().remoteBulletinDigests[key]).toEqual([{ id: 'old' }]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it('HY4: invalid/absent visible directories cannot evict still-visible partial maps', async () => {
+    const cached = fullPartialSnapshot();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const before = catalog().remoteBulletinDigests[`${satellite.id}::group`];
+    send('snapshot', { ...cached, groupProjects: [{ id: 'group' }, { id: 'group' }], bulletinDigests: {} });
+    expect(catalog().remoteBulletinDigests[`${satellite.id}::group`]).toBe(before);
+    const omitted = { ...cached, bulletinDigests: {} };
+    delete omitted.groupProjects;
+    send('snapshot', omitted);
+    expect(catalog().remoteBulletinDigests[`${satellite.id}::group`]).toBe(before);
   });
 
 });

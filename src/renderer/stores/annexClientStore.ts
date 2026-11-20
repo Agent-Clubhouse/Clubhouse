@@ -109,24 +109,105 @@ const eventDomains: Record<string, number> = {
   'bulletin:message': CachedDomain.Digests,
 };
 
-function establishedDomains(satelliteId: string, snapshot: SatelliteSnapshot): number {
-  let domains = CachedDomain.Projects | CachedDomain.Agents | CachedDomain.Details
-    | CachedDomain.ProjectIcons | CachedDomain.AgentIcons | CachedDomain.Plugins
-    | CachedDomain.Permissions | CachedDomain.Pause;
-  const store = useRemoteProjectStore.getState();
+function visibleDirectory(value: unknown): string[] | null {
+  if (!Array.isArray(value) || !value.every((row) => row && typeof row === 'object'
+    && Object.prototype.hasOwnProperty.call(row, 'id') && typeof row.id === 'string' && row.id.length > 0)) return null;
+  const ids = value.map((row) => row.id as string);
+  return new Set(ids).size === ids.length ? ids : null;
+}
+const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
+const objectMap = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+const canvasValue = (value: unknown): boolean => objectMap(value) && Array.isArray(value.canvases)
+  && value.canvases.every((row) => objectMap(row) && (row.views === undefined || Array.isArray(row.views))) && typeof value.activeCanvasId === 'string';
+const memberValue = (entry: unknown): boolean => Array.isArray(entry)
+  && entry.every((row) => objectMap(row) && typeof row.agentId === 'string' && typeof row.agentName === 'string' && typeof row.status === 'string');
+function typedMap<T>(value: unknown, valid: (entry: unknown) => boolean): Record<string, T> | undefined {
+  return objectMap(value) ? Object.fromEntries(Object.entries(value).filter(([, entry]) => valid(entry))) as Record<string, T> : undefined;
+}
+function projectionInput(snapshot: SatelliteSnapshot): SatelliteSnapshot {
+  return {
+    ...snapshot,
+    projects: visibleDirectory(snapshot.projects) === null ? [] : snapshot.projects,
+    groupProjects: visibleDirectory(snapshot.groupProjects) === null ? undefined : snapshot.groupProjects,
+    canvasState: typedMap(snapshot.canvasState, canvasValue),
+    appCanvasState: canvasValue(snapshot.appCanvasState) ? snapshot.appCanvasState : undefined,
+    bulletinDigests: typedMap(snapshot.bulletinDigests, Array.isArray),
+    groupProjectMembers: typedMap(snapshot.groupProjectMembers, memberValue),
+  };
+}
+function establishedDomains(snapshot: SatelliteSnapshot): number {
+  let domains = CachedDomain.Agents | CachedDomain.Details | CachedDomain.ProjectIcons
+    | CachedDomain.AgentIcons | CachedDomain.Plugins | CachedDomain.Permissions | CachedDomain.Pause;
+  const projects = visibleDirectory(snapshot.projects);
+  const groups = visibleDirectory(snapshot.groupProjects);
+  if (projects !== null) domains |= CachedDomain.Projects;
+  if (groups !== null) domains |= CachedDomain.Groups;
   const omitted = (snapshot as SatelliteSnapshot & { snapshotTruncated?: { omitted?: string[] } }).snapshotTruncated?.omitted;
   const canvasOmitted = omitted?.includes('canvasState');
-  const prefix = satellitePrefix(satelliteId);
-  if (!canvasOmitted && snapshot.canvasState && Object.keys(store.remoteCanvasState)
-    .filter((id) => id.startsWith(prefix)).every((id) => Object.keys(snapshot.canvasState!).some((key) => namespacedProjectId(satelliteId, key) === id))) domains |= CachedDomain.Canvas;
-  if (!canvasOmitted && snapshot.appCanvasState) domains |= CachedDomain.AppCanvas;
-  if (snapshot.groupProjects) domains |= CachedDomain.Groups;
-  const covers = (current: Record<string, unknown>, incoming: Record<string, unknown> | undefined) => incoming
-    && Object.keys(current).filter((key) => key.startsWith(`${satelliteId}::`)).every((key) => Object.keys(incoming).some((id) => `${satelliteId}::${id}` === key));
-  if (covers(store.remoteBulletinDigests, snapshot.bulletinDigests)) domains |= CachedDomain.Digests;
-  if (covers(store.remoteGroupProjectMembers, snapshot.groupProjectMembers)) domains |= CachedDomain.Members;
+  const covers = (directory: string[] | null, map: unknown, valid: (entry: unknown) => boolean) => directory !== null
+    && objectMap(map) && directory.every((id) => own(map, id) && valid(map[id]));
+  if (!canvasOmitted && covers(projects, snapshot.canvasState, canvasValue)) domains |= CachedDomain.Canvas;
+  if (!canvasOmitted && canvasValue(snapshot.appCanvasState)) domains |= CachedDomain.AppCanvas;
+  if (covers(groups, snapshot.bulletinDigests, Array.isArray)) domains |= CachedDomain.Digests;
+  if (covers(groups, snapshot.groupProjectMembers, memberValue)) domains |= CachedDomain.Members;
   return domains;
 }
+
+const projectVisibilityDomains = CachedDomain.Projects | CachedDomain.Agents | CachedDomain.Details
+  | CachedDomain.Permissions | CachedDomain.ProjectIcons | CachedDomain.AgentIcons | CachedDomain.Canvas;
+const groupVisibilityDomains = CachedDomain.Groups | CachedDomain.Digests | CachedDomain.Members;
+function visibilityLoss(satelliteId: string, priorProjects: string[], priorGroups: string[]): number {
+  const store = useRemoteProjectStore.getState();
+  const projects = new Set((store.satelliteProjects[satelliteId] ?? []).map((project) => project.id));
+  const groups = new Set(visibleDirectory(store.remoteGroupProjects[satelliteId]) ?? []);
+  return (priorProjects.some((id) => !projects.has(id)) ? projectVisibilityDomains : 0)
+    | (priorGroups.some((id) => !groups.has(id)) ? groupVisibilityDomains : 0);
+}
+
+/** Explicit authoritative visibility only; absence/invalid directories never evict. */
+function reconcileAuthoritativeVisibility(satelliteId: string, snapshot: SatelliteSnapshot, priorProjects: string[], priorGroups: string[], uncertain: number) {
+  const projects = visibleDirectory(snapshot.projects);
+  const groups = visibleDirectory(snapshot.groupProjects);
+  const prefix = satellitePrefix(satelliteId);
+  const groupPrefix = `${satelliteId}::`;
+  let removed = visibilityLoss(satelliteId, priorProjects, priorGroups);
+  let deferred = 0;
+  useRemoteProjectStore.setState((state) => {
+    const canvases = { ...state.remoteCanvasState };
+    const digests = { ...state.remoteBulletinDigests };
+    const members = { ...state.remoteGroupProjectMembers };
+    if (projects !== null) {
+      const visible = new Set(projects.map((id) => namespacedProjectId(satelliteId, id)));
+      for (const key of Object.keys(canvases)) if (key.startsWith(prefix) && !visible.has(key)) { delete canvases[key]; removed |= projectVisibilityDomains; }
+      for (const id of projects) {
+        const key = namespacedProjectId(satelliteId, id);
+        if (!priorProjects.includes(key) && !(objectMap(snapshot.canvasState) && own(snapshot.canvasState, id) && canvasValue(snapshot.canvasState[id]))) {
+          if (own(canvases, key) || (uncertain & CachedDomain.Canvas)) deferred |= CachedDomain.Canvas;
+          delete canvases[key];
+        }
+      }
+    }
+    if (groups !== null) {
+      const visible = new Set(groups.map((id) => `${groupPrefix}${id}`));
+      for (const key of Object.keys(digests)) if (key.startsWith(groupPrefix) && !visible.has(key)) { delete digests[key]; removed |= groupVisibilityDomains; }
+      for (const key of Object.keys(members)) if (key.startsWith(groupPrefix) && !visible.has(key)) { delete members[key]; removed |= groupVisibilityDomains; }
+      for (const id of groups) if (!priorGroups.includes(id)) {
+        const key = `${groupPrefix}${id}`;
+        if (!(objectMap(snapshot.bulletinDigests) && own(snapshot.bulletinDigests, id) && Array.isArray(snapshot.bulletinDigests[id]))) {
+          if (own(digests, key) || (uncertain & CachedDomain.Digests)) deferred |= CachedDomain.Digests;
+          delete digests[key];
+        }
+        if (!(objectMap(snapshot.groupProjectMembers) && own(snapshot.groupProjectMembers, id) && memberValue(snapshot.groupProjectMembers[id]))) {
+          if (own(members, key) || (uncertain & CachedDomain.Members)) deferred |= CachedDomain.Members;
+          delete members[key];
+        }
+      }
+    }
+    return { remoteCanvasState: canvases, remoteBulletinDigests: digests, remoteGroupProjectMembers: members };
+  });
+  return { removed, deferred };
+}
+
 function applySnapshot(satellite: SatelliteConnection, snapshot: SatelliteSnapshot): void {
   useRemoteProjectStore.getState().applySatelliteSnapshot(satellite.id, satellite.alias, snapshot);
   syncRemotePermissions(satellite.id, snapshot.pendingPermissions ?? []);
@@ -136,7 +217,8 @@ function applySnapshot(satellite: SatelliteConnection, snapshot: SatelliteSnapsh
 }
 
 function applyCachedSnapshot(satellite: SatelliteConnection, previous: SatelliteSnapshot, next: SatelliteSnapshot, uncertain: number): number {
-  let deferred = useRemoteProjectStore.getState().applyCachedSatelliteSnapshot(satellite.id, satellite.alias, previous, next, uncertain);
+  let deferred = useRemoteProjectStore.getState().applyCachedSatelliteSnapshot(satellite.id, satellite.alias, projectionInput(previous), projectionInput(next),
+    uncertain | (visibleDirectory(next.projects) === null ? CachedDomain.Projects : 0));
   const permissions = (snapshot: SatelliteSnapshot) => Object.fromEntries(
     (snapshot.pendingPermissions ?? []).map((value) => remotePermission(satellite.id, value))
       .filter((value) => value !== null).map((value) => [value.requestId, value]),
@@ -306,10 +388,11 @@ function reconcileSatellites(satellites: SatelliteConnection[], journal?: Startu
     const duplicate = comparison !== undefined && sameSnapshotValue(comparison, sat.snapshot);
     const missingCatalog = !useRemoteProjectStore.getState().satelliteProjects[sat.id];
     const cachedBeforeReconnect = duplicate && old?.state !== 'connected' && sat.state === 'connected' && missingCatalog;
-    const incomplete = old?.catalogIncomplete || journal?.blocked(sat.id) || cachedBeforeReconnect;
+    const invalidProjects = !!sat.snapshot && visibleDirectory(sat.snapshot.projects) === null;
+    const incomplete = old?.catalogIncomplete || journal?.blocked(sat.id) || cachedBeforeReconnect || invalidProjects;
     const connection = { ...sat, snapshot: duplicate ? old!.snapshot : sat.snapshot, ...(incomplete && { catalogIncomplete: true }) };
     const nextComparison = { ...metadata, snapshot: sat.snapshot ? (duplicate ? comparison : structuredClone(sat.snapshot)) : undefined };
-    if (incomplete && !nextComparison.deferred && sat.snapshot) nextComparison.deferred |= establishedDomains(sat.id, sat.snapshot);
+    if (incomplete && !nextComparison.deferred && sat.snapshot) nextComparison.deferred |= establishedDomains(sat.snapshot);
     comparedSnapshots.set(connection, nextComparison);
     if (sat.state !== 'connected') {
       syncRemotePermissions(sat.id, []);
@@ -318,10 +401,14 @@ function reconcileSatellites(satellites: SatelliteConnection[], journal?: Startu
       nextComparison.uncertain |= ALL_CACHED_DOMAINS;
     } else if (!incomplete && sat.snapshot && (!duplicate || missingCatalog)) {
       if (missingCatalog) {
-        applySnapshot(connection, sat.snapshot);
+        applySnapshot(connection, projectionInput(sat.snapshot));
         nextComparison.uncertain |= journal?.replay(sat.id) ?? 0;
       } else if (comparison) {
+        const prior = useRemoteProjectStore.getState();
+        const priorProjects = (prior.satelliteProjects[sat.id] ?? []).map((project) => project.id);
+        const priorGroups = visibleDirectory(prior.remoteGroupProjects[sat.id]) ?? [];
         nextComparison.deferred |= applyCachedSnapshot(connection, comparison, sat.snapshot, nextComparison.uncertain);
+        nextComparison.uncertain |= visibilityLoss(sat.id, priorProjects, priorGroups);
         if (nextComparison.deferred) connection.catalogIncomplete = true;
       } else {
         // Existing rows without a source baseline cannot be reconciled safely.
@@ -720,12 +807,25 @@ export function initAnnexClientListener(): () => void {
       // A late frame cannot restore a removed host's catalog or permissions.
       if (satellite?.state !== 'connected') return;
       const snap = payload as SatelliteSnapshot;
-      applySnapshot(satellite, snap);
+      const store = useRemoteProjectStore.getState();
+      const priorProjectRows = store.satelliteProjects[satelliteId];
+      const priorProjects = (priorProjectRows ?? []).map((project) => project.id);
+      const priorGroups = visibleDirectory(store.remoteGroupProjects[satelliteId]) ?? [];
+      const input = projectionInput(snap);
+      applySnapshot(satellite, input);
+      if (visibleDirectory(snap.projects) === null) useRemoteProjectStore.setState((state) => {
+        const projects = { ...state.satelliteProjects };
+        if (priorProjectRows) projects[satelliteId] = priorProjectRows;
+        else delete projects[satelliteId];
+        return { satelliteProjects: projects };
+      });
       const previous = comparisonFor(satellite);
-      const established = establishedDomains(satelliteId, snap);
-      const deferred = previous.deferred & ~established;
+      const visibility = reconcileAuthoritativeVisibility(satelliteId, snap, priorProjects, priorGroups, previous.uncertain);
+      const established = establishedDomains(snap);
+      const deferred = (previous.deferred & ~established) | visibility.deferred
+        | (visibleDirectory(snap.projects) === null ? CachedDomain.Projects : 0);
       const connection = { ...satellite, snapshot: snap, catalogIncomplete: !!deferred };
-      comparedSnapshots.set(connection, { snapshot: structuredClone(snap), uncertain: previous.uncertain & ~established, deferred });
+      comparedSnapshots.set(connection, { snapshot: structuredClone(input), uncertain: (ALL_CACHED_DOMAINS & ~established) | visibility.removed | visibility.deferred, deferred });
       useAnnexClientStore.setState((state) => ({
         satellites: state.satellites.map((sat) => sat.id === satelliteId ? connection : sat),
       }));

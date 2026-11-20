@@ -494,7 +494,13 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
     let deferred = 0;
     set((state) => Object.fromEntries(Object.entries(domains).map(([field, domain]) => {
       const key = field as keyof typeof before;
-      const result = reconcileCachedValue(state[key], before[key], after[key], !!(uncertain & domain));
+      // These authoritative fields merge only supplied keys. Missing data can
+      // mean an unavailable read; it is not a deletion or a known empty value.
+      const partial = key === 'remoteCanvasState' || key === 'remoteAppCanvasState' || key === 'remoteGroupProjects'
+        || key === 'remoteBulletinDigests' || key === 'remoteGroupProjectMembers';
+      const baseline = partial ? Object.fromEntries(Object.keys(after[key]).filter((id) => Object.prototype.hasOwnProperty.call(before[key], id))
+        .map((id) => [id, (before[key] as Record<string, unknown>)[id]])) : before[key];
+      const result = reconcileCachedValue(state[key], baseline, after[key], !!(uncertain & domain));
       if (result.deferred) deferred |= domain;
       return [field, result.value];
     })));
