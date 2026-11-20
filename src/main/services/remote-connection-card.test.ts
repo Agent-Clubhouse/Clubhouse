@@ -210,14 +210,16 @@ it('keeps cold manual source page and row omissions visible', async () => {
 
 it.each(['on', 'off', 'unknown-controller', 'unknown-name', 'saved-override', 'unreadable-override', 'mixed-source'] as const)('shows selected configured automatic Dispatcher directions without collecting sources: %s', async (mode) => {
   const { configuredDispatcherDirections } = await import('./configured-dispatcher-directions'); m.ownOn = mode !== 'off';
-  const collect = vi.fn(async () => { fs.writeFileSync(path.join(root, 'unexpected-marker'), 'called'); return []; }); stops.push(registerPersistedBindingSource({ id: 'dispatcher-wires', collect, inspect: collect }));
+  let armed = false; const collect = vi.fn(async () => { if (armed) fs.writeFileSync(path.join(root, 'unexpected-marker'), 'called'); return []; }); stops.push(registerPersistedBindingSource({ id: 'dispatcher-wires', collect, inspect: collect }));
+  if (mode === 'unknown-controller') { await rebuildPersistedBindings(); expect(collect).toHaveBeenCalledTimes(1); collect.mockClear(); expect(readCachedConnectionSourcesForDisplay(selected)).toMatchObject({ state: 'ok', value: { complete: true, total: 0 } }); }
+  armed = true;
   if (mode === 'saved-override') await put('connection-grants.json', { version: 1, directions: [direction('controller', false, { disabledTools: ['read_output'] })] });
   if (mode === 'unreadable-override') await fs.promises.writeFile(path.join(root, 'connection-grants.json'), '{broken');
   if (mode === 'mixed-source') bindingManager.bind(selected, { targetId: 'controller', targetKind: 'agent', label: 'Bound controller name' });
   if (mode === 'unknown-name') m.names.set('controller', 'PRIVATE_UNQUALIFIED_NAME');
   const automatic = configuredDispatcherDirections({ id: selected, name: 'Selected custom name' }, { state: 'ok', value: true, inputs: [] }, mode === 'unknown-controller' ? undefined : { id: 'controller', name: mode === 'unknown-name' ? undefined : 'Admitted controller' });
   const before = await disk(), { c, receipts } = await read(false, { automatic });
-  if (mode === 'unknown-controller') { expect.soft(c.rows).toHaveLength(0); expect.soft(c.state).toBe('error'); expect.soft(c.notes.join(' ')).toContain('Automatic Dispatcher source details are unavailable'); }
+  if (mode === 'unknown-controller') { expect.soft(c.rows).toHaveLength(0); expect.soft(c.state).toBe('error'); expect.soft(c.notes.join(' ')).toContain('Automatic Dispatcher source details are unavailable'); expect.soft(c.notes.join(' ')).not.toContain('No binding or active saved direction'); }
   else {
     const name = mode === 'unknown-name' ? 'controller' : mode === 'mixed-source' ? 'Bound controller name' : 'Admitted controller';
     expect(c.rows.some((r) => r.label === name && r.value.includes('two-way records'))).toBe(true);
@@ -227,4 +229,13 @@ it.each(['on', 'off', 'unknown-controller', 'unknown-name', 'saved-override', 'u
     expect.soft(c.rows.filter((r) => r.label.endsWith('automatic starting switches'))).toHaveLength(2); expect.soft(c.rows.find((r) => r.label === 'Host Dispatcher')?.value).toBe(mode === 'off' ? 'Off' : 'On'); expect.soft(c.notes.join(' ')).toContain('do not establish current bindings');
   }
   expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_'); expect.soft(collect).not.toHaveBeenCalled(); expect.soft(m.legacy).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before); expect.soft(receipts.every((r) => r.current())).toBe(true);
+});
+
+it('charges automatic source fields even when known binding rows fill the displayed page', async () => {
+  const { configuredDispatcherDirections } = await import('./configured-dispatcher-directions');
+  for (let i = 0; i < 34; i++) bindingManager.bind(selected, { targetId: 'terminal-' + i, targetKind: 'terminal', label: 'Bound terminal ' + i });
+  const automatic = configuredDispatcherDirections({ id: selected, name: 'Selected' }, { state: 'ok', value: true, inputs: [] }, { id: 'controller', name: 'Admitted controller' });
+  const before = await disk(), { c } = await read(false, { automatic });
+  expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe(12); // 2 host + 34×3 binding + 2×4 automatic fields.
+  expect.soft(c.rows.some((r) => r.label.endsWith('automatic starting switches'))).toBe(false); expect.soft(m.legacy).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
 });
