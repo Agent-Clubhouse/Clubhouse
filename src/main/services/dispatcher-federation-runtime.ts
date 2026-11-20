@@ -131,6 +131,7 @@ export function startFederatedRequests(): () => void {
       }
       catch (err) { return result(err instanceof FederationRefusal ? { error: err.details() } : err instanceof Error ? err.message : String(err), true); }
     },
+    readPauseForDisplay: (machine, options) => active ? instance.readPauseForDisplay(machine, options) : { state: 'unavailable', inputs: [{ field: 'Active request-service metadata', source: 'host-cache', observedAt: Date.now() }] },
     allowed: (machine, args, tool) => instance.allowed(machine, args, tool),
     pauseReason: (machine) => instance.pauseReason(machine),
     before: async (caller, machine, target, cause, args, tool) => instance.outgoingNews(machine, target, cause ?? { rootId: '', depth: 0 }, args, tool, caller),
