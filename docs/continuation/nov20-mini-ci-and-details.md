@@ -36,3 +36,17 @@ Next work includes qualified helper rows and continuation, selected durable sess
 Auto completed hosted validation on the checkpoint head `722f89beaf38ece7922ac550b14240f4de20701b`. Windows stable-mode persistence, the quota generation suite and the Annex rename shard passed. The run finished with 33 successful jobs and four skips. All three PRs above were verified open on their listed heads.
 
 The Mini Details integration reached `b7b40600b462ba533f6cb61ff375d12da5f35ece`. It includes accessible Canvas membership scope and omission reasons at `88f21e81019e2c230427c52214734f680cba7de2`, and qualified helper rows with eight-row continuation at `39241905098a5824bda6bc793c10794d9a06370e`. Independent review caught in-place helper registration changes that the first candidate missed. The successor captured immutable run fields and passed 300 focused cases plus 14 selected transport checks. Board content omitted from an authorized snapshot remains unavailable. Final composition and complete parity are still pending.
+
+## 05:00 Pacific assignment ledger
+
+All branch names in this ledger are normal remote branches in Agent-Clubhouse/Clubhouse.
+
+| Assignment | Branch | Frozen commit or verified successor | Status |
+| --- | --- | --- | --- |
+| Mini Details integration | `Clubhouse-Orchestrator/3733-mini-continuation` | `c5d6c20bcf321fedc7473f04c741cb7d203de397` descends from `d90cd8d504b7085aed04d4728a0b2cfea72468e6` | Reviewed bounded history, Actions source modules and selected-role HTTP handler incorporated. Composed acceptance pending. |
+| Selected-role HTTP | `DetailsSessionDisplay/role-read-http` | `98fcbd677e79719887d20ce1fa25a1e0d0d87d3c` | Independent handler review passed after 67 HTTP and 15 selector cases. Consumer work on Mini remains open. |
+| Selected Actions source | `Nov20AutoCI/3733-selected-actions` | `37d642a869ed8631a7c94d114b51b39659b9c3f1` | Reviewed source modules. Common query and renderer integration pending. |
+| Managed list continuation | `Nov20SettingsCI/3733-managed-inventory` | `3116ab759f16459857fb5de6e06abea962773271` contains `e5c07d6274c8418155fba52b1aba90a17a7872a4` | Targeted tests and source typecheck passed after correcting an oversized test assertion. Full-view check, review and integration pending at checkpoint. |
+| Selected durable history | `Nov20RootDiagnostics/3733-session-history` | `bb3851959421e0a9bddf348317ad078b809ece1c` | Bounded current-runtime history accepted and integrated. Sleeping, unbound and earlier resumed sessions remain partial. |
+
+The hosted CI receipt is commit `2970b03eeea4d550dfc961316c2c8287e9f16e12` on this evidence branch. Settings, Auto and catalog hydration are green on the PR heads listed above. Mini owns all remaining Details implementation and fixes. Sleeping-helper inline and selected-role consumer follow-ups are Mini-local work in progress at this checkpoint. Full parity, composed testing and final review remain pending. The 27-record private evidence subset and omissions for #3613 retain their separate custody boundaries.
