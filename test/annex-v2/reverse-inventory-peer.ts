@@ -2,10 +2,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import * as os from 'os';
-import { afterAll, expect, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import { installAcceptAudit, installDialPolicy, sizedPng } from './reverse-parity-fixture';
+import { installAcceptAudit, installDialPolicy, sizedPng, type RpcPeer } from './reverse-parity-fixture';
 import type { ConfigurePeer, PeerInfo } from './reverse-client-peer';
 import type { IPty } from 'node-pty';
 
@@ -973,3 +973,85 @@ export async function createInventoryPeer(alias: string) {
 }
 
 export type InventoryPeer = Awaited<ReturnType<typeof createInventoryPeer>>;
+
+export function describeCurrentReadSurfaces(pair: () => {
+  a: InventoryPeer; b: RpcPeer; bInfo: InventoryPeerInfo; opener: 'A' | 'B';
+}): void {
+  const target = (who: 'A' | 'B') => who === 'A' ? pair().bInfo : pair().a.info;
+  const wire = (who: 'A' | 'B', input: Parameters<InventoryPeer['wire']>[0]): Promise<WireAnswer> =>
+    who === 'A' ? pair().a.wire(input) : pair().b.call('wire', input);
+  const json = (answer: WireAnswer): unknown => JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'));
+  describe('current read surfaces: controller chat, sessions and Settings details', () => {
+    const controllerPath = '/api/v1/network/dispatcher/controller/chat';
+    const controllerPage = (who: 'A' | 'B') => who === 'A' ? pair().a.controllerPage({ limit: 2 })
+      : pair().b.call<Awaited<ReturnType<InventoryPeer['controllerPage']>>>('controllerPage', { limit: 2 });
+    const sessions = (who: 'A' | 'B') => who === 'A' ? pair().a.controllerSessions()
+      : pair().b.call<Awaited<ReturnType<InventoryPeer['controllerSessions']>>>('controllerSessions');
+    const publication = (who: 'A' | 'B', state: Parameters<InventoryPeer['controllerPublication']>[0]) =>
+      who === 'A' ? pair().b.call('controllerPublication', state) : Promise.resolve(pair().a.controllerPublication(state));
+    beforeEach(async () => { pair().a.prepareControllerReads(); await pair().b.call('prepareControllerReads'); });
+    afterEach(async () => { pair().a.finishControllerReads(); await pair().b.call('finishControllerReads'); });
+
+    it.each(['A', 'B'] as const)('%s reads controller history and saved sessions through the real pinned route and desktop adapter', async (who) => {
+      const event = { type: 'agent_message', data: { messageId: `controller-route-${who}`, text: `Owned controller read ${who}` } } as const;
+      const seq = who === 'A' ? await pair().b.call<number>('emit', event) : await pair().a.emit(event);
+      const raw = await wire(who, { method: 'GET', path: `${controllerPath}?limit=2` });
+      expect(raw.status).toBe(200);
+      expect(raw.headers['cache-control']).toBe('no-store');
+      expect(json(raw)).toMatchObject({
+        readOnly: true, agentId: target(who).agentId,
+        events: expect.arrayContaining([expect.objectContaining({
+          seq, type: 'agent_message', data: expect.objectContaining(event.data),
+        })]),
+      });
+      expect(await controllerPage(who)).toMatchObject({ status: 'ok', value: json(raw) });
+      const saved = await wire(who, { method: 'GET', path: `${controllerPath}/sessions` });
+      expect(saved.status).toBe(200);
+      expect(saved.headers['cache-control']).toBe('no-store');
+      expect(json(saved)).toMatchObject({ sessions: expect.arrayContaining([expect.objectContaining({ sessionId: target(who).sessionId })]) });
+      expect(await sessions(who)).toMatchObject({ status: 'ok', value: json(saved) });
+    });
+
+    it.each(['A', 'B'] as const)('%s preserves a successful read-only Settings response in the desktop adapter without a new direct dial', async (who) => {
+      const agentId = target(who).agentId;
+      const raw = await wire(who, { method: 'GET', path: `/api/v1/agents/${agentId}/settings-details` });
+      expect(raw.status).toBe(200);
+      expect(raw.headers['cache-control']).toBe('no-store');
+      expect(json(raw)).toMatchObject({ version: 1, readOnly: true, agentId, provider: expect.any(String) });
+      const result = who === 'A' ? await pair().a.agentSettings(agentId)
+        : await pair().b.call<Awaited<ReturnType<InventoryPeer['agentSettings']>>>('agentSettings', agentId);
+      const observed = who === 'A' ? pair().a.status() : await pair().b.call<ReturnType<InventoryPeer['status']>>('status');
+      console.info('P8 current Settings route', JSON.stringify({ opener: pair().opener, who, rawStatus: raw.status, result,
+        connected: observed.connected, direct: observed.direct }));
+      expect(observed.connected).toBe(true);
+      expect(observed.direct).toBe(who === pair().opener);
+      expect(result).toEqual({ status: 'ok', value: json(raw) });
+    });
+
+    it.each(['A', 'B'] as const)('%s retains exact controller-read refusal for off and unknown publications without changing grants', async (who) => {
+      try {
+        for (const state of ['off', 'unknown'] as const) {
+          await publication(who, state);
+          for (const path of [controllerPath, `${controllerPath}/sessions`]) {
+            const raw = await wire(who, { method: 'GET', path });
+            expect(raw.status).toBe(403);
+            expect(json(raw)).toEqual({ error: 'agent_read_required' });
+          }
+          expect(await controllerPage(who)).toEqual({ status: 'forbidden' });
+          expect(await sessions(who)).toEqual({ status: 'forbidden' });
+        }
+      } finally { await publication(who, 'ready'); }
+    });
+
+    it.each(['A', 'B'] as const)('%s keeps the three surfaces read-only and rejects invalid controller queries', async (who) => {
+      const invalid = await wire(who, { method: 'GET', path: `${controllerPath}?limit=0` });
+      expect(invalid.status).toBe(400);
+      expect(json(invalid)).toEqual({ error: 'invalid_query' });
+      for (const path of [controllerPath, `${controllerPath}/sessions`, `/api/v1/agents/${target(who).agentId}/settings-details`]) {
+        const response = await wire(who, { method: 'POST', path, body: JSON.stringify({ text: 'must not write' }) });
+        expect(response.status).toBe(404);
+        expect(json(response)).toMatchObject({ error: 'not_found' });
+      }
+    });
+  });
+}

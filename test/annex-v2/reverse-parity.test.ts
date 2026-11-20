@@ -4,10 +4,10 @@ import * as os from 'os';
 import * as path from 'path';
 import * as net from 'net';
 import { createHash } from 'crypto';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   BULLETIN_MESSAGES, BULLETIN_MESSAGE_BYTES, NATIVE_TRANSCRIPT_EVENTS, NATIVE_TRANSCRIPT_EVENT_BYTES, NATIVE_SESSION_ID, SMALL_SESSION_ID,
-  createInventoryPeer, LARGE_DIFF_BYTES, LARGE_TEXT_BYTES, type InventoryPeer, type InventoryPeerInfo, type WireAnswer,
+  createInventoryPeer, describeCurrentReadSurfaces, LARGE_DIFF_BYTES, LARGE_TEXT_BYTES, type InventoryPeer, type InventoryPeerInfo, type WireAnswer,
 } from './reverse-inventory-peer';
 import { assertAcceptAudit, assertDialAudit, closeServer, rpcPeer, sentinel, sizedPng, transparentForward, type RpcPeer } from './reverse-parity-fixture';
 import { CHAT_IMAGE_MAX_BYTES, type ChatEventDraft } from '../../src/shared/chat';
@@ -99,74 +99,7 @@ describe('full-server audit inventory over one A to B forward', () => {
     if (ipcDir) fs.rmSync(ipcDir, { recursive: true, force: true });
   }, 30_000);
 
-  describe('current read surfaces: controller chat, sessions and Settings details', () => {
-    const controllerPath = '/api/v1/network/dispatcher/controller/chat';
-    const controllerPage = (who: 'A' | 'B') => who === 'A' ? a.controllerPage({ limit: 2 })
-      : b.call<Awaited<ReturnType<InventoryPeer['controllerPage']>>>('controllerPage', { limit: 2 });
-    const sessions = (who: 'A' | 'B') => who === 'A' ? a.controllerSessions()
-      : b.call<Awaited<ReturnType<InventoryPeer['controllerSessions']>>>('controllerSessions');
-    const publication = (who: 'A' | 'B', state: Parameters<InventoryPeer['controllerPublication']>[0]) =>
-      who === 'A' ? b.call('controllerPublication', state) : Promise.resolve(a.controllerPublication(state));
-    beforeEach(async () => { a.prepareControllerReads(); await b.call('prepareControllerReads'); });
-    afterEach(async () => { a.finishControllerReads(); await b.call('finishControllerReads'); });
-
-    it.each(['A', 'B'] as const)('%s reads controller history and saved sessions through the real pinned route and desktop adapter', async (who) => {
-      const seq = await emitOnTarget(who, { type: 'agent_message', data: { messageId: `controller-route-${who}`, text: `Owned controller read ${who}` } });
-      const raw = await wire(who, { method: 'GET', path: `${controllerPath}?limit=2` });
-      expect(raw.status).toBe(200);
-      expect(raw.headers['cache-control']).toBe('no-store');
-      expect(json(raw)).toMatchObject({
-        readOnly: true, agentId: target(who).agentId,
-        events: expect.arrayContaining([expect.objectContaining({
-          seq, type: 'agent_message', data: expect.objectContaining({ messageId: `controller-route-${who}`, text: `Owned controller read ${who}` }),
-        })]),
-      });
-      expect(await controllerPage(who)).toMatchObject({ status: 'ok', value: json(raw) });
-      const saved = await wire(who, { method: 'GET', path: `${controllerPath}/sessions` });
-      expect(saved.status).toBe(200);
-      expect(json(saved)).toMatchObject({ sessions: expect.arrayContaining([expect.objectContaining({ sessionId: target(who).sessionId })]) });
-      expect(await sessions(who)).toMatchObject({ status: 'ok', value: json(saved) });
-    });
-
-    it.each(['A', 'B'] as const)('%s preserves a successful read-only Settings response in the desktop adapter without a new direct dial', async (who) => {
-      const agentId = target(who).agentId;
-      const raw = await wire(who, { method: 'GET', path: `/api/v1/agents/${agentId}/settings-details` });
-      expect(raw.status).toBe(200);
-      expect(raw.headers['cache-control']).toBe('no-store');
-      expect(json(raw)).toMatchObject({ version: 1, readOnly: true, agentId, provider: expect.any(String) });
-      const result = who === 'A' ? await a.agentSettings(agentId)
-        : await b.call<Awaited<ReturnType<InventoryPeer['agentSettings']>>>('agentSettings', agentId);
-      const observed = await status(who);
-      console.info('P8 current Settings route', JSON.stringify({ who, rawStatus: raw.status, result, connected: observed.connected, direct: observed.direct }));
-      expect(result).toEqual({ status: 'ok', value: json(raw) });
-    });
-
-    it.each(['A', 'B'] as const)('%s retains exact controller-read refusal for off and unknown publications without changing grants', async (who) => {
-      try {
-        for (const state of ['off', 'unknown'] as const) {
-          await publication(who, state);
-          for (const path of [controllerPath, `${controllerPath}/sessions`]) {
-            const raw = await wire(who, { method: 'GET', path });
-            expect(raw.status).toBe(403);
-            expect(json(raw)).toEqual({ error: 'agent_read_required' });
-          }
-          expect(await controllerPage(who)).toEqual({ status: 'forbidden' });
-          expect(await sessions(who)).toEqual({ status: 'forbidden' });
-        }
-      } finally { await publication(who, 'ready'); }
-    });
-
-    it.each(['A', 'B'] as const)('%s keeps the three surfaces read-only and rejects invalid controller queries', async (who) => {
-      const invalid = await wire(who, { method: 'GET', path: `${controllerPath}?limit=0` });
-      expect(invalid.status).toBe(400);
-      expect(json(invalid)).toEqual({ error: 'invalid_query' });
-      for (const path of [controllerPath, `${controllerPath}/sessions`, `/api/v1/agents/${target(who).agentId}/settings-details`]) {
-        const response = await wire(who, { method: 'POST', path, body: JSON.stringify({ text: 'must not write' }) });
-        expect(response.status).toBe(404);
-        expect(json(response)).toMatchObject({ error: 'not_found' });
-      }
-    });
-  });
+  describeCurrentReadSurfaces(() => ({ a, b, bInfo, opener: 'A' }));
 
   it.each(['A', 'B'] as const)('R01 %s: actual chat pages, cursor and saved session listing', async (who) => {
     const first = await emitOnTarget(who, { type: 'agent_message', data: { messageId: 'history-1', text: 'first page message' } });
