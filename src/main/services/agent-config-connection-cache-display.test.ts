@@ -63,6 +63,17 @@ it('keeps a missing ID in a loaded project distinct from a cold project or confi
   await warm(); expect(readAgentConnectionCacheForDisplay(project, 'PRIVATE_OTHER', { receipts: [] })).toMatchObject({ availability: 'not-in-loaded-index' });
   expect(readAgentConnectionCacheForDisplay(path.join(root, 'cold'), 'target', { receipts: [] })).toMatchObject({ availability: 'not-loaded' }); assertNoReadEffects();
 });
+it('does not borrow a loaded native ID from another project or warm a cold copied project inventory', async () => {
+  await warm(); const other = path.join(root, 'other'); const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+  await actual.mkdir(path.join(other, '.clubhouse'), { recursive: true }); await actual.writeFile(path.join(other, '.clubhouse', 'agents.json'), JSON.stringify([agent({ name: 'PRIVATE_OTHER_PROJECT_NAME' })])); resetObservation();
+  const result = readAgentConnectionCacheForDisplay(other, 'target', { receipts: [] });
+  expect.soft(result).toMatchObject({ availability: 'not-loaded' }); expect.soft(JSON.stringify(result)).not.toMatch(/PRIVATE_|Selected cache name/); assertNoReadEffects();
+});
+it('refuses an inconsistent raw ID in the loaded point index without projecting another identity or retaining a receipt', async () => {
+  await warm(); const selected = await getDurableConfig(project, 'target'); selected!.id = 'PRIVATE_REPLACEMENT_ID';
+  const receipts: DisplayReceipt[] = [], result = read(receipts);
+  expect.soft(result).toMatchObject({ availability: 'invalid' }); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_'); expect.soft(receipts).toEqual([]); assertNoReadEffects();
+});
 it.each(['name', 'policy', 'disposed', 'helper'] as const)('invalidates late selected %s changes through the actual loaded record, without a reader write or raw clone', async (kind) => {
   await warm(); const receipts: DisplayReceipt[] = []; expect(read(receipts).availability).toBe('loaded'); expect(receipts[0].current()).toBe(true);
   const selected = await getDurableConfig(project, 'target'); expect(selected).not.toBeNull();
