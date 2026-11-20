@@ -1066,3 +1066,20 @@ describe('selected saved group membership in full Details', () => {
     } finally { capture.mockRestore(); identity.resetForTests(); home.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
   });
 });
+
+describe('selected Connections envelope admission', () => {
+  it('preserves every requested source field under unrelated full-card pressure', async () => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-source-envelope-'))), a = path.join(root, 'a'), b = path.join(root, 'b'); for (const f of [a, b]) await fs.mkdir(path.join(f, '.clubhouse'), { recursive: true }); m.base = root; m.realConnections = true; m.realWitness = true;
+    const selected = { ...agent(), worktreePath: a }, p = { ...project, name: '😀'.repeat(120), path: a }; await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [p, { id: 'p-other', name: 'Other project', path: b }] })); await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), JSON.stringify([selected])); await fs.writeFile(path.join(b, '.clubhouse', 'agents.json'), JSON.stringify(Array.from({ length: 8 }, (_, i) => ({ id: 'target-' + i, name: i + '😀'.repeat(120) }))));
+    const sourceFile = path.join(a, '.clubhouse', '.local', 'orchestrator-connections.json'); await fs.mkdir(path.dirname(sourceFile)); await fs.writeFile(sourceFile, JSON.stringify({ version: 1, connections: Array.from({ length: 8 }, (_, i) => ({ ownerId: selected.id, agentId: selected.id, targetId: 'target-' + i, targetKind: 'agent', targetProjectPath: b, scope: 'granted', createdAt: '2026-11-20T00:00:00Z' })) }));
+    m.target.mockResolvedValue({ agent: selected, project: p });
+    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard; let before = 0;
+    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); expect(args[0].omitted).toBe(0); before = args[0].rows.length; });
+    const presentation = await import('./remote-details-presentation'), actualSection = presentation.section;
+    const pressure = vi.spyOn(presentation, 'section').mockImplementation(async (c, run) => { await actualSection(c, run); if (c.id !== 'connections') c.rows = Array.from({ length: 100 }, () => ({ label: '😀'.repeat(1024), value: 'x'.repeat(2048) })); });
+    try {
+      const response = await readRemoteAgentDetails(selected.id, () => true, { card: 'connections', source: 'tool-records' }); expect(before).toBe(40); expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, selected.id)).toBe(true);
+      const body = response.body as RemoteAgentDetails, c = body.cards.find((c) => c.id === 'connections')!; expect.soft(c.omitted).toBe(0); expect.soft(c.rows).toHaveLength(before); expect(Buffer.byteLength(JSON.stringify(body))).toBeLessThanOrEqual(256 * 1024);
+    } finally { pressure.mockRestore(); capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+});

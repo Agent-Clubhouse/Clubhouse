@@ -297,3 +297,17 @@ it('keeps same-ID ordinary Dispatcher metadata visible with explicit ambiguity a
   expect(result.c.rows.some((r) => r.label.endsWith('starting switches') || r.value.includes('two configured directions'))).toBe(false); expect(JSON.stringify(result.c)).not.toContain(root); expect(receipts.every((r) => r.current())).toBe(true);
   await fs.promises.writeFile(normalFile, '[]'); expect(role.current()).toBe(true); expect(receipts.some((r) => !r.current())).toBe(true);
 });
+
+it('continues every retained target-kind variant without losing fields to the card row budget', async () => {
+  const kinds = ['browser', 'agent', 'terminal', 'group-project', 'plugin'] as const, collects: Array<ReturnType<typeof vi.fn>> = [];
+  for (const kind of kinds) { const collect = vi.fn(async () => Array.from({ length: 8 }, (_, i) => wire(selected, 'variant-' + i, { targetKind: kind, targetName: 'Variant target ' + i }))); collects.push(collect); registerPersistedBindingSource({ id: 'variant-' + kind, collect }); }
+  await rebuildPersistedBindings(); for (const collect of collects) collect.mockClear();
+  const cached = readCachedConnectionSourcesForDisplay(selected); expect(cached.state).toBe('ok'); if (cached.state !== 'ok') throw new Error('fixture'); expect(cached.value.pairs).toHaveLength(8); expect(cached.value.pairs.every((p) => p.sources.length === 5 && p.sources.every((s) => s.binding.state === 'ok'))).toBe(true);
+  const seen = new Set<string>(); let offset = 0;
+  for (let page = 0; page < 10; page++) {
+    const result = await read(false, { page: { card: 'connections', source: 'sources', offset } }); expect(result.c.state).toBe('ok'); expect.soft(result.c.omitted).toBe(0);
+    for (const row of result.c.rows) if (/^Variant target \d+$/.test(row.label)) seen.add(row.label + ':' + row.value.split(' · ')[0]);
+    const next = result.c.connectionPage?.next; if (!next) break; expect(next.offset).toBeGreaterThan(offset); offset = next.offset;
+  }
+  expect.soft(seen.size).toBe(40); for (const collect of collects) expect(collect).not.toHaveBeenCalled(); expect(m.legacy).not.toHaveBeenCalled();
+});
