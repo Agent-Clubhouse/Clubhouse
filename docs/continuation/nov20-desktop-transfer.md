@@ -41,6 +41,21 @@ Repository: Agent-Clubhouse/Clubhouse. This notes branch is documentation only, 
 
 ## Transfer acceptance ledger
 
-All entries currently PENDING receiver verification. Before release of sender ownership record: verified recipient identity/authorized route, exact remote branch and SHA fetched by recipient, explicit remaining-scope acceptance, timestamp, and sender stop boundary. Delivery of a message alone is not takeover.
+Verified route: sender → Navi → Tael → Mini desktop `bp83o0`. No direct sender-to-Mini wire or transferred grant is assumed.
+
+At 08:45Z, Navi relayed actual authenticated Mini acceptance via Tael:
+
+- Settings: exact `3b6647f3955e9c6ace65a9079fa2d37219880fd7` fetched; PR-readiness/hosted-check coordination accepted. Sender stopped that coordination; retains private/raw preservation responsibility. Original scope came from direct user UI requests; PR sequencing authority came from user-provided Orchestrator AGENTS requiring independent review before opening a PR. No separate specific-PR command or merge authority is asserted; receiving grants remain local.
+- PR3744: exact `166f8d50ff702081afa3af33e819698482d73a5a` fetched; PR/CI-blocker coordination accepted. Sender stopped duplicate coordination. Unknown allocator rejection remains unresolved, with no rerun/fix/waiver implied.
+- QA: exact `90e30f99b27bea8dde20b90b738d2e5488ffd39e` on `qa-full-card-parity/nov20-transfer` fetched; nine reports verified and accepted as summaries only. Entry point `docs/qa-transfer/2026-11-20/README.md`.
+- #3613: three source refs fetched, safe index read; SOURCE/INDEX CUSTODY ONLY accepted. Raw calibration assessment and implementation takeover deferred. Safe index: https://github.com/Agent-Clubhouse/Clubhouse/issues/3613#issuecomment-7034686908 . Existing private transport supports bounded text/temp delivery only; do not tunnel binary packages. Await receiver durable destination and exact saved-file hash receipts for necessary original text evidence.
+
+Further source preservation, not takeover:
+
+- Auto implementation `c29c0c9ab208de37482d8cd8ce387dace1af61c3`, tree `3c963bcb46ec18b0e00aca3ebc95d03d96e0defe`, pushed on `auto-reset-policy-design/implement-reset-aware-auto`; independent source review assigned here, final exact-head checks pending. Owner retains active implementation responsibility.
+- Navi Q5 preservation `e2340b51e434c499b5e4f7014e9bc3bcd857920f` on `diagnose-navi-queue/mini-preservation`; entry `notes/diagnose-navi-queue-transfer/README.txt`, 25 safe evidence records with index. Requested preservation-only acceptance; policy decision still pending, no implementation authorization.
+- Details source owner continues on pushed `lane-full-remote-details/connections-complete`, with `docs/implementation-notes/3733-continuation.md`. Branch is actively advancing, not a final freeze; obtain exact final owner receipt before takeover. Accepted root remains f122. No concurrent receiver edits authorized by source publication.
+
+For each remaining transfer record exact fetched SHA, explicit remaining-scope acceptance, timestamp and sender stop boundary. Delivery alone is not takeover.
 
 Existing #3613 validation drafts #3736 and #3721 remain DO NOT MERGE. The old #3611 merge hold is superseded; #3706 public desktop release hold remains. No default-branch push, merge or release authority is created by this document.
