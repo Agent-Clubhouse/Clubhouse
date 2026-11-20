@@ -96,6 +96,12 @@
       "bytes": 5828,
       "sha256": "88fe4be352f6120f85fdb0b0975e44d7080f12821f30b4919323d8eb8781fd7c",
       "originalSourceSha256": "88fe4be352f6120f85fdb0b0975e44d7080f12821f30b4919323d8eb8781fd7c"
+    },
+    {
+      "path": "reports/3733-4fcae1c95-independent-cold-composition-verdict.txt",
+      "bytes": 12757,
+      "sha256": "b3f7b7f066fbd518614cdfb2faa094bb524e200c11ebc6e5c6dbf5c99ad9a5ec",
+      "originalSourceSha256": "b3f7b7f066fbd518614cdfb2faa094bb524e200c11ebc6e5c6dbf5c99ad9a5ec"
     }
   ],
   "copyNote": "Only redundant blank lines at EOF normalized in Git copies; original reports unchanged. Original and copied hashes retained."
