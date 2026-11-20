@@ -115,3 +115,27 @@ it('does not adopt another project’s same-ID parent or probe unrelated relatio
   await put(b, [agent('safe', { parentAgentId: 'parent', parentProjectPath: a }), agent('wrong', { name: 'PRIVATE_OTHER_PARENT_CHILD', parentAgentId: 'parent', parentProjectPath: b }), agent('unrelated', { name: 'PRIVATE_OTHER_RELATIONSHIP', parentAgentId: 'unrelated', parentProjectPath: '/unadmitted/never-probe' })]);
   const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, entries: [{ agentId: 'safe' }] } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
 });
+
+it('keeps same-native-ID Dispatcher candidates in other projects explicitly ambiguous instead of verified empty', async () => {
+  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
+  const controller = agent('controller', { orchestration: { connectToDispatcher: true } }), ordinary = agent('controller', { name: 'Normal project agent', orchestration: { connectToDispatcher: true } });
+  await put(a, [controller]); await put(b, [ordinary]);
+  const target = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a } } as unknown as import('./agent-config-reader').AgentConfigTarget;
+  const role = captureReadOnlyRoleTargetWitness(target, () => true), receipts: DisplayReceipt[] = [];
+  expect(role.current()).toBe(true); expect(JSON.parse(await fsp.readFile(path.join(b, '.clubhouse', 'agents.json'), 'utf8'))[0]).toEqual(ordinary);
+  const result = readRegisteredAgentDisplayPage({ agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role }, 'dispatcher-auto', { authorized: () => true, receipts });
+  expect.soft(result).toMatchObject({ state: 'ok', value: { complete: false, knownMatches: 1, unknownRows: 1, entries: [{ agentId: 'controller', projectId: 'b', identityAmbiguous: true, fields: { name: { value: 'Normal project agent' }, connectToDispatcher: { value: true } } }], next: null } });
+  expect.soft(receipts.every((r) => r.current())).toBe(true); expect.soft(JSON.stringify(result)).not.toContain(root);
+  await put(b, [{ ...ordinary, name: 'Changed normal project agent' }]); expect(role.current()).toBe(true); expect.soft(receipts.some((r) => !r.current())).toBe(true);
+});
+it('excludes the admitted canonical role folder while preserving a distinct-ID registered source and bounded continuation', async () => {
+  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
+  const controller = agent('controller'), worker = agent('role-worker', { name: 'PRIVATE_ROLE_WORKER', orchestration: { connectToDispatcher: true } });
+  await put(a, [controller, worker]); await put(b, Array.from({ length: 9 }, (_, i) => agent('normal-' + i, { orchestration: { connectToDispatcher: true } })));
+  const target = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a } } as unknown as import('./agent-config-reader').AgentConfigTarget;
+  const role = captureReadOnlyRoleTargetWitness(target, () => true); expect(role.current()).toBe(true);
+  const first = readRegisteredAgentDisplayPage({ agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role }, 'dispatcher-auto', { authorized: () => true, receipts: [], limit: 8 });
+  expect.soft(first).toMatchObject({ state: 'ok', value: { complete: true, unknownRows: 0, knownMatches: 9, next: { projectOffset: 0, matchOffset: 8 } } }); expect.soft(JSON.stringify(first)).not.toContain('PRIVATE_ROLE_WORKER');
+  const last = readRegisteredAgentDisplayPage({ agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role }, 'dispatcher-auto', { authorized: () => true, receipts: [], limit: 8, matchOffset: 8 });
+  expect.soft(last).toMatchObject({ state: 'ok', value: { entries: [{ agentId: 'normal-8' }], next: null, knownMatches: 9 } });
+});
