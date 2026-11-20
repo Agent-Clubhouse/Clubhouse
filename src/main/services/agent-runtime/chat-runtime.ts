@@ -223,8 +223,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   private readonly inFlightTools = new Map<string, string | undefined>();
   private publishedQueueState = { queuedMessageIds: [] as string[], queueStateSeq: 0 };
   /** drainQueue is sending the next queued item: the turn it starts hasn't begun yet. */
-  private draining = false;
-  private queueWaitingForWork = false;
+  private draining: ChatDriverSession | undefined;
+  private queueWaitingForWork: ChatDriverSession | undefined;
   private pendingTurns = new Set<symbol>();
   private readonly permissions = new Map<string, PendingPermission>();
   /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
@@ -646,7 +646,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   hasPendingWork(): boolean {
-    return this.turnId !== undefined || this.draining || this.queued.length > 0 || this.pendingTurns.size > 0;
+    return this.turnId !== undefined || (this.draining !== undefined && this.draining === this.session) || this.queued.length > 0 || this.pendingTurns.size > 0;
   }
 
   hasReceivedInput(): boolean {
@@ -663,9 +663,10 @@ export class ChatAgentRuntime implements AgentRuntime {
     const causalPending = this.pendingTurns.size > 0 && federationTurnInputs(this.agentId).length > 0;
     // Drivers do not correlate send() with turn_started. Admit one start at
     // a time until that boundary, even when the first input has no provenance.
-    const awaitingTurn = (this.draining || this.pendingTurns.size > 0) && this.turnId === undefined;
+    const draining = this.draining === session;
+    const awaitingTurn = (draining || this.pendingTurns.size > 0) && this.turnId === undefined;
     // While the queue drains, the state still reads idle; a prompt now would race the drained one.
-    const running = this.draining
+    const running = draining
       || this.state === 'running' || this.state === 'waiting_permission' || this.state === 'waiting_input';
     const caps = this.capabilities ?? session.capabilities;
     // Keep Action messages removable even when the driver normally queues natively.
@@ -973,12 +974,13 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   private async drainQueue(): Promise<void> {
+    const session = this.session;
+    if (!session) return;
     if (!agentWorkOpen()) {
-      if (!this.queueWaitingForWork) {
-        this.queueWaitingForWork = true;
-        const session = this.session;
+      if (this.queueWaitingForWork !== session) {
+        this.queueWaitingForWork = session;
         void whenAgentWorkOpen().then(async () => {
-          this.queueWaitingForWork = false;
+          if (this.queueWaitingForWork === session) this.queueWaitingForWork = undefined;
           if (this.session === session) await this.drainQueue();
         }).catch(() => {
           // telemetry-exempt: the queued item remains visible and can be retried.
@@ -987,13 +989,12 @@ export class ChatAgentRuntime implements AgentRuntime {
       }
       return;
     }
-    if (!this.session) return;
     await runAgentWork(this.agentId, () => this.deliverQueuedMessage());
   }
 
   private async deliverQueuedMessage(): Promise<void> {
     const session = this.session;
-    if (!session || this.draining || (this.turnId === undefined && this.pendingTurns.size > 0)) return;
+    if (!session || this.draining === session || (this.turnId === undefined && this.pendingTurns.size > 0)) return;
     const next = this.queued.shift();
     if (!next) return;
     this.pendingDispatch = next;
@@ -1002,7 +1003,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     const pending = Symbol();
     let federation: ReturnType<typeof prepareFederationInput>[] = [];
     let rollbackAssignment: (() => Promise<void>) | undefined;
-    this.draining = true;
+    this.draining = session;
     try {
       this.clearIdleTimer();
       await this.emitQueueState([next.messageId], 'dispatching');
@@ -1064,7 +1065,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       failed = true;
     } finally {
       if (this.pendingDispatch === next) this.pendingDispatch = undefined;
-      this.draining = false;
+      if (this.draining === session) this.draining = undefined;
       this.armQueueExpiry();
     }
     // A failed start has no future turn end. An early turn end may also have
