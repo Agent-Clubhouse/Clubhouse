@@ -101,6 +101,13 @@ it('preserves malformed/foreign/shortened reports as partial instead of treating
   expect(screen.getByText(/This archived event was shortened/)).toBeInTheDocument();
   expect(screen.queryByText(/FOREIGN_SKILL|explicitly empty/)).not.toBeInTheDocument();
 });
+it.each([true, false])('distinguishes a known zero usage report from unknown totals/scope, known=%s', async (known) => {
+  request.mockResolvedValue(page([event(20, 'usage', known ? { scope: 'session', tokens: { total: 0 }, costUsd: 0 } : { scope: 'malformed', tokens: {} })], null));
+  show();
+  fireEvent.click(screen.getByRole('button', { name: 'Read older session history' }));
+  await screen.findByTestId('remote-history-reports');
+  expect(screen.getByTestId('remote-history-reports')).toHaveTextContent(known ? 'Usage report: session · 0 tokens · $0' : 'Usage report: scope not reported · token total not reported');
+});
 it.each(['host', 'project', 'session', 'provider', 'native', 'same-native reopen', 'offline', 'snapshot', 'denied Details'] as const)('discards a late archive page after %s', async (change) => {
   let finish!: (value: unknown) => void;
   request.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
