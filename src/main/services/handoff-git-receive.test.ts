@@ -5,7 +5,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { createHash, randomUUID } from 'crypto';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, onTestFailed, vi } from 'vitest';
+import { quarantineFailureCapture } from '../../../test/handoff-quarantine-diagnostics';
+import * as logging from './log-service';
 import { HANDOFF_TRANSFER_DEFAULTS, canonicalHandoffManifest } from '../../shared/handoff-manifest';
 import { prepareHandoffSnapshot } from './handoff-snapshot';
 import { prepareHandoffBundle } from './handoff-git-bundle';
@@ -133,6 +135,14 @@ it('classifies an impossible launch layout before spawning and cleans its quaran
   expect(fs.readdirSync(options.snapshot.root).some((name) => name.startsWith('quarantine-'))).toBe(false);
 }, 30_000);
 it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository path', 220], ['very deep repository path', 300]] as const)('handles bundle packs beyond the Windows %s limit (root%i) with isolated Git configuration', async (limit, rootLength) => {
+  const diagnostic = quarantineFailureCapture();
+  const appLog = logging.appLog;
+  vi.spyOn(logging, 'appLog').mockImplementation((namespace, level, message, options) => {
+    diagnostic.record(namespace, message, options?.meta);
+    appLog(namespace, level, message, options);
+  });
+  // Includes assertion failures and test timeout; never serialize the thrown error.
+  onTestFailed(() => { console.error('QUARANTINE_ADMISSION_FAILURE', JSON.stringify({ rootLength, ...diagnostic.snapshot() })); });
   const options = await prepared();
   // Windows CI checks out on D: while temp staging is on C:. Exercise that
   // boundary too: making only the final fetch source relative cannot fix it.

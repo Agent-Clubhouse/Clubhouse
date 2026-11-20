@@ -4,6 +4,8 @@ import * as path from 'path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createHandoffQuarantine, handoffQuarantineFits, handoffQuarantineRoots, HANDOFF_QUARANTINE_MAX_AGE, sweepHandoffQuarantines, windowsHandoffQuarantineRoots } from './handoff-quarantine';
 import * as windowsQuarantine from './handoff-quarantine-windows';
+import * as logging from './log-service';
+import { quarantineFailureCapture } from '../../../test/handoff-quarantine-diagnostics';
 
 let fixture: string;
 let staging: string;
@@ -253,6 +255,12 @@ it('fails closed when no inspection is available, never recovering on its own sa
 });
 
 it.each([['existing', true], ['fresh', false]] as const)('stops at the first timed-out verification of a %s root instead of retrying or recovering', async (_kind, existing) => {
+  const capture = quarantineFailureCapture();
+  const log = logging.appLog;
+  vi.spyOn(logging, 'appLog').mockImplementation((namespace, level, message, options) => {
+    capture.record(namespace, message, options?.meta);
+    log(namespace, level, message, options);
+  });
   if (existing) fs.mkdirSync(short, { mode: 0o700 });
   const verify = vi.fn().mockRejectedValue(timeout());
   const inspect = vi.fn().mockResolvedValue(true);
@@ -260,6 +268,21 @@ it.each([['existing', true], ['fresh', false]] as const)('stops at the first tim
   expect(verify).toHaveBeenCalledTimes(1);
   expect(inspect).not.toHaveBeenCalled();
   expect(fs.existsSync(short)).toBe(existing);
+  expect(capture.snapshot()).toEqual({ events: [
+    { event: 'root_rejected', failure: 'verify:timeout', attempt: 1, created: !existing, elapsedMs: expect.any(Number) },
+    { event: 'allocation_rejected', eligible: 1, canonical: 1, fitting: 1, admitted: false, elapsedMs: expect.any(Number) },
+  ], dropped: 0 });
+});
+
+it.each(['ineligible', 'canonical', 'length'] as const)('reports the %s admission gate without disclosing candidate text', async (gate) => {
+  const capture = quarantineFailureCapture();
+  vi.spyOn(logging, 'appLog').mockImplementation((namespace, _level, message, options) => capture.record(namespace, message, options?.meta));
+  const roots = gate === 'ineligible' ? [] : gate === 'canonical' ? [path.join(short, 'missing-parent', 'root')] : [path.join(fixture, 'x'.repeat(260))];
+  await expect(createHandoffQuarantine(staging, { roots, windows: true })).rejects.toMatchObject(failClosed);
+  const { events } = capture.snapshot();
+  expect(events.at(-1)).toEqual({ event: 'allocation_rejected', eligible: gate === 'ineligible' ? 0 : 1, canonical: gate === 'length' ? 1 : 0, fitting: 0, admitted: false, elapsedMs: expect.any(Number) });
+  if (gate === 'canonical') expect(events[0]).toMatchObject({ event: 'root_rejected', failure: 'canonical:other' });
+  expect(JSON.stringify(events)).not.toContain(fixture);
 });
 
 it('removes its child and fails closed if the verified root is replaced while the child is created', async () => {

@@ -128,7 +128,7 @@ export async function sweepHandoffQuarantines(options: { roots?: string[]; now?:
   }
 }
 
-type RootStage = 'mkdir' | 'identity' | 'verify' | 'recover' | 'child';
+type RootStage = 'canonical' | 'mkdir' | 'identity' | 'verify' | 'recover' | 'child';
 export interface QuarantineRootOptions {
   roots?: string[]; windows?: boolean;
   /** Verifies (and, when `created`, initializes) a root's owner-only ACL. Defaults to the Windows check. */
@@ -180,6 +180,7 @@ async function createRoot(candidate: string): Promise<fs.BigIntStats | undefined
 
 /** Open (creating if needed) one verified private root, then an exclusive child. */
 async function openRoot(candidate: string, options: QuarantineRootOptions): Promise<{ owner: fs.BigIntStats; directory: string }> {
+  const started = performance.now();
   const verify = options.verify ?? (WINDOWS ? verifyWindowsQuarantineRoot : undefined);
   const inspect = options.inspect ?? (WINDOWS ? inspectWindowsQuarantineRoot : undefined);
   const delay = options.retryDelay ?? 250;
@@ -190,7 +191,7 @@ async function openRoot(candidate: string, options: QuarantineRootOptions): Prom
     try { prepared = await prepareRoot(candidate, !!fresh, verify); }
     catch (error) { // telemetry-exempt: classified and logged below as a closed failure class
       last = error as RootFailure; lastCreated = !!fresh;
-      appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(last), attempt, created: lastCreated } });
+      appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(last), attempt, created: lastCreated, elapsedMs: Math.floor(performance.now() - started) } });
       if (fresh) await removeEmptyRoot(candidate, fresh);
       // A timed-out verify is a slow machine, not a broken root: stop here so
       // worst-case latency stays bounded (each further PowerShell may take 20 s).
@@ -215,7 +216,7 @@ async function openRoot(candidate: string, options: QuarantineRootOptions): Prom
       catch (error) { await removeEmptyRoot(candidate, fresh); throw error; }
     } catch (error) {
       const failure = new RootFailure('recover', error instanceof RootFailure ? error.cause : error);
-      appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(failure), recovery: true } });
+      appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(failure), recovery: true, elapsedMs: Math.floor(performance.now() - started) } });
       throw failure;
     }
   }
@@ -243,23 +244,33 @@ export async function createHandoffQuarantine(staging: string, options: Quaranti
   let owner: fs.BigIntStats | undefined;
   let root: string | undefined;
   if (!handoffQuarantineFits(nested, options.windows)) {
+    const started = performance.now();
+    const candidates = options.roots ?? handoffQuarantineRoots();
     const roots: string[] = [];
-    for (const candidate of options.roots ?? handoffQuarantineRoots()) {
+    for (const candidate of candidates) {
       try { roots.push(await canonicalRoot(candidate)); }
-      catch { /* telemetry-exempt: try another existing short parent */ }
+      catch (error) { // Closed classification only; try another existing short parent.
+        appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(new RootFailure('canonical', error)), elapsedMs: Math.floor(performance.now() - started) } });
+      }
     }
+    let fitting = 0;
     for (const candidate of [...new Set(roots)].sort((a, b) => a.length - b.length || a.localeCompare(b))) {
       if (!handoffQuarantineFits(path.join(candidate, `q-${'0'.repeat(32)}`), true)) continue;
+      fitting++;
       try {
         const opened = await openRoot(candidate, options);
         owner = opened.owner; root = candidate; directory = opened.directory;
         break;
       } catch (error) { // telemetry-exempt: openRoot logged a closed failure class
         // Identity, verify and recover rejections were logged by openRoot; try another root. Unverified Windows ACLs fail closed.
-        if (error instanceof RootFailure && (error.stage === 'mkdir' || error.stage === 'child')) appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(error) } });
+        if (error instanceof RootFailure && (error.stage === 'mkdir' || error.stage === 'child')) appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(error), elapsedMs: Math.floor(performance.now() - started) } });
       }
     }
-    if (!root || !owner) throw pathTooLong();
+    if (!root || !owner) {
+      // Counts describe admission gates without disclosing candidate paths or identities.
+      appLog('core:handoff', 'warn', 'Handoff quarantine allocation rejected', { meta: { eligible: candidates.length, canonical: new Set(roots).size, fitting, admitted: false, elapsedMs: Math.floor(performance.now() - started) } });
+      throw pathTooLong();
+    }
   } else {
     // Exclusive mkdir: never reuse or follow an existing name, even on collision.
     await fs.promises.mkdir(directory, { mode: 0o700 });
