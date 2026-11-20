@@ -1,0 +1,58 @@
+REQUEST CHANGES — bounded frozen Connections paging/generation composition
+Exact017f7ec9dae90361f09c6c5c8858b3534c95a281 / treeaae189a702f38fb73b337a10e9be48b1600a2727
+Branchlane-full-remote-details/connections-generation-correction, parent67d8782abdcd97bfaa19b88d2e7809e84a3d3358. Reviewed full2482->67 paging consumer plus017 correction;67 was pending review/custody, never an accepted implementation root. Assigned rootf122 remains unchanged. No reviewer execution/source edits/CI/live/PR/merge/release action.
+
+Blocking finding PG1 — project-qualified identity silently excluded by native-ID self check
+Location src/main/services/registered-agent-display-page.ts164–168, dispatcher-auto.
+The early agent.id===selectedId branch skips an otherwise valid registered ordinary project's same-native-ID primary without establishing canonical project/folder equality. It does not increment unknownRows or set complete=false. Thus a page can report zero matches/complete while a selected current primary's identity association is unresolved.
+Concrete source schedule: canonical Dispatcher admitted with nativeID X in canonical folder; a different registered project contains unique normal/nondisposed/nonhelper X with Connect=true and valid primary. Reader silently skips that project-qualified row. Neither canonical path equality nor uniqueness across projects is established by this condition. This is a source-derived completeness/identity-association bug, NOT an executed counterexample, disclosure/auth bypass, proof of a real live role collision, or instruction to manufacture a native self-link.
+Parent confirmed intended contract: no global native-ID uniqueness assumption; do not infer canonical self solely from nativeID. Owner separately confirms ordinary dispatcherWiresForProject also skips matching nativeID (a restore/source limitation). Therefore DO NOT invent configured two-way directions for this ambiguous case.
+Needed successor: exact admitted canonical-folder self may be excluded; different/unprovable same-ID association remains explicitly ambiguous/partial with no configured-direction claim, preserving other independently known rows. Require real registry/primary baseline, exact canonical self and distinct-ID positives, alias/unknown identity and retained final receipt checks. Owner's proposed isolated correction is not reviewed or approved here. Frozen017 remains rejected pending exact successor evidence.
+
+Verified positive source behavior (does not override PG1)
+- Full delta from approved2482 contains26 paths (inventory/registered projection, existing Details GET query plumbing/client/preload/renderer/schema, tests/docs). No cold tool/source, helper-parent direction or Quick-paging WIP incorporated.
+-017 changes only Main/Quick display-generation capture/final compare, appended controls and note. Independently removing those two additions yields exact67 production bodies; other tree paths unchanged. Generation captured with existing runtime/app/native identity before Settings/template/card await and compared in existing final run fence, with authorization refusal precedence. Stable/absent optional method supported.
+- Registered page validates selected local ID/project/path/receipt and fixed helper/Dispatcher purpose; strict primary projects registry, registered roots and exact helper-parent project/directory association; bounded alias probes, no ordinary recovering loaders. Safe allowlisted fields and private directory/source receipts stay separate from DTOs.
+- Initial budget: <=4096 registry entries; <=4096 agent-row visits charged for duplicate-ID and projection passes;16 registered roots; registry<=4MiB, aggregate initial project-primary<=8MiB, individual file<=4MiB,<=64 alias probes,<=8 related endpoints per consumer page. Supported later roots defer after aggregate bytes/row visits; intrinsically oversized/unreadable roots stay explicitly partial. Currentness rereads are additional bounded-by-receipt work, not charged to initial byte admission; no hard I/O deadline/universal heap/continuous inode/ABA proof.
+- Related cache callback requires fresh relevant primary/registry/selected root receipt and expected verified directory namespace before every getter. Saved primary, host-memory fields and configured source defaults remain distinct from runtime/eligibility/effective permission.
+- Page queries use fixed source/card enum plus bounded numeric offsets, no caller paths/refs; existing eligible desktop authority/pin/revocation unchanged. Query is captured before awaits, response schema validates page and exact source/offset/projectOffset echo; renderer also checks page echo, host/snapshot/read identity and stale async completion.
+- Query sourcehelpers/dispatcher-auto is admitted through actual selected/canonical target witnesses. Quick source paging returns unavailable; old host summary-only capability is explicit. Pages are independent observations, not cross-page frozen snapshots. Full Details still assembles other cards, a disclosed efficiency/scope limit.
+- Final selected/helper/settings/provider/Dispatcher/orchestration/connection and run receipts remain through complete assembly, synchronous serialization and final authorization; no new write/start/loader/transport authority.
+
+Independently verified exact package
+Proof branchlane-full-remote-details/proof-connections-pages-67d
+Head57d3d3cb8fecad8a512d0f5d2d13b0ec0d66ea63/tree6740abce9f441cca2f6c355b3ef524d45f2e0916
+docs/implementation-notes/evidence/3733-017f7ec9d/
+Final manifest SHA256463043ad579c525a2b61060fcfb15483f1f748b812a9d29d04e02e0ce211d528.
+All57 required artifacts hash-match,26 source blob identities match exact017,103 fixture identities match committed source.
+All15 mutation patches independently reconstructed from exact017 controls: original/mutated/restored hashes agree, patches byte-equal, tracked source restored clean exacthead/tree.
+All18 admitted launches (15RED+GREEN+route/client+tsc) bind103 unchanged committed fixtures, explicit ANNEX_MOBILE_FIXTURES unset, actual gateSTART/END and commands. Aggregate driverexit0/stdoutSHA verified; no75 in formal run. Before/after attestations are not continuous runtime observations.
+
+Actual outcomes:
+-11files348PASS/no skips.
+-Separate route/client2files16PASS815intentionallyunselected; not full831case or canonical/mobile suite acceptance.
+-tsc--noEmit exit0.
+-RED failures in control order:
+parent-project1;match-offset2;byte-deferral1;row-deferral1;cache-root-currentness3FAIL1PASS;disposed-directions1;final-source-receipt1FAIL4PASS;client-echo1;renderer-echo1;desktop-eligibility1;route-query1;Mainfinalgeneration2FAIL3PASS;Mainlatecapture1;Quickfinalgeneration2FAIL3PASS;Quicklatecapture1. Skips are targeted unselected cases, not passes.
+
+Assertion reach and model limits
+- Parent-project mutant first HARD result/count expectation at test116 fails; later standalone PRIVATE_ assertion is UNREACHED. Returned fixture difference is not a separately observed privacy assertion or live disclosure.
+- Byte-deferral mutant first HARD boundary expectation at test103 fails before later-page retrieval assertions. Exact GREEN independently executes supported later-root retrieval.
+- Cache-root mutants reach SOFT final-withholding/no-name positives before SOFT extra-callback failures. They discriminate admission/read ordering, not a disclosure.
+- Final-source-receipt mutant reaches stale200 plus no-cards/provider/settings soft failures under actual related-primary edit in modeled later Canvas await. Revocation controls remain independent.
+- Renderer wrong-page mutant reaches both wrong-marker and safe-state SOFT failures. Client uses modeled pinned HTTPS. Route test uses local HTTP with mocked peer/principal/reader; desktop mutant discriminates phone refusal, not real mTLS. Route-admission mutant first positive200 assertion fails on404; later authority checks unreached.
+- Main/Quick final-generation mutants: same runtime/registration/app/native hard prestates pass; early/late generation changes then stale200/no-card soft failures. Stable/unsupported200 and revoked403/no-cards remain positive independent cases. Moving capture after first await yields1FAIL per path, proving placement relative to modeled await, not real native reopen/process timing. Selected project/primary IO actual, runtime and card awaits modeled.
+
+Historical distinctions retained
+-48b4b9436aaae5e366381bdb47d4e5d2e2974c8d/treee2ba1ae46b20596b5d1c51fbe22ac23d6c725a9a is test-only on9a9f323b5d483a7dbbc2e0aa257bd1c29473ad23 WIP, NOT executed67. Original baseline3-artifact manifest/log/result link verifies2FAIL181SKIP and expected-failure capture; same-object/generation hard prestates then status/cards soft failures reached. No canonical 67 reproduction or wrapper-success inference.
+- Fresh generation-correction cwd failed collection of2files/zero tests, resolving bare tls as workspace path. Unchanged67 four-file overlay in SAME cwd failed identically; recorded hashes restore all overlaid bytes. Exact017 then passed10generation cases in establishedconnections-complete cwd before formal proof. Initial unsealed failed stdout is CURRENT-linked, not retroactively launch-sealed. Mechanism unresolved: no blanket infrastructure/flakiness/portability attribution or dependency workaround inferred.
+
+Disposition and next step
+REQUEST CHANGES for PG1 only; source-derived until owner bound baseline/successor is inspected. Verified348/16/tsc and bounded generation closure stay valid but do not confer whole017 approval. Preserve independent useful rows and explicit unknown/partial identity semantics. Review exact isolated correction plus discriminatory evidence without re-running broad suites.
+
+Cold Canvas/group/tool/user/helper-parent/Quick paging, complete suspension/current eligibility, navigation/folds/provider/nonConnections matrix, no-chat Dispatcher, latest-main/CI/PR/full parity remain open. #3706 public-release hold stays; superseded#3611 merge hold not reinstated. No assigned-root or Mini active ownership transfer.
+
+Source:
+https://github.com/Agent-Clubhouse/Clubhouse/blob/017f7ec9dae90361f09c6c5c8858b3534c95a281/src/main/services/registered-agent-display-page.ts#L163
+Proof:
+https://github.com/Agent-Clubhouse/Clubhouse/tree/57d3d3cb8fecad8a512d0f5d2d13b0ec0d66ea63/docs/implementation-notes/evidence/3733-017f7ec9d
