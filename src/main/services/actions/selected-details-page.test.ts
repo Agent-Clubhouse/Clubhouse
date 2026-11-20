@@ -74,3 +74,17 @@ it('projects a real started engine without management/history refresh/storage mu
     expect(mutableHistory).not.toHaveBeenCalled(); expect(remoteDelivery).not.toHaveBeenCalled(); expect(history.put).not.toHaveBeenCalled(); expect(storage.load).not.toHaveBeenCalled(); expect(storage.saveActions).not.toHaveBeenCalled(); expect(storage.saveState).not.toHaveBeenCalled(); expect(steps.run).not.toHaveBeenCalled(); expect(JSON.stringify(page)).not.toContain('PRIVATE_');
   } finally { engine.stop(); }
 });
+it('uses stable identity ordering for equal creation times and redacts before bounding existing display fields', () => {
+  const actions = [action(2), action(0), action(1)]; for (const a of actions) a.createdAt = at;
+  actions[1].name = 'apiKey="PRIVATE_NAME" ' + 'x'.repeat(400);
+  const first = read(actions, 0, undefined, { names: () => ({ ...names(), agent: () => 'password="PRIVATE_REFERENCE"' }) });
+  if (first.page.state !== 'recorded') throw new Error('Expected page'); expect(first.page.rows[0].key).toMatch(/^[a-f0-9]{64}$/);
+  expect(first.page.rows[1].name).toBe('Action 1'); expect(first.page.rows[2].name).toBe('Action 2'); expect(first.page.rows[0].name.length).toBeLessThanOrEqual(240); expect(JSON.stringify(first.page)).not.toContain('PRIVATE_');
+  actions.reverse(); expect(first.receipts.every((r) => r.current())).toBe(true);
+});
+it('keeps invalid Date-domain run time unknown while preserving the recorded outcome', () => {
+  const result = read([action(0)]); result.lastRunForDisplay.mockReturnValue({ outcome: 'done', startedAt: Number.MAX_SAFE_INTEGER });
+  const page = readSelectedActionRelationshipPage(result.engine, { agentId: 'selected', projectId: 'p', dispatcher: false }, { offset: 0, authorized: () => true, target: { current: () => true }, sourceCurrent: () => true, names, receipts: [] });
+  expect(page).toMatchObject({ state: 'recorded', rows: [{ lastRun: { outcome: 'done' } }, {}, {}] });
+  if (page.state !== 'recorded') throw new Error('Expected page'); expect(page.rows[0].lastRun).not.toHaveProperty('startedAt');
+});
