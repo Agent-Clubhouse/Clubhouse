@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 vi.mock('fs', async (original) => { const actual = await original<typeof import('fs')>(); return { ...actual, readSync: vi.fn(actual.readSync) }; });
-import { createReadOnlyMetadataBudget, readReadOnlyPrimaryMetadata, ReadOnlyMetadataLimitError } from './read-only-agent-target-witness';
+import { createReadOnlyMetadataBudget, readReadOnlyPrimaryMetadata as readRawMetadata, ReadOnlyMetadataLimitError } from './read-only-agent-target-witness';
+const readReadOnlyPrimaryMetadata = (root: string, relative: 'projects.json' | '.clubhouse/agents.json', options: { maxBytes?: number; budget?: ReturnType<typeof createReadOnlyMetadataBudget> } = {}) => readRawMetadata(root, relative, { ...options, budget: options.budget ?? createReadOnlyMetadataBudget() });
 let root: string;
 const file = () => path.join(root, '.clubhouse', 'agents.json');
 const put = (value: unknown) => fs.promises.writeFile(file(), JSON.stringify(value));
@@ -48,3 +49,5 @@ it('refuses a real same-path edit during its descriptor read and closes the admi
 it('rejects non-file metadata and caller-provided arbitrary filenames before decoding', async () => {
   await fs.promises.mkdir(file()); expect(() => readReadOnlyPrimaryMetadata(root, '.clubhouse/agents.json')).toThrow(); expect(() => readReadOnlyPrimaryMetadata(root, '../unrelated.json' as never)).toThrow(); expect(() => readReadOnlyPrimaryMetadata('../unrelated', 'projects.json')).toThrow();
 });
+
+it('requires an explicit aggregate budget at the internal API boundary', async () => { await put([]); expect(() => readRawMetadata(root, '.clubhouse/agents.json', {} as never)).toThrow(ReadOnlyMetadataLimitError); });
