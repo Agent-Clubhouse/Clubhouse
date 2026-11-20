@@ -97,11 +97,11 @@ function absentMetadataReceipt(root: string, signature: string): { current(): bo
  * validate collection schemas, whitelist selected fields, and retain receipt.
  * Only these fixed metadata filenames are supported. No load/recovery/writes.
  */
-export function readReadOnlyPrimaryMetadata(root: string, relative: 'projects.json' | '.clubhouse/agents.json', options: { maxBytes?: number; budget: ReadOnlyMetadataBudget }): {
+export function readReadOnlyPrimaryMetadata(root: string, relative: 'projects.json' | '.clubhouse/agents.json' | 'dispatcher-connections.json', options: { maxBytes?: number; budget: ReadOnlyMetadataBudget }): {
   raw: unknown; missing: boolean; receipt: { current(): boolean };
 } {
   if (typeof root !== 'string' || !root || root.length > 4096 || !path.isAbsolute(root) || root.includes('\0')
-    || !['projects.json', '.clubhouse/agents.json'].includes(relative)) throw new Error('Metadata root was not admitted.');
+    || !['projects.json', '.clubhouse/agents.json', 'dispatcher-connections.json'].includes(relative)) throw new Error('Metadata root was not admitted.');
   if (!options?.budget) throw new ReadOnlyMetadataLimitError('Metadata budget was not admitted.');
   try {
     const { value, signature, byteLength } = inventory(root, relative, options.maxBytes, options.budget);

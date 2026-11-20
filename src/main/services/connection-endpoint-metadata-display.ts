@@ -28,7 +28,7 @@ function profileReceipt(base: string): DisplayReceipt {
 }
 /** Separate factory: no raw metadata, input collection or filesystem budget is retained. */
 function combinedReceipt(receipts: readonly DisplayReceipt[]): DisplayReceipt {
-  const captured = [...receipts];
+  const captured = [...new Set(receipts)];
   return { current: () => captured.every(current) };
 }
 
@@ -50,10 +50,14 @@ export function readConnectionEndpointMetadataForDisplay(requests: readonly Admi
   const results: DisplayValue<ConnectionEndpointMetadata>[] = requests.map(() => unknown('invalid'));
   const admitted: Array<{ index: number; agentId: string; projectPath: string; association: DisplayReceipt }> = [];
   const evidence: DisplayReceipt[] = [];
+  const initialAssociations = new Map<DisplayReceipt, boolean>();
   for (let index = 0; index < requests.length; index++) {
     const request = requests[index];
     if (!request || !identifier(request.agentId) || !folder(request.projectPath) || typeof request.association?.current !== 'function') continue;
-    if (!current(request.association)) { results[index] = unknown('changed'); continue; }
+    // One passive source may bind the complete selected page. Check it once
+    // in this admission phase, then freshly before each project and at finish.
+    if (!initialAssociations.has(request.association)) initialAssociations.set(request.association, current(request.association));
+    if (!initialAssociations.get(request.association)) { results[index] = unknown('changed'); continue; }
     admitted.push({ index, agentId: request.agentId, projectPath: request.projectPath, association: request.association });
     evidence.push(request.association);
   }
