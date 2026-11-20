@@ -36,7 +36,8 @@ export async function readSelectedDispatcherDetails(authorized?: () => boolean):
     if (!allowed()) return refused();
     if (!current()) return changed();
     if (result.status !== 200) return result;
-    if (!isRemoteAgentDetails(result.body, target.agent.id) || result.body.connectionPageOnly === true) {
+    if (!isRemoteAgentDetails(result.body, target.agent.id) || result.body.connectionPageOnly === true
+      || ('helperPageOnly' in result.body && result.body.helperPageOnly === true)) {
       return { status: 500, body: { error: 'dispatcher_details_invalid' } };
     }
     const body: SelectedDispatcherDetails = { version: 1, role: 'dispatcher', agentId: target.agent.id, details: result.body };

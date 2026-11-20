@@ -100,6 +100,11 @@ describe('staged selected-host Dispatcher Details', () => {
     expect(m.details).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a selected helper-page-only envelope instead of presenting it as full Dispatcher Details', async () => {
+    m.details.mockResolvedValue({ status: 200, body: { ...details(), helperPageOnly: true } });
+    expect(await readSelectedDispatcherDetails(() => true)).toEqual({ status: 500, body: { error: 'dispatcher_details_invalid' } });
+  });
+
   it('rejects a mismatched ordinary response identity and bounds unexpected errors', async () => {
     m.details.mockResolvedValueOnce({ status: 200, body: { ...details(), agentId: 'unrelated' } });
     expect(await readSelectedDispatcherDetails(() => true)).toEqual({ status: 500, body: { error: 'dispatcher_details_invalid' } });

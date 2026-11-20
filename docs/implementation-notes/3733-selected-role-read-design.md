@@ -28,7 +28,7 @@ The service reuses `dispatcherControllerForDisplay` rather than looking up a pub
 
 It then invokes `readRemoteAgentDetails` directly with that exact admitted id and the same authorization callback. The outer role/primary witnesses are checked after the asynchronous ordinary read and after the proposed bounded wrapper is serialized, preventing a role replacement or primary revision from being relabelled as the selected Dispatcher. The wrapper contains only `version`, constant role name, the existing native selected id and the ordinary safe Details projection. Raw targets, folders, configs and private receipts are never exported. This is not a new global monotonic role generation or a stronger ABA guarantee than the existing role/primary witness.
 
-Ordinary refusal/error results remain refused/error results; there is no mobile/controller retry. Mismatched response identity, source-page-only response or excessive wrapper size is unavailable/error rather than fabricated evidence. An exception returns only a bounded error. No private role metadata is placed on a public selected-machine snapshot or presence bus.
+Ordinary refusal/error results remain refused/error results; there is no mobile/controller retry. Mismatched response identity, Connections-source-page-only or helperPageOnly response or excessive wrapper size is unavailable/error rather than fabricated evidence. An exception returns only a bounded error. No private role metadata is placed on a public selected-machine snapshot or presence bus.
 
 ## Proposed reservations after authority review only
 
