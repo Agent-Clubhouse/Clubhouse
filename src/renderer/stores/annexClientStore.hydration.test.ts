@@ -442,6 +442,11 @@ describe('satellite catalog reconciliation (#3695)', () => {
     send('pty:exit', { agentId: 'agent', exitCode: 0 });
     send('permission:response', { requestId: 'request' });
     send('session:resumed', {});
+    expect({
+      status: catalog().remoteAgents[agentId].status,
+      permission: usePendingPermissionStore.getState().byRequestId[requestId],
+      paused: useAnnexClientStore.getState().satellitePaused[satellite.id],
+    }).toEqual({ status: 'sleeping', permission: undefined, paused: false });
     // Main folds canvas events into sat.snapshot, but does not fold the three
     // events above. A later local list/read therefore legitimately mixes them.
     const updated = structuredClone(cached);
@@ -459,6 +464,152 @@ describe('satellite catalog reconciliation (#3695)', () => {
       permission: usePendingPermissionStore.getState().byRequestId[requestId],
       paused: useAnnexClientStore.getState().satellitePaused[satellite.id],
     }).toEqual({ status: 'sleeping', permission: undefined, paused: false });
+  });
+
+  it('HY1: cached agent/project/nested changes preserve unchanged newer subfields and detailed status', async () => {
+    const cached = snapshot({ agentsMeta: { agent: { detailedStatus: { state: 'idle', message: 'Old', timestamp: 1 } } } });
+    cached.agents.project[0].pluginMetadata = { changed: 'old', unchanged: 'old' };
+    cached.projects[0].color = 'blue';
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    send('pty:exit', { agentId: 'agent' });
+    catalog().updateRemoteAgentStatus(satellite.id, 'agent', { state: 'working', message: 'Newer', timestamp: 2 });
+    useRemoteProjectStore.setState((state) => ({
+      remoteAgents: { ...state.remoteAgents, [agentId]: { ...state.remoteAgents[agentId], pluginMetadata: { changed: 'old', unchanged: 'live' } } },
+      satelliteProjects: { ...state.satelliteProjects, [satellite.id]: state.satelliteProjects[satellite.id].map((project) => ({ ...project, color: 'green' })) },
+    }));
+    const updated = structuredClone(cached);
+    updated.agents.project[0].color = 'purple';
+    updated.agents.project[0].pluginMetadata!.changed = 'cached-new';
+    updated.projects[0].displayName = 'New project label';
+    changed(list(updated));
+    expect(catalog().remoteAgents[agentId]).toMatchObject({ status: 'sleeping', color: 'purple', pluginMetadata: { changed: 'cached-new', unchanged: 'live' } });
+    expect(catalog().remoteAgentDetailedStatus[agentId]).toMatchObject({ state: 'working', timestamp: 2 });
+    expect(catalog().satelliteProjects[satellite.id][0]).toMatchObject({ displayName: 'New project label', color: 'green' });
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
+  });
+
+  it('HY1: cached source additions/removals and clearing preserve unrelated live rows and another host', async () => {
+    const cached = snapshot();
+    cached.projects.push({ id: 'removed-project', name: 'Removed', path: '/synthetic-removed' });
+    cached.agents.project.push({ ...cached.agents.project[0], id: 'removed-agent' });
+    cached.projectIcons = { project: 'old-icon' };
+    cached.agentIcons = { agent: 'old-agent-icon' };
+    cached.pendingPermissions.push({ ...permission, requestId: 'removed-request' });
+    cached.agentsMeta = { agent: { detailedStatus: { state: 'idle', message: 'Old', timestamp: 1 } } };
+    read.mockResolvedValueOnce([...list(structuredClone(cached)), { ...satellite, id: 'other', snapshot: snapshot() }]);
+    start();
+    await tick();
+    send('agent:spawned', { id: 'live-agent', projectId: 'project', status: 'running', name: 'Live' });
+    send('permission:request', { ...permission, requestId: 'live-request' });
+    const otherProjects = catalog().satelliteProjects.other;
+    const updated = structuredClone(cached);
+    updated.projects = [updated.projects[0], { id: 'new-project', name: 'New', path: '/synthetic-new' }];
+    updated.agents.project = [updated.agents.project[0], { ...updated.agents.project[0], id: 'new-agent', projectId: 'new-project' }];
+    updated.pendingPermissions = [permission, { ...permission, requestId: 'new-request' }];
+    updated.projectIcons = {};
+    updated.agentIcons = {};
+    updated.agentsMeta = {};
+    changed([...list(updated), { ...satellite, id: 'other', snapshot: snapshot() }]);
+    expect(catalog().satelliteProjects[satellite.id].map((project) => project.id)).toEqual([projectId, namespacedProjectId(satellite.id, 'new-project')]);
+    expect(catalog().remoteAgents[namespacedAgentId(satellite.id, 'removed-agent')]).toBeUndefined();
+    expect(catalog().remoteAgents[namespacedAgentId(satellite.id, 'new-agent')].projectId).toBe(namespacedProjectId(satellite.id, 'new-project'));
+    expect(catalog().remoteAgents[namespacedAgentId(satellite.id, 'live-agent')]).toBeDefined();
+    expect(catalog().remoteProjectIcons[projectId]).toBeUndefined();
+    expect(catalog().remoteAgentIcons[agentId]).toBeUndefined();
+    expect(catalog().remoteAgentDetailedStatus[agentId]).toBeUndefined();
+    expect(usePendingPermissionStore.getState().byRequestId[namespacedAgentId(satellite.id, 'removed-request')]).toBeUndefined();
+    expect(usePendingPermissionStore.getState().byRequestId[namespacedAgentId(satellite.id, 'new-request')]).toBeDefined();
+    expect(usePendingPermissionStore.getState().byRequestId[namespacedAgentId(satellite.id, 'live-request')]).toBeDefined();
+    expect(catalog().satelliteProjects.other).toBe(otherProjects);
+  });
+
+  it('HY1: explicit undefined and omitted cached properties clear only the changed source fields', async () => {
+    const cached = snapshot();
+    cached.projects[0].emoji = 'old';
+    cached.agents.project[0].model = 'old-model';
+    cached.agents.project[0].pluginMetadata = { keep: 'keep', remove: 'remove' };
+    cached.pendingPermissions = [{ ...permission, message: 'old-message' }];
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    const updated = structuredClone(cached);
+    updated.projects[0].emoji = undefined;
+    delete updated.agents.project[0].model;
+    delete updated.agents.project[0].pluginMetadata!.remove;
+    updated.pendingPermissions = [{ ...permission, message: undefined }];
+    changed(list(updated));
+    expect(catalog().satelliteProjects[satellite.id][0]).toHaveProperty('emoji', undefined);
+    expect(catalog().remoteAgents[agentId]).not.toHaveProperty('model');
+    expect(catalog().remoteAgents[agentId].pluginMetadata).toEqual({ keep: 'keep' });
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toHaveProperty('message', undefined);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
+  });
+
+  it.each([42, 0])('HY1: same-field conflict keeps current state, applies independent deltas, and waits for live seq %s', async (seq) => {
+    const cached = snapshot();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    useRemoteProjectStore.setState((state) => ({ remoteAgents: { ...state.remoteAgents, [agentId]: { ...state.remoteAgents[agentId], name: 'Renderer C' } } }));
+    const updated = structuredClone(cached);
+    updated.agents.project[0].name = 'Cached B';
+    updated.agents.project[0].color = 'blue';
+    changed(list(updated));
+    expect(catalog().remoteAgents[agentId]).toMatchObject({ name: 'Renderer C', color: 'blue' });
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    changed(list({ ...updated, projectIcons: { project: 'later-cache' } }));
+    expect(catalog().remoteAgents[agentId].name).toBe('Renderer C');
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...updated, lastSeq: seq });
+    expect(catalog().remoteAgents[agentId].name).toBe('Cached B');
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it('HY1: a cached edit cannot resurrect a settled permission or delete a newer conflicting row', async () => {
+    const cached = snapshot();
+    cached.pendingPermissions = [{ ...permission, message: 'A' }];
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    send('permission:response', { requestId: 'request' });
+    send('pty:exit', { agentId: 'agent' });
+    const updated = structuredClone(cached);
+    updated.pendingPermissions = [{ ...permission, message: 'B' }];
+    updated.agents = {};
+    changed(list(updated));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...updated, pendingPermissions: [] });
+    expect(catalog().remoteAgents[agentId]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it('HY1: nested canvas row deltas and numeric-id ordering preserve independently newer view fields', async () => {
+    const cached = snapshot({ canvasState: { project: { canvases: [
+      { id: '1', name: 'Old', views: [{ id: 'view', agentId: 'agent', x: 0 }] },
+      { id: '2', name: 'Second', views: [] },
+    ], activeCanvasId: '1' } } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    catalog().updateRemoteCanvasState(projectId, { canvases: [
+      { id: '1', name: 'Old', views: [{ id: 'view', agentId, x: 10 }] },
+      { id: '2', name: 'Second', views: [] },
+    ], activeCanvasId: '1' });
+    const updated = structuredClone(cached);
+    updated.canvasState!.project.canvases = [
+      updated.canvasState!.project.canvases[1],
+      { id: '1', name: 'Cached rename', views: [{ id: 'view', agentId: 'agent', x: 0 }] },
+    ];
+    changed(list(updated));
+    expect(catalog().remoteCanvasState[projectId].canvases).toEqual([
+      { id: '2', name: 'Second', views: [] },
+      { id: '1', name: 'Cached rename', views: [{ id: 'view', agentId, x: 10 }] },
+    ]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
   });
 
 });

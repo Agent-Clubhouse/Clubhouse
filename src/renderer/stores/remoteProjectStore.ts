@@ -7,6 +7,7 @@
  */
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { create } from 'zustand';
+import { applySnapshotDelta } from './snapshot-delta';
 import { usePluginStore } from '../plugins/plugin-store';
 import type {
   Project,
@@ -119,6 +120,9 @@ interface RemoteProjectStoreState {
 
   /** Apply a satellite snapshot to the store. */
   applySatelliteSnapshot: (satelliteId: string, satelliteName: string, snapshot: SatelliteSnapshot) => void;
+
+  /** Reconcile cached source changes without replaying unchanged live projection fields. */
+  applyCachedSatelliteSnapshot: (satelliteId: string, satelliteName: string, previous: SatelliteSnapshot, next: SatelliteSnapshot) => boolean;
 
   /** Remove all data for a satellite (e.g., on disconnect). */
   removeSatellite: (satelliteId: string) => void;
@@ -258,6 +262,108 @@ function namespaceCanvasData(
   return { ...data, canvases };
 }
 
+/** Pure projection shared by authoritative snapshots and cached field deltas. */
+function projectSnapshot(satelliteId: string, satelliteName: string, snapshot: SatelliteSnapshot) {
+  // Map projects to RemoteProject
+  const projects: RemoteProject[] = (snapshot.projects || []).map((p) => ({
+    ...p,
+    id: namespacedProjectId(satelliteId, p.id),
+    path: '__remote__',
+    remote: true as const,
+    satelliteId,
+    satelliteName,
+  }));
+
+  // Map agents with namespaced IDs
+  const newAgents: Record<string, Agent> = {};
+  const agents = snapshot.agents || {};
+  for (const [_projectId, projectAgents] of Object.entries(agents)) {
+    for (const agent of projectAgents as Agent[]) {
+      const nsId = namespacedAgentId(satelliteId, agent.id);
+      newAgents[nsId] = {
+        ...agent,
+        id: nsId,
+        projectId: namespacedProjectId(satelliteId, agent.projectId),
+        ...(agent.parentAgentId && { parentAgentId: namespacedParentId(satelliteId, agent.parentAgentId) }),
+      };
+    }
+  }
+
+  // That machine's Dispatcher chat (#3043), in no project: kept so its run state follows events,
+  // for a computer following it as the lead (#3352). Project lists don't show it.
+  const dispatcher = snapshot.dispatcher?.agent;
+  if (dispatcher?.id) {
+    const nsId = namespacedAgentId(satelliteId, dispatcher.id);
+    newAgents[nsId] = { ...dispatcher, id: nsId, projectId: namespacedProjectId(satelliteId, dispatcher.projectId || DISPATCHER_PROJECT_ID) };
+  }
+
+  // Compute plugin match state
+  const pluginMatches = snapshot.plugins
+    ? computePluginMatchState(snapshot.plugins)
+    : [];
+
+  // Namespace icon data URLs
+  const newProjectIcons: Record<string, string> = {};
+  if (snapshot.projectIcons) {
+    for (const [projId, dataUrl] of Object.entries(snapshot.projectIcons)) {
+      newProjectIcons[namespacedProjectId(satelliteId, projId)] = dataUrl;
+    }
+  }
+
+  const newAgentIcons: Record<string, string> = {};
+  if (snapshot.agentIcons) {
+    for (const [agentId, dataUrl] of Object.entries(snapshot.agentIcons)) {
+      newAgentIcons[namespacedAgentId(satelliteId, agentId)] = dataUrl;
+    }
+  }
+
+  // Namespace canvas state by project ID, including agentId/projectId
+  // fields within each canvas view so they match the namespaced IDs
+  // used in remoteAgents.
+  const newCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] }> = {};
+  if (snapshot.canvasState) {
+    for (const [projId, cs] of Object.entries(snapshot.canvasState)) {
+      const typed = cs as { canvases: Array<{ views?: unknown[] } & Record<string, unknown>>; activeCanvasId: string; wireDefinitions?: unknown[] };
+      const namespacedCanvases = typed.canvases.map((canvas) => {
+        if (!canvas.views || !Array.isArray(canvas.views)) return canvas;
+        return {
+          ...canvas,
+          views: namespaceCanvasViews(satelliteId, canvas.views),
+        };
+      });
+      newCanvasState[namespacedProjectId(satelliteId, projId)] = {
+        ...typed,
+        canvases: namespacedCanvases,
+      };
+    }
+  }
+
+  // Extract detailed statuses from agentsMeta (snapshot includes current status for running agents)
+  const newDetailedStatuses: Record<string, AgentDetailedStatus> = {};
+  if (snapshot.agentsMeta) {
+    const meta = snapshot.agentsMeta as Record<string, { detailedStatus?: AgentDetailedStatus | null }>;
+    for (const [agentId, agentMeta] of Object.entries(meta)) {
+      if (agentMeta.detailedStatus) {
+        newDetailedStatuses[namespacedAgentId(satelliteId, agentId)] = agentMeta.detailedStatus;
+      }
+    }
+  }
+
+  return {
+    satelliteProjects: { [satelliteId]: projects },
+    remoteAgents: newAgents,
+    remoteAgentDetailedStatus: newDetailedStatuses,
+    pluginMatchState: { [satelliteId]: pluginMatches },
+    remoteProjectIcons: newProjectIcons,
+    remoteAgentIcons: newAgentIcons,
+    remoteCanvasState: newCanvasState,
+    remoteAppCanvasState: snapshot.appCanvasState ? { [satelliteId]: namespaceCanvasData(satelliteId, snapshot.appCanvasState) } : {},
+    remoteGroupProjects: snapshot.groupProjects ? { [satelliteId]: snapshot.groupProjects } : {},
+    remoteBulletinDigests: Object.fromEntries(Object.entries(snapshot.bulletinDigests ?? {}).map(([id, digest]) => [`${satelliteId}::${id}`, digest])),
+    remoteGroupProjectMembers: Object.fromEntries(Object.entries(snapshot.groupProjectMembers ?? {}).map(([id, members]) => [`${satelliteId}::${id}`, members])),
+  };
+}
+
 export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) => ({
   satelliteProjects: {},
   remoteAgents: {},
@@ -272,90 +378,14 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   remoteGroupProjectMembers: {},
 
   applySatelliteSnapshot: (satelliteId, satelliteName, snapshot) => {
-    // Map projects to RemoteProject
-    const projects: RemoteProject[] = (snapshot.projects || []).map((p) => ({
-      ...p,
-      id: namespacedProjectId(satelliteId, p.id),
-      path: '__remote__',
-      remote: true as const,
-      satelliteId,
-      satelliteName,
-    }));
-
-    // Map agents with namespaced IDs
-    const newAgents: Record<string, Agent> = {};
-    const agents = snapshot.agents || {};
-    for (const [_projectId, projectAgents] of Object.entries(agents)) {
-      for (const agent of projectAgents as Agent[]) {
-        const nsId = namespacedAgentId(satelliteId, agent.id);
-        newAgents[nsId] = {
-          ...agent,
-          id: nsId,
-          projectId: namespacedProjectId(satelliteId, agent.projectId),
-          ...(agent.parentAgentId && { parentAgentId: namespacedParentId(satelliteId, agent.parentAgentId) }),
-        };
-      }
-    }
-
-    // That machine's Dispatcher chat (#3043), in no project: kept so its run state follows events,
-    // for a computer following it as the lead (#3352). Project lists don't show it.
-    const dispatcher = snapshot.dispatcher?.agent;
-    if (dispatcher?.id) {
-      const nsId = namespacedAgentId(satelliteId, dispatcher.id);
-      newAgents[nsId] = { ...dispatcher, id: nsId, projectId: namespacedProjectId(satelliteId, dispatcher.projectId || DISPATCHER_PROJECT_ID) };
-    }
-
-    // Compute plugin match state
-    const pluginMatches = snapshot.plugins
-      ? computePluginMatchState(snapshot.plugins)
-      : [];
-
-    // Namespace icon data URLs
-    const newProjectIcons: Record<string, string> = {};
-    if (snapshot.projectIcons) {
-      for (const [projId, dataUrl] of Object.entries(snapshot.projectIcons)) {
-        newProjectIcons[namespacedProjectId(satelliteId, projId)] = dataUrl;
-      }
-    }
-
-    const newAgentIcons: Record<string, string> = {};
-    if (snapshot.agentIcons) {
-      for (const [agentId, dataUrl] of Object.entries(snapshot.agentIcons)) {
-        newAgentIcons[namespacedAgentId(satelliteId, agentId)] = dataUrl;
-      }
-    }
-
-    // Namespace canvas state by project ID, including agentId/projectId
-    // fields within each canvas view so they match the namespaced IDs
-    // used in remoteAgents.
-    const newCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] }> = {};
-    if (snapshot.canvasState) {
-      for (const [projId, cs] of Object.entries(snapshot.canvasState)) {
-        const typed = cs as { canvases: Array<{ views?: unknown[] } & Record<string, unknown>>; activeCanvasId: string; wireDefinitions?: unknown[] };
-        const namespacedCanvases = typed.canvases.map((canvas) => {
-          if (!canvas.views || !Array.isArray(canvas.views)) return canvas;
-          return {
-            ...canvas,
-            views: namespaceCanvasViews(satelliteId, canvas.views),
-          };
-        });
-        newCanvasState[namespacedProjectId(satelliteId, projId)] = {
-          ...typed,
-          canvases: namespacedCanvases,
-        };
-      }
-    }
-
-    // Extract detailed statuses from agentsMeta (snapshot includes current status for running agents)
-    const newDetailedStatuses: Record<string, AgentDetailedStatus> = {};
-    if (snapshot.agentsMeta) {
-      const meta = snapshot.agentsMeta as Record<string, { detailedStatus?: AgentDetailedStatus | null }>;
-      for (const [agentId, agentMeta] of Object.entries(meta)) {
-        if (agentMeta.detailedStatus) {
-          newDetailedStatuses[namespacedAgentId(satelliteId, agentId)] = agentMeta.detailedStatus;
-        }
-      }
-    }
+    const projected = projectSnapshot(satelliteId, satelliteName, snapshot);
+    const projects = projected.satelliteProjects[satelliteId];
+    const newAgents = projected.remoteAgents;
+    const newDetailedStatuses = projected.remoteAgentDetailedStatus;
+    const pluginMatches = projected.pluginMatchState[satelliteId];
+    const newProjectIcons = projected.remoteProjectIcons;
+    const newAgentIcons = projected.remoteAgentIcons;
+    const newCanvasState = projected.remoteCanvasState;
 
     // Merge into store (replace this satellite's data, keep others)
     set((state) => {
@@ -448,6 +478,14 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
           : state.remoteGroupProjectMembers,
       };
     });
+  },
+
+  applyCachedSatelliteSnapshot: (satelliteId, satelliteName, previous, next) => {
+    const before = projectSnapshot(satelliteId, satelliteName, previous);
+    const after = projectSnapshot(satelliteId, satelliteName, next);
+    let complete = true;
+    set((state) => applySnapshotDelta(state, before, after, () => { complete = false; }));
+    return complete;
   },
 
   removeSatellite: (satelliteId) => {

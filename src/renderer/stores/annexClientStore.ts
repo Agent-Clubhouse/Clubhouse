@@ -5,6 +5,7 @@
  * from the main process.
  */
 import { create } from 'zustand';
+import { applySnapshotDelta, sameSnapshotValue } from './snapshot-delta';
 import { namespacedAgentId, useRemoteProjectStore } from './remoteProjectStore';
 import type { HelperDeleteChoice, SatelliteSnapshot } from '../../shared/types';
 import type { ChatEvent } from '../../shared/chat';
@@ -79,23 +80,29 @@ let startupRead: { promise: Promise<void>; listRevision: number } | null = null;
 // IPC clones have no shared object identity or socket epoch. Keep an independent
 // comparison copy: this is duplicate suppression, not a freshness/sequence test.
 const comparedSnapshots = new WeakMap<SatelliteConnection, SatelliteSnapshot>();
-function sameSnapshot(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true;
-  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-  const left = a as Record<string, unknown>;
-  const right = b as Record<string, unknown>;
-  const keys = Object.keys(left);
-  return keys.length === Object.keys(right).length
-    && keys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && sameSnapshot(left[key], right[key]));
-}
-
 function applySnapshot(satellite: SatelliteConnection, snapshot: SatelliteSnapshot): void {
   useRemoteProjectStore.getState().applySatelliteSnapshot(satellite.id, satellite.alias, snapshot);
   syncRemotePermissions(satellite.id, snapshot.pendingPermissions ?? []);
   useAnnexClientStore.setState((state) => ({
     satellitePaused: { ...state.satellitePaused, [satellite.id]: !!snapshot.sessionPaused },
   }));
+}
+
+function applyCachedSnapshot(satellite: SatelliteConnection, previous: SatelliteSnapshot, next: SatelliteSnapshot): boolean {
+  let complete = useRemoteProjectStore.getState().applyCachedSatelliteSnapshot(satellite.id, satellite.alias, previous, next);
+  const conflict = () => { complete = false; };
+  const permissions = (snapshot: SatelliteSnapshot) => Object.fromEntries(
+    (snapshot.pendingPermissions ?? []).map((value) => remotePermission(satellite.id, value))
+      .filter((value) => value !== null).map((value) => [value.requestId, value]),
+  );
+  usePendingPermissionStore.setState((state) => ({
+    byRequestId: applySnapshotDelta(state.byRequestId, permissions(previous), permissions(next), conflict),
+  }));
+  useAnnexClientStore.setState((state) => ({
+    satellitePaused: applySnapshotDelta(state.satellitePaused,
+      { [satellite.id]: !!previous.sessionPaused }, { [satellite.id]: !!next.sessionPaused }, conflict),
+  }));
+  return complete;
 }
 
 type SatelliteEvent = { satelliteId: string; type: string; payload: unknown };
@@ -240,7 +247,7 @@ function reconcileSatellites(satellites: SatelliteConnection[], journal?: Startu
   const next = satellites.map((sat) => {
     const old = previous.find((item) => item.id === sat.id);
     const comparison = old && comparedSnapshots.get(old);
-    const duplicate = comparison !== undefined && sameSnapshot(comparison, sat.snapshot);
+    const duplicate = comparison !== undefined && sameSnapshotValue(comparison, sat.snapshot);
     const missingCatalog = !useRemoteProjectStore.getState().satelliteProjects[sat.id];
     const cachedBeforeReconnect = duplicate && old?.state !== 'connected' && sat.state === 'connected' && missingCatalog;
     const incomplete = old?.catalogIncomplete || journal?.blocked(sat.id) || cachedBeforeReconnect;
@@ -251,8 +258,15 @@ function reconcileSatellites(satellites: SatelliteConnection[], journal?: Startu
       delete paused[sat.id];
       journal?.clear(sat.id);
     } else if (!incomplete && sat.snapshot && (!duplicate || missingCatalog)) {
-      applySnapshot(connection, sat.snapshot);
-      journal?.replay(sat.id);
+      if (missingCatalog) {
+        applySnapshot(connection, sat.snapshot);
+        journal?.replay(sat.id);
+      } else if (comparison) {
+        if (!applyCachedSnapshot(connection, comparison, sat.snapshot)) connection.catalogIncomplete = true;
+      } else {
+        // Existing rows without a source baseline cannot be reconciled safely.
+        connection.catalogIncomplete = true;
+      }
       paused[sat.id] = useAnnexClientStore.getState().satellitePaused[sat.id];
     }
     return connection;
