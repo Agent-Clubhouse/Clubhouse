@@ -647,6 +647,24 @@ describe('per-action sliding throttles', () => {
 });
 
 describe('queued delivery receipts', () => {
+  it.each(['before', 'after'] as const)('Q4 unknown receipt %s step completion records confirmation failure without retry or a new delivery enum', async (when) => {
+    const h = setup({ stepImpl: async (step, ctx) => {
+      if (when === 'before') ctx.deliveryChanged!('unknown');
+      return { kind: step.kind, outcome: 'done', detail: 'Queued', delivery: 'queued' };
+    } });
+    h.engine.start();
+    const a = h.engine.create({ trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } }, steps: [{ kind: 'message', agentId: 'lead', text: 'Once' }] }, user);
+    const runId = h.engine.runNow(a.id);
+    await flush();
+    if (when === 'after') h.stepCalls[0].ctx.deliveryChanged!('unknown');
+    await h.clock.advance(1000);
+    const run = h.history(a.id).find((entry) => entry.id === runId)!;
+    expect(run.outcome).toBe('failed');
+    expect(run.steps[0]).toMatchObject({ outcome: 'failed', detail: 'The message was submitted, but delivery could not be confirmed' });
+    expect(run.steps[0].delivery).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(run)).steps[0]).not.toHaveProperty('delivery');
+    expect(h.stepCalls).toHaveLength(1);
+  });
   it('updates the correct completed step and preserves an expiry after another message is replaced', async () => {
     const h = setup({ stepImpl: async (step) => ({ kind: step.kind, outcome: 'done', detail: 'Queued', delivery: 'queued' }) });
     h.engine.start();

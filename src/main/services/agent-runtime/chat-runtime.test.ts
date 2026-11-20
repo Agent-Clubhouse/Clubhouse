@@ -2164,6 +2164,48 @@ describe('provider turn attribution', () => {
 
 describe('federation input follows actual runtime dispatch (#3553)', () => {
   const remote = (id: string) => ({ id, cause: { rootId: id, depth: 4 } } as FederatedRequest);
+  it.each([['direct', 'stop'], ['direct', 'clear'], ['queued', 'stop'], ['queued', 'clear']] as const)
+    ('Q4 late rejection of a submitted %s request after %s stays unconfirmed without replay', async (path, change) => {
+      const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+      let reject!: (error: Error) => void;
+      const reply = new Promise<'prompt'>((_resolve, rejectReply) => { reject = rejectReply; });
+      const driver = new FakeChatDriver();
+      const { runtime } = makeRuntime(driver);
+      const stop = startFederationTurnTracking(runtime.agentId);
+      const settled = vi.fn();
+      let directResult: Promise<unknown> | undefined;
+      try {
+        await runtime.start();
+        const old = driver.last;
+        const send = old.send.bind(old);
+        vi.spyOn(old, 'send').mockImplementationOnce(async (content, delivery) => { await send(content, delivery); return reply; });
+        if (path === 'direct') {
+          directResult = expect(withFederationInput(remote('old'), () => runtime.sendMessage('old submitted input', { source: 'mcp' })))
+            .rejects.toThrow('provider response unavailable');
+        } else {
+          old.emit({ type: 'turn_started', data: {} });
+          await flush();
+          await withFederationInput(remote('old'), () => runtime.sendMessage('old submitted input', {
+            source: 'action', actionQueue: { actionId: 'old', onSettled: settled },
+          }));
+          old.emit({ type: 'turn_ended', data: {} });
+        }
+        await flush();
+        expect(old.sent).toHaveLength(1); // Invocation does not prove provider acceptance.
+        if (change === 'stop') await runtime.stop();
+        else await runtime.clearContext();
+        const boundary = transcript.length;
+        reject(new Error('provider response unavailable'));
+        if (directResult) await directResult;
+        await flush();
+        if (path === 'queued') expect(settled).toHaveBeenCalledExactlyOnceWith('unknown');
+        expect(federationTurnInputs(runtime.agentId)).toEqual([]);
+        expect(runtime.hasPendingWork()).toBe(false);
+        expect(transcript.slice(boundary).filter((e) => e.type === 'user_message' || e.type === 'queue_state')).toEqual([]);
+        expect(old.sent).toHaveLength(1);
+        if (change === 'clear') expect(driver.last.sent).toEqual([]);
+      } finally { reject(new Error('test cleanup')); if (directResult) await directResult; await runtime.stop(); stop(); activation.mockRestore(); }
+    });
   it.each([
     ['direct', 'stop', 'prompt'], ['direct', 'stop', 'queued'],
     ['direct', 'clear', 'prompt'], ['direct', 'clear', 'queued'],
