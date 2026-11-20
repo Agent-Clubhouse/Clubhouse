@@ -21,7 +21,7 @@ vi.mock('./agent-runtime/chat-media-retention', () => ({ removeAgentChatMedia: m
 vi.mock('./helper-auto-state', () => ({ forgetAutoHelper: m.external }));
 vi.mock('./grant-requests', () => ({ dropGrantRequestsFor: m.external }));
 vi.mock('fs', async (original) => { const actual = await original<typeof import('fs')>(); return { ...actual,
-  readFileSync: vi.fn(actual.readFileSync), lstatSync: vi.fn(actual.lstatSync), existsSync: vi.fn(actual.existsSync),
+  openSync: vi.fn(actual.openSync), readFileSync: vi.fn(actual.readFileSync), lstatSync: vi.fn(actual.lstatSync), existsSync: vi.fn(actual.existsSync),
   watch: vi.fn(() => { const watcher = { on: vi.fn(() => watcher), close: vi.fn() }; return watcher; }),
 }; });
 vi.mock('fs/promises', async (original) => { const actual = await original<typeof import('fs/promises')>(); return { ...actual,
@@ -34,7 +34,7 @@ import { readSavedDispatcherEndpointMetadataForDisplay } from './dispatcher-endp
 let root: string, project: string, selectedProject: string, otherProject: string;
 const file = () => path.join(project, '.clubhouse', 'agents.json');
 const agent = (extra = {}) => ({ id: 'target', name: 'Selected cache name', color: 'blue', createdAt: '2026-11-19T00:00:00Z', orchestrator: 'codex-cli', orchestration: { connectToDispatcher: true }, instructions: 'PRIVATE_INSTRUCTIONS', env: { token: 'PRIVATE_CREDENTIAL' }, ...extra });
-const io = () => [fsp.readFile, fsp.writeFile, fsp.stat, fsp.rename, fsp.mkdir, fs.readFileSync, fs.lstatSync, fs.existsSync, fs.watch];
+const io = () => [fsp.readFile, fsp.writeFile, fsp.stat, fsp.rename, fsp.mkdir, fs.openSync, fs.readFileSync, fs.lstatSync, fs.existsSync, fs.watch];
 const resetObservation = () => { for (const fn of io()) vi.mocked(fn).mockClear(); m.external.mockClear(); };
 const assertNoReadEffects = () => { for (const fn of io()) expect.soft(fn).not.toHaveBeenCalled(); expect.soft(m.external).not.toHaveBeenCalled(); };
 const read = (receipts: DisplayReceipt[] = []) => readAgentConnectionCacheForDisplay(project, 'target', { receipts });
@@ -123,4 +123,30 @@ it('rechecks the exact saved association freshly between cache project groups', 
 });
 it('refuses an already invalid selected target before any cache lookup or source-file access', () => {
   m.selected = false; const reader = vi.fn(readAgentConnectionCacheForDisplay); expect(query(reader)).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect.soft(reader).not.toHaveBeenCalled(); assertNoReadEffects();
+});
+it('checks shared source identity per cache project phase rather than once for every selected record', async () => {
+  const targets = Array.from({ length: 20 }, (_, i) => `target-${i}`);
+  await fsp.writeFile(file(), JSON.stringify(targets.map((id) => agent({ id }))));
+  await putLinks(targets.map((targetId) => link({ targetId }))); await warm();
+  const before = await disk(); resetObservation(); const reader = vi.fn(readAgentConnectionCacheForDisplay), result = query(reader, [], targets.map((id) => pair(id)));
+  expect(result.state).toBe('ok'); if (result.state !== 'ok') return;
+  expect(result.value.rows).toHaveLength(20); expect(result.value.rows.every((row) => row.hostCache?.state === 'ok' && row.hostCache.value.availability === 'loaded')).toBe(true); expect(reader).toHaveBeenCalledTimes(20);
+  const sourceOpens = vi.mocked(fs.openSync).mock.calls.filter((args) => String(args[0]) === source()).length;
+  expect.soft(sourceOpens).toBeLessThanOrEqual(12); noWrites(); expect.soft(await disk()).toEqual(before);
+});
+it('does not expand the saved metadata root cap when an optional host-cache getter is installed', async () => {
+  const projects = [selectedProject], pairs = [], links = [];
+  for (let i = 0; i < 17; i++) {
+    const folder = path.join(root, `bounded-${i}`), id = `target-${i}`; projects.push(folder); pairs.push(pair(id)); links.push(link({ targetId: id, targetProjectPath: folder }));
+    await fsp.mkdir(path.join(folder, '.clubhouse'), { recursive: true }); await fsp.writeFile(path.join(folder, '.clubhouse', 'agents.json'), JSON.stringify([agent({ id })])); await initializeDurableProject(folder);
+  }
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: projects.map((folder, i) => ({ id: `p-${i}`, name: `P${i}`, path: folder })) })); await putLinks(links); resetObservation();
+  const reader = vi.fn(readAgentConnectionCacheForDisplay), result = query(reader, [], pairs); expect(result.state).toBe('ok'); if (result.state !== 'ok') return;
+  expect(result.value.rows.slice(0, 16).every((row) => row.hostCache?.state === 'ok' && row.hostCache.value.availability === 'loaded')).toBe(true);
+  expect.soft(result.value.rows[16]).toMatchObject({ endpoint: { state: 'unavailable', reason: 'limit' } }); expect.soft(result.value.rows[16].hostCache).toBeUndefined(); expect.soft(reader).toHaveBeenCalledTimes(16); noWrites();
+});
+it('keeps excessive selected pair admission ahead of source reads and optional cache callbacks', () => {
+  const reader = vi.fn(readAgentConnectionCacheForDisplay), result = query(reader, [], Array.from({ length: 51 }, (_, i) => pair(`target-${i}`)));
+  expect(result).toMatchObject({ state: 'unavailable', reason: 'limit' }); expect.soft(reader).not.toHaveBeenCalled(); assertNoReadEffects();
 });
