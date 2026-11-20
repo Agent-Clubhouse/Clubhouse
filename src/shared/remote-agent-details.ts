@@ -9,6 +9,23 @@ export const REMOTE_DETAILS_MAX_BYTES = 256 * 1024;
 export const REMOTE_DETAILS_MAX_ROWS = 100;
 export const REMOTE_DETAILS_CARD_IDS = ['settings', 'dispatcher', 'orchestrate', 'connections', 'actions', 'skills-mcp', 'session', 'canvases', 'changes'] as const;
 export type RemoteDetailsCardId = typeof REMOTE_DETAILS_CARD_IDS[number];
+export const REMOTE_OUTGOING_WIRE_KINDS = ['agent', 'browser', 'terminal', 'group-project', 'plugin'] as const;
+/** Selected host-memory binding records; never a handshake, reachability or effective grant. */
+export type RemoteOutgoingWires = { source: 'selected-outgoing-binding-records'; state: 'recorded';
+  rows: Array<{ name: string | null; kind: typeof REMOTE_OUTGOING_WIRE_KINDS[number] }>; total: number; omitted: number }
+  | { source: 'selected-outgoing-binding-records'; state: 'unavailable'; reason: 'unreadable' | 'invalid' | 'limit' | 'changed' };
+export function isRemoteOutgoingWires(value: unknown): value is RemoteOutgoingWires {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as RemoteOutgoingWires;
+  if (v.source !== 'selected-outgoing-binding-records') return false;
+  if (v.state === 'unavailable') return Object.keys(v).every((key) => ['source', 'state', 'reason'].includes(key))
+    && ['unreadable', 'invalid', 'limit', 'changed'].includes(v.reason);
+  return v.state === 'recorded' && Object.keys(v).every((key) => ['source', 'state', 'rows', 'total', 'omitted'].includes(key))
+    && Array.isArray(v.rows) && v.rows.length <= 50 && Number.isSafeInteger(v.total) && v.total >= v.rows.length && v.total <= 4096
+    && Number.isSafeInteger(v.omitted) && v.omitted === v.total - v.rows.length
+    && v.rows.every((r) => !!r && typeof r === 'object' && !Array.isArray(r) && Object.keys(r).every((key) => ['name', 'kind'].includes(key))
+      && (r.name === null || typeof r.name === 'string' && !!r.name && r.name.length <= 240) && REMOTE_OUTGOING_WIRE_KINDS.includes(r.kind));
+}
 export interface RemoteDetailsRow {
   label: string;
   value: string;
@@ -58,6 +75,8 @@ export interface RemoteAgentDetails {
   /** Optional on older hosts; one exact live runtime's passive provider facts. */
   providerEvidence?: ChatDetailsEvidence;
   providerEvidenceState?: 'current' | 'unavailable' | 'unsupported';
+  /** Absent on older hosts, unsupported selected roles, or source-page-only responses. */
+  outgoingWires?: RemoteOutgoingWires;
 }
 
 export function isRemoteAgentDetails(value: unknown, agentId: string): value is RemoteAgentDetails {
@@ -65,6 +84,7 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
   const v = value as RemoteAgentDetails;
   const text = (s: unknown) => typeof s === 'string' && s.length <= 2048;
   return v.version === 1 && (v.connectionPages === undefined || v.connectionPages === 1)
+    && (v.outgoingWires === undefined || v.connectionPageOnly !== true && isRemoteOutgoingWires(v.outgoingWires))
     && (v.connectionPageEnvelope === undefined || v.connectionPages === 1 && v.connectionPageEnvelope === 1)
     && (v.connectionPageOnly === undefined || v.connectionPageOnly === true && v.connectionPageEnvelope === 1 && v.settings === null && v.providerEvidence === undefined && Array.isArray(v.cards) && v.cards.every((c) => !!c && typeof c === 'object') && v.cards.some((c) => c.id === 'connections' && c.connectionPage !== undefined) && v.cards.every((c) => c.id === 'connections' ? c.requested === undefined : c.requested === false && Array.isArray(c.rows) && !c.rows.length && Array.isArray(c.notes) && !c.notes.length))
     && (v.connectionPageSources === undefined || v.connectionPages === 1 && Array.isArray(v.connectionPageSources) && v.connectionPageSources.length <= 16

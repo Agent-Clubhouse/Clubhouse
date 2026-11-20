@@ -18,3 +18,10 @@ it('rejects incomplete/malformed page-only claims without throwing and keeps an 
   for (const patch of [{ connectionPages: undefined }, { connectionPageEnvelope: undefined }, { connectionPageOnly: false }, { settings: {} }, { cards: [null] }, { cards: value.cards.map((c) => c.id === 'settings' ? { ...c, requested: undefined } : c) }, { cards: value.cards.map((c) => c.id === 'settings' ? { ...c, notes: ['PRIVATE_UNREQUESTED'] } : c) }]) expect(isRemoteAgentDetails({ ...value, ...patch }, 'a1')).toBe(false);
   const unavailable = fixture(); delete unavailable.cards.find((c) => c.id === 'connections')!.connectionPage; selectedConnectionPageEnvelope(unavailable); expect(unavailable.connectionPageOnly).toBeUndefined(); expect(unavailable.cards.every((c) => c.requested === undefined)).toBe(true);
 });
+
+it('omits typed outgoing Wires from source-only pages and refuses mixed unrequested evidence', () => {
+  const value = fixture(); value.outgoingWires = { source: 'selected-outgoing-binding-records', state: 'recorded', rows: [{ name: 'Safe browser', kind: 'browser' }], total: 1, omitted: 0 };
+  expect(isRemoteAgentDetails(value, 'a1')).toBe(true); const wires = value.outgoingWires;
+  selectedConnectionPageEnvelope(value); expect(value.outgoingWires).toBeUndefined(); expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
+  expect(isRemoteAgentDetails({ ...value, outgoingWires: wires }, 'a1')).toBe(false);
+});

@@ -259,7 +259,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       if (pair.kind === 'agent' && !pair.machine) { const address = parseAgentAddress(other); if (address.machine) { pair.machine = address.machine; pair.remoteAgent = address.agentId; } }
       const makers = pair.saved?.makers;
       const makerField = makers && (makers.state !== 'ok' || !!makers.value.length);
-      const fields = 3 + (pair.machine ? 3 + (options.dispatcher ? 1 : 0) : 0) + (makerField ? 1 : 0) + (pair.manual ? 2 : 0) + (pair.manual && pair.identityGroup ? 1 : 0) + (pair.automatic ? 1 : 0) + (pair.manualFields ? 1 + (pair.manualFields.memory ? 1 : 0) : 0);
+      const fields = 3 + (pair.machine ? 3 + (options.dispatcher ? 1 : 0) : 0) + (makerField ? 1 : 0) + (pair.manual ? 3 : 0) + (pair.manual && pair.identityGroup ? 1 : 0) + (pair.automatic ? 1 : 0) + (pair.manualFields ? 1 + (pair.manualFields.memory ? 1 : 0) : 0);
       if (c.rows.length >= REMOTE_DETAILS_MAX_ROWS) { c.omitted += fields; continue; }
       const sourceBinding = pair.sources.map((source) => value(source.binding)).find((b) => !!b);
       const record = pair.binding ?? sourceBinding;
@@ -322,6 +322,9 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
           : queued === false ? 'No queued removal reported in this host session' : 'Queued removal status unavailable';
         const policy = value(options.connectToDispatcher), enabled = value(localDispatcher?.enabled);
         const writes = manualMemory?.state === 'ok' ? manualMemory.value.storeWrites : undefined;
+        const restrictions = [enabled === false ? 'Host Dispatcher off' : '', policy === false ? 'Selected Connect to Dispatcher off' : '',
+          writes === 'recorded-blocked' ? 'Earlier store write failed' : '', removed === true ? 'Saved removal recorded' : '', queued === true ? 'Removal pending in host memory' : ''].filter(Boolean);
+        row(c, `${name} manual source eligibility`, `${restrictions.length ? `Restriction evidence: ${restrictions.join('; ')}` : 'No restriction confirmed by the available selected records'} · ${queued === undefined ? 'Pending removal unknown' : queued ? 'Pending removal recorded' : 'No pending removal in host memory'} · Current endpoint eligibility and active/suspended status unknown: no qualified current endpoint census is available. Other sources and recorded bindings are independent.`);
         row(c, `${name} Dispatcher availability`, [enabled === false ? 'Host Dispatcher saved off' : enabled === undefined ? 'Host Dispatcher switch unavailable' : 'Host Dispatcher saved on',
           !options.dispatcher ? policy === false ? 'This agent’s Connect to Dispatcher is off' : policy === true ? 'This agent’s Connect to Dispatcher is on' : 'This agent’s Dispatcher setting unavailable' : '',
           processRemoval, writes === 'recorded-blocked' ? 'Last file-save check failed' : writes === 'recorded-writable' ? 'Earlier file-save check succeeded' : writes === 'unobserved' ? 'File-save checks not yet reported' : 'File-save status unavailable', 'Other endpoint eligibility not confirmed'].filter(Boolean).join(' · '));

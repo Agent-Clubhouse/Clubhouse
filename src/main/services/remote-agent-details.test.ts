@@ -732,7 +732,7 @@ it('keeps independently known Settings rows when the unchanged v1 contract canno
 
 
 describe('actual selected Connections receipts at the complete Details boundary', () => {
-  it.each(['unchanged', 'binding', 'source', 'primary', 'revoked-and-changed'] as const)('retains actual admitted selected evidence across a later card await: %s', async (mode) => {
+  it.each(['unchanged', 'binding-before-connections', 'unrelated-binding', 'binding', 'source', 'primary', 'revoked-and-changed'] as const)('retains actual admitted selected evidence across a later card await: %s', async (mode) => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-connection-')));
     const getPath = vi.spyOn(app, 'getPath').mockReturnValue(root);
     const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
@@ -752,11 +752,13 @@ describe('actual selected Connections receipts at the complete Details boundary'
     expect(sources.readCachedConnectionSourcesForDisplay('a1', { receipts: admitted }).state).toBe('ok');
     expect(readConnectionDirectionsForDisplay('a1', { receipts: admitted }).state).toBe('ok');
     expect(admitted.every((receipt) => receipt.current())).toBe(true);
+    if (mode === 'binding-before-connections') m.mcp.mockImplementation(async () => { bindingManager.updateBinding('a1', 'selected-target', { targetName: 'Changed before Connections read' }); return []; });
     let allowed = true, laterRead = false;
     m.canvases.mockImplementation(async () => {
       laterRead = true;
       // These are real owner/primary changes AFTER the Connections producer
       // returns, not a mocked receipt returning false or an admission hook.
+      if (mode === 'unrelated-binding') bindingManager.bind('unrelated', { targetId: 'other', targetKind: 'agent', label: 'Unrelated' });
       if (mode === 'binding') bindingManager.updateBinding('a1', 'selected-target', { targetName: 'Selected target after' });
       if (mode === 'source' || mode === 'revoked-and-changed') sources.markSourceRemovedByUser('selected-test-source', 'a1', 'selected-target');
       if (mode === 'primary') await put(['read_output']);
@@ -766,9 +768,10 @@ describe('actual selected Connections receipts at the complete Details boundary'
     try {
       const response = await readRemoteAgentDetails('a1', () => allowed);
       expect(laterRead).toBe(true); expect(m.connectionFixture).not.toHaveBeenCalled(); expect(collect).not.toHaveBeenCalled();
-      expect(admitted.every((receipt) => receipt.current())).toBe(mode === 'unchanged');
-      if (mode === 'unchanged') {
+      expect(admitted.every((receipt) => receipt.current())).toBe(mode === 'unchanged' || mode === 'unrelated-binding');
+      if (mode === 'unchanged' || mode === 'unrelated-binding') {
         expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+        expect((response.body as RemoteAgentDetails).outgoingWires).toEqual({ source: 'selected-outgoing-binding-records', state: 'recorded', rows: [{ name: 'Selected target before', kind: 'agent' }], total: 1, omitted: 0 });
         expect((response.body as RemoteAgentDetails).cards.find((card) => card.id === 'connections')?.rows.some((row) => row.label === 'Selected target before')).toBe(true);
       } else {
         expect.soft(response.status).toBe(mode === 'revoked-and-changed' ? 403 : 409);
@@ -1116,4 +1119,11 @@ describe('selected Connections envelope admission', () => {
       const body = response.body as RemoteAgentDetails, c = body.cards.find((c) => c.id === 'connections')!; expect.soft(c.omitted).toBe(0); expect.soft(c.rows).toHaveLength(before); expect(Buffer.byteLength(JSON.stringify(body))).toBeLessThanOrEqual(256 * 1024);
     } finally { pressure.mockRestore(); capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
   });
+});
+
+it('keeps typed outgoing Wires absent from denied and source-only Details responses', async () => {
+  const full = await read(); expect(full.outgoingWires).toEqual({ source: 'selected-outgoing-binding-records', state: 'recorded', rows: [], total: 0, omitted: 0 });
+  const page = await readRemoteAgentDetails('a1', () => true, { card: 'connections', source: 'outgoing' });
+  expect(page.status).toBe(200); expect(page.body).toHaveProperty('connectionPageOnly', true); expect(page.body).not.toHaveProperty('outgoingWires');
+  const denied = await readRemoteAgentDetails('a1', () => false); expect(denied.status).toBe(403); expect(denied.body).not.toHaveProperty('outgoingWires');
 });
