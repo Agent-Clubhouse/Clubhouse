@@ -1,8 +1,8 @@
 /** Saved fields only. Registration/relationship admission and final witnesses belong to the reader. */
 import { projectOrchestrationAgentFieldsForDisplay } from './orchestration-agent-fields';
 import type { DisplayValue } from './display-settings';
-const ownDisplayValue = (raw: Record<string, unknown>, key: string): unknown => Object.prototype.hasOwnProperty.call(raw, key) ? raw[key] : undefined;
 import type { OrchestrationPolicySource } from '../../shared/orchestration-policy';
+const ownDisplayValue = (raw: Record<string, unknown>, key: string): unknown => Object.prototype.hasOwnProperty.call(raw, key) ? raw[key] : undefined;
 
 export interface ConnectionEndpointFields {
   id: string;
