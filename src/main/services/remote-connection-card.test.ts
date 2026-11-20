@@ -176,3 +176,11 @@ it.each(['saved', 'pending-not-saved', 'primary-unavailable', 'owner-unavailable
   if (mode === 'primary-late') { await putLinks(1, 'changed-target'); expect(receipts.some((receipt) => !receipt.current())).toBe(true); }
   if (mode === 'owner-late') { await putLinks(2); expect(await recordUserRemoval({ agentId: selected, targetId: 'manual-target' })).toBe(true); await putLinks(); expect(receipts.some((receipt) => !receipt.current())).toBe(true); }
 });
+
+it.each(['dispatcher', 'helper'] as const)('does not adopt manual Dispatcher-link records for the locally inapplicable %s role', async (role) => {
+  const projectPath = path.join(root, 'selected-project'); await put('dispatcher-connections.json', { version: 1, connections: [{ agentId: selected, targetId: 'PRIVATE_INAPPLICABLE_TARGET', agentProjectPath: projectPath, targetProjectPath: '/other-project', createdAt: at, createdBy: 'controller' }], removedByUser: [] });
+  const saved = await import('./dispatcher-saved-links-display'), owner = await import('./dispatcher-connections');
+  const savedRead = vi.spyOn(saved, 'readSavedDispatcherLinksForDisplay'), memoryRead = vi.spyOn(owner, 'readDispatcherLinkMemoryForDisplay');
+  const { c } = await read(role === 'dispatcher', { projectPath, ...(role === 'helper' ? { family: { parentId: 'parent-agent', helperIds: new Set<string>() } } : {}) });
+  expect.soft(savedRead).not.toHaveBeenCalled(); expect.soft(memoryRead).not.toHaveBeenCalled(); expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_INAPPLICABLE_TARGET');
+});

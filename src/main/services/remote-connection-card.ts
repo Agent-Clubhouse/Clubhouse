@@ -97,7 +97,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     const sources = readCachedConnectionSourcesForDisplay(selected, { receipts: options.receipts });
     let manual: ReturnType<typeof readSavedDispatcherLinksForDisplay> | undefined;
     let manualMemory: ReturnType<typeof readDispatcherLinkMemoryForDisplay> | undefined;
-    if (options.projectPath) {
+    if (options.projectPath && !options.dispatcher && !options.family?.parentId) {
       // Saved metadata and process-known state have different provenance. A
       // failed source field cannot erase independently readable bindings.
       try {

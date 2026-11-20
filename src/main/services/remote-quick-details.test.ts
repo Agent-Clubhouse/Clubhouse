@@ -361,3 +361,16 @@ describe('actual selected Quick Connections evidence at final assembly', () => {
     } finally { m.realConnections = false; sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); }
   });
 });
+
+it('keeps current Quick bindings while refusing inapplicable saved durable Dispatcher links for its native ID', async () => {
+  const run = start(), registration: AgentRegistration = { projectPath: project, cwd: project, orchestrator: 'claude-code', runtime: 'pty', nonce: 'PRIVATE_RUN_NONCE' };
+  m.registration.mockReturnValue(registration); m.running.mockReturnValue(true); m.runtime.mockReturnValue({ kind: 'pty' }); noteQuickAgentRuntime(run, registration, () => m.registration() === registration);
+  const bindings = await import('./clubhouse-mcp/binding-manager'), sources = await import('./persisted-bindings'), saved = await import('./dispatcher-saved-links-display'), owner = await import('./dispatcher-connections');
+  m.realConnections = true; bindings.bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting();
+  bindings.bindingManager.setConnectionToolsSource(null, null); bindings.bindingManager.setConnectionInstructionsSource(null);
+  bindings.bindingManager.bind('quick', { targetId: 'current-target', targetKind: 'agent', label: 'Current receiver' });
+  await fs.writeFile(path.join(m.base, 'dispatcher-connections.json'), JSON.stringify({ version: 1, connections: [{ agentId: 'quick', targetId: 'PRIVATE_INAPPLICABLE_TARGET', agentProjectPath: project, targetProjectPath: '/other-project', createdAt: '2026-11-19T00:00:00Z', createdBy: 'controller' }], removedByUser: [] }));
+  const savedRead = vi.spyOn(saved, 'readSavedDispatcherLinksForDisplay'), memoryRead = vi.spyOn(owner, 'readDispatcherLinkMemoryForDisplay');
+  try { const result = await read(); expect.soft(result.cards.find((card) => card.id === 'connections')?.rows.some((row) => row.label === 'Current receiver')).toBe(true); expect.soft(savedRead).not.toHaveBeenCalled(); expect.soft(memoryRead).not.toHaveBeenCalled(); expect.soft(JSON.stringify(result)).not.toMatch(/PRIVATE_INAPPLICABLE_TARGET|PRIVATE_RUN_NONCE/); }
+  finally { m.realConnections = false; bindings.bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting(); }
+});
