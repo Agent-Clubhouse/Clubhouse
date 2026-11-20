@@ -1,3 +1,4 @@
+import { isSelectedDispatcherDetails, type SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
 import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
 import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
 import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
@@ -111,6 +112,8 @@ export interface SatelliteConnection {
   snapshot: SatelliteSnapshot | null;
   /** Minted only by an accepted snapshot on the current pinned socket; never restored from cache. */
   snapshotReceipt?: string;
+  /** Existing main-process connection epoch; no role data is retained here. */
+  connectionGeneration?: number;
   lastError: string | null;
   /** This connection's satellite said it can't build a snapshot yet, and is retrying. `snapshot` is from before, if there is one. */
   snapshotUnavailable?: boolean;
@@ -581,6 +584,7 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
     mainPort: s.mainPort,
     pairingPort: s.pairingPort,
     snapshot: s.snapshot,
+    connectionGeneration: connectionEpochs.get(s.id) ?? 0,
     ...(s.snapshotReceipt && s.state === 'connected' && s.ws?.readyState === WebSocket.OPEN && !s.needsPairing && !s.snapshotUnavailable && !s.snapshot?.sessionPaused && { snapshotReceipt: s.snapshotReceipt }),
     lastError: s.lastError,
     ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
@@ -2487,6 +2491,33 @@ export async function requestAgentSettings(machine: string, agentId: string): Pr
     return { status: 'ok', value: res.body };
   } catch {
     // telemetry-exempt: the Settings card shows a safe state without host error content.
+    return { status: current() ? 'error' : 'offline' };
+  }
+}
+
+/** Explicit selected-host role GET. Never resolves an address, caches a role or falls back to another surface. */
+export async function requestDispatcherDetails(machine: string): Promise<ControllerReadResult<SelectedDispatcherDetails>> {
+  const sat = satelliteFor(machine);
+  if (!sat || sat.state !== 'connected' || sat.needsPairing) return { status: 'offline' };
+  const peer = annexPeers.getPeer(sat.fingerprint), pin = peer?.tlsCertificateFingerprint;
+  if (!peer || !pin || peer.networkPending || !annexPeers.controlledFromHere(peer)) return { status: 'forbidden' };
+  const epoch = connectionEpochs.get(sat.id) ?? 0, receipt = sat.snapshotReceipt, role = peer.role, kind = peer.kind;
+  const current = () => {
+    const now = annexPeers.getPeer(sat.fingerprint);
+    return satelliteFor(machine) === sat && sat.state === 'connected' && !sat.needsPairing
+      && (connectionEpochs.get(sat.id) ?? 0) === epoch && sat.snapshotReceipt === receipt
+      && !!now && now.tlsCertificateFingerprint === pin && now.role === role && now.kind === kind && !now.networkPending;
+  };
+  try {
+    const res = await satelliteJson(sat.fingerprint, 'GET', '/api/v1/dispatcher/details', undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
+    if (!current()) return { status: 'offline' };
+    if (res.status === 404 || res.status === 405 || res.status === 409) return { status: 'unavailable' };
+    if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+    if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
+    if (res.status !== 200 || !isSelectedDispatcherDetails(res.body)) return { status: 'error' };
+    return { status: 'ok', value: res.body };
+  } catch {
+    // telemetry-exempt: bounded status only; never a local/controller/mobile fallback.
     return { status: current() ? 'error' : 'offline' };
   }
 }

@@ -1,16 +1,11 @@
 /** Host-only composition for the explicit desktop Details adapter; never a snapshot or client/UI lookup. */
-import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
+import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES } from '../../shared/remote-agent-details';
 import type { DisplayReceipt } from './display-settings';
 import { dispatcherControllerForDisplay } from './remote-dispatcher-card';
 import { readRemoteAgentDetails } from './remote-agent-details';
 
-/** Safe role binding plus the ordinary Details projection; never an Agent/config/receipt export. */
-export interface SelectedDispatcherDetails {
-  version: 1;
-  role: 'dispatcher';
-  agentId: string;
-  details: RemoteAgentDetails;
-}
+import type { SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
+export type { SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
 
 /**
  * The pinned desktop adapter must supply the SAME desktopDetailsAuthorized
@@ -37,7 +32,8 @@ export async function readSelectedDispatcherDetails(authorized?: () => boolean):
     if (!current()) return changed();
     if (result.status !== 200) return result;
     if (!isRemoteAgentDetails(result.body, target.agent.id) || result.body.connectionPageOnly === true
-      || ('helperPageOnly' in result.body && result.body.helperPageOnly === true)) {
+      || ('helperPageOnly' in result.body && result.body.helperPageOnly === true)
+      || ('inventoryPageOnly' in result.body && result.body.inventoryPageOnly === true)) {
       return { status: 500, body: { error: 'dispatcher_details_invalid' } };
     }
     const body: SelectedDispatcherDetails = { version: 1, role: 'dispatcher', agentId: target.agent.id, details: result.body };

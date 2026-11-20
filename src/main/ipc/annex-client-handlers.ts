@@ -180,6 +180,10 @@ export function registerAnnexClientHandlers(): void {
     [stringArg(), stringArg({ maxLength: 240 })],
     (_event, machine, agentId) => annexClient.requestAgentSettings(machine, agentId),
   ));
+  ipcMain.handle(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS, withValidatedArgs(
+    [stringArg({ maxLength: 240 })],
+    (_event, machine) => annexClient.requestDispatcherDetails(machine),
+  ));
   ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_DETAILS, withValidatedArgs(
     [stringArg(), stringArg({ maxLength: 240 }), objectArg({ optional: true })],
     (_event, machine, agentId, query) => annexClient.requestAgentDetails(machine, agentId, query as import('../../shared/remote-details-query').RemoteDetailsQuery | undefined),
