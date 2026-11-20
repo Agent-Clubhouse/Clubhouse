@@ -178,7 +178,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round(ctx.used / ctx.size * 100)) : null;
   const limits = session?.capabilities?.limits ? session.usage.limits : [];
   const skillReport = reportedSkillsFor(agent, session, details ? { orchestrator: details.providerId } : undefined);
-  const otherMachines = snapshot?.dispatcherPresence?.remotes;
+  const otherMachines = dispatcher && result.status === 'ok' && connected && !satellite?.needsPairing && !snapshotUnavailable
+    && satellite?.snapshotReceipt && !snapshot?.sessionPaused ? snapshot?.dispatcherPresence?.remotes : undefined;
   return <aside className="w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 pt-2.5 pb-3 pr-3.5 pl-1" data-testid="agent-details" aria-label={`${agent.name} details`}
     onKeyDown={(e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); setOpen(false); } }}>
     <div className="flex items-center gap-2 px-1 text-xs text-ctp-overlay1"><span className="font-semibold">Details</span><span className="truncate">{agent.name}</span><button type="button" className="ml-auto" aria-label="Hide details" data-testid="agent-details-close" onClick={() => setOpen(false)}>×</button></div>
@@ -206,8 +207,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     </DetailsCard>}
     <RemoteConnectionsCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} dispatcher={dispatcher} open={open('connections')} onToggle={() => toggleCard('connections')} />
     {dispatcher && <DetailsCard id="other-machines" title="Other machines" summary={otherMachines ? otherMachinesSummary(otherMachines) : 'not shared here'} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
-      {(!connected || snapshotUnavailable) && <CardNote>Last host snapshot; these states may be stale.</CardNote>}
-      {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host} hasn’t shared its other machines here.</CardNote>}
+      {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host}’s Other machines list is unavailable until its current snapshot and Details access are confirmed. Earlier private peers are withheld.</CardNote>}
     </DetailsCard>}
     {basic('actions', 'Actions')}
     {!dispatcher && <DetailsCard id="skills-mcp" title="Skills and MCP" summary={asleep ? 'last session evidence' : 'connections and session reports'} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')}>

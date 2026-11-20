@@ -87,8 +87,8 @@ describe('DispatcherView', () => {
     useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', fingerprint: 'fp1', state: 'connected', snapshotReceipt: 'main-snapshot-receipt', snapshot: { dispatcher: { enabled: false, agent: null }, dispatcherPresence: { remotes: [] } } }] } as never);
     render(<DispatcherView />);
     expect(screen.getByTestId('remote-dispatcher-details')).toBeInTheDocument();
-    expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('Turned off · host snapshot');
-    expect(screen.getByTestId('details-card-other-machines-summary')).toHaveTextContent('0 of 0 online');
+    expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('unavailable');
+    expect(screen.queryByTestId('other-machines-empty')).not.toBeInTheDocument();
     act(() => useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', fingerprint: 'fp1', state: 'connected', snapshot: { dispatcher: { agent: chat } } }] } as never));
     expect(screen.getByTestId('runtime-pane')).toHaveTextContent('remote||s1||chat');
     expect(screen.queryByTestId('remote-dispatcher-details')).toBeNull();

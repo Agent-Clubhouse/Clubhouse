@@ -1,3 +1,4 @@
+import { REMOTE_DETAILS_CARD_IDS } from '../../shared/remote-agent-details';
 /**
  * Tests for the Annex V2 Client — discovery, pairing, and connection management.
  *
@@ -2525,6 +2526,51 @@ describe('annex-client', () => {
       const current = () => annexClient.getSatellite(FP)!;
       const publicBroadcast = () => vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).at(-1)![1] as Array<{ snapshotReceipt?: string }>;
 
+      const metadata = () => ({ version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) });
+      const roleResponse = () => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: metadata() });
+      const broadcasts = () => vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).length;
+      function answer(status: number, body: object, hold = false) {
+        let finish!: () => void;
+        vi.mocked(https.request).mockImplementation(((_url: string, _options: unknown, callback: (response: unknown) => void) => {
+          const req = Object.assign(new EventEmitter(), { setTimeout: vi.fn(), destroy: vi.fn(), end: () => {
+            finish = () => { const res = Object.assign(new EventEmitter(), { statusCode: status, headers: {} }); callback(res); res.emit('data', Buffer.from(JSON.stringify(body))); res.emit('end'); };
+            if (!hold) finish();
+          } }); return req;
+        }) as never);
+        return () => finish();
+      }
+
+      it.each(['agent', 'role'] as const)('invalidates only positive snapshot admission on %s denial, not retained cache or repeated-denial loops', async (kind) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const cached = current().snapshot, oldReceipt = current().snapshotReceipt;
+        expect(oldReceipt).toEqual(expect.any(String));
+        const invoke = () => kind === 'role' ? annexClient.requestDispatcherDetails(FP) : annexClient.requestAgentDetails(FP, 'role1');
+        answer(403, {}); const before = broadcasts();
+        expect(await invoke()).toEqual({ status: 'forbidden' });
+        expect(current().snapshot).toBe(cached); expect(current().snapshotReceipt).toBeUndefined();
+        expect(broadcasts()).toBe(before + 1);
+        expect(await invoke()).toEqual({ status: 'forbidden' }); expect(broadcasts()).toBe(before + 1);
+        answer(200, kind === 'role' ? roleResponse() : metadata());
+        expect((await invoke()).status).toBe('ok'); expect(current().snapshotReceipt).toBeUndefined();
+        expect(JSON.stringify(annexClient.getSatellites())).not.toContain('PRIVATE_ROLE_RESPONSE');
+        send(0, 'snapshot', payload(2));
+        expect(current().snapshotReceipt).toEqual(expect.any(String)); expect(current().snapshotReceipt).not.toBe(oldReceipt);
+      });
+
+      it.each(['agent', 'role'] as const)('ignores a stale prior-epoch %s denial rather than clearing a fresh connection receipt', async (kind) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const finish = answer(403, {}, true);
+        const pending = kind === 'role' ? annexClient.requestDispatcherDetails(FP) : annexClient.requestAgentDetails(FP, 'role1');
+        const generation = current().connectionGeneration;
+        annexClient.disconnect(FP); annexClient.connect(FP); sockets[1].handlers.open(); send(1, 'snapshot', payload(2));
+        const freshReceipt = current().snapshotReceipt;
+        expect(current().connectionGeneration).toBeGreaterThan(generation!);
+        const count = broadcasts(); finish();
+        expect(await pending).toEqual({ status: 'offline' });
+        expect(current().snapshotReceipt).toBe(freshReceipt); expect(broadcasts()).toBe(count);
+      });
+
       it('mints only on accepted current-socket snapshots, not cached serialization or ignored older frames', async () => {
         await discover(); sockets[0].handlers.open();
         expect(current().snapshotReceipt).toBeUndefined();
@@ -3390,6 +3436,61 @@ describe('annex-client', () => {
         return req;
       }) as any);
       annexClient._addConnectedSatelliteForTesting(FP);
+    });
+
+    describe('selected Dispatcher role transport', () => {
+      const response = () => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: { version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null,
+        sessionId: null, nativeSessionId: null, settings: null, cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) } });
+      beforeEach(() => { vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as never); });
+      it('uses only the selected pinned host and fixed metadata GET, retaining no role response on satellites', async () => {
+        const value = response(); answers.push({ status: 200, body: value });
+        expect(await annexClient.requestDispatcherDetails(FP)).toEqual({ status: 'ok', value });
+        expect(requests).toHaveLength(1); expect(requests[0]).toMatchObject({ method: 'GET' });
+        expect(requests[0].url).toContain('/api/v1/dispatcher/details'); expect(requests[0].url).not.toContain('?');
+        expect(await annexClient.requestDispatcherDetails('role@other-machine')).toEqual({ status: 'offline' }); expect(requests).toHaveLength(1);
+        expect(JSON.stringify(annexClient.getSatellites())).not.toContain('PRIVATE_ROLE_RESPONSE');
+      });
+      it('keeps legacy/unbound/changed, denied and busy responses distinct without fallback URLs or error text', async () => {
+        for (const status of [404, 405, 409, 401, 403, 429, 500]) {
+          answers.push({ status, body: { private: 'PRIVATE_HOST_ERROR' } });
+          const result = await annexClient.requestDispatcherDetails(FP);
+          expect(result.status).toBe([404, 405, 409].includes(status) ? 'unavailable' : status === 401 || status === 403 ? 'forbidden' : status === 429 ? 'rate_limited' : 'error');
+          expect(JSON.stringify(result)).not.toContain('PRIVATE_HOST_ERROR');
+        }
+        expect(requests.every((r) => r.url.endsWith('/api/v1/dispatcher/details'))).toBe(true);
+      });
+      it('rejects wrong role/id, private wrapper fields and every partial page kind', async () => {
+        for (const patch of [{ role: 'controller' }, { agentId: 'other' }, { receipt: {} }]) {
+          answers.push({ status: 200, body: { ...response(), ...patch } }); expect(await annexClient.requestDispatcherDetails(FP)).toEqual({ status: 'error' });
+        }
+        for (const field of ['helperPageOnly', 'connectionPageOnly', 'inventoryPageOnly']) {
+          const value = response(); Object.assign(value.details, { [field]: true }); answers.push({ status: 200, body: value });
+          expect(await annexClient.requestDispatcherDetails(FP)).toEqual({ status: 'error' });
+        }
+      });
+      it.each(['pin', 'kind', 'role', 'pending', 'removed'] as const)('fences an in-flight response after peer %s changes, including in-place peer mutation', async (mode) => {
+        let peer: Record<string, unknown> | undefined = { fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' };
+        vi.mocked(annexPeers.getPeer).mockImplementation(() => peer as never);
+        let finish!: () => void;
+        vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => Object.assign(new EventEmitter(), { destroy: vi.fn(), setTimeout: vi.fn(), end: () => {
+          finish = () => { const res = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(res); res.emit('data', Buffer.from(JSON.stringify(response()))); res.emit('end'); };
+        } })) as never);
+        const pending = annexClient.requestDispatcherDetails(FP);
+        if (mode === 'removed') peer = undefined;
+        else peer[mode === 'pin' ? 'tlsCertificateFingerprint' : mode === 'pending' ? 'networkPending' : mode] = mode === 'pin' ? 'new-pin' : mode === 'pending' ? true : mode === 'kind' ? 'phone' : 'controller';
+        finish(); expect(await pending).toEqual({ status: 'offline' });
+      });
+      it('fences a role response across an in-place reconnect generation', async () => {
+        let finish!: () => void;
+        vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => Object.assign(new EventEmitter(), { destroy: vi.fn(), setTimeout: vi.fn(), end: () => {
+          finish = () => { const res = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(res); res.emit('data', Buffer.from(JSON.stringify(response()))); res.emit('end'); };
+        } })) as never);
+        const pending = annexClient.requestDispatcherDetails(FP), epoch = annexClient.getSatellite(FP)!.connectionGeneration;
+        annexClient._receiveSatelliteDisconnectForTesting(FP); annexClient.connect(FP);
+        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
+        expect(annexClient.getSatellite(FP)!.connectionGeneration).toBeGreaterThan(epoch!);
+        finish(); expect(await pending).toEqual({ status: 'offline' });
+      });
     });
 
     it.each(['requestAgentSettings', 'requestAgentDetails', 'requestAgentChanges'] as const)('discards %s responses across an in-place disconnect/reconnect epoch', async (method) => {

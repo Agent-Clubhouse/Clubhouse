@@ -677,3 +677,53 @@ it('keeps withheld request text out of visible, title and accessibility paths an
   expect(card).toHaveTextContent('Task withheld (conservative display policy)'); expect(card).toHaveTextContent('HOST_CREATED · HOST_EXPIRES'); expect(card).toHaveTextContent('Review visible changes');
   expect(container.innerHTML).not.toMatch(/PRIVATE_CACHED|PRIVATE_LOCAL/); expect(screen.queryByTestId('helper-request-task')).not.toBeInTheDocument(); expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
 });
+
+describe('real-chat Dispatcher private Other machines admission', () => {
+  const privateSnapshot = (peer = 'PRIVATE_OLD_PEER') => ({ dispatcher: { agent: { ...agent, id: 'a1', projectId: '__dispatcher__' } }, dispatcherPresence: { remotes: [
+    { machineId: peer, machineName: peer, dispatcherName: 'Private host peer', label: `Private host peer on ${peer}`, address: null, state: 'online', link: { state: 'active' } },
+  ] } });
+  const openPeers = () => {
+    const toggle = screen.getByTestId('details-card-other-machines-toggle');
+    if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+  };
+  it('withholds denied data across retained clone, remount and regrant before an actual fresh snapshot', async () => {
+    const snap = privateSnapshot();
+    satellite({ snapshot: snap, snapshotReceipt: 'positive-a', connectionGeneration: 0 });
+    let view = render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI'));
+    openPeers(); expect(screen.getByTestId('other-machine-PRIVATE_OLD_PEER')).toBeInTheDocument();
+    read.mockResolvedValue({ status: 'forbidden' });
+    // A denied current read blocks even a still-positive retained marker before its main invalidation arrives.
+    act(() => satellite({ snapshot: JSON.parse(JSON.stringify(snap)), snapshotReceipt: 'positive-a', connectionGeneration: 0 }));
+    await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('does not allow this details read'));
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+    act(() => satellite({ snapshot: JSON.parse(JSON.stringify(snap)), snapshotReceipt: undefined, connectionGeneration: 0 }));
+    view.unmount(); view = render(<AgentDetails agent={agent} />); openPeers();
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('does not allow this details read'));
+    read.mockResolvedValue({ status: 'ok', value: fixture() });
+    act(() => satellite({ snapshot: JSON.parse(JSON.stringify(snap)), snapshotReceipt: undefined, connectionGeneration: 0 }));
+    await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI'));
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld');
+    act(() => satellite({ snapshot: privateSnapshot('PRIVATE_FRESH_PEER'), snapshotReceipt: 'fresh-b', connectionGeneration: 0 }));
+    await screen.findByTestId('other-machine-PRIVATE_FRESH_PEER');
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+  });
+
+  it.each(['needsPairing', 'receipt', 'offline', 'snapshotUnavailable', 'paused'] as const)('hides current private peers on %s, including an unchanged/retained snapshot and successful stale mock Details', async (mode) => {
+    const snap = privateSnapshot();
+    satellite({ snapshot: snap, snapshotReceipt: 'positive-a' });
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [{ machineId: 'LOCAL_FALLBACK', machineName: 'Local', address: null, dispatcherName: 'Local', label: 'Local', state: 'online', link: { state: 'active' } }] });
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI')); openPeers();
+    expect(screen.getByTestId('other-machine-PRIVATE_OLD_PEER')).toBeInTheDocument();
+    act(() => satellite({ snapshot: mode === 'paused' ? { ...snap, sessionPaused: true } : snap, snapshotReceipt: mode === 'receipt' ? undefined : 'positive-a',
+      ...(mode === 'needsPairing' && { needsPairing: true }), ...(mode === 'offline' && { state: 'disconnected' }), ...(mode === 'snapshotUnavailable' && { snapshotUnavailable: true }) }));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 190)); });
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('other-machine-LOCAL_FALLBACK')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld');
+    expect(presence).not.toHaveBeenCalled();
+  });
+});

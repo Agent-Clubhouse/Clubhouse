@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRemoteAgentDetails, REMOTE_DETAILS_CARD_IDS } from './remote-agent-details';
+import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, REMOTE_DETAILS_CARD_IDS } from './remote-agent-details';
 import { isSelectedDispatcherDetails, type SelectedDispatcherDetails } from './selected-dispatcher-details';
 
 const roleFixture = (): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: {
@@ -24,8 +24,15 @@ describe('selected Dispatcher full wrapper validation', () => {
     expect(isRemoteAgentDetails(value.details, value.agentId)).toBe(true);
     expect(isSelectedDispatcherDetails(value)).toBe(false);
   });
+  it('enforces the full UTF-8 wrapper bound, even when character count is below the byte limit', () => {
+    const value = roleFixture();
+    value.details.cards[0].rows = Array.from({ length: 100 }, () => ({ label: '中'.repeat(512), value: '中'.repeat(512) }));
+    expect(isRemoteAgentDetails(value.details, value.agentId)).toBe(true);
+    expect(JSON.stringify(value).length).toBeLessThan(REMOTE_DETAILS_MAX_BYTES);
+    expect(isSelectedDispatcherDetails(value)).toBe(false);
+  });
   it('rejects settings identity substitution and malformed nested Details', () => {
-    const value = roleFixture(); Object.assign(value.details, { settings: { agentId: 'other' } });
+    const value = roleFixture(); Object.assign(value.details, { settings: { version: 1, agentId: 'other', readOnly: true, provider: 'CLI', model: 'model', runtime: 'chat', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } } });
     expect(isSelectedDispatcherDetails(value)).toBe(false);
     expect(isSelectedDispatcherDetails({ ...roleFixture(), details: null })).toBe(false);
   });

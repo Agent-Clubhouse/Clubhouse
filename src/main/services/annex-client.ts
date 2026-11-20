@@ -2495,6 +2495,13 @@ export async function requestAgentSettings(machine: string, agentId: string): Pr
   }
 }
 
+/** Metadata denial revokes only the positive admission; legacy retained snapshot data stays untouched. */
+function invalidateSnapshotAdmission(sat: SatelliteConnectionInternal): void {
+  if (!sat.snapshotReceipt) return;
+  sat.snapshotReceipt = undefined;
+  broadcastSatellitesChanged();
+}
+
 /** Explicit selected-host role GET. Never resolves an address, caches a role or falls back to another surface. */
 export async function requestDispatcherDetails(machine: string): Promise<ControllerReadResult<SelectedDispatcherDetails>> {
   const sat = satelliteFor(machine);
@@ -2512,7 +2519,7 @@ export async function requestDispatcherDetails(machine: string): Promise<Control
     const res = await satelliteJson(sat.fingerprint, 'GET', '/api/v1/dispatcher/details', undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
     if (!current()) return { status: 'offline' };
     if (res.status === 404 || res.status === 405 || res.status === 409) return { status: 'unavailable' };
-    if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+    if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat); return { status: 'forbidden' }; }
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
     if (res.status !== 200 || !isSelectedDispatcherDetails(res.body)) return { status: 'error' };
     return { status: 'ok', value: res.body };
@@ -2536,7 +2543,7 @@ export async function requestAgentDetails(machine: string, agentId: string, quer
     const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/details${params ? `?${params}` : ''}`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
     if (!current()) return { status: 'offline' };
     if (res.status === 404 || res.status === 405 || page && res.status === 400) return { status: 'unavailable' };
-    if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+    if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat); return { status: 'forbidden' }; }
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
     if (res.status !== 200 || !isRemoteAgentDetails(res.body, agentId)) return { status: 'error' };
     if (!page && (res.body.connectionPageOnly === true || res.body.helperPageOnly === true)) return { status: 'error' };
