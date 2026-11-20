@@ -54,3 +54,36 @@ it('does not read a primary body beyond admission limits or turn its missing hel
   const actual = await vi.importActual<typeof import('fs')>('fs'); const opened: string[] = [], real = actual.openSync; const spy = vi.spyOn(fs, 'openSync').mockImplementation(((...args: Parameters<typeof fs.openSync>) => { opened.push(String(args[0])); return real(...args); }) as typeof fs.openSync);
   const result = read(); spy.mockRestore(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, unavailableProjects: 1, entries: [] } }); expect(opened).not.toContain(path.join(b, '.clubhouse', 'agents.json'));
 });
+
+it('captures selection facts before authorization callbacks and withholds an in-read revocation', () => {
+  const selected = selection(); let called = false;
+  const result = readRegisteredAgentDisplayPage(selected, 'helper-children', { receipts: [], authorized: () => { if (!called) { called = true; selected.agentId = 'different'; selected.projectId = 'b'; selected.projectPath = b; } return true; } });
+  expect(result).toMatchObject({ state: 'ok', value: { entries: [], complete: true } });
+  const actual = vi.mocked(fs.openSync).getMockImplementation()!;
+  const open = vi.spyOn(fs, 'openSync').mockImplementation(((...args: Parameters<typeof fs.openSync>) => { const fd = actual(...args); m.allowed = false; return fd; }) as typeof fs.openSync);
+  m.allowed = true; expect(read().state).toBe('unavailable'); open.mockRestore();
+});
+it('admits only a bounded number of distinct parent alias probes and labels the remaining association unknown', async () => {
+  const aliases = Array.from({ length: 65 }, (_, i) => a + (path.sep + '.' + path.sep).repeat(i + 1));
+  await put(b, aliases.map((alias, i) => agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: alias })));
+  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, knownMatches: 64, unknownRows: 1 } });
+  if (result.state !== 'ok') throw new Error('fixture'); expect(result.value.entries).toHaveLength(50);
+});
+it('charges both inventory passes before traversing an oversized row collection', async () => {
+  await put(b, Array.from({ length: 2048 }, (_, i) => agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: a })));
+  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, unavailableProjects: 1, knownMatches: 0, entries: [] } });
+});
+it('continues registered-root pages and treats a shifted page as changed rather than verified empty', async () => {
+  const projects = [{ id: 'a', name: 'Project A', path: a }];
+  for (let i = 0; i < 16; i++) { const folder = path.join(root, 'project-' + i); await fsp.mkdir(path.join(folder, '.clubhouse'), { recursive: true }); await put(folder, [agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: a })]); projects.push({ id: 'p' + i, name: 'Project ' + i, path: folder }); }
+  await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects }));
+  const first = read(); expect(first).toMatchObject({ state: 'ok', value: { knownMatches: 15, next: { projectOffset: 16, matchOffset: 0 } } });
+  const last = read({ projectOffset: 16 }); expect(last).toMatchObject({ state: 'ok', value: { entries: [{ agentId: 'child-15' }], next: null } });
+  expect(read({ projectOffset: 17 })).toMatchObject({ state: 'unavailable', reason: 'changed' });
+});
+it('keeps malformed relationship data partial while preserving known helpers, missing files and explicit false values', async () => {
+  await put(b, [agent('known', { parentAgentId: 'parent', parentProjectPath: a, orchestration: { connectToDispatcher: false } }), agent('bad', { parentAgentId: 'parent', parentProjectPath: {} })]);
+  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, unknownRows: 1, entries: [{ agentId: 'known', fields: { connectToDispatcher: { state: 'ok', value: false } } }] } });
+  await fsp.unlink(path.join(b, '.clubhouse', 'agents.json')); expect(read()).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 0 } });
+  await fsp.writeFile(path.join(b, '.clubhouse', 'agents.json.bak'), '[]'); expect(read()).toMatchObject({ state: 'ok', value: { complete: false, unavailableProjects: 1 } });
+});
