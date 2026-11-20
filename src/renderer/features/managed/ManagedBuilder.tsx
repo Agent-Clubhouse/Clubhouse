@@ -299,14 +299,14 @@ export function PreviewPane({ agent, setup, draft }: { agent?: BuilderAgent; set
   if (error) return <p role="alert" className="text-xs text-ctp-error">{error}</p>;
   if (!preview) return <p className="text-[13px] text-ctp-overlay1">Loading…</p>;
   const text = showWildcards ? preview.rawInstructions ?? preview.instructions : preview.instructions;
-  const lines = preview.instructions.split('\n');
+  const lines = text.split('\n');
   const running = preview.running;
   const runningText = running ? (showWildcards ? running.rawInstructions : running.instructions) : '';
   return (
     <div className="flex flex-col gap-4" data-testid="managed-preview">
       <section>
         <div className="flex items-center gap-2 mb-1">
-          <h3 className="text-[13px] font-semibold text-ctp-text">Instructions <span className="font-normal text-xs text-ctp-overlay1">{preview.blocks.length} blocks, {preview.instructions ? lines.length : 0} lines</span></h3>
+          <h3 className="text-[13px] font-semibold text-ctp-text">Instructions <span className="font-normal text-xs text-ctp-overlay1">{preview.blocks.length} blocks, {text ? lines.length : 0} lines</span></h3>
           <label className="ml-auto flex items-center gap-2 text-xs text-ctp-subtext1">
             <Toggle checked={showWildcards} onChange={setShowWildcards} aria-label="Show wildcards" data-testid="managed-preview-show-wildcards" />
             Show wildcards
@@ -316,7 +316,7 @@ export function PreviewPane({ agent, setup, draft }: { agent?: BuilderAgent; set
           <div className={`grid grid-cols-1 ${running ? '@min-[800px]:grid-cols-2' : ''} border border-surface-0 rounded-md overflow-hidden`}>
             <div className="min-w-0">
               {running && <div className="px-3 pt-2 text-xs font-medium text-ctp-subtext1"><span>Next start</span> · {draft || setup ? 'draft setup' : 'saved setup'}</div>}
-              <BlockInstructionsPreview blocks={preview.blocks} text={text} />
+              <BlockInstructionsPreview blocks={preview.blocks} text={text} raw={showWildcards && text !== preview.instructions} />
             </div>
             {running && (
               <div className="min-w-0 border-t @min-[800px]:border-t-0 @min-[800px]:border-l border-surface-0" data-testid="managed-preview-running">

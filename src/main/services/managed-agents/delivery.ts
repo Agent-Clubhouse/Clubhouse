@@ -1016,10 +1016,17 @@ export async function previewManagedSetup(params: {
   const usage = new Map<string, number>();
   for (const b of resolved.blocks) usage.set(b.id, (await params.service.consumers(b.id)).length);
   let line = 1;
+  let rawLine = 1;
   const blocks = resolved.blocks.map((b) => {
     const lines = replaceManagedWildcards(b.content, ctx).split('\n').length;
-    const entry = { id: b.id, name: b.name, builtin: b.builtin, usedBy: usage.get(b.id) ?? 0, startLine: line, endLine: line + lines - 1 };
+    const rawLines = b.content.split('\n').length;
+    const entry = {
+      id: b.id, name: b.name, builtin: b.builtin, usedBy: usage.get(b.id) ?? 0,
+      startLine: line, endLine: line + lines - 1,
+      rawStartLine: rawLine, rawEndLine: rawLine + rawLines - 1,
+    };
     line += lines + 1;
+    rawLine += rawLines + 1;
     return entry;
   });
   const conv = params.provider?.conventions;
