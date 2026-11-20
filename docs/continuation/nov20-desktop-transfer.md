@@ -82,3 +82,9 @@ Details custody now includes exact017f7ec9dae90361f09c6c5c8858b3534c95a281 plus 
 Navi confirmed actual Mini preservation-only acceptance via Tael6cfccbd0: exacte2340b51e434c499b5e4f7014e9bc3bcd857920f fetched, INDEX9bc1854f03b6658a75d9b0e55b9e5845e1d0849589ce7467daf441b80da9c674 and all25 record sizes/hashes plus four frozen ancestors verified. No policy choice or implementation accepted.
 
 Existing reviewable decision remains durable per-group/member quarantine (recommended smaller scope: persist intent before handoff, pause later automatic notices on uncertainty, preserve manual board reading, human-only one retry with duplicate warning and explicit writer/rollback compatibility) versus a larger per-notice/range outcome ledger that allows later automatic notices while retaining uncertain gaps. Explicit deferral leaves0bb withheld. Exact proposal is on e234 at notes/diagnose-navi-queue-transfer/evidence/Q5-policy-proposal.json. No new user question or implementation was issued. Parked decision-follow-through ownership acceptance has been requested separately; custody needs no repeated handshake.
+
+## Q5 parked follow-through accepted
+
+Actual Mini bp83o0 acceptance via Tael d31f9bc1 covers parked policy-decision follow-through on exacte234. Sender stops duplicate parked-decision tracking only. User decision remains pending; no duplicate question, policy choice, schema change, live action, replay or implementation is authorized now. Upon an actual decision Mini may sequence only the expressly authorized correction and independent review.0bb remains withheld; both options and writer/rollback requirements remain.
+
+Settings/Auto/3744 PR coordination and current CI failures remain Mini-owned. No source-side duplicate fixes, blind reruns or waivers. Details correction remains active source-owned, with04:30 transferable freeze target.
