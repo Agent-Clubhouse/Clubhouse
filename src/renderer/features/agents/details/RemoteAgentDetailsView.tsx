@@ -3,7 +3,7 @@ import { RemoteHelpersCard } from './RemoteHelpersCard';
 import { useNow } from './useNow';
 import { RemoteSessionHistory } from './RemoteSessionHistory';
 import { RemoteConnectionsCard } from './RemoteConnectionsCard';
-import { RemoteActionsEvidence } from './RemoteActionsEvidence';
+import { RemoteActionsCard } from './RemoteActionsCard';
 /** Remote container: host reads and shared presentation only; no local config, git or action hooks. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RemoteAgentDetails, RemoteDetailsCardId } from '../../../../shared/remote-agent-details';
@@ -162,7 +162,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
         <CanvasMembershipList hits={c.rows.filter((r) => r.canvas).map((r) => ({ ...r.canvas!, name: r.label }))} onJump={(hit) => jumpToCanvas(agent, hit)} unavailable={(hit) => remoteCanvasJumpUnavailable(agent, hit)} />
         <Evidence card={{ ...c, rows: c.rows.filter((r) => !r.canvas) }} />
         {c.rows.some((r) => !r.canvas) && <CardNote>This host shared membership names without navigation identities.</CardNote>}
-      </> : id === 'actions' ? <RemoteActionsEvidence card={c} agentName={agent.name} /> : <Evidence card={c} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
+      </> : <Evidence card={c} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
     </DetailsCard>;
   };
   const sessionCard = card('session');
@@ -226,7 +226,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       {(!connected || snapshotUnavailable) && <CardNote>Last host snapshot; these states may be stale.</CardNote>}
       {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host} hasn’t shared its other machines here.</CardNote>}
     </DetailsCard>}
-    {basic('actions', 'Actions')}
+    <RemoteActionsCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('actions')} readable={!snapshotUnavailable && !runtimeUnconfirmed}
+      message={resultMessage(result.status)} onToggle={() => toggleCard('actions')} onRefused={() => setRetry((n) => n + 1)} />
     {!dispatcher && <DetailsCard id="skills-mcp" title="Skills and MCP" summary={asleep ? 'last session evidence' : 'connections and session reports'} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')}>
       {runtimeUnconfirmed && <CardNote>The session stopped or reported an error after the host read. Current MCP status is unconfirmed.</CardNote>}
       <RemoteSkillsMcpEvidence card={card('skills-mcp')} setup={details?.settings?.setup} live={session?.mcpServers ?? null} skills={skillReport}

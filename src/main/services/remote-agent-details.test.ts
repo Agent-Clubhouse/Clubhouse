@@ -12,7 +12,7 @@ import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-di
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
-const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), connectionFixture: vi.fn(), sourceFrame: { pairs: [], unreadable: [] } as import('../../shared/connection-sources').AgentConnectionSources, satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realConnections: false, realWitness: false, realDispatcher: false, realPolicy: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+const m = vi.hoisted(() => ({ actionEngine: undefined as Pick<import('./actions/engine').ActionsEngine, 'list' | 'lastRunForDisplay'> | undefined, target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), connectionFixture: vi.fn(), sourceFrame: { pairs: [], unreadable: [] } as import('../../shared/connection-sources').AgentConnectionSources, satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realConnections: false, realWitness: false, realDispatcher: false, realPolicy: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
 const liveProbes = vi.hoisted(() => ({ model: vi.fn(() => { throw new Error('Historical Details must not probe live models.'); }), quota: vi.fn(() => { throw new Error('Historical Details must not probe live quota.'); }) }));
 // Native transcript lookup/parser stay real. Their unrelated live CLI probe
 // ports must remain unused, without importing a spawn/transport graph here.
@@ -71,7 +71,17 @@ vi.mock('./agent-grants-service', async (original) => {
   return { ...actual, viewOf: () => { throw new Error('ordinary grants must not be read'); } };
 });
 
-vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), peekActionProjectName: () => 'Project' }));
+vi.mock('./actions', async () => {
+  const { readSelectedActionRelationshipPage } = await vi.importActual<typeof import('./actions/selected-details-page')>('./actions/selected-details-page');
+  return {
+    readSelectedActionDetailsPageForAgent: (agentId: string, projectId: string | undefined, dispatcher: boolean, options: Omit<import('./actions/selected-details-page').SelectedActionPageOptions, 'sourceCurrent'>) => {
+      const admitted = m.actionEngine;
+      return readSelectedActionRelationshipPage(admitted ?? { list: m.actions, lastRunForDisplay: () => undefined }, { agentId, projectId, dispatcher }, { ...options, sourceCurrent: () => m.actionEngine === admitted });
+    },
+    readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names),
+    peekActionProjectName: () => 'Project',
+  };
+});
 vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ liveEntries: m.entries, getTemplate: m.template,
   openSetupMetadataForDisplay: async () => ({ head: async (id: string) => (await m.entries())[id] ?? null, receipt: { current: () => true } }),
@@ -91,7 +101,7 @@ const PEER_MACHINE = 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa';
 const setting = () => ({ version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } });
 beforeEach(() => {
   _resetAgentDisplayStateForTesting();
-  m.realConnections = false; m.realPolicy = false; m.envCached.mockReturnValue(true); m.realDispatcher = false; m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
+  m.actionEngine = undefined; m.realConnections = false; m.realPolicy = false; m.envCached.mockReturnValue(true); m.realDispatcher = false; m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
   m.target.mockResolvedValue({ agent: agent(), project });
   m.settings.mockResolvedValue({ status: 200, body: setting() });
   m.provider.mockReturnValue({ id: 'codex-cli', conventions: {}, readSessionTranscript: m.transcript });
@@ -1176,4 +1186,58 @@ it('returns an independent selected managed page beyond100 without full setup, h
   expect(m.settings).not.toHaveBeenCalled(); expect(m.canvases).not.toHaveBeenCalled(); expect(m.actions).not.toHaveBeenCalled(); expect(m.work).not.toHaveBeenCalled();
   expect((last.body as RemoteAgentDetails).cards.every((c) => !c.rows.length && !c.notes.length)).toBe(true);
   expect((last.body as RemoteAgentDetails).helperPage).toBeUndefined(); expect((last.body as RemoteAgentDetails).outgoingWires).toBeUndefined();
+});
+
+it('integrates selected Actions through the actual Details assembler and real started engine, preserving final relationship rows without mutation', async () => {
+  const { ActionsEngine } = await import('./actions/engine');
+  const all = Array.from({ length: 61 }, (_, i) => ({ id: `private-action-${i}`, name: `Related ${i}`, createdAt: i + 1, updatedAt: i + 1, enabled: false, overlap: 'skip' as const,
+    owner: { kind: 'agent' as const, agentId: 'a1' }, trigger: { kind: 'event' as const, event: 'agent.slept' as const, source: { kind: 'agent' as const, agentId: 'a1' } }, steps: [{ kind: 'message' as const, agentId: 'a1', text: 'PRIVATE_WORKFLOW_TEXT' }] }));
+  const storage = { load: vi.fn(() => ({ actions: all, state: { nextAt: {}, waits: [] } })), saveActions: vi.fn(), saveState: vi.fn() };
+  const history = { list: vi.fn(() => []), put: vi.fn(), prune: vi.fn(), remove: vi.fn() }, steps = { run: vi.fn() }, remoteDelivery = vi.fn();
+  const engine = new ActionsEngine({ clock: { now: () => 100, setTimeout: vi.fn(() => 1), clearTimeout: vi.fn() }, storage, history, steps,
+    facts: { remoteDelivery, agentExists: () => true, isRunning: () => false, agentName: () => 'Selected', agentProjectId: () => 'p1', projectName: () => 'Project', projectIdForPath: () => 'p1', repoOwner: () => ({}) }, rights: { checkStep: () => null, checkSource: () => null, maxActions: () => null } });
+  engine.start(); storage.load.mockClear(); storage.saveActions.mockClear(); storage.saveState.mockClear(); m.actionEngine = engine;
+  try {
+    let offset = 0, selection: string | undefined; const seen: Array<{ name: string; group: string }> = [];
+    for (;;) {
+      const response = await readRemoteAgentDetails('a1', () => true, { card: 'actions', source: 'selected-action-relationships', offset, ...(selection && { selection }) });
+      expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+      const value = response.body as RemoteAgentDetails, page = value.inventoryPage;
+      if (page?.source !== 'selected-action-relationships' || page.state !== 'recorded') throw new Error('Expected selected Actions');
+      selection ??= page.selection; expect(page.selection).toBe(selection); expect(page.uniqueActions).toBe(61); expect(page.totalRelationships).toBe(183);
+      seen.push(...page.rows.map(({ name, group }) => ({ name, group }))); expect(JSON.stringify(value)).not.toMatch(/PRIVATE_|private-action-/);
+      expect(value.cards.every((c) => !c.rows.length && !c.notes.length && (c.id === 'actions' || c.requested === false))).toBe(true);
+      if (page.next === null) break; offset = page.next;
+    }
+    expect(seen).toHaveLength(183); expect(seen[182]).toEqual({ name: 'Related 60', group: 'triggered-by' });
+    expect(storage.load).not.toHaveBeenCalled(); expect(storage.saveActions).not.toHaveBeenCalled(); expect(storage.saveState).not.toHaveBeenCalled(); expect(steps.run).not.toHaveBeenCalled(); expect(history.put).not.toHaveBeenCalled(); expect(remoteDelivery).not.toHaveBeenCalled();
+    expect(m.settings).not.toHaveBeenCalled(); expect(m.canvases).not.toHaveBeenCalled(); expect(m.entries).not.toHaveBeenCalled();
+  } finally { engine.stop(); m.actionEngine = undefined; }
+});
+
+it.each(['target', 'ordering', 'reference-name', 'revoked'] as const)('fences the actual Actions Details page after late %s changes with real selected primary metadata', async (mode) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-action-page-target-'));
+  try {
+    m.realWitness = true; m.base = path.join(root, 'profile'); const home = path.join(root, 'project');
+    await fs.mkdir(m.base); await fs.mkdir(path.join(home, '.clubhouse'), { recursive: true });
+    const selected = { ...agent(), worktreePath: home }, selectedProject = { ...project, path: home };
+    const file = path.join(home, '.clubhouse', 'agents.json'); await fs.writeFile(file, JSON.stringify([selected]));
+    await fs.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects: [selectedProject] }));
+    m.target.mockResolvedValue({ agent: selected, project: selectedProject });
+    let allowed = true, reference = 'Reference before', scheduled = false;
+    const names = await import('./app-event-sources'); vi.spyOn(names, 'peekKnownAgentName').mockImplementation(() => reference);
+    const all = [{ id: 'one', name: 'Selected Action', createdAt: 1, enabled: false, owner: { kind: 'agent', agentId: 'a1' }, trigger: { kind: 'once', at: 1 }, steps: [{ kind: 'message', agentId: 'reference', text: 'PRIVATE_ACTION_TEXT' }] }];
+    m.actions.mockImplementation(() => {
+      if (!scheduled) { scheduled = true; queueMicrotask(() => {
+        if (mode === 'target') require('fs').writeFileSync(file, '[]');
+        if (mode === 'ordering') all.length = 0;
+        if (mode === 'reference-name') reference = 'Reference after';
+        if (mode === 'revoked') allowed = false;
+      }); }
+      return all;
+    });
+    const response = await readRemoteAgentDetails('a1', () => allowed, { card: 'actions', source: 'selected-action-relationships' });
+    expect(response.status).toBe(mode === 'revoked' ? 403 : 409); expect(response.body).not.toHaveProperty('inventoryPage');
+    expect(JSON.stringify(response.body)).not.toMatch(/Selected Action|Reference|PRIVATE_ACTION_TEXT/);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

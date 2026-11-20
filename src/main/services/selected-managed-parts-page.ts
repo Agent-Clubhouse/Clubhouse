@@ -1,6 +1,6 @@
 /** Only chosen configured IDs, from an already admitted durable snapshot. No payload or grant resolution. */
 import { createHash } from 'crypto';
-import { isRemoteInventoryQuery, REMOTE_INVENTORY_MAX_ITEMS, REMOTE_INVENTORY_PAGE_SIZE, type RemoteInventoryPage, type RemoteInventoryQuery, type RemoteManagedPartRecord } from '../../shared/remote-inventory-page';
+import { isRemoteInventoryQuery, REMOTE_INVENTORY_MAX_ITEMS, REMOTE_INVENTORY_PAGE_SIZE, type RemoteManagedInventoryPage as RemoteInventoryPage, type RemoteManagedInventoryQuery as RemoteInventoryQuery, type RemoteManagedPartRecord } from '../../shared/remote-inventory-page';
 import type { AgentConfigTarget } from './agent-config-reader';
 import type { DisplayReceipt } from './display-settings';
 import { managedAgents } from './managed-agents';

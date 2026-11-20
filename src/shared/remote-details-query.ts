@@ -16,7 +16,7 @@ export interface RemoteConnectionPage {
 const offset = (v: unknown) => Number.isInteger(v) && Number(v) >= 0 && Number(v) <= 4096;
 export function isRemoteDetailsQuery(value: unknown): value is RemoteDetailsQuery {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  if ((value as { card?: unknown }).card === 'skills-mcp') return isRemoteInventoryQuery(value);
+  if (['skills-mcp', 'actions'].includes((value as { card?: string }).card)) return isRemoteInventoryQuery(value);
   const v = value as RemoteConnectionDetailsQuery;
   return Object.keys(v).every((key) => ['card', 'source', 'offset', 'projectOffset'].includes(key)) && (v.card === 'connections' || v.card === 'orchestrate' && v.source === 'helpers' && !v.projectOffset && (v.offset ?? 0) % 8 === 0)
     && REMOTE_CONNECTION_PAGE_SOURCES.includes(v.source) && (v.offset === undefined || offset(v.offset))

@@ -3468,6 +3468,27 @@ describe('annex-client', () => {
       const before = requests.length; expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, projectOffset: 1 })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
     });
 
+    it('binds Actions inventory GETs to selected source/offset/order and connection epochs without default-body reuse', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const selection = 'a'.repeat(64), query = { card: 'actions' as const, source: 'selected-action-relationships' as const, offset: 25, selection };
+      const value = { version: 1, inventoryPages: 1, inventorySources: [query.source], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        inventoryPage: { version: 1, source: query.source, offset: 25, observedAt: 1, notes: [], state: 'recorded', selection, totalRelationships: 26, uniqueActions: 13, next: null, rows: [{ key: 'b'.repeat(64), group: 'triggered-by', enabled: false, description: 'Message Selected', name: 'Last relationship' }] },
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'actions' && { requested: false }) })) };
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain(`card=actions&source=selected-action-relationships&offset=25&selection=${selection}`);
+      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }]) {
+        const body = 'selection' in patch ? { ...value, inventoryPage: { ...value.inventoryPage, selection: patch.selection } } : { ...value, ...patch };
+        answers.push({ status: 200, body }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      }
+      answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
+      answers.push({ status: 403, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'forbidden' });
+      let finish!: () => void;
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => Object.assign(new EventEmitter(), { end: () => { finish = () => { const res = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(res); res.emit('data', Buffer.from(JSON.stringify(value))); res.emit('end'); }; }, destroy: vi.fn() })) as any);
+      const pending = annexClient.requestAgentDetails(FP, 'a1', query); await vi.waitFor(() => expect(finish).toBeTypeOf('function')); annexClient._receiveSatelliteDisconnectForTesting(FP); finish();
+      expect(await pending).toEqual({ status: 'offline' });
+    });
+
     it('reads bounded exact-agent Details and treats old/refused/malformed contracts explicitly', async () => {
       const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
       const value = { version: 1, agentId: 'a?/#', readOnly: true, readAt: 1, providerId: 'codex-cli', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
