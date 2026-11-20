@@ -1,7 +1,7 @@
 /** Proposal acceptance examples only; no provider processes, settings writes or paid prompts. */
 import { describe, expect, it } from 'vitest';
 import { QUOTA_STALE_MS } from '../../shared/helper-routing';
-import { decideAutoProvider, type AutoCandidate, type AutoPolicyInput } from './helper-auto-policy';
+import { decideAutoProvider, tieSetKey, type AutoCandidate, type AutoPolicyInput } from './helper-auto-policy';
 import { DAY, HOUR, runReplay, type SimConfig } from './__fixtures__/helper-auto-replay';
 import { observedRate, selectReset, weeklySimulationEvidence, type RateSample, type ResetEvidence, type ResetMode, type ResetOptions } from './__fixtures__/helper-reset-replay';
 
@@ -18,8 +18,71 @@ const research = (candidates: AutoCandidate[], options: Partial<ResetOptions> = 
   mode: 'bounded_urgency', evidence: weeklySimulationEvidence, ...options,
 });
 const chosen = (r: ReturnType<typeof research>) => r.decision.ok ? r.decision.key : null;
+const pressurePeers = () => [
+  candidate('A', 82, 24, { expectedBurnBp: 100, remainingPressure: [{ usedBp: 8200, upperBp: 100 }] }),
+  candidate('B', 20, 24, { expectedBurnBp: 6800, remainingPressure: [{ usedBp: 2000, upperBp: 6900 }] }),
+];
+const assumedZeroRate = (c: AutoCandidate, now: number) => ({ ...weeklySimulationEvidence(c, now)!, rateBpPerHour: 0 });
 
 describe('reset-aware Auto proposal (isolated)', () => {
+  it('AR1: equal urgency/reset compares supplied comparable pressure before legacy quota tiers', () => {
+    // Supplied qualified-coverage inputs for this discriminator, not a newly qualified model.
+    const candidates = pressurePeers();
+    const result = selectReset({ ...input(candidates), options: { useBurnForecasts: true } }, {
+      mode: 'bounded_urgency', evidence: (c, now) => ({ ...weeklySimulationEvidence(c, now)!, rateBpPerHour: 0 }),
+    });
+    expect(result.evaluations.every((e) => !e.excluded && e.urgency === 2)).toBe(true);
+    process.stdout.write(`AR1_DISCRIMINATOR=${JSON.stringify({ chosen: chosen(result), evaluations: result.decision.evaluations })}\n`);
+    expect(chosen(result)).toBe('A');
+    expect(result.decision.evaluations.find((e) => e.key === 'A')?.tier).toBe('low');
+  });
+
+  it('AR1 controls: preserves legacy ranking and never fabricates cold or partial mean coverage', () => {
+    const run = (candidates: AutoCandidate[], mode: ResetMode = 'bounded_urgency', useBurnForecasts = true) =>
+      selectReset({ ...input(candidates), options: { useBurnForecasts } }, { mode, evidence: assumedZeroRate });
+    expect(chosen(run(pressurePeers(), 'cycle_legacy_tiers'))).toBe('B');
+    expect(chosen(run(pressurePeers(), 'bounded_urgency', false))).toBe('B');
+    expect(chosen(run(pressurePeers().map((c) => ({ ...c, weekly: { ...c.weekly!, resetsAtMs: NOW + 72 * HOUR } }))))).toBe('B');
+    for (const cold of ['A', 'B', 'both']) {
+      const candidates = pressurePeers().map((c) => c.key === cold || cold === 'both' ? { ...c, expectedBurnBp: undefined } : c);
+      const result = run(candidates);
+      expect(chosen(result)).toBe('B');
+      expect(result.decision.evaluations.map((e) => e.score.pressureBp)).toEqual([8200, 2000]);
+      expect(candidates.find((c) => c.key === (cold === 'both' ? 'A' : cold))!.expectedBurnBp).toBeUndefined();
+    }
+  });
+
+  it('AR1 controls: equal urgent pressure uses load then the unchanged deterministic rotation', () => {
+    const peers = pressurePeers();
+    peers[1].expectedBurnBp = 6300;
+    peers[1].remainingPressure = [{ usedBp: 2000, upperBp: 6400 }];
+    const run = (candidates: AutoCandidate[], cursors: Record<string, string> = {}) => selectReset({
+      ...input(candidates), cursors, options: { useBurnForecasts: true },
+    }, { mode: 'bounded_urgency', evidence: assumedZeroRate });
+    const load = run(peers.map((c) => ({ ...c, load: c.key === 'A' ? 1 : 0 })));
+    expect(chosen(load)).toBe('B');
+    expect(load.decision.ok && load.decision.tie.byLoad).toBe(true);
+    expect(chosen(run(peers))).toBe('A');
+    expect(chosen(run(peers, { [tieSetKey(['A', 'B'])]: 'A' }))).toBe('B');
+  });
+
+  it('AR1 controls: promotion still requires verified mappings, readable usage and every reserve/window gate', () => {
+    for (const patch of [{ verified: false }, { quotaState: 'unknown' as const }, { quotaState: 'near_limit' as const },
+      { remainingPressure: [{ usedBp: 8200, upperBp: 800 }] }]) {
+      const peers = pressurePeers();
+      Object.assign(peers[0], patch);
+      expect(chosen(selectReset({ ...input(peers), options: { useBurnForecasts: true } }, {
+        mode: 'bounded_urgency', evidence: assumedZeroRate,
+      }))).toBe('B');
+    }
+    const result = selectReset({ ...input(pressurePeers()), options: { useBurnForecasts: true } }, {
+      mode: 'bounded_urgency', evidence: (c, now) => ({ ...assumedZeroRate(c, now),
+        windows: [...assumedZeroRate(c, now).windows, { name: 'fiveHour', usedBp: c.key === 'A' ? 9000 : 1000 }] }),
+    });
+    expect(chosen(result)).toBe('B');
+    expect(result.evaluations[0].excluded).toBe('auto_reserve');
+  });
+
   it('exposes the tier barrier, then promotes useful low-tier work without crossing its reserve', () => {
     for (const basis of ['weekly_used', 'reset_schedule'] as const) {
       const current = decideAutoProvider({ ...input([a(), b()]), options: { basis } });
@@ -102,7 +165,7 @@ describe('reset-aware Auto proposal (isolated)', () => {
     // A needs 60/72 pp/hour; B needs 8/24. Raw pace picks A outside the useful-work window.
     expect(chosen(research(candidates, { mode: 'pace_deficit', evidence }))).toBe('A');
     expect(chosen(research(candidates, { mode: 'bounded_urgency', evidence }))).toBe('B');
-    // Strong observed outside/login activity removes B's urgency without assigning it to a helper.
+    // An assumed whole-login rate removes B's urgency; this is not a closed-loop rate observation.
     expect(chosen(research(candidates, { evidence: (c, now) => ({ ...evidence(c, now), rateBpPerHour: c.key === 'B' ? 100 : 0 }) }))).toBe('A');
   });
 
@@ -161,20 +224,25 @@ describe('reset-aware Auto proposal (isolated)', () => {
         start: NOW, end: NOW + DAY + HOUR, tickMs: HOUR, runMs: HOUR, sampleEveryMs: 0, work: 2.5,
         arrivals: (t) => t >= NOW + DAY || demand === 'absent' ? 0 : demand === 'high' || (t - NOW) % (6 * HOUR) === 0 ? 1 : 0,
       };
-      const selectors: Array<{ policy: string; options?: SimConfig['options']; select?: SimConfig['select'] }> = [
+      const selectors: Array<{ policy: string; assumedRateBpPerHour?: number; options?: SimConfig['options']; select?: SimConfig['select'] }> = [
         { policy: 'weekly_used' }, { policy: 'reset_schedule', options: { basis: 'reset_schedule' } },
-        ...(['cycle_legacy_tiers', 'pace_deficit', 'bounded_urgency'] as ResetMode[]).map((mode) => ({ policy: mode,
+        ...(['cycle_legacy_tiers', 'pace_deficit', 'bounded_urgency'] as ResetMode[]).map((mode) => ({ policy: mode, assumedRateBpPerHour: 25,
           select: (i: AutoPolicyInput) => selectReset(i, { mode, evidence: (c, now) => ({ ...weeklySimulationEvidence(c, now)!, rateBpPerHour: 25 }) }).decision })),
         { policy: 'bounded_relax_24h', select: (i) => selectReset(i, { mode: 'bounded_urgency', reserveWithin24hBp: 500,
           evidence: weeklySimulationEvidence }).decision },
+        { policy: 'bounded_relax_24h_rate25', assumedRateBpPerHour: 25,
+          select: (i) => selectReset(i, { mode: 'bounded_urgency', reserveWithin24hBp: 500,
+            evidence: (c, now) => ({ ...weeklySimulationEvidence(c, now)!, rateBpPerHour: 25 }) }).decision },
+        { policy: 'bounded_urgency_unknown_rate', select: (i) => selectReset(i, { mode: 'bounded_urgency', evidence: weeklySimulationEvidence }).decision },
       ];
-      const results = selectors.map(({ policy, ...selector }) => {
+      const results = selectors.map(({ policy, assumedRateBpPerHour, ...selector }) => {
         const r = runReplay({ ...base, ...selector });
         const requested = demand === 'high' ? 24 : demand === 'low' ? 4 : 0;
         expect(r.refused).toBe(0);
         expect(r.sequence).toHaveLength(requested);
         expect(r.exhaustedAt).toEqual({});
-        return { demand, policy, requested, accepted: r.sequence.length, refused: r.refused, picks: r.picks,
+        return { demand, policy, assumedRateBpPerHour: assumedRateBpPerHour ?? null,
+          requested, accepted: r.sequence.length, refused: r.refused, picks: r.picks,
           unusedA: r.unusedAtReset.A[0], minHeadroom: r.minHeadroomPercent };
       });
       const at = (policy: string) => results.find((r) => r.policy === policy)!;
@@ -185,11 +253,20 @@ describe('reset-aware Auto proposal (isolated)', () => {
         expect(at('pace_deficit').unusedA).toBe(10);
         expect(at('bounded_urgency').unusedA).toBe(10);
         expect(at('bounded_relax_24h').unusedA).toBe(5);
+        expect(at('bounded_relax_24h_rate25').unusedA).toBe(5);
+        expect(at('bounded_urgency_unknown_rate').unusedA).toBe(10);
+      }
+      for (const [normal, relaxed] of [
+        ['bounded_urgency', 'bounded_relax_24h_rate25'], ['bounded_urgency_unknown_rate', 'bounded_relax_24h'],
+      ]) {
+        expect(at(normal).assumedRateBpPerHour).toBe(at(relaxed).assumedRateBpPerHour);
+        expect(at(normal).requested).toBe(at(relaxed).requested);
+        expect(at(normal).unusedA - at(relaxed).unusedA).toBe(demand === 'high' ? 5 : 0);
       }
       if (demand === 'absent') expect(results.every((r) => r.accepted === 0 && r.unusedA === 60)).toBe(true);
       report.push(...results);
     }
-    expect(report).toHaveLength(18);
+    expect(report).toHaveLength(24);
     process.stdout.write(`RESET_REPLAY_REPORT=${JSON.stringify(report)}\n`);
   });
 });

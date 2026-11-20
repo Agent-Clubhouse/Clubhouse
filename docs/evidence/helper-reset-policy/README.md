@@ -2,6 +2,8 @@
 
 Task `t_mwojop1n`; design branch `auto-reset-policy-design/standby`, source base `ae56577af786b0db79f21d137d0b334a5f7847dc`. See [proposal](../../helper-auto-reset-proposal.md) for assumptions, limits, user choices and deferred implementation review. No production code/configuration changes or live provider activity.
 
+Historical evidence for `2bafbbbd13ac832aa6b323cd813cd8412f32ac79`: the task branch is now `auto-reset-policy-design/reset-aware-reserves`. Independent review requested changes AR1/AR2. See [successor correction and matched comparisons](ar1/README.md). Original logs/results below are retained, not retroactively corrected or sealed. In particular the original ES2022 scoped compiler pass did **not** establish root ES2020 compatibility, and the adjacent original exact-head receipt was an owner assertion rather than a before/after seal embedded in the admitted command.
+
 All values below are **synthetic percentages of the simulated plan A**, never measured provider savings. Same requests, outcomes and simulated capacity across policies. A starts at 40% and resets at 24h; B starts at 40% and resets at 144h. Each task consumes 2.5 simulated units over one hour; serial arrivals, hourly ticks, current rounded quota readings. High demand asks hourly, low demand every six hours. No arrivals after the first reset. Absent demand asks for zero tasks; no work is generated.
 
 | Policy | High: requested / accepted / refused | A unused at reset, high | Low: requested / accepted / refused | A unused, low | Absent: requested / accepted / refused; A unused |

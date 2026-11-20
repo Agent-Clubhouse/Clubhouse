@@ -1,0 +1,52 @@
+2026-11-20T05:53:24Z START auto-reset-policy-design idle=88% unused=8786M avail=29549M freepct=76 comp=7558M swap=1892M pid=63518 cmd=node /Users/masonallen/source/Clubhouse/node_modules/vitest/vitest.mjs run --project main src/main/services/helper-reset-replay.test.ts --maxWorkers=2 --disableConsoleIntercept --reporter=verbose -t AR1
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design
+
+AR1_DISCRIMINATOR={"chosen":"B","evaluations":[{"key":"A","provider":"A","verified":true,"load":0,"score":{"basis":"weekly_used","weeklyUsedBp":8200,"pressureBp":8300},"tier":"low","rank":1},{"key":"B","provider":"B","verified":true,"load":0,"score":{"basis":"weekly_used","weeklyUsedBp":2000,"pressureBp":8800},"tier":"headroom","rank":0}]}
+ × |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > AR1: equal urgency/reset compares supplied comparable pressure before legacy quota tiers 3ms
+   → expected 'B' to be 'A' // Object.is equality
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > exposes the tier barrier, then promotes useful low-tier work without crossing its reserve
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 23.99999972222222 hours
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 24 hours
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 24.00000027777778 hours
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 47.99999972222222 hours
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 48 hours
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 48.00000027777778 hours
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > makes relaxation explicit, weekly-only, bounded and expired at reset
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > keeps provider exhaustion and short/model window constraints ahead of urgency and relaxation
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > does not turn missing reset, missing usage, stale, future or unreadable evidence into urgency
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > distinguishes unknown pace from a reported zero, and suppresses urgency when whole-login burn is already sufficient
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > shows why raw pace deficit and bounded calendar urgency express different product preferences
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > applies a supplied aggregate upper bound and exposes cold-forecast concurrency overshoot
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > keeps unknown Copilot last, respects its opt-out, and refuses if nothing is eligible
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > derives a past-only whole-login rate, invalidating resets, identity changes, decreases and sparse evidence
+ ↓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > compares identical staggered-reset workloads with high, low and absent useful demand
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > AR1: equal urgency/reset compares supplied comparable pressure before legacy quota tiers
+AssertionError: expected 'B' to be 'A' // Object.is equality
+
+Expected: "A"
+Received: "B"
+
+ ❯ src/main/services/helper-reset-replay.test.ts:34:28
+     32|     expect(result.evaluations.every((e) => !e.excluded && e.urgency ==…
+     33|     process.stdout.write(`AR1_DISCRIMINATOR=${JSON.stringify({ chosen:…
+     34|     expect(chosen(result)).toBe('A');
+       |                            ^
+     35|   });
+     36|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 16 skipped (17)
+   Start at  21:53:24
+   Duration  124ms (transform 36ms, setup 9ms, import 37ms, tests 4ms, environment 0ms)
+
+2026-11-20T05:53:25Z END auto-reset-policy-design rc=1

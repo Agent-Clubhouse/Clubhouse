@@ -16,7 +16,7 @@ export interface RateSample {
 export function observedRate(samples: readonly RateSample[], now: number): number | undefined {
   const rows = samples.filter((s) => s.availableAtMs < now && s.atMs <= s.availableAtMs && now - s.atMs <= 24 * HOUR)
     .sort((a, b) => a.atMs - b.atMs);
-  const first = rows[0], last = rows.at(-1);
+  const first = rows[0], last = rows[rows.length - 1];
   if (rows.length < 4 || !first || !last || last.atMs - first.atMs < 6 * HOUR
     || now - last.atMs > QUOTA_STALE_MS || last.resetsAtMs <= now) return undefined;
   if (rows.some((s, i) => !Number.isFinite(s.atMs) || !Number.isFinite(s.availableAtMs) || !Number.isFinite(s.resetsAtMs)
@@ -110,6 +110,7 @@ export function selectReset(input: AutoPolicyInput, options: ResetOptions): { de
   }
 
   let candidates = eligible;
+  let urgencyPromoted = false;
   if (options.mode === 'pace_deficit') {
     // Raw pace comparator only when ALL measured eligible candidates have evidence.
     const measured = eligible.filter((c) => c.quotaUnknownReason !== 'not_supported');
@@ -125,10 +126,24 @@ export function selectReset(input: AutoPolicyInput, options: ResetOptions): { de
       const inBand = urgent.filter((c) => evaluations.find((e) => e.key === c.key)!.urgency === band);
       const soonest = Math.min(...inBand.map((c) => evaluations.find((e) => e.key === c.key)!.hoursLeft!));
       candidates = inBand.filter((c) => evaluations.find((e) => e.key === c.key)!.hoursLeft === soonest);
+      urgencyPromoted = true;
     }
   }
-  return { evaluations, decision: decideAutoProvider({ ...input, candidates,
-    options: { ...input.options, basis: options.mode === 'cycle_legacy_tiers' ? 'reset_schedule' : 'weekly_used' } }) };
+  // Only the already admitted, verified, measured urgency peers share a comparison tier.
+  // Preserve the selector's comparable-mean coverage check, pressure/tie band, load and rotation.
+  // This is a ranking projection, not a new healthy quota observation; restore original tier labels below.
+  const comparison = urgencyPromoted
+    ? candidates.map((c) => ({ ...c, quotaState: c.quotaState === 'low' ? 'known' as const : c.quotaState }))
+    : candidates;
+  const decision = decideAutoProvider({ ...input, candidates: comparison,
+    options: { ...input.options, basis: options.mode === 'cycle_legacy_tiers' ? 'reset_schedule' : 'weekly_used' } });
+  if (urgencyPromoted) {
+    for (const e of decision.evaluations) {
+      if (e.tier) e.tier = candidates.find((c) => c.key === e.key)!.quotaState === 'low' ? 'low' : 'headroom';
+    }
+    if (decision.ok) decision.tier = decision.evaluations.find((e) => e.key === decision.key)!.tier!;
+  }
+  return { evaluations, decision };
 }
 
 /** For the synthetic weekly-only, zero-lag simulation. Never use this invented freshness in production. */
