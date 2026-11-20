@@ -5,8 +5,10 @@ import * as os from 'os';
 import * as path from 'path';
 const m = vi.hoisted(() => ({ home: '', allowed: true }));
 vi.mock('electron', () => ({ app: { getPath: () => m.home } }));
+vi.mock('fs', async (original) => { const actual = await original<typeof import('fs')>(); return { ...actual, openSync: vi.fn(actual.openSync) }; });
 vi.mock('./agent-config', () => { throw new Error('Display inventory imported the ordinary owner'); });
 vi.mock('./project-store', () => { throw new Error('Display inventory imported the ordinary project store'); });
+import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { getBaseDirPath } from './base-dir';
 import { readRegisteredAgentDisplayPage } from './registered-agent-display-page';
 import type { DisplayReceipt } from './display-settings';
@@ -16,7 +18,7 @@ const put = (folder: string, rows: unknown[]) => fsp.writeFile(path.join(folder,
 const selection = () => ({ agentId: 'parent', projectId: 'a', projectPath: a, receipt: { current: () => m.allowed } });
 const read = (options = {}) => readRegisteredAgentDisplayPage(selection(), 'helper-children', { authorized: () => m.allowed, receipts: [], ...options });
 beforeEach(async () => {
-  root = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-registered-display-'))); m.home = root; m.allowed = true; a = path.join(root, 'a'); b = path.join(root, 'b');
+  root = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-registered-display-'))); m.home = root; m.allowed = true; vi.mocked(fs.openSync).mockClear(); a = path.join(root, 'a'); b = path.join(root, 'b');
   for (const p of [a, b]) await fsp.mkdir(path.join(p, '.clubhouse'), { recursive: true });
   await fsp.mkdir(getBaseDirPath(), { recursive: true });
   await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'a', name: 'Project A', path: a }, { id: 'b', name: 'Custom B', path: b }] }));
@@ -39,7 +41,7 @@ it('continues selected helper matches while preserving independently observed pa
 });
 it('keeps configured Dispatcher applicability separate from ordinary unrelated fields and unknown policies', async () => {
   await put(b, [agent('on', { orchestration: { connectToDispatcher: true } }), agent('off', { orchestration: { connectToDispatcher: false } }), agent('disposed', { disposedAt: '2026-11-20', orchestration: { connectToDispatcher: true } }), agent('bad', { orchestration: { connectToDispatcher: 'bad' } })]);
-  const result = readRegisteredAgentDisplayPage({ ...selection(), agentId: 'controller', projectId: 'dispatcher' }, 'dispatcher-auto', { authorized: () => true, receipts: [] });
+  const result = readRegisteredAgentDisplayPage({ ...selection(), agentId: 'controller', projectId: DISPATCHER_PROJECT_ID }, 'dispatcher-auto', { authorized: () => true, receipts: [] });
   expect(result).toMatchObject({ state: 'ok', value: { complete: false, unknownRows: 1, entries: [{ agentId: 'on' }] } });
   expect(JSON.stringify(result)).not.toContain('Name off'); expect(JSON.stringify(result)).not.toContain('Name bad');
 });
@@ -49,6 +51,6 @@ it('refuses denied or prefilled-root-map reads before opening a metadata file', 
 });
 it('does not read a primary body beyond admission limits or turn its missing helper evidence into empty', async () => {
   await put(b, [agent('large', { parentAgentId: 'parent', parentProjectPath: a, unused: 'x'.repeat(4 * 1024 * 1024) })]);
-  const opened: string[] = [], real = fs.openSync; const spy = vi.spyOn(fs, 'openSync').mockImplementation(((...args: Parameters<typeof fs.openSync>) => { opened.push(String(args[0])); return real(...args); }) as typeof fs.openSync);
+  const actual = await vi.importActual<typeof import('fs')>('fs'); const opened: string[] = [], real = actual.openSync; const spy = vi.spyOn(fs, 'openSync').mockImplementation(((...args: Parameters<typeof fs.openSync>) => { opened.push(String(args[0])); return real(...args); }) as typeof fs.openSync);
   const result = read(); spy.mockRestore(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, unavailableProjects: 1, entries: [] } }); expect(opened).not.toContain(path.join(b, '.clubhouse', 'agents.json'));
 });
