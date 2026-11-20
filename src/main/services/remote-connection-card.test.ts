@@ -19,7 +19,7 @@ vi.mock('./connection-sources', () => ({ listConnectionSources: m.legacy }));
 vi.mock('./connection-grants-store', () => ({ getConnectionDirection: m.legacy, listConnectionDirectionsForInspection: m.legacy }));
 import { readPassiveConnectionCard } from './remote-connection-card';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { registerPersistedBindingSource, rebuildPersistedBindings, claimSourceBinding, markSourceRemovedByUser, _resetPersistedBindingSourcesForTesting, type PersistedBinding } from './persisted-bindings';
+import { registerPersistedBindingSource, rebuildPersistedBindings, claimSourceBinding, markSourceRemovedByUser, readCachedConnectionSourcesForDisplay, _resetPersistedBindingSourcesForTesting, type PersistedBinding } from './persisted-bindings';
 import * as peers from './annex-peers';
 import * as membership from './annex-network-membership';
 import { setFederationRequestRouter } from './dispatcher-federation-policy';
@@ -106,3 +106,26 @@ it('preserves row and reader omissions without querying omitted target names or 
 
 it('uses shared local source identities and keeps unknown prototype-shaped source IDs unclassified', () => { expect(connectionSourceKind('connections-card')).toBe('card_link'); expect(connectionSourceKind('dispatcher-federation')).toBe('dispatcher_federation'); expect(connectionSourceKind('constructor')).toBe('other'); expect(connectionSourceKind('__proto__')).toBe('other'); expect(mergeConnectionDirection(mergeConnectionDirection('to', 'from'), 'from')).toBe('two-way'); });
 it('refuses revoked admission before reading any selected binding or primary file', async () => { const binding = vi.spyOn(bindingManager, 'readBindingsForDisplay'), c = card('connections', 'Connections'); await expect(readPassiveConnectionCard(c, selected, { receipts: [], authorized: () => false })).rejects.toThrow('revoked'); expect(binding).not.toHaveBeenCalled(); expect(c.rows).toEqual([]); });
+
+it.each(['typed-incoming', 'unbound-incoming', 'widget-and-unrelated'] as const)('preserves independently known Connections when selected source originals hit their limit: %s', async (mode) => {
+  const rows = Array.from({ length: 5 }, (_, i) => Array.from({ length: 100 }, () => wire(selected, `target-${i}`, { targetName: `Known target ${i}`, instructions: { '*': 'PRIVATE_SOURCE_TEXT' } }))).flat();
+  rows.push(...Array.from({ length: 100 }, () => wire('sender-agent', selected, { agentName: 'Known incoming sender', label: 'Selected target label' })));
+  if (mode === 'widget-and-unrelated') {
+    rows.push(...Array.from({ length: 100 }, () => wire('PRIVATE_WIDGET_OWNER', selected, { targetKind: 'browser', label: 'PRIVATE_WIDGET_LABEL' })));
+    rows.push(...Array.from({ length: 100 }, () => wire('PRIVATE_OTHER_OWNER', 'PRIVATE_OTHER_TARGET', { targetName: 'PRIVATE_OTHER_LABEL' })));
+  }
+  const collect = vi.fn(async () => rows); registerPersistedBindingSource({ id: 'orchestrator-connections', collect }); await rebuildPersistedBindings(); collect.mockClear();
+  if (mode === 'unbound-incoming') bindingManager.unbind('sender-agent', selected);
+  const outgoing = bindingManager.readBindingsForDisplay(selected, { direction: 'outgoing' }), incoming = bindingManager.readBindingsForDisplay(selected, { direction: 'incoming' });
+  expect(outgoing).toMatchObject({ state: 'ok', value: { total: 5 } }); expect(incoming).toMatchObject({ state: 'ok', value: { total: mode === 'unbound-incoming' ? 0 : 1 } });
+  const cached = readCachedConnectionSourcesForDisplay(selected); expect(cached.state).toBe('ok');
+  if (cached.state !== 'ok') throw new Error('Fixture did not establish source evidence');
+  expect(cached.value.pairs).toHaveLength(6); expect(cached.value.pairs.find((p) => p.agentId === 'sender-agent')?.sources[0].binding).toMatchObject({ state: 'unavailable', reason: 'limit' });
+  expect(cached.value.pairs.filter((p) => p.agentId === selected).every((p) => p.sources[0].binding.state === 'ok')).toBe(true);
+  const { c, receipts } = await read();
+  expect.soft(c.state).toBe('ok');
+  for (let i = 0; i < 5; i++) expect.soft(c.rows.some((row) => row.label === `Known target ${i}`)).toBe(true);
+  if (mode !== 'unbound-incoming') expect.soft(c.rows.some((row) => row.label === 'Known incoming sender')).toBe(true);
+  expect.soft(c.notes.join(' ')).toContain('source');
+  expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|Selected target label/); expect.soft(collect).not.toHaveBeenCalled(); expect.soft(receipts.every((receipt) => receipt.current())).toBe(true);
+});
