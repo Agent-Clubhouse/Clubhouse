@@ -1,3 +1,4 @@
+import { RemoteHelpersCard } from './RemoteHelpersCard';
 import { useNow } from './useNow';
 import { RemoteConnectionsCard } from './RemoteConnectionsCard';
 import { RemoteActionsEvidence } from './RemoteActionsEvidence';
@@ -195,7 +196,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
 
     {!dispatcher && <RemoteChangesCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('changes')} onToggle={() => toggleCard('changes')} />}
     {!dispatcher && agent.kind === 'durable' && !agent.parentAgentId && basic('dispatcher', 'Dispatcher')}
-    {!dispatcher && agent.kind === 'durable' && basic('orchestrate', 'Orchestration')}
+    {!dispatcher && agent.kind === 'durable' && <RemoteHelpersCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} />}
     {showSubagents && session && map && <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
       {(!connected || asleep || snapshotUnavailable) && <CardNote>Last loaded session snapshot. Current subagent status is not confirmed.</CardNote>}
       {hydrated.evidence && !hydrated.evidence.values.subagents && <CardNote>No subagent report has arrived in this runtime open. Earlier conversation activity is separate.</CardNote>}

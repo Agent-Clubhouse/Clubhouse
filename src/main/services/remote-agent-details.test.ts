@@ -371,7 +371,7 @@ describe('host selected-agent Details projections', () => {
       const homeFile = path.join(home, '.clubhouse', 'agents.json'), otherFile = path.join(other, '.clubhouse', 'agents.json');
       await fs.writeFile(homeFile, JSON.stringify(homeRows)); await fs.writeFile(otherFile, JSON.stringify(otherRows));
       await fs.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects: [p1, p2] }));
-      m.target.mockResolvedValue({ agent: selected, project: p1 });
+      m.target.mockImplementation(async (id: string) => id === selected.id ? { agent: selected, project: p1 } : id === a.id ? { agent: a, project: cross ? p2 : p1 } : { agent: b, project: p1 });
       const realIndex = await vi.importActual<typeof import('./helper-index')>('./helper-index');
       let acquired = false;
       let actualReceipts: Array<{ current(): boolean }> = [];
@@ -648,25 +648,20 @@ describe('host selected-agent Details projections', () => {
     m.running.mockReturnValue(false);
     expect(JSON.stringify((await read()).cards.find((c) => c.id === 'skills-mcp'))).not.toContain('Connected');
   });
-  it('shares helper counters/work words, skips inapplicable checks and makes the work bound explicit', async () => {
+  it('keeps unqualified helper runtime/work facts unknown while preserving independent counters', async () => {
     const helpers = Array.from({ length: 10 }, (_, i) => ({ projectPath: project.path, config: { ...agent(), id: `h${i}`, name: `Helper ${i}`, parentAgentId: 'a1' } }));
     helpers.push({ projectPath: project.path, config: { ...agent(), id: 'starting', name: 'Starting helper', parentAgentId: 'a1', creation: { state: 'creating' } } } as never);
     helpers.push({ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Disposed helper', parentAgentId: 'a1', disposedAt: '2026-11-19' } } as never);
     m.helpers.mockResolvedValue(helpers);
-    m.work.mockResolvedValueOnce({ dirty: 2, unpushed: 150, unmerged: 0 }).mockResolvedValueOnce({ dirty: 0, unpushed: 0, unmerged: null, error: 'unknown' });
-    const c = (await read()).cards.find((c) => c.id === 'orchestrate')!;
+    const value = await read(), c = value.cards.find((c) => c.id === 'orchestrate')!;
     expect(c.rows).toContainEqual({ label: 'Helpers', value: '11 · 1 starting' });
     expect(c.rows).toContainEqual({ label: 'Disposed helpers', value: '1' });
-    expect(c.rows.find((r) => r.label === 'Helper 0')?.value).toContain('2 uncommitted, 99+ unpushed');
-    expect(c.rows.find((r) => r.label === 'Helper 1')?.value).toContain('couldn’t check');
-    expect(c.rows.find((r) => r.label === 'Helper 2')?.value).toContain('clean');
-    expect(c.rows.find((r) => r.label === 'Helper 8')?.value).toContain('Work not checked');
-    expect(c.notes.join(' ')).toContain('2 helper work checks omitted');
-    expect(m.work).toHaveBeenCalledTimes(8);
-    expect(m.work.mock.calls.every((call) => call[0].agent.id === 'a1' && call[1].config.parentAgentId === 'a1')).toBe(true);
+    expect(value.helperPage).toMatchObject({ total: 12, liveCount: 11, disposedCount: 1, next: 8 });
+    expect(value.helperPage?.rows[0]).toMatchObject({ status: 'unknown', projectName: null, work: { state: 'unavailable', reason: 'identity' } });
+    expect(value.helperPage?.rows[0].target).toBeUndefined(); expect(m.work).not.toHaveBeenCalled();
   });
   it('keeps disposed and live handed-off helpers distinct with their real timestamps', async () => {
-    m.helpers.mockResolvedValue([{ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Disposed helper', disposedAt: '2026-11-18T12:00:00Z' } }, { projectPath: project.path, config: { ...agent(), id: 'handoff', name: 'Handed helper', handoff: { at: '2026-11-19' } } }]);
+    m.helpers.mockResolvedValue([{ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Disposed helper', parentAgentId: 'a1', disposedAt: '2026-11-18T12:00:00Z' } }, { projectPath: project.path, config: { ...agent(), id: 'handoff', name: 'Handed helper', parentAgentId: 'a1', handoff: { at: '2026-11-19' } } }]);
     const rows = (await read()).cards.find((c) => c.id === 'orchestrate')!.rows;
     expect(rows.find((r) => r.label === 'Disposed helper')?.value).toContain('Disposed · feature · 2026-11-18T12:00:00Z');
     expect(rows.find((r) => r.label === 'Handed helper')?.value).toContain('Handed off');
@@ -1126,4 +1121,38 @@ it('keeps typed outgoing Wires absent from denied and source-only Details respon
   const page = await readRemoteAgentDetails('a1', () => true, { card: 'connections', source: 'outgoing' });
   expect(page.status).toBe(200); expect(page.body).toHaveProperty('connectionPageOnly', true); expect(page.body).not.toHaveProperty('outgoingWires');
   const denied = await readRemoteAgentDetails('a1', () => false); expect(denied.status).toBe(403); expect(denied.body).not.toHaveProperty('outgoingWires');
+});
+
+describe('structured selected helper pages at the complete Details boundary', () => {
+  it('returns the 101st helper in an independent helper-only envelope and refuses unsupported arithmetic', async () => {
+    m.helpers.mockResolvedValue(Array.from({ length: 101 }, (_, i) => ({ projectPath: project.path, config: { ...agent(), id: `h${i}`, name: `Helper ${i}`, parentAgentId: 'a1' } })));
+    const response = await readRemoteAgentDetails('a1', () => true, { card: 'orchestrate', source: 'helpers', offset: 96 });
+    expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+    const value = response.body as RemoteAgentDetails; expect(value.helperPageOnly).toBe(true); expect(value.helperPage).toMatchObject({ offset: 96, total: 101, liveCount: 101, disposedCount: 0, pendingCount: 0, next: null });
+    expect(value.helperPage?.rows.map((r) => r.name)).toEqual(['Helper 96', 'Helper 97', 'Helper 98', 'Helper 99', 'Helper 100']);
+    expect(value.cards.filter((c) => c.id !== 'orchestrate').every((c) => c.requested === false && !c.rows.length && !c.notes.length)).toBe(true);
+    expect(value.cards.find((c) => c.id === 'orchestrate')?.rows).toEqual([]); expect(value.settings).toBeNull(); expect(value.providerEvidence).toBeUndefined(); expect(value.outgoingWires).toBeUndefined();
+    expect(JSON.stringify(value.helperPage)).not.toContain('/host'); expect(value.helperPage?.rows.every((r) => r.target === undefined)).toBe(true);
+    expect((await readRemoteAgentDetails('a1', () => true, { card: 'orchestrate', source: 'helpers', offset: 1 })).status).toBe(400);
+    expect((await readRemoteAgentDetails('a1', () => false, { card: 'orchestrate', source: 'helpers', offset: 1 })).status).toBe(403);
+  });
+  it('keeps unavailable helper inventory counts independent of readable pending starts', async () => {
+    m.helpers.mockRejectedValue(new Error('PRIVATE_INVENTORY'));
+    const value = await read(); expect(value.helperPage).toMatchObject({ state: 'unavailable', total: null, liveCount: null, disposedCount: null, pendingCount: 0, rows: [] }); expect(JSON.stringify(value)).not.toContain('PRIVATE_INVENTORY');
+  });
+});
+
+it('preserves valid saved disposed dates and handoff words in legacy summaries outside the selected helper page', async () => {
+  const helpers = Array.from({ length: 9 }, (_, i) => ({ projectPath: project.path, config: { ...agent(), id: `valid-${i}`, name: `Valid ${i}`, parentAgentId: 'a1' } }));
+  helpers.push({ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Disposed beyond page', parentAgentId: 'a1', disposedAt: '2026-11-18T12:00:00Z' } } as never);
+  helpers.push({ projectPath: project.path, config: { ...agent(), id: 'handoff', name: 'Handed beyond page', parentAgentId: 'a1', handoff: { at: '2026-11-19' } } } as never);
+  m.helpers.mockResolvedValue(helpers); const value = await read(), rows = value.cards.find((c) => c.id === 'orchestrate')!.rows;
+  expect(value.helperPage?.rows).toHaveLength(8); expect(value.helperPage).toMatchObject({ total: 11, liveCount: 10, disposedCount: 1 });
+  expect(rows.find((r) => r.label === 'Disposed beyond page')?.value).toContain('Disposed · feature · 2026-11-18T12:00:00Z');
+  expect(rows.find((r) => r.label === 'Handed beyond page')?.value).toContain('Handed off');
+});
+
+it('refuses a helper offset that fell beyond the current selected inventory without returning partial private cards', async () => {
+  const response = await readRemoteAgentDetails('a1', () => true, { card: 'orchestrate', source: 'helpers', offset: 8 });
+  expect(response).toEqual({ status: 409, body: { error: 'helper_inventory_changed' } });
 });

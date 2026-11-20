@@ -3435,6 +3435,21 @@ describe('annex-client', () => {
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
     });
 
+    it('binds helper-only Details pages to exact selected offsets and rejects mixed/default envelopes', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const query = { card: 'orchestrate' as const, source: 'helpers' as const, offset: 8 };
+      const value = { version: 1, helperPages: 1, helperPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        helperPage: { version: 1, source: 'selected-direct-helpers', state: 'ok', offset: 8, next: null, total: 9, liveCount: 9, disposedCount: 0, pendingCount: 0, rows: [{ key: 'last', name: 'Last helper', projectName: null, status: 'unknown', statusSource: 'unknown', branch: null, failure: 'unknown', disposedAt: null, work: { state: 'unavailable', reason: 'identity' } }], pending: [], notes: [] },
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'orchestrate' && { requested: false }) })) };
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain('card=orchestrate&source=helpers&offset=8&projectOffset=0');
+      answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: { ...value, helperPage: { ...value.helperPage, state: 'unavailable', offset: 0, total: null, liveCount: null, disposedCount: null, next: null, rows: [] } } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      answers.push({ status: 400, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
+      answers.push({ status: 403, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'forbidden' });
+      const before = requests.length; expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, projectOffset: 1 })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
+    });
+
     it('reads bounded exact-agent Details and treats old/refused/malformed contracts explicitly', async () => {
       const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
       const value = { version: 1, agentId: 'a?/#', readOnly: true, readAt: 1, providerId: 'codex-cli', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
