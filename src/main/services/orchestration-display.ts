@@ -43,14 +43,13 @@ export function readProjectHelperAutoOffForDisplay(projectPath: string, options:
   return result;
 }
 
-/** Use the already admitted config. Malformed fields never turn into false/default values. */
-export function readOrchestrationForDisplay(target: AgentConfigTarget, options: { receipts?: DisplayReceipt[] } = {}): {
-  fields: PolicyFields; sources: Partial<ResolvedOrchestrationPolicy['sources']>; globalCap: DisplayValue<number>;
-  autoEffective: DisplayValue<NonNullable<ResolvedOrchestrationPolicy['autoEffective']>>;
+/** The same validated saved agent fields, without project/global settings reads. */
+function projectOrchestrationAgentFields(agent: { orchestration?: unknown; parentAgentId?: unknown }): {
+  policy: ResolvedOrchestrationPolicy; fields: PolicyFields; sources: Partial<ResolvedOrchestrationPolicy['sources']>;
 } {
-  const raw: unknown = target.agent.orchestration;
+  const raw: unknown = agent.orchestration;
   const shape = raw === undefined || record(raw), selected = record(raw) ? raw : {};
-  const parent: unknown = target.agent.parentAgentId, helper = typeof parent === 'string' && !!parent;
+  const parent: unknown = agent.parentAgentId, helper = typeof parent === 'string' && !!parent;
   const roleKnown = parent === undefined || typeof parent === 'string';
   const policy = resolveOrchestrationPolicy(shape ? normalizeOrchestrationConfig(selected) : undefined, { helper });
   const keys = Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>;
@@ -61,6 +60,24 @@ export function readOrchestrationForDisplay(target: AgentConfigTarget, options: 
       && (key !== 'connectToDispatcher' || roleKnown && (policy.sources.connectToDispatcher !== 'default' || valid('orchestrate')));
     return [key, known ? { state: 'ok', value: policy[key], inputs } : { state: 'unavailable', inputs }];
   })) as PolicyFields;
+  const sources = Object.fromEntries(keys.filter((key) => fields[key].state === 'ok').map((key) => [key, policy.sources[key]])) as Partial<ResolvedOrchestrationPolicy['sources']>;
+  return { policy, fields, sources };
+}
+
+/** Validated fields only: callers cannot consume fallback policy values for unknown metadata. */
+export function projectOrchestrationAgentFieldsForDisplay(agent: { orchestration?: unknown; parentAgentId?: unknown }): {
+  fields: PolicyFields; sources: Partial<ResolvedOrchestrationPolicy['sources']>;
+} {
+  const { fields, sources } = projectOrchestrationAgentFields(agent);
+  return { fields, sources };
+}
+
+/** Use the already admitted config. Malformed fields never turn into false/default values. */
+export function readOrchestrationForDisplay(target: AgentConfigTarget, options: { receipts?: DisplayReceipt[] } = {}): {
+  fields: PolicyFields; sources: Partial<ResolvedOrchestrationPolicy['sources']>; globalCap: DisplayValue<number>;
+  autoEffective: DisplayValue<NonNullable<ResolvedOrchestrationPolicy['autoEffective']>>;
+} {
+  const { policy, fields, sources } = projectOrchestrationAgentFields(target.agent);
   const project = readProjectHelperAutoOffForDisplay(target.project.path, options), app = readAutoHelpersForDisplay(options), globalCap = readGlobalHelperCapForDisplay(options);
   const inputs = [...fields.orchestrate.inputs, ...fields.autoHelpers.inputs, ...project.inputs, ...app.inputs];
   let autoEffective: DisplayValue<NonNullable<ResolvedOrchestrationPolicy['autoEffective']>> = { state: 'unavailable', inputs };
@@ -71,6 +88,5 @@ export function readOrchestrationForDisplay(target: AgentConfigTarget, options: 
     autoEffective = { state: 'ok', value: decideHelperAuto({ projectOff: false, app: app.state === 'ok' ? app.value : false,
       policy: { orchestrate: fields.orchestrate.value, autoHelpers: fields.autoHelpers.value, sources: policy.sources } }), inputs };
   }
-  const sources = Object.fromEntries(keys.filter((key) => fields[key].state === 'ok').map((key) => [key, policy.sources[key]])) as Partial<ResolvedOrchestrationPolicy['sources']>;
   return { fields, sources, globalCap, autoEffective };
 }
