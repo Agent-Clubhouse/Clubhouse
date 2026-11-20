@@ -107,11 +107,17 @@ it('does not change the saved-only default contract when no cache getter is supp
   expect(result).toMatchObject({ state: 'ok', value: { rows: [{ endpoint: { value: { record: 'registered-primary' } } }] } }); expect.soft(JSON.stringify(result)).not.toContain('hostCache');
 });
 const warmSecond = async () => { await initializeDurableProject(otherProject); await new Promise<void>((resolve) => setImmediate(resolve)); await putLinks([link(), link({ targetId: 'other', targetProjectPath: otherProject })]); resetObservation(); };
-it.each(['cache-record', 'primary'] as const)('withholds all assembled fields if an earlier %s changes during a later real owner cache read', async (kind) => {
+it.each(['cache-record', 'primary', 'source-path', 'registry', 'selected-role'] as const)('withholds all assembled fields if an earlier %s changes during a later real owner cache read', async (kind) => {
   await warm(); await warmSecond(); let calls = 0;
   const reader: typeof readAgentConnectionCacheForDisplay = (folder, id, options) => {
     const value = readAgentConnectionCacheForDisplay(folder, id, options); calls++;
-    if (calls === 2) { if (kind === 'cache-record') clearAgentConfigCache(project); else fs.writeFileSync(file(), JSON.stringify([agent({ name: 'Changed during later read' })])); }
+    if (calls === 2) {
+      if (kind === 'cache-record') clearAgentConfigCache(project);
+      if (kind === 'primary') fs.writeFileSync(file(), JSON.stringify([agent({ name: 'Changed during later read' })]));
+      if (kind === 'source-path') fs.writeFileSync(source(), JSON.stringify({ version: 1, connections: [link({ targetProjectPath: otherProject }), link({ targetId: 'other', targetProjectPath: otherProject })] }));
+      if (kind === 'registry') fs.writeFileSync(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [] }));
+      if (kind === 'selected-role') m.selected = false;
+    }
     return value;
   };
   const result = query(reader, [], [pair(), pair('other')]); expect(calls).toBe(2); expect.soft(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect.soft(JSON.stringify(result)).not.toMatch(/Selected cache name|Other host name/);
