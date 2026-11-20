@@ -48,3 +48,17 @@ Authored unit tests exercise the staged service with the **real existing canonic
 Unit authorization callbacks do **not** prove real HTTP caller classification. Current `annex-server.test.ts` source already has the ordinary pinned desktop positive and wrong-pin/phone/unknown/pending/post-await-revocation negatives, but those tests must be rerun and extended to the eventual new handler before claiming anonymous/other-principal route coverage. The staged module creates no reachable route for any principal now.
 
 No tests were run during the occupied lane. The final handoff records any subsequently granted serial test lane and exact-head results; until then tests are authored/source-only, not acceptance. Independent authority/source review is required before route registration. No production/live activity, installations, grants, PR or merge.
+
+
+## Subsequently granted serial-lane proof
+
+After the source-only phase and independent source/design no-blocker assessment, Orchestrator granted the lane after Canvas. At staged code head `779ef524c0a0e030afa0695986f54d35bf6e0544`:
+- New selector + existing real primary-witness, Settings and Details suites: **242 passed** across four files.
+- Existing ordinary desktop Settings/Details HTTP gate matrix: **21 passed / 578 skipped**. This verifies the current ordinary gate, not a new handler; real principal classification tests for the reserved future route remain required before client/UI work.
+- Bypassing the new outer role/primary receipts makes the role replacement and asynchronous revision/removal checks fail. Removing helperPageOnly refusal makes its new discriminator fail. All temporary mutations restored.
+- No production/live activity, grants, installed dependencies or new route registration. Tests use the verified November19 dependencies, 1 worker and no parallel files. Final handoff records exact delivered head, final checks and lane release.
+
+```
+NODE_OPTIONS=--no-experimental-webstorage node_modules/.bin/vitest run --project main src/main/services/selected-dispatcher-details.test.ts src/main/services/read-only-config-target.test.ts src/main/services/remote-agent-settings.test.ts src/main/services/remote-agent-details.test.ts --maxWorkers=1 --no-file-parallelism
+NODE_OPTIONS=--no-experimental-webstorage node_modules/.bin/vitest run --project main src/main/services/annex-server.test.ts -t 'remote full Details authority|remote Settings details' --maxWorkers=1 --no-file-parallelism
+```
