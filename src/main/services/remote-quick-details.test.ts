@@ -1,3 +1,4 @@
+import { fixtureBindingPage, fixtureSourcePage, fixtureDirectionPage, fixturePeerMetadata } from './connection-card-fixtures.qa';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -19,21 +20,26 @@ import { ASSET_CATALOG_VERSION } from '../../shared/asset-catalog-types';
 import { createManagedAgentsService } from './managed-agents/service';
 import { createManagedStateStore } from './managed-agents/state-store';
 import { resetAllSettingsStoresForTests } from './settings-store';
-const m = vi.hoisted(() => ({ base: '', service: undefined as import('./managed-agents/service').ManagedAgentsService | undefined, durable: vi.fn(), registration: vi.fn(), runtime: vi.fn(), running: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), actions: vi.fn(), canvases: vi.fn(), template: vi.fn(), entries: vi.fn(), connection: vi.fn() }));
+const m = vi.hoisted(() => ({ base: '', realConnections: false, service: undefined as import('./managed-agents/service').ManagedAgentsService | undefined, durable: vi.fn(), registration: vi.fn(), runtime: vi.fn(), running: vi.fn(), bindings: vi.fn(), connectionFixture: vi.fn(), sourceFrame: { pairs: [], unreadable: [] } as import('../../shared/connection-sources').AgentConnectionSources, satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), actions: vi.fn(), canvases: vi.fn(), template: vi.fn(), entries: vi.fn(), connection: vi.fn() }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: m.registration } }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: m.runtime }));
 vi.mock('./agent-system', () => ({ isAgentRunning: m.running }));
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: m.durable }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ isDispatcherIdentityAgentId: () => false }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ isDispatcherIdentityAgentId: () => false, dispatcherDisplayName: () => 'Dispatcher' }));
 vi.mock('../orchestrators', () => ({ getProvider: (id: string) => ({ displayName: `Host ${id}` }) }));
-vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: m.bindings } }));
+vi.mock('./clubhouse-mcp/binding-manager', async (original) => { const actual = await original<typeof import('./clubhouse-mcp/binding-manager')>(); return { ...actual, bindingManager: new Proxy(actual.bindingManager, { get(target, key) { if (key === 'getAllBindings') return () => { throw new Error('legacy global bindings must not be read'); }; if (key === 'readBindingsForDisplay') return (id: string, options: Parameters<typeof target.readBindingsForDisplay>[1]) => m.realConnections ? target.readBindingsForDisplay(id, options) : fixtureBindingPage(m.bindings(), id, options!.direction!, actual.projectBindingRowForDisplay); const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value; } }) }; });
+vi.mock('./persisted-bindings', async (original) => { const actual = await original<typeof import('./persisted-bindings')>(); const binding = await vi.importActual<typeof import('./clubhouse-mcp/binding-manager')>('./clubhouse-mcp/binding-manager'); return { ...actual, readCachedConnectionSourcesForDisplay: (...args: Parameters<typeof actual.readCachedConnectionSourcesForDisplay>) => m.realConnections ? actual.readCachedConnectionSourcesForDisplay(...args) : fixtureSourcePage(m.sourceFrame, args[0], binding.projectBindingRowForDisplay) }; });
+vi.mock('./connection-directions-display', async (original) => { const actual = await original<typeof import('./connection-directions-display')>(); return { ...actual, readConnectionDirectionsForDisplay: (...args: Parameters<typeof actual.readConnectionDirectionsForDisplay>) => m.realConnections ? actual.readConnectionDirectionsForDisplay(...args) : fixtureDirectionPage(m.directions(), args[0]) }; });
+// A modeled async admission at the actual card API boundary preserves the old
+// assembly-race schedules. It is NOT the production legacy source reader.
+vi.mock('./remote-details-cards', async (original) => { const actual = await original<typeof import('./remote-details-cards')>(); return { ...actual, readConnectionCard: async (...args: Parameters<typeof actual.readConnectionCard>) => { if (!m.realConnections) m.sourceFrame = await m.connectionFixture(args[1]); return actual.readConnectionCard(...args); } }; });
 vi.mock('./annex-client', () => ({ getSatellite: m.satellite }));
-vi.mock('./annex-peers', () => ({ getPeer: m.peer }));
-vi.mock('./connection-sources', () => ({ listConnectionSources: m.sources }));
+vi.mock('./annex-peers', () => ({ getPeer: () => { throw new Error('legacy credential reader must not be read'); }, readPeerMetadataForDisplay: () => fixturePeerMetadata(m.peer()), peekPeerAlias: () => m.peer()?.alias, capturePeerPairingForDisplay: () => ({ state: 'unavailable', inputs: [], matches: () => undefined }) }));
+vi.mock('./connection-sources', () => ({ listConnectionSources: () => { throw new Error('legacy source reader must not be read'); } }));
 vi.mock('./connection-grants-store', () => ({ listConnectionDirectionsForInspection: m.directions }));
-vi.mock('./actions/details-names', () => ({ actionDetailsNames: () => ({ names: { agent: () => 'Selected', project: () => 'Project' }, notices: () => [] }) }));
+
 vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), peekActionProjectName: () => 'Project' }));
 vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases }));
 vi.mock('./clubhouse-mcp/bridge-server', () => ({ getAgentConnection: m.connection, getCurrentAgentConnection: () => m.connection()?.current ? m.connection() : null }));
@@ -51,13 +57,13 @@ async function snapshot(folder: string, prefix = ''): Promise<Record<string, str
 }
 const start = () => beginQuickAgentRun({ agentId: 'quick', projectPath: project, cwd: project, name: 'Review', model: 'launch-model', effort: 'high', orchestrator: 'codex-cli', managedTemplate: { id: 't1', agentName: 'Review', addParts: ['added'], removeParts: ['removed'] } });
 beforeEach(async () => {
-  clearQuickAgentRuns(); _resetAgentDisplayStateForTesting();
+  m.realConnections = false; clearQuickAgentRuns(); _resetAgentDisplayStateForTesting();
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-quick-details-')); m.base = path.join(root, 'profile'); project = path.join(root, 'project');
   m.service = undefined; vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests();
   await fs.mkdir(m.base); await fs.mkdir(project);
   await fs.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'p1', name: 'Project', path: project }] }));
   m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined); m.running.mockReturnValue(false);
-  m.bindings.mockReturnValue([]); m.sources.mockResolvedValue({ pairs: [], unreadable: [] }); m.satellite.mockReturnValue(null); m.peer.mockReturnValue(undefined); m.directions.mockReturnValue([]);
+  m.bindings.mockReturnValue([]); m.connectionFixture.mockResolvedValue({ pairs: [], unreadable: [] }); m.satellite.mockReturnValue(null); m.peer.mockReturnValue(undefined); m.directions.mockReturnValue([]);
   m.actions.mockReturnValue([]); m.canvases.mockResolvedValue([]); m.connection.mockReturnValue(null);
   m.template.mockResolvedValue({ name: 'Review template', source: 'primary', observedAt: Date.now() }); m.entries.mockResolvedValue({ added: { name: 'Extra' }, removed: { name: 'Tone' } });
   m.durable.mockImplementation(() => { throw new Error('Quick reads must not resolve a durable config.'); });
@@ -109,12 +115,14 @@ describe('read-only quick Details target and cards', () => {
   });
   it('does not adopt a prior runtime for a reused ID or its current nonce/handshake/cwd', async () => {
     start(); m.running.mockReturnValue(true);
+    m.bindings.mockReturnValue([{ agentId: 'quick', targetId: 'PRIVATE_PRIOR_TARGET', targetKind: 'agent', label: 'PRIVATE_PRIOR_CONNECTION' }]);
     m.registration.mockReturnValue({ projectPath: project, cwd: '/PRIVATE_PRIOR_FOLDER', orchestrator: 'prior-cli', runtime: 'pty', nonce: 'prior-run' });
     m.runtime.mockReturnValue({ kind: 'chat', getSessionId: () => 'PRIVATE_PRIOR_SESSION' });
     m.connection.mockReturnValue({ current: true, toolCount: 999 });
     const value = await read();
     expect(value).toMatchObject({ running: false, status: 'spawning', providerId: 'unknown', sessionId: null });
     expect(JSON.stringify(value)).not.toMatch(/PRIVATE_PRIOR|prior-cli|999 tools/);
+    expect(m.connectionFixture).not.toHaveBeenCalled();
     expect(value.cards.find((c) => c.id === 'session')?.rows).toContainEqual({ label: 'Requested folder', value: project });
     expect((await readRemoteAgentChanges('quick', { scope: 'branch' }, () => true)).status).toBe(409);
   });
@@ -139,11 +147,11 @@ describe('read-only quick Details target and cards', () => {
   });
   it('keeps missing templates and unreadable connection sources partial, never verified empty', async () => {
     start(); m.template.mockRejectedValue(new Error('PRIVATE_ERROR'));
-    m.sources.mockResolvedValue({ pairs: [], unreadable: ['Host source'] });
+    m.connectionFixture.mockResolvedValue({ pairs: [], unreadable: ['Host source'] });
     const result = await read();
     expect(result.cards.find((c) => c.id === 'settings')?.rows).toContainEqual({ label: 'Requested model', value: 'launch-model' });
     const connections = result.cards.find((c) => c.id === 'connections')!;
-    expect(connections.state).toBe('error'); expect(connections.summary).toContain('incomplete');
+    expect(connections.state).toBe('error'); expect(connections.summary).toBe('Connection run association unavailable'); expect(m.connectionFixture).not.toHaveBeenCalled();
     expect(connections.notes.join(' ')).not.toContain('No Clubhouse MCP wires');
     expect(JSON.stringify(result)).not.toContain('PRIVATE_ERROR');
   });
@@ -322,5 +330,34 @@ describe('quick Changes with actual inventories and Git', () => {
     const result = await readRemoteAgentChanges('quick', { scope: 'branch' }, () => true);
     expect(result.status).toBe(409); expect(result.body).not.toHaveProperty('files');
     expect(m.durable).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('actual selected Quick Connections evidence at final assembly', () => {
+  it.each(['unchanged', 'binding', 'primary', 'revoked-and-changed'] as const)('keeps the attested quick run and final selected evidence: %s', async (mode) => {
+    const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
+    const sources = await import('./persisted-bindings');
+    const { readConnectionDirectionsForDisplay } = await import('./connection-directions-display');
+    m.realConnections = true; bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting();
+    bindingManager.setConnectionToolsSource(null, null); bindingManager.setConnectionInstructionsSource(null);
+    const run = start(), registration: AgentRegistration = { projectPath: project, cwd: project, orchestrator: 'claude-code', runtime: 'pty', nonce: 'PRIVATE_CURRENT_NONCE' };
+    m.running.mockReturnValue(true); m.registration.mockReturnValue(registration); noteQuickAgentRuntime(run, registration, () => m.registration() === registration);
+    bindingManager.bind('quick', { targetId: 'selected-target', targetKind: 'agent', label: 'Quick selected target' });
+    const file = path.join(root, 'connection-grants.json');
+    const put = (disabledTools: string[]) => fs.writeFile(file, JSON.stringify({ version: 1, directions: [{ from: { agentId: 'quick' }, to: { agentId: 'selected-target' }, disabledTools, link: { createdAt: '2026-11-19T00:00:00Z' } }] }));
+    await put([]);
+    const admitted: Array<{ current(): boolean }> = [];
+    bindingManager.readBindingsForDisplay('quick', { direction: 'outgoing', receipts: admitted }); readConnectionDirectionsForDisplay('quick', { receipts: admitted });
+    expect(admitted.every((receipt) => receipt.current())).toBe(true);
+    let allowed = true, late = false;
+    m.canvases.mockImplementation(async () => { late = true; if (mode === 'binding' || mode === 'revoked-and-changed') bindingManager.updateBinding('quick', 'selected-target', { label: 'Quick new target' }); if (mode === 'primary') await put(['read_output']); if (mode === 'revoked-and-changed') allowed = false; return []; });
+    try {
+      const target = await resolveReadOnlyQuickTarget('quick', () => allowed); expect(target).not.toBeNull();
+      const result = await readRemoteQuickDetails(target!, () => allowed);
+      expect(late).toBe(true); expect(m.connectionFixture).not.toHaveBeenCalled(); expect(admitted.every((receipt) => receipt.current())).toBe(mode === 'unchanged');
+      if (mode === 'unchanged') { expect(result.status).toBe(200); expect(isRemoteAgentDetails(result.body, 'quick')).toBe(true); expect(JSON.stringify(result.body)).toContain('Quick selected target'); }
+      else { expect.soft(result.status).toBe(mode === 'revoked-and-changed' ? 403 : 409); expect.soft(result.body).toEqual({ error: mode === 'revoked-and-changed' ? 'details_read_refused' : 'connection_evidence_changed' }); expect.soft(result.body).not.toHaveProperty('cards'); }
+    } finally { m.realConnections = false; sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); }
   });
 });

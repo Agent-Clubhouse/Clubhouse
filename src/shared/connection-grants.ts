@@ -119,6 +119,12 @@ export function localDirectionTools(
   return out;
 }
 
+/** Across machines every switch, including wake, is on unless disabled (D232). */
+export function networkDirectionTools(disabledTools: readonly string[]): DirectionTools {
+  return { allowed: CONNECTION_SWITCHES.filter((entry) => !disabledTools.includes(entry.tool)).map((entry) => entry.tool),
+    disabled: CONNECTION_SWITCHES.filter((entry) => disabledTools.includes(entry.tool)).map((entry) => entry.tool) };
+}
+
 /**
  * A direction's lists from the tools to allow on it, on this computer: every
  * connection tool left out is turned off, and wake is on only when named.

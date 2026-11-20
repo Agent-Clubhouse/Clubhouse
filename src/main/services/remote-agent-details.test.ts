@@ -1,3 +1,4 @@
+import { fixtureBindingPage, fixtureSourcePage, fixtureDirectionPage, fixturePeerMetadata } from './connection-card-fixtures.qa';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
@@ -11,7 +12,7 @@ import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-di
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
-const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, realDispatcher: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), connectionFixture: vi.fn(), sourceFrame: { pairs: [], unreadable: [] } as import('../../shared/connection-sources').AgentConnectionSources, satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realConnections: false, realWitness: false, realDispatcher: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
 vi.mock('child_process', async (original) => ({ ...await original<typeof import('child_process')>(), execSync: vi.fn(() => '') }));
 vi.mock('../util/shell', async (original) => ({ ...await original<typeof import('../util/shell')>(), isShellEnvironmentCached: m.envCached }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
@@ -39,13 +40,18 @@ vi.mock('./orchestration-settings', () => ({ getGlobalHelperCap: () => 20 }));
 vi.mock('./helper-index', () => ({ listHelpersEverywhere: m.helpers }));
 vi.mock('./read-only-helper-work', () => ({ readOnlyHelperWork: m.work, HELPER_TRANSFORM_UNAVAILABLE: 'Custom Git filters or text transforms are not run for helper work.' }));
 vi.mock('./helper-start-requests', () => ({ readStartRequestsForDisplay: () => ({ state: 'ok', value: m.requests(), inputs: [] }) }));
-vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: m.bindings } }));
+vi.mock('./clubhouse-mcp/binding-manager', async (original) => { const actual = await original<typeof import('./clubhouse-mcp/binding-manager')>(); return { ...actual, bindingManager: new Proxy(actual.bindingManager, { get(target, key) { if (key === 'getAllBindings') return () => { throw new Error('legacy global bindings must not be read'); }; if (key === 'readBindingsForDisplay') return (id: string, options: Parameters<typeof target.readBindingsForDisplay>[1]) => m.realConnections ? target.readBindingsForDisplay(id, options) : fixtureBindingPage(m.bindings(), id, options!.direction!, actual.projectBindingRowForDisplay); const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value; } }) }; });
+vi.mock('./persisted-bindings', async (original) => { const actual = await original<typeof import('./persisted-bindings')>(); const binding = await vi.importActual<typeof import('./clubhouse-mcp/binding-manager')>('./clubhouse-mcp/binding-manager'); return { ...actual, readCachedConnectionSourcesForDisplay: (...args: Parameters<typeof actual.readCachedConnectionSourcesForDisplay>) => m.realConnections ? actual.readCachedConnectionSourcesForDisplay(...args) : fixtureSourcePage(m.sourceFrame, args[0], binding.projectBindingRowForDisplay) }; });
+vi.mock('./connection-directions-display', async (original) => { const actual = await original<typeof import('./connection-directions-display')>(); return { ...actual, readConnectionDirectionsForDisplay: (...args: Parameters<typeof actual.readConnectionDirectionsForDisplay>) => m.realConnections ? actual.readConnectionDirectionsForDisplay(...args) : fixtureDirectionPage(m.directions(), args[0]) }; });
+// A modeled async admission at the actual card API boundary preserves the old
+// assembly-race schedules. It is NOT the production legacy source reader.
+vi.mock('./remote-details-cards', async (original) => { const actual = await original<typeof import('./remote-details-cards')>(); return { ...actual, readConnectionCard: async (...args: Parameters<typeof actual.readConnectionCard>) => { if (!m.realConnections) m.sourceFrame = await m.connectionFixture(args[1]); return actual.readConnectionCard(...args); } }; });
 vi.mock('./clubhouse-mcp/bridge-server', () => ({ getAgentConnection: m.connection, getCurrentAgentConnection: () => m.connection()?.current ? m.connection() : null }));
 vi.mock('./annex-client', () => ({ getSatellite: m.satellite }));
-vi.mock('./annex-peers', () => ({ getPeer: m.peer }));
-vi.mock('./connection-sources', () => ({ listConnectionSources: m.sources }));
+vi.mock('./annex-peers', () => ({ getPeer: () => { throw new Error('legacy credential reader must not be read'); }, readPeerMetadataForDisplay: () => fixturePeerMetadata(m.peer()), peekPeerAlias: () => m.peer()?.alias, capturePeerPairingForDisplay: () => ({ state: 'unavailable', inputs: [], matches: () => undefined }) }));
+vi.mock('./connection-sources', () => ({ listConnectionSources: () => { throw new Error('legacy source reader must not be read'); } }));
 vi.mock('./connection-grants-store', () => ({ listConnectionDirectionsForInspection: m.directions }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => { throw new Error('ordinary Dispatcher state must not be read'); }, getDispatcherAgentId: () => m.dispatcher()?.agentId ?? null, getDispatcherChatAgentId: () => m.dispatcher()?.chatAgentId ?? null, isDispatcherAgentId: (id: string) => id === m.dispatcher()?.agentId, isDispatcherIdentityAgentId: (id: string) => [m.dispatcher()?.agentId, m.dispatcher()?.chatAgentId].includes(id) }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ dispatcherDisplayName: () => m.dispatcher()?.config?.name ?? 'Dispatcher', getDispatcherState: () => { throw new Error('ordinary Dispatcher state must not be read'); }, getDispatcherAgentId: () => m.dispatcher()?.agentId ?? null, getDispatcherChatAgentId: () => m.dispatcher()?.chatAgentId ?? null, isDispatcherAgentId: (id: string) => id === m.dispatcher()?.agentId, isDispatcherIdentityAgentId: (id: string) => [m.dispatcher()?.agentId, m.dispatcher()?.chatAgentId].includes(id) }));
 vi.mock('./dispatcher/dispatcher-settings', async (original) => {
   const actual = await original<typeof import('./dispatcher/dispatcher-settings')>();
   return { ...actual, isDispatcherEnabled: () => { throw new Error('ordinary Dispatcher initialization must not be read'); }, readDispatcherEnablementForDisplay: (...args: Parameters<typeof actual.readDispatcherEnablementForDisplay>) => m.realDispatcher ? actual.readDispatcherEnablementForDisplay(...args) : { enabled: { state: 'ok', value: m.dispatcherOn(), inputs: [] }, reason: { state: 'ok', value: null, inputs: [] } } };
@@ -58,7 +64,7 @@ vi.mock('./agent-grants-service', async (original) => {
   const actual = await original<typeof import('./agent-grants-service')>();
   return { ...actual, viewOf: () => { throw new Error('ordinary grants must not be read'); } };
 });
-vi.mock('./actions/details-names', () => ({ actionDetailsNames: () => ({ names: { agent: () => 'Selected', project: () => 'Project' }, notices: () => [] }) }));
+
 vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), peekActionProjectName: () => 'Project' }));
 vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ liveEntries: m.entries, getTemplate: m.template }), statusFor: m.status }));
@@ -73,10 +79,11 @@ import { projectActionDetails } from './actions/details-read';
 import { readRemoteAgentDetails } from './remote-agent-details';
 const agent = () => ({ id: 'a1', name: 'Selected', color: 'blue', createdAt: '2026-11-18', worktreePath: '/host/selected', branch: 'feature' });
 const project = { id: 'p1', name: 'Project', path: '/host/project' };
+const PEER_MACHINE = 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa';
 const setting = () => ({ version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } });
 beforeEach(() => {
   _resetAgentDisplayStateForTesting();
-  m.envCached.mockReturnValue(true); m.realDispatcher = false; m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
+  m.realConnections = false; m.envCached.mockReturnValue(true); m.realDispatcher = false; m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
   m.target.mockResolvedValue({ agent: agent(), project });
   m.settings.mockResolvedValue({ status: 200, body: setting() });
   m.provider.mockReturnValue({ id: 'codex-cli', conventions: {}, readSessionTranscript: m.transcript });
@@ -85,7 +92,7 @@ beforeEach(() => {
   m.running.mockReturnValue(false);
   m.policies.mockReturnValue(new Map([['a1', ORCHESTRATION_DEFAULTS]]));
   m.helpers.mockResolvedValue([]); m.requests.mockReturnValue([]); m.work.mockResolvedValue({ dirty: 0, unpushed: 0, unmerged: null });
-  m.bindings.mockReturnValue([]); m.sources.mockResolvedValue({ pairs: [], unreadable: [] }); m.satellite.mockReturnValue(null); m.peer.mockReturnValue(undefined); m.directions.mockReturnValue([]);
+  m.bindings.mockReturnValue([]); m.connectionFixture.mockResolvedValue({ pairs: [], unreadable: [] }); m.satellite.mockReturnValue(null); m.peer.mockReturnValue(undefined); m.directions.mockReturnValue([]);
   m.dispatcher.mockReturnValue({ agentId: 'disp', config: { name: 'Host Dispatcher' } }); m.dispatcherOn.mockReturnValue(false);
   m.actions.mockReturnValue([]); m.canvases.mockResolvedValue([]);
   m.status.mockResolvedValue({ managed: false, running: false, waiting: false, changes: [] }); m.entries.mockResolvedValue({}); m.template.mockResolvedValue({ name: 'Template' });
@@ -188,7 +195,7 @@ describe('host selected-agent Details projections', () => {
     });
     m.dispatcherOn.mockReturnValue(mode !== 'off'); m.settings.mockResolvedValue({ status: 200, body: { ...setting(), agentId: 'chat1' } });
     let allowed = true;
-    m.sources.mockImplementation(async (id: string) => {
+    m.connectionFixture.mockImplementation(async (id: string) => {
       expect(id).toBe('controller1');
       if (mode === 'removed-late') await fs.writeFile(primary, '[]');
       if (mode === 'role-cleared-late') m.dispatcher.mockReturnValue({ agentId: null, chatAgentId: 'chat1' });
@@ -205,8 +212,8 @@ describe('host selected-agent Details projections', () => {
         const cards = (response.body as RemoteAgentDetails).cards;
         const connections = cards.find((c) => c.id === 'connections')!;
         expect(connections.state).toBe(missing ? 'error' : 'ok');
-        if (missing) { expect(m.sources).not.toHaveBeenCalled(); expect(connections.notes.join(' ')).not.toContain('No Clubhouse MCP wires'); }
-        else expect(m.sources).toHaveBeenCalledWith('controller1');
+        if (missing) { expect(m.connectionFixture).not.toHaveBeenCalled(); expect(connections.notes.join(' ')).not.toContain('No Clubhouse MCP wires'); }
+        else expect(m.connectionFixture).toHaveBeenCalledWith('controller1');
         for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes']) expect(cards.find((c) => c.id === id)?.state).toBe('not-applicable');
       }
       expect(m.target.mock.calls.every(([id]) => ['chat1', 'controller1'].includes(id))).toBe(true);
@@ -247,7 +254,7 @@ describe('host selected-agent Details projections', () => {
     m.target.mockResolvedValue({ agent: selected, project: { id: DISPATCHER_PROJECT_ID, path: folder, name: 'Dispatcher' } });
     m.settings.mockResolvedValue({ status: 200, body: { ...setting(), agentId: 'disp' } });
     let allowed = true;
-    m.sources.mockImplementation(async () => {
+    m.connectionFixture.mockImplementation(async () => {
       if (mode === 'disposed') await fs.writeFile(file, JSON.stringify([{ ...selected, disposedAt: '2026-11-19' }]));
       if (mode === 'removed') await fs.writeFile(file, '[]');
       if (mode === 'same-bytes-replaced') { await fs.rename(file, `${file}.old`); await fs.writeFile(file, primary); }
@@ -306,38 +313,40 @@ describe('host selected-agent Details projections', () => {
     } else { expect(getDetailsEvidence).not.toHaveBeenCalled(); expect(JSON.stringify(response.body)).not.toContain('INITIAL_VERSION'); }
   });
   it('does not describe a connected peer without a snapshot as cached name evidence', async () => {
-    m.directions.mockReturnValue([{ from: { agentId: 'a1' }, to: { agentId: 'b', machineId: 'm1' }, disabledTools: [], link: { createdAt: '2026-11-19' }, updatedAt: '2026-11-19' }]);
+    m.directions.mockReturnValue([{ from: { agentId: 'a1' }, to: { agentId: 'b', machineId: PEER_MACHINE }, disabledTools: [], link: { createdAt: '2026-11-19' }, updatedAt: '2026-11-19' }]);
     m.satellite.mockReturnValue({ alias: 'Studio', state: 'connected' });
     const connections = (await read()).cards.find((c) => c.id === 'connections')!;
-    expect(connections.rows.find((r) => r.label === 'b')?.value).toContain('names from retained metadata');
+    expect(connections.rows.find((r) => r.label === 'b')?.value).toContain('target name unavailable');
     expect(JSON.stringify(connections)).not.toContain('names from cached snapshot');
     expect(connections.notes.join(' ')).toContain('unavailable or ambiguous');
   });
   it('folds only the selected local agent’s network directions and projects cached peer fields without raw trust records or unrelated agents', async () => {
     const base = { disabledTools: ['send_message'], link: { createdAt: '2026-11-19' }, updatedAt: '2026-11-19' };
     m.directions.mockReturnValue([
-      { ...base, from: { agentId: 'a1' }, to: { agentId: 'b', machineId: 'm1' } },
-      { ...base, from: { agentId: 'b', machineId: 'm1' }, to: { agentId: 'a1' } },
+      { ...base, from: { agentId: 'a1' }, to: { agentId: 'b', machineId: PEER_MACHINE } },
+      { ...base, from: { agentId: 'b', machineId: PEER_MACHINE }, to: { agentId: 'a1' } },
       { ...base, from: { agentId: 'a1', machineId: 'PRIVATE_FOREIGN_FROM' }, to: { agentId: 'PRIVATE_OTHER_AGENT', machineId: 'PRIVATE_OTHER_MACHINE' } },
     ]);
-    m.satellite.mockImplementation((id: string) => id === 'm1' ? { alias: 'Studio', state: 'disconnected', snapshotUnavailable: true,
+    m.satellite.mockImplementation((id: string) => id === PEER_MACHINE ? { alias: 'Studio', state: 'disconnected', snapshotUnavailable: true,
       snapshot: { agents: { p1: [{ id: 'b', name: 'Peer B' }, { id: 'unrelated', name: 'PRIVATE_UNRELATED_NAME' }] }, quickAgents: {} }, tlsCertificatePem: 'PRIVATE_CERTIFICATE' } : null);
     m.peer.mockReturnValue({ alias: 'Saved alias', lastSeen: '2026-11-19T00:00:00Z', publicKey: 'PRIVATE_UNUSED_TRUST_RECORD' });
     const value = await read();
     const connections = value.cards.find((c) => c.id === 'connections')!;
     expect.soft(connections.summary).toBe('0 local directions · 1 remote connections');
-    expect.soft(connections.rows.find((r) => r.label === 'Peer B')?.value).toContain('on Studio · two-way · saved network link · disconnected · names from retained metadata');
-    expect.soft(connections.rows.find((r) => r.label === 'Peer B outgoing switches')?.value).toContain('Off: Send messages');
+    expect.soft(connections.rows.find((r) => r.label === 'Peer B on Studio')?.value).toContain('two-way records');
+    expect.soft(connections.rows.find((r) => r.label === 'Peer B on Studio')?.value).toContain('saved network link · names from retained metadata');
+    expect.soft(connections.rows.find((r) => r.label === 'Peer B on Studio host record')?.value).toBe('Studio · retained transport: disconnected · snapshot missing or incomplete');
+    expect.soft(connections.rows.find((r) => r.label === 'Peer B on Studio outgoing switches')?.value).toContain('Off: Send messages');
     expect.soft(connections.notes.join(' ')).not.toContain('No Clubhouse MCP wires');
     expect.soft(JSON.stringify(value)).not.toMatch(/PRIVATE_OTHER|PRIVATE_UNRELATED|PRIVATE_CERTIFICATE|PRIVATE_UNUSED/i);
-    expect.soft(m.satellite.mock.calls.every(([id]) => id === 'm1')).toBe(true);
+    expect.soft(m.satellite.mock.calls.every(([id]) => id === PEER_MACHINE)).toBe(true);
   });
   it('never substitutes a different cached agent’s name when the saved network target is absent', async () => {
-    m.directions.mockReturnValue([{ from: { agentId: 'a1' }, to: { agentId: 'missing', machineId: 'm1' }, disabledTools: [], link: { createdAt: '2026-11-19' }, updatedAt: '2026-11-19' }]);
+    m.directions.mockReturnValue([{ from: { agentId: 'a1' }, to: { agentId: 'missing', machineId: PEER_MACHINE }, disabledTools: [], link: { createdAt: '2026-11-19' }, updatedAt: '2026-11-19' }]);
     m.satellite.mockReturnValue({ alias: 'Studio', state: 'connected', snapshot: { agents: { p: [{ id: 'different', name: 'PRIVATE_OTHER_AGENT_NAME' }] }, quickAgents: {} } });
     const c = (await read()).cards.find((c) => c.id === 'connections')!;
     expect.soft(c.rows.some((r) => r.label === 'missing')).toBe(true);
-    expect.soft(c.notes.join(' ')).toContain('name for missing@m1 is unavailable or ambiguous');
+    expect.soft(c.notes.join(' ')).toContain('target name is unavailable or ambiguous');
     expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_OTHER_AGENT_NAME');
   });
   it.each(['parent-removal', 'earlier-helper-release', 'cross-project-reparent', 'disposed-reparent'] as const)('withholds complete Details when real primary membership changes after helper work: %s', async (condition) => {
@@ -560,7 +569,7 @@ describe('host selected-agent Details projections', () => {
     m.canvases.mockResolvedValue(Array.from({ length: 112 }, (_, i) => ({ name: `Board ${i}`, scope: 'project' })));
     const value = await read();
     expect(value.cards.find((c) => c.id === 'actions')).toMatchObject({ state: 'error', rows: [] });
-    expect(value.cards.find((c) => c.id === 'connections')).toMatchObject({ state: 'ok', rows: [], summary: '0 directions' });
+    expect(value.cards.find((c) => c.id === 'connections')).toMatchObject({ state: 'ok', rows: [], summary: '0 known directions' });
     expect(value.cards.find((c) => c.id === 'canvases')).toMatchObject({ state: 'ok', omitted: 12 });
     expect(JSON.stringify(value)).not.toContain('PRIVATE_ERROR');
   });
@@ -666,7 +675,7 @@ it.each(['same', 'changed', 'created', 'revoked'] as const)('holds a real select
     options.receipts.push(captureInstructionDisplayWitness(root, 'CLAUDE.md'));
     return { status: 200, body: setting() };
   });
-  m.sources.mockImplementation(async () => { if (mode !== 'same') await fs.writeFile(file, 'Changed instructions'); if (mode === 'revoked') allowed = false; return { pairs: [], unreadable: [] }; });
+  m.connectionFixture.mockImplementation(async () => { if (mode !== 'same') await fs.writeFile(file, 'Changed instructions'); if (mode === 'revoked') allowed = false; return { pairs: [], unreadable: [] }; });
   try {
     const result = await readRemoteAgentDetails('a1', () => allowed);
     expect.soft(result.status).toBe(mode === 'same' ? 200 : mode === 'revoked' ? 403 : 409);
@@ -678,4 +687,55 @@ it('keeps independently known Settings rows when the unchanged v1 contract canno
   m.settings.mockResolvedValue({ status: 503, body: { error: 'settings_evidence_unavailable' }, display: { id: 'settings', title: 'Settings', state: 'error', summary: 'Some host settings are unavailable', rows: [{ label: 'Next start model', value: 'HOST_SAVED_MODEL' }, { label: 'Next wake', value: 'Unavailable from host settings' }], notes: ['Known host fields remain available independently.'], omitted: 0, observedAt: Date.now() } });
   const result = await read(); expect(result.settings).toBeNull();
   expect(result.cards.find((card) => card.id === 'settings')).toMatchObject({ state: 'error', rows: expect.arrayContaining([{ label: 'Next start model', value: 'HOST_SAVED_MODEL' }, { label: 'Next wake', value: 'Unavailable from host settings' }]) });
+});
+
+
+describe('actual selected Connections receipts at the complete Details boundary', () => {
+  it.each(['unchanged', 'binding', 'source', 'primary', 'revoked-and-changed'] as const)('retains actual admitted selected evidence across a later card await: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-connection-')));
+    const getPath = vi.spyOn(app, 'getPath').mockReturnValue(root);
+    const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
+    const sources = await import('./persisted-bindings');
+    const { readConnectionDirectionsForDisplay } = await import('./connection-directions-display');
+    m.realConnections = true; resetAllSettingsStoresForTests(); bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting();
+    bindingManager.setConnectionToolsSource(null, null); bindingManager.setConnectionInstructionsSource(null);
+    const collect = vi.fn(async () => []);
+    sources.registerPersistedBindingSource({ id: 'selected-test-source', collect });
+    await sources.rebuildPersistedBindings(); collect.mockClear();
+    expect(sources.claimSourceBinding('selected-test-source', { agentId: 'a1', targetId: 'selected-target', targetKind: 'agent', label: 'Selected target before', targetName: 'Selected target before' })).toBe('created');
+    const file = path.join(root, 'connection-grants.json');
+    const put = (disabledTools: string[]) => fs.writeFile(file, JSON.stringify({ version: 1, directions: [{ from: { agentId: 'a1' }, to: { agentId: 'selected-target' }, disabledTools, link: { createdAt: '2026-11-19T00:00:00Z' } }] }));
+    await put([]);
+    const admitted: Array<{ current(): boolean }> = [];
+    expect(bindingManager.readBindingsForDisplay('a1', { direction: 'outgoing', receipts: admitted }).state).toBe('ok');
+    expect(sources.readCachedConnectionSourcesForDisplay('a1', { receipts: admitted }).state).toBe('ok');
+    expect(readConnectionDirectionsForDisplay('a1', { receipts: admitted }).state).toBe('ok');
+    expect(admitted.every((receipt) => receipt.current())).toBe(true);
+    let allowed = true, laterRead = false;
+    m.canvases.mockImplementation(async () => {
+      laterRead = true;
+      // These are real owner/primary changes AFTER the Connections producer
+      // returns, not a mocked receipt returning false or an admission hook.
+      if (mode === 'binding') bindingManager.updateBinding('a1', 'selected-target', { targetName: 'Selected target after' });
+      if (mode === 'source' || mode === 'revoked-and-changed') sources.markSourceRemovedByUser('selected-test-source', 'a1', 'selected-target');
+      if (mode === 'primary') await put(['read_output']);
+      if (mode === 'revoked-and-changed') allowed = false;
+      return [];
+    });
+    try {
+      const response = await readRemoteAgentDetails('a1', () => allowed);
+      expect(laterRead).toBe(true); expect(m.connectionFixture).not.toHaveBeenCalled(); expect(collect).not.toHaveBeenCalled();
+      expect(admitted.every((receipt) => receipt.current())).toBe(mode === 'unchanged');
+      if (mode === 'unchanged') {
+        expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+        expect((response.body as RemoteAgentDetails).cards.find((card) => card.id === 'connections')?.rows.some((row) => row.label === 'Selected target before')).toBe(true);
+      } else {
+        expect.soft(response.status).toBe(mode === 'revoked-and-changed' ? 403 : 409);
+        expect.soft(response.body).toEqual({ error: mode === 'revoked-and-changed' ? 'details_read_refused' : 'connection_evidence_changed' });
+        expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('providerId'); expect.soft(response.body).not.toHaveProperty('settings');
+      }
+    } finally {
+      m.realConnections = false; sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); resetAllSettingsStoresForTests(); getPath.mockRestore(); await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

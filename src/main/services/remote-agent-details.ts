@@ -50,6 +50,8 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const settingsReceipts: Array<{ current(): boolean }> = [];
     const orchestrationReceipts: Array<{ current(): boolean }> = [];
     const dispatcherReceipts: Array<{ current(): boolean }> = [];
+    const connectionReceipts: Array<{ current(): boolean }> = [];
+    const connectionHelpers = new Set<string>();
     const controller = dispatcherControllerForDisplay({ receipts: dispatcherReceipts, authorized });
     let orchestration: ReturnType<typeof readOrchestrationForDisplay> | undefined;
     const readPolicy = () => orchestration ??= readOrchestrationForDisplay(target, { receipts: orchestrationReceipts });
@@ -121,6 +123,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       }
       const helpers = await listHelpersEverywhere(project.path, agentId, { includeDisposed: true, readOnly: true, receipts: helperReceipts });
       if (!authorized()) throw new Error('revoked');
+      for (const { config } of helpers) connectionHelpers.add(config.id);
       const requests = readStartRequestsForDisplay(project.path, agentId, { receipts: orchestrationReceipts });
       const waiting = projectPendingHelperStarts(c, requests);
       const live = helpers.filter((h) => !isDisposedAgent(h.config));
@@ -150,11 +153,11 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     });
     await read('dispatcher', (c) => readDispatcherCard(c, target, readPolicy().fields.connectToDispatcher, { receipts: dispatcherReceipts, authorized, controller }));
     await read('connections', async (c) => {
-      if (!dispatcher) return readConnectionCard(c, agentId);
+      if (!dispatcher) return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: agent.name, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
       const canonical = await controller();
       if (!authorized()) return;
       if (!canonical) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The host Dispatcher’s canonical connection identity is unavailable. Connections cannot be verified until its host identity is available.'); return; }
-      return readConnectionCard(c, canonical.agent.id);
+      return readConnectionCard(c, canonical.agent.id, { receipts: connectionReceipts, authorized, dispatcher: true, name: canonical.agent.name });
     });
     await read('actions', (c) => readActionCard(c, agentId, project.id, dispatcher, { agentName: agent.name, projectName: project.displayName || project.name }));
     await read('skills-mcp', async (c) => {
@@ -223,6 +226,9 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       largest.rows.pop(); largest.omitted++;
     }
     if (cards.length !== REMOTE_DETAILS_CARD_IDS.length) throw new Error('details_contract');
+    if (!authorized()) return refused();
+    if (connectionReceipts.some((receipt) => !receipt.current())) return authorized() ? { status: 409, body: { error: 'connection_evidence_changed' } } : refused();
+    if (!authorized()) return refused();
     return { status: 200, body: result };
   } catch {
     // telemetry-exempt: no host errors or partial evidence after revocation leave this boundary.

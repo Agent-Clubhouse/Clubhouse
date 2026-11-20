@@ -9,6 +9,9 @@ export interface RemoteConnection {
   direction: 'two-way' | 'to' | 'from';
 }
 
+/** The same recorded target in both directions is one two-way relationship. */
+export const mergeConnectionDirection = (current: 'two-way' | 'to' | 'from' | undefined, next: 'to' | 'from'): 'two-way' | 'to' | 'from' => current && current !== next ? 'two-way' : next;
+
 /** The agent's links with agents on other machines, one row per other agent. */
 export function remoteConnections(grants: readonly SavedDirection[], agentId: string): RemoteConnection[] {
   const rows = new Map<string, RemoteConnection>();
@@ -21,7 +24,7 @@ export function remoteConnections(grants: readonly SavedDirection[], agentId: st
     const address = formatAgentAddress({ agentId: other.agentId, machine: other.machineId });
     const existing = rows.get(address);
     const direction = outgoing ? 'to' : 'from';
-    if (existing) existing.direction = existing.direction === direction ? direction : 'two-way';
+    if (existing) existing.direction = mergeConnectionDirection(existing.direction, direction);
     else rows.set(address, { address, agentId: other.agentId, machine: other.machineId!.toLowerCase(), direction });
   }
   return [...rows.values()];

@@ -20,6 +20,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
   try {
     const { run, project } = target, agentId = run.agentId, selected = run.display;
     const setupReceipts: DisplayReceipt[] = [];
+    const connectionReceipts: DisplayReceipt[] = [];
     const registration = agentRegistry.get(agentId);
     const nonce = registration?.nonce, registeredRuntime = registration?.runtime;
     const registeredProvider = registration?.orchestrator, registeredCwd = registration?.cwd;
@@ -93,7 +94,10 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
         if (selected.template.omitted) { c.omitted += selected.template.omitted; c.notes.push('Further launch part choices were outside the retained display limit.'); }
       }
     });
-    await read('connections', (c) => readConnectionCard(c, agentId));
+    await read('connections', (c) => {
+      if (!running || !bound) { c.state = 'error'; c.summary = 'Connection run association unavailable'; c.notes.push('The host cannot associate current connection records with this stopped or unconfirmed quick run.'); return; }
+      return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: run.name });
+    });
     await read('actions', (c) => readActionCard(c, agentId, project.id, false, { agentName: run.name, projectName: project.displayName || project.name }));
     await read('canvases', (c) => readCanvasCard(c, agentId, project.id));
     await read('skills-mcp', (c) => {
@@ -136,6 +140,9 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
       const largest = cards.filter((c) => c.rows.length).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];
       if (!largest) throw new Error('details_limit'); largest.rows.pop(); largest.omitted++;
     }
+    if (!authorized()) return refused();
+    if (connectionReceipts.some((receipt) => !receipt.current())) return authorized() ? { status: 409, body: { error: 'connection_evidence_changed' } } : refused();
+    if (!authorized()) return refused();
     return { status: 200, body: result };
   } catch { /* telemetry-exempt: no raw host error or partial data after revocation. */ return authorized() ? { status: 500, body: { error: 'quick_details_unreadable' } } : refused(); }
 }
