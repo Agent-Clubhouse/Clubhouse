@@ -20,6 +20,38 @@ beforeEach(() => {
 });
 const show = (extra = {}) => render(<RemoteChangesCard agent={agent} details={details} status="ok" freshnessKey="current" open onToggle={() => {}} {...extra} />);
 describe('remote Changes read-only shared file view', () => {
+  it('displays exact-rename endpoints, uses only the selected opaque key and keeps live limits explicit', async () => {
+    request.mockImplementation(async (_host, _id, query) => ({ status: 'ok', value: fixture({
+      files: [{ ...fixture().files[0], path: 'new-name', oldPath: 'old-name', status: 'renamed', additions: 0, deletions: 0 }],
+      diffstat: { additions: 0, deletions: 0, knownFiles: 1 },
+      ...(query.fileKey && { patch: { fileKey: key, state: 'text', text: 'rename from old-name\nrename to new-name\n' } }),
+    }) }));
+    show();
+    await screen.findByText('new-name');
+    expect(screen.getByTestId('changes-file-row')).toHaveAttribute('title', 'old-name → new-name');
+    expect(screen.getByText(/Only verified, unambiguous identical regular-file moves/)).toBeInTheDocument();
+    expect(screen.getByTestId('details-card-changes-summary')).toHaveTextContent('+0 −0');
+    fireEvent.click(screen.getByTestId('changes-file-row'));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('sat', 'a1', { scope: 'branch', fileKey: key }));
+    await screen.findByText('Rename: old-name → new-name.');
+    expect(screen.queryByText(/Revert|Undo|Overwrite/)).not.toBeInTheDocument();
+    expect(window.clubhouse.git.branchFilePatch).not.toHaveBeenCalled();
+  });
+  it('keeps link-own metadata refused instead of fabricating a destination or zero counts', async () => {
+    request.mockImplementation(async (_host, _id, query) => ({ status: 'ok', value: fixture({
+      files: [{ ...fixture().files[0], path: 'link', status: 'unknown', countsKnown: false, evidence: 'unsafe' }],
+      diffstat: { additions: 0, deletions: 0, knownFiles: 0 },
+      ...(query.fileKey && { patch: { fileKey: key, state: 'unsafe' } }),
+    }) }));
+    show();
+    await screen.findByText('link');
+    expect(screen.getByTestId('details-card-changes-summary')).toHaveTextContent('line counts unavailable · partial');
+    expect(screen.getByText(/Link destinations are not shared/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('changes-file-row'));
+    await waitFor(() => expect(screen.getByTestId('changes-file-diff')).toHaveTextContent('could not be safely shared'));
+    expect(screen.queryByText(/Symbolic link to/)).not.toBeInTheDocument();
+    expect(window.clubhouse.git.branchFilePatch).not.toHaveBeenCalled();
+  });
   it.each([false, true])('keeps whole-comparison diffstat stable across pages with unknown counts=%s', async (unknown) => {
     const first = Array.from({ length: 50 }, (_, i) => ({ ...fixture().files[0], path: `file-${i}`, fileKey: i.toString(16).padStart(64, '0'), additions: 1, deletions: 2 }));
     const last = { ...fixture().files[0], path: 'last', fileKey: 'b'.repeat(64), status: unknown ? 'unknown' as const : 'modified' as const, additions: unknown ? 0 : 3, deletions: unknown ? 0 : 4, countsKnown: !unknown, evidence: unknown ? 'filtered' as const : 'text' as const };
