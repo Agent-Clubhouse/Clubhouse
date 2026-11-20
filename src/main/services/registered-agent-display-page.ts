@@ -79,9 +79,11 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
     || !Number.isInteger(matchOffset) || matchOffset < 0 || matchOffset > REGISTERED_DISPLAY_ROWS
     || !['helper-children', 'dispatcher-auto'].includes(purpose)
     || (purpose === 'dispatcher-auto') !== (selected.projectId === DISPATCHER_PROJECT_ID)) return unknown('invalid');
-  const admitted = () => { try { return options.authorized() && current(selected.receipt); } catch { return false; } };
+  const selectedId = selected.agentId, selectedProjectId = selected.projectId, selectedPath = selected.projectPath, selectedReceipt = selected.receipt;
+  const authorized = options.authorized, receipts = options.receipts;
+  const admitted = () => { try { return authorized() && current(selectedReceipt); } catch { return false; } };
   if (!admitted()) return unknown('changed');
-  const base = getBaseDirPath(), budget = createReadOnlyMetadataBudget(), evidence: DisplayReceipt[] = [selected.receipt, profile(base)];
+  const base = getBaseDirPath(), budget = createReadOnlyMetadataBudget(), evidence: DisplayReceipt[] = [selectedReceipt, profile(base)];
   const localRoots = new Map<string, RegisteredDisplayRoot>(), entries: RegisteredDisplayAgent[] = [];
   let knownMatches = 0, unknownRows = 0, unavailableProjects = 0, complete = true, rowsLeft = REGISTERED_DISPLAY_ROWS;
   try {
@@ -94,7 +96,7 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
     for (const value of raw) {
       if (!record(value) || !id(value.id) || !folder(value.path) || ids.has(value.id) || paths.has(value.path)) return unknown('unreadable');
       ids.add(value.id); paths.add(value.path);
-      if (value.id === selected.projectId && value.path === selected.projectPath) selectedRegistered = true;
+      if (value.id === selectedProjectId && value.path === selectedPath) selectedRegistered = true;
       const label = typeof value.displayName === 'string' && value.displayName ? value.displayName : value.name;
       const name: DisplayValue<string> = typeof label === 'string' && label.length <= 1024 ? { state: 'ok', value: display(label, 240), inputs }
         : { state: 'unavailable', reason: typeof label === 'string' ? 'limit' : 'invalid', inputs };
@@ -106,12 +108,12 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
     let selectedDirectory: string | undefined, selectedDirectoryReceipt: DisplayReceipt | undefined;
     const aliases = new Map<string, { key: string | null; receipt?: DisplayReceipt }>();
     if (purpose === 'helper-children') {
-      try { selectedDirectory = directoryKey(selected.projectPath); selectedDirectoryReceipt = directoryReceipt(selected.projectPath, selectedDirectory); evidence.push(selectedDirectoryReceipt); }
+      try { selectedDirectory = directoryKey(selectedPath); selectedDirectoryReceipt = directoryReceipt(selectedPath, selectedDirectory); evidence.push(selectedDirectoryReceipt); }
       catch { return unknown('unreadable'); }
     }
     const relatedParent = (parent: unknown, relevant: Set<DisplayReceipt>): boolean | undefined => {
       if (!folder(parent)) return undefined;
-      if (parent === selected.projectPath) return true;
+      if (parent === selectedPath) return true;
       // An unregistered UNC/network spelling is not an admitted alias probe.
       if ((parent.startsWith('\\\\') || parent.startsWith('//')) && !paths.has(parent)) return undefined;
       if (aliases.has(parent)) { const found = aliases.get(parent)!; if (found.receipt) relevant.add(found.receipt); return found.key === null ? undefined : found.key === selectedDirectory; }
@@ -138,8 +140,8 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
           if (!record(agent)) { unknownRows++; complete = false; continue; }
           if (purpose === 'helper-children') {
             if (agent.parentAgentId === undefined) continue;
-            if (typeof agent.parentAgentId === 'string' && agent.parentAgentId !== selected.agentId) continue;
-            if (agent.parentAgentId !== selected.agentId || agent.id === selected.agentId) { unknownRows++; complete = false; continue; }
+            if (typeof agent.parentAgentId === 'string' && agent.parentAgentId !== selectedId) continue;
+            if (agent.parentAgentId !== selectedId || agent.id === selectedId) { unknownRows++; complete = false; continue; }
             const related = agent.parentProjectPath === undefined && data.rootNamespace ? data.rootNamespace === selectedDirectory
               : relatedParent(agent.parentProjectPath === undefined ? project.path : agent.parentProjectPath, relevantAliases);
             if (related === false) continue;
@@ -150,7 +152,7 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
           if (projected.state !== 'ok') { unknownRows++; complete = false; continue; }
           const fields = projected.value;
           if (purpose === 'dispatcher-auto') {
-            if (agent.id === selected.agentId || fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value
+            if (agent.id === selectedId || fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value
               || fields.disposed.state === 'ok' && fields.disposed.value || fields.helper.state === 'ok' && fields.helper.value) continue;
             if (fields.connectToDispatcher.state !== 'ok' || fields.disposed.state !== 'ok' || fields.helper.state !== 'ok') { unknownRows++; complete = false; continue; }
           }
@@ -160,13 +162,13 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
           entries.push({ agentId: agent.id, projectId: project.id, projectName: project.name,
             fields: { ...fields, name: fields.name.state === 'ok' ? { ...stamp(fields.name), state: 'ok', value: display(fields.name.value, 240) } : stamp(fields.name),
               helper: stamp(fields.helper), disposed: stamp(fields.disposed), connectToDispatcher: stamp(fields.connectToDispatcher) },
-            ...(purpose === 'helper-children' && { parentAgentId: selected.agentId }) });
+            ...(purpose === 'helper-children' && { parentAgentId: selectedId }) });
         }
         if (entries.length > emittedBefore) localRoots.set(project.id, { projectPath: project.path, namespace: data.rootNamespace,
-          receipt: combine([selected.receipt, profile(base), snapshot.receipt, data.receipt, ...relevantAliases]) });
+          receipt: combine([selectedReceipt, profile(base), snapshot.receipt, data.receipt, ...relevantAliases]) });
       } catch (error) { unavailableProjects++; complete = false; if (!(error instanceof ReadOnlyMetadataLimitError)) continue; }
     }
-    const receipt = combine(evidence); options.receipts.push(receipt);
+    const receipt = combine(evidence); receipts.push(receipt);
     if (!admitted() || !receipt.current()) return unknown('changed');
     if (matchOffset > 0 && matchOffset >= knownMatches) return unknown('changed');
     if (rootsOut) for (const [key, value] of localRoots) rootsOut.set(key, value);
