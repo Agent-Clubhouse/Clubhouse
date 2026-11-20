@@ -53,14 +53,16 @@ beforeEach(async () => {
 });
 afterEach(async () => { bindingManager._resetForTesting(); _resetPersistedBindingSourcesForTesting(); clearAgentConfigCache(); await fsp.rm(root, { recursive: true, force: true }); });
 
-it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'dispatcher-inapplicable', 'helper-inapplicable', 'revoked-before-metadata'] as const)('integrates real selected source, primary and owner cache fields into a read-only Connections card: %s', async (kind) => {
+it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'dispatcher-inapplicable', 'helper-inapplicable', 'revoked-before-metadata', 'bounded-page'] as const)('integrates real selected source, primary and owner cache fields into a read-only Connections card: %s', async (kind) => {
   bindingManager._resetForTesting(); _resetPersistedBindingSourcesForTesting();
   const selectedProject = path.join(root, 'selected'); await fsp.mkdir(path.join(selectedProject, '.clubhouse'), { recursive: true });
   const selected = { ...agent(), id: 'selected', name: 'Selected', ...(kind === 'helper-inapplicable' ? { parentAgentId: 'parent' } : {}) }, selectedRecord = { id: 's', name: 'Selected project', path: selectedProject };
   await fsp.writeFile(path.join(selectedProject, '.clubhouse', 'agents.json'), JSON.stringify([selected]));
   await fsp.mkdir(getBaseDirPath()); await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [selectedRecord, { id: 't', name: 'Target project', path: project }] }));
-  await fsp.writeFile(path.join(getBaseDirPath(), 'dispatcher-connections.json'), JSON.stringify({ version: 1, connections: [{ agentId: 'selected', targetId: 'target', agentProjectPath: selectedProject, targetProjectPath: project, createdBy: 'selected', createdAt: '2026-11-19T00:00:00Z' }], removedByUser: [] }));
-  if (kind !== 'cold-cache') await warm();
+  const targets = kind === 'bounded-page' ? Array.from({ length: 30 }, (_, i) => agent({ id: 'target-' + i, name: 'Qualified target ' + i })) : [agent()];
+  await fsp.writeFile(file(), JSON.stringify(targets));
+  await fsp.writeFile(path.join(getBaseDirPath(), 'dispatcher-connections.json'), JSON.stringify({ version: 1, connections: targets.map((target) => ({ agentId: 'selected', targetId: target.id, agentProjectPath: selectedProject, targetProjectPath: project, createdBy: 'selected', createdAt: '2026-11-19T00:00:00Z' })), removedByUser: [] }));
+  if (kind !== 'cold-cache' && kind !== 'bounded-page') await warm();
   if (kind === 'saved-and-memory') (await getDurableConfig(project, 'target'))!.name = 'Host accepted custom name';
   if (kind === 'changed-directory') { const actual = await vi.importActual<typeof import('fs')>('fs'); actual.renameSync(project, project + '-retired'); actual.mkdirSync(path.join(project, '.clubhouse'), { recursive: true }); actual.writeFileSync(file(), JSON.stringify([agent({ name: 'New registered primary' })])); }
   const target = captureReadOnlyAgentTargetWitness({ agent: selected, project: selectedRecord }); expect(target.current()).toBe(true);
@@ -82,6 +84,12 @@ it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'd
   }
   if (kind === 'revoked-before-metadata') {
     expect(revoked).toBe(true); expect.soft(cacheRead).not.toHaveBeenCalled(); expect.soft([...paths.values()]).not.toContain(file()); expect.soft(JSON.stringify(c)).not.toContain('Selected cache name'); expect.soft(await snapshot()).toEqual(before); expect.soft(m.external).not.toHaveBeenCalled(); return;
+  }
+  if (kind === 'bounded-page') {
+    expect(cacheRead).toHaveBeenCalledTimes(30); expect(receipts.every((r) => r.current())).toBe(true);
+    expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe(112); // 2 host rows + 30 directions × 7 fields, including saved and memory fields.
+    expect.soft(c.rows.some((r) => r.label.endsWith(' saved target'))).toBe(true); expect.soft(c.rows.some((r) => r.label.endsWith(' host memory target'))).toBe(true);
+    expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|rootNamespace|targetProjectPath/); expect.soft(await snapshot()).toEqual(before); expect.soft(m.external).not.toHaveBeenCalled(); return;
   }
   const label = kind === 'changed-directory' ? 'New registered primary' : kind === 'saved-and-memory' ? 'Host accepted custom name' : 'Selected cache name';
   expect(c.rows.some((r) => r.label === label)).toBe(true); expect(c.rows.find((r) => r.label === label + ' saved target')?.value).toContain(kind === 'changed-directory' ? 'New registered primary' : 'Selected cache name');
