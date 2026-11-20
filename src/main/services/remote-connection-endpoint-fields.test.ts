@@ -100,3 +100,38 @@ it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'd
   expect.soft(await snapshot()).toEqual(before);
   for (const fn of [fsp.writeFile, fsp.rename, fsp.mkdir, fs.watch]) expect.soft(fn).not.toHaveBeenCalled();
 });
+
+it.each(['cross-project-outgoing', 'cross-project-two-way', 'matching-role-folder', 'distinct-native-ids'] as const)('keeps configured controller and saved manual endpoint identities independent: %s', async (mode) => {
+  const { configuredDispatcherDirections } = await import('./configured-dispatcher-directions');
+  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
+  const { readSavedDispatcherLinksForDisplay } = await import('./dispatcher-saved-links-display');
+  const selectedProject = path.join(root, 'selected'), roleProject = path.join(root, 'dispatcher');
+  for (const folder of [selectedProject, roleProject]) await fsp.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+  const selected = { ...agent(), id: 'selected', name: 'Selected', orchestration: { connectToDispatcher: true } }, controller = { ...agent(), id: 'controller1', name: 'Operations' };
+  const related = { ...agent(), id: mode === 'distinct-native-ids' ? 'ordinary-target' : 'controller1', name: 'Project agent' };
+  const selectedRecord = { id: 's', name: 'Selected project', path: selectedProject };
+  await fsp.writeFile(path.join(selectedProject, '.clubhouse', 'agents.json'), JSON.stringify([selected])); await fsp.writeFile(path.join(roleProject, '.clubhouse', 'agents.json'), JSON.stringify([controller])); await fsp.writeFile(file(), JSON.stringify([related]));
+  const same = mode === 'matching-role-folder', manualProject = same ? roleProject : project, manualId = same ? controller.id : related.id;
+  await fsp.mkdir(getBaseDirPath(), { recursive: true }); await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [selectedRecord, { id: 'p', name: 'Manual target project', path: manualProject }] }));
+  const links = [{ agentId: selected.id, targetId: manualId, agentProjectPath: selectedProject, targetProjectPath: manualProject, createdBy: selected.id, createdAt: '2026-11-19T00:00:00Z' }, ...(mode === 'cross-project-two-way' ? [{ agentId: manualId, targetId: selected.id, agentProjectPath: manualProject, targetProjectPath: selectedProject, createdBy: selected.id, createdAt: '2026-11-19T00:00:00Z' }] : [])];
+  await fsp.writeFile(path.join(getBaseDirPath(), 'dispatcher-connections.json'), JSON.stringify({ version: 1, connections: links, removedByUser: [] }));
+  const selectedReceipt = captureReadOnlyAgentTargetWitness({ agent: selected, project: selectedRecord }), roleReceipt = captureReadOnlyRoleTargetWitness({ agent: controller, project: { id: 'dispatcher', name: 'Dispatcher', path: roleProject } }, () => true);
+  expect(selectedReceipt.current()).toBe(true); expect(roleReceipt.current()).toBe(true); expect(project).not.toBe(roleProject);
+  const saved = readSavedDispatcherLinksForDisplay(selected.id, selectedProject); expect(saved).toMatchObject({ state: 'ok', value: { total: links.length } });
+  const automatic = configuredDispatcherDirections(selected, { state: 'ok', value: true, inputs: [] }, controller); expect(automatic).toMatchObject({ state: 'ok', value: [{ agentId: 'selected', targetId: 'controller1', targetName: 'Operations' }, { agentId: 'controller1', targetId: 'selected', agentName: 'Operations' }] });
+  const actualSource = JSON.parse(await fsp.readFile(path.join(getBaseDirPath(), 'dispatcher-connections.json'), 'utf8')); expect(actualSource.connections[0].targetProjectPath).toBe(manualProject);
+  const receipts: DisplayReceipt[] = [selectedReceipt, roleReceipt], c = card('connections', 'Connections'), source = await import('./dispatcher-endpoint-associations-display'), readMetadata = source.readSavedDispatcherEndpointMetadataForDisplay;
+  const metadata = readMetadata({ agentId: selected.id, projectPath: selectedProject, target: selectedReceipt }, links, { receipts, readLoadedCache: readAgentConnectionCacheForDisplay });
+  expect(metadata).toMatchObject({ state: 'ok', value: { rows: [{ relationship: 'recorded', endpoint: { state: 'ok', value: { record: 'registered-primary', fields: { id: manualId, name: { state: 'ok', value: same ? 'Operations' : 'Project agent' } } } } }] } }); expect(receipts.every((r) => r.current())).toBe(true);
+  resetObservation(); await readPassiveConnectionCard(c, selected.id, { receipts, authorized: () => true, projectPath: selectedProject, name: selected.name, automatic, endpoint: { target: selectedReceipt, readCache: readAgentConnectionCacheForDisplay } });
+  expect(receipts.every((r) => r.current())).toBe(true); expect(m.external).not.toHaveBeenCalled();
+  const automaticSources = c.rows.filter((r) => r.label.endsWith(' sources') && r.value.includes('Connect to Dispatcher (saved policy)'));
+  const manualSources = c.rows.filter((r) => r.label.endsWith(' sources') && r.value.includes('Made by the Dispatcher (saved record'));
+  expect.soft(automaticSources).toHaveLength(2); expect.soft(automaticSources.every((r) => r.label.startsWith('Operations'))).toBe(true);
+  expect.soft(manualSources).toHaveLength(links.length); expect.soft(manualSources.every((r) => r.label.startsWith(same ? 'Operations' : 'Project agent'))).toBe(true);
+  if (mode === 'cross-project-outgoing') {
+    const manualHeaders = c.rows.filter((r) => r.label.startsWith('Project agent') && r.value.startsWith('agent ·'));
+    expect.soft(manualHeaders).toHaveLength(1); expect.soft(manualHeaders.every((r) => !r.value.includes('two-way records') && r.value.includes('sends to it'))).toBe(true);
+  }
+  expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|rootNamespace|targetProjectPath/);
+});
