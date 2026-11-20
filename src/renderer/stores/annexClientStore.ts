@@ -5,8 +5,8 @@
  * from the main process.
  */
 import { create } from 'zustand';
-import { applySnapshotDelta, sameSnapshotValue } from './snapshot-delta';
-import { namespacedAgentId, useRemoteProjectStore } from './remoteProjectStore';
+import { ALL_CACHED_DOMAINS, CachedDomain, onRemoteProjectionMutation, reconcileCachedValue, sameSnapshotValue } from './snapshot-delta';
+import { namespacedAgentId, namespacedProjectId, satellitePrefix, useRemoteProjectStore } from './remoteProjectStore';
 import type { HelperDeleteChoice, SatelliteSnapshot } from '../../shared/types';
 import type { ChatEvent } from '../../shared/chat';
 import type { PendingPermissionInfo } from '../../shared/permission-types';
@@ -79,7 +79,54 @@ let startupRead: { promise: Promise<void>; listRevision: number } | null = null;
 
 // IPC clones have no shared object identity or socket epoch. Keep an independent
 // comparison copy: this is duplicate suppression, not a freshness/sequence test.
-const comparedSnapshots = new WeakMap<SatelliteConnection, SatelliteSnapshot>();
+type SnapshotComparison = { snapshot?: SatelliteSnapshot; uncertain: number; deferred: number };
+const comparedSnapshots = new WeakMap<SatelliteConnection, SnapshotComparison>();
+const comparisonFor = (satellite: SatelliteConnection): SnapshotComparison => {
+  let comparison = comparedSnapshots.get(satellite);
+  if (!comparison) {
+    comparison = { uncertain: 0, deferred: 0 };
+    comparedSnapshots.set(satellite, comparison);
+  }
+  return comparison;
+};
+
+// Invalidate before handlers/timers, including no-op/unknown-ID settlements.
+const eventDomains: Record<string, number> = {
+  'pty:exit': CachedDomain.Agents | CachedDomain.Permissions,
+  'agent:completed': CachedDomain.Agents | CachedDomain.Permissions,
+  'agent:woken': CachedDomain.Agents,
+  'agent:spawned': CachedDomain.Agents,
+  'agent:status': CachedDomain.Agents | CachedDomain.Details,
+  'hook:event': CachedDomain.Details,
+  'structured:event': CachedDomain.Details,
+  'permission:request': CachedDomain.Permissions,
+  'permission:response': CachedDomain.Permissions,
+  'session:paused': CachedDomain.Pause,
+  'session:resumed': CachedDomain.Pause,
+  'canvas:state': CachedDomain.Canvas | CachedDomain.AppCanvas,
+  'group-project:changed': CachedDomain.Groups,
+  'group-project:list': CachedDomain.Groups,
+  'bulletin:message': CachedDomain.Digests,
+};
+
+function establishedDomains(satelliteId: string, snapshot: SatelliteSnapshot): number {
+  let domains = CachedDomain.Projects | CachedDomain.Agents | CachedDomain.Details
+    | CachedDomain.ProjectIcons | CachedDomain.AgentIcons | CachedDomain.Plugins
+    | CachedDomain.Permissions | CachedDomain.Pause;
+  const store = useRemoteProjectStore.getState();
+  const omitted = (snapshot as SatelliteSnapshot & { snapshotTruncated?: { omitted?: string[] } }).snapshotTruncated?.omitted;
+  const canvasOmitted = omitted?.includes('canvasState');
+  const prefix = satellitePrefix(satelliteId);
+  if (!canvasOmitted && snapshot.canvasState && Object.keys(store.remoteCanvasState)
+    .filter((id) => id.startsWith(prefix)).every((id) => Object.keys(snapshot.canvasState!).some((key) => namespacedProjectId(satelliteId, key) === id))) domains |= CachedDomain.Canvas;
+  if (!canvasOmitted && snapshot.appCanvasState) domains |= CachedDomain.AppCanvas;
+  if (snapshot.groupProjects) domains |= CachedDomain.Groups;
+  const covers = (current: Record<string, unknown>, incoming: Record<string, unknown> | undefined) => incoming
+    && Object.keys(current).filter((key) => key.startsWith(`${satelliteId}::`)).every((key) => Object.keys(incoming).some((id) => `${satelliteId}::${id}` === key));
+  if (covers(store.remoteBulletinDigests, snapshot.bulletinDigests)) domains |= CachedDomain.Digests;
+  if (covers(store.remoteGroupProjectMembers, snapshot.groupProjectMembers)) domains |= CachedDomain.Members;
+  return domains;
+}
 function applySnapshot(satellite: SatelliteConnection, snapshot: SatelliteSnapshot): void {
   useRemoteProjectStore.getState().applySatelliteSnapshot(satellite.id, satellite.alias, snapshot);
   syncRemotePermissions(satellite.id, snapshot.pendingPermissions ?? []);
@@ -88,21 +135,24 @@ function applySnapshot(satellite: SatelliteConnection, snapshot: SatelliteSnapsh
   }));
 }
 
-function applyCachedSnapshot(satellite: SatelliteConnection, previous: SatelliteSnapshot, next: SatelliteSnapshot): boolean {
-  let complete = useRemoteProjectStore.getState().applyCachedSatelliteSnapshot(satellite.id, satellite.alias, previous, next);
-  const conflict = () => { complete = false; };
+function applyCachedSnapshot(satellite: SatelliteConnection, previous: SatelliteSnapshot, next: SatelliteSnapshot, uncertain: number): number {
+  let deferred = useRemoteProjectStore.getState().applyCachedSatelliteSnapshot(satellite.id, satellite.alias, previous, next, uncertain);
   const permissions = (snapshot: SatelliteSnapshot) => Object.fromEntries(
     (snapshot.pendingPermissions ?? []).map((value) => remotePermission(satellite.id, value))
       .filter((value) => value !== null).map((value) => [value.requestId, value]),
   );
-  usePendingPermissionStore.setState((state) => ({
-    byRequestId: applySnapshotDelta(state.byRequestId, permissions(previous), permissions(next), conflict),
-  }));
-  useAnnexClientStore.setState((state) => ({
-    satellitePaused: applySnapshotDelta(state.satellitePaused,
-      { [satellite.id]: !!previous.sessionPaused }, { [satellite.id]: !!next.sessionPaused }, conflict),
-  }));
-  return complete;
+  usePendingPermissionStore.setState((state) => {
+    const result = reconcileCachedValue(state.byRequestId, permissions(previous), permissions(next), !!(uncertain & CachedDomain.Permissions));
+    if (result.deferred) deferred |= CachedDomain.Permissions;
+    return { byRequestId: result.value };
+  });
+  useAnnexClientStore.setState((state) => {
+    const result = reconcileCachedValue(state.satellitePaused,
+      { [satellite.id]: !!previous.sessionPaused }, { [satellite.id]: !!next.sessionPaused }, !!(uncertain & CachedDomain.Pause));
+    if (result.deferred) deferred |= CachedDomain.Pause;
+    return { satellitePaused: result.value };
+  });
+  return deferred;
 }
 
 type SatelliteEvent = { satelliteId: string; type: string; payload: unknown };
@@ -214,8 +264,11 @@ function startupJournal() {
       bytes += retained;
     },
     replay(id: string) {
+      let domains = 0;
       for (const operation of hosts.get(id)?.operations ?? []) {
         const store = useRemoteProjectStore.getState();
+        domains |= operation.kind === 'run' ? CachedDomain.Agents | (operation.clearPermissions ? CachedDomain.Permissions : 0)
+          : operation.kind === 'status' ? CachedDomain.Details : operation.kind === 'pause' ? CachedDomain.Pause : CachedDomain.Permissions;
         if (operation.kind === 'run') {
           if (operation.clearPermissions) usePendingPermissionStore.getState().clearForAgent(namespacedAgentId(id, operation.agentId));
           store.updateRemoteAgentRunState(id, operation.agentId, operation.status);
@@ -225,6 +278,7 @@ function startupJournal() {
         else useAnnexClientStore.setState((state) => ({ satellitePaused: { ...state.satellitePaused, [id]: operation.paused } }));
       }
       clear(id);
+      return domains;
     },
   };
 }
@@ -246,26 +300,33 @@ function reconcileSatellites(satellites: SatelliteConnection[], journal?: Startu
   }
   const next = satellites.map((sat) => {
     const old = previous.find((item) => item.id === sat.id);
-    const comparison = old && comparedSnapshots.get(old);
+    const previousComparison = old && comparedSnapshots.get(old);
+    const comparison = previousComparison?.snapshot;
+    const metadata = { uncertain: previousComparison?.uncertain ?? (!journal ? ALL_CACHED_DOMAINS : 0), deferred: previousComparison?.deferred ?? 0 };
     const duplicate = comparison !== undefined && sameSnapshotValue(comparison, sat.snapshot);
     const missingCatalog = !useRemoteProjectStore.getState().satelliteProjects[sat.id];
     const cachedBeforeReconnect = duplicate && old?.state !== 'connected' && sat.state === 'connected' && missingCatalog;
     const incomplete = old?.catalogIncomplete || journal?.blocked(sat.id) || cachedBeforeReconnect;
     const connection = { ...sat, snapshot: duplicate ? old!.snapshot : sat.snapshot, ...(incomplete && { catalogIncomplete: true }) };
-    if (sat.snapshot) comparedSnapshots.set(connection, duplicate ? comparison : structuredClone(sat.snapshot));
+    const nextComparison = { ...metadata, snapshot: sat.snapshot ? (duplicate ? comparison : structuredClone(sat.snapshot)) : undefined };
+    if (incomplete && !nextComparison.deferred && sat.snapshot) nextComparison.deferred |= establishedDomains(sat.id, sat.snapshot);
+    comparedSnapshots.set(connection, nextComparison);
     if (sat.state !== 'connected') {
       syncRemotePermissions(sat.id, []);
       delete paused[sat.id];
       journal?.clear(sat.id);
+      nextComparison.uncertain |= ALL_CACHED_DOMAINS;
     } else if (!incomplete && sat.snapshot && (!duplicate || missingCatalog)) {
       if (missingCatalog) {
         applySnapshot(connection, sat.snapshot);
-        journal?.replay(sat.id);
+        nextComparison.uncertain |= journal?.replay(sat.id) ?? 0;
       } else if (comparison) {
-        if (!applyCachedSnapshot(connection, comparison, sat.snapshot)) connection.catalogIncomplete = true;
+        nextComparison.deferred |= applyCachedSnapshot(connection, comparison, sat.snapshot, nextComparison.uncertain);
+        if (nextComparison.deferred) connection.catalogIncomplete = true;
       } else {
         // Existing rows without a source baseline cannot be reconciled safely.
         connection.catalogIncomplete = true;
+        nextComparison.deferred |= CachedDomain.Projects | CachedDomain.Agents | CachedDomain.Details | CachedDomain.Permissions | CachedDomain.Pause;
       }
       paused[sat.id] = useAnnexClientStore.getState().satellitePaused[sat.id];
     }
@@ -628,6 +689,12 @@ function throttledHookUpdate(
 export function initAnnexClientListener(): () => void {
   let active = true;
   const journal = startupJournal();
+  const unsubMutations = onRemoteProjectionMutation((satelliteId, domains) => {
+    const satellite = useAnnexClientStore.getState().satellites.find((sat) => sat.id === satelliteId);
+    if (active && satellite) comparisonFor(satellite).uncertain |= domains;
+  });
+  // Existing records can span a listener observation gap; this is not an epoch.
+  for (const satellite of useAnnexClientStore.getState().satellites) comparisonFor(satellite).uncertain |= ALL_CACHED_DOMAINS;
   const unsubSatellites = window.clubhouse.annexClient.onSatellitesChanged((satellites: SatelliteConnection[]) => {
     if (!active) return;
     satelliteRevision++;
@@ -645,6 +712,8 @@ export function initAnnexClientListener(): () => void {
     const { satelliteId, type, payload } = event;
 
     satelliteRevision++;
+    const currentSatellite = useAnnexClientStore.getState().satellites.find((sat) => sat.id === satelliteId);
+    if (currentSatellite && eventDomains[type]) comparisonFor(currentSatellite).uncertain |= eventDomains[type];
     journal.record(event);
     if (type === 'snapshot') {
       const satellite = useAnnexClientStore.getState().satellites.find((s) => s.id === satelliteId);
@@ -652,8 +721,11 @@ export function initAnnexClientListener(): () => void {
       if (satellite?.state !== 'connected') return;
       const snap = payload as SatelliteSnapshot;
       applySnapshot(satellite, snap);
-      const connection = { ...satellite, snapshot: snap, catalogIncomplete: false };
-      comparedSnapshots.set(connection, structuredClone(snap));
+      const previous = comparisonFor(satellite);
+      const established = establishedDomains(satelliteId, snap);
+      const deferred = previous.deferred & ~established;
+      const connection = { ...satellite, snapshot: snap, catalogIncomplete: !!deferred };
+      comparedSnapshots.set(connection, { snapshot: structuredClone(snap), uncertain: previous.uncertain & ~established, deferred });
       useAnnexClientStore.setState((state) => ({
         satellites: state.satellites.map((sat) => sat.id === satelliteId ? connection : sat),
       }));
@@ -960,13 +1032,16 @@ export function initAnnexClientListener(): () => void {
   });
 
   return () => {
+    if (!active) return;
     if (startupRead === initialRead) startupRead = null;
     active = false;
+    for (const satellite of useAnnexClientStore.getState().satellites) comparisonFor(satellite).uncertain |= ALL_CACHED_DOMAINS;
     journal.stop();
     satelliteRevision++;
     unsubSatellites();
     unsubDiscovered();
     unsubEvents();
+    unsubMutations();
     // Discard buffered PTY data — do NOT emit into the next session on reconnect.
     if (ptyDataFlushTimer) { clearTimeout(ptyDataFlushTimer); ptyDataFlushTimer = null; }
     ptyDataBuffer.splice(0);

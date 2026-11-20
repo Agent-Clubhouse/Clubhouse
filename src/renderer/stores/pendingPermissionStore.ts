@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { CachedDomain, remoteProjectionMutated } from './snapshot-delta';
 import type { PendingPermissionInfo, PermissionResolveOutcome } from '../../shared/permission-types';
 import { isRemoteAgentId, parseNamespacedId, satellitePrefix } from './remoteProjectStore';
 
@@ -30,6 +31,12 @@ interface PendingPermissionState {
     requestId: string,
     decision: 'allow' | 'deny',
   ) => Promise<PermissionResolveOutcome>;
+}
+
+/** Display mutation only; host decisions and existing action gates are unchanged. */
+function remotePermissionMutated(id: string): void {
+  const remote = parseNamespacedId(id);
+  if (remote) remoteProjectionMutated(remote.satelliteId, CachedDomain.Permissions);
 }
 
 /** Pending requests for one agent, oldest first. */
@@ -64,10 +71,12 @@ export const usePendingPermissionStore = create<PendingPermissionState>((set, ge
   },
 
   addPending: (permission) => {
+    remotePermissionMutated(permission.agentId);
     set((s) => ({ byRequestId: { ...s.byRequestId, [permission.requestId]: permission } }));
   },
 
   removePending: (requestId) => {
+    remotePermissionMutated(requestId);
     set((s) => {
       if (!s.byRequestId[requestId]) return s;
       const next = { ...s.byRequestId };
@@ -77,6 +86,7 @@ export const usePendingPermissionStore = create<PendingPermissionState>((set, ge
   },
 
   clearForAgent: (agentId) => {
+    remotePermissionMutated(agentId);
     set((s) => {
       const next: Record<string, PendingPermissionInfo> = {};
       let changed = false;

@@ -7,7 +7,7 @@
  */
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { create } from 'zustand';
-import { applySnapshotDelta } from './snapshot-delta';
+import { CachedDomain, reconcileCachedValue, remoteProjectionMutated } from './snapshot-delta';
 import { usePluginStore } from '../plugins/plugin-store';
 import type {
   Project,
@@ -122,7 +122,7 @@ interface RemoteProjectStoreState {
   applySatelliteSnapshot: (satelliteId: string, satelliteName: string, snapshot: SatelliteSnapshot) => void;
 
   /** Reconcile cached source changes without replaying unchanged live projection fields. */
-  applyCachedSatelliteSnapshot: (satelliteId: string, satelliteName: string, previous: SatelliteSnapshot, next: SatelliteSnapshot) => boolean;
+  applyCachedSatelliteSnapshot: (satelliteId: string, satelliteName: string, previous: SatelliteSnapshot, next: SatelliteSnapshot, uncertain?: number) => number;
 
   /** Remove all data for a satellite (e.g., on disconnect). */
   removeSatellite: (satelliteId: string) => void;
@@ -262,7 +262,7 @@ function namespaceCanvasData(
   return { ...data, canvases };
 }
 
-/** Pure projection shared by authoritative snapshots and cached field deltas. */
+/** Shared transformation; plugin matching also reads the current local plugin cache. */
 function projectSnapshot(satelliteId: string, satelliteName: string, snapshot: SatelliteSnapshot) {
   // Map projects to RemoteProject
   const projects: RemoteProject[] = (snapshot.projects || []).map((p) => ({
@@ -480,12 +480,25 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
     });
   },
 
-  applyCachedSatelliteSnapshot: (satelliteId, satelliteName, previous, next) => {
+  applyCachedSatelliteSnapshot: (satelliteId, satelliteName, previous, next, uncertain = 0) => {
     const before = projectSnapshot(satelliteId, satelliteName, previous);
     const after = projectSnapshot(satelliteId, satelliteName, next);
-    let complete = true;
-    set((state) => applySnapshotDelta(state, before, after, () => { complete = false; }));
-    return complete;
+    const domains = {
+      satelliteProjects: CachedDomain.Projects, remoteAgents: CachedDomain.Agents,
+      remoteAgentDetailedStatus: CachedDomain.Details, pluginMatchState: CachedDomain.Plugins,
+      remoteProjectIcons: CachedDomain.ProjectIcons, remoteAgentIcons: CachedDomain.AgentIcons,
+      remoteCanvasState: CachedDomain.Canvas, remoteAppCanvasState: CachedDomain.AppCanvas,
+      remoteGroupProjects: CachedDomain.Groups, remoteBulletinDigests: CachedDomain.Digests,
+      remoteGroupProjectMembers: CachedDomain.Members,
+    };
+    let deferred = 0;
+    set((state) => Object.fromEntries(Object.entries(domains).map(([field, domain]) => {
+      const key = field as keyof typeof before;
+      const result = reconcileCachedValue(state[key], before[key], after[key], !!(uncertain & domain));
+      if (result.deferred) deferred |= domain;
+      return [field, result.value];
+    })));
+    return deferred;
   },
 
   removeSatellite: (satelliteId) => {
@@ -547,6 +560,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   },
 
   updateRemoteAgentStatus: (satelliteId, agentId, status) => {
+    remoteProjectionMutated(satelliteId, CachedDomain.Details);
     const nsId = namespacedAgentId(satelliteId, agentId);
     set((state) => ({
       remoteAgentDetailedStatus: {
@@ -557,6 +571,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   },
 
   updateRemoteAgentRunState: (satelliteId, agentId, status) => {
+    remoteProjectionMutated(satelliteId, CachedDomain.Agents);
     const nsId = namespacedAgentId(satelliteId, agentId);
     set((state) => {
       const agent = state.remoteAgents[nsId];
@@ -571,6 +586,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   },
 
   upsertRemoteAgent: (satelliteId, agent) => {
+    remoteProjectionMutated(satelliteId, CachedDomain.Agents);
     const nsId = namespacedAgentId(satelliteId, agent.id);
     set((state) => {
       const existing = state.remoteAgents[nsId];
@@ -611,6 +627,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   },
 
   removeRemoteAgent: (satelliteId, agentId) => {
+    remoteProjectionMutated(satelliteId, CachedDomain.Agents | CachedDomain.Details);
     const nsId = namespacedAgentId(satelliteId, agentId);
     set((state) => {
       const newAgents = { ...state.remoteAgents };
@@ -625,6 +642,8 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   },
 
   updateRemoteCanvasState: (nsProjId, canvasData) => {
+    const satellite = parseNamespacedId(nsProjId)?.satelliteId;
+    if (satellite) remoteProjectionMutated(satellite, CachedDomain.Canvas);
     set((state) => ({
       remoteCanvasState: {
         ...state.remoteCanvasState,
@@ -634,6 +653,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   },
 
   updateRemoteAppCanvasState: (satelliteId, canvasData) => {
+    remoteProjectionMutated(satelliteId, CachedDomain.AppCanvas);
     set((state) => ({
       remoteAppCanvasState: {
         ...state.remoteAppCanvasState,
@@ -643,6 +663,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   },
 
   updateRemoteGroupProject: (satelliteId, action, project) => {
+    remoteProjectionMutated(satelliteId, CachedDomain.Groups);
     set((state) => {
       const prev = state.remoteGroupProjects[satelliteId] || [];
       const gp = project as { id: string };
@@ -666,6 +687,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   },
 
   addRemoteBulletinMessage: (satelliteId, projectId, _message) => {
+    remoteProjectionMutated(satelliteId, CachedDomain.Digests);
     // A new message was posted — invalidate the cached digest so UI re-fetches
     const key = `${satelliteId}::${projectId}`;
     set((state) => {
@@ -676,6 +698,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   },
 
   setRemoteGroupProjects: (satelliteId, projects) => {
+    remoteProjectionMutated(satelliteId, CachedDomain.Groups);
     set((state) => ({
       remoteGroupProjects: { ...state.remoteGroupProjects, [satelliteId]: projects },
     }));

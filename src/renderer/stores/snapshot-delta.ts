@@ -21,7 +21,7 @@ const record = (value: unknown): value is Record<string, unknown> =>
  */
 export function applySnapshotDelta<T>(current: T, previous: unknown, next: unknown, onConflict?: () => void): T {
   const merge = (value: unknown, before: unknown, after: unknown): unknown => {
-    if (sameSnapshotValue(before, after)) return value;
+    if (sameSnapshotValue(before, after) || sameSnapshotValue(value, after)) return value;
     if (after === absent) {
       if (value !== absent && !sameSnapshotValue(value, before)) {
         onConflict?.();
@@ -48,8 +48,18 @@ export function applySnapshotDelta<T>(current: T, previous: unknown, next: unkno
         const oldOrder = ids(before);
         const newOrder = ids(after);
         const liveOrder = ids(value);
-        const reordered = !sameSnapshotValue(oldOrder, newOrder);
-        const order = reordered ? [...newOrder, ...liveOrder] : [...liveOrder, ...newOrder];
+        const common = new Set(oldOrder.filter((id) => newRows[id] !== undefined && liveRows[id] !== undefined));
+        const shared = (order: string[]) => order.filter((id) => common.has(id));
+        const sourceReordered = !sameSnapshotValue(shared(oldOrder), shared(newOrder));
+        const liveReordered = !sameSnapshotValue(shared(oldOrder), shared(liveOrder));
+        const conflicting = sourceReordered && liveReordered && !sameSnapshotValue(shared(newOrder), shared(liveOrder));
+        // Membership changes cannot prove placement relative to an independently
+        // reordered/added live row. Keep the live order and defer that ambiguity.
+        const ambiguousPlacement = (liveReordered && newOrder.some((id) => !(id in oldRows)))
+          || (sourceReordered && liveOrder.some((id) => !(id in oldRows)));
+        if (conflicting || ambiguousPlacement) onConflict?.();
+        const keepLiveOrder = conflicting || ambiguousPlacement || liveReordered;
+        const order = keepLiveOrder ? [...liveOrder, ...newOrder] : [...newOrder, ...liveOrder];
         return [...new Set(order)].filter((id) => Object.prototype.hasOwnProperty.call(rows, id)).map((id) => rows[id]);
       }
       // Arrays without stable row identities are indivisible source values.
@@ -76,4 +86,30 @@ export function applySnapshotDelta<T>(current: T, previous: unknown, next: unkno
     return structuredClone(after);
   };
   return merge(current, previous, next) as T;
+}
+
+/** Finite uncertainty domains, owned by renderer satellite records, never socket epochs. */
+export enum CachedDomain {
+  Projects = 1, Agents = 2, Details = 4, ProjectIcons = 8, AgentIcons = 16,
+  Plugins = 32, Canvas = 64, AppCanvas = 128, Groups = 256, Digests = 512,
+  Members = 1024, Permissions = 2048, Pause = 4096,
+}
+export const ALL_CACHED_DOMAINS = 8191;
+
+/** An observed change/gap can hide ABA even when the current value equals before. */
+export function reconcileCachedValue<T>(current: T, previous: unknown, next: unknown, uncertain: boolean) {
+  let deferred = false;
+  const value = applySnapshotDelta(current, previous, next, () => { deferred = true; });
+  if (uncertain && (deferred || !sameSnapshotValue(value, current))) return { value: current, deferred: true };
+  return { value, deferred };
+}
+
+// Mutation notifications carry only a domain bitmask, not payloads or ID history.
+const projectionListeners = new Set<(satelliteId: string, domains: number) => void>();
+export function onRemoteProjectionMutation(listener: (satelliteId: string, domains: number) => void): () => void {
+  projectionListeners.add(listener);
+  return () => { projectionListeners.delete(listener); };
+}
+export function remoteProjectionMutated(satelliteId: string, domains: number): void {
+  for (const listener of projectionListeners) listener(satelliteId, domains);
 }

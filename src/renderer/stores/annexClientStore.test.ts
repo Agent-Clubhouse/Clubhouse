@@ -177,11 +177,14 @@ describe('annexClientStore', () => {
       expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeUndefined();
     });
 
-    it('clears stale prompts on disconnect and restores a still-pending prompt from the next connection snapshot', () => {
+    it('keeps prompts cleared through cached reconnect lists, then restores from the authoritative snapshot', () => {
       snapshot([permission]);
       changed([{ ...SATELLITE, state: 'disconnected' }]);
       expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeUndefined();
       changed([{ ...SATELLITE, snapshot: { pendingPermissions: [permission] } as never }]);
+      // A cached-list difference does not establish that this request is current.
+      expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeUndefined();
+      snapshot([permission]);
       expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeDefined();
     });
 
