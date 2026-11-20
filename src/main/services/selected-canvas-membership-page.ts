@@ -18,7 +18,7 @@ const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 const id = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 200 && display(v, 240) === v;
 class InvalidMembership extends Error {}
 class MembershipLimit extends Error {}
-const current = (receipt: DisplayReceipt) => { try { return receipt.current(); } catch { return false; } };
+const current = (receipt: DisplayReceipt) => { try { return receipt.current(); } catch { return false; /* telemetry-exempt: failed source/target receipt withholds the metadata page */ } };
 
 /** Missing primary is not empty when any recovery key exists. Stat only: never
  * open backup contents, including empty, malformed or linked recovery files. */
@@ -27,7 +27,9 @@ function missingRecoveryReceipt(root: string, prefix: string, primary: DisplayRe
     if (!current(primary)) return false;
     for (const name of ['canvas-instances-backup.json', 'canvas-instances-backup.json.bak']) {
       try { fs.lstatSync(path.join(root, prefix, name)); return false; }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return false; }
+      catch (error) { // telemetry-exempt: absence is expected; any other metadata failure withholds the page
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return false;
+      }
     }
     return current(primary);
   };
