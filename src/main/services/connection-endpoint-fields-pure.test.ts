@@ -12,7 +12,7 @@ it('projects the same bounded fields with cache-observation provenance without i
   const raw = { id: 'target', name: '  Custom name  ', parentAgentId: '', disposedAt: '', orchestration: { connectToDispatcher: false }, instructions: 'PRIVATE_TEXT', env: { token: 'PRIVATE_KEY' } };
   const saved = projectConnectionEndpointFieldsForDisplay('target', raw), loaded = projectLoadedConnectionEndpointFieldsForDisplay('target', raw);
   const values = (value: unknown) => JSON.stringify(value, (key, field) => key === 'inputs' ? undefined : field);
-  expect.soft(values(loaded)).toBe(values(saved)); expect.soft(loaded).toMatchObject({ state: 'ok', inputs: [{ source: 'host-cache', observedAt: 42 }], value: { name: { value: '  Custom name  ', inputs: [{ source: 'host-cache', observedAt: 42 }] }, helper: { value: false }, disposed: { value: false }, connectToDispatcher: { value: false, inputs: [{ source: 'host-cache', observedAt: 42 }] } } });
+  expect.soft(values(loaded)).toBe(values(saved)); expect.soft(loaded).toMatchObject({ state: 'ok', inputs: [{ field: 'Related agent host-session fields', source: 'host-cache', observedAt: 42 }], value: { name: { value: '  Custom name  ', inputs: [{ source: 'host-cache', observedAt: 42 }] }, helper: { value: false }, disposed: { value: false }, connectToDispatcher: { value: false, inputs: [{ source: 'host-cache', observedAt: 42 }] } } });
   expect.soft(JSON.stringify(loaded)).not.toMatch(/PRIVATE_|runtime|permission|projectPath/);
 });
 it('retains unknown malformed fields while using the shared local policy model', () => {

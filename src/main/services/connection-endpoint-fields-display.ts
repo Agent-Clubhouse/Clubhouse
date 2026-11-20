@@ -47,5 +47,5 @@ export function projectLoadedConnectionEndpointFieldsForDisplay(expectedId: stri
   const evidence = <T>(value: DisplayValue<T>): DisplayValue<T> => ({ ...value, inputs: value.inputs.map((input) => ({ ...input, source: 'host-cache', observedAt })) });
   if (projected.state !== 'ok') return evidence(projected);
   const fields = projected.value;
-  return { ...evidence(projected), state: 'ok', value: { ...fields, name: evidence(fields.name), helper: evidence(fields.helper), disposed: evidence(fields.disposed), connectToDispatcher: evidence(fields.connectToDispatcher) } };
+  return { ...evidence(projected), inputs: [{ field: 'Related agent host-session fields', source: 'host-cache', observedAt }], state: 'ok', value: { ...fields, name: evidence(fields.name), helper: evidence(fields.helper), disposed: evidence(fields.disposed), connectToDispatcher: evidence(fields.connectToDispatcher) } };
 }
