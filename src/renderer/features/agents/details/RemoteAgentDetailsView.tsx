@@ -19,7 +19,7 @@ import { DRIVER_LABELS, limitLabel, limitName } from '../chat/ChatHeader';
 import { describeSleep, formatAgo } from '../states/format';
 import { OtherMachinesList, otherMachinesSummary } from '../../dispatcher/OtherMachinesList';
 import { reportedSkillsFor } from './reported-skills';
-import { mcpRows } from './McpCard';
+import { RemoteSkillsMcpEvidence } from './RemoteSkillsMcpEvidence';
 import { useRemoteDetailsChat } from './useRemoteDetailsChat';
 import { CanvasMembershipList } from './CanvasMembershipList';
 import { jumpToCanvas, remoteCanvasJumpUnavailable } from './agent-canvases';
@@ -27,7 +27,7 @@ import { RemoteChangesCard } from './RemoteChangesCard';
 import { Evidence } from './RemoteDetailsEvidence';
 import { RemoteQuickSettingsCard } from './RemoteQuickSettingsCard';
 import { admittedProviderLabel } from '../../../../shared/provider-display';
-import { ProviderEvidenceNotes, ProviderInventory } from './ProviderEvidenceNotes';
+import { ProviderEvidenceNotes } from './ProviderEvidenceNotes';
 import { remoteDetailsAddress } from './remote-details-address';
 
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
@@ -176,8 +176,6 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round(ctx.used / ctx.size * 100)) : null;
   const limits = session?.capabilities?.limits ? session.usage.limits : [];
   const skillReport = reportedSkillsFor(agent, session, details ? { orchestrator: details.providerId } : undefined);
-  const reported = skillReport.report;
-  const liveMcp = mcpRows(session?.mcpServers ?? null, null, []);
   const otherMachines = snapshot?.dispatcherPresence?.remotes;
   return <aside className="w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 pt-2.5 pb-3 pr-3.5 pl-1" data-testid="agent-details" aria-label={`${agent.name} details`}
     onKeyDown={(e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); setOpen(false); } }}>
@@ -212,17 +210,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     {basic('actions', 'Actions')}
     {!dispatcher && <DetailsCard id="skills-mcp" title="Skills and MCP" summary={asleep ? 'last session evidence' : 'connections and session reports'} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')}>
       {runtimeUnconfirmed && <CardNote>The session stopped or reported an error after the host read. Current MCP status is unconfirmed.</CardNote>}
-      {card('skills-mcp') ? <Evidence card={runtimeUnconfirmed ? { ...card('skills-mcp')!, rows: card('skills-mcp')!.rows.filter((r) => r.label !== 'Clubhouse MCP') } : card('skills-mcp')!} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
-      {hydrated.evidence && hydrated.evidence.values.mcpServers === undefined && <CardNote>The provider has not reported its MCP connections in this runtime open.</CardNote>}
-      {hydrated.evidence?.values.mcpServers?.length === 0 && <CardNote>The provider explicitly reported no MCP connections.</CardNote>}
-      <ProviderInventory evidence={hydrated.evidence} />
-      {liveMcp.rows.map((m) => <CardRow key={m.name} label={m.name}>{m.status}{m.reason ? ` · ${m.reason}` : ''}</CardRow>)}
-      {reported && <>
-        <CardNote>{asleep || !connected ? 'Last session snapshot.' : 'Session snapshot.'} Provider-reported names do not prove a skill was used or executed. Filesystem scope and origin are not reported.</CardNote>
-        <CardRow label="Source">Claude · system/init</CardRow><CardRow label="Session">{reported.sessionId}</CardRow><CardRow label="Native session">{reported.nativeSessionId}</CardRow><CardRow label="Reported">{new Date(reported.reportedAt).toLocaleString()}</CardRow>
-        {reported.names?.length ? reported.names.map((name) => <CardRow key={name} label="Reported skill">{name}</CardRow>) : <CardNote>{reported.names ? 'Claude explicitly reported no skills in this snapshot.' : 'Skill names were not reported in this snapshot.'}</CardNote>}
-      </>}
-      {!reported && <CardNote>{!details || !session ? 'Provider evidence is unavailable until a current authorized session read succeeds.' : skillReport.supported ? 'No valid skills report for this session has arrived.' : 'This provider does not report loaded skill names here.'}</CardNote>}
+      <RemoteSkillsMcpEvidence card={card('skills-mcp')} setup={details?.settings?.setup} live={session?.mcpServers ?? null} skills={skillReport}
+        evidence={hydrated.evidence} currentRun={!!details?.running && !asleep && !runtimeUnconfirmed} sessionAvailable={!!session} message={resultMessage(result.status)} />
     </DetailsCard>}
     {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={asleep ? lastSummary : sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
       <CardRow label="Runs on">{provider}{session?.driver ? ` · ${DRIVER_LABELS[session.driver] ?? session.driver}${session.cliVersion ? ` ${session.cliVersion}` : ''}` : agent.executionMode === 'pty' ? ' · CLI' : ''}</CardRow>
