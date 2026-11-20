@@ -149,7 +149,7 @@ function StatusMark({ status }: { status: McpRowStatus }) {
     : <span className="w-2 h-2 rounded-full border border-ctp-overlay0 flex-shrink-0" aria-hidden="true" />;
 }
 
-function ServerRow({ row }: { row: McpRow }) {
+export function McpServerRow({ row }: { row: McpRow }) {
   const detail = row.toolCount !== undefined ? `${STATUS_WORD[row.status]} · ${row.toolCount} ${row.toolCount === 1 ? 'tool' : 'tools'}` : STATUS_WORD[row.status];
   return (
     <li className="flex flex-col pl-[33px] pr-3.5 text-[12.5px] text-ctp-text" data-testid="details-mcp-row" data-status={row.status}>
@@ -197,7 +197,7 @@ export function McpCard({ agent, projectPath, live, spawnedAt, refreshKey, open,
     <DetailsCard id="mcp" title="MCP servers" summary={mcpSummary(rows, configuredOnly)} open={open} onToggle={onToggle} embedded={embedded}>
       {rows.length > 0 && (
         <ul className="flex flex-col">
-          {rows.map((r) => <ServerRow key={r.name} row={r} />)}
+          {rows.map((r) => <McpServerRow key={r.name} row={r} />)}
         </ul>
       )}
       {hasClubhouse && bindings.length > 0 && (
@@ -214,7 +214,7 @@ export function McpCard({ agent, projectPath, live, spawnedAt, refreshKey, open,
         <>
           <p className="pr-3.5 pl-[33px] pt-1.5 pb-0.5 text-xs text-ctp-overlay1">Set in Clubhouse</p>
           <ul className="flex flex-col" data-testid="details-mcp-configured">
-            {configuredOnly.map((id) => <ServerRow key={id} row={{ name: id, status: 'configured', ...(reasons[id] && { reason: reasons[id] }) }} />)}
+            {configuredOnly.map((id) => <McpServerRow key={id} row={{ name: id, status: 'configured', ...(reasons[id] && { reason: reasons[id] }) }} />)}
           </ul>
         </>
       )}
