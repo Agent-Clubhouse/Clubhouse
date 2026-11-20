@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { RemoteAgentDetails } from '../../../../shared/remote-agent-details';
 import type { ControllerReadResult } from '../../../../shared/controller-chat';
-import type { RemoteDetailsQuery, RemoteConnectionPageSource } from '../../../../shared/remote-details-query';
+import type { RemoteConnectionDetailsQuery as RemoteDetailsQuery, RemoteConnectionPageSource } from '../../../../shared/remote-details-query';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { remoteDetailsAddress } from './remote-details-address';
 import { DetailsCard, CardNote } from './DetailsCard';

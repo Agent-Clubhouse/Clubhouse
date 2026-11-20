@@ -21,6 +21,7 @@ import { describeSleep, formatAgo } from '../states/format';
 import { OtherMachinesList, otherMachinesSummary } from '../../dispatcher/OtherMachinesList';
 import { reportedSkillsFor } from './reported-skills';
 import { RemoteSkillsMcpEvidence } from './RemoteSkillsMcpEvidence';
+import { SelectedManagedPartsPage } from './SelectedManagedPartsPage';
 import { useRemoteDetailsChat } from './useRemoteDetailsChat';
 import { CanvasMembershipList } from './CanvasMembershipList';
 import { jumpToCanvas, remoteCanvasJumpUnavailable } from './agent-canvases';
@@ -214,6 +215,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       <RemoteSkillsMcpEvidence card={card('skills-mcp')} setup={details?.settings?.setup} live={session?.mcpServers ?? null} skills={skillReport}
         outgoingWires={agent.kind === 'durable' && !snapshotUnavailable && !runtimeUnconfirmed && details?.connectionPageOnly !== true ? details?.outgoingWires : undefined}
         evidence={hydrated.evidence} currentRun={!!details?.running && !asleep && !runtimeUnconfirmed} sessionAvailable={!!session} message={resultMessage(result.status)} />
+      <SelectedManagedPartsPage agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('skills-mcp')} readable={!snapshotUnavailable && !runtimeUnconfirmed} onRefused={() => setRetry((n) => n + 1)} />
     </DetailsCard>}
     {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={asleep ? lastSummary : sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
       <CardRow label="Runs on">{provider}{session?.driver ? ` · ${DRIVER_LABELS[session.driver] ?? session.driver}${session.cliVersion ? ` ${session.cliVersion}` : ''}` : agent.executionMode === 'pty' ? ' · CLI' : ''}</CardRow>

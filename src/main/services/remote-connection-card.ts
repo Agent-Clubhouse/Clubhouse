@@ -1,7 +1,7 @@
 import type { SavedGroupConnectionPage } from './saved-group-connections-display';
 import type { SavedCanvasConnectionPage } from './saved-canvas-connections-display';
 import type { SavedToolConnectionPage } from './saved-tool-connections-display';
-import type { RemoteDetailsQuery } from '../../shared/remote-details-query';
+import type { RemoteConnectionDetailsQuery as RemoteDetailsQuery } from '../../shared/remote-details-query';
 import type { ConfiguredRegisteredConnectionPage } from './configured-registered-connections-display';
 /** Selected Connections evidence only. No generic source/federation/credential readers. */
 import { createHash } from 'crypto';

@@ -33,6 +33,7 @@ export function selectedConnectionPageEnvelope(result: RemoteAgentDetails): void
   result.connectionPageEnvelope = 1; result.connectionPageOnly = true; result.settings = null;
   delete result.providerEvidence; delete result.providerEvidenceState;
   delete result.outgoingWires; delete result.helperPage;
+  delete result.inventoryPage; delete result.inventoryPageOnly;
   for (const c of result.cards) if (c !== requested) {
     c.requested = false; c.omitted += c.rows.length; c.rows = []; c.notes = [];
     c.summary = 'Not included in this selected Connections page';

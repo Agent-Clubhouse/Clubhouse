@@ -1,0 +1,43 @@
+#3733 selected inventory continuation — bounded managed-parts increment
+
+Base: b7b40600b462ba533f6cb61ff375d12da5f35ece. This is a source/WIP
+checkpoint until exact-head checks and independent review are reported.
+
+Implemented: additive inventoryPages/inventorySources discovery, strict
+inventoryPageOnly envelope on the existing authorized Details GET, and selected
+managed-block/skill/MCP metadata sources. Query and response bind card/source,
+offset and an opaque identity for the selected host project/agent's ordered
+configured IDs. Later pages require this identity; source replacement returns
+changed rather than mixing observations. Each page observes names separately;
+it does not claim an atomic historical snapshot of the entire library.
+
+Boundaries:25 records per page; at most4096 configured IDs in one selected
+source. Existing committed catalog index bound is4MiB; a larger/unreadable index
+remains unavailable even for a selected page. Each new reader retains its100
+head-call cap and this source queries at most25. No bound increase, payload,
+instruction/MCP definition, revision body or global library-list export.
+Grant-gated saved skill choices are withheld; implicit/grant-derived/runtime
+parts remain separate. Configured metadata is not installation/loading/use.
+
+Current selected target, host authorization, provider/run continuity and
+catalog receipts are rechecked before publication. Unrelated cards are empty
+and explicitly unrequested; default/mixed/wrong source/offset/selection pages
+are rejected by the client. Renderer continuation is user-selected and guarded
+by parent read, host/snapshot/selection identity. Denial invalidates the parent
+read; prior/late page records are not reused. No local inventory fallback.
+
+Still OPEN: Actions source-specific producer/DTO/consumer is owned separately;
+it will fit this envelope after its reviewed SHA is integrated. No uncommitted
+Actions imports or speculative capability advertisements are included here.
+Canvas membership continuation needs bounded passive source/file receipts;
+existing strict membership reads alone do not fence later pages. No Canvas
+continuation is claimed or advertised. Board content and omitted-board
+navigation remain a separate unavailable boundary, never membership authority.
+Helper paging remains its reviewed orchestrate/helpers contract unchanged.
+
+Tests added for strict schema, row126 retrieval, real catalog unchanged,
+selected-head budgets, missing parts, grant-gated withholding,4MiB refusal,
+late target/auth/catalog changes, source identity, host envelope and client
+binding, old-host/changed states and renderer late/offline/denied pages.
+Exact-head results/limits and review status are reported separately to the
+Clubhouse-Orchestrator. This checkpoint does not accept all §3/full PR parity.
