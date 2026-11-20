@@ -1,0 +1,18 @@
+{"startedAt": "2026-11-20T08:59:53.524918+00:00", "command": ["python3", "/Users/masonallen/source/Clubhouse/.clubhouse/qa-reports/3733-67d8782ab-proof-driver.py", "/Users/masonallen/source/Clubhouse/.clubhouse/qa-reports/3733-67d8782ab-configuration.json"]}
+red-ignore-parent-project exit 1 at 2026-11-20T08:59:56.446468+00:00
+red-ignore-match-offset exit 1 at 2026-11-20T08:59:57.884654+00:00
+red-lose-byte-deferred-root exit 1 at 2026-11-20T08:59:59.312593+00:00
+red-lose-row-deferred-root exit 1 at 2026-11-20T09:00:00.721902+00:00
+red-ignore-cache-root-currentness exit 1 at 2026-11-20T09:00:02.127464+00:00
+red-promote-disposed-directions exit 1 at 2026-11-20T09:00:03.541034+00:00
+red-drop-final-source-receipts exit 1 at 2026-11-20T09:00:05.632191+00:00
+red-ignore-client-page-echo exit 1 at 2026-11-20T09:00:07.253009+00:00
+red-ignore-renderer-page-echo exit 1 at 2026-11-20T09:00:09.308942+00:00
+red-bypass-desktop-page-eligibility exit 1 at 2026-11-20T09:00:12.525852+00:00
+red-drop-query-route-admission exit 1 at 2026-11-20T09:00:15.528930+00:00
+green exit 0 at 2026-11-20T09:00:30.931999+00:00
+route-client exit 0 at 2026-11-20T09:00:34.492009+00:00
+tsc exit 0 at 2026-11-20T09:00:45.480244+00:00
+ALL_CONTROLS_RESTORED_AND_GREEN 67d8782abdcd97bfaa19b88d2e7809e84a3d3358 9714c66da6676bf22799abb930afcab171e190eb 2026-11-20T09:00:45.532668+00:00
+
+{"driverExit": 0, "endedAt": "2026-11-20T09:00:45.535682+00:00"}
