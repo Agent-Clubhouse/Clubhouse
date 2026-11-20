@@ -884,3 +884,42 @@ describe('cold selected saved automatic Dispatcher source at whole Details assem
     } finally { capture.mockRestore(); stop(); sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); resetAllSettingsStoresForTests(); getPath.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
   });
 });
+
+describe('whole Details joins configured sources only through admitted endpoint project identity', () => {
+  it.each(['cross-project', 'convergent', 'convergent-controller-late', 'cross-project-primary-late', 'cross-project-revoked'] as const)('preserves distinct source associations and final evidence: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-source-identity-'))), a = path.join(root, 'selected'), b = path.join(root, 'ordinary'), d = path.join(root, 'dispatcher');
+    const getPath = vi.spyOn(app, 'getPath').mockReturnValue(root), selected = { ...agent(), worktreePath: a, orchestration: { orchestrate: false, connectToDispatcher: true } }, selectedProject = { ...project, path: a };
+    const canonical = { ...agent(), id: 'controller1', name: 'Operations', worktreePath: d, orchestration: { connectToDispatcher: true }, env: { token: 'PRIVATE_ROLE_ENV' } }, ordinary = { ...canonical, name: 'Project agent', worktreePath: b, orchestration: { connectToDispatcher: false } };
+    const convergent = mode.startsWith('convergent'), manualProject = convergent ? d : b;
+    for (const [folder, config] of [[a, selected], [b, ordinary], [d, canonical]] as const) { await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true }); await fs.writeFile(path.join(folder, '.clubhouse', 'agents.json'), JSON.stringify([config])); }
+    await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [selectedProject, { id: 'related', name: 'Manual endpoint project', path: manualProject }] }));
+    await fs.writeFile(path.join(root, 'dispatcher-settings.json'), JSON.stringify({ enabled: false }));
+    await fs.writeFile(path.join(root, 'dispatcher-connections.json'), JSON.stringify({ version: 1, connections: [{ agentId: 'a1', targetId: 'controller1', agentProjectPath: a, targetProjectPath: manualProject, createdBy: 'a1', createdAt: '2026-11-19T00:00:00Z' }], removedByUser: [] }));
+    m.base = root; m.realConnections = true; m.realPolicy = true; m.realDispatcher = true; m.realWitness = true; resetAllSettingsStoresForTests(); m.dispatcher.mockReturnValue({ agentId: 'controller1', chatAgentId: 'chat1' });
+    m.target.mockImplementation(async (id: string) => id === 'a1' ? { agent: selected, project: selectedProject } : { agent: canonical, project: { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: d } });
+    const sources = await import('./persisted-bindings'), { bindingManager } = await import('./clubhouse-mcp/binding-manager'); sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting();
+    const collect = vi.fn(async () => { await fs.writeFile(path.join(root, 'unexpected-marker'), 'called'); return []; }); const stop = sources.registerPersistedBindingSource({ id: 'dispatcher-wires', collect, inspect: collect });
+    const saved = await import('./dispatcher-saved-links-display'), originalSourceReceipts: Array<{ current(): boolean }> = [];
+    expect(saved.readSavedDispatcherLinksForDisplay('a1', a, { receipts: originalSourceReceipts })).toMatchObject({ state: 'ok', value: { total: 1 } });
+    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
+    let captured: RemoteAgentDetails['cards'][number] | undefined, allowed = true, reached = false, observed: { automatic: boolean; manual: boolean; combined: number } | undefined;
+    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); captured = args[0]; });
+    m.canvases.mockImplementationOnce(async () => {
+      reached = true; const rows = captured?.rows ?? [];
+      observed = { automatic: rows.some((r) => r.label.startsWith('Operations') && r.value.includes('Connect to Dispatcher (saved policy)')), manual: rows.some((r) => r.label.startsWith(convergent ? 'Operations' : 'Project agent') && r.value.includes('Made by the Dispatcher (saved record')), combined: rows.filter((r) => r.value.includes('Connect to Dispatcher (saved policy)') && r.value.includes('Made by the Dispatcher (saved record')).length };
+      if (mode === 'convergent-controller-late') await fs.writeFile(path.join(d, '.clubhouse', 'agents.json'), JSON.stringify([{ ...canonical, disposedAt: '2026-11-19' }]));
+      if (mode === 'cross-project-primary-late') await fs.writeFile(path.join(b, '.clubhouse', 'agents.json'), JSON.stringify([{ ...ordinary, name: 'Changed project agent' }]));
+      if (mode === 'cross-project-revoked') allowed = false;
+      return [];
+    });
+    try {
+      const response = await readRemoteAgentDetails('a1', () => allowed);
+      expect(reached).toBe(true); expect(observed).toEqual({ automatic: true, manual: true, combined: convergent ? 1 : 0 }); expect(originalSourceReceipts.every((r) => r.current())).toBe(true); expect(collect).not.toHaveBeenCalled();
+      if (mode === 'convergent-controller-late') expect(JSON.parse(await fs.readFile(path.join(d, '.clubhouse', 'agents.json'), 'utf8'))[0].disposedAt).toBe('2026-11-19');
+      if (mode === 'cross-project-primary-late') expect(JSON.parse(await fs.readFile(path.join(b, '.clubhouse', 'agents.json'), 'utf8'))[0].name).toBe('Changed project agent');
+      const changed = mode.endsWith('-late'); expect.soft(response.status).toBe(mode === 'cross-project-revoked' ? 403 : changed ? 409 : 200);
+      if (changed || mode === 'cross-project-revoked') { expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId'); }
+      else { expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true); expect.soft(JSON.stringify(response.body)).not.toMatch(/PRIVATE_|automaticControllerProjectPath|endpointProjects|identityGroup/); }
+    } finally { capture.mockRestore(); stop(); sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); resetAllSettingsStoresForTests(); getPath.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+});
