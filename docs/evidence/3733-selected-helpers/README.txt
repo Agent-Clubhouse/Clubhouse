@@ -145,3 +145,6 @@ checking original object identity. No auth nonce or runtime object is serialized
 These are actual registry mutation semantics, with unrelated dependency ports
 stubbed for the test; no live host lifecycle is claimed. Final successor SHA
 and exact-head results are reported independently from023d and development passes.
+
+A selected helper offset that fell beyond the new inventory refuses409 with no
+partial private cards, rather than pretending the host lacks helper-page support.

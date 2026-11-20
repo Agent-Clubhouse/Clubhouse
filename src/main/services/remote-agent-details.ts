@@ -268,7 +268,8 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     // Enforce the envelope even when every section fits its individual row limit.
     if (query?.card === 'connections') selectedConnectionPageEnvelope(result);
     if (query?.card === 'orchestrate') {
-      if (dispatcher || !result.helperPage) return { status: 400, body: { error: 'unsupported_helper_page' } };
+      if (dispatcher || result.helperPages !== 1) return { status: 400, body: { error: 'unsupported_helper_page' } };
+      if (!result.helperPage) return authorized() ? { status: 409, body: { error: 'helper_inventory_changed' } } : refused();
       byId.orchestrate.rows = []; byId.orchestrate.notes = []; byId.orchestrate.summary = 'Selected helper page';
       result.helperPageOnly = true; result.settings = null; delete result.providerEvidence; delete result.providerEvidenceState; delete result.outgoingWires;
       for (const c of cards) if (c.id !== 'orchestrate') { c.requested = false; c.omitted = 0; c.rows = []; c.notes = []; delete c.connectionPage; c.summary = 'Not included in this selected helper page'; }

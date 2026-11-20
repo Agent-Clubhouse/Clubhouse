@@ -1151,3 +1151,8 @@ it('preserves valid saved disposed dates and handoff words in legacy summaries o
   expect(rows.find((r) => r.label === 'Disposed beyond page')?.value).toContain('Disposed · feature · 2026-11-18T12:00:00Z');
   expect(rows.find((r) => r.label === 'Handed beyond page')?.value).toContain('Handed off');
 });
+
+it('refuses a helper offset that fell beyond the current selected inventory without returning partial private cards', async () => {
+  const response = await readRemoteAgentDetails('a1', () => true, { card: 'orchestrate', source: 'helpers', offset: 8 });
+  expect(response).toEqual({ status: 409, body: { error: 'helper_inventory_changed' } });
+});
