@@ -110,3 +110,12 @@ it('checks a shared source receipt once per admission/final phase, freshly befor
   expect.soft(result.state).toBe('ok'); expect.soft(association.current).toHaveBeenCalledTimes(3);
   receipts[0].current(); expect(association.current).toHaveBeenCalledTimes(4);
 });
+it('bounds actual source file rechecks independently of twenty selected pairs sharing the same project', async () => {
+  const pairs = Array.from({ length: 20 }, (_, i) => pair(`target-${i}`));
+  await putSource(pairs.map((p) => saved(p))); await putAgents(b, pairs.map((p) => ({ id: p.targetId, name: `Saved ${p.targetId}` })));
+  const result = query(pairs); expect(result.state).toBe('ok'); if (result.state !== 'ok') return;
+  expect(result.value.rows).toHaveLength(20); expect(result.value.rows.every((r) => r.relationship === 'recorded' && r.endpoint?.state === 'ok')).toBe(true);
+  // Initial source read + own pre/post checks + metadata admission/project/
+  // final checks: no repeated full-source parse for each of the twenty pairs.
+  expect(opened().filter((f) => f === source())).toHaveLength(6);
+});
