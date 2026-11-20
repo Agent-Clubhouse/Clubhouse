@@ -1,0 +1,39 @@
+PR3744 Windows failure — bounded source/log diagnosis, 2026-11-20 08:37 UTC
+
+Disposition: real unresolved validation failure; allocator failure is established, its underlying cause is not. No rerun, cancellation, source edit, waiver or credentials change.
+
+Exact attribution
+- Validate run44693675446/job136145316872, Windows unit/component shard2/2:
+  https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44693675446/job/136145316872
+- Log checks out synthetic PR merge82d384973eec65f62cec6a5809cf51bdd729b8e6, not the raw PR head. Read-only GitHub commit metadata verifies parents ae56577af786b0db79f21d137d0b334a5f7847dc +166f8d50ff702081afa3af33e819698482d73a5a, and tree6e8368316a67b30ee69e45b272c3e4af817d8c1e exactly equals reviewed166f tree.
+- All inspected test/allocator/Windows-verifier/receive/path-helper/log-service/Vitest setup files are unchanged versus main. This establishes source identity only, not a main failure or flakiness.
+- Test blobbcab52f8d4b67709e1d46f9a9c54c30b11229d78; allocatorbb9fc63086b4c434ebc8d90cb9df771520889e8b; Windows verifierc17415743647d0b60923a07a51178d4bb154e77a.
+
+Path construction and assertion reach
+- handoff-git-receive.test.ts:40–48 creates real temporary sender/receiver/stage repositories and isolated Git config.
+- :134–145 prepares a real snapshot and, if temp and checkout drives differ, creates the receiver under checkout; no exact temp/profile paths are emitted in the available log.
+- :146–159 moves snapshot to an exactly220-character destination, building nested quarantine-<UUID>/repo and pack paths. A 47-character quarantine basename yields nested length268 and repo length273; repo+separator/NUL cannot fit the260 policy. The threshold assertions pass before receive is awaited.
+- root220 skips the explicit deliberately-failing core.longpaths=false fetch branch, which is restricted to root150/root170 (:160–172).
+- :178 awaits successful receive/bundle. Actual stack is pathTooLong(:33) <- createHandoffQuarantine(:262) <- receiveHandoffCommit(:39). That receive failed before its quarantine Git init or bundle import, not at the later short-CWD/profile-root/GIT_DIR/file-content/cleanup assertions (:179–207); those later assertions are unreached.
+- Exact log reports root220 failed after28197ms; root150,170 and subsequent root300 passed. These observations do not prove a timeout, race or intermittent runner cause.
+
+What the diagnostic really means
+- createHandoffQuarantine(:241–262) rejects the intended too-long nested path, attempts bounded short external roots and throws pathTooLong when none was admitted.
+- Only Windows candidate is LOCALAPPDATA/ch-q, constrained to the current profile (:18–29), canonicalized/non-symlink ancestors checked (:54–70), then checked for a short q-<32hex>/repo layout.
+- openRoot(:182–235) verifies directory identity, SID/DACL via fixed noninteractive PowerShell, attempts guarded recovery only where allowed, then creates/rechecks a private child. Verification timeout is20000ms; timeout stops retry/recovery (:197). Other creation/verification/recovery/child failures can produce the same final error.
+- pathTooLong(:32–35) SYNTHESIZES reportHandoffGitFailure(['init'],{code:'ENAMETOOLONG'}). Thus “Git:init;exit=unknown;stderr=path_too_long” is NOT observed stderr from a failed Git init. This refines the earlier readiness wording; readiness disposition is unchanged.
+- Canonical-root rejection or missing/oversized candidate can also reach :262. Therefore the stack alone does not establish that PowerShell actually timed out or even ran for this attempt.
+- Source emits closed stage/class/attempt/created diagnostics via appLog; full downloaded stdout contains no “Handoff quarantine root rejected” or verify:timeout record. appLog writes diag/in-memory startup evidence rather than console (:appDiag). No captured allocator stage/candidate-admission/PowerShell outcome is available here.
+
+Smallest supported next step / missing evidence
+- No behavioral correction is justified by this record alone. Do not shorten the intentional220 fixture, skip it, accept rejection, bypass profile/ACL/no-reparse checks, switch to shared temp, or merely increase timeout/retries.
+- Narrow owner diagnostic change, if needed: expose the already-safe closed allocator failure class to this integration test's failure output (and bounded candidate count/admission/length flags for pre-open failures); retain stage, attempt, created, elapsed time and timeout/code classification, without raw path/SID/ACL/error text. Preserve actual long-path success assertions. This would distinguish no eligible root, canonical/fit refusal, verify timeout, permission/ACL rejection and child/replacement failure.
+- Existing diagnostics artifact could supply that missing evidence without code if retained; this review did not find it in the job stdout and did not claim artifact absence.
+- Then owner can select a risk-targeted correction and exact-head Windows proof appropriate to the observed failure. A deterministic test-only private root could isolate Git path mechanics but would NOT replace proof of production default LOCALAPPDATA allocation. Timeout enlargement or retry is not evidence-backed yet.
+- Keep the CI failure as a landing gate. No accepted #3695 source verdict or source equality waives it.
+
+Source references at exact head
+https://github.com/Agent-Clubhouse/Clubhouse/blob/166f8d50ff702081afa3af33e819698482d73a5a/src/main/services/handoff-git-receive.test.ts#L134
+https://github.com/Agent-Clubhouse/Clubhouse/blob/166f8d50ff702081afa3af33e819698482d73a5a/src/main/services/handoff-quarantine.ts#L238
+https://github.com/Agent-Clubhouse/Clubhouse/blob/166f8d50ff702081afa3af33e819698482d73a5a/src/main/services/handoff-quarantine-windows.ts#L41
+https://github.com/Agent-Clubhouse/Clubhouse/blob/166f8d50ff702081afa3af33e819698482d73a5a/src/main/services/handoff-git-receive.ts#L39

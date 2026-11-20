@@ -1,0 +1,23 @@
+PR3744 existing-artifact check — bounded read-only, 2026-11-20
+
+Run44693675446 / failed Windows unit-component shard2 job136145316872.
+Exact synthetic merge82d384973eec65f62cec6a5809cf51bdd729b8e6 has reviewed166f tree6e8368316a67b30ee69e45b272c3e4af817d8c1e; earlier diagnosis/source/assertion limits unchanged.
+
+Run artifacts GET with per_page100 returns27 total /27 entries: four unit-result ZIPs, twenty E2E-result/trace artifacts, two webpack artifacts and one packaged-runtime artifact. No separately named unit allocator/diag artifact. Unrelated E2E/build archives were not downloaded; they do not originate from this failed unit job.
+
+Downloaded exact failed shard artifact14610199596, test-results-windows-latest-2:
+-524059 bytes, SHA2566da37b44b11eac877cceb74220d0d6dafa7ecc60bad8391cda444dbc918ffa26; matches GitHub artifact digest.
+-Preserved ZIP: /Users/masonallen/source/Clubhouse/.clubhouse/qa-reports/3744-test-results-windows-latest-2.zip
+-Single member test-results.xml.
+-Failing suite handoff-git-receive.test.ts:18tests/1failure/0errors/0skip,298.4018508s.
+-root220 case28.1970969s, same synthesized path_too_long stack:
+pathTooLong handoff-quarantine.ts33 -> createHandoffQuarantine262 -> receiveHandoffCommit39.
+-Serialized error codegit_failed, cleanupFailed:false; other fields undefined.
+-No suite/testcase system-out/system-err or other children for this failure.
+-Entire XML contains none of “Handoff quarantine root rejected”, “verify:timeout”, “LOCALAPPDATA”, “ch-q”.
+
+Exact workflow validate.yml283–288 uploads only test-results.xml from this unit job, always. It has no unit diag-directory publication. This, the complete artifact inventory, existing stdout and failed-shard XML provide no underlying closed allocator root-rejection diagnostic. This is an evidence gap in the published materials inspected, not proof that no local recorder ever retained it.
+
+Retain narrow recommendation: capture bounded safe allocator stage/class/attempt/created/elapsed and candidate-admission flags in the integration test's failure output (or preserve an existing matching diag record), without raw paths/SID/ACL/error text. No supported behavioral fix, timeout increase or waiver can be selected from current evidence. Landing gate remains unresolved; no main reproduction/flakiness claim.
+
+Actions performed: existing-artifact metadata GET/download and local ZIP/XML parsing only. No tests/CI reruns/cancellations/execution of artifact contents/source edits/credentials/PR mutation. Priority Auto exact review remains next upon receipt.

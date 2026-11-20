@@ -1,0 +1,66 @@
+Independent bounded verdict: APPROVE exact2482 CA1 correction
+
+Head2482e8bc2a93f55bcd39d4cd9f5fdcfff8053467
+Tree1d52067db1dd1726c17c0a0f6af12aa6ac46f023
+Branch lane-full-remote-details/automatic-manual-identity-correction
+Production base133c9fe78869e2147ed99213052b630708b1d66a; test-only baseline087e598ef220c7ffc899964136bef9737537ce84
+
+CA1 is resolved for this bounded selected-normal-agent automatic/manual/native-record overlap. No further actionable blocker found in the exact delta. Acceptance does not advance assigned f122 root, establish target eligibility/runtime/permission, close #3733, accept latest main/PR/release, or authorize live actions. Source and existing artifacts were read only; no reviewer tests/compiler/proof scripts/app actions were run, and no owner source was edited.
+
+Exact source/composition
+
+Resolved full SHA/tree. All4440 tracked entries compared with133c; exactly seven paths change (+187/-18), three production and four tests, with no entry additions/removals. Full source-tests.patch matches Git133c..2482 and delta-from-baseline.patch matches Git087..2482. Seven changed blob identities and13 preserved ordinary/imported blob identities match Git; all13 preserved paths match133c. Config owner/reader, Dispatcher lifecycle/settings/controller/source, manual binding factory, policy, persisted source owner, Annex server, automatic projector, endpoint presenter and primary-file witness remain unchanged.
+
+Frozen source references:
+- dispatcher-endpoint-associations-display.ts:42-57,139-148: private optional endpointProjects output admission and current registered-primary-only population.
+- remote-agent-details.ts:159-163: existing strict canonical target supplies its primary project path privately; original target/controller/policy/connection receipts retained.
+- remote-connection-card.ts:109-139,144-209,220-285: collision detection, source partitions, identity-aware reverse grouping, safe names/qualifiers, independent switch provenance and row accounting.
+- remote-agent-details.ts:207-240: existing selected/role/provider/run/policy/controller/connection final fences and authorization before returning a body.
+
+CA1 closure
+
+The overlapping manual source is held in a separate partition before automatic directions are added. Unqualified native binding/source/saved-direction records remain a separate native partition. Reverse-direction grouping includes identityGroup as well as kind and other native ID. A cross-project outgoing manual record no longer borrows the automatic reverse direction's two-way grouping; reverse-only and explicit manual two-way cases retain their own grouping. Same display names do not establish identity: static manual/automatic/native qualifiers distinguish overlapping source observations.
+
+Manual and canonical source convergence requires both the same ordered native pair and exact equality of privately admitted manual primary-folder string with the canonical target's strict primary-folder string. Missing context, absent/unregistered/unknown primary or different strings do not converge. Different path strings mean equality is unproven, not proof of physically different folders. No alias equivalence, incarnation/ABA, continuous directory lock, runtime or authority claim is made.
+
+The endpoint helper accepts only an initially empty internal Map and exports at most50 already-selected pair->project strings after recorded source association, registered selected primary and aggregate currentness checks. It exports no raw config/unrelated inventory. Without the opt-in, the new aggregate/output block is skipped. All relevant source/registry/primary/cache/selected-authority receipts still enter caller-owned final connection receipts; the Map does not attest anything independently. Existing file/read allocation budgets remain inherited, with additional bounded currentness rereads distinguished from initial allocation limits. No whole-Details universal work/deadline bound is inferred.
+
+Main provides the controller folder from its existing strictly admitted target, not a route path or a name lookup. Existing canonical role/fixed-folder/primary receipt remains in dispatcherReceipts. Map evidence remains in connectionReceipts. Later ordinary-primary/controller/selected changes remain refusal evidence;403 still wins for exercised revocation. All checks complete after the last awaited card work and before returning a body; private project paths, maps, partition keys and receipts are not added to the DTO.
+
+Native-ID switch records are not silently attached to a project-qualified configured endpoint. Their useful rows/overrides remain visible separately, while configured rows state that switch association is unconfirmed. Even exact manual/automatic convergence retains independent source defaults and reports Multiple configured sources instead of arbitrarily choosing one as effective switches without a saved/bound record. Verified ordinary bindingFor supplies no starting arrays; shared local defaults therefore differ from automatic narrow defaults (manual clear/compact on,wake off; automatic clear/compact off,wake on). These are source defaults, explicitly not effective tool authority. Existing no-automatic manual behavior is not expanded into a new universal identity contract by this acceptance.
+
+Evidence independently inspected
+
+Final manifest SHA256392a58e5239a5871970b148b4f62e6ce5a753d5639b531a21c0280c7c47b5d0e: all60 listed artifact hashes match. Retained initial45 and runner-completed49 manifests also match. Later supplements remain additive CURRENT inspection/history, not reconstructed development launch proof. Read driver and actual closed stdout/subprocess receipt: aggregate exit0 at2026-11-20T07:40:10.894559Z.
+
+Actual exact GREEN:8 files/332PASS/no skips, gate4/maxWorkers2,2026-11-20 07:39:58-07:40:01Z,exit0. Actual tsc --noEmit:gate6,07:40:02-10Z,exit0. Each of18 admitted launch metadata records binds exact head/tree and before/after103 fixture hashes independently matching frozen Git, with ANNEX_MOBILE_FIXTURES absent. No75 in supplied package. No prior252/235/333/canonical68/lint/live result transfer.
+
+Independently reconstructed all16 mutation patches from exact source, checked original/mutated hashes and exact patch bytes, and verified each recorded restored hash/clean tracked head/tree. Actual results/reached limits:
+1 Any admitted folder treated equal:6FAIL3PASS8SKIP. Hard primary/source/currentness/factory admission passes; name/source/grouping/combined-row/qualifier/default-association soft failures and17vs20 omissions are reached. Missing-context/convergent/distinct-ID positives remain.
+2 Drop Main controller folder:2FAIL3PASS129SKIP. Convergent cases first hard-fail combined observation; later assertions there uncredited. Cross-project and revocation behavior remain independent.
+3 Omit private admitted project output:2FAIL1PASS51SKIP. Registered Map output and convergent source count/Multiple-source text fail; unregistered positive passes. Dependent undefined-row matcher error is not extra disclosure evidence.
+4 Export unregistered project:1FAIL36SKIP, actual private Map size1vs0. No outward authority/path-data claim.
+5 Accept prefilled Map:1FAIL36SKIP, incorrect ok plus forbidden open/lstat spy calls reached (25/168 calls). Disk/no-write assertions pass; not recovery or timing evidence.
+6 Native-ID-only grouping:2FAIL15SKIP, outgoing/reverse manual directions wrongly folded two-way. Independent names/source/currentness retained.
+7 Collapse manual partition:1FAIL16SKIP, missing convergent combined row and expected Multiple-source switch row; no extra leak claim.
+8 Collapse automatic partition:2FAIL62SKIP, independent native row/switch assertions fail. Undefined-row matcher errors are consequences of missing association rows, not additional raw leaks.
+9 Borrow native switch association:1FAIL16SKIP, qualified source rows lose the expected unconfirmed predicate; native override/default record remains separate evidence.
+10 Prefer one convergent source:1FAIL16SKIP, incorrect automatic defaults instead of Multiple configured sources; both source-default rows otherwise retained.
+11 Omit manual defaults:3FAIL14SKIP,0vs1 selected manual default rows; other facts retained.
+12 Omit manual default field count:1FAIL16SKIP,100-row assertion passes,19vs20 omissions fails. Counting only, not heap/physical-I/O proof.
+13 Omit scoped labels:1FAIL16SKIP, same-name source qualifier predicates fail; source facts/currentness remain independently known.
+14 Borrow automatic defaults for manual source:2FAIL15SKIP. Actual manual factory prestate passes before combined manual-default predicate fails. Short-circuit boolean assertions are not separate runtime-byte proof of each flag.
+15 Serialize private Map:1FAIL16SKIP, actual temp-root not-in-Card-JSON assertion reached. Deliberate mutant output only; no unmutated leak or prohibition on legitimate Folder fields elsewhere.
+16 Drop final connection receipts:1FAIL4PASS129SKIP. Real late ordinary-primary edit and current old manual-page receipt pass hard setup, then stale200 versus409/cards/settings/provider soft failures are reached. Controller change independently refuses409; revocation403 retained.
+
+Actual/model and historical limits
+
+Direct mixed fixture nine cases exercises actual saved source/metadata/cache getter/Card/binding APIs with real selected/ordinary/role primaries and registry. Canonical facts are direct modeled input and identity callback returns true, although role-primary witness is actual. Getter remains cold; this is not a warm cache or live role/auth proof. Added factory/default predicates, same-name/reverse/two-way/native override/convergence/missing-context cases, and34 bindings yielding100 rows/20 omissions materially extend087. New temporary-tree comparisons establish unchanged bytes/inode/mtime around direct reads (not atime); controlled external ports unused. This new no-write evidence is not retroactively credited to087.
+
+Whole Main five cases use actual passive policy/source/metadata/Card, temporary selected/ordinary/controller/registry/settings files and primary/role witnesses. Strict resolver, runtime/provider/settings/helpers/actions and later canvas scheduling remain modeled. Hard observations are outside application catches. Late related primary edit invalidates new receipts while old manual-page receipts stay current; controller disposal independently invalidates role evidence; revocation403 wins. No universal whole-Main temp-tree preservation, live HTTP/installed app/native provider/network/transport/effective-permission proof follows.
+
+Four private-output cases cover current registered output, unregistered/wrong-selected omission and prefilled-before-IO refusal. Result JSON excludes private paths, but the Map itself is deliberately host-private mutable callback output; callers must retain its evidence, as Main does.
+
+Preserve rejected133 and corroborated087 exactly:087 had2FAIL2PASS8SKIP/three reached name-grouping soft failures, cold real getter and modeled canonical identity, without explicit defaults-value or whole-tree no-write assertions. These histories are not rewritten. Successor development wrong override-file fixture and intermediate229/234/235 counts remain CURRENT-linked only; exact332 proof above is separate. No source acceptance/count transfer from development.
+
+Other cold helper/Canvas/group/tool/user sources, Dispatcher-wide/offline/missing-role surfaces, true suspension/current eligibility, paging/folds/navigation and full role/provider/version/state/UI/latest-main matrix remain required. This bounded CA1 approval supplies no assigned-root/full-matrix/PR/main/live/release authority. #3611 merge hold remains superseded; #3706 public-release hold remains.

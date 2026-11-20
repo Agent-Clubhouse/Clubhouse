@@ -1,0 +1,60 @@
+{
+  "kind": "current preservation of reviewer reports, not retroactive owner proof sealing",
+  "files": [
+    {
+      "path": "reports/landing-readiness-3744-settings-3b6647f39-20261120.txt",
+      "bytes": 4713,
+      "sha256": "044d2e9b51284750c0a9186d97ef19051e0d03da26fdddf9d1458c344ebb5861",
+      "originalSourceSha256": "bb73ea19ec43f0ee207c90138189e3a681e872b00c5e177d510117ae7fa73cfe"
+    },
+    {
+      "path": "reports/3744-windows-quarantine-readonly-diagnosis-20261120.txt",
+      "bytes": 5925,
+      "sha256": "b286099d3de6cbc313dd7d3654accaf2b438028cf42e7f62c1f5a719b0e2f193",
+      "originalSourceSha256": "3024c71296d64c49898a133166c103c3f0b4f8610f4be3ce8b2e0f1d6f9f9339"
+    },
+    {
+      "path": "reports/3744-windows-artifact-diagnostic-gap-20261120.txt",
+      "bytes": 2578,
+      "sha256": "625dd52a06dd37f109b4331641c68ad97ba4eb3ac48052b6fecccfdda45416bb",
+      "originalSourceSha256": "00abac2e44c7f46ea9353bbc1ca1c7e9d24ed0e0e4643f7e021aeabb9aed30b9"
+    },
+    {
+      "path": "reports/3695-166f8d50f-independent-final-bounded-verdict.txt",
+      "bytes": 14085,
+      "sha256": "c0590c257f1890afc127d3bdeab8da079580d6e5970b4c2496d4e8096f611059",
+      "originalSourceSha256": "c0590c257f1890afc127d3bdeab8da079580d6e5970b4c2496d4e8096f611059"
+    },
+    {
+      "path": "reports/3695-166f8d50f-independent-typecheck-validation-addendum.txt",
+      "bytes": 5643,
+      "sha256": "c2704cbb40bf7d374097ec0ee5bc45a0fc27f52c8760bf1485e8ba05c6e8c0fa",
+      "originalSourceSha256": "c2704cbb40bf7d374097ec0ee5bc45a0fc27f52c8760bf1485e8ba05c6e8c0fa"
+    },
+    {
+      "path": "reports/agent-settings-3b6647f39-independent-ui1-verdict.txt",
+      "bytes": 8595,
+      "sha256": "0b3ee0ae630997e67ce74b316032729664970c69a090e2916c0254c7ede79fc0",
+      "originalSourceSha256": "0b3ee0ae630997e67ce74b316032729664970c69a090e2916c0254c7ede79fc0"
+    },
+    {
+      "path": "reports/auto-reset-f386b143f-independent-design-replay-verdict.txt",
+      "bytes": 7798,
+      "sha256": "1d647fd2d87b45e85c231de27b19c02dad5db571fc42fd4ba1408a4bff72fea2",
+      "originalSourceSha256": "1d647fd2d87b45e85c231de27b19c02dad5db571fc42fd4ba1408a4bff72fea2"
+    },
+    {
+      "path": "reports/3733-2482e8bc2-independent-ca1-correction-verdict.txt",
+      "bytes": 11790,
+      "sha256": "af4ce8d6b9dd18ca129cad98c0693f37c5c00b997c1c7de11dd70cdc8480ccfe",
+      "originalSourceSha256": "af4ce8d6b9dd18ca129cad98c0693f37c5c00b997c1c7de11dd70cdc8480ccfe"
+    },
+    {
+      "path": "reports/3733-2482-fresh-local-delta-closeout-checklist.txt",
+      "bytes": 17206,
+      "sha256": "49f4d474288d384615c1ac455335ffb193fc3523c64010f5eca0e48b81a67bee",
+      "originalSourceSha256": "49f4d474288d384615c1ac455335ffb193fc3523c64010f5eca0e48b81a67bee"
+    }
+  ],
+  "copyNote": "Only redundant blank lines at EOF normalized in Git copies; original reports unchanged. Original and copied hashes retained."
+}

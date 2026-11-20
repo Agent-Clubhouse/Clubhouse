@@ -1,0 +1,28 @@
+Independent final VALIDATION addendum — exact166f TypeScript PASS in the recorded lock-matching cache environment.
+
+Head166f8d50ff702081afa3af33e819698482d73a5a
+Tree6e8368316a67b30ee69e45b272c3e4af817d8c1e
+Correctness verdict remains the separate bounded implementation APPROVE. This addendum adds a new successful validation receipt; it does not rewrite earlier failures, approve new source or authorize PR/merge/live/release actions.
+
+Actual linked-typecheck.log shows gate6GB03:58:38–58Z, explicit Node/TypeScript --noEmit command, COMMAND_EXIT0 and gate ENDrc0, with no diagnostic lines. Both embedded source receipts are identical, clean and exact166f; independently checked all4311 tracked-file SHA256 values against immutable Git. Source capture runner hash matches the inspected7a9011... file. Dependency wrapper1d44d10f2c891a215215a3d005ab6035bc8158ed9a99cdf801a4f8da97d28417 and resolution helper0de37a028670523dd202148470ecbec56a8634b2e5d75519957d9f035ec479d4 match recorded environment hashes. Reviewer read scripts/receipts only, never executed them or changed any dependency link.
+
+Environment linkage independently checked
+
+- Frozen package.json SHA02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9 and package-lock SHA bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d match Git and recorded cache. Dependency/devDependency/optionalDependency maps equal lock root. Package versionbeta7 versus lock rootbeta6 is unchanged from this task's baseline; no package/lock change was made.
+- Existing cache sidecar lock and hidden installed lock hashes match environment records. All1281 recorded installed package JSON files currently match their recorded premanifest content hashes, recorded names/versions and target lock versions. Hidden-lock version/resolved/integrity metadata matches target lock for all1281 installed entries. This checks installed metadata and recorded payload subsets, not remote package provenance or a new installation.
+- Current615 required package source/type file hashes and30 required payload hashes match the pre-run cache manifest/inspection. All13 recorded TypeScript resolution realpaths are within the selected cache and their current leaf hashes match that manifest. Node binary/TS bin/_tsc implementation hashes match records. Recorded Node is24.22.1 darwin/arm64; TypeScript5.9.3. No Node/compiler/resolution command was rerun by reviewer.
+- Pre/post cache manifest JSON is byte-identical7348634bytes,51068entries (50980 regular files,88 symlink targets), SHA42a54700f140f2a2d83bbd76f4499277622ebd769e92b58f40f3fb39835fe2af. All88 current recorded symlink targets match and resolve inside that cache. Reviewer did NOT rehash the full1.49GB current cache. Equality attests recorded file contents/link targets at two observations, not absence of transient writes, inode/mode/permission/directory-metadata changes or a continuous whole-cache attestation.
+
+Cleanup independently corroborated
+
+Wrapper source uses a reversible local directory rename/link and finally restores only its expected link/original directory. The receipt reports restoration; current localnode_modules is not a symlink, retains original inode2489182963, contains only .vite, and its recorded907byte results file hash matches. Preservation backup is absent. The original local content manifest has one file, not a complete directory metadata/mtime/inode history for every descendant. No persistent link/setup change or current cache content alteration was found within the inspected evidence. No review-time link mutation, install/download/cache deletion or live action occurred.
+
+Package integrity/provenance
+
+Delivered30802byte addendum SHAead7ae01805a5c22a73a14b6863faac776a5768e0e16b5ddf753664e7d0203cd verified. Its20 indexed artifacts all match supplied sizes/hashes. Archive5126790bytes SHA077016dda5540693ff89dc9df024c16ac6ddf5ae344d2e93a6eceecd6c21aa37 verified by read-only archive inspection:23 regular files,16251799 uncompressed bytes,no link/absolute/traversal members; all20 indexed payloads match archive members. Full raw source/cache manifests were read rather than assuming the package excerpts contained them. Package, bundle, raw log, summary and cleanup audit are preserved outside helper workspace under3695-166f8d50f-typecheck-addendum-* with explicit reviewer CURRENT preservation receipt. That receipt is not a retroactive original launch manifest.
+
+Validation disposition/history
+
+Exact166f now has a verified successful TypeScript --noEmit invocation in the recorded existing lock-matching dependency environment. Earlier105-diagnostic exit2 runs remain true failures for their original environment and are preserved unchanged. Existing247 renderer PASS and lint0/50warning receipts remain their original environment; no single combined environment/run or rerun of those suites under this cache is claimed. Original local setup was restored, so this successful compiler receipt does not assert every future invocation in that restored setup will pass.
+
+No new source or correctness verdict is inferred. Original166f observation/visibility/producer omission/quiescent/no-history/private-incident/transport limitations remain. This addendum does not independently verify PR app-write capability, create a PR, authorize merge/release or approve latest-main integration; prepared PR text/current drift/capability notes in the package are outside this validation determination. No full #3733 or live/phone acceptance;3706 public-release hold remains, superseded3611 merge hold not reinstated. Resume separately queued e83 review with39 dependency disposition retained.

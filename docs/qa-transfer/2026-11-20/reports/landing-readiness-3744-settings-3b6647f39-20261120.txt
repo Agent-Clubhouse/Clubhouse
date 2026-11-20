@@ -1,0 +1,38 @@
+Bounded read-only landing readiness — observed 2026-11-20 08:32–08:35 UTC
+
+Scope: existing GitHub GETs, local Git object comparisons and existing job log only. No tests, lint, typecheck, CI reruns/cancellations, source changes, credentials, PR mutations or merge. This is readiness evidence, not a fresh source approval or landing authorization.
+
+PR #3744 — https://github.com/Agent-Clubhouse/Clubhouse/pull/3744
+- Open, non-draft; head 166f8d50ff702081afa3af33e819698482d73a5a / tree 6e8368316a67b30ee69e45b272c3e4af817d8c1e, unchanged from reviewed head.
+- Main/base remains ae56577af786b0db79f21d137d0b334a5f7847dc. Merge base is exactly main; 0 behind / 10 ahead. No base drift.
+- GitHub reports mergeable=true, mergeable_state=unstable, rebaseable=false; snapshot only, not a merge instruction. No auto-merge.
+- No submitted GitHub reviews, review threads or requested reviewers/teams. External independent review remains separate.
+- Exact-head PR query returns only #3744; all six open repository PRs contain no duplicate for this branch/feature.
+- Validate run 44693675446, attempt 1, completed FAILURE: 37 jobs, 32 success / 1 failure / 4 skipped.
+  https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44693675446
+- Failed job 136145316872: Unit + Component Tests (windows-latest, 2/2).
+  https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44693675446/job/136145316872
+  Raw log: src/main/services/handoff-git-receive.test.ts > handles bundle packs beyond the Windows repository path limit (root220) with isolated Git configuration.
+  HandoffSnapshotError: Handoff snapshot failed: git_failed. Git: init; exit=unknown; stderr=path_too_long.
+  Shard result: 1 failed / 677 passed / 5 skipped files; 1 failed / 15530 passed / 171 skipped tests. Step exits 1.
+  Both named test file and handoff-quarantine.ts are unchanged against main. This does not establish a main reproduction, flake, root cause or permission to waive the failure.
+- Typecheck + API and ESLint passed, as did the other three unit shards, two builds and twenty Linux/Windows E2E jobs.
+- Skipped: Dependency resolution preflight; Linux Package Smoke; macOS unit tests; macOS Build + E2E smoke. Skips are not passing execution.
+- Concrete gate: owner must disposition the actual Windows failure and obtain required green validation before landing. No rerun or repair performed by reviewer. Existing external implementation/typecheck approvals do not override this new hosted failure.
+
+Approved Agent Settings branch — agent-settings-usability/wildcard-preview
+- Remote ref remains 3b6647f3955e9c6ace65a9079fa2d37219880fd7 / tree 43cb8d116c9791b58b73be506875362634b4c05f, unchanged from approved UI1 head.
+- Exact merge base/main remains ae56577af786b0db79f21d137d0b334a5f7847dc; 0 behind / 3 ahead.
+- All-state exact-head PR query returns no PR; open-PR listing independently has no matching Settings PR.
+- Exact SHA has zero Actions runs and zero Check Runs. Empty legacy status arrays return aggregate "pending"; this is not evidence of an actual pending job.
+- Concrete gates: authorized owner must create the PR through an authorized route, confirm exact head/base, and obtain hosted validation/review as applicable. Current read-only assignment grants no PR creation. Historical integration refusal/credential boundaries are untouched.
+- Retain earlier bounded UI1 approval (137 producer/renderer tests, changed-file lint, full-source tsc and isolated component visuals) with its original environment/model scope. No fresh CI or full Chrome/Electron/live-provider proof inferred.
+
+Visible repository rules
+- Main is protected. Active ruleset 12846624 "Protect main": pull requests, squash-only merge, linear history, deletion/non-fast-forward restrictions; bypass unavailable to current user.
+  https://github.com/Agent-Clubhouse/Clubhouse/rules/12846624
+- Visible ruleset requires zero approving reviews, no code-owner/last-push review or thread-resolution gate; stale reviews dismissed on push; extra approval for unattributed changes enabled.
+- No required-status-check rule is exposed in this ruleset; branch metadata shows no required contexts. This is a technical policy snapshot, not a waiver of assignment validation/review requirements.
+- No merge/release authorization supplied. #3706 public release hold remains; superseded #3611 phone hold is not reinstated. #3613 provider-refusal boundary unaffected.
+
+Disposition: PR3744 NOT READY for landing due to failed hosted Windows shard. Settings exact approved branch is source-stable but NOT YET PR/CI-ready. Neither has head/base drift. No duplicate accepted source review or execution performed. Prioritize exact Auto implementation review upon receipt.
