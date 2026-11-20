@@ -84,9 +84,11 @@ describe('DispatcherView', () => {
   it('shows a selected Dispatcher’s status until this computer has its chat, then the chat', () => {
     const chat = { id: 'chat', projectId: DISPATCHER_PROJECT_ID, name: 'Tael', kind: 'durable', status: 'running', executionMode: 'chat' };
     useRemoteDispatcherSelection.getState().select('fp1');
-    useAnnexClientStore.setState({ satellites: [] });
+    useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', fingerprint: 'fp1', state: 'connected', snapshot: { dispatcher: { enabled: false, agent: null }, dispatcherPresence: { remotes: [] } } }] } as never);
     render(<DispatcherView />);
     expect(screen.getByTestId('remote-dispatcher-details')).toBeInTheDocument();
+    expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('Turned off · host snapshot');
+    expect(screen.getByTestId('details-card-other-machines-summary')).toHaveTextContent('0 of 0 online');
     act(() => useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', fingerprint: 'fp1', state: 'connected', snapshot: { dispatcher: { agent: chat } } }] } as never));
     expect(screen.getByTestId('runtime-pane')).toHaveTextContent('remote||s1||chat');
     expect(screen.queryByTestId('remote-dispatcher-details')).toBeNull();
