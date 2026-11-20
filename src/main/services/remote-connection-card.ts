@@ -97,7 +97,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
   if (!options.authorized()) throw new Error('revoked');
   if (!selected || selected.length > 200) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The selected connection identity exceeds the host display limit.'); return; }
   const refs = referenceNames(selected, options.name);
-  const endpointTarget = options.endpoint?.target, endpointCache = options.endpoint?.readCache;
+  const endpointTarget = options.endpoint?.target, endpointCache = options.endpoint?.readCache, projectPath = options.projectPath;
   try {
     const outgoing = bindingManager.readBindingsForDisplay(selected, { direction: 'outgoing', receipts: options.receipts });
     const incoming = bindingManager.readBindingsForDisplay(selected, { direction: 'incoming', receipts: options.receipts });
@@ -106,17 +106,17 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     let manual: ReturnType<typeof readSavedDispatcherLinksForDisplay> | undefined;
     let manualMemory: ReturnType<typeof readDispatcherLinkMemoryForDisplay> | undefined;
     let endpointMetadata: ReturnType<typeof readSavedDispatcherEndpointMetadataForDisplay> | undefined;
-    if (options.projectPath && !options.dispatcher && !options.family?.parentId) {
+    if (projectPath && !options.dispatcher && !options.family?.parentId) {
       // Saved metadata and process-known state have different provenance. A
       // failed source field cannot erase independently readable bindings.
       try {
-        manual = readSavedDispatcherLinksForDisplay(selected, options.projectPath, { receipts: options.receipts });
+        manual = readSavedDispatcherLinksForDisplay(selected, projectPath, { receipts: options.receipts });
       } catch { manual = { state: 'unavailable', reason: 'unreadable', inputs: [] }; }
       if (manual.state === 'ok') {
-        try { manualMemory = readDispatcherLinkMemoryForDisplay(selected, options.projectPath, manual.value.rows, { receipts: options.receipts }); }
+        try { manualMemory = readDispatcherLinkMemoryForDisplay(selected, projectPath, manual.value.rows, { receipts: options.receipts }); }
         catch { manualMemory = { state: 'unavailable', reason: 'unreadable', inputs: [] }; }
         if (endpointTarget && manual.value.rows.length) {
-          endpointMetadata = readSavedDispatcherEndpointMetadataForDisplay({ agentId: selected, projectPath: options.projectPath, target: endpointTargetReceipt(options.authorized, endpointTarget) }, manual.value.rows,
+          endpointMetadata = readSavedDispatcherEndpointMetadataForDisplay({ agentId: selected, projectPath: projectPath, target: endpointTargetReceipt(options.authorized, endpointTarget) }, manual.value.rows,
             { receipts: options.receipts, readLoadedCache: endpointCache });
         }
       }
