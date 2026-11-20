@@ -44,6 +44,95 @@ describe('remote full Details host evidence', () => {
       subagents: [{ subagentId: 'initial-sub', name: 'Initial reviewer', status: 'completed' as const, toolCount: 4, usage: { total: 42 } }],
       sessionUsage: { costUsd: 0, tokens: { total: 123 } }, context: { used: 100, size: 200_000 },
     }, observedAt: { cliVersion: 2000, model: 2000, effort: 2000, level: 1000, capabilities: 1000, mcpServers: 2000, skills: 2000, subagents: 2500, sessionUsage: 2600, context: 2600 }, omitted: {} });
+  it.each([
+    ['known total zero', { tokens: { total: 0 } }, 'tokens', '0 tokens'],
+    ['absent', undefined, 'tokens', 'Not reported in the loaded session snapshot'],
+    ['empty tokens', { tokens: {} }, 'tokens', 'Not reported in the loaded session snapshot'],
+    ['partial input zero', { tokens: { input: 0 } }, 'tokens', '0 tokens'],
+    ['partial output', { tokens: { output: 42 } }, 'tokens', '42 tokens'],
+    ['input and output', { tokens: { input: 12, output: 30 } }, 'tokens', '42 tokens'],
+    ['total takes precedence', { tokens: { total: 0, input: 42 } }, 'tokens', '0 tokens'],
+    ['zero cost', { costUsd: 0 }, 'cost', '<$0.01'],
+    ['zero cost and tokens', { costUsd: 0, tokens: { total: 0 } }, 'cost', '<$0.01 · 0 tokens'],
+    ['usage none', { costUsd: 1, tokens: { total: 42 } }, 'none', 'Not reported in the loaded session snapshot'],
+  ] as const)('preserves usage knownness: %s', async (_name, usage, capability, expected) => {
+    const report = evidence();
+    Object.assign(report.values, { sessionUsage: usage });
+    Object.assign(report.values.capabilities, { usage: capability });
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: report } });
+    chatPage.mockResolvedValue(page('1.2.3', { displayRunId: 'runtime-a' }));
+    render(<AgentDetails agent={agent} />);
+    await screen.findByText('Host CLI INITIAL_VERSION');
+    const toggle = screen.getByTestId('details-card-session-toggle');
+    if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+    const card = screen.getByTestId('details-card-session');
+    expect(within(card).getAllByText(expected, { exact: true }).length).toBeGreaterThan(0);
+    if (capability === 'none' || !usage || 'tokens' in usage && Object.keys(usage.tokens).length === 0) {
+      expect(card).not.toHaveTextContent('0 tokens');
+    }
+  });
+
+  it('keeps known zero turn sums and their resumed-history qualification', async () => {
+    const report = evidence();
+    Object.assign(report.values, { sessionUsage: undefined, turnTotal: { input: 0, output: 0 } });
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: report } });
+    chatPage.mockResolvedValue(page('1.2.3', { displayRunId: 'runtime-a' }));
+    render(<AgentDetails agent={agent} />);
+    await screen.findByText('Host CLI INITIAL_VERSION');
+    const toggle = screen.getByTestId('details-card-session-toggle');
+    if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+    expect(screen.getByTestId('details-card-session')).toHaveTextContent('0 tokens');
+    expect(screen.getByTestId('details-card-session')).toHaveTextContent('Earlier resumed conversation usage is separate');
+  });
+
+  it.each(['stop', 'offline', 'snapshot-loss', 'forbidden', 'unmount'] as const)('ticks elapsed body and collapsed summary without host events, then cleans up on %s', async (transition) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(120_000);
+    const value = fixture(); value.spawnedAt = 60_000;
+    read.mockResolvedValue({ status: 'ok', value });
+    const view = render(<AgentDetails agent={agent} />);
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      const summary = screen.getByTestId('details-card-session-summary');
+      expect(summary).toHaveTextContent('1m');
+      const toggle = screen.getByTestId('details-card-session-toggle');
+      if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+      expect(within(screen.getByTestId('details-card-session')).getAllByText('1m', { exact: true })).toHaveLength(2);
+      fireEvent.click(toggle);
+      const hostReads = read.mock.calls.length, pages = chatPage.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(summary).toHaveTextContent('1m 30s');
+      fireEvent.click(toggle);
+      expect(within(screen.getByTestId('details-card-session')).getAllByText('1m 30s', { exact: true })).toHaveLength(2);
+      expect(read).toHaveBeenCalledTimes(hostReads);
+      expect(chatPage).toHaveBeenCalledTimes(pages);
+      if (transition === 'unmount') view.unmount();
+      else if (transition === 'stop') {
+        read.mockResolvedValue({ status: 'error' });
+        act(() => useChatStore.getState().applyEvent({ v: 2, agentId: agent.id, sessionId: 's1', seq: 4, ts: 4, type: 'session_ended', data: { reason: 'stopped' } }));
+      }
+      else if (transition === 'offline') act(() => satellite({ state: 'disconnected' }));
+      else {
+        read.mockResolvedValue({ status: 'forbidden' });
+        act(() => satellite(transition === 'snapshot-loss' ? { snapshotUnavailable: true } : {}));
+      }
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(vi.getTimerCount()).toBe(0);
+      if (transition !== 'unmount') {
+        expect(screen.queryByTestId('details-card-session-summary')).not.toBeInTheDocument();
+        expect(within(screen.getByTestId('details-card-session')).queryByText('Running')).not.toBeInTheDocument();
+      }
+      const finalReads = read.mock.calls.length, finalPages = chatPage.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(read).toHaveBeenCalledTimes(finalReads);
+      expect(chatPage).toHaveBeenCalledTimes(finalPages);
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it('renders shared read-only action group fields and outcome/time without local action APIs or management buttons', async () => {
     const value = fixture(); const card = value.cards.find((c) => c.id === 'actions')!;
     card.summary = '1 related'; card.rows = ['owned', 'targeting', 'triggered-by'].map((group) => ({ label: 'Host reminder', value: 'Legacy Off · Description · done', action: { group, enabled: false, description: 'When Selected sleeps → Message Selected', lastRun: { outcome: 'done', startedAt: 1000 } } })) as typeof card.rows;

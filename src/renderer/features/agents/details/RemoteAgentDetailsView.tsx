@@ -1,3 +1,4 @@
+import { useNow } from './useNow';
 import { RemoteConnectionsCard } from './RemoteConnectionsCard';
 import { RemoteActionsEvidence } from './RemoteActionsEvidence';
 /** Remote container: host reads and shared presentation only; no local config, git or action hooks. */
@@ -154,10 +155,16 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const sessionCard = card('session');
   const sessionRows = sessionCard?.rows.map((r) => r.label === 'Ended' && /^\d{4}-\d{2}-\d{2}T/.test(r.value) && Number.isFinite(Date.parse(r.value)) ? { ...r, value: formatAgo(Date.parse(r.value)) } : r);
   const lastSummary = ['Ended', 'Duration', 'Cost'].map((label) => sessionRows?.find((r) => r.label === label)?.value).filter((value) => value && value !== 'Not reported').join(' · ');
-  const stats = session?.usage.session;
+  const usage = session?.capabilities?.usage === 'none' ? undefined : session?.usage;
+  const stats = usage?.session;
   const cost = stats?.costUsd !== undefined ? formatCost(stats.costUsd, stats.costIsEstimate) : null;
-  const tokenStats = stats?.tokens ?? session?.usage.turnTotal;
-  const tokens = tokenStats?.total ?? ((tokenStats?.input ?? 0) + (tokenStats?.output ?? 0) || undefined);
+  const tokenStats = stats?.tokens ?? usage?.turnTotal;
+  const tokens = tokenStats?.total ?? (tokenStats?.input !== undefined || tokenStats?.output !== undefined ? (tokenStats.input ?? 0) + (tokenStats.output ?? 0) : undefined);
+  const spawnedAt = details?.spawnedAt;
+  const clockActive = !dispatcher && !runtimeUnconfirmed && !!details?.running && status === 'running' && spawnedAt != null;
+  const now = useNow(clockActive);
+  const runningFor = clockActive && spawnedAt != null ? formatDuration(now - spawnedAt) : null;
+  const sessionSummary = [runningFor, cost].filter(Boolean).join(' · ');
   const ctx = session?.capabilities && session.capabilities.usage !== 'none' ? session.usage.context : null;
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round(ctx.used / ctx.size * 100)) : null;
   const limits = session?.capabilities?.limits ? session.usage.limits : [];
@@ -210,11 +217,11 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       </>}
       {!reported && <CardNote>{!details || !session ? 'Provider evidence is unavailable until a current authorized session read succeeds.' : skillReport.supported ? 'No valid skills report for this session has arrived.' : 'This provider does not report loaded skill names here.'}</CardNote>}
     </DetailsCard>}
-    {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={asleep ? lastSummary : cost ?? ''} open={open('session')} onToggle={() => toggleCard('session')}>
+    {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={asleep ? lastSummary : sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
       <CardRow label="Runs on">{provider}{session?.driver ? ` · ${DRIVER_LABELS[session.driver] ?? session.driver}${session.cliVersion ? ` ${session.cliVersion}` : ''}` : agent.executionMode === 'pty' ? ' · CLI' : ''}</CardRow>
-      {!asleep && <CardRow label="Usage">{cost || tokens ? [cost, tokens ? `${formatTokens(tokens)} tokens` : null].filter(Boolean).join(' · ') : session ? 'Not reported in the loaded session snapshot' : agent.executionMode === 'pty' && details?.settings?.runtime === 'terminal' ? 'Not reported in the CLI view' : 'Current usage is not available from the host'}</CardRow>}
+      {!asleep && <CardRow label="Usage">{cost !== null || tokens !== undefined ? [cost, tokens !== undefined ? `${formatTokens(tokens)} tokens` : null].filter(Boolean).join(' · ') : session ? 'Not reported in the loaded session snapshot' : agent.executionMode === 'pty' && details?.settings?.runtime === 'terminal' ? 'Not reported in the CLI view' : 'Current usage is not available from the host'}</CardRow>}
       {hydrated.evidence?.values.turnTotal && !hydrated.evidence.values.sessionUsage?.tokens && <CardNote>Token sums cover completed turns observed since this runtime opened. Earlier resumed conversation usage is separate.</CardNote>}
-      {!runtimeUnconfirmed && status === 'running' && details?.spawnedAt && <CardRow label="Running">{formatDuration(Math.max(0, Date.now() - details.spawnedAt))}</CardRow>}
+      {runningFor !== null && <CardRow label="Running">{runningFor}</CardRow>}
       {ctx && ctxPct !== null && <section aria-label="Context window" data-testid="details-session-context"><CardRow label="Context window" labelWidth="wide">{ctxPct}% of {formatTokens(ctx.size)}{ctx.window === 'input' ? ' input' : ''}</CardRow><div className="pr-3.5 pl-[33px] py-1 text-xs"><UsageBar pct={ctxPct} /><p>{formatTokens(ctx.used)} of {formatTokens(ctx.size)} {ctx.window === 'input' ? 'input ' : ''}tokens</p>{ctx.window === 'input' && <p>{provider} reports the room left for input after its output reserve, so its own total can be larger.</p>}<p>{provider} compacts the conversation on its own near the limit.</p></div></section>}
       {limits.length > 0 && <CardRow label="Plan limits"><span className="flex flex-col gap-1">{limits.map((l) => <span key={l.window}>{limitName(l.window)} {limitLabel(l)}{l.resetsAt ? ` · resets ${new Date(l.resetsAt).toLocaleString()}` : ''}</span>)}</span></CardRow>}
       {asleep && !details && agent.lastSleep && <><CardNote>Last loaded host snapshot; these sleep fields may be stale.</CardNote><CardRow label="Ended">{formatAgo(Date.parse(agent.lastSleep.at))}</CardRow><CardRow label="Why">{describeSleep(agent.lastSleep)}</CardRow></>}

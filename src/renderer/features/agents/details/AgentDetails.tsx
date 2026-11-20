@@ -1,3 +1,4 @@
+import { useNow } from './useNow';
 /**
  * Agent details (#2032, "Design decided 2026-10-17"): a 340px column of cards
  * beside the transcript or terminal, behind one toolbar button (⌥⌘D). It
@@ -144,17 +145,6 @@ export function useBranchChanges(cwd: string | undefined, refreshKey: unknown): 
     };
   }, [cwd, refreshKey]);
   return changes;
-}
-
-function useNow(active: boolean, everyMs = 30_000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), everyMs);
-    return () => clearInterval(id);
-  }, [active, everyMs]);
-  return now;
 }
 
 function tokensOf(t: { total?: number; input?: number; output?: number } | undefined): number | undefined {
