@@ -192,8 +192,10 @@ export function captureReadOnlyAgentTargetWitness(target: AgentConfigTarget): { 
 const CONNECTION_SOURCE_METADATA = [
   'connection-card.json', 'registry.json', 'membership.json', '.clubhouse/.local/orchestrator-connections.json',
   '.clubhouse/plugin-data/canvas/kv/canvas-instances.json', '.clubhouse/plugin-data/canvas/kv/canvas-instances-backup.json',
+  '.clubhouse/plugin-data/canvas/kv/canvas-active-id.json',
   '.clubhouse/plugin-data/canvas/kv/canvas-wires.json', '.clubhouse/plugin-data/canvas/kv/canvas-zone-wires.json',
   '.clubhouse/plugin-data-local/canvas/kv/canvas-instances.json', '.clubhouse/plugin-data-local/canvas/kv/canvas-instances-backup.json',
+  '.clubhouse/plugin-data-local/canvas/kv/canvas-active-id.json',
   '.clubhouse/plugin-data-local/canvas/kv/canvas-wires.json', '.clubhouse/plugin-data-local/canvas/kv/canvas-zone-wires.json',
 ] as const;
 export type ReadOnlyConnectionSourceMetadata = typeof CONNECTION_SOURCE_METADATA[number];

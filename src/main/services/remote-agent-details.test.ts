@@ -984,3 +984,28 @@ describe('cold saved tool-source connection pages in Details', () => {
     } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
   });
 });
+
+describe('cold saved Canvas and zone connection pages in Details', () => {
+  it.each((['canvas-records', 'zone-records'] as const).flatMap((source) => (['unchanged', 'source-late', 'endpoint-late', 'revoked'] as const).map((mode) => ({ source, mode }))))('keeps selected saved source fields and final receipts: $source/$mode', async ({ source, mode }) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-canvas-page-'))), a = path.join(root, 'a'), b = path.join(root, 'b');
+    for (const folder of [a, b]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+    const home = vi.spyOn(app, 'getPath').mockReturnValue(root); m.base = root; m.realConnections = true; m.realWitness = true;
+    const selected = { ...agent(), worktreePath: a, orchestrator: 'codex-cli' as const }, p = { ...project, path: a };
+    await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [p, { id: 'p-other', name: 'Other project', path: b }] })); await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), JSON.stringify([selected]));
+    const endpoint = path.join(b, '.clubhouse', 'agents.json'); await fs.writeFile(endpoint, JSON.stringify([{ id: 'canvas-target', name: 'Qualified Canvas target', env: { key: 'PRIVATE_ENDPOINT_ENV' } }]));
+    const dir = path.join(a, '.clubhouse', 'plugin-data-local', 'canvas', 'kv'); await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'canvas-instances.json'), JSON.stringify([{ id: 'project', views: [{ id: 'selected-view', type: 'agent', agentId: selected.id, projectId: p.id }, { id: 'target-view', type: 'agent', agentId: 'canvas-target', projectId: 'p-other' }, { id: 'zone', type: 'zone', containedViewIds: ['selected-view'] }] }]));
+    const sourceFile = path.join(dir, source === 'canvas-records' ? 'canvas-wires.json' : 'canvas-zone-wires.json');
+    await fs.writeFile(sourceFile, JSON.stringify(source === 'canvas-records' ? [{ agentId: selected.id, targetId: 'canvas-target', targetKind: 'agent', label: 'Selected saved label', instructions: { '*': 'PRIVATE_PROMPT' } }] : [{ id: 'wire', sourceZoneId: 'zone', targetId: 'canvas-target', targetType: 'agent' }]));
+    m.target.mockResolvedValue({ agent: selected, project: p }); let allowed = true, reached = false, observed = false;
+    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
+    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((r) => r.label === 'Qualified Canvas target · Project'); });
+    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'source-late') await fs.writeFile(sourceFile, '[]'); if (mode === 'endpoint-late') await fs.writeFile(endpoint, '[]'); if (mode === 'revoked') allowed = false; return []; });
+    try {
+      const response = await readRemoteAgentDetails(selected.id, () => allowed, { card: 'connections', source, offset: 0, projectOffset: 0 });
+      expect(reached).toBe(true); expect(observed).toBe(true);
+      if (mode === 'unchanged') { expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, selected.id)).toBe(true); const body = response.body as RemoteAgentDetails; expect(body.connectionPageSources).toContain(source); expect(body.cards.find((c) => c.id === 'connections')?.connectionPage).toMatchObject({ source, known: 1, complete: true, next: null }); expect(JSON.stringify(body)).not.toMatch(/PRIVATE_|projectPath|ProjectPath|"receipts"/); }
+      else { expect.soft(response.status).toBe(mode === 'revoked' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId'); }
+    } finally { capture.mockRestore(); home.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+});

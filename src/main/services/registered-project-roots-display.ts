@@ -14,6 +14,8 @@ export interface RegisteredProjectDisplayRoots {
   roots: RegisteredProjectDisplayRoot[];
   /** At most4096 validated paths, private alias admission only. */
   registeredPaths: ReadonlySet<string>;
+  /** Private validated ID→path associations; never a DTO or live registration. */
+  projectPaths: ReadonlyMap<string, string>;
   total: number;
   offset: number;
   nextOffset: number | null;
@@ -46,12 +48,12 @@ export function readRegisteredProjectRootsForDisplay(selected: { projectId: stri
     const rows = Array.isArray(snapshot.raw) ? snapshot.raw : record(snapshot.raw) && snapshot.raw.version === 1 ? snapshot.raw.projects : undefined;
     if (!Array.isArray(rows)) return unknown('unreadable');
     if (rows.length > DISPLAY_REGISTERED_ROOT_ROWS) return unknown('limit');
-    const ids = new Set<string>(), paths = new Set<string>(), page: RegisteredProjectDisplayRoot[] = [];
+    const ids = new Set<string>(), paths = new Set<string>(), projectPaths = new Map<string, string>(), page: RegisteredProjectDisplayRoot[] = [];
     let found = false;
     for (let index = 0; index < rows.length; index++) {
       const row = rows[index];
       if (!record(row) || !id(row.id) || !folder(row.path) || ids.has(row.id) || paths.has(row.path)) return unknown('unreadable');
-      ids.add(row.id); paths.add(row.path); if (row.id === projectId && row.path === projectPath) found = true;
+      ids.add(row.id); paths.add(row.path); projectPaths.set(row.id, row.path); if (row.id === projectId && row.path === projectPath) found = true;
       if (index < offset || index >= offset + DISPLAY_REGISTERED_ROOT_PAGE) continue;
       const name = typeof row.displayName === 'string' && row.displayName ? row.displayName : row.name;
       page.push({ id: row.id, path: row.path, name: typeof name === 'string' && name.length <= 1024 ? { state: 'ok', value: display(name, 240), inputs }
@@ -60,7 +62,7 @@ export function readRegisteredProjectRootsForDisplay(selected: { projectId: stri
     if (projectId !== DISPATCHER_PROJECT_ID && !found || offset > 0 && offset >= rows.length) return unknown('changed');
     const evidence = receipt(base, target, snapshot.receipt); receipts.push(evidence);
     if (!admitted() || !evidence.current()) return unknown('changed');
-    return { state: 'ok', inputs, value: { roots: page, registeredPaths: paths, total: rows.length, offset,
+    return { state: 'ok', inputs, value: { roots: page, registeredPaths: paths, projectPaths, total: rows.length, offset,
       nextOffset: offset + page.length < rows.length ? offset + page.length : null, receipt: evidence } };
   } catch (error) { return unknown(error instanceof ReadOnlyMetadataLimitError ? 'limit' : 'unreadable'); }
 }

@@ -1,3 +1,4 @@
+import { readSavedCanvasConnectionsForDisplay } from './saved-canvas-connections-display';
 import { readSavedToolConnectionsForDisplay } from './saved-tool-connections-display';
 import { isRemoteDetailsQuery, REMOTE_CONNECTION_PAGE_SOURCES, type RemoteDetailsQuery } from '../../shared/remote-details-query';
 import { readConfiguredRegisteredConnectionsForDisplay } from './configured-registered-connections-display';
@@ -162,6 +163,12 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     });
     await read('dispatcher', (c) => readDispatcherCard(c, target, readPolicy().fields.connectToDispatcher, { receipts: dispatcherReceipts, authorized, controller }));
     await read('connections', async (c) => {
+      const canvasFor = (chosen: AgentConfigTarget) => {
+        if (query?.source !== 'canvas-records' && query?.source !== 'zone-records') return undefined;
+        const receipt = captureReadOnlyConfigTargetWitness(chosen); connectionReceipts.push(receipt);
+        return readSavedCanvasConnectionsForDisplay({ agentId: chosen.agent.id, projectId: chosen.project.id, projectPath: chosen.project.path, receipt }, query.source === 'canvas-records' ? 'canvas' : 'zone',
+          { authorized, receipts: connectionReceipts, projectOffset: query.projectOffset, offset: query.offset });
+      };
       const toolsFor = (chosen: AgentConfigTarget) => {
         if (query?.source !== 'tool-records') return undefined;
         const receipt = captureReadOnlyConfigTargetWitness(chosen); connectionReceipts.push(receipt);
@@ -181,12 +188,12 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
         const canonical = connect.state === 'ok' && connect.value ? await controller() : undefined;
         if (!authorized()) return;
         const automatic = configuredDispatcherDirections({ id: agentId, name: agent.name }, connect, canonical && { id: canonical.agent.id, name: canonical.agent.name });
-        return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, page: query, registered: registeredFor(target), tools: toolsFor(target), name: agent.name, projectPath: project.path, connectToDispatcher: connect, automatic, automaticControllerProjectPath: canonical?.project.path, endpoint: !agent.parentAgentId ? { target: targetWitness, readCache: readAgentConnectionCacheForDisplay } : undefined, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
+        return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, page: query, registered: registeredFor(target), tools: toolsFor(target), canvas: canvasFor(target), name: agent.name, projectPath: project.path, connectToDispatcher: connect, automatic, automaticControllerProjectPath: canonical?.project.path, endpoint: !agent.parentAgentId ? { target: targetWitness, readCache: readAgentConnectionCacheForDisplay } : undefined, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
       }
       const canonical = await controller();
       if (!authorized()) return;
       if (!canonical) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The host Dispatcher’s canonical connection identity is unavailable. Connections cannot be verified until its host identity is available.'); return; }
-      return readConnectionCard(c, canonical.agent.id, { receipts: connectionReceipts, authorized, page: query, registered: registeredFor(canonical), tools: toolsFor(canonical), dispatcher: true, name: canonical.agent.name, projectPath: canonical.project.path });
+      return readConnectionCard(c, canonical.agent.id, { receipts: connectionReceipts, authorized, page: query, registered: registeredFor(canonical), tools: toolsFor(canonical), canvas: canvasFor(canonical), dispatcher: true, name: canonical.agent.name, projectPath: canonical.project.path });
     });
     await read('actions', (c) => readActionCard(c, agentId, project.id, dispatcher, { agentName: agent.name, projectName: project.displayName || project.name }));
     await read('skills-mcp', async (c) => {

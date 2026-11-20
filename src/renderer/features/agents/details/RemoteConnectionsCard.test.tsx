@@ -61,3 +61,9 @@ it('offers only explicitly supported live Quick inventories and no durable sourc
   expect(screen.queryByRole('button', { name: 'Saved tool links' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Saved Dispatcher links' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Helper relationships' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Outgoing bindings' })); await waitFor(() => expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'outgoing', offset: 0, projectOffset: 0 }));
 });
+it.each([['canvas-records', 'Saved Canvas wires'], ['zone-records', 'Saved zone wires']] as const)('requires explicit capability and reads the bounded %s page on the selected host', async (source, label) => {
+  const view = show(); expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
+  view.rerender(<RemoteConnectionsCard agent={agent} details={{ ...details, connectionPageSources: [source] }} status="ok" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: label })); await screen.findByText('First helper'); expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source, offset: 0, projectOffset: 0 });
+  fireEvent.click(screen.getByRole('button', { name: 'Next', exact: true })); await screen.findByText('Final helper'); expect(screen.queryByText('First helper')).not.toBeInTheDocument();
+});

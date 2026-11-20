@@ -1,3 +1,4 @@
+import type { SavedCanvasConnectionPage } from './saved-canvas-connections-display';
 import type { SavedToolConnectionPage } from './saved-tool-connections-display';
 import type { RemoteDetailsQuery } from '../../shared/remote-details-query';
 import type { ConfiguredRegisteredConnectionPage } from './configured-registered-connections-display';
@@ -33,6 +34,7 @@ export interface ConnectionCardReadOptions {
   page?: RemoteDetailsQuery;
   registered?: DisplayValue<ConfiguredRegisteredConnectionPage>;
   tools?: DisplayValue<SavedToolConnectionPage>;
+  canvas?: DisplayValue<SavedCanvasConnectionPage>;
   authorized(): boolean;
   dispatcher?: boolean;
   /** Strictly admitted durable project only; Quick runs do not use saved durable links. */
@@ -114,6 +116,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
   if (!options.authorized()) throw new Error('revoked');
   if (!selected || selected.length > 200) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The selected connection identity exceeds the host display limit.'); return; }
   if (options.page?.source === 'tool-records') { renderSavedToolConnections(c, options.tools, options.page); return; }
+  if (options.page?.source === 'canvas-records' || options.page?.source === 'zone-records') { renderSavedCanvasConnections(c, options.canvas, options.page); return; }
   if (options.page?.source === 'helpers' || options.page?.source === 'dispatcher-auto') {
     renderRegisteredConnections(c, options.registered, options.page); return;
   }
@@ -426,4 +429,28 @@ function renderSavedToolConnections(c: RemoteDetailsCard, read: DisplayValue<Sav
   if (page.unknownRows) c.notes.push(`${page.unknownRows} candidate tool-source records could not be classified safely.`);
   if (page.unavailableProjects) c.notes.push(`${page.unavailableProjects} saved tool-source inventories are unavailable or exceed this read's bounds.`);
   c.notes.push('These are selected project-qualified saved records, not a source collection or live binding report. Current owner membership, grants, availability and effective tool authority remain separate.');
+}
+
+/** Independently saved source projection; never merged by native ID with another source. */
+function renderSavedCanvasConnections(c: RemoteDetailsCard, read: DisplayValue<SavedCanvasConnectionPage> | undefined, query: RemoteDetailsQuery): void {
+  const source = query.source === 'zone-records' ? 'zone' : 'Canvas';
+  if (read?.state !== 'ok') { c.state = 'error'; c.summary = `Saved ${source} records unavailable`; c.notes.push('This selected saved-source page is unavailable; no empty list is inferred.'); return; }
+  const page = read.value;
+  c.connectionPage = { source: query.source, offset: page.offset, projectOffset: page.projectOffset, known: page.knownMatches, complete: page.complete, next: page.next };
+  c.summary = `${page.knownMatches} known saved ${source} relationships in this store page${page.complete ? '' : ' · partial'}`;
+  for (const entry of page.rows) {
+    const id = entry.direction === 'outgoing' ? entry.targetId : entry.agentId;
+    const fields = entry.endpoint ? endpointCardFields({ agentId: entry.agentId, targetId: entry.targetId, relationship: 'recorded', endpoint: entry.endpoint }) : undefined;
+    const store = entry.sourceName.state === 'ok' ? entry.sourceName.value : 'Store name unavailable', name = `${fields?.displayName || id} · ${store}`;
+    row(c, name, `Saved ${source} ${entry.targetKind} record · ${entry.direction} · ${entry.sourceScope === 'app' ? 'Home store' : `project ${entry.sourceProjectId}`} · current eligibility unconfirmed`);
+    row(c, `${name} saved label`, entry.savedLabel);
+    if (entry.startingTools === 'recorded') {
+      const tools = localDirectionTools(undefined, entry.disabledTools, []);
+      row(c, `${name} starting switches`, `Recorded starting list · On: ${labels(tools.allowed)}; Off: ${labels(tools.disabled)}${entry.unrecognizedTools ? `; ${entry.unrecognizedTools} unrecognized tool names withheld` : ''} · not effective tool authority`);
+    } else row(c, `${name} starting switches`, entry.startingTools === 'absent' ? 'No starting switch list saved; saved directions and bindings remain separate' : 'Starting switch list unavailable; saved directions and bindings remain separate');
+    if (fields) row(c, `${name} saved target`, fields.saved);
+  }
+  if (page.unknownRows) c.notes.push(`${page.unknownRows} candidate records or bounded expansion segments could not be classified safely.`);
+  if (page.unavailableStores) c.notes.push(`${page.unavailableStores} saved stores are unavailable or exceed this read’s bounds.`);
+  c.notes.push('Saved project-qualified Canvas records or a preview of saved active-canvas zone containment. Unsaved host changes, group scope/membership, user removal, current bindings and effective authority are separate; no source collection is run. Names and labels are bounded display text.');
 }
