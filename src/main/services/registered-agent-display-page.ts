@@ -69,15 +69,17 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
   receipts: DisplayReceipt[];
   projectOffset?: number;
   matchOffset?: number;
+  limit?: number;
   rootEvidence?: Map<string, RegisteredDisplayRoot>;
 }): DisplayValue<RegisteredAgentDisplayPage> {
   const observedAt = Date.now(), inputs: DisplayInput[] = [{ field: 'Selected registered relationship inventory', source: 'primary', observedAt }];
   const unknown = (reason: 'invalid' | 'unreadable' | 'limit' | 'changed'): DisplayValue<RegisteredAgentDisplayPage> => ({ state: 'unavailable', reason, inputs });
-  const projectOffset = options.projectOffset ?? 0, matchOffset = options.matchOffset ?? 0, rootsOut = options.rootEvidence;
+  const projectOffset = options.projectOffset ?? 0, matchOffset = options.matchOffset ?? 0, limit = options.limit ?? REGISTERED_DISPLAY_MATCHES, rootsOut = options.rootEvidence;
   if (!selected || !localId(selected.agentId) || !id(selected.projectId) || !folder(selected.projectPath) || typeof selected.receipt?.current !== 'function'
     || !Array.isArray(options.receipts) || rootsOut !== undefined && (!(rootsOut instanceof Map) || rootsOut.size)
     || !Number.isInteger(projectOffset) || projectOffset < 0 || projectOffset > REGISTERED_DISPLAY_ROWS
     || !Number.isInteger(matchOffset) || matchOffset < 0 || matchOffset > REGISTERED_DISPLAY_ROWS
+    || !Number.isInteger(limit) || limit < 1 || limit > REGISTERED_DISPLAY_MATCHES
     || !['helper-children', 'dispatcher-auto'].includes(purpose)
     || (purpose === 'dispatcher-auto') !== (selected.projectId === DISPATCHER_PROJECT_ID)) return unknown('invalid');
   const selectedId = selected.agentId, selectedProjectId = selected.projectId, selectedPath = selected.projectPath, selectedReceipt = selected.receipt;
@@ -158,7 +160,7 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
             if (fields.connectToDispatcher.state !== 'ok' || fields.disposed.state !== 'ok' || fields.helper.state !== 'ok') { unknownRows++; complete = false; continue; }
           }
           knownMatches++;
-          if (knownMatches <= matchOffset || entries.length >= REGISTERED_DISPLAY_MATCHES) continue;
+          if (knownMatches <= matchOffset || entries.length >= limit) continue;
           const stamp = <T>(value: DisplayValue<T>): DisplayValue<T> => ({ ...value, inputs: value.inputs.map((input) => ({ ...input, source: 'primary', observedAt })) });
           entries.push({ agentId: agent.id, projectId: project.id, projectName: project.name,
             fields: { ...fields, name: fields.name.state === 'ok' ? { ...stamp(fields.name), state: 'ok', value: display(fields.name.value, 240) } : stamp(fields.name),
