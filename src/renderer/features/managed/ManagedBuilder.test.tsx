@@ -904,23 +904,23 @@ describe('Preview: wildcards, settings and what is running now (#2895)', () => {
     expect(screen.getAllByTestId('managed-preview-block-text').map((b) => b.textContent).join('')).toBe(value.instructions);
   });
 
-  it('retains empty blocks and exact separators around a short block', async () => {
+  it.each(['', '\n', '\n\n'])('retains empty blocks, separators and trailing newlines (%j)', async (tail) => {
     vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
-      instructions: '\n\nrelease-lead\n\n', rawInstructions: '\n\n@@AgentName\n\n',
+      instructions: `\n\nrelease-lead\n\n${tail}`, rawInstructions: `\n\n@@AgentName\n\n${tail}`,
       blocks: [
         { id: 'empty-start', name: 'Empty start', builtin: false, usedBy: 1, startLine: 1, endLine: 1, rawStartLine: 1, rawEndLine: 1 },
         { id: 'short', name: 'Short', builtin: false, usedBy: 1, startLine: 3, endLine: 3, rawStartLine: 3, rawEndLine: 3 },
-        { id: 'empty-end', name: 'Empty end', builtin: false, usedBy: 1, startLine: 5, endLine: 5, rawStartLine: 5, rawEndLine: 5 },
+        { id: 'empty-end', name: 'Trailing block', builtin: false, usedBy: 1, startLine: 5, endLine: 5 + tail.length, rawStartLine: 5, rawEndLine: 5 + tail.length },
       ], skills: [], mcps: [], missing: [],
     } } as never);
     render(<PreviewPane agent={agent} />);
     await screen.findByTestId('managed-preview-text');
     expect(screen.getAllByTestId('managed-preview-block-label')).toHaveLength(3);
     const content = () => screen.getAllByTestId('managed-preview-block-text').map((b) => b.textContent);
-    expect(content()).toEqual(['\n\n', 'release-lead\n\n', '']);
-    expect(content().join('')).toBe('\n\nrelease-lead\n\n');
+    expect(content()).toEqual(['\n\n', 'release-lead\n\n', tail]);
+    expect(content().join('')).toBe(`\n\nrelease-lead\n\n${tail}`);
     fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
-    expect(content().join('')).toBe('\n\n@@AgentName\n\n');
+    expect(content().join('')).toBe(`\n\n@@AgentName\n\n${tail}`);
   });
 
   it('renders a New agent draft through previewDraft, never an agent preview', async () => {
