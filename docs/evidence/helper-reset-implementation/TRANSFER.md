@@ -10,8 +10,8 @@ Repository: `https://github.com/Agent-Clubhouse/Clubhouse`
 | Frozen code commit | `f7be061e73006cf094403dbc0e8b2739087d3e67` |
 | Frozen code tree | `9eb1ae175523d98110af907478f821a405e37c62` |
 | Evidence branch | `auto-reset-policy-design/reset-aware-auto-evidence` |
-| Approved design predecessor | `f386b143fda60d969c705dcb397c9458b6ae0035` on `auto-reset-policy-design/reset-aware-reserves` |
-| Original research / standby | `2bafbbbd13ac832aa6b323cd813cd8412f32ac79` on `auto-reset-policy-design/standby` |
+| Approved design predecessor | `f386b143fda60d969c705dcb397c9458b6ae0035`; preserved local design ref, also reachable through the pushed code branch |
+| Original research / standby | `2bafbbbd13ac832aa6b323cd813cd8412f32ac79`; preserved local standby ref, also reachable through the pushed code branch |
 | Issue / PR | No new issue or PR created. Internal parent task `t_mwojop1n`; independent review must precede PR creation |
 
 The evidence branch has the same implementation source plus these notes/receipts; its evidence-only commit is not a new production head. Review, changes and any eventual PR should target the code branch, not merge the evidence branch. No branch was force-pushed, reset or deleted.
