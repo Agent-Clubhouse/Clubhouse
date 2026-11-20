@@ -99,7 +99,10 @@ it('retains qualified same-ID Dispatcher primary fields as ambiguous policy with
   const role = captureReadOnlyRoleTargetWitness(target, () => true), receipts: DisplayReceipt[] = []; expect(role.current()).toBe(true); expect(JSON.parse(await fs.readFile(path.join(b, '.clubhouse', 'agents.json'), 'utf8'))).toHaveLength(9);
   const chosen = { agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role, fields: fields.value };
   const first = readPage(chosen, 'dispatcher-auto', { authorized: () => true, receipts });
-  expect.soft(first).toMatchObject({ state: 'ok', value: { complete: false, knownMatches: 9, unknownRows: 1, next: { projectOffset: 0, matchOffset: 8 }, entries: [{ endpoint: { projectId: 'b', agentId: controller.id, identityAmbiguous: true, fields: { name: { value: 'Ordinary same-ID agent' } } }, applicability: 'unknown', directions: [] }] } });
+  expect.soft(first).toMatchObject({ state: 'ok', value: { complete: false, knownMatches: 9, unknownRows: 1, next: { projectOffset: 0, matchOffset: 8 }, entries: expect.any(Array) } });
+  if (first.state !== 'ok') throw new Error('first page unavailable');
+  expect.soft(first.value.entries).toHaveLength(8);
+  expect.soft(first.value.entries[0]).toMatchObject({ endpoint: { projectId: 'b', agentId: controller.id, identityAmbiguous: true, fields: { name: { value: 'Ordinary same-ID agent' } } }, applicability: 'unknown', directions: [] });
   const last = readPage(chosen, 'dispatcher-auto', { authorized: () => true, receipts, matchOffset: 8 });
   expect.soft(last).toMatchObject({ state: 'ok', value: { entries: [{ endpoint: { agentId: 'normal-7' }, applicability: 'configured', directions: [{ from: 'selected' }, { from: 'endpoint' }] }], next: null } });
   expect.soft(receipts.every((r) => r.current())).toBe(true);
