@@ -1,0 +1,18 @@
+red-reintroduce-native-id-omission exit 1 at 2026-11-20T10:14:17.054719+00:00
+red-adopt-canonical-role-primary exit 1 at 2026-11-20T10:14:18.359047+00:00
+red-adopt-canonical-directory-alias exit 1 at 2026-11-20T10:14:19.653794+00:00
+red-adopt-unsupported-root-identity exit 1 at 2026-11-20T10:14:20.989166+00:00
+red-infer-ambiguous-configured-directions exit 1 at 2026-11-20T10:14:22.305960+00:00
+red-hide-identity-ambiguity exit 1 at 2026-11-20T10:14:24.608583+00:00
+red-ignore-match-offset exit 1 at 2026-11-20T10:14:25.932449+00:00
+red-lose-byte-deferred-root exit 1 at 2026-11-20T10:14:27.240389+00:00
+red-lose-row-deferred-root exit 1 at 2026-11-20T10:14:28.521406+00:00
+red-drop-final-source-receipts exit 1 at 2026-11-20T10:14:30.392937+00:00
+red-main-drop-display-final-fence exit 1 at 2026-11-20T10:14:32.278981+00:00
+red-main-capture-display-after-first-await exit 1 at 2026-11-20T10:14:34.152662+00:00
+red-quick-drop-display-final-fence exit 1 at 2026-11-20T10:14:36.014997+00:00
+red-quick-capture-display-after-first-await exit 1 at 2026-11-20T10:14:37.927153+00:00
+green exit 0 at 2026-11-20T10:14:53.860811+00:00
+route-client exit 0 at 2026-11-20T10:14:57.415014+00:00
+tsc exit 0 at 2026-11-20T10:15:08.209487+00:00
+ALL_CONTROLS_RESTORED_AND_GREEN fee2d0c192d505b53983d49f16be430c1245c6f2 9e106a525de0792ddd506b66604f0c6c1119a517 2026-11-20T10:15:08.264133+00:00

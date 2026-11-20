@@ -1,0 +1,748 @@
+2026-11-20T10:04:48Z START full-details idle=88% unused=8238M avail=29922M freepct=77 comp=7476M swap=1836M pid=41083 cmd=node_modules/.bin/vitest run src/main/services/registered-agent-display-page.test.ts src/main/services/configured-registered-connections-display.test.ts src/main/services/remote-connection-card.test.ts src/main/services/remote-agent-details.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-dispatcher-identity
+
+ ❯ |main| src/main/services/configured-registered-connections-display.test.ts (11 tests | 1 failed) 61ms
+   × retains qualified same-ID Dispatcher primary fields as ambiguous policy with no configured directions and reaches later records 16ms
+ ❯ |main| src/main/services/remote-agent-details.test.ts (147 tests | 3 failed) 476ms
+     × retains independent project fields and final source refusal: unchanged 5ms
+     × retains independent project fields and final source refusal: normal-primary-late 2ms
+     × retains independent project fields and final source refusal: revoked 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/configured-registered-connections-display.test.ts > retains qualified same-ID Dispatcher primary fields as ambiguous policy with no configured directions and reaches later records
+AssertionError: expected { state: 'ok', value: { …(9) }, …(1) } to match object { state: 'ok', value: { …(5) } }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -7,17 +7,695 @@
+          "applicability": "unknown",
+          "directions": [],
+          "endpoint": {
+            "agentId": "controller",
+            "fields": {
++             "connectSource": "agent",
++             "connectToDispatcher": {
++               "inputs": [
++                 {
++                   "field": "Agent orchestration connectToDispatcher",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": true,
++             },
++             "disposed": {
++               "inputs": [
++                 {
++                   "field": "Related agent disposed flag",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "helper": {
++               "inputs": [
++                 {
++                   "field": "Related agent helper role",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "id": "controller",
+              "name": {
++               "inputs": [
++                 {
++                   "field": "Related agent name",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
+                "value": "Ordinary same-ID agent",
+              },
+            },
+            "identityAmbiguous": true,
++           "projectId": "b",
++           "projectName": {
++             "inputs": [
++               {
++                 "field": "Selected registered relationship inventory",
++                 "observedAt": 1795169089447,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": "Second custom project",
++           },
++         },
++         "source": "dispatcher-auto",
++       },
++       {
++         "applicability": "configured",
++         "directions": [
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "selected",
++           },
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "endpoint",
++           },
++         ],
++         "endpoint": {
++           "agentId": "normal-0",
++           "fields": {
++             "connectSource": "agent",
++             "connectToDispatcher": {
++               "inputs": [
++                 {
++                   "field": "Agent orchestration connectToDispatcher",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": true,
++             },
++             "disposed": {
++               "inputs": [
++                 {
++                   "field": "Related agent disposed flag",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "helper": {
++               "inputs": [
++                 {
++                   "field": "Related agent helper role",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "id": "normal-0",
++             "name": {
++               "inputs": [
++                 {
++                   "field": "Related agent name",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": "Name normal-0",
++             },
++           },
++           "projectId": "b",
++           "projectName": {
++             "inputs": [
++               {
++                 "field": "Selected registered relationship inventory",
++                 "observedAt": 1795169089447,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": "Second custom project",
++           },
++         },
++         "source": "dispatcher-auto",
++       },
++       {
++         "applicability": "configured",
++         "directions": [
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "selected",
++           },
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "endpoint",
++           },
++         ],
++         "endpoint": {
++           "agentId": "normal-1",
++           "fields": {
++             "connectSource": "agent",
++             "connectToDispatcher": {
++               "inputs": [
++                 {
++                   "field": "Agent orchestration connectToDispatcher",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": true,
++             },
++             "disposed": {
++               "inputs": [
++                 {
++                   "field": "Related agent disposed flag",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "helper": {
++               "inputs": [
++                 {
++                   "field": "Related agent helper role",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "id": "normal-1",
++             "name": {
++               "inputs": [
++                 {
++                   "field": "Related agent name",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": "Name normal-1",
++             },
++           },
++           "projectId": "b",
++           "projectName": {
++             "inputs": [
++               {
++                 "field": "Selected registered relationship inventory",
++                 "observedAt": 1795169089447,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": "Second custom project",
++           },
++         },
++         "source": "dispatcher-auto",
++       },
++       {
++         "applicability": "configured",
++         "directions": [
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "selected",
++           },
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "endpoint",
++           },
++         ],
++         "endpoint": {
++           "agentId": "normal-2",
++           "fields": {
++             "connectSource": "agent",
++             "connectToDispatcher": {
++               "inputs": [
++                 {
++                   "field": "Agent orchestration connectToDispatcher",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": true,
++             },
++             "disposed": {
++               "inputs": [
++                 {
++                   "field": "Related agent disposed flag",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "helper": {
++               "inputs": [
++                 {
++                   "field": "Related agent helper role",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "id": "normal-2",
++             "name": {
++               "inputs": [
++                 {
++                   "field": "Related agent name",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": "Name normal-2",
++             },
++           },
++           "projectId": "b",
++           "projectName": {
++             "inputs": [
++               {
++                 "field": "Selected registered relationship inventory",
++                 "observedAt": 1795169089447,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": "Second custom project",
++           },
++         },
++         "source": "dispatcher-auto",
++       },
++       {
++         "applicability": "configured",
++         "directions": [
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "selected",
++           },
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "endpoint",
++           },
++         ],
++         "endpoint": {
++           "agentId": "normal-3",
++           "fields": {
++             "connectSource": "agent",
++             "connectToDispatcher": {
++               "inputs": [
++                 {
++                   "field": "Agent orchestration connectToDispatcher",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": true,
++             },
++             "disposed": {
++               "inputs": [
++                 {
++                   "field": "Related agent disposed flag",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "helper": {
++               "inputs": [
++                 {
++                   "field": "Related agent helper role",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "id": "normal-3",
++             "name": {
++               "inputs": [
++                 {
++                   "field": "Related agent name",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": "Name normal-3",
++             },
++           },
++           "projectId": "b",
++           "projectName": {
++             "inputs": [
++               {
++                 "field": "Selected registered relationship inventory",
++                 "observedAt": 1795169089447,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": "Second custom project",
++           },
++         },
++         "source": "dispatcher-auto",
++       },
++       {
++         "applicability": "configured",
++         "directions": [
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "selected",
++           },
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "endpoint",
++           },
++         ],
++         "endpoint": {
++           "agentId": "normal-4",
++           "fields": {
++             "connectSource": "agent",
++             "connectToDispatcher": {
++               "inputs": [
++                 {
++                   "field": "Agent orchestration connectToDispatcher",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": true,
++             },
++             "disposed": {
++               "inputs": [
++                 {
++                   "field": "Related agent disposed flag",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "helper": {
++               "inputs": [
++                 {
++                   "field": "Related agent helper role",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "id": "normal-4",
++             "name": {
++               "inputs": [
++                 {
++                   "field": "Related agent name",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": "Name normal-4",
++             },
++           },
++           "projectId": "b",
++           "projectName": {
++             "inputs": [
++               {
++                 "field": "Selected registered relationship inventory",
++                 "observedAt": 1795169089447,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": "Second custom project",
++           },
++         },
++         "source": "dispatcher-auto",
++       },
++       {
++         "applicability": "configured",
++         "directions": [
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "selected",
++           },
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "endpoint",
++           },
++         ],
++         "endpoint": {
++           "agentId": "normal-5",
++           "fields": {
++             "connectSource": "agent",
++             "connectToDispatcher": {
++               "inputs": [
++                 {
++                   "field": "Agent orchestration connectToDispatcher",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": true,
++             },
++             "disposed": {
++               "inputs": [
++                 {
++                   "field": "Related agent disposed flag",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "helper": {
++               "inputs": [
++                 {
++                   "field": "Related agent helper role",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "id": "normal-5",
++             "name": {
++               "inputs": [
++                 {
++                   "field": "Related agent name",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": "Name normal-5",
++             },
++           },
++           "projectId": "b",
++           "projectName": {
++             "inputs": [
++               {
++                 "field": "Selected registered relationship inventory",
++                 "observedAt": 1795169089447,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": "Second custom project",
++           },
++         },
++         "source": "dispatcher-auto",
++       },
++       {
++         "applicability": "configured",
++         "directions": [
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "selected",
++           },
++           {
++             "disabledTools": [
++               "clear_agent",
++               "compact_agent",
++             ],
++             "enabledTools": [
++               "wake_agent",
++             ],
++             "from": "endpoint",
++           },
++         ],
++         "endpoint": {
++           "agentId": "normal-6",
++           "fields": {
++             "connectSource": "agent",
++             "connectToDispatcher": {
++               "inputs": [
++                 {
++                   "field": "Agent orchestration connectToDispatcher",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": true,
++             },
++             "disposed": {
++               "inputs": [
++                 {
++                   "field": "Related agent disposed flag",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "helper": {
++               "inputs": [
++                 {
++                   "field": "Related agent helper role",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": false,
++             },
++             "id": "normal-6",
++             "name": {
++               "inputs": [
++                 {
++                   "field": "Related agent name",
++                   "observedAt": 1795169089447,
++                   "source": "primary",
++                 },
++               ],
++               "state": "ok",
++               "value": "Name normal-6",
++             },
++           },
+            "projectId": "b",
++           "projectName": {
++             "inputs": [
++               {
++                 "field": "Selected registered relationship inventory",
++                 "observedAt": 1795169089447,
++                 "source": "primary",
+                },
++             ],
++             "state": "ok",
++             "value": "Second custom project",
++           },
++         },
++         "source": "dispatcher-auto",
+        },
+      ],
+      "knownMatches": 9,
+      "next": {
+        "matchOffset": 8,
+
+ ❯ src/main/services/configured-registered-connections-display.test.ts:102:22
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > qualified Dispatcher native-ID policy ambiguity at final Details > retains independent project fields and final source refusal: unchanged
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > qualified Dispatcher native-ID policy ambiguity at final Details > retains independent project fields and final source refusal: normal-primary-late
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > qualified Dispatcher native-ID policy ambiguity at final Details > retains independent project fields and final source refusal: revoked
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:989:23
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  2 failed | 2 passed (4)
+      Tests  4 failed | 221 passed (225)
+   Start at  02:04:49
+   Duration  1.41s (transform 1.20s, setup 18ms, import 1.61s, tests 792ms, environment 0ms)
+
+2026-11-20T10:04:50Z END full-details rc=1

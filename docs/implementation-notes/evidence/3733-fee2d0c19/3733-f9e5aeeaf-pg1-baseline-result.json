@@ -1,0 +1,7 @@
+{
+  "head": "f9e5aeeaf47b0c4b646da7f8a28d97064e8482b3",
+  "tree": "d5e721c104102fb53a514d45c1318d22ffd03f2c",
+  "testExit": 1,
+  "expectedFailureCapture": true,
+  "logSHA256": "13f85c6495dafa17c301a5042d06760cbc66d8b755ee2bb480bca31e041b2830"
+}

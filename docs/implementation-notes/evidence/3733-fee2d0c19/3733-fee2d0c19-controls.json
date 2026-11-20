@@ -1,0 +1,225 @@
+[
+  {
+    "name": "red-reintroduce-native-id-omission",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "if (fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value",
+        "if (agent.id === selectedId || fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts",
+      "src/main/services/configured-registered-connections-display.test.ts"
+    ],
+    "pattern": "same-native-ID Dispatcher|qualified same-ID Dispatcher",
+    "evidenceLimit": "Actual registry/selected and ordinary primaries. Hard role/current primaries before soft result/entry/continuation failures; role cache callback modeled."
+  },
+  {
+    "name": "red-adopt-canonical-role-primary",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "if (purpose === 'dispatcher-auto' && project.path === selectedPath) continue;",
+        "if (false) continue;"
+      ],
+      [
+        "if (purpose === 'dispatcher-auto' && data.rootNamespace && data.rootNamespace === selectedDirectory) continue;",
+        "if (false) continue;"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts"
+    ],
+    "pattern": "canonical role folder|filesystem alias",
+    "evidenceLimit": "Real primary/controller folder/registered symlink or junction; canonical internal marker is synthetic. Observed tuples/currentness, not runtime/permission or universal provenance."
+  },
+  {
+    "name": "red-adopt-canonical-directory-alias",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "if (purpose === 'dispatcher-auto' && data.rootNamespace && data.rootNamespace === selectedDirectory) continue;",
+        "if (false) continue;"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts"
+    ],
+    "pattern": "filesystem alias",
+    "evidenceLimit": "Exact canonical path exclusion remains; real registered alias resolves to held-primary root tuple. Alias-currentness assertions after result hard assertion may be unreached under mutant; restored GREEN covers retargeting."
+  },
+  {
+    "name": "red-adopt-unsupported-root-identity",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "if (purpose === 'dispatcher-auto' && !data.rootNamespace) { unavailableProjects++; complete = false; continue; }",
+        "if (false) { unavailableProjects++; complete = false; continue; }"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts"
+    ],
+    "pattern": "unsupported canonical",
+    "evidenceLimit": "Actual primary files, mocked filesystem inode=0 for one registered root; no unsupported-filesystem host claim. First partial-state assertion discriminates; canonical unsupported second assertion may be unreached in RED."
+  },
+  {
+    "name": "red-infer-ambiguous-configured-directions",
+    "file": "src/main/services/configured-registered-connections-display.ts",
+    "changes": [
+      [
+        "endpoint.identityAmbiguous ? 'unknown' : ",
+        ""
+      ]
+    ],
+    "tests": [
+      "src/main/services/configured-registered-connections-display.test.ts"
+    ],
+    "pattern": "qualified same-ID Dispatcher",
+    "evidenceLimit": "Actual selected/project primaries and page9 records. Page shape checked separately from first-entry applicability/directions; restored last-page reachability and receipts checked."
+  },
+  {
+    "name": "red-hide-identity-ambiguity",
+    "file": "src/main/services/remote-connection-card.ts",
+    "changes": [
+      [
+        "    if (endpoint.identityAmbiguous) row(c, `${label} identity`, 'This project record reuses the controller\u2019s native ID. The endpoint association is ambiguous; configured directions are unavailable.');\n",
+        ""
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-connection-card.test.ts"
+    ],
+    "pattern": "same-ID|ambiguous",
+    "evidenceLimit": "Actual card projector with actual inventory/configured page/primaries and strict role witness; no renderer/live host claim."
+  },
+  {
+    "name": "red-ignore-match-offset",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "knownMatches <= matchOffset || entries.length >= limit",
+        "entries.length >= limit"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts"
+    ],
+    "pattern": "continues selected helper matches|supported later root",
+    "evidenceLimit": "Real last-page record retrieval; all currentness checks remain. No cross-page frozen-snapshot claim."
+  },
+  {
+    "name": "red-lose-byte-deferred-root",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "error.reason === 'aggregate' && index > 0",
+        "false"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts"
+    ],
+    "pattern": "aggregate byte budget",
+    "evidenceLimit": "Real three3MiB files; selected row/next boundary reached. Memory/disk I/O byte admission, not hard latency evidence."
+  },
+  {
+    "name": "red-lose-row-deferred-root",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "data.raw.length * 2 <= REGISTERED_DISPLAY_ROWS && index > 0",
+        "false"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts"
+    ],
+    "pattern": "page agent-row budget",
+    "evidenceLimit": "Real later2048-row root after earlier row visits; eventual last helper retrieval. Explicit visit budget, not parser heap proof."
+  },
+  {
+    "name": "red-drop-final-source-receipts",
+    "file": "src/main/services/remote-agent-details.ts",
+    "changes": [
+      [
+        "if (connectionReceipts.some((receipt) => !receipt.current()))",
+        "if (false)"
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-agent-details.test.ts"
+    ],
+    "pattern": "qualified Dispatcher native-ID policy ambiguity at final Details",
+    "evidenceLimit": "Actual distinct fixed controller/chat folders, registry and ordinary primary, strict role/source receipts. Later action callback mutates primary or revokes; lifecycle/role IDs/await modeled. Soft409/no-cards discrimination versus retained403 priority."
+  },
+  {
+    "name": "red-main-drop-display-final-fence",
+    "file": "src/main/services/remote-agent-details.ts",
+    "changes": [
+      [
+        " || (runtime.getDisplayRunId?.() ?? null) !== displayRunId",
+        ""
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-agent-details.test.ts"
+    ],
+    "pattern": "admitted.*Details display generation",
+    "evidenceLimit": "Same-object/registration/app/native hard prestates plus early/late generation changes modeled. Stable/unsupported and revoked403 remain independent. No live/provider-payload disclosure claim."
+  },
+  {
+    "name": "red-main-capture-display-after-first-await",
+    "file": "src/main/services/remote-agent-details.ts",
+    "changes": [
+      [
+        "    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;\n",
+        ""
+      ],
+      [
+        "    const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });\n",
+        "    const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });\n    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;\n"
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-agent-details.test.ts"
+    ],
+    "pattern": "early-reopen",
+    "evidenceLimit": "Generation changed in the first modeled settings/template await; source/target primary evidence real where applicable. Exact placement/order discrimination, not latency or real runtime proof."
+  },
+  {
+    "name": "red-quick-drop-display-final-fence",
+    "file": "src/main/services/remote-quick-details.ts",
+    "changes": [
+      [
+        " || (runtime.getDisplayRunId?.() ?? null) !== displayRunId",
+        ""
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-quick-details.test.ts"
+    ],
+    "pattern": "admitted.*Details display generation",
+    "evidenceLimit": "Same-object/registration/app/native hard prestates plus early/late generation changes modeled. Stable/unsupported and revoked403 remain independent. No live/provider-payload disclosure claim."
+  },
+  {
+    "name": "red-quick-capture-display-after-first-await",
+    "file": "src/main/services/remote-quick-details.ts",
+    "changes": [
+      [
+        "    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;\n",
+        ""
+      ],
+      [
+        "    await read('connections', (c) => {\n",
+        "    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;\n    await read('connections', (c) => {\n"
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-quick-details.test.ts"
+    ],
+    "pattern": "early-reopen",
+    "evidenceLimit": "Generation changed in the first modeled settings/template await; source/target primary evidence real where applicable. Exact placement/order discrimination, not latency or real runtime proof."
+  }
+]

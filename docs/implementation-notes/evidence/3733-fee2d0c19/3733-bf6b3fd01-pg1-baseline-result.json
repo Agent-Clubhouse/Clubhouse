@@ -1,0 +1,12 @@
+{
+  "head": "bf6b3fd01b717b5690b982217993a3d6abceb81a",
+  "tree": "fd0b115bc3f8abb1621e355ee3f4d9d19990506e",
+  "testExit": 1,
+  "expectedFailureCapture": true,
+  "onlyTestPaths": [
+    "src/main/services/configured-registered-connections-display.test.ts",
+    "src/main/services/registered-agent-display-page.test.ts"
+  ],
+  "logSHA256": "c50873c57f5f387cf0dca3b0516858357f64e19f52181e7d8d64f19653d4a38d",
+  "firstF9CombinedArrayShapeAssertionWasNondiscriminating": "This baseline separates 8-entry page shape from first-entry identity; original f9 artifacts unchanged."
+}

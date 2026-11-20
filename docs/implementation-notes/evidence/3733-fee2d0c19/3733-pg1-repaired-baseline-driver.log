@@ -1,0 +1,385 @@
+refused75 waiting60
+2026-11-20T10:11:15Z START full-details idle=88% unused=13G avail=31625M freepct=77 comp=7463M swap=1836M pid=44121 cmd=node_modules/.bin/vitest run src/main/services/registered-agent-display-page.test.ts src/main/services/configured-registered-connections-display.test.ts --maxWorkers=2 --testNamePattern same-native-ID Dispatcher|canonical role folder|qualified same-ID Dispatcher
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-pg1-baseline
+
+ ❯ |main| src/main/services/configured-registered-connections-display.test.ts (11 tests | 1 failed | 10 skipped) 25ms
+   × retains qualified same-ID Dispatcher primary fields as ambiguous policy with no configured directions and reaches later records 24ms
+ ❯ |main| src/main/services/registered-agent-display-page.test.ts (16 tests | 2 failed | 14 skipped) 26ms
+   × keeps same-native-ID Dispatcher candidates in other projects explicitly ambiguous instead of verified empty 15ms
+   × excludes the admitted canonical role folder while preserving a distinct-ID registered source and bounded continuation 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/configured-registered-connections-display.test.ts > retains qualified same-ID Dispatcher primary fields as ambiguous policy with no configured directions and reaches later records
+AssertionError: expected { state: 'ok', value: { …(9) }, …(1) } to match object { state: 'ok', value: { …(5) } }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -1,9 +1,9 @@
+  {
+    "state": "ok",
+    "value": {
+-     "complete": false,
++     "complete": true,
+      "entries": [
+        {
+          "applicability": "configured",
+          "directions": [
+            {
+@@ -714,13 +714,10 @@
+            },
+          },
+          "source": "dispatcher-auto",
+        },
+      ],
+-     "knownMatches": 9,
+-     "next": {
+-       "matchOffset": 8,
+-       "projectOffset": 0,
+-     },
+-     "unknownRows": 1,
++     "knownMatches": 8,
++     "next": null,
++     "unknownRows": 0,
+    },
+  }
+
+ ❯ src/main/services/configured-registered-connections-display.test.ts:102:22
+    100|   const chosen = { agentId: controller.id, projectId: DISPATCHER_PROJE…
+    101|   const first = readPage(chosen, 'dispatcher-auto', { authorized: () =…
+    102|   expect.soft(first).toMatchObject({ state: 'ok', value: { complete: f…
+       |                      ^
+    103|   if (first.state !== 'ok') throw new Error('first page unavailable');
+    104|   expect.soft(first.value.entries).toHaveLength(8);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  |main| src/main/services/configured-registered-connections-display.test.ts > retains qualified same-ID Dispatcher primary fields as ambiguous policy with no configured directions and reaches later records
+AssertionError: expected { endpoint: { …(4) }, …(3) } to match object { …(3) }
+(21 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "applicability": "unknown",
+-   "directions": [],
++   "applicability": "configured",
++   "directions": [
++     {
++       "disabledTools": [
++         "clear_agent",
++         "compact_agent",
++       ],
++       "enabledTools": [
++         "wake_agent",
++       ],
++       "from": "selected",
++     },
++     {
++       "disabledTools": [
++         "clear_agent",
++         "compact_agent",
++       ],
++       "enabledTools": [
++         "wake_agent",
++       ],
++       "from": "endpoint",
++     },
++   ],
+    "endpoint": {
+-     "agentId": "controller",
++     "agentId": "normal-0",
+      "fields": {
+        "name": {
+-         "value": "Ordinary same-ID agent",
++         "value": "Name normal-0",
+        },
+      },
+-     "identityAmbiguous": true,
+      "projectId": "b",
+    },
+  }
+
+ ❯ src/main/services/configured-registered-connections-display.test.ts:105:39
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  |main| src/main/services/configured-registered-connections-display.test.ts > retains qualified same-ID Dispatcher primary fields as ambiguous policy with no configured directions and reaches later records
+AssertionError: expected { state: 'unavailable', …(2) } to match object { state: 'ok', value: { …(2) } }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "state": "ok",
+-   "value": {
+-     "entries": [
+-       {
+-         "applicability": "configured",
+-         "directions": [
+-           {
+-             "from": "selected",
+-           },
+-           {
+-             "from": "endpoint",
+-           },
+-         ],
+-         "endpoint": {
+-           "agentId": "normal-7",
+-         },
+-       },
+-     ],
+-     "next": null,
+-   },
++   "state": "unavailable",
+  }
+
+ ❯ src/main/services/configured-registered-connections-display.test.ts:107:21
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  |main| src/main/services/registered-agent-display-page.test.ts > keeps same-native-ID Dispatcher candidates in other projects explicitly ambiguous instead of verified empty
+AssertionError: expected { state: 'ok', …(2) } to match object { state: 'ok', value: { …(5) } }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "state": "ok",
+    "value": {
+-     "complete": false,
+-     "entries": [
+-       {
+-         "agentId": "controller",
+-         "fields": {
+-           "connectToDispatcher": {
+-             "value": true,
+-           },
+-           "name": {
+-             "value": "Normal project agent",
+-           },
+-         },
+-         "identityAmbiguous": true,
+-         "projectId": "b",
+-       },
+-     ],
+-     "knownMatches": 1,
++     "complete": true,
++     "entries": [],
++     "knownMatches": 0,
+      "next": null,
+-     "unknownRows": 1,
++     "unknownRows": 0,
+    },
+  }
+
+ ❯ src/main/services/registered-agent-display-page.test.ts:127:23
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  |main| src/main/services/registered-agent-display-page.test.ts > excludes the admitted canonical role folder while preserving a distinct-ID registered source and bounded continuation
+AssertionError: expected { state: 'ok', …(2) } to match object { state: 'ok', value: { …(4) } }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -1,10 +1,10 @@
+  {
+    "state": "ok",
+    "value": {
+      "complete": true,
+-     "knownMatches": 9,
++     "knownMatches": 10,
+      "next": {
+        "matchOffset": 8,
+        "projectOffset": 0,
+      },
+      "unknownRows": 0,
+
+ ❯ src/main/services/registered-agent-display-page.test.ts:138:22
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  |main| src/main/services/registered-agent-display-page.test.ts > excludes the admitted canonical role folder while preserving a distinct-ID registered source and bounded continuation
+AssertionError: expected '{"state":"ok","inputs":[{"field":"Sel…' not to contain 'PRIVATE_ROLE_WORKER'
+
+Expected: "PRIVATE_ROLE_WORKER"
+Received: "{"state":"ok","inputs":[{"field":"Selected registered relationship inventory","source":"primary","observedAt":1795169476267}],"value":{"entries":[{"agentId":"role-worker","projectId":"a","projectName":{"state":"ok","value":"Project A","inputs":[{"field":"Selected registered relationship inventory","source":"primary","observedAt":1795169476267}]},"fields":{"id":"role-worker","name":{"state":"ok","value":"PRIVATE_ROLE_WORKER","inputs":[{"field":"Related agent name","source":"primary","observedAt":1795169476267}]},"helper":{"state":"ok","value":false,"inputs":[{"field":"Related agent helper role","source":"primary","observedAt":1795169476267}]},"disposed":{"state":"ok","value":false,"inputs":[{"field":"Related agent disposed flag","source":"primary","observedAt":1795169476267}]},"connectToDispatcher":{"state":"ok","value":true,"inputs":[{"field":"Agent orchestration connectToDispatcher","source":"primary","observedAt":1795169476267}]},"connectSource":"agent"}},{"agentId":"normal-0","projectId":"b","projectName":{"state":"ok","value":"Custom B","inputs":[{"field":"Selected registered relationship inventory","source":"primary","observedAt":1795169476267}]},"fields":{"id":"normal-0","name":{"state":"ok","value":"Name normal-0","inputs":[{"field":"Related agent name","source":"primary","observedAt":1795169476267}]},"helper":{"state":"ok","value":false,"inputs":[{"field":"Related agent helper role","source":"primary","observedAt":1795169476267}]},"disposed":{"state":"ok","value":false,"inputs":[{"field":"Related agent disposed flag","source":"primary","observedAt":1795169476267}]},"connectToDispatcher":{"state":"ok","value":true,"inputs":[{"field":"Agent orchestration connectToDispatcher","source":"primary","observedAt":1795169476267}]},"connectSource":"agent"}},{"agentId":"normal-1","projectId":"b","projectName":{"state":"ok","value":"Custom B","inputs":[{"field":"Selected registered relationship inventory","source":"primary","observedAt":1795169476267}]},"fields":{"id":"normal-1","name":{"state":"ok","value":"Name normal-1","inputs":[{"field":"Related agent name","source":"primary","observedAt":1795169476267}]},"helper":{"state":"ok","value":false,"inputs":[{"field":"Related agent helper role","source":"primary","observedAt":1795169476267}]},"disposed":{"state":"ok","value":false,"inputs":[{"field":"Related agent disposed flag","source":"primary","observedAt":1795169476267}]},"connectToDispatcher":{"state":"ok","value":true,"inputs":[{"field":"Agent orchestration connectToDispatcher","source":"primary","observedAt":1795169476267}]},"connectSource":"agent"}},{"agentId":"normal-2","projectId":"b","projectName":{"state":"ok","value":"Custom B","inputs":[{"field":"Selected registered relationship inventory","source":"primary","observedAt":1795169476267}]},"fields":{"id":"normal-2","name":{"state":"ok","value":"Name normal-2","inputs":[{"field":"Related agent name","source":"primary","observedAt":1795169476267}]},"helper":{"state":"ok","value":false,"inputs":[{"field":"Related agent helper role","source":"primary","observedAt":1795169476267}]},"disposed":{"state":"ok","value":false,"inputs":[{"field":"Related agent disposed flag","source":"primary","observedAt":1795169476267}]},"connectToDispatcher":{"state":"ok","value":true,"inputs":[{"field":"Agent orchestration connectToDispatcher","source":"primary","observedAt":1795169476267}]},"connectSource":"agent"}},{"agentId":"normal-3","projectId":"b","projectName":{"state":"ok","value":"Custom B","inputs":[{"field":"Selected registered relationship inventory","source":"primary","observedAt":1795169476267}]},"fields":{"id":"normal-3","name":{"state":"ok","value":"Name normal-3","inputs":[{"field":"Related agent name","source":"primary","observedAt":1795169476267}]},"helper":{"state":"ok","value":false,"inputs":[{"field":"Related agent helper role","source":"primary","observedAt":1795169476267}]},"disposed":{"state":"ok","value":false,"inputs":[{"field":"Related agent disposed flag","source":"primary","observedAt":1795169476267}]},"connectToDispatcher":{"state":"ok","value":true,"inputs":[{"field":"Agent orchestration connectToDispatcher","source":"primary","observedAt":1795169476267}]},"connectSource":"agent"}},{"agentId":"normal-4","projectId":"b","projectName":{"state":"ok","value":"Custom B","inputs":[{"field":"Selected registered relationship inventory","source":"primary","observedAt":1795169476267}]},"fields":{"id":"normal-4","name":{"state":"ok","value":"Name normal-4","inputs":[{"field":"Related agent name","source":"primary","observedAt":1795169476267}]},"helper":{"state":"ok","value":false,"inputs":[{"field":"Related agent helper role","source":"primary","observedAt":1795169476267}]},"disposed":{"state":"ok","value":false,"inputs":[{"field":"Related agent disposed flag","source":"primary","observedAt":1795169476267}]},"connectToDispatcher":{"state":"ok","value":true,"inputs":[{"field":"Agent orchestration connectToDispatcher","source":"primary","observedAt":1795169476267}]},"connectSource":"agent"}},{"agentId":"normal-5","projectId":"b","projectName":{"state":"ok","value":"Custom B","inputs":[{"field":"Selected registered relationship inventory","source":"primary","observedAt":1795169476267}]},"fields":{"id":"normal-5","name":{"state":"ok","value":"Name normal-5","inputs":[{"field":"Related agent name","source":"primary","observedAt":1795169476267}]},"helper":{"state":"ok","value":false,"inputs":[{"field":"Related agent helper role","source":"primary","observedAt":1795169476267}]},"disposed":{"state":"ok","value":false,"inputs":[{"field":"Related agent disposed flag","source":"primary","observedAt":1795169476267}]},"connectToDispatcher":{"state":"ok","value":true,"inputs":[{"field":"Agent orchestration connectToDispatcher","source":"primary","observedAt":1795169476267}]},"connectSource":"agent"}},{"agentId":"normal-6","projectId":"b","projectName":{"state":"ok","value":"Custom B","inputs":[{"field":"Selected registered relationship inventory","source":"primary","observedAt":1795169476267}]},"fields":{"id":"normal-6","name":{"state":"ok","value":"Name normal-6","inputs":[{"field":"Related agent name","source":"primary","observedAt":1795169476267}]},"helper":{"state":"ok","value":false,"inputs":[{"field":"Related agent helper role","source":"primary","observedAt":1795169476267}]},"disposed":{"state":"ok","value":false,"inputs":[{"field":"Related agent disposed flag","source":"primary","observedAt":1795169476267}]},"connectToDispatcher":{"state":"ok","value":true,"inputs":[{"field":"Agent orchestration connectToDispatcher","source":"primary","observedAt":1795169476267}]},"connectSource":"agent"}}],"complete":true,"knownMatches":10,"unknownRows":0,"unavailableProjects":0,"next":{"projectOffset":0,"matchOffset":8},"projectOffset":0,"matchOffset":0,"observedAt":1795169476267}}"
+
+ ❯ src/main/services/registered-agent-display-page.test.ts:138:197
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  |main| src/main/services/registered-agent-display-page.test.ts > excludes the admitted canonical role folder while preserving a distinct-ID registered source and bounded continuation
+AssertionError: expected { state: 'ok', …(2) } to match object { state: 'ok', value: { …(3) } }
+(7 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "state": "ok",
+    "value": {
+      "entries": [
+        {
++         "agentId": "normal-7",
++         "fields": {
++           "connectSource": "agent",
++           "connectToDispatcher": {
++             "inputs": [
++               {
++                 "field": "Agent orchestration connectToDispatcher",
++                 "observedAt": 1795169476273,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": true,
++           },
++           "disposed": {
++             "inputs": [
++               {
++                 "field": "Related agent disposed flag",
++                 "observedAt": 1795169476273,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": false,
++           },
++           "helper": {
++             "inputs": [
++               {
++                 "field": "Related agent helper role",
++                 "observedAt": 1795169476273,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": false,
++           },
++           "id": "normal-7",
++           "name": {
++             "inputs": [
++               {
++                 "field": "Related agent name",
++                 "observedAt": 1795169476273,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": "Name normal-7",
++           },
++         },
++         "projectId": "b",
++         "projectName": {
++           "inputs": [
++             {
++               "field": "Selected registered relationship inventory",
++               "observedAt": 1795169476273,
++               "source": "primary",
++             },
++           ],
++           "state": "ok",
++           "value": "Custom B",
++         },
++       },
++       {
+          "agentId": "normal-8",
++         "fields": {
++           "connectSource": "agent",
++           "connectToDispatcher": {
++             "inputs": [
++               {
++                 "field": "Agent orchestration connectToDispatcher",
++                 "observedAt": 1795169476273,
++                 "source": "primary",
+                },
+              ],
+-     "knownMatches": 9,
++             "state": "ok",
++             "value": true,
++           },
++           "disposed": {
++             "inputs": [
++               {
++                 "field": "Related agent disposed flag",
++                 "observedAt": 1795169476273,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": false,
++           },
++           "helper": {
++             "inputs": [
++               {
++                 "field": "Related agent helper role",
++                 "observedAt": 1795169476273,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": false,
++           },
++           "id": "normal-8",
++           "name": {
++             "inputs": [
++               {
++                 "field": "Related agent name",
++                 "observedAt": 1795169476273,
++                 "source": "primary",
++               },
++             ],
++             "state": "ok",
++             "value": "Name normal-8",
++           },
++         },
++         "projectId": "b",
++         "projectName": {
++           "inputs": [
++             {
++               "field": "Selected registered relationship inventory",
++               "observedAt": 1795169476273,
++               "source": "primary",
++             },
++           ],
++           "state": "ok",
++           "value": "Custom B",
++         },
++       },
++     ],
++     "knownMatches": 10,
+      "next": null,
+    },
+  }
+
+ ❯ src/main/services/registered-agent-display-page.test.ts:140:21
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  3 failed | 24 skipped (27)
+   Start at  02:11:16
+   Duration  211ms (transform 145ms, setup 17ms, import 172ms, tests 51ms, environment 0ms)
+
+2026-11-20T10:11:16Z END full-details rc=1
+
+EXPECTED_FAILURE_CAPTURED bf6b3fd01b717b5690b982217993a3d6abceb81a fd0b115bc3f8abb1621e355ee3f4d9d19990506e /Users/masonallen/source/Clubhouse/.clubhouse/qa-reports/3733-bf6b3fd01-pg1-baseline-manifest.json 99bc877ea1e020c40fdcdee53a25bbc7a29c9c8b0c0888263908b428a2d25fa1

@@ -1,0 +1,11 @@
+--- src/main/services/remote-agent-details.ts
++++ src/main/services/remote-agent-details.ts
+@@ -229,7 +229,7 @@
+       || currentRegistration !== registration || currentRegistration?.nonce !== registeredNonce || currentRegistration?.runtime !== registeredRuntime
+       || currentRegistration?.orchestrator !== registeredProvider || currentRegistration?.cwd !== registeredCwd
+       || isAgentRunning(agentId) !== running
+-      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId || (runtime.getDisplayRunId?.() ?? null) !== displayRunId)) {
++      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)) {
+       return { status: 409, body: { error: 'agent_run_changed' } };
+     }
+     result.providerEvidenceState = runtime?.kind === 'chat' && runtime.getDetailsEvidence ? 'unavailable' : 'unsupported';

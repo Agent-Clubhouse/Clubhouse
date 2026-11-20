@@ -1,0 +1,18 @@
+--- src/main/services/registered-agent-display-page.ts
++++ src/main/services/registered-agent-display-page.ts
+@@ -135,13 +135,13 @@
+       if (!admitted()) return unknown('changed');
+       // Role-owned controller/chat/work primaries are not ordinary agent
+       // sources. The admitted role folder, never native ID alone, binds this.
+-      if (purpose === 'dispatcher-auto' && project.path === selectedPath) continue;
++      if (false) continue;
+       try {
+         const data = readReadOnlyPrimaryMetadata(project.path, '.clubhouse/agents.json', { budget }); evidence.push(data.receipt);
+         // A registered alias of the observed canonical directory is also
+         // role-owned. Both directory + primary receipts remain final fences;
+         // this tuple is no runtime/permission or historical-incarnation proof.
+-        if (purpose === 'dispatcher-auto' && data.rootNamespace && data.rootNamespace === selectedDirectory) continue;
++        if (false) continue;
+         if (purpose === 'dispatcher-auto' && !data.rootNamespace) { unavailableProjects++; complete = false; continue; }
+         if (!Array.isArray(data.raw)) { unavailableProjects++; complete = false; continue; }
+         // Both duplicate-ID admission and relationship projection visit every row.

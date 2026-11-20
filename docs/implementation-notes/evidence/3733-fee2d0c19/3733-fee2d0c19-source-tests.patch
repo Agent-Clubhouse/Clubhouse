@@ -1,0 +1,257 @@
+diff --git a/docs/implementation-notes/3733-dispatcher-paging-identity.md b/docs/implementation-notes/3733-dispatcher-paging-identity.md
+new file mode 100644
+index 000000000..5b30e16cb
+--- /dev/null
++++ b/docs/implementation-notes/3733-dispatcher-paging-identity.md
+@@ -0,0 +1,15 @@
++# Dispatcher paging identity correction — pending exact independent review
++
++This isolated continuation of 017f7ec9dae90361f09c6c5c8858b3534c95a281 addresses PG1 in the selected registered-agent inventory and its configured/card projection. Original 67d/017 source and proof remain immutable. The feature accepted root remains f122; this branch grants no full-parity, PR, runtime, permission or release acceptance.
++
++The exact admitted canonical Dispatcher directory is role-owned and excluded from ordinary Connect-to-Dispatcher inventory. A registered alias of that observed directory is also excluded, retaining both primary and selected-directory currentness evidence. A normal registered project's Connect-on primary that reuses the controller native ID remains visible with its own project/name and an explicit ambiguous endpoint association. It makes the page partial and contributes an unknown row; it never supplies configured directions/defaults. Native-ID equality alone does not prove canonical-role equality or global ID uniqueness. Ordinary restore/wiring behavior is unchanged.
++
++The existing 16-root/4096-visit/row and bounded primary-byte budgets, match/root continuation, selected role/project/source receipts and final authorization/runtime fences remain. Same-ID ambiguous entries occupy normal page slots and remain reachable across continuation. The canonical directory stat tuple is compared with the registered primary reader’s realpath/lstat root tuple verified through the chain around its held primary-file FD. Both selected-directory and primary receipts are retained through final assembly; retargeting an alias invalidates the evidence. Unsupported canonical directory identity makes the page unavailable; unsupported registered-root identity makes that root explicitly unavailable/partial. No path-string/name/native-ID equivalence substitutes for this observed tuple join. These are snapshots, not held root-directory handles, continuous locks, historical-incarnation proof or runtime authority; inode reuse/ABA limits remain.
++
++Controls use actual temporary registry/primary files and strict role/primary witnesses, actual inventory/configured readers and card projection. Endpoint assembly tests use the exact distinct controller/chat folders and real primary receipts, with modeled lifecycle/role-cache/actions-await ports. They test stable output, later ordinary-primary mutation and authorization priority. No live host/process/ordinary operational restore proof is claimed.
++
++Development history is preserved: original f9 test-only baseline on 017 had 3 failed tests, but its combined configured-page array assertion also expected one element in a legitimate eight-row page. A separate repaired test-only baseline separates page shape and first-entry identity. The first correction development run had 1 failed/75 passed, second had 4 failed/221 passed: the configured array expectation and new endpoint fixture's incorrect shared role folder caused those failures. Corrected focused development passes 225 tests across four files and tsc exits0; exact frozen proof is recorded separately rather than promoted from those development checks.
++
++Earlier proof assertion qualifications remain additive: parent-project RED fails the first hard result/count assertion before the separate PRIVATE_ assertion; byte-deferral RED fails its first boundary before later-page retrieval (the restored GREEN retrieves that page); cache-root RED passes withholding/no-name checks before unwanted extra callback/count failures. Those resource controls do not show disclosure.
++
++Cold tool/Canvas/zone/group/helper-parent sources and Quick paging remain on a separate unfinished branch. Full matrix, latest-main integration, independent final review and real-host acceptance remain open. Mini bp83o0 holds frozen custody only; source implementation ownership remains here until explicit verified takeover through parent/Navi/Tael. #3611 merge hold is superseded; #3706 public containing-desktop release hold remains. No Handoff APIs, job cancellations, releases or access changes.
+diff --git a/src/main/services/configured-registered-connections-display.test.ts b/src/main/services/configured-registered-connections-display.test.ts
+index 19f7dc027..8e0a47f17 100644
+--- a/src/main/services/configured-registered-connections-display.test.ts
++++ b/src/main/services/configured-registered-connections-display.test.ts
+@@ -89,3 +89,22 @@ it('validates page size before any callback and preserves partial primary fields
+   await put(b, [agent('one', { parentAgentId: 'parent', parentProjectPath: a })]);
+   expect(read({ limit: 1, readLoadedCache: cache })).toMatchObject({ state: 'ok', value: { entries: [{ endpoint: { agentId: 'one' }, hostCache: { state: 'unavailable' } }] } }); expect(cache).toHaveBeenCalledTimes(1);
+ });
++
++it('retains qualified same-ID Dispatcher primary fields as ambiguous policy with no configured directions and reaches later records', async () => {
++  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
++  const controller = agent('controller'), ordinary = agent('controller', { name: 'Ordinary same-ID agent', orchestration: { connectToDispatcher: true } });
++  await put(a, [controller]); await put(b, [ordinary, ...Array.from({ length: 8 }, (_, i) => agent('normal-' + i, { orchestration: { connectToDispatcher: true } }))]);
++  const fields = projectConnectionEndpointFieldsForDisplay(controller.id, controller); if (fields.state !== 'ok') throw new Error('fixture');
++  const target = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a } } as unknown as import('./agent-config-reader').AgentConfigTarget;
++  const role = captureReadOnlyRoleTargetWitness(target, () => true), receipts: DisplayReceipt[] = []; expect(role.current()).toBe(true); expect(JSON.parse(await fs.readFile(path.join(b, '.clubhouse', 'agents.json'), 'utf8'))).toHaveLength(9);
++  const chosen = { agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role, fields: fields.value };
++  const first = readPage(chosen, 'dispatcher-auto', { authorized: () => true, receipts });
++  expect.soft(first).toMatchObject({ state: 'ok', value: { complete: false, knownMatches: 9, unknownRows: 1, next: { projectOffset: 0, matchOffset: 8 }, entries: expect.any(Array) } });
++  if (first.state !== 'ok') throw new Error('first page unavailable');
++  expect.soft(first.value.entries).toHaveLength(8);
++  expect.soft(first.value.entries[0]).toMatchObject({ endpoint: { projectId: 'b', agentId: controller.id, identityAmbiguous: true, fields: { name: { value: 'Ordinary same-ID agent' } } }, applicability: 'unknown', directions: [] });
++  const last = readPage(chosen, 'dispatcher-auto', { authorized: () => true, receipts, matchOffset: 8 });
++  expect.soft(last).toMatchObject({ state: 'ok', value: { entries: [{ endpoint: { agentId: 'normal-7' }, applicability: 'configured', directions: [{ from: 'selected' }, { from: 'endpoint' }] }], next: null } });
++  expect.soft(receipts.every((r) => r.current())).toBe(true);
++  await put(b, []); expect(role.current()).toBe(true); expect.soft(receipts.some((r) => !r.current())).toBe(true);
++});
+diff --git a/src/main/services/configured-registered-connections-display.ts b/src/main/services/configured-registered-connections-display.ts
+index e4724f47a..b3c353385 100644
+--- a/src/main/services/configured-registered-connections-display.ts
++++ b/src/main/services/configured-registered-connections-display.ts
+@@ -60,7 +60,7 @@ export function readConfiguredRegisteredConnectionsForDisplay(selected: Register
+   if (page.state !== 'ok') return page;
+   const result: ConfiguredRegisteredConnectionPage = { ...page.value, entries: page.value.entries.map((endpoint) => {
+     const disposed = endpoint.fields.disposed.state === 'ok' ? endpoint.fields.disposed.value : undefined;
+-    const applicability = disposed || selectedDisposed ? 'disposed' : disposed === false && selectedDisposed === false ? 'configured' : 'unknown';
++    const applicability = endpoint.identityAmbiguous ? 'unknown' : disposed || selectedDisposed ? 'disposed' : disposed === false && selectedDisposed === false ? 'configured' : 'unknown';
+     const first = purpose === 'helper-children' ? AUTOMATIC_CONNECTION_SWITCHES.parentToHelper : AUTOMATIC_CONNECTION_SWITCHES.dispatcherToAgent;
+     const second = purpose === 'helper-children' ? AUTOMATIC_CONNECTION_SWITCHES.helperToParent : AUTOMATIC_CONNECTION_SWITCHES.agentToDispatcher;
+     return { endpoint, source: purpose === 'helper-children' ? 'helper' : 'dispatcher-auto', applicability,
+diff --git a/src/main/services/registered-agent-display-page.test.ts b/src/main/services/registered-agent-display-page.test.ts
+index 98414fc98..6600afde1 100644
+--- a/src/main/services/registered-agent-display-page.test.ts
++++ b/src/main/services/registered-agent-display-page.test.ts
+@@ -115,3 +115,59 @@ it('does not adopt another project’s same-ID parent or probe unrelated relatio
+   await put(b, [agent('safe', { parentAgentId: 'parent', parentProjectPath: a }), agent('wrong', { name: 'PRIVATE_OTHER_PARENT_CHILD', parentAgentId: 'parent', parentProjectPath: b }), agent('unrelated', { name: 'PRIVATE_OTHER_RELATIONSHIP', parentAgentId: 'unrelated', parentProjectPath: '/unadmitted/never-probe' })]);
+   const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, entries: [{ agentId: 'safe' }] } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
+ });
++
++it('keeps same-native-ID Dispatcher candidates in other projects explicitly ambiguous instead of verified empty', async () => {
++  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
++  const controller = agent('controller', { orchestration: { connectToDispatcher: true } }), ordinary = agent('controller', { name: 'Normal project agent', orchestration: { connectToDispatcher: true } });
++  await put(a, [controller]); await put(b, [ordinary]);
++  const target = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a } } as unknown as import('./agent-config-reader').AgentConfigTarget;
++  const role = captureReadOnlyRoleTargetWitness(target, () => true), receipts: DisplayReceipt[] = [];
++  expect(role.current()).toBe(true); expect(JSON.parse(await fsp.readFile(path.join(b, '.clubhouse', 'agents.json'), 'utf8'))[0]).toEqual(ordinary);
++  const result = readRegisteredAgentDisplayPage({ agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role }, 'dispatcher-auto', { authorized: () => true, receipts });
++  expect.soft(result).toMatchObject({ state: 'ok', value: { complete: false, knownMatches: 1, unknownRows: 1, entries: [{ agentId: 'controller', projectId: 'b', identityAmbiguous: true, fields: { name: { value: 'Normal project agent' }, connectToDispatcher: { value: true } } }], next: null } });
++  expect.soft(receipts.every((r) => r.current())).toBe(true); expect.soft(JSON.stringify(result)).not.toContain(root);
++  await put(b, [{ ...ordinary, name: 'Changed normal project agent' }]); expect(role.current()).toBe(true); expect.soft(receipts.some((r) => !r.current())).toBe(true);
++});
++it('excludes the admitted canonical role folder while preserving a distinct-ID registered source and bounded continuation', async () => {
++  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
++  const controller = agent('controller'), worker = agent('role-worker', { name: 'PRIVATE_ROLE_WORKER', orchestration: { connectToDispatcher: true } });
++  await put(a, [controller, worker]); await put(b, Array.from({ length: 9 }, (_, i) => agent('normal-' + i, { orchestration: { connectToDispatcher: true } })));
++  const target = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a } } as unknown as import('./agent-config-reader').AgentConfigTarget;
++  const role = captureReadOnlyRoleTargetWitness(target, () => true); expect(role.current()).toBe(true);
++  const first = readRegisteredAgentDisplayPage({ agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role }, 'dispatcher-auto', { authorized: () => true, receipts: [], limit: 8 });
++  expect.soft(first).toMatchObject({ state: 'ok', value: { complete: true, unknownRows: 0, knownMatches: 9, next: { projectOffset: 0, matchOffset: 8 } } }); expect.soft(JSON.stringify(first)).not.toContain('PRIVATE_ROLE_WORKER');
++  const last = readRegisteredAgentDisplayPage({ agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role }, 'dispatcher-auto', { authorized: () => true, receipts: [], limit: 8, matchOffset: 8 });
++  expect.soft(last).toMatchObject({ state: 'ok', value: { entries: [{ agentId: 'normal-8' }], next: null, knownMatches: 9 } });
++});
++it('excludes a registered filesystem alias of the admitted canonical role directory without borrowing its internal records', async () => {
++  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
++  const controller = agent('controller'), internal = agent('internal-worker', { name: 'PRIVATE_ROLE_ALIAS_WORKER', orchestration: { connectToDispatcher: true } });
++  await put(a, [controller, internal]); await put(b, [agent('normal', { orchestration: { connectToDispatcher: true } })]);
++  const alias = path.join(root, 'registered-role-alias'); await fsp.symlink(a, alias, process.platform === 'win32' ? 'junction' : 'dir');
++  await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'a', name: 'Role folder', path: a }, { id: 'b', name: 'Normal project', path: b }, { id: 'alias', name: 'Role alias', path: alias }] }));
++  const target = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a } } as unknown as import('./agent-config-reader').AgentConfigTarget;
++  const role = captureReadOnlyRoleTargetWitness(target, () => true), receipts: DisplayReceipt[] = []; expect(role.current()).toBe(true);
++  const result = readRegisteredAgentDisplayPage({ agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role }, 'dispatcher-auto', { authorized: () => true, receipts });
++  expect(result).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, unknownRows: 0, entries: [{ agentId: 'normal', projectId: 'b' }], next: null } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_ROLE'); expect(receipts.every((r) => r.current())).toBe(true);
++  await fsp.unlink(alias); await fsp.symlink(b, alias, process.platform === 'win32' ? 'junction' : 'dir');
++  expect(role.current()).toBe(true); expect(receipts.some((r) => !r.current())).toBe(true);
++});
++it('keeps unsupported canonical or registered directory identity explicitly unavailable', async () => {
++  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
++  const controller = agent('controller'); await put(a, [controller]); await put(b, [agent('normal', { orchestration: { connectToDispatcher: true } })]);
++  const target = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a } } as unknown as import('./agent-config-reader').AgentConfigTarget;
++  const role = captureReadOnlyRoleTargetWitness(target, () => true); expect(role.current()).toBe(true);
++  const chosen = { agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role };
++  const original = fs.lstatSync, unsupported = vi.spyOn(fs, 'lstatSync').mockImplementation(((file: fs.PathLike, options: { bigint?: boolean }) => {
++    const value = original(file, options as { bigint: true });
++    return String(file) === b && options?.bigint ? new Proxy(value, { get: (v, key) => key === 'ino' ? 0n : Reflect.get(v, key) }) : value;
++  }) as typeof fs.lstatSync);
++  try { expect(readRegisteredAgentDisplayPage(chosen, 'dispatcher-auto', { authorized: () => true, receipts: [] })).toMatchObject({ state: 'ok', value: { entries: [], complete: false, unavailableProjects: 1 } }); }
++  finally { unsupported.mockRestore(); }
++  const stat = fs.statSync, noCanonical = vi.spyOn(fs, 'statSync').mockImplementation(((file: fs.PathLike, options: { bigint?: boolean }) => {
++    const value = stat(file, options as { bigint: true });
++    return String(file) === a && options?.bigint ? new Proxy(value, { get: (v, key) => key === 'ino' ? 0n : Reflect.get(v, key) }) : value;
++  }) as typeof fs.statSync);
++  try { expect(readRegisteredAgentDisplayPage(chosen, 'dispatcher-auto', { authorized: () => true, receipts: [] })).toMatchObject({ state: 'unavailable', reason: 'unreadable' }); }
++  finally { noCanonical.mockRestore(); }
++});
+diff --git a/src/main/services/registered-agent-display-page.ts b/src/main/services/registered-agent-display-page.ts
+index ce654f61e..926123434 100644
+--- a/src/main/services/registered-agent-display-page.ts
++++ b/src/main/services/registered-agent-display-page.ts
+@@ -20,6 +20,9 @@ export interface RegisteredDisplayAgent {
+   fields: ConnectionEndpointFields;
+   /** Included only after the selected parent/project relationship is established. */
+   parentAgentId?: string;
++  /** A normal project record reuses the selected controller's native ID.
++   * Its primary fields remain useful, but no live/configured direction is inferred. */
++  identityAmbiguous?: true;
+ }
+ export interface RegisteredDisplayRoot { projectPath: string; namespace?: string; receipt: DisplayReceipt }
+ export interface RegisteredAgentDisplayPage {
+@@ -113,7 +116,7 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
+     if (projectOffset > 0 && projectOffset >= projects.length) return unknown('changed');
+     let selectedDirectory: string | undefined, selectedDirectoryReceipt: DisplayReceipt | undefined;
+     const aliases = new Map<string, { key: string | null; receipt?: DisplayReceipt }>();
+-    if (purpose === 'helper-children') {
++    {
+       try { selectedDirectory = directoryKey(selectedPath); selectedDirectoryReceipt = directoryReceipt(selectedPath, selectedDirectory); evidence.push(selectedDirectoryReceipt); }
+       catch { return unknown('unreadable'); }
+     }
+@@ -130,8 +133,16 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
+     const rootPage = projects.slice(projectOffset, projectOffset + REGISTERED_DISPLAY_PROJECTS), namespaces = new Set<string>();
+     for (const [index, project] of rootPage.entries()) {
+       if (!admitted()) return unknown('changed');
++      // Role-owned controller/chat/work primaries are not ordinary agent
++      // sources. The admitted role folder, never native ID alone, binds this.
++      if (purpose === 'dispatcher-auto' && project.path === selectedPath) continue;
+       try {
+         const data = readReadOnlyPrimaryMetadata(project.path, '.clubhouse/agents.json', { budget }); evidence.push(data.receipt);
++        // A registered alias of the observed canonical directory is also
++        // role-owned. Both directory + primary receipts remain final fences;
++        // this tuple is no runtime/permission or historical-incarnation proof.
++        if (purpose === 'dispatcher-auto' && data.rootNamespace && data.rootNamespace === selectedDirectory) continue;
++        if (purpose === 'dispatcher-auto' && !data.rootNamespace) { unavailableProjects++; complete = false; continue; }
+         if (!Array.isArray(data.raw)) { unavailableProjects++; complete = false; continue; }
+         // Both duplicate-ID admission and relationship projection visit every row.
+         if (data.raw.length * 2 > rowsLeft) {
+@@ -161,17 +172,19 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
+           if (projected.state !== 'ok') { unknownRows++; complete = false; continue; }
+           const fields = projected.value;
+           if (purpose === 'dispatcher-auto') {
+-            if (agent.id === selectedId || fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value
++            if (fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value
+               || fields.disposed.state === 'ok' && fields.disposed.value || fields.helper.state === 'ok' && fields.helper.value) continue;
+             if (fields.connectToDispatcher.state !== 'ok' || fields.disposed.state !== 'ok' || fields.helper.state !== 'ok') { unknownRows++; complete = false; continue; }
+           }
++          const identityAmbiguous = purpose === 'dispatcher-auto' && agent.id === selectedId;
++          if (identityAmbiguous) { unknownRows++; complete = false; }
+           knownMatches++;
+           if (knownMatches <= matchOffset || entries.length >= limit) continue;
+           const stamp = <T>(value: DisplayValue<T>): DisplayValue<T> => ({ ...value, inputs: value.inputs.map((input) => ({ ...input, source: 'primary', observedAt })) });
+           entries.push({ agentId: agent.id, projectId: project.id, projectName: project.name,
+             fields: { ...fields, name: fields.name.state === 'ok' ? { ...stamp(fields.name), state: 'ok', value: display(fields.name.value, 240) } : stamp(fields.name),
+               helper: stamp(fields.helper), disposed: stamp(fields.disposed), connectToDispatcher: stamp(fields.connectToDispatcher) },
+-            ...(purpose === 'helper-children' && { parentAgentId: selectedId }) });
++            ...(purpose === 'helper-children' && { parentAgentId: selectedId }), ...(identityAmbiguous && { identityAmbiguous: true as const }) });
+         }
+         if (entries.length > emittedBefore) localRoots.set(project.id, { projectPath: project.path, namespace: data.rootNamespace,
+           receipt: combine([selectedReceipt, profile(base), snapshot.receipt, data.receipt, ...relevantAliases]) });
+diff --git a/src/main/services/remote-agent-details.test.ts b/src/main/services/remote-agent-details.test.ts
+index ff54a9a3e..fa6cb7368 100644
+--- a/src/main/services/remote-agent-details.test.ts
++++ b/src/main/services/remote-agent-details.test.ts
+@@ -973,3 +973,22 @@ describe('admitted Details display generation', () => {
+     } finally { await fs.rm(root, { recursive: true, force: true }); }
+   });
+ });
++
++describe('qualified Dispatcher native-ID policy ambiguity at final Details', () => {
++  it.each(['unchanged', 'normal-primary-late', 'revoked'] as const)('retains independent project fields and final source refusal: %s', async (mode) => {
++    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-dispatcher-native-policy-'))), a = path.join(root, 'dispatcher'), chatFolder = path.join(root, 'dispatcher-chat'), b = path.join(root, 'normal'); for (const folder of [a, chatFolder, b]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
++    m.base = root; m.realWitness = true; m.realConnections = true;
++    const chat = { ...agent(), name: 'Dispatcher chat', worktreePath: chatFolder }, canonical = { ...agent(), id: 'controller1', name: 'Operations', worktreePath: a }, ordinary = { ...agent(), id: canonical.id, name: 'Normal project agent', worktreePath: b, orchestration: { connectToDispatcher: true } };
++    const roleProject = { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a }; await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'normal', name: 'Normal custom project', path: b }] })); await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), JSON.stringify([canonical])); await fs.writeFile(path.join(chatFolder, '.clubhouse', 'agents.json'), JSON.stringify([chat])); const normalFile = path.join(b, '.clubhouse', 'agents.json'); await fs.writeFile(normalFile, JSON.stringify([ordinary]));
++    m.dispatcher.mockReturnValue({ agentId: canonical.id, chatAgentId: chat.id }); m.target.mockImplementation(async (id: string) => ({ agent: id === canonical.id ? canonical : chat, project: id === canonical.id ? roleProject : { ...roleProject, path: chatFolder } }));
++    let allowed = true, reached = false, observed = false, ambiguous = false; const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
++    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((r) => r.label === 'Normal project agent · Normal custom project'); ambiguous = args[0].rows.some((r) => r.value.includes('endpoint association is ambiguous')); });
++    const native = await import('fs'); m.actions.mockImplementation(() => { reached = true; if (mode === 'normal-primary-late') native.writeFileSync(normalFile, '[]'); if (mode === 'revoked') allowed = false; return []; });
++    try {
++      const response = await readRemoteAgentDetails(chat.id, () => allowed, { card: 'connections', source: 'dispatcher-auto' });
++      expect(reached).toBe(true); expect(observed).toBe(true); expect(ambiguous).toBe(true);
++      if (mode === 'unchanged') { expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, chat.id)).toBe(true); const c = (response.body as RemoteAgentDetails).cards.find((c) => c.id === 'connections'); expect(c?.connectionPage).toMatchObject({ known: 1, complete: false, next: null }); expect(c?.rows.some((r) => r.label.endsWith('starting switches') || r.value.includes('two configured directions'))).toBe(false); expect(JSON.stringify(c)).not.toContain(root); }
++      else { expect.soft(response.status).toBe(mode === 'revoked' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId'); }
++    } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
++  });
++});
+diff --git a/src/main/services/remote-connection-card.test.ts b/src/main/services/remote-connection-card.test.ts
+index b79b04c5a..93528e45f 100644
+--- a/src/main/services/remote-connection-card.test.ts
++++ b/src/main/services/remote-connection-card.test.ts
+@@ -271,3 +271,17 @@ it('renders project-qualified configured helpers independently of colliding nati
+   expect(result.c.rows[0]).toMatchObject({ label: 'Saved helper name · Custom project', value: expect.stringContaining('project p') });
+   expect(result.c.rows.filter((r) => r.label.endsWith('starting switches'))).toHaveLength(2); expect(JSON.stringify(result.c)).not.toMatch(/PRIVATE_|namespace|projectPath/); expect(JSON.stringify(result.c)).not.toContain(root); expect(await disk()).toEqual(before);
+ });
++it('keeps same-ID ordinary Dispatcher metadata visible with explicit ambiguity and no configured switch/direction claim', async () => {
++  const { DISPATCHER_PROJECT_ID } = await import('../../shared/dispatcher-types'), { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
++  const { readConfiguredRegisteredConnectionsForDisplay } = await import('./configured-registered-connections-display'), { projectConnectionEndpointFieldsForDisplay } = await import('./connection-endpoint-fields-display');
++  const roleFolder = path.join(root, 'role'), normalFolder = path.join(root, 'normal'); for (const folder of [roleFolder, normalFolder]) await fs.promises.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
++  const controller = { id: selected, name: 'Canonical controller' }, ordinary = { id: selected, name: 'Normal project agent', orchestration: { connectToDispatcher: true } };
++  await put('projects.json', { version: 1, projects: [{ id: 'normal', name: 'Normal custom project', path: normalFolder }] }); await fs.promises.writeFile(path.join(roleFolder, '.clubhouse', 'agents.json'), JSON.stringify([controller])); const normalFile = path.join(normalFolder, '.clubhouse', 'agents.json'); await fs.promises.writeFile(normalFile, JSON.stringify([ordinary]));
++  const roleTarget = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: roleFolder } } as unknown as import('./agent-config-reader').AgentConfigTarget;
++  const role = captureReadOnlyRoleTargetWitness(roleTarget, () => true), fields = projectConnectionEndpointFieldsForDisplay(selected, controller); if (fields.state !== 'ok') throw new Error('fixture'); expect(role.current()).toBe(true);
++  const receipts: Array<{ current(): boolean }> = [], registered = readConfiguredRegisteredConnectionsForDisplay({ agentId: selected, projectId: DISPATCHER_PROJECT_ID, projectPath: roleFolder, receipt: role, fields: fields.value }, 'dispatcher-auto', { authorized: () => true, receipts });
++  const result = await read(true, { page: { card: 'connections', source: 'dispatcher-auto' }, registered });
++  expect(result.c.connectionPage).toMatchObject({ source: 'dispatcher-auto', known: 1, complete: false, next: null }); expect(result.c.rows.some((r) => r.label === 'Normal project agent · Normal custom project')).toBe(true); expect(result.c.rows.some((r) => r.value.includes('endpoint association is ambiguous'))).toBe(true);
++  expect(result.c.rows.some((r) => r.label.endsWith('starting switches') || r.value.includes('two configured directions'))).toBe(false); expect(JSON.stringify(result.c)).not.toContain(root); expect(receipts.every((r) => r.current())).toBe(true);
++  await fs.promises.writeFile(normalFile, '[]'); expect(role.current()).toBe(true); expect(receipts.some((r) => !r.current())).toBe(true);
++});
+diff --git a/src/main/services/remote-connection-card.ts b/src/main/services/remote-connection-card.ts
+index ca192ee16..5221fc832 100644
+--- a/src/main/services/remote-connection-card.ts
++++ b/src/main/services/remote-connection-card.ts
+@@ -381,7 +381,7 @@ function renderRegisteredConnections(c: RemoteDetailsCard, read: DisplayValue<Co
+   const page = read.value;
+   c.connectionPage = { source: query.source, offset: page.matchOffset, projectOffset: page.projectOffset, known: page.knownMatches, complete: page.complete,
+     next: page.next ? { offset: page.next.matchOffset, projectOffset: page.next.projectOffset } : null };
+-  c.summary = `${page.knownMatches} known configured relationships in this project page${page.complete ? '' : ' · partial'}`;
++  c.summary = `${page.knownMatches} known ${query.source === 'helpers' ? 'helper records' : 'Dispatcher policy records'} in this project page${page.complete ? '' : ' · partial'}`;
+   for (const entry of page.entries) {
+     const endpoint = entry.endpoint, fields = endpointCardFields({ agentId: '', targetId: endpoint.agentId, relationship: 'recorded',
+       endpoint: { state: 'ok', value: { record: 'registered-primary', fields: endpoint.fields }, inputs: [] }, hostCache: entry.hostCache });
+@@ -389,6 +389,7 @@ function renderRegisteredConnections(c: RemoteDetailsCard, read: DisplayValue<Co
+     // Include both stable project identity and display label when names collide.
+     const label = `${name} · ${projectName}`;
+     row(c, label, `${entry.source === 'helper' ? 'Direct helper' : 'Automatic Dispatcher source'} · ${entry.applicability === 'configured' ? 'two configured directions' : entry.applicability === 'disposed' ? 'disposed; no configured directions' : 'configured applicability unknown'} · project ${endpoint.projectId}`);
++    if (endpoint.identityAmbiguous) row(c, `${label} identity`, 'This project record reuses the controller’s native ID. The endpoint association is ambiguous; configured directions are unavailable.');
+     row(c, `${label} saved settings`, fields.saved);
+     if (fields.memory) row(c, `${label} host memory`, fields.memory);
+     for (const direction of entry.directions) {

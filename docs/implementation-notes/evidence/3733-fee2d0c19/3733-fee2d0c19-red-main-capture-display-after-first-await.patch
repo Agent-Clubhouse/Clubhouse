@@ -1,0 +1,18 @@
+--- src/main/services/remote-agent-details.ts
++++ src/main/services/remote-agent-details.ts
+@@ -74,7 +74,6 @@
+     const runtime = getAgentRuntime(agentId);
+     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
+     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
+-    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
+     const lifecycle = agentDisplayState(agent, running);
+     const cwd = agentRegistry.get(agentId)?.cwd || agent.worktreePath || project.path;
+     const cards = [card('settings', 'Settings'), card('dispatcher', 'Dispatcher'), card('orchestrate', 'Orchestration'), card('connections', 'Connections'), card('actions', 'Actions'), card('skills-mcp', 'Skills and MCP'), card('session', 'Session'), card('canvases', 'Canvases'), card('changes', 'Changes')];
+@@ -83,6 +82,7 @@
+     if (agent.parentAgentId) byId.dispatcher.state = 'not-applicable';
+     const result: RemoteAgentDetails = { version: 1, connectionPages: 1, readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
+     const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });
++    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
+     if (!authorized()) return refused();
+     // A failed freshness/authority check is a refusal of this assembly, not
+     // an independently unavailable field such as the supported partial 503.

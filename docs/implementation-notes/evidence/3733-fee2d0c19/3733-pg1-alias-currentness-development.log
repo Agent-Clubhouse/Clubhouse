@@ -1,0 +1,14 @@
+2026-11-20T10:12:28Z START full-details idle=89% unused=13G avail=31522M freepct=77 comp=7463M swap=1836M pid=44813 cmd=node_modules/.bin/vitest run src/main/services/registered-agent-display-page.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-dispatcher-identity
+
+
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+   Start at  02:12:28
+   Duration  303ms (transform 69ms, setup 5ms, import 84ms, tests 143ms, environment 0ms)
+
+2026-11-20T10:12:28Z END full-details rc=0

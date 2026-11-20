@@ -1,0 +1,51 @@
+{
+  "head": "fee2d0c192d505b53983d49f16be430c1245c6f2",
+  "tree": "9e106a525de0792ddd506b66604f0c6c1119a517",
+  "base": "017f7ec9dae90361f09c6c5c8858b3534c95a281",
+  "onlyDeltaPaths": [
+    "docs/implementation-notes/3733-dispatcher-paging-identity.md",
+    "src/main/services/configured-registered-connections-display.test.ts",
+    "src/main/services/configured-registered-connections-display.ts",
+    "src/main/services/registered-agent-display-page.test.ts",
+    "src/main/services/registered-agent-display-page.ts",
+    "src/main/services/remote-agent-details.test.ts",
+    "src/main/services/remote-connection-card.test.ts",
+    "src/main/services/remote-connection-card.ts"
+  ],
+  "otherEntireTreeEntriesEqual": true,
+  "criticalUnchangedFiles": {
+    "src/main/services/remote-agent-details.ts": {
+      "baseBlob": "05af251acf132d4f034aa32c47ab7308078fe784",
+      "headBlob": "05af251acf132d4f034aa32c47ab7308078fe784"
+    },
+    "src/main/services/remote-quick-details.ts": {
+      "baseBlob": "5f3707af3029fa5d009e00271dbcae1b9084a429",
+      "headBlob": "5f3707af3029fa5d009e00271dbcae1b9084a429"
+    },
+    "src/main/services/annex-server.ts": {
+      "baseBlob": "64c928f60e945020e3271f4b4db25fb86a484917",
+      "headBlob": "64c928f60e945020e3271f4b4db25fb86a484917"
+    },
+    "src/main/services/annex-client.ts": {
+      "baseBlob": "6316ce3c515482ff1c20ad33a8adfc067753e96b",
+      "headBlob": "6316ce3c515482ff1c20ad33a8adfc067753e96b"
+    },
+    "src/main/services/read-only-agent-target-witness.ts": {
+      "baseBlob": "9c604e784a169da3fadcf465557ac1c81190a7d3",
+      "headBlob": "9c604e784a169da3fadcf465557ac1c81190a7d3"
+    },
+    "src/shared/remote-agent-details.ts": {
+      "baseBlob": "5f97d9b8561fec26bdd9397f903e871a17a16024",
+      "headBlob": "5f97d9b8561fec26bdd9397f903e871a17a16024"
+    },
+    "src/shared/remote-details-query.ts": {
+      "baseBlob": "e2b36639ec01014b3a945d606e95453573a45fc6",
+      "headBlob": "e2b36639ec01014b3a945d606e95453573a45fc6"
+    },
+    "src/renderer/features/agents/details/RemoteConnectionsCard.tsx": {
+      "baseBlob": "e72da7309d9bd69b1c9ad052a59314dc56e18900",
+      "headBlob": "e72da7309d9bd69b1c9ad052a59314dc56e18900"
+    }
+  },
+  "ordinaryOwnersAndAuthorityTransportsUnchanged": true
+}

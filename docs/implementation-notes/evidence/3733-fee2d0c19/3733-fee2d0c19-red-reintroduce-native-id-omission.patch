@@ -1,0 +1,11 @@
+--- src/main/services/registered-agent-display-page.ts
++++ src/main/services/registered-agent-display-page.ts
+@@ -172,7 +172,7 @@
+           if (projected.state !== 'ok') { unknownRows++; complete = false; continue; }
+           const fields = projected.value;
+           if (purpose === 'dispatcher-auto') {
+-            if (fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value
++            if (agent.id === selectedId || fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value
+               || fields.disposed.state === 'ok' && fields.disposed.value || fields.helper.state === 'ok' && fields.helper.value) continue;
+             if (fields.connectToDispatcher.state !== 'ok' || fields.disposed.state !== 'ok' || fields.helper.state !== 'ok') { unknownRows++; complete = false; continue; }
+           }
