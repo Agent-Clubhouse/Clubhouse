@@ -2,6 +2,7 @@
 import * as path from 'path';
 import { getBaseDirPath } from './base-dir';
 import type { DisplayReceipt, DisplayValue } from './display-settings';
+import type { AgentConnectionCacheDisplay } from './agent-config';
 import { createReadOnlyMetadataBudget, readReadOnlyPrimaryMetadata, ReadOnlyMetadataLimitError } from './read-only-agent-target-witness';
 import { readConnectionEndpointMetadataForDisplay, type AdmittedConnectionEndpoint, type ConnectionEndpointMetadata } from './connection-endpoint-metadata-display';
 
@@ -10,6 +11,8 @@ export interface SavedDispatcherEndpointMetadataRow extends Pair {
   /** Exact selected-project association in this saved source, not a live wire. */
   relationship: 'recorded' | 'not-recorded' | 'different-selected-project';
   endpoint?: DisplayValue<ConnectionEndpointMetadata>;
+  /** Optional exact-project host-memory evidence, independent of saved fields. */
+  hostCache?: DisplayValue<AgentConnectionCacheDisplay>;
 }
 export interface SavedDispatcherEndpointMetadata {
   scope: 'saved-dispatcher-endpoint-metadata';
@@ -35,11 +38,15 @@ function profile(base: string): DisplayReceipt { return { current: () => getBase
  * transport/pin/auth/run receipts. No paths come from a route parameter.
  * This exposes saved metadata, never current eligibility/effective authority.
  */
-export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentId: string; projectPath: string; target: DisplayReceipt }, pairs: readonly Pair[], options: { receipts: DisplayReceipt[] }): DisplayValue<SavedDispatcherEndpointMetadata> {
+export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentId: string; projectPath: string; target: DisplayReceipt }, pairs: readonly Pair[], options: { receipts: DisplayReceipt[];
+  /** Trusted internal synchronous passive getter only; never a route-supplied callback or loader. */
+  readLoadedCache?: (projectPath: string, agentId: string, options: { receipts: DisplayReceipt[] }) => AgentConnectionCacheDisplay;
+}): DisplayValue<SavedDispatcherEndpointMetadata> {
   const inputs = [{ field: 'Selected saved Dispatcher endpoint associations', source: 'primary' as const, observedAt: Date.now() }];
   const unknown = (reason: 'invalid' | 'unreadable' | 'limit' | 'changed'): DisplayValue<SavedDispatcherEndpointMetadata> => ({ state: 'unavailable', reason, inputs });
   if (!selected || !identifier(selected.agentId) || !folder(selected.projectPath) || typeof selected.target?.current !== 'function' || !Array.isArray(options?.receipts)) return unknown('invalid');
-  const selectedId = selected.agentId, selectedProject = selected.projectPath, selectedTarget = selected.target;
+  const selectedId = selected.agentId, selectedProject = selected.projectPath, selectedTarget = selected.target, readLoadedCache = options.readLoadedCache;
+  if (readLoadedCache !== undefined && typeof readLoadedCache !== 'function') return unknown('invalid');
   if (!Array.isArray(pairs) || pairs.length > 50) return unknown('limit');
   const admitted: Pair[] = [], seen = new Set<string>();
   for (const pair of pairs) {
@@ -71,6 +78,7 @@ export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentI
     }
     // A whole-file descriptor witness binds all captured other-project paths,
     // including edits invisible to the path-free saved card page receipt.
+    const evidenceStart = options.receipts.length;
     const association = combine([selectedTarget, profile(base), snapshot.receipt]);
     options.receipts.push(association);
     if (!association.current()) return unknown('changed');
@@ -86,6 +94,35 @@ export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentI
       for (const index of positions) rows[index].endpoint = { state: 'unavailable', reason: metadata.reason, inputs: metadata.inputs };
     } else {
       for (let index = 0; index < positions.length; index++) rows[positions[index]].endpoint = metadata.value[index];
+    }
+    if (readLoadedCache) {
+      // A cache is not a substitute for registration or the saved relationship.
+      // Only exact registered primary identities may reach the injected passive
+      // getter. A failed/absent/limited primary remains independent unknown;
+      // it cannot authorize borrowing a globally indexed native ID.
+      const metadataEvidence = options.receipts.slice(evidenceStart);
+      if (!combine(metadataEvidence).current()) return unknown('changed');
+      const groups = new Map<string, Array<{ row: SavedDispatcherEndpointMetadataRow; query: AdmittedConnectionEndpoint }>>();
+      for (let index = 0; index < positions.length; index++) {
+        const row = rows[positions[index]];
+        if (row.endpoint?.state !== 'ok' || row.endpoint.value.record !== 'registered-primary') continue;
+        const query = queries[index], group = groups.get(query.projectPath);
+        if (group) group.push({ row, query }); else groups.set(query.projectPath, [{ row, query }]);
+      }
+      // At most16 admitted metadata roots/50 selected identities. Check the
+      // source freshly per project, not once per repeated identity, and never
+      // carry a previous phase's truth across registry/cache work.
+      for (const [projectPath, group] of groups) {
+        if (!association.current()) return unknown('changed');
+        for (const { row, query } of group) {
+          const cacheInputs = [{ field: 'Related agent host-session fields', source: 'host-cache' as const, observedAt: Date.now() }];
+          try { row.hostCache = { state: 'ok', value: readLoadedCache(projectPath, query.agentId, { receipts: options.receipts }), inputs: cacheInputs }; }
+          catch { row.hostCache = { state: 'unavailable', reason: 'unreadable', inputs: cacheInputs }; }
+        }
+      }
+      // Cache callbacks are synchronous and passive by contract, but their
+      // selected evidence still must survive later rows and final assembly.
+      if (!combine(options.receipts.slice(evidenceStart)).current()) return unknown('changed');
     }
     return known(rows);
   } catch (error) { return unknown(error instanceof ReadOnlyMetadataLimitError ? 'limit' : 'unreadable'); }
