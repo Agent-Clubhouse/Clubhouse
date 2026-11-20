@@ -29,7 +29,7 @@ export async function readSelectedManagedPartsPage(target: AgentConfigTarget, qu
   const selection = hash([target.agent.id, target.project.id, target.project.path, query.source, selected]);
   if (query.selection && query.selection !== selection || base.offset !== 0 && base.offset >= ids.length) return unavailable('changed');
   const rows: RemoteManagedPartRecord[] = [];
-  if (!ids.length) return { ...base, state: 'recorded', selection, total: 0, rows, next: null, notes: ['The selected configured list is empty; no catalog heads were read.'] };
+  if (!ids.length) return { ...base, state: 'recorded', selection, total: 0, rows, next: null, notes: ['Selected configured parts only; grant-gated skill choices are withheld. No catalog heads were read.'] };
   try {
     // A new bounded reader per page keeps the existing catalog 4MiB / 100-head
     // limits. Only 25 selected heads are queried, never the full setup.

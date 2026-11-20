@@ -295,6 +295,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       byId.orchestrate.rows = []; byId.orchestrate.notes = []; byId.orchestrate.summary = 'Selected helper page';
       result.helperPageOnly = true; result.settings = null; delete result.providerEvidence; delete result.providerEvidenceState; delete result.outgoingWires;
       delete result.inventoryPage; delete result.inventoryPageOnly;
+      delete result.inventoryPages; delete result.inventorySources;
       for (const c of cards) if (c.id !== 'orchestrate') { c.requested = false; c.omitted = 0; c.rows = []; c.notes = []; delete c.connectionPage; c.summary = 'Not included in this selected helper page'; }
     }
     while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) {

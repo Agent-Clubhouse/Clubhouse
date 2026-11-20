@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { RemoteAgentDetails } from '../../../../shared/remote-agent-details';
 import type { ControllerReadResult } from '../../../../shared/controller-chat';
-import { REMOTE_INVENTORY_PAGE_SIZE, REMOTE_MANAGED_INVENTORY_SOURCES, type RemoteInventoryQuery, type RemoteInventorySource } from '../../../../shared/remote-inventory-page';
+import { isRemoteInventoryPage, REMOTE_INVENTORY_PAGE_SIZE, REMOTE_MANAGED_INVENTORY_SOURCES, type RemoteInventoryQuery, type RemoteInventorySource } from '../../../../shared/remote-inventory-page';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { remoteDetailsAddress } from './remote-details-address';
 import { CardNote } from './DetailsCard';
@@ -24,9 +24,10 @@ export function SelectedManagedPartsPage({ agent, details, status, freshnessKey,
   const key = `${identity}:${query?.source ?? ''}:${query?.offset ?? 0}:${query?.selection ?? ''}:${selected?.revision ?? 0}`;
   const [read, setRead] = useState<{ key: string; snapshot: typeof snapshot; result: Result } | null>(null);
   const refused = useRef(onRefused); refused.current = onRefused;
+  const currentCard = details?.cards.find((c) => c.id === 'skills-mcp');
   const eligible = agent.kind === 'durable' && connected && !satellite?.snapshotUnavailable && readable && status === 'ok' && !!details
     && details.agentId === address?.agentId && details.inventoryPages === 1 && !details.inventoryPageOnly && !details.helperPageOnly && !details.connectionPageOnly
-    && details.cards.find((c) => c.id === 'skills-mcp')?.state !== 'not-applicable';
+    && !!currentCard && currentCard.requested !== false && currentCard.state !== 'not-applicable';
   useEffect(() => {
     if (!open || !eligible || !query || !address || !details?.inventorySources?.includes(query.source)) return;
     let active = true;
@@ -39,7 +40,7 @@ export function SelectedManagedPartsPage({ agent, details, status, freshnessKey,
   }, [open, eligible, query, key, snapshot, address?.satelliteId, address?.agentId, details?.inventorySources]);
   const result: Result = !eligible ? { status: !connected ? 'offline' : status === 'ok' ? 'unavailable' : status } as Result
     : read?.key === key && read.snapshot === snapshot ? read.result : { status: 'loading' };
-  const response = result.status === 'ok' && result.value.agentId === address?.agentId && result.value.inventoryPageOnly === true ? result.value.inventoryPage : undefined;
+  const response = result.status === 'ok' && result.value.agentId === address?.agentId && result.value.inventoryPages === 1 && result.value.inventoryPageOnly === true && isRemoteInventoryPage(result.value.inventoryPage) ? result.value.inventoryPage : undefined;
   const page = query && response?.source === query.source && response.offset === (query.offset ?? 0)
     && (response.state !== 'recorded' || !query.selection || response.selection === query.selection) ? response : undefined;
   const select = (source: RemoteInventorySource, offset = 0, selection?: string) => setNavigation({ identity, query: { card: 'skills-mcp', source, offset, ...(selection && { selection }) }, revision: (selected?.revision ?? 0) + 1 });
