@@ -1,3 +1,4 @@
+import { readSelectedActionRelationshipPage, unavailableActionRelationshipPage, type SelectedActionPageOptions } from './selected-details-page';
 import { projectActionDetails } from './details-read';
 import { LogRedactor } from '../../../shared/log-redaction';
 /**
@@ -493,6 +494,15 @@ export function listActions(): ActionView[] {
 /** Details never initializes the engine or refreshes/persists delivery receipts. */
 export function readActionDetailsForAgent(agentId: string, projectId: string | undefined, dispatcher: boolean, names: ActionNames) {
   return projectActionDetails(requireEngine(), agentId, projectId, dispatcher, names);
+}
+
+/** A selected relationship page from the already-running engine; never initializes it. */
+export function readSelectedActionDetailsPageForAgent(agentId: string, projectId: string | undefined, dispatcher: boolean, options: Omit<SelectedActionPageOptions, 'sourceCurrent'>) {
+  try { if (!options.authorized() || !options.target.current()) return unavailableActionRelationshipPage(options.offset, 'changed'); }
+  catch { /* telemetry-exempt: an unavailable selected receipt never grants display access. */ return unavailableActionRelationshipPage(options.offset, 'changed'); }
+  const admittedEngine = engine;
+  if (!admittedEngine) return unavailableActionRelationshipPage(options.offset, 'unreadable');
+  return readSelectedActionRelationshipPage(admittedEngine, { agentId, projectId, dispatcher }, { ...options, sourceCurrent: () => engine === admittedEngine });
 }
 
 /** One visible action, or undefined (also for Clubhouse's own). */
