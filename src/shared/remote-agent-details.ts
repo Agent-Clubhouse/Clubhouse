@@ -1,3 +1,4 @@
+import { isRemoteHelperPage, type RemoteHelperPage } from './remote-helper-page';
 import { isRemoteConnectionPage, REMOTE_CONNECTION_PAGE_SOURCES, type RemoteConnectionPage, type RemoteConnectionPageSource } from './remote-details-query';
 import { ACTION_OUTCOMES, ACTION_RELATIONSHIPS, isActionRunTime, type RemoteActionRow } from './agent-action-groups';
 import { isRemoteAgentSettings, type RemoteAgentSettings } from './remote-agent-settings';
@@ -51,6 +52,9 @@ export interface RemoteDetailsCard {
 }
 export interface RemoteAgentDetails {
   version: 1;
+  helperPages?: 1;
+  helperPageOnly?: true;
+  helperPage?: RemoteHelperPage;
   /** Additive selected-source continuation support, independent of older Details hosts. */
   connectionPages?: 1;
   /** Explicit selected-source-only envelope support; absent on older paged hosts. */
@@ -83,7 +87,10 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
   if (!value || typeof value !== 'object') return false;
   const v = value as RemoteAgentDetails;
   const text = (s: unknown) => typeof s === 'string' && s.length <= 2048;
-  return v.version === 1 && (v.connectionPages === undefined || v.connectionPages === 1)
+  return v.version === 1 && (v.helperPages === undefined || v.helperPages === 1)
+    && (v.helperPage === undefined || v.helperPages === 1 && v.connectionPageOnly !== true && isRemoteHelperPage(v.helperPage))
+    && (v.helperPageOnly === undefined || v.helperPageOnly === true && v.helperPage !== undefined && v.connectionPageOnly !== true && v.settings === null && v.providerEvidence === undefined && v.outgoingWires === undefined && Array.isArray(v.cards) && v.cards.every((c) => !!c && typeof c === 'object' && (c.id === 'orchestrate' ? c.requested === undefined : c.requested === false && c.connectionPage === undefined && c.omitted === 0 && Array.isArray(c.rows) && !c.rows.length && Array.isArray(c.notes) && !c.notes.length)))
+    && (v.connectionPages === undefined || v.connectionPages === 1)
     && (v.outgoingWires === undefined || v.connectionPageOnly !== true && isRemoteOutgoingWires(v.outgoingWires))
     && (v.connectionPageEnvelope === undefined || v.connectionPages === 1 && v.connectionPageEnvelope === 1)
     && (v.connectionPageOnly === undefined || v.connectionPageOnly === true && v.connectionPageEnvelope === 1 && v.settings === null && v.providerEvidence === undefined && Array.isArray(v.cards) && v.cards.every((c) => !!c && typeof c === 'object') && v.cards.some((c) => c.id === 'connections' && c.connectionPage !== undefined) && v.cards.every((c) => c.id === 'connections' ? c.requested === undefined : c.requested === false && Array.isArray(c.rows) && !c.rows.length && Array.isArray(c.notes) && !c.notes.length))
@@ -104,7 +111,7 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
     && new Set(v.cards.map((c) => c.id)).size === REMOTE_DETAILS_CARD_IDS.length
     && v.cards.every((c) => REMOTE_DETAILS_CARD_IDS.includes(c.id) && text(c.title) && text(c.summary)
       && ['ok', 'error', 'unsupported', 'not-applicable'].includes(c.state)
-      && (c.requested === undefined || v.connectionPageOnly === true && c.id !== 'connections' && c.requested === false)
+      && (c.requested === undefined || (v.connectionPageOnly === true && c.id !== 'connections' || v.helperPageOnly === true && c.id !== 'orchestrate') && c.requested === false)
       && Number.isSafeInteger(c.omitted) && c.omitted >= 0
       && Number.isFinite(c.observedAt) && c.observedAt > 0
       && (c.connectionPage === undefined || c.id === 'connections' && isRemoteConnectionPage(c.connectionPage))

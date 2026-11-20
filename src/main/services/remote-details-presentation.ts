@@ -32,7 +32,7 @@ export function selectedConnectionPageEnvelope(result: RemoteAgentDetails): void
   if (!requested?.connectionPage) return; // An unsupported/failed page retains its explicit error response.
   result.connectionPageEnvelope = 1; result.connectionPageOnly = true; result.settings = null;
   delete result.providerEvidence; delete result.providerEvidenceState;
-  delete result.outgoingWires;
+  delete result.outgoingWires; delete result.helperPage;
   for (const c of result.cards) if (c !== requested) {
     c.requested = false; c.omitted += c.rows.length; c.rows = []; c.notes = [];
     c.summary = 'Not included in this selected Connections page';

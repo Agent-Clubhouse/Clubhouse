@@ -1,7 +1,7 @@
-/** Selected Connections pages over the existing paired-desktop Details GET. */
+/** Selected Connections and helper pages over the existing paired-desktop Details GET. */
 export const REMOTE_CONNECTION_PAGE_SOURCES = ['outgoing', 'incoming', 'directions', 'sources', 'manual-dispatcher', 'helpers', 'dispatcher-auto', 'tool-records', 'canvas-records', 'zone-records', 'helper-parent', 'group-records'] as const;
 export type RemoteConnectionPageSource = typeof REMOTE_CONNECTION_PAGE_SOURCES[number];
-export interface RemoteDetailsQuery { card: 'connections'; source: RemoteConnectionPageSource; offset?: number; projectOffset?: number }
+export interface RemoteDetailsQuery { card: 'connections' | 'orchestrate'; source: RemoteConnectionPageSource; offset?: number; projectOffset?: number }
 export interface RemoteConnectionPage {
   source: RemoteConnectionPageSource;
   offset: number;
@@ -15,7 +15,7 @@ const offset = (v: unknown) => Number.isInteger(v) && Number(v) >= 0 && Number(v
 export function isRemoteDetailsQuery(value: unknown): value is RemoteDetailsQuery {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const v = value as RemoteDetailsQuery;
-  return Object.keys(v).every((key) => ['card', 'source', 'offset', 'projectOffset'].includes(key)) && v.card === 'connections'
+  return Object.keys(v).every((key) => ['card', 'source', 'offset', 'projectOffset'].includes(key)) && (v.card === 'connections' || v.card === 'orchestrate' && v.source === 'helpers' && !v.projectOffset && (v.offset ?? 0) % 8 === 0)
     && REMOTE_CONNECTION_PAGE_SOURCES.includes(v.source) && (v.offset === undefined || offset(v.offset))
     && (v.projectOffset === undefined || offset(v.projectOffset))
     && (!v.projectOffset || v.source === 'helpers' || v.source === 'dispatcher-auto' || v.source === 'tool-records' || v.source === 'canvas-records' || v.source === 'zone-records');

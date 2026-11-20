@@ -2492,8 +2492,11 @@ export async function requestAgentDetails(machine: string, agentId: string, quer
     if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
     if (res.status !== 200 || !isRemoteAgentDetails(res.body, agentId)) return { status: 'error' };
-    if (!page && res.body.connectionPageOnly === true) return { status: 'error' };
-    if (page) {
+    if (!page && (res.body.connectionPageOnly === true || res.body.helperPageOnly === true)) return { status: 'error' };
+    if (page?.card === 'orchestrate') {
+      if (res.body.helperPages !== 1 || !res.body.helperPage) return { status: 'unavailable' };
+      if (res.body.helperPageOnly !== true || res.body.helperPage.offset !== (page.offset ?? 0)) return { status: 'error' };
+    } else if (page) {
       if (res.body.connectionPageEnvelope === 1 && res.body.cards.find((card) => card.id === 'connections')?.connectionPage && res.body.connectionPageOnly !== true) return { status: 'error' };
       const response = res.body.cards.find((card) => card.id === 'connections')?.connectionPage;
       if (!response) return { status: res.body.connectionPages === 1 ? 'error' : 'unavailable' }; // Older host ignored the additive page query.

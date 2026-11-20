@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+import { readSelectedHelperPage } from './selected-helper-page';
 import { readSavedGroupConnectionsForDisplay } from './saved-group-connections-display';
 import { readHelperParentConnectionForDisplay } from './helper-parent-connection-display';
 import { readSavedCanvasConnectionsForDisplay } from './saved-canvas-connections-display';
@@ -11,7 +13,6 @@ import { card, row, section, display, selectedConnectionPageEnvelope } from './r
 import { readConnectionCard, readActionCard, readCanvasCard } from './remote-details-cards';
 import { resolveReadOnlyQuickTarget } from './read-only-quick-target';
 import { readRemoteQuickDetails } from './remote-quick-details';
-import * as path from 'path';
 import { REMOTE_DETAILS_CARD_IDS, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails, type RemoteDetailsCard, type RemoteDetailsCardId } from '../../shared/remote-agent-details';
 import { GRANT_GATED_SKILL_IDS } from '../../shared/managed-agents-types';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -30,11 +31,9 @@ import { dispatcherControllerForDisplay, readDispatcherCard } from './remote-dis
 import { configuredDispatcherDirections } from './configured-dispatcher-directions';
 import { readMcpConfig, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
 import { getProvider } from '../orchestrators';
-import { safeMcpErrorLine } from './mcp-error-text';
 import { agentDisplayState } from './agent-display-state';
 import { getAgentRuntime } from './agent-runtime';
-import { HELPER_TRANSFORM_UNAVAILABLE, readOnlyHelperWork } from './read-only-helper-work';
-import { helpersSummary, workSummary } from '../../shared/helper-work-summary';
+import { helpersSummary } from '../../shared/helper-work-summary';
 import { captureReadOnlyConfigTargetWitness } from './read-only-config-target';
 import { captureDisplayProvider } from './display-provider';
 import { readAgentConnectionCacheForDisplay } from './agent-config';
@@ -48,7 +47,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
   query = query && { ...query };
   try {
     const quick = await resolveReadOnlyQuickTarget(agentId, authorized);
-    if (quick) return readRemoteQuickDetails(quick, authorized, query);
+    if (quick) return query?.card === 'orchestrate' ? { status: 400, body: { error: 'unsupported_helper_page' } } : readRemoteQuickDetails(quick, authorized, query);
     let target: AgentConfigTarget;
     try { target = await resolveAgentConfigTarget(agentId, undefined, { strict: true }); }
     catch (error) { return !authorized() ? refused() : error instanceof Error && error.message === 'No registered agent matches that reference.'
@@ -136,38 +135,34 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
         if (access.state !== 'ok') c.state = 'error';
         else if (running) c.notes.push('The helper ceiling is recorded by Clubhouse for this run. Helper start settings are ranked for the chosen CLI when it starts; provider enforcement is not independently verified.');
       }
-      const helpers = await listHelpersEverywhere(project.path, agentId, { includeDisposed: true, readOnly: true, receipts: helperReceipts });
+      let helpers: Awaited<ReturnType<typeof listHelpersEverywhere>> | undefined;
+      try { helpers = await listHelpersEverywhere(project.path, agentId, { includeDisposed: true, readOnly: true, receipts: helperReceipts }); }
+      catch { /* telemetry-exempt: unavailable helper inventory stays separate from pending starts. */ }
       if (!authorized()) throw new Error('revoked');
-      for (const { config } of helpers) connectionHelpers.add(config.id);
+      for (const { config } of helpers ?? []) connectionHelpers.add(config.id);
       const requests = readStartRequestsForDisplay(project.path, agentId, { receipts: orchestrationReceipts });
       const waiting = projectPendingHelperStarts(c, requests);
+      result.helperPages = 1;
+      result.helperPage = await readSelectedHelperPage(target, helpers, requests, { offset: query?.card === 'orchestrate' ? query.offset ?? 0 : 0, authorized, target: targetWitness, receipts: helperReceipts });
+      if (!helpers) { c.state = 'error'; c.notes.push('The selected helper inventory is unavailable; live and disposed totals are unknown.'); return; }
       const live = helpers.filter((h) => !isDisposedAgent(h.config));
       const summary = helpersSummary(live.length, enabled ? limit : undefined, live.filter((h) => h.config.creation?.state === 'creating').length, waiting);
       row(c, 'Helpers', waiting === undefined ? `${live.length ? summary : 'No live helpers'} · pending starts unavailable` : summary);
       if (helpers.length > live.length) row(c, 'Disposed helpers', helpers.length - live.length);
-      let workReads = 0, workOmitted = 0;
-      const workDeadline = Date.now() + 2000;
       for (const entry of helpers) {
-        const { config: h, projectPath } = entry;
-        const state = isDisposedAgent(h) ? 'Disposed' : h.handoff ? 'Handed off' : h.creation?.state === 'failed' ? 'Failed' : h.creation?.state === 'creating' ? 'Starting' : isAgentRunning(h.id) ? 'Running' : 'Sleeping';
-        let work: string | null = null;
-        if (!isDisposedAgent(h) && !h.creation) {
-          if (workReads < 8 && Date.now() < workDeadline) {
-            workReads++;
-            const checks = await readOnlyHelperWork(target, entry, authorized);
-            if (!authorized()) throw new Error('revoked');
-            work = workSummary(checks);
-            if (checks.error === HELPER_TRANSFORM_UNAVAILABLE) work += ' (custom Git transform)';
-          } else { work = 'Work not checked (host read limit)'; workOmitted++; }
-        }
-        row(c, h.name, [state, h.branch, work, isDisposedAgent(h) ? h.disposedAt : '', projectPath !== project.path ? path.basename(projectPath) : '', h.creation?.state === 'failed' ? safeMcpErrorLine(h.creation.reason) : ''].filter(Boolean).join(' · '));
+        const h = entry.config, structured = result.helperPage.rows.find((row) => row.key === createHash('sha256').update(JSON.stringify([entry.projectPath, h.id])).digest('hex'));
+        const recordedState = structured?.status ?? (isDisposedAgent(h) ? 'disposed' : h.creation?.state === 'failed' ? 'failed' : h.creation?.state === 'creating' ? 'creating' : 'State not checked in this helper page');
+        const state = recordedState === 'disposed' ? 'Disposed' : recordedState === 'handed-off' ? 'Handed off' : recordedState === 'creating' ? 'Starting' : recordedState;
+        row(c, h.name, [state, h.branch, structured?.disposedAt, structured?.work.state === 'recorded' ? structured.work.text : structured?.work.state === 'unavailable' && structured.work.reason === 'read-failed' ? 'couldn’t check' : 'Work not checked (selected helper page)', structured?.projectName].filter(Boolean).join(' · '));
       }
-      if (workOmitted) c.notes.push(`${workOmitted} helper work checks omitted by this read’s limit (at most 8 checks, 2 seconds to start checks). Other helper fields are shown.`);
+      c.notes.push('Structured helper rows and bounded work continuation are shared separately; each selected page checks at most eight helpers.');
       if (agent.parentAgentId && !helpers.length && requests.state === 'ok' && !requests.value.length) c.state = 'not-applicable';
       if (!running && enabled) c.notes.push('The helper tools appear the next time this agent starts.');
     });
     await read('dispatcher', (c) => readDispatcherCard(c, target, readPolicy().fields.connectToDispatcher, { receipts: dispatcherReceipts, authorized, controller }));
+    const argumentsQuery = query;
     await read('connections', async (c) => {
+      const query = argumentsQuery?.card === 'connections' ? argumentsQuery : undefined;
       const groupsFor = (chosen: AgentConfigTarget) => {
         if (query?.source !== 'group-records') return undefined;
         const fields = projectConnectionEndpointFieldsForDisplay(chosen.agent.id, chosen.agent); if (fields.state !== 'ok') return undefined;
@@ -270,7 +265,13 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       }
     }
     // Enforce the envelope even when every section fits its individual row limit.
-    if (query) selectedConnectionPageEnvelope(result);
+    if (query?.card === 'connections') selectedConnectionPageEnvelope(result);
+    if (query?.card === 'orchestrate') {
+      if (dispatcher || !result.helperPage) return { status: 400, body: { error: 'unsupported_helper_page' } };
+      byId.orchestrate.rows = []; byId.orchestrate.notes = []; byId.orchestrate.summary = 'Selected helper page';
+      result.helperPageOnly = true; result.settings = null; delete result.providerEvidence; delete result.providerEvidenceState; delete result.outgoingWires;
+      for (const c of cards) if (c.id !== 'orchestrate') { c.requested = false; c.omitted = 0; c.rows = []; c.notes = []; delete c.connectionPage; c.summary = 'Not included in this selected helper page'; }
+    }
     while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) {
       const largest = cards.filter((c) => c.rows.length).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];
       if (!largest) throw new Error('details_limit');
