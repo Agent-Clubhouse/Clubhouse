@@ -53,10 +53,10 @@ beforeEach(async () => {
 });
 afterEach(async () => { bindingManager._resetForTesting(); _resetPersistedBindingSourcesForTesting(); clearAgentConfigCache(); await fsp.rm(root, { recursive: true, force: true }); });
 
-it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late'] as const)('integrates real selected source, primary and owner cache fields into a read-only Connections card: %s', async (kind) => {
+it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'dispatcher-inapplicable', 'helper-inapplicable'] as const)('integrates real selected source, primary and owner cache fields into a read-only Connections card: %s', async (kind) => {
   bindingManager._resetForTesting(); _resetPersistedBindingSourcesForTesting();
   const selectedProject = path.join(root, 'selected'); await fsp.mkdir(path.join(selectedProject, '.clubhouse'), { recursive: true });
-  const selected = { ...agent(), id: 'selected', name: 'Selected' }, selectedRecord = { id: 's', name: 'Selected project', path: selectedProject };
+  const selected = { ...agent(), id: 'selected', name: 'Selected', ...(kind === 'helper-inapplicable' ? { parentAgentId: 'parent' } : {}) }, selectedRecord = { id: 's', name: 'Selected project', path: selectedProject };
   await fsp.writeFile(path.join(selectedProject, '.clubhouse', 'agents.json'), JSON.stringify([selected]));
   await fsp.mkdir(getBaseDirPath()); await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [selectedRecord, { id: 't', name: 'Target project', path: project }] }));
   await fsp.writeFile(path.join(getBaseDirPath(), 'dispatcher-connections.json'), JSON.stringify({ version: 1, connections: [{ agentId: 'selected', targetId: 'target', agentProjectPath: selectedProject, targetProjectPath: project, createdBy: 'selected', createdAt: '2026-11-19T00:00:00Z' }], removedByUser: [] }));
@@ -67,7 +67,12 @@ it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late'] as
   const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
   const snapshot = async (folder = root): Promise<unknown> => Object.fromEntries(await Promise.all((await actual.readdir(folder)).sort().map(async (name) => { const child = path.join(folder, name), stat = await actual.stat(child); return [name, stat.isDirectory() ? { ino: stat.ino, children: await snapshot(child) } : { ino: stat.ino, mtimeMs: stat.mtimeMs, bytes: (await actual.readFile(child)).toString('base64') }]; })));
   const before = await snapshot(); resetObservation(); const c = card('connections', 'Connections'), receipts: DisplayReceipt[] = [];
-  await readPassiveConnectionCard(c, 'selected', { receipts, authorized: () => true, projectPath: selectedProject, name: 'Selected', endpoint: { target, readCache: readAgentConnectionCacheForDisplay } });
+  const source = await import('./dispatcher-endpoint-associations-display'), sourceRead = vi.spyOn(source, 'readSavedDispatcherEndpointMetadataForDisplay'), cacheRead = vi.fn(readAgentConnectionCacheForDisplay);
+  try { await readPassiveConnectionCard(c, 'selected', { receipts, authorized: () => true, projectPath: selectedProject, name: 'Selected', dispatcher: kind === 'dispatcher-inapplicable', family: kind === 'helper-inapplicable' ? { parentId: 'parent', helperIds: new Set() } : undefined, endpoint: { target, readCache: cacheRead } }); }
+  finally { sourceRead.mockRestore(); }
+  if (kind === 'dispatcher-inapplicable' || kind === 'helper-inapplicable') {
+    expect.soft(cacheRead).not.toHaveBeenCalled(); expect.soft(JSON.stringify(c)).not.toMatch(/Selected cache name|saved target|host memory target/); expect.soft(await snapshot()).toEqual(before); expect.soft(m.external).not.toHaveBeenCalled(); return;
+  }
   const label = kind === 'changed-directory' ? 'New registered primary' : kind === 'saved-and-memory' ? 'Host accepted custom name' : 'Selected cache name';
   expect(c.rows.some((r) => r.label === label)).toBe(true); expect(c.rows.find((r) => r.label === label + ' saved target')?.value).toContain(kind === 'changed-directory' ? 'New registered primary' : 'Selected cache name');
   const memory = c.rows.find((r) => r.label === label + ' host memory target')?.value;
