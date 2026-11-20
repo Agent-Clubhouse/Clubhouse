@@ -146,7 +146,7 @@ it('withholds a private mismatched admitted namespace without returning fields o
   await warm(); const receipts: DisplayReceipt[] = []; const result = readAgentConnectionCacheForDisplay(project, 'target', { receipts, expectedProjectNamespace: 'ino:1:999999999999999999' });
   expect.soft(result).toMatchObject({ availability: 'namespace-unconfirmed' }); expect.soft(result.fields).toBeUndefined(); expect.soft(receipts).toEqual([]); assertNoReadEffects();
 });
-it.each(['', 'x'.repeat(8193), null, 7])('bounds private expected namespaces before cache lookup: %j', (expected) => {
+it.each([['empty', ''], ['overlong', 'x'.repeat(8193)], ['null', null], ['number', 7]] as const)('bounds private expected namespaces before cache lookup: %s', (_label, expected) => {
   const receipts: DisplayReceipt[] = [], result = readAgentConnectionCacheForDisplay(project, 'target', { receipts, expectedProjectNamespace: expected as string });
   expect.soft(result).toMatchObject({ availability: 'invalid' }); expect.soft(receipts).toEqual([]); assertNoReadEffects();
 });

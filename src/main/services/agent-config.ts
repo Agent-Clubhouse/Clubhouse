@@ -1536,6 +1536,9 @@ function connectionCacheDisplayReceipt(projectPath: string, agentId: string, cac
  * separately admits the exact related project and retains source/target/role/
  * run/auth/pin receipts. Namespace association here is host-memory evidence,
  * never authoritative registration, actual runtime or effective permission.
+ * Optional expectedProjectNamespace comes only from an admitted held primary
+ * root. Equality checks observed dev/ino tuples, not historical ABA. Caller
+ * retains that primary receipt through final assembly; this getter adds no IO.
  */
 export function readAgentConnectionCacheForDisplay(projectPath: string, agentId: string, options: { receipts: DisplayReceipt[]; expectedProjectNamespace?: string }): AgentConnectionCacheDisplay {
   const observedAt = Date.now();
