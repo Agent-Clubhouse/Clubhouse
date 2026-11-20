@@ -2164,6 +2164,56 @@ describe('provider turn attribution', () => {
 
 describe('federation input follows actual runtime dispatch (#3553)', () => {
   const remote = (id: string) => ({ id, cause: { rootId: id, depth: 4 } } as FederatedRequest);
+  it('Q3 keeps replacement drain ownership separate from an old queued activation', async () => {
+    const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+    let releaseOld!: (rollback: () => Promise<void>) => void;
+    let releaseNew!: (rollback: () => Promise<void>) => void;
+    const oldHeld = new Promise<() => Promise<void>>((resolve) => { releaseOld = resolve; });
+    const newHeld = new Promise<() => Promise<void>>((resolve) => { releaseNew = resolve; });
+    const settled = vi.fn();
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    try {
+      await runtime.start();
+      const old = driver.last;
+      old.emit({ type: 'turn_started', data: {} });
+      await flush();
+      await runtime.sendMessage('old queued item', { source: 'action', actionQueue: { actionId: 'old', onSettled: settled } });
+      activation.mockReturnValueOnce(oldHeld);
+      old.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      await runtime.clearContext();
+      expect(settled).toHaveBeenCalledExactlyOnceWith('dropped');
+      activation.mockResolvedValueOnce(async () => {}).mockReturnValueOnce(newHeld);
+      await expect(runtime.sendMessage('new first', { source: 'user' })).resolves.toMatchObject({ delivery: 'prompt' });
+      await expect(runtime.sendMessage('new second', { source: 'user', delivery: 'queued' })).resolves.toMatchObject({ delivery: 'queued' });
+      driver.last.emit({ type: 'turn_started', data: {} });
+      driver.last.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      releaseOld(async () => {});
+      await flush();
+      // Completion of the old drain must not clear the new drain's reservation.
+      await expect(runtime.sendMessage('new third', { source: 'user' })).resolves.toMatchObject({ delivery: 'queued' });
+      releaseNew(async () => {});
+      await flush();
+      expect(old.sent).toEqual([]);
+      expect(settled).toHaveBeenCalledExactlyOnceWith('dropped');
+      expect(driver.last.sent.map((item) => item.content)).toEqual([
+        [{ type: 'text', text: 'new first' }], [{ type: 'text', text: 'new second' }],
+      ]);
+      driver.last.emit({ type: 'turn_started', data: {} });
+      driver.last.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      expect(driver.last.sent.map((item) => item.content)).toEqual([
+        [{ type: 'text', text: 'new first' }], [{ type: 'text', text: 'new second' }], [{ type: 'text', text: 'new third' }],
+      ]);
+      driver.last.emit({ type: 'turn_started', data: {} });
+      driver.last.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+      expect(runtime.hasPendingWork()).toBe(false);
+    } finally { releaseOld(async () => {}); releaseNew(async () => {}); await runtime.stop(); activation.mockRestore(); }
+  });
   it('Q1 does not let an early turn consume the token of a dispatch still activating', async () => {
     const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
     let rejectActivation!: (error: Error) => void;
