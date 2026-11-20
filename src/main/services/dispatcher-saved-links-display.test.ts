@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 const m = vi.hoisted(() => ({ base: '' }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
-import { readSavedDispatcherLinksForDisplay, SAVED_LINK_DISPLAY_BYTES, SAVED_LINK_DISPLAY_PAGE, SAVED_LINK_DISPLAY_SCAN } from './dispatcher-saved-links-display';
+import { readSavedDispatcherLinksForDisplay, SAVED_LINK_DISPLAY_PAGE, SAVED_LINK_DISPLAY_SCAN } from './dispatcher-saved-links-display';
 let root: string, project: string;
 const at = '2026-11-19T00:00:00Z', store = 'dispatcher-connections.json', pending = 'dispatcher-connections.pending-removals.json';
 const link = (extra: Record<string, unknown> = {}) => ({ agentId: 'selected', targetId: 'target', agentProjectPath: project, targetProjectPath: '/other-project', createdAt: at, createdBy: 'controller', PRIVATE_ARGS: 'PRIVATE_CREDENTIAL', ...extra });
@@ -44,7 +44,7 @@ it.each(['known-false', 'broken', 'backup-only', 'invalid-shape', 'future', 'bad
   expect.soft(result.value.rows[0].createdAt).toBe(at); expect.soft(result.value.rows[0].removalRecorded).toMatchObject(mode === 'known-false' ? { state: 'ok', value: false } : { state: 'unavailable' }); expect.soft(await disk()).toEqual(before);
 });
 it.each(['bytes', 'entries', 'combined-removals', 'duplicate', 'empty-path', 'relative-path', 'invalid-selected-date', 'invalid-scope'] as const)('bounds and validates %s before inferring selected source completeness', async (mode) => {
-  if (mode === 'bytes') await put(store, { version: 1, connections: [link()], removedByUser: [], padding: 'x'.repeat(SAVED_LINK_DISPLAY_BYTES) });
+  if (mode === 'bytes') await put(store, { version: 1, connections: [link()], removedByUser: [], padding: 'x'.repeat(1024 * 1024) });
   else if (mode === 'entries') await putStore(Array.from({ length: SAVED_LINK_DISPLAY_SCAN + 1 }, (_, i) => link({ agentId: `other-${i}`, targetId: 'other-target' })));
   else if (mode === 'combined-removals') await putStore([link()], Array.from({ length: SAVED_LINK_DISPLAY_SCAN }, (_, i) => ({ agentId: `other-${i}`, targetId: 'other-target' })));
   else if (mode === 'duplicate') await putStore([link(), link()]);
@@ -76,3 +76,6 @@ it.each(['empty', 'whitespace', 'long', 'relative-project', 'negative-offset', '
   const result = readSavedDispatcherLinksForDisplay(selected, mode === 'relative-project' ? '../project' : project, { offset: mode === 'negative-offset' ? -1 : mode === 'fractional-offset' ? 0.5 : mode === 'over-offset' ? SAVED_LINK_DISPLAY_SCAN + 1 : 0, receipts });
   expect(result.state).toBe('unavailable'); expect(receipts).toEqual([]);
 });
+
+it('excludes fully valid unrelated native identities and their private attributes', async () => { await putStore([link(), link({ agentId: 'PRIVATE_OTHER_OWNER', targetId: 'PRIVATE_OTHER_TARGET' })]); const { result } = read(); expect.soft(result).toMatchObject({ state: 'ok', value: { total: 1 } }); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_'); });
+it('binds only the selected safe page and counts, leaving off-page metadata edits current', async () => { const entries = Array.from({ length: 51 }, (_, i) => link({ targetId: `target-${i}` })); await putStore(entries); const first = read(), last = read(50); entries[50].createdAt = '2026-11-20T00:00:00Z'; await putStore(entries); expect(first.receipts[0].current()).toBe(true); expect(last.receipts[0].current()).toBe(false); });
