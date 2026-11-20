@@ -13,6 +13,11 @@ import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
 const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), connectionFixture: vi.fn(), sourceFrame: { pairs: [], unreadable: [] } as import('../../shared/connection-sources').AgentConnectionSources, satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realConnections: false, realWitness: false, realDispatcher: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+const liveProbes = vi.hoisted(() => ({ model: vi.fn(() => { throw new Error('Historical Details must not probe live models.'); }), quota: vi.fn(() => { throw new Error('Historical Details must not probe live quota.'); }) }));
+// Native transcript lookup/parser stay real. Their unrelated live CLI probe
+// ports must remain unused, without importing a spawn/transport graph here.
+vi.mock('../orchestrators/model-probes', () => ({ probeClaudeModels: liveProbes.model }));
+vi.mock('../orchestrators/quota-probes', () => ({ probeClaudeQuota: liveProbes.quota }));
 vi.mock('child_process', async (original) => ({ ...await original<typeof import('child_process')>(), execSync: vi.fn(() => '') }));
 vi.mock('../util/shell', async (original) => ({ ...await original<typeof import('../util/shell')>(), isShellEnvironmentCached: m.envCached }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
@@ -543,6 +548,7 @@ describe('host selected-agent Details projections', () => {
       expect(c.rows.some((r) => r.label === 'Ended')).toBe(false); expect(JSON.stringify(c)).not.toContain('PRIVATE_HISTORY_TEXT');
       expect(await fs.readFile(file, 'utf8')).toBe(text); expect(await fs.readdir(folder)).toEqual(entries);
       const after = await fs.stat(file); expect({ size: after.size, mtimeMs: after.mtimeMs, ino: after.ino }).toEqual({ size: before.size, mtimeMs: before.mtimeMs, ino: before.ino });
+      expect(liveProbes.model).not.toHaveBeenCalled(); expect(liveProbes.quota).not.toHaveBeenCalled();
     } finally { Object.defineProperty(process, 'platform', { value: platform }); shell.invalidateShellEnvironmentCache(); await fs.rm(root, { recursive: true, force: true }); }
   });
   it.each(['inventory', 'revocation'] as const)('withholds historical evidence after awaited %s change with real primary witness', async (mode) => {
