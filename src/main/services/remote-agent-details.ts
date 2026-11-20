@@ -20,6 +20,7 @@ import { readStartRequestsForDisplay } from './helper-start-requests';
 import { getAgentConnection, getCurrentAgentConnection } from './clubhouse-mcp/bridge-server';
 import { isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
 import { dispatcherControllerForDisplay, readDispatcherCard } from './remote-dispatcher-card';
+import { configuredDispatcherDirections } from './configured-dispatcher-directions';
 import { readMcpConfig, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
 import { getProvider } from '../orchestrators';
 import { safeMcpErrorLine } from './mcp-error-text';
@@ -154,7 +155,13 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     });
     await read('dispatcher', (c) => readDispatcherCard(c, target, readPolicy().fields.connectToDispatcher, { receipts: dispatcherReceipts, authorized, controller }));
     await read('connections', async (c) => {
-      if (!dispatcher) return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: agent.name, projectPath: project.path, connectToDispatcher: readPolicy().fields.connectToDispatcher, endpoint: !agent.parentAgentId ? { target: targetWitness, readCache: readAgentConnectionCacheForDisplay } : undefined, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
+      if (!dispatcher) {
+        const connect = readPolicy().fields.connectToDispatcher;
+        const canonical = connect.state === 'ok' && connect.value ? await controller() : undefined;
+        if (!authorized()) return;
+        const automatic = configuredDispatcherDirections({ id: agentId, name: agent.name }, connect, canonical && { id: canonical.agent.id, name: canonical.agent.name });
+        return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: agent.name, projectPath: project.path, connectToDispatcher: connect, automatic, endpoint: !agent.parentAgentId ? { target: targetWitness, readCache: readAgentConnectionCacheForDisplay } : undefined, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
+      }
       const canonical = await controller();
       if (!authorized()) return;
       if (!canonical) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The host Dispatcher’s canonical connection identity is unavailable. Connections cannot be verified until its host identity is available.'); return; }

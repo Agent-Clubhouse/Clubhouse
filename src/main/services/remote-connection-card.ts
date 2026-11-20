@@ -22,6 +22,7 @@ import { isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
 import type { DisplayReceipt, DisplayValue } from './display-settings';
 import { readSavedDispatcherEndpointMetadataForDisplay } from './dispatcher-endpoint-associations-display';
 import { endpointCardFields, type EndpointCardFields } from './connection-endpoint-card-fields';
+import type { ConfiguredDispatcherDirection } from './configured-dispatcher-directions';
 import { row, display } from './remote-details-presentation';
 
 export interface ConnectionCardReadOptions {
@@ -33,10 +34,12 @@ export interface ConnectionCardReadOptions {
   connectToDispatcher?: DisplayValue<boolean>;
   /** Strict selected normal-durable target; no route-supplied paths/getters. */
   endpoint?: { target: DisplayReceipt; readCache?: NonNullable<Parameters<typeof readSavedDispatcherEndpointMetadataForDisplay>[2]['readLoadedCache']> };
+  /** Selected normal-agent saved automatic source; caller retains selected/controller admission receipts. */
+  automatic?: DisplayValue<ConfiguredDispatcherDirection[]>;
   name?: string;
   family?: { parentId?: string; helperIds: ReadonlySet<string> };
 }
-type Pair = { from: string; to: string; kind: BindingDisplayRow['targetKind'] | 'unknown'; binding?: BindingDisplayRow; saved?: ConnectionDirectionDisplay; sources: CachedSourceDisplay[]; machine?: string; remoteAgent?: string; manual?: SavedDispatcherLinkDisplay; manualMemory?: DispatcherLinkMemoryDisplay['rows'][number]; manualFields?: EndpointCardFields };
+type Pair = { from: string; to: string; kind: BindingDisplayRow['targetKind'] | 'unknown'; binding?: BindingDisplayRow; saved?: ConnectionDirectionDisplay; sources: CachedSourceDisplay[]; machine?: string; remoteAgent?: string; manual?: SavedDispatcherLinkDisplay; manualMemory?: DispatcherLinkMemoryDisplay['rows'][number]; manualFields?: EndpointCardFields; automatic?: ConfiguredDispatcherDirection };
 const value = <T>(v: DisplayValue<T> | undefined): T | undefined => v?.state === 'ok' ? v.value : undefined;
 const hash = (v: unknown) => createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const boundedName = (v: unknown): string | undefined => typeof v === 'string' && !!v && v.length <= 1024 ? v : undefined;
@@ -69,6 +72,10 @@ function referenceNames(selected: string, selectedName: string | undefined) {
   };
 }
 function toolsFor(pair: Pair, savedComplete: boolean): string {
+  if (pair.automatic && !pair.binding && !pair.saved && !pair.sources.length) {
+    const defaults = localDirectionTools({ disabledTools: pair.automatic.disabledTools, enabledTools: pair.automatic.enabledTools });
+    return `Configured automatic link defaults · On: ${labels(defaults.allowed)}; Off: ${labels(defaults.disabled)}`;
+  }
   const fixed = pair.sources.find((source) => connectionSourceKind(source.sourceId) === 'dispatcher_federation');
   if (fixed) {
     const record = pair.binding ?? value(fixed.binding), off = value(record?.disabledTools);
@@ -129,6 +136,10 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     const key = (from: string, to: string, kind: Pair['kind']) => `${from}\0${to}\0${kind}`;
     const ensure = (from: string, to: string, kind: Pair['kind']): Pair => { if (typeof from !== 'string' || !from || from.length > 512 || typeof to !== 'string' || !to || to.length > 512 || from !== selected && (to !== selected || kind !== 'agent')) throw new Error('connection_scope'); const id = key(from, to, kind); let p = pairs.get(id); if (!p) { p = { from, to, kind, sources: [] }; pairs.set(id, p); } return p; };
     for (const page of [outgoing, incoming]) if (page.state === 'ok') for (const b of page.value.rows) ensure(b.agentId, b.targetId, b.targetKind).binding = b;
+    if (options.automatic?.state === 'ok') for (const automatic of options.automatic.value) {
+      if (options.dispatcher || automatic.agentId !== selected && automatic.targetId !== selected) throw new Error('automatic_connection_scope');
+      ensure(automatic.agentId, automatic.targetId, 'agent').automatic = automatic;
+    }
     let limitedSourceDetails = 0, untypedIncomingSources = 0;
     if (sources.state === 'ok') for (const p of sources.value.pairs) for (const source of p.sources) {
       const b = value(source.binding);
@@ -167,7 +178,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       const other = d.from.machineId ? d.from : d.to.machineId ? d.to : undefined; if (other?.machineId) { pair.machine = other.machineId.toLowerCase(); pair.remoteAgent = other.agentId; }
     }
     const dispatcherSource = (source: CachedSourceDisplay) => ['dispatcher_auto', 'dispatcher_link', 'dispatcher_federation'].includes(connectionSourceKind(source.sourceId));
-    const needsDispatcher = options.dispatcher || [...pairs.values()].some((pair) => pair.sources.some(dispatcherSource) || !!pair.manual);
+    const needsDispatcher = options.dispatcher || [...pairs.values()].some((pair) => pair.sources.some(dispatcherSource) || !!pair.manual || !!pair.automatic);
     const localDispatcher = needsDispatcher ? readDispatcherEnablementForDisplay({ receipts: options.receipts }) : undefined;
     if (localDispatcher) {
       row(c, 'Host Dispatcher', localDispatcher.enabled.state === 'ok' ? localDispatcher.enabled.value ? 'On' : 'Off' : 'Unavailable from host metadata');
@@ -207,7 +218,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       // A saved project-qualified manual entry does not authorize borrowing a
       // current cached name for a reused native ID in another project.
       const resolved = savedOnlyIdentity ? pair.manualFields?.displayName : (pair.kind === 'agent' && isDispatcherIdentityAgentId(other) ? refs.get(other) : undefined)
-        ?? ordinary ?? (pair.kind === 'agent' ? refs.get(other) : undefined);
+        ?? ordinary ?? boundedName(outgoingPair ? pair.automatic?.targetName : pair.automatic?.agentName) ?? (pair.kind === 'agent' ? refs.get(other) : undefined);
       if (savedOnlyIdentity) {
         const note = pair.manualFields?.primaryAdmitted ? 'Saved target settings are shown with host memory values separately. These observations do not confirm that this link works now.' : 'The saved target’s current project identity is not confirmed; its saved ID is shown.';
         if (!c.notes.includes(note)) c.notes.push(note);
@@ -230,6 +241,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       if (value(pair.saved?.makers)?.length) sourceLabels.add(CONNECTION_SOURCE_LABELS.tool_link);
       const uncertainSource = pair.saved && (pair.saved.userLink.state !== 'ok' || pair.saved.cardLink.state !== 'ok' || pair.saved.makers.state !== 'ok');
       if (uncertainSource) sourceLabels.add('Saved source information unavailable');
+      if (pair.automatic) sourceLabels.add('Connect to Dispatcher (saved policy)');
       if (pair.manual) sourceLabels.add(`Made by the Dispatcher (saved record${value(pair.manual.removalRecorded) === true || value(pair.manualMemory?.pendingRemoval) === true ? ', removal recorded' : ''})`);
 
       row(c, `${name} sources`, [...sourceLabels].join(', ') || (sources.state === 'ok' && sources.value.complete ? 'No source reported in the retained cache' : 'Source information unavailable'));
@@ -288,6 +300,8 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
         c.notes.push('Saved Dispatcher links show saved settings and removal reports from this host session. The saved target’s current project, availability and tool access are not confirmed by those records.');
       }
     }
+    if (options.automatic?.state === 'unavailable') c.notes.push('Automatic Dispatcher source details are unavailable; no empty source list is inferred.');
+    else if (options.automatic?.state === 'ok') c.notes.push(options.automatic.value.length ? 'Automatic Dispatcher directions come from saved selected-agent policy and an admitted controller identity. These configured directions do not establish current bindings, eligibility or effective tool access.' : 'The selected saved policy configures no automatic Dispatcher direction. Other connection sources remain independent.');
     if (sources.state !== 'ok') c.notes.push('Registered source metadata is unavailable. Other sources may hold these connections.');
     else {
       if (!sources.value.sourceStates.length) c.notes.push('No registered source inventory is retained for this read. Saved source coverage is unavailable.');
