@@ -951,3 +951,25 @@ describe('selected registered Connections pages at final Details assembly', () =
     } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
   });
 });
+
+describe('admitted Details display generation', () => {
+  it.each(['stable', 'unsupported', 'early-reopen', 'late-reopen', 'revoked-reopen'] as const)('fences a same-object/app/native runtime across card awaits: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-display-generation-'))), folder = path.join(root, 'selected'); await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+    m.base = root; m.realWitness = true;
+    const selected = { ...agent(), worktreePath: folder, orchestrator: 'codex-cli' as const }, p = { ...project, path: folder };
+    await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [p] })); await fs.writeFile(path.join(folder, '.clubhouse', 'agents.json'), JSON.stringify([selected]));
+    let generation = 'admitted-display', allowed = true, early = false, late = false;
+    const runtime = { kind: 'chat', getSessionId: () => 'same-app', getNativeSessionId: () => 'same-native', getDisplayRunId: mode === 'unsupported' ? undefined : () => generation };
+    const registration = { projectPath: folder, cwd: folder, runtime: 'chat', orchestrator: 'codex-cli', nonce: 'PRIVATE_ADMITTED_NONCE' };
+    m.target.mockResolvedValue({ agent: selected, project: p }); m.runtime.mockReturnValue(runtime); m.running.mockReturnValue(true); m.registration.mockReturnValue(registration);
+    if (mode === 'early-reopen') m.settings.mockImplementationOnce(async () => { early = true; generation = 'reopened-display'; return { status: 200, body: setting() }; });
+    m.canvases.mockImplementationOnce(async () => { late = true; if (mode === 'late-reopen' || mode === 'revoked-reopen') generation = 'reopened-display'; if (mode === 'revoked-reopen') allowed = false; return []; });
+    try {
+      const response = await readRemoteAgentDetails('a1', () => allowed);
+      expect(late).toBe(true); expect(early).toBe(mode === 'early-reopen'); expect(m.runtime()).toBe(runtime); expect(m.registration()).toBe(registration); expect(runtime.getSessionId()).toBe('same-app'); expect(runtime.getNativeSessionId()).toBe('same-native');
+      expect(generation).toBe(mode.endsWith('reopen') ? 'reopened-display' : 'admitted-display');
+      if (mode === 'stable' || mode === 'unsupported') { expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true); expect(JSON.stringify(response.body)).not.toContain('PRIVATE_ADMITTED_NONCE'); }
+      else { expect.soft(response.status).toBe(mode === 'revoked-reopen' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId'); }
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+});

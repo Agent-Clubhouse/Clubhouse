@@ -74,6 +74,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const runtime = getAgentRuntime(agentId);
     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
+    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
     const lifecycle = agentDisplayState(agent, running);
     const cwd = agentRegistry.get(agentId)?.cwd || agent.worktreePath || project.path;
     const cards = [card('settings', 'Settings'), card('dispatcher', 'Dispatcher'), card('orchestrate', 'Orchestration'), card('connections', 'Connections'), card('actions', 'Actions'), card('skills-mcp', 'Skills and MCP'), card('session', 'Session'), card('canvases', 'Canvases'), card('changes', 'Changes')];
@@ -228,7 +229,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       || currentRegistration !== registration || currentRegistration?.nonce !== registeredNonce || currentRegistration?.runtime !== registeredRuntime
       || currentRegistration?.orchestrator !== registeredProvider || currentRegistration?.cwd !== registeredCwd
       || isAgentRunning(agentId) !== running
-      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)) {
+      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId || (runtime.getDisplayRunId?.() ?? null) !== displayRunId)) {
       return { status: 409, body: { error: 'agent_run_changed' } };
     }
     result.providerEvidenceState = runtime?.kind === 'chat' && runtime.getDetailsEvidence ? 'unavailable' : 'unsupported';

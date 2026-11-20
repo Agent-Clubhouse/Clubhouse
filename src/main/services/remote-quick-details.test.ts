@@ -374,3 +374,19 @@ it('keeps current Quick bindings while refusing inapplicable saved durable Dispa
   try { const result = await read(); expect.soft(result.cards.find((card) => card.id === 'connections')?.rows.some((row) => row.label === 'Current receiver')).toBe(true); expect.soft(savedRead).not.toHaveBeenCalled(); expect.soft(memoryRead).not.toHaveBeenCalled(); expect.soft(JSON.stringify(result)).not.toMatch(/PRIVATE_INAPPLICABLE_TARGET|PRIVATE_RUN_NONCE/); }
   finally { m.realConnections = false; bindings.bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting(); }
 });
+
+describe('admitted Quick Details display generation', () => {
+  it.each(['stable', 'unsupported', 'early-reopen', 'late-reopen', 'revoked-reopen'] as const)('fences a same-object/app/native Quick runtime across card awaits: %s', async (mode) => {
+    let generation = 'admitted-display', allowed = true, early = false, late = false;
+    const runtime = { kind: 'chat', getSessionId: () => 'same-app', getNativeSessionId: () => 'same-native', getDisplayRunId: mode === 'unsupported' ? undefined : () => generation };
+    const run = start(), registration: AgentRegistration = { projectPath: project, cwd: project, runtime: 'chat', orchestrator: 'codex-cli', nonce: 'PRIVATE_ADMITTED_NONCE' };
+    m.runtime.mockReturnValue(runtime); m.running.mockReturnValue(true); m.registration.mockReturnValue(registration); noteQuickAgentRuntime(run, registration, () => m.registration() === registration);
+    if (mode === 'early-reopen') m.template.mockImplementationOnce(async () => { early = true; generation = 'reopened-display'; return { name: 'Review template', source: 'primary', observedAt: Date.now() }; });
+    m.canvases.mockImplementationOnce(async () => { late = true; if (mode === 'late-reopen' || mode === 'revoked-reopen') generation = 'reopened-display'; if (mode === 'revoked-reopen') allowed = false; return []; });
+    const target = await resolveReadOnlyQuickTarget('quick', () => allowed); expect(target).not.toBeNull();
+    const response = await readRemoteQuickDetails(target!, () => allowed);
+    expect(late).toBe(true); expect(early).toBe(mode === 'early-reopen'); expect(m.runtime()).toBe(runtime); expect(m.registration()).toBe(registration); expect(runtime.getSessionId()).toBe('same-app'); expect(runtime.getNativeSessionId()).toBe('same-native'); expect(generation).toBe(mode.endsWith('reopen') ? 'reopened-display' : 'admitted-display');
+    if (mode === 'stable' || mode === 'unsupported') { expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'quick')).toBe(true); expect(JSON.stringify(response.body)).not.toContain('PRIVATE_ADMITTED_NONCE'); }
+    else { expect.soft(response.status).toBe(mode === 'revoked-reopen' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('providerId'); }
+  });
+});
