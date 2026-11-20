@@ -228,15 +228,16 @@ it('preserves primary fields but avoids cache adoption when the held root cannot
   }) as typeof fs.lstatSync);
   try {
     const reader = vi.fn(readAgentConnectionCacheForDisplay), result = query(reader);
-    expect(result).toMatchObject({ state: 'ok', value: { rows: [{ endpoint: { value: { record: 'registered-primary', fields: { name: { value: 'Selected cache name' } } } }, hostCache: { state: 'unavailable', reason: 'unreadable' } }] } });
-    expect.soft(reader).not.toHaveBeenCalled(); noWrites();
+    expect(result).toMatchObject({ state: 'ok', value: { rows: [{ endpoint: { value: { record: 'registered-primary', fields: { name: { value: 'Selected cache name' } } } } }] } });
+    if (result.state !== 'ok') return;
+    expect.soft(result.value.rows[0].hostCache).toMatchObject({ state: 'unavailable', reason: 'unreadable' }); expect.soft(reader).not.toHaveBeenCalled(); noWrites();
   } finally { vi.mocked(fs.lstatSync).mockImplementation(actual.lstatSync); }
 });
 it('withholds cache evidence if a later read replaces an earlier admitted directory before final assembly', async () => {
   await warm(); await warmSecond(); let calls = 0;
   const reader: typeof readAgentConnectionCacheForDisplay = (folder, id, options) => {
     const result = readAgentConnectionCacheForDisplay(folder, id, options); expect(result.availability).toBe('loaded'); calls++;
-    if (calls === 2) { fs.renameSync(project, project + '-retired'); fs.mkdirSync(path.join(project, '.clubhouse'), { recursive: true }); fs.writeFileSync(file(), JSON.stringify([agent()])); }
+    if (calls === 2) { const prior = fs.statSync(project, { bigint: true }); fs.renameSync(project, project + '-retired'); fs.mkdirSync(path.join(project, '.clubhouse'), { recursive: true }); fs.writeFileSync(file(), JSON.stringify([agent()])); const after = fs.statSync(project, { bigint: true }); expect(`${after.dev}:${after.ino}`).not.toBe(`${prior.dev}:${prior.ino}`); }
     return result;
   };
   const result = query(reader, [], [pair(), pair('other')]); expect(calls).toBe(2);

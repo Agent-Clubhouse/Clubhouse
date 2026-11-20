@@ -21,7 +21,7 @@ vi.mock('./agent-runtime/chat-media-retention', () => ({ removeAgentChatMedia: m
 vi.mock('./helper-auto-state', () => ({ forgetAutoHelper: m.external }));
 vi.mock('./grant-requests', () => ({ dropGrantRequestsFor: m.external }));
 vi.mock('fs', async (original) => { const actual = await original<typeof import('fs')>(); return { ...actual,
-  readFileSync: vi.fn(actual.readFileSync), lstatSync: vi.fn(actual.lstatSync), existsSync: vi.fn(actual.existsSync),
+  statSync: vi.fn(actual.statSync), readFileSync: vi.fn(actual.readFileSync), lstatSync: vi.fn(actual.lstatSync), existsSync: vi.fn(actual.existsSync),
   watch: vi.fn(() => { const watcher = { on: vi.fn(() => watcher), close: vi.fn() }; return watcher; }),
 }; });
 vi.mock('fs/promises', async (original) => { const actual = await original<typeof import('fs/promises')>(); return { ...actual,
@@ -32,7 +32,7 @@ import type { DisplayReceipt } from './display-settings';
 let root: string, project: string;
 const file = () => path.join(project, '.clubhouse', 'agents.json');
 const agent = (extra = {}) => ({ id: 'target', name: 'Selected cache name', color: 'blue', createdAt: '2026-11-19T00:00:00Z', orchestrator: 'codex-cli', orchestration: { connectToDispatcher: true }, instructions: 'PRIVATE_INSTRUCTIONS', env: { token: 'PRIVATE_CREDENTIAL' }, ...extra });
-const io = () => [fsp.readFile, fsp.writeFile, fsp.stat, fsp.rename, fsp.mkdir, fs.readFileSync, fs.lstatSync, fs.existsSync, fs.watch];
+const io = () => [fsp.readFile, fsp.writeFile, fsp.stat, fsp.rename, fsp.mkdir, fs.statSync, fs.readFileSync, fs.lstatSync, fs.existsSync, fs.watch];
 const resetObservation = () => { for (const fn of io()) vi.mocked(fn).mockClear(); m.external.mockClear(); };
 const assertNoReadEffects = () => { for (const fn of io()) expect.soft(fn).not.toHaveBeenCalled(); expect.soft(m.external).not.toHaveBeenCalled(); };
 const read = (receipts: DisplayReceipt[] = []) => readAgentConnectionCacheForDisplay(project, 'target', { receipts });
@@ -149,4 +149,10 @@ it('withholds a private mismatched admitted namespace without returning fields o
 it.each([['empty', ''], ['overlong', 'x'.repeat(8193)], ['null', null], ['number', 7]] as const)('bounds private expected namespaces before cache lookup: %s', (_label, expected) => {
   const receipts: DisplayReceipt[] = [], result = readAgentConnectionCacheForDisplay(project, 'target', { receipts, expectedProjectNamespace: expected as string });
   expect.soft(result).toMatchObject({ availability: 'invalid' }); expect.soft(receipts).toEqual([]); assertNoReadEffects();
+});
+it('checks admitted namespace before reading any selected cached display field', async () => {
+  await warm(); const selected = await getDurableConfig(project, 'target'); expect(selected).not.toBeNull();
+  const fieldRead = vi.fn(() => 'PRIVATE_PRIOR_NAMESPACE_NAME'); Object.defineProperty(selected!, 'name', { configurable: true, enumerable: true, get: fieldRead });
+  const receipts: DisplayReceipt[] = [], result = readAgentConnectionCacheForDisplay(project, 'target', { receipts, expectedProjectNamespace: 'ino:1:999999999999999999' });
+  expect.soft(result).toMatchObject({ availability: 'namespace-unconfirmed' }); expect.soft(result.fields).toBeUndefined(); expect.soft(receipts).toEqual([]); expect.soft(fieldRead).not.toHaveBeenCalled(); assertNoReadEffects();
 });
