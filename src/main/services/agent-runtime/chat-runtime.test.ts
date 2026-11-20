@@ -2164,6 +2164,59 @@ describe('provider turn attribution', () => {
 
 describe('federation input follows actual runtime dispatch (#3553)', () => {
   const remote = (id: string) => ({ id, cause: { rootId: id, depth: 4 } } as FederatedRequest);
+  it.each([
+    ['direct', 'stop', 'prompt'], ['direct', 'stop', 'queued'],
+    ['direct', 'clear', 'prompt'], ['direct', 'clear', 'queued'],
+    ['queued', 'stop', 'prompt'], ['queued', 'stop', 'queued'],
+    ['queued', 'clear', 'prompt'], ['queued', 'clear', 'queued'],
+  ] as const)('Q4 isolates late %s success after %s when the provider reports %s', async (path, change, delivery) => {
+    const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+    let release!: (result: 'prompt' | 'queued') => void;
+    const reply = new Promise<'prompt' | 'queued'>((resolve) => { release = resolve; });
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    const stop = startFederationTurnTracking(runtime.agentId);
+    const settled = vi.fn();
+    let direct: ReturnType<typeof runtime.sendMessage> | undefined;
+    try {
+      await runtime.start();
+      const old = driver.last;
+      const send = old.send.bind(old);
+      vi.spyOn(old, 'send').mockImplementationOnce(async (content, requested) => {
+        await send(content, requested); // The request reached the provider boundary.
+        return reply;
+      });
+      if (path === 'direct') direct = withFederationInput(remote('old-late'), () => runtime.sendMessage('late old input', { source: 'mcp' }));
+      else {
+        old.emit({ type: 'turn_started', data: {} });
+        await flush();
+        await withFederationInput(remote('old-late'), () => runtime.sendMessage('late old input', {
+          source: 'action', actionQueue: { actionId: 'old-dispatched', onSettled: settled },
+        }));
+        old.emit({ type: 'turn_ended', data: {} });
+      }
+      await flush();
+      expect(old.sent).toHaveLength(1);
+      expect(settled).not.toHaveBeenCalled();
+      if (change === 'stop') await runtime.stop();
+      else await runtime.clearContext();
+      const boundary = transcript.length;
+      expect(federationTurnInputs(runtime.agentId)).toEqual([]);
+      release(delivery);
+      // A late success remains an honest provider delivery receipt.
+      if (direct) await expect(direct).resolves.toMatchObject({ delivery });
+      await flush();
+      if (path === 'queued') expect(settled).toHaveBeenCalledExactlyOnceWith('delivered');
+      expect.soft(federationTurnInputs(runtime.agentId)).toEqual([]);
+      expect.soft(transcript.slice(boundary).filter((e) => e.type === 'user_message' || e.type === 'queue_state')).toEqual([]);
+      expect(runtime.hasPendingWork()).toBe(false);
+      if (change === 'clear') {
+        expect(driver.last.sent).toEqual([]);
+        await expect(runtime.sendMessage('new input', { source: 'user' })).resolves.toMatchObject({ delivery: 'prompt' });
+        expect(driver.last.sent).toHaveLength(1);
+      }
+    } finally { release(delivery); if (direct) await direct; await runtime.stop(); stop(); activation.mockRestore(); }
+  });
   it('Q3 keeps replacement drain ownership separate from an old queued activation', async () => {
     const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
     let releaseOld!: (rollback: () => Promise<void>) => void;
