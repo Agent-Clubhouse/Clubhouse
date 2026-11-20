@@ -89,3 +89,19 @@ it('validates page size before any callback and preserves partial primary fields
   await put(b, [agent('one', { parentAgentId: 'parent', parentProjectPath: a })]);
   expect(read({ limit: 1, readLoadedCache: cache })).toMatchObject({ state: 'ok', value: { entries: [{ endpoint: { agentId: 'one' }, hostCache: { state: 'unavailable' } }] } }); expect(cache).toHaveBeenCalledTimes(1);
 });
+
+it('retains qualified same-ID Dispatcher primary fields as ambiguous policy with no configured directions and reaches later records', async () => {
+  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
+  const controller = agent('controller'), ordinary = agent('controller', { name: 'Ordinary same-ID agent', orchestration: { connectToDispatcher: true } });
+  await put(a, [controller]); await put(b, [ordinary, ...Array.from({ length: 8 }, (_, i) => agent('normal-' + i, { orchestration: { connectToDispatcher: true } }))]);
+  const fields = projectConnectionEndpointFieldsForDisplay(controller.id, controller); if (fields.state !== 'ok') throw new Error('fixture');
+  const target = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a } } as unknown as import('./agent-config-reader').AgentConfigTarget;
+  const role = captureReadOnlyRoleTargetWitness(target, () => true), receipts: DisplayReceipt[] = []; expect(role.current()).toBe(true); expect(JSON.parse(await fs.readFile(path.join(b, '.clubhouse', 'agents.json'), 'utf8'))).toHaveLength(9);
+  const chosen = { agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role, fields: fields.value };
+  const first = readPage(chosen, 'dispatcher-auto', { authorized: () => true, receipts });
+  expect.soft(first).toMatchObject({ state: 'ok', value: { complete: false, knownMatches: 9, unknownRows: 1, next: { projectOffset: 0, matchOffset: 8 }, entries: [{ endpoint: { projectId: 'b', agentId: controller.id, identityAmbiguous: true, fields: { name: { value: 'Ordinary same-ID agent' } } }, applicability: 'unknown', directions: [] }] } });
+  const last = readPage(chosen, 'dispatcher-auto', { authorized: () => true, receipts, matchOffset: 8 });
+  expect.soft(last).toMatchObject({ state: 'ok', value: { entries: [{ endpoint: { agentId: 'normal-7' }, applicability: 'configured', directions: [{ from: 'selected' }, { from: 'endpoint' }] }], next: null } });
+  expect.soft(receipts.every((r) => r.current())).toBe(true);
+  await put(b, []); expect(role.current()).toBe(true); expect.soft(receipts.some((r) => !r.current())).toBe(true);
+});
