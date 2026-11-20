@@ -1,3 +1,4 @@
+import { managedProviderPlatformCapability } from './managed-provider-platform';
 import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from './dispatcher-federation-context';
 import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -97,6 +98,7 @@ vi.mock('./agent-config', () => ({
   getSessionHistory: (...args: unknown[]) => mockGetSessionHistory(...(args as [])),
   removeSessionEntries: (...args: unknown[]) => mockRemoveSessionEntries(...(args as [])),
   getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
+  peekCachedDurableConfig: () => mockGetDurableConfig(),
   addSessionEntry: (...args: unknown[]) => mockAddSessionEntry(...args),
   updateSessionId: (...args: unknown[]) => mockUpdateSessionId(...args),
   updateDurableConfig: (...args: unknown[]) => mockUpdateDurableConfig(...args),
@@ -137,6 +139,8 @@ vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
 const mockStripLegacyClubhouseBridgeToml = vi.fn(async () => false);
 const mockDeliverForSpawn = vi.fn(async () => {});
+const mockManagedProviderStartGuard = vi.hoisted(() => vi.fn(async () => () => {}));
+vi.mock('./managed-provider-transition', () => ({ managedProviderStartGuard: mockManagedProviderStartGuard }));
 const mockQuickLaunchFor = vi.fn();
 vi.mock('./managed-agents', () => ({
   deliverForSpawn: (...args: unknown[]) => mockDeliverForSpawn(...(args as [])),
@@ -401,6 +405,7 @@ function notSessionCapable(provider: Record<string, unknown>): void {
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockManagedProviderStartGuard.mockReset().mockResolvedValue(() => {});
     clearQuickAgentRuns();
     resetAppEventBus();
     mockPeekProjects.mockReset().mockResolvedValue([]);
@@ -536,7 +541,9 @@ describe('agent-system', () => {
       }
     });
 
-    it('a spawn already past the entry check doesn\'t start its terminal once shutdown closed launches', async () => {
+    it.each(['darwin', 'win32'])('a spawn already past the entry check doesn\'t start its terminal once shutdown closed launches (%s)', async (hostPlatform) => {
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      Object.defineProperty(process, 'platform', { ...platform, value: hostPlatform });
       const { closeLaunches, reopenLaunches, LaunchesClosedError } = await import('./launch-gate');
       const { whenSpawnsSettled } = await import('./agent-system');
       let release!: () => void;
@@ -544,6 +551,7 @@ describe('agent-system', () => {
       // Quit lands while the spawn reads the agent's config.
       mockGetDurableConfig.mockImplementationOnce((async () => { await gate; return null; }) as never);
       const spawn = spawnAgent({ agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable' });
+      void spawn.catch(() => {}); // Attach immediately while the test holds the read.
       let settled = false;
       const drained = whenSpawnsSettled().then(() => { settled = true; });
       try {
@@ -555,7 +563,41 @@ describe('agent-system', () => {
         await drained;
         expect(mockPtySpawn).not.toHaveBeenCalled();
       } finally {
-        reopenLaunches();
+        release(); await spawn.catch(() => {}); await drained;
+        Object.defineProperty(process, 'platform', platform); reopenLaunches();
+      }
+    });
+
+    it('tracks a reentrant Windows platform read and rechecks shutdown before activation', async () => {
+      const { closeLaunches, reopenLaunches, LaunchesClosedError } = await import('./launch-gate');
+      const { whenSpawnsSettled } = await import('./agent-system');
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+      const activation = vi.spyOn(managedActivation, 'withManagedActivationLaunch');
+      let release!: () => void; let entered!: () => void; let settled = false;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const readEntered = new Promise<void>((resolve) => { entered = resolve; });
+      let drained = Promise.resolve();
+      mockGetDurableConfig.mockImplementationOnce((async () => {
+        // A synchronous callback during the first read must already see this spawn.
+        drained = whenSpawnsSettled().then(() => { settled = true; });
+        closeLaunches('quitting'); entered();
+        await gate; return null;
+      }) as never);
+      const spawn = spawnAgent({ agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable' });
+      void spawn.catch(() => {});
+      try {
+        await readEntered; await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(settled).toBe(false); expect(activation).not.toHaveBeenCalled();
+        release(); await expect(spawn).rejects.toBeInstanceOf(LaunchesClosedError); await drained;
+        expect(settled).toBe(true); expect(activation).not.toHaveBeenCalled();
+        expect(mockGetDurableConfig).toHaveBeenCalledTimes(1);
+        expect((await import('./agent-config')).initializeDurableProject).not.toHaveBeenCalled();
+        expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled(); expect(mockDeliverForSpawn).not.toHaveBeenCalled();
+        expect(mockPtySpawn).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+      } finally {
+        release(); await spawn.catch(() => {}); await drained; activation.mockRestore();
+        Object.defineProperty(process, 'platform', platform); reopenLaunches();
       }
     });
 
@@ -3186,6 +3228,93 @@ describe('agent-system', () => {
   });
 
   describe('managed agent delivery (#2896)', () => {
+  // Independent QA3731 regression, copied with attribution from qa-provider-apply-v2.
+    it.skipIf(!managedProviderPlatformCapability().supported)('QA3731 valid marked terminal resume reaches PTY after provenance verification', async () => {
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli', runtimeMode: 'terminal',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' },
+        lastSessionId: 'valid-native', sessionHistory: [{ sessionId: 'valid-native', orchestrator: 'codex-cli' }] });
+      const { resolveRuntimeMode } = await import('./chat-runtime-settings');
+      expect(resolveRuntimeMode('codex-cli', 'terminal').mode).toBe('terminal');
+      sessionCapable(mockCodexProvider);
+      (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => true);
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli',
+        resume: true, sessionId: 'valid-native' })).resolves.toBeUndefined();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('QA3731 marked quarantined strict resume must refuse rather than create fresh', async () => {
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli', runtimeMode: 'terminal',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' },
+        lastSessionId: 'quarantined-native', quarantinedSessionIds: ['quarantined-native'],
+        sessionHistory: [{ sessionId: 'quarantined-native', orchestrator: 'codex-cli' }] });
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli',
+        resume: true, strictResume: true, sessionId: 'quarantined-native' })).rejects.toThrow(managedProviderPlatformCapability().supported ? 'resume_unverified' : 'managed_platform_unsupported');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+
+    it('strict chat resume still refuses a terminal fallback without clearing native history', async () => {
+      const config = { id: 'agent-1', name: 'agent-1', orchestrator: 'codex-cli', runtimeMode: 'chat', lastSessionId: 'native',
+        sessionHistory: [{ sessionId: 'native', orchestrator: 'codex-cli' }] };
+      mockGetDurableConfig.mockReturnValue(config); sessionCapable(mockCodexProvider);
+      (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => true);
+      const { resolveRuntimeMode } = await import('./chat-runtime-settings');
+      const features = await import('./experimental-settings');
+      const enabled = vi.spyOn(features, 'isGraduatedFeatureOn').mockReturnValue(true);
+      try {
+        expect(resolveRuntimeMode('codex-cli', 'chat').mode).toBe('chat');
+        mockTryStartChatAgent.mockResolvedValueOnce('terminal');
+        await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'codex-cli', resume: true, strictResume: true, sessionId: 'native' })).rejects.toThrow('resume_failed');
+        expect(mockPtySpawn).not.toHaveBeenCalled(); expect(config.lastSessionId).toBe('native');
+      } finally { enabled.mockRestore(); }
+    });
+
+    it('refuses an invalid durable transition before cleanup, managed delivery or runtime creation', async () => {
+      const config = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' }, sessionHistory: [{ sessionId: 'keep' }] };
+      mockGetDurableConfig.mockReturnValue(config);
+      mockManagedProviderStartGuard.mockRejectedValueOnce(new Error('managed_transition_stale'));
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli' })).rejects.toThrow(managedProviderPlatformCapability().supported ? 'managed_transition_stale' : 'managed_platform_unsupported');
+      expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled(); expect(mockStripLegacyClubhouseBridgeToml).not.toHaveBeenCalled();
+      expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockPtySpawn).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+      expect(config.sessionHistory).toEqual([{ sessionId: 'keep' }]);
+    });
+    it('never routes an unprepared strict v2 managed start into legacy delivery', async () => {
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', strictManagedDelivery: true })).rejects.toThrow(managedProviderPlatformCapability().supported ? 'managed_delivery_unsupported' : 'managed_platform_unsupported');
+      expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+    it.skipIf(!managedProviderPlatformCapability().supported)('uses read-only admission on ordinary wake and reaches the actual creation fence without native delivery writes', async () => {
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' } });
+      const fence = vi.fn(); const created = vi.fn(); mockManagedProviderStartGuard.mockResolvedValueOnce(fence);
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      mockPtySpawn.mockImplementationOnce(async (...args) => { args[7]?.beforeCreate(); args[7]?.onCreated('exact-created-pty'); });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli', onRuntimeCreated: created });
+      expect(fence).toHaveBeenCalledTimes(2); expect(created).toHaveBeenCalledWith('exact-created-pty');
+      expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled(); expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockInjectClubhouseMcp).not.toHaveBeenCalled();
+    });
+    it.each([['entry', false], ['entry', true], ['inner', false], ['inner', true], ['entry-unmanaged-marker', false]])('refuses Windows marked %s start resume=%s before probing or any launch effects', async (boundary, resume) => {
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      const config = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli', runtimeMode: 'terminal',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' },
+        lastSessionId: 'keep-native', sessionHistory: [{ sessionId: 'keep-native', orchestrator: 'codex-cli' }] };
+      if (boundary === 'entry-unmanaged-marker') delete (config as { managed?: unknown }).managed;
+      const before = structuredClone(config); mockGetDurableConfig.mockReturnValue(config);
+      sessionCapable(mockCodexProvider); const hasSession = vi.fn(async () => true);
+      (mockCodexProvider as Record<string, unknown>).hasSession = hasSession;
+      Object.defineProperty(process, 'platform', { ...platform, value: boundary === 'inner' ? 'darwin' : 'win32' });
+      if (boundary === 'inner') mockGetDurableConfig.mockImplementationOnce(() => { Object.defineProperty(process, 'platform', { ...platform, value: 'win32' }); return config; });
+      try {
+        await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli', resume: resume === true, sessionId: 'keep-native' })).rejects.toMatchObject({ code: 'managed_platform_unsupported' });
+        expect(hasSession).not.toHaveBeenCalled(); expect(mockManagedProviderStartGuard).not.toHaveBeenCalled();
+        expect((await import('./agent-config')).initializeDurableProject).not.toHaveBeenCalled();
+        expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled(); expect(mockStripLegacyClubhouseBridgeToml).not.toHaveBeenCalled();
+        expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockPtySpawn).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+        expect(config).toEqual(before);
+      } finally { Object.defineProperty(process, 'platform', platform); }
+    });
     it('delivers a managed setup before the start', async () => {
       mockDeliverForSpawn.mockClear();
       const config = {

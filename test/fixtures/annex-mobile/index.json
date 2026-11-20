@@ -89,6 +89,7 @@
     "pairing-revoke.json",
     "pairing.json",
     "project-links.json",
+    "provider-control-v2.json",
     "pty.json",
     "queued-bursts.json",
     "replay.json",

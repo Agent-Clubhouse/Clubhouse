@@ -162,6 +162,15 @@ coalesced 15-second retry timer per machine. Local initialization also wakes the
 queue; reverse followed by direct still emits just one effective-connected event.
 Unrelated ordinary delivery lanes keep their existing behavior.
 
+Authenticated request availability is not catalog freshness: Settings can show
+connected before the stream's first snapshot. A snapshot is published in the
+satellite list before its snapshot event. The first snapshot of each new direct
+or reverse stream can reset the sequence; later snapshots on that same stream
+cannot move it backwards. Wake preserves an already-open direct stream. A
+successful reconnect after an observed disconnect creates a new stream and
+fences callbacks from the old one. These producer rules do not replace renderer
+catalog hydration.
+
 Waiting consumes no delivery attempts. The existing per-machine/global outbox
 caps and seven-day expiry still apply, including a peer that remains enabled
 without a coordinator forever. Actual federation-off, a removed/changed

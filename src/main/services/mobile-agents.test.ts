@@ -345,7 +345,7 @@ describe('saved Access from a phone (#3207)', () => {
   it('checks the level against the CLI and runtime it will start on, in the same command too', async () => {
     expect(await refusal(updateMobileAgent(project, agent({ orchestrator: 'copilot-cli', runtimeMode: 'terminal' }), { agentId: 'durable_1', access: 'auto' }, live))).toMatchObject({ code: 'access_unavailable' });
     // The new CLI in the same command decides, not the saved one.
-    expect(await refusal(updateMobileAgent(project, agent({ access: 'auto', freeAgentMode: true }), { agentId: 'durable_1', orchestrator: 'codex-cli', access: 'auto' }, live))).toMatchObject({ code: 'access_unavailable' });
+    expect(await refusal(updateMobileAgent(project, agent({ access: 'auto', freeAgentMode: true }), { agentId: 'durable_1', orchestrator: 'codex-cli', access: 'auto' }, live))).toMatchObject({ code: 'provider_change_requires_preview' });
     expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
     await updateMobileAgent(project, agent({ orchestrator: 'copilot-cli', runtimeMode: 'terminal' }), { agentId: 'durable_1', access: 'full_access' }, live);
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(project.path, 'durable_1', { access: 'full_access' });
@@ -468,26 +468,29 @@ describe('agent.update', () => {
     const result = await updateMobileAgent(project, agent(), { agentId: 'durable_1', name: ' calm-otter ', color: 'rose', emoji: '🦦',
       orchestrator: 'claude-code', model: 'opus', runtime: 'terminal', idleSleep: 'never' }, live);
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/work/app', 'durable_1',
-      { orchestrator: 'claude-code', model: 'opus', runtimeMode: 'terminal', idleSleep: 'never' });
+      { model: 'opus', runtimeMode: 'terminal', idleSleep: 'never' });
     expect(agentConfig.updateDurable).toHaveBeenCalledWith('/work/app', 'durable_1', { name: 'calm-otter', color: 'rose', emoji: '🦦' });
     expect(result.settings).toMatchObject({ name: { value: 'calm-otter' }, model: { value: 'opus' }, idleSleep: { value: 'never', minutes: 0 } });
+  });
+  it('refuses generic provider writes that bypass guided preview and stopped-capture checks', async () => {
+    const original = agent({ orchestrator: 'claude-code', lastSessionId: 'keep', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+    expect(await refusal(updateMobileAgent(project, original, { agentId: original.id, orchestrator: 'codex-cli' }, live)))
+      .toMatchObject({ code: 'provider_change_requires_preview' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    expect(original.lastSessionId).toBe('keep');
   });
   it('says a new CLI starts a new session, before and after the change (#2593)', async () => {
     const withSession = agent({ orchestrator: 'claude-code', lastSessionId: 's1' });
     expect((await buildAgentSettings(project, withSession, undefined)).settings.orchestrator.changeStartsNewSession).toBe(true);
     expect((await buildAgentSettings(project, agent(), undefined)).settings.orchestrator.changeStartsNewSession).toBe(false);
 
-    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(agent({ orchestrator: 'codex-cli' }));
-    const changed = await updateMobileAgent(project, withSession, { agentId: 'durable_1', orchestrator: 'codex-cli' }, live);
-    expect(changed.sessionReset).toBe(true);
-    expect(changed.settings.orchestrator.changeStartsNewSession).toBe(false);
+    expect(await refusal(updateMobileAgent(project, withSession, { agentId: 'durable_1', orchestrator: 'codex-cli' }, live))).toMatchObject({ code: 'provider_change_requires_preview' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    expect(withSession.lastSessionId).toBe('s1');
   });
-  it('reports no session reset when a session stayed or there was none', async () => {
-    const withSession = agent({ orchestrator: 'claude-code', lastSessionId: 's1' });
-    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(withSession);
-    expect(await updateMobileAgent(project, withSession, { agentId: 'durable_1', orchestrator: 'claude-code' }, live)).not.toHaveProperty('sessionReset');
-    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(agent({ orchestrator: 'codex-cli' }));
-    expect(await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestrator: 'codex-cli' }, live)).not.toHaveProperty('sessionReset');
+  it('keeps an inherited same-provider selection inherited', async () => {
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestrator: 'claude-code' }, live);
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
   });
   it('clears with null, default and inherit', async () => {
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', emoji: null, runtime: 'default', model: 'default', idleSleep: 'inherit' }, live);
@@ -516,7 +519,7 @@ describe('agent.update', () => {
     expect(await refuse({ name: '   ' })).toBe('invalid_name');
     expect(await refuse({ color: 'plaid' })).toBe('invalid_color');
     expect(await refuse({ orchestrator: 'gemini' })).toBe('orchestrator_unavailable');
-    expect(await refuse({ orchestrator: 'codex-cli', runtime: 'chat' })).toBe('runtime_unavailable');
+    expect(await refuse({ orchestrator: 'codex-cli', runtime: 'chat' })).toBe('provider_change_requires_preview');
     // Personas were retired (#2901): any persona is refused. Clearing one (null) is a no-op, tested below.
     for (const persona of ['qa', 'pirate', 'dispatcher']) expect(await refuse({ persona })).toBe('managed_agent');
     expect(await refuse({ persona: 'qa' }, agent({ persona: 'qa' }))).toBe('managed_agent');
@@ -727,11 +730,9 @@ describe('the Dispatcher from a phone (#2533)', () => {
     expect(agentConfig.updateDurable).not.toHaveBeenCalled();
   });
 
-  it('resets the model with a new CLI, as Settings > Dispatcher does, unless the command sets one', async () => {
-    await update({ orchestrator: 'codex-cli' });
-    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith(folder.path, 'durable_d', { orchestrator: 'codex-cli', model: 'default' });
-    await update({ orchestrator: 'claude-code', model: 'opus' }, undefined, dispatcherAgent({ orchestrator: 'codex-cli' }));
-    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith(folder.path, 'durable_d', { orchestrator: 'claude-code', model: 'opus' });
+  it('requires guided preview for a cross-provider Dispatcher change outside the by-hand workflow', async () => {
+    expect(await refusal(update({ orchestrator: 'codex-cli' }))).toMatchObject({ code: 'provider_change_requires_preview' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
   });
 
   it('refuses what Settings > Dispatcher does not offer, before writing anything', async () => {
@@ -740,7 +741,7 @@ describe('the Dispatcher from a phone (#2533)', () => {
     }
     expect(await refusal(update({ model: 'gpt-9' }))).toMatchObject({ code: 'invalid_model', statusCode: 400 });
     expect(await refusal(update({ orchestrator: 'unknown-cli' }))).toMatchObject({ code: 'orchestrator_unavailable' });
-    expect(await refusal(update({ orchestrator: 'codex-cli', freeAgentMode: true }))).toMatchObject({ code: 'free_agent_mode_unavailable' });
+    expect(await refusal(update({ orchestrator: 'codex-cli', freeAgentMode: true }))).toMatchObject({ code: 'provider_change_requires_preview' });
     expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
   });
 
@@ -771,7 +772,7 @@ describe('the Dispatcher from a phone (#2533)', () => {
   it('keeps its current CLI choosable after it was turned off for new agents', async () => {
     vi.mocked(getAvailableOrchestrators).mockReturnValue([orchestrator('codex-cli', false)] as never);
     await update({ orchestrator: 'claude-code' }, undefined, dispatcherAgent({ orchestrator: undefined }));
-    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(folder.path, 'durable_d', { orchestrator: 'claude-code', model: 'default' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
   });
 });
 

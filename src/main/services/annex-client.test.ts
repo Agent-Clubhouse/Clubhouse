@@ -883,6 +883,52 @@ describe('annex-client', () => {
     }
     const sat = () => annexClient.getSatellite(FINGERPRINT)!;
 
+    it('keeps the connected stream on wake and publishes its next snapshot to the list before the event', async () => {
+      const handler = await connected();
+      await vi.waitFor(() => expect(sat().state).toBe('connected'));
+      handler()(frame({ ...snapshot, payload: { ...snapshot.payload, lastSeq: 50 } }));
+      const { WebSocket: WsMock } = await import('ws');
+      const socketCount = vi.mocked(WsMock).mock.calls.length;
+      vi.mocked(broadcastToAllWindows).mockClear();
+      annexClient.resumeAllConnections();
+      expect(vi.mocked(WsMock).mock.calls).toHaveLength(socketCount);
+      handler()(frame({ ...snapshot, payload: { ...snapshot.payload, lastSeq: 0 } }));
+      expect(sat().snapshot?.lastSeq).toBe(50);
+      vi.mocked(broadcastToAllWindows).mockClear();
+      handler()(frame({ ...snapshot, payload: { ...snapshot.payload, lastSeq: 51 } }));
+      const publications = vi.mocked(broadcastToAllWindows).mock.calls;
+      expect(publications[0]).toMatchObject([IPC.ANNEX_CLIENT.SATELLITES_CHANGED, [
+        { fingerprint: FINGERPRINT, state: 'connected', snapshot: { lastSeq: 51 } },
+      ]]);
+      expect(publications[1]).toEqual([IPC.ANNEX_CLIENT.SATELLITE_EVENT, {
+        satelliteId: FINGERPRINT, type: 'snapshot', payload: { ...snapshot.payload, lastSeq: 51 },
+      }]);
+    });
+
+    it('accepts a lower first snapshot after an observed disconnect and wake, ignoring the old stream', async () => {
+      const handler = await connected();
+      await vi.waitFor(() => expect(sat().state).toBe('connected'));
+      const old = handler();
+      old(frame({ ...snapshot, payload: { ...snapshot.payload, lastSeq: 50 } }));
+      annexClient._receiveSatelliteDisconnectForTesting(FINGERPRINT);
+      annexClient.resumeAllConnections();
+      await vi.waitFor(() => expect(handler()).not.toBe(old));
+      await vi.waitFor(() => expect(sat().state).toBe('connected'));
+      vi.mocked(broadcastToAllWindows).mockClear();
+      handler()(frame({ ...snapshot, payload: { ...snapshot.payload, lastSeq: 0 } }));
+      expect(sat().snapshot?.lastSeq).toBe(0);
+      const publications = vi.mocked(broadcastToAllWindows).mock.calls;
+      expect(publications[0]).toMatchObject([IPC.ANNEX_CLIENT.SATELLITES_CHANGED, [
+        { fingerprint: FINGERPRINT, state: 'connected', snapshot: { lastSeq: 0 } },
+      ]]);
+      expect(publications[1]).toMatchObject([IPC.ANNEX_CLIENT.SATELLITE_EVENT, {
+        satelliteId: FINGERPRINT, type: 'snapshot', payload: { lastSeq: 0 },
+      }]);
+      old(frame({ ...snapshot, payload: { ...snapshot.payload, lastSeq: 999 } }));
+      expect(sat().snapshot?.lastSeq).toBe(0);
+      expect(broadcastToAllWindows).toHaveBeenCalledTimes(2);
+    });
+
     it('says so until a snapshot arrives, and stays connected', async () => {
       const handler = await connected();
       await vi.waitFor(() => expect(sat().state).toBe('connected'));
@@ -3827,6 +3873,26 @@ describe('annex-client', () => {
         });
         ({ devicesChanged: changed } = await import('./annex-device-signal'));
         changed();
+      });
+
+      it('publishes authenticated request availability before its first reverse snapshot without inventing catalog readiness', () => {
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connected', snapshot: null });
+        const observed = vi.fn();
+        const stop = annexClient.onSatelliteSnapshot(observed);
+        try {
+          expect(observed).not.toHaveBeenCalled();
+          vi.mocked(broadcastToAllWindows).mockClear();
+          handlers[0].onFrame(snapshot(0));
+          expect(observed).toHaveBeenCalledExactlyOnceWith(FP);
+          expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(0);
+          expect(vi.mocked(broadcastToAllWindows).mock.calls).toEqual([
+            [IPC.ANNEX_CLIENT.SATELLITES_CHANGED, expect.arrayContaining([
+              expect.objectContaining({ fingerprint: FP, state: 'connected', snapshot: expect.objectContaining({ lastSeq: 0 }) }),
+            ])],
+            [IPC.ANNEX_CLIENT.SATELLITE_EVENT, { satelliteId: FP, type: 'snapshot', payload: snapshot(0).payload }],
+          ]);
+        } finally { stop(); }
       });
 
       it('uses the normal snapshot/event IPC without per-frame readiness notifications', async () => {

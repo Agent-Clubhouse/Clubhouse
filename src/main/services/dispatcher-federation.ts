@@ -157,7 +157,11 @@ export function watchFederation(changed: () => void, connected: (machine: string
     return undefined;
   });
   listeners.add(changed);
-  const offDevices = onDevicesChanged(changed);
+  // Authenticated sync traffic refreshes lastSeen too. Echoing that refresh
+  // would make idle peers continually resync and rebuild each other.
+  const offDevices = onDevicesChanged((change) => {
+    if (change !== 'last-seen') changed();
+  });
   const offDispatcher = onDispatcherChanged(changed);
   return () => { offLookup(); offMessages(); offStatus(); listeners.delete(changed); offDevices(); offDispatcher(); };
 }
