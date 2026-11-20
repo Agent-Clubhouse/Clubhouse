@@ -839,8 +839,9 @@ describe('admitted endpoint target fields at complete normal Details assembly', 
 });
 
 describe('cold selected saved automatic Dispatcher source at whole Details assembly', () => {
-  it.each(['on', 'off', 'unknown-controller', 'wrong-role', 'unreadable-controller', 'controller-late-off', 'role-late-off', 'selected-late-off', 'revoked-off'] as const)('uses passive admitted policy/controller and final receipts: %s', async (mode) => {
+  it.each(['on', 'off', 'unknown-controller', 'wrong-role', 'unreadable-controller', 'switch-late-off', 'controller-late-off', 'role-late-off', 'selected-late-off', 'revoked-off'] as const)('uses passive admitted policy/controller and final receipts: %s', async (mode) => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-automatic-'))), a = path.join(root, 'selected'), d = path.join(root, 'dispatcher');
+    const getPath = vi.spyOn(app, 'getPath').mockReturnValue(root);
     const selected = { ...agent(), worktreePath: a, orchestration: { orchestrate: false, connectToDispatcher: true } }, selectedProject = { ...project, path: a };
     const canonical = { ...agent(), id: 'controller1', name: 'Admitted Operations', worktreePath: d, env: { token: 'PRIVATE_CONTROLLER_ENV' } };
     for (const folder of [a, d]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
@@ -856,6 +857,7 @@ describe('cold selected saved automatic Dispatcher source at whole Details assem
     const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); captured = args[0]; });
     m.canvases.mockImplementationOnce(async () => {
       reached = true; observed = captured?.rows.some((r) => r.label === 'Admitted Operations' && r.value.includes('two-way records')) === true;
+      if (mode === 'switch-late-off') await fs.writeFile(path.join(root, 'dispatcher-settings.json'), JSON.stringify({ enabled: true }));
       if (mode === 'controller-late-off') await fs.writeFile(controllerFile, JSON.stringify([{ ...canonical, disposedAt: '2026-11-19' }]));
       if (mode === 'role-late-off') m.dispatcher.mockReturnValue({ agentId: 'replacement-controller', chatAgentId: 'chat1' });
       if (mode === 'selected-late-off') await fs.writeFile(selectedFile, JSON.stringify([{ ...selected, orchestration: { orchestrate: false, connectToDispatcher: false } }]));
@@ -879,6 +881,6 @@ describe('cold selected saved automatic Dispatcher source at whole Details assem
         expect.soft(JSON.stringify(response.body)).not.toMatch(/PRIVATE_|controllerReceipts|primarySignature|"current":/);
       }
       if (!late) expect.soft(await snapshot()).toEqual(before);
-    } finally { capture.mockRestore(); stop(); sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); resetAllSettingsStoresForTests(); await fs.rm(root, { recursive: true, force: true }); }
+    } finally { capture.mockRestore(); stop(); sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); resetAllSettingsStoresForTests(); getPath.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
   });
 });
