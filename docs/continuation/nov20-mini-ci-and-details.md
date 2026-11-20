@@ -50,3 +50,11 @@ All branch names in this ledger are normal remote branches in Agent-Clubhouse/Cl
 | Selected durable history | `Nov20RootDiagnostics/3733-session-history` | `bb3851959421e0a9bddf348317ad078b809ece1c` | Bounded current-runtime history accepted and integrated. Sleeping, unbound and earlier resumed sessions remain partial. |
 
 The hosted CI receipt is commit `2970b03eeea4d550dfc961316c2c8287e9f16e12` on this evidence branch. Settings, Auto and catalog hydration are green on the PR heads listed above. Mini owns all remaining Details implementation and fixes. Sleeping-helper inline and selected-role consumer follow-ups are Mini-local work in progress at this checkpoint. Full parity, composed testing and final review remain pending. The 27-record private evidence subset and omissions for #3613 retain their separate custody boundaries.
+
+## After the 05:00 checkpoint
+
+Integration advanced to `0056aae0d574adb2c6bd050abcf4787e80a7763f` after the managed continuation at `3116ab759f16459857fb5de6e06abea962773271` passed independent review. Its full-view regression passed 84 cases and its root typecheck passed. Scoped lint reproduced one inherited sanitizer diagnostic on the base.
+
+On the preceding composition `c5d6c20bcf321fedc7473f04c741cb7d203de397`, 788 tests passed across 30 suites with one worker. That run excluded the large Annex client and server suites. The root typecheck on that checkout encountered a missing installed Copilot SDK dependency. The local dependency link was repaired using the existing installation with matching lockfile. The successor still needs composed typecheck, transport coverage and independent final review.
+
+The sleeping-helper presentation checkpoint is `Nov20AutoCI/3733-sleeping-inline-helpers` at `d927c3363abb9c6c0af979cdcf2bfd73f0900d99`. Role-consumer, central Actions integration and passive Canvas membership continuation remain in progress on Mini. Canvas paging is limited to membership fields for the admitted Home and project sources. Omitted board contents remain unavailable.
