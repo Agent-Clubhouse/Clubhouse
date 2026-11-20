@@ -26,7 +26,7 @@ it('reaches the101st selected relationship and preserves all groups, short descr
   const last = read(actions, 300, first.page.selection); expect(last.page).toMatchObject({ state: 'recorded', next: null });
   if (last.page.state !== 'recorded') throw new Error('Expected page'); expect(last.page.rows.map((r) => r.name)).toEqual(['Action 98', 'Action 99', 'Action 100']);
   expect(first.lastRunForDisplay).toHaveBeenCalledTimes(25); expect(first.lastRunForDisplay.mock.calls.every(([id]) => !id.includes('999'))).toBe(true);
-  expect(JSON.stringify(first.page)).not.toMatch(/PRIVATE_|\"(?:steps|trigger|owner|updatedAt|agentId|actionId)\"\s*:/); expect(first.receipts.every((r) => r.current())).toBe(true);
+  expect(JSON.stringify(first.page)).not.toMatch(/PRIVATE_|"(?:steps|trigger|owner|updatedAt|agentId|actionId)"\s*:/); expect(first.receipts.every((r) => r.current())).toBe(true);
 });
 it('keeps one Action in multiple relationship groups with stable group-qualified keys', () => {
   const result = read([action(0)]); if (result.page.state !== 'recorded') throw new Error('Expected page');
