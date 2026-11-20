@@ -1042,7 +1042,7 @@ export function foldChatEvents(state: ChatViewState | undefined, agentId: string
 
 interface ChatStoreState {
   /** A successful remote hydration, tied to the exact requested refresh and host snapshot. */
-  remoteReadReceipts: Record<string, { revision: number; snapshot: unknown; sessionId: string | null; live: boolean | null; state: string | null; truncated: boolean; displayRunId?: string | null }>;
+  remoteReadReceipts: Record<string, { revision: number; snapshot: unknown; sessionId: string | null; live: boolean | null; state: string | null; truncated: boolean; displayRunId?: string | null; nextBeforeSeq?: number | null; historyBinding?: import('../../shared/remote-session-history').RemoteSessionHistoryBinding }>;
   /** View state keyed by agent id. */
   agents: Record<string, ChatViewState>;
   /** Agents whose transcript is being read. */
@@ -1203,6 +1203,8 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       let remoteState: string | null = null;
       let remoteCut = false;
       let displayRunId: string | null = null;
+      let nextBeforeSeq: number | null | undefined;
+      let historyBinding: import('../../shared/remote-session-history').RemoteSessionHistoryBinding | undefined;
       let remoteMeta: RemoteChatMeta = {};
       // Whether a chat runtime runs this agent now; asked alongside the read.
       const live = remote ? Promise.resolve(undefined) : runtimeIsLive(agentId);
@@ -1214,6 +1216,8 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           remoteState = read.state;
           remoteCut = read.truncated;
           displayRunId = read.displayRunId;
+          nextBeforeSeq = read.nextBeforeSeq;
+          historyBinding = read.historyBinding;
           remoteMeta = read.meta;
         } else {
           events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
@@ -1266,7 +1270,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           loading,
           partial: { ...s.partial, [agentId]: cut },
           loaded: { ...s.loaded, [agentId]: true },
-          ...(remote && !refreshPending ? { remoteReadReceipts: { ...s.remoteReadReceipts, [agentId]: { revision: remoteRevision, snapshot: remoteSnapshot, sessionId: next.sessionId, live: remoteLive ?? null, state: remoteState, truncated: cut, displayRunId } } } : {}),
+          ...(remote && !refreshPending ? { remoteReadReceipts: { ...s.remoteReadReceipts, [agentId]: { revision: remoteRevision, snapshot: remoteSnapshot, sessionId: next.sessionId, live: remoteLive ?? null, state: remoteState, truncated: cut, displayRunId, nextBeforeSeq, historyBinding } } } : {}),
         };
       });
       // A resume that arrived during the read needs that session's earlier
