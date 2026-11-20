@@ -1,0 +1,9 @@
+{
+  "head": "48b4b9436aaae5e366381bdb47d4e5d2e2974c8d",
+  "tree": "e2ba1ae46b20596b5d1c51fbe22ac23d6c725a9a",
+  "testExit": 1,
+  "expectedFailureCapture": true,
+  "log": "3733-48b4b9436-display-generation-baseline.log",
+  "logSHA256": "e3c920553b52451900a77104306aecba814f266ae0109da187958abd10d43655",
+  "finishedAt": "2026-11-20T09:27:54.839655+00:00"
+}

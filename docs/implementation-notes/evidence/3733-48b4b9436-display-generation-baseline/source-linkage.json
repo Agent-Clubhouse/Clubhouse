@@ -1,0 +1,15 @@
+{
+  "head": "48b4b9436aaae5e366381bdb47d4e5d2e2974c8d",
+  "tree": "e2ba1ae46b20596b5d1c51fbe22ac23d6c725a9a",
+  "productionBase": "9a9f323b5d483a7dbbc2e0aa257bd1c29473ad23",
+  "testOnlyDelta": [
+    "src/main/services/remote-agent-details.test.ts",
+    "src/main/services/remote-quick-details.test.ts"
+  ],
+  "equalProductionBlobs": {
+    "src/main/services/remote-agent-details.ts": "58c191906d981e55c60f7d959cfbbe8cabd656b8",
+    "src/main/services/remote-quick-details.ts": "c52a6a4cdabf0c05acd12e7766f29eb3e3ae706b",
+    "src/main/services/saved-tool-connections-display.ts": "ae8db5071cde183a45ede72dcf12769040d21c64"
+  },
+  "qualification": "Additive CURRENT linkage, not original contemporaneous baseline manifest coverage."
+}
