@@ -100,6 +100,7 @@ import {
   getAction,
   listActions,
   readActionDetailsForAgent,
+  readSelectedActionDetailsPageForAgent,
   listAppActions,
   observeActions,
   removeAppAction,
@@ -123,6 +124,14 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 it('leaves an unavailable Actions engine unavailable for Details instead of initializing it', () => {
   stopActions();
   expect(() => readActionDetailsForAgent('disp', undefined, true, { agent: () => undefined, project: () => undefined })).toThrow('Actions are still starting');
+});
+
+it('keeps selected Actions page engine availability passive and gives revocation precedence', () => {
+  stopActions(); const names = () => ({ agent: () => undefined, project: () => undefined });
+  const result = readSelectedActionDetailsPageForAgent('disp', undefined, true, { offset: 0, authorized: () => true, target: { current: () => true }, receipts: [], names });
+  expect(result).toMatchObject({ state: 'unavailable', reason: 'unreadable' }); expect(result).not.toHaveProperty('rows');
+  const refused = readSelectedActionDetailsPageForAgent('disp', undefined, true, { offset: 0, authorized: () => false, target: { current: () => true }, receipts: [], names });
+  expect(refused).toMatchObject({ state: 'unavailable', reason: 'changed' });
 });
 
 it('retains one external Annex receipt across engine restart without creating executable work', async () => {
