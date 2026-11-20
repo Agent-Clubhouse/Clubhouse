@@ -1,4 +1,6 @@
 import { createHash } from 'crypto';
+import { readSelectedManagedPartsPage } from './selected-managed-parts-page';
+import { REMOTE_MANAGED_INVENTORY_SOURCES } from '../../shared/remote-inventory-page';
 import { readSelectedHelperPage } from './selected-helper-page';
 import { readSavedGroupConnectionsForDisplay } from './saved-group-connections-display';
 import { readHelperParentConnectionForDisplay } from './helper-parent-connection-display';
@@ -86,6 +88,26 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     if (dispatcher) for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes'] as const) byId[id].state = 'not-applicable';
     if (agent.parentAgentId) byId.dispatcher.state = 'not-applicable';
     const result: RemoteAgentDetails = { version: 1, connectionPages: 1, connectionPageEnvelope: 1, connectionPageSources: REMOTE_CONNECTION_PAGE_SOURCES.filter((source) => source === 'helper-parent' ? !!agent.parentAgentId && !dispatcher : source === 'dispatcher-auto' ? dispatcher : source === 'manual-dispatcher' ? !dispatcher && !agent.parentAgentId : source === 'helpers' ? !dispatcher : true), readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
+    if (!dispatcher && agent.managed?.version === 1) { result.inventoryPages = 1; result.inventorySources = [...REMOTE_MANAGED_INVENTORY_SOURCES]; }
+    if (query?.card === 'skills-mcp') {
+      if (dispatcher || !result.inventorySources?.includes(query.source)) return { status: 400, body: { error: 'unsupported_inventory_page' } };
+      const receipts: Array<{ current(): boolean }> = [];
+      result.inventoryPage = await readSelectedManagedPartsPage(target, query, { authorized, target: targetWitness, receipts });
+      if (!authorized()) return refused();
+      if (!targetWitness.current()) return { status: 409, body: { error: 'agent_inventory_changed' } };
+      if (!providerRead.receipt.current()) return { status: 409, body: { error: 'settings_evidence_changed' } };
+      if (receipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'inventory_evidence_changed' } };
+      const now = agentRegistry.get(agentId);
+      if (running && !registration && runtime?.kind !== 'chat' || now !== registration || now?.nonce !== registeredNonce || now?.runtime !== registeredRuntime || now?.orchestrator !== registeredProvider || now?.cwd !== registeredCwd
+        || isAgentRunning(agentId) !== running || getAgentRuntime(agentId) !== runtime
+        || runtime?.kind === 'chat' && (runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId || (runtime.getDisplayRunId?.() ?? null) !== displayRunId)) return { status: 409, body: { error: 'agent_run_changed' } };
+      result.inventoryPageOnly = true;
+      delete result.connectionPages; delete result.connectionPageEnvelope; delete result.connectionPageSources;
+      for (const c of cards) { c.rows = []; c.notes = []; c.omitted = 0; c.summary = c.id === 'skills-mcp' ? 'Selected configured metadata page' : 'Not included in this selected inventory page'; if (c.id !== 'skills-mcp') c.requested = false; }
+      if (!authorized()) return refused();
+      if (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) throw new Error('inventory_page_limit');
+      return { status: 200, body: result };
+    }
     const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });
     if (!authorized()) return refused();
     // A failed freshness/authority check is a refusal of this assembly, not
@@ -272,6 +294,8 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       if (!result.helperPage) return authorized() ? { status: 409, body: { error: 'helper_inventory_changed' } } : refused();
       byId.orchestrate.rows = []; byId.orchestrate.notes = []; byId.orchestrate.summary = 'Selected helper page';
       result.helperPageOnly = true; result.settings = null; delete result.providerEvidence; delete result.providerEvidenceState; delete result.outgoingWires;
+      delete result.inventoryPage; delete result.inventoryPageOnly;
+      delete result.inventoryPages; delete result.inventorySources;
       for (const c of cards) if (c.id !== 'orchestrate') { c.requested = false; c.omitted = 0; c.rows = []; c.notes = []; delete c.connectionPage; c.summary = 'Not included in this selected helper page'; }
     }
     while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) {

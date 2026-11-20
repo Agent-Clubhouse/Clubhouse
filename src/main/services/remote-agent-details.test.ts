@@ -73,7 +73,9 @@ vi.mock('./agent-grants-service', async (original) => {
 
 vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), peekActionProjectName: () => 'Project' }));
 vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases }));
-vi.mock('./managed-agents', () => ({ managedAgents: () => ({ liveEntries: m.entries, getTemplate: m.template }), statusFor: m.status }));
+vi.mock('./managed-agents', () => ({ managedAgents: () => ({ liveEntries: m.entries, getTemplate: m.template,
+  openSetupMetadataForDisplay: async () => ({ head: async (id: string) => (await m.entries())[id] ?? null, receipt: { current: () => true } }),
+}), statusFor: m.status }));
 vi.mock('./agent-settings-service', () => ({ readMcpConfig: m.mcp, readLaunchWrapper: async () => undefined, readDefaultMcps: async () => [] }));
 vi.mock('./git-service', () => ({ getBranchChanges: m.branch }));
 vi.mock('../orchestrators', () => ({ isSessionCapable: () => true, getProvider: (id: string) => m.catalog(id) }));
@@ -1155,4 +1157,23 @@ it('preserves valid saved disposed dates and handoff words in legacy summaries o
 it('refuses a helper offset that fell beyond the current selected inventory without returning partial private cards', async () => {
   const response = await readRemoteAgentDetails('a1', () => true, { card: 'orchestrate', source: 'helpers', offset: 8 });
   expect(response).toEqual({ status: 409, body: { error: 'helper_inventory_changed' } });
+});
+
+it('returns an independent selected managed page beyond100 without full setup, history, board content or unrelated card reads', async () => {
+  const ids = Array.from({ length: 126 }, (_, i) => `part-${i}`);
+  m.target.mockResolvedValue({ agent: { ...agent(), managed: { version: 1, blocks: [], skills: ids, mcps: [] } }, project });
+  m.entries.mockResolvedValue(Object.fromEntries(ids.map((id) => [id, { kind: 'skill', name: `Safe ${id}`, revision: 1, builtin: false, PRIVATE_PAYLOAD: 'PRIVATE_BODY' }])));
+  m.settings.mockRejectedValue(new Error('Ordinary setup must not be read'));
+  const first = await readRemoteAgentDetails('a1', () => true, { card: 'skills-mcp', source: 'selected-managed-skills' });
+  expect(first.status).toBe(200); expect(isRemoteAgentDetails(first.body, 'a1')).toBe(true);
+  const value = first.body as RemoteAgentDetails;
+  expect(value.inventoryPageOnly).toBe(true); expect(value.inventoryPage).toMatchObject({ state: 'recorded', total: 126, next: 25 });
+  if (value.inventoryPage?.state !== 'recorded') throw new Error('Expected selected metadata');
+  const last = await readRemoteAgentDetails('a1', () => true, { card: 'skills-mcp', source: 'selected-managed-skills', offset: 125, selection: value.inventoryPage.selection });
+  expect(last.status).toBe(200); expect(isRemoteAgentDetails(last.body, 'a1')).toBe(true);
+  expect((last.body as RemoteAgentDetails).inventoryPage).toMatchObject({ state: 'recorded', total: 126, next: null, rows: [{ name: 'Safe part-125' }] });
+  expect(JSON.stringify(last.body)).not.toMatch(/PRIVATE_|assetId|payload/);
+  expect(m.settings).not.toHaveBeenCalled(); expect(m.canvases).not.toHaveBeenCalled(); expect(m.actions).not.toHaveBeenCalled(); expect(m.work).not.toHaveBeenCalled();
+  expect((last.body as RemoteAgentDetails).cards.every((c) => !c.rows.length && !c.notes.length)).toBe(true);
+  expect((last.body as RemoteAgentDetails).helperPage).toBeUndefined(); expect((last.body as RemoteAgentDetails).outgoingWires).toBeUndefined();
 });

@@ -3435,6 +3435,24 @@ describe('annex-client', () => {
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
     });
 
+    it('binds managed inventory pages to exact source, ordered selection, offset and page-only envelope', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const selection = 'a'.repeat(64), query = { card: 'skills-mcp' as const, source: 'selected-managed-skills' as const, offset: 100, selection };
+      const value = { version: 1, inventoryPages: 1, inventorySources: ['selected-managed-skills'], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        inventoryPage: { version: 1, source: query.source, offset: 100, observedAt: 1, notes: [], state: 'recorded', selection, total: 101, next: null, rows: [{ key: 'b'.repeat(64), kind: 'skill', state: 'recorded', name: 'Last selected skill', revision: 1, builtin: false }] },
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'skills-mcp' && { requested: false }) })) };
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain(`card=skills-mcp&source=selected-managed-skills&offset=100&selection=${selection}`); expect(requests[0].url).not.toContain('projectOffset');
+      for (const patch of [{ selection: 'c'.repeat(64) }, { offset: 0 }]) {
+        answers.push({ status: 200, body: { ...value, inventoryPage: { ...value.inventoryPage, ...patch } } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      }
+      answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: { ...value, PRIVATE_UNRELATED: 'PRIVATE' } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      answers.push({ status: 403, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'forbidden' });
+      const before = requests.length; expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, selection: undefined })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
+    });
+
     it('binds helper-only Details pages to exact selected offsets and rejects mixed/default envelopes', async () => {
       const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
       const query = { card: 'orchestrate' as const, source: 'helpers' as const, offset: 8 };
