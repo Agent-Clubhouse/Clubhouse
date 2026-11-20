@@ -27,7 +27,7 @@ it.each(['absent-from-primary', 'project-not-registered'] as const)('does not bo
 });
 it.each(['not-loaded', 'not-in-loaded-index', 'namespace-unconfirmed', 'invalid', 'changed'] as const)('withholds retained memory fields in %s state while preserving useful primary data', (availability) => {
   const value = row({}, { name: 'PRIVATE_RETAINED_MEMORY' }); if (value.hostCache?.state !== 'ok') throw new Error('fixture'); value.hostCache.value.availability = availability;
-  const result = endpointCardFields(value); expect(result.savedName).toBe('  Saved custom name  '); expect.soft(result.displayName).toBe('Host memory custom name'); expect.soft(result.nameOrigin).toBe('host-memory'); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_'); expect.soft(result.memory).toBeTruthy();
+  const result = endpointCardFields(value); expect(result.savedName).toBe('  Saved custom name  '); expect.soft(result.displayName).toBe('  Saved custom name  '); expect.soft(result.nameOrigin).toBe('saved'); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_'); expect.soft(result.memory).toBeTruthy();
 });
 it('keeps malformed independent fields unknown and known explicit false visible', () => {
   const result = endpointCardFields(row({ parentAgentId: 7, disposedAt: 7 }, { orchestration: { connectToDispatcher: false } }));
