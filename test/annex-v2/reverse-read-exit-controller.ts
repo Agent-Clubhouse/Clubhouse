@@ -8,7 +8,10 @@ import {
   assertAcceptAudit, assertDialAudit, captureOwnedReverseAudit, closeServer, readMainDialAudit,
   rpcPeer, sentinel, transparentForward, type MainDialAudit, type OwnedAuditPeer, type RpcPeer,
 } from './reverse-parity-fixture';
-import { readOwnedResourceDiagnostics } from './owned-resource-diagnostics';
+import {
+  evaluateOwnedResourceDiagnostics, OWNED_DIAGNOSTIC_CONTRACT_VERSION, readOwnedResourceDiagnostics,
+  validateOwnedNativeTerminal, type OwnedCliExit,
+} from './owned-resource-diagnostics';
 
 interface ProcessRow {
   pid: number;
@@ -25,11 +28,16 @@ interface Peer {
   auditPath: string;
   ipc: net.Server;
   child: ChildProcess;
-  exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+  exited: Promise<OwnedCliExit>;
   bootstrap?: { pid: number; ppid: number };
   rpc?: RpcPeer;
   info?: Record<string, unknown> & { port: number };
   closing?: Promise<void>;
+  stopIssuedNs?: string;
+  stopReplyObservedNs?: string;
+  stopReply?: unknown;
+  nativeTerminal?: ReturnType<typeof validateOwnedNativeTerminal>;
+  timing?: Record<string, unknown>;
 }
 
 const utilityEvents: Array<Record<string, unknown>> = [];
@@ -103,6 +111,7 @@ async function main() {
     utc: new Date().toISOString(), argv: process.argv, controllerPid: process.pid, nonce,
     head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), sourceStatus: git('status', '--porcelain'),
     tokenUnset: true, mode: 'bootstrap-quiesce-public-resource-diagnostic-only', opener: 'A',
+    diagnosticContractVersion: OWNED_DIAGNOSTIC_CONTRACT_VERSION,
     driverSha256: createHash('sha256').update(readArtifact(__filename)).digest('hex'),
     helperSha256: createHash('sha256').update(readArtifact(path.join(__dirname, 'reverse-parity-fixture.js'))).digest('hex'),
     diagnosticSha256: createHash('sha256').update(readArtifact(path.join(__dirname, 'owned-resource-diagnostics.js'))).digest('hex'),
@@ -111,6 +120,7 @@ async function main() {
   let forward: Awaited<ReturnType<typeof transparentForward>> | undefined;
   let guard: Awaited<ReturnType<typeof sentinel>> | undefined;
   let capture: Awaited<ReturnType<typeof captureOwnedReverseAudit>> | undefined;
+  let verifiedFinalAudits: MainDialAudit[] | undefined;
   let sentinelClosed = false;
   let interruption: Error | undefined;
   let proofActive = true;
@@ -216,49 +226,45 @@ async function main() {
   function closePeer(peer: Peer): Promise<void> {
     peer.closing ??= (async () => {
       const closeErrors: unknown[] = [];
+      let observedExit: OwnedCliExit | undefined;
       if (peer.rpc) {
-        try { await bounded(peer.rpc.call('stop'), 15_000, `${peer.role} stop acknowledgment`); }
+        try {
+          if (peer.stopIssuedNs !== undefined) throw new Error('Duplicate owned stop issue');
+          peer.stopIssuedNs = process.hrtime.bigint().toString();
+          peer.stopReply = await bounded(peer.rpc.call('stop'), 15_000, `${peer.role} stop acknowledgment`);
+          peer.stopReplyObservedNs = process.hrtime.bigint().toString();
+          assert.equal(peer.stopReply, true);
+        }
         catch (error) { closeErrors.push(error); }
       } else { closeErrors.push(new Error(`${peer.role} never established owned IPC`)); }
       try {
         const result = await bounded(peer.exited, 20_000, `${peer.role} actual runner exit`);
+        observedExit = result;
         if (result.code !== 0 || result.signal) throw new Error(`${peer.role} runner exit ${JSON.stringify(result)}`);
         if (!peer.bootstrap) throw new Error(`${peer.role} has no actual fork identity`);
         if (processes().some((row) => row.pid === peer.bootstrap?.pid)) throw new Error(`${peer.role} fork remains alive`);
-        const native = readArtifact(path.join(output, `${peer.role}-native-events.jsonl`)).trim().split('\n').map((line) => {
-          const value: unknown = JSON.parse(line);
-          if (!record(value) || value.role !== peer.role || value.nonce !== nonce || value.cliPid !== peer.child.pid) {
-            throw new Error(`${peer.role} native event identity mismatch`);
-          }
-          return value;
-        });
-        const kind = (name: string) => native.filter((event) => event.kind === name);
-        assert.equal(kind('pool-created').length, 1);
-        assert.equal(kind('pool-created')[0].instances, 1);
-        assert.equal(kind('stop-request').length, 1);
-        assert.equal(kind('stop-request')[0].tagged, true);
-        assert.equal(kind('runtime-stopped').length, 1);
-        const response = kind('runtime-stopped')[0].response;
-        assert.ok(record(response) && response.type === 'stopped' && response.__vitest_worker_response__ === true
-          && response.error === undefined);
-        for (const name of ['native-exit', 'native-close']) {
-          assert.equal(kind(name).length, 1);
-          assert.equal(kind(name)[0].code, 0);
-          assert.equal(kind(name)[0].signal, null);
-        }
-        assert.equal(kind('native-exit')[0].premature, false);
-        assert.equal(kind('dead-cleanup-complete').length, 1);
-        const ordered = ['stop-request', 'runtime-stopped', 'native-exit', 'native-close', 'dead-cleanup-start', 'dead-cleanup-complete'];
-        const positions = ordered.map((name) => native.findIndex((event) => event.kind === name));
-        assert.ok(positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1])));
+        assert.ok(peer.child.pid);
+        const native: unknown[] = readArtifact(path.join(output, `${peer.role}-native-events.jsonl`)).trim().split('\n')
+          .map((line): unknown => JSON.parse(line));
+        peer.nativeTerminal = validateOwnedNativeTerminal({
+          role: peer.role, nonce, auditPath: peer.auditPath, pid: peer.bootstrap.pid,
+          cliPid: peer.child.pid, controllerPid: process.pid,
+        }, native, result);
         fs.writeFileSync(path.join(output, `${peer.role}-native-verified.json`), JSON.stringify({
-          pid: peer.bootstrap.pid, ppid: peer.bootstrap.ppid, role: peer.role, nonce, events: native,
+          pid: peer.bootstrap.pid, ppid: peer.bootstrap.ppid, role: peer.role, nonce, events: peer.nativeTerminal.events,
         }, null, 2) + '\n', { flag: 'wx' });
       } catch (error) {
         closeErrors.push(error);
         try { await forceStop(peer); }
         catch (terminationError) { closeErrors.push(terminationError); }
       } finally { peer.rpc?.close(); }
+      peer.timing = {
+        kind: 'owned-close-timing', contractVersion: OWNED_DIAGNOSTIC_CONTRACT_VERSION,
+        role: peer.role, nonce, controllerPid: process.pid, cliPid: peer.child.pid, peerPid: peer.bootstrap?.pid,
+        clock: 'process.hrtime.bigint', stopIssuedNs: peer.stopIssuedNs, stopReplyObservedNs: peer.stopReplyObservedNs,
+        stopReply: peer.stopReply, cliExitObservedNs: observedExit?.monotonicNs,
+      };
+      fs.writeFileSync(path.join(output, `${peer.role}-close-timing.json`), JSON.stringify(peer.timing, null, 2) + '\n', { flag: 'wx' });
       if (closeErrors.length) throw new AggregateError(closeErrors, `${peer.role} owned peer did not close cleanly`);
     })();
     return peer.closing;
@@ -287,11 +293,18 @@ async function main() {
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+    assert.ok(child.pid && Number.isInteger(child.pid) && child.pid > 0, 'Missing owned CLI PID');
+    const cliPid = child.pid;
+    const exited = new Promise<OwnedCliExit>((resolve, reject) => {
       child.once('error', reject);
       child.once('exit', (code, signal) => {
-        fs.writeFileSync(path.join(output, `${role}-runner-exit.json`), JSON.stringify({ pid: child.pid, code, signal, utc: new Date().toISOString() }) + '\n', { flag: 'wx' });
-        resolve({ code, signal });
+        const monotonicNs = process.hrtime.bigint().toString();
+        const receipt: OwnedCliExit = {
+          role, nonce, controllerPid: process.pid, pid: cliPid, code, signal,
+          utc: new Date().toISOString(), clock: 'process.hrtime.bigint', monotonicNs,
+        };
+        fs.writeFileSync(path.join(output, `${role}-runner-exit.json`), JSON.stringify(receipt) + '\n', { flag: 'wx' });
+        resolve(receipt);
       });
     });
     const peer: Peer = { role, profile, auditPath, ipc, child, exited };
@@ -404,6 +417,7 @@ async function main() {
           assertAcceptAudit(capture.audits[0].accepts, peers[0].info.port, []);
           assertAcceptAudit(capture.audits[1].accepts, peers[1].info.port, capture.forward.targetSourcePorts);
           assert.ok(capture.audits.every((audit) => audit.attempts.every((attempt) => !attempt.afterSeal)));
+          verifiedFinalAudits = capture.audits;
         } catch (error) { errors.push(errorDetails(error)); }
       }
     } else {
@@ -433,17 +447,24 @@ async function main() {
     if (remaining.length || peers.some((peer) => fs.existsSync(peer.profile))) {
       errors.push(errorDetails(new Error('Owned process/profile teardown is not clean')));
     }
-    const resourceDiagnostics = peers.map((peer) => {
+    const resourceDiagnostics = peers.map((peer, index) => {
+      let diagnostic: ReturnType<typeof readOwnedResourceDiagnostics> | undefined;
       try {
         if (!peer.bootstrap || !peer.child.pid) throw new Error(`${peer.role} diagnostic identity missing`);
-        const diagnostic = readOwnedResourceDiagnostics({ role: peer.role, nonce, auditPath: peer.auditPath }, {
+        diagnostic = readOwnedResourceDiagnostics({ role: peer.role, nonce, auditPath: peer.auditPath }, {
           pid: peer.bootstrap.pid, cliPid: peer.child.pid, controllerPid: process.pid,
         });
-        if (diagnostic.status !== 'captured') errors.push(errorDetails(new Error(`${peer.role} resource diagnostic phases missing`)));
-        return diagnostic;
+        const contract = evaluateOwnedResourceDiagnostics({
+          contractVersion: launch.diagnosticContractVersion,
+          expected: { role: peer.role, nonce, auditPath: peer.auditPath,
+            pid: peer.bootstrap.pid, cliPid: peer.child.pid, controllerPid: process.pid },
+          diagnostics: diagnostic, nativeEvents: peer.nativeTerminal?.events,
+          cliExit: peer.nativeTerminal?.cliExit, finalAudit: verifiedFinalAudits?.[index], timing: peer.timing,
+        });
+        return { ...diagnostic, contract };
       } catch (error) {
         errors.push(errorDetails(error));
-        return { role: peer.role, status: 'partial', error: errorDetails(error) };
+        return { ...diagnostic, role: peer.role, status: 'partial', contract: { kind: 'incomplete' }, error: errorDetails(error) };
       }
     });
     const result = {
@@ -451,6 +472,8 @@ async function main() {
       scope: 'one A-opener public-resource diagnostic reproduction; no read-route cases',
       launch, elapsedMs: Date.now() - started, capture,
       resourceDiagnostics,
+      diagnosticContractVersion: launch.diagnosticContractVersion,
+      aggregateInterpretation: 'v2: observed post-ack or verified early exit before the conservative nominal window; raw missing samples are retained',
       sentinel: { accepts: sentinelAccepts, closed: sentinelClosed },
       peakNodeProcesses, peakAggregateRssKiB, peakAggregateCpuPercent,
       rssIncludesSharedMemoryDoubleCounting: true, processLedger: [...ledger.values()], samples: samples.length,
