@@ -1,0 +1,56 @@
+# Remote Details parity continuation — unfinished, no full acceptance
+
+Repository: Agent-Clubhouse/Clubhouse. Issue #3733 remains open. PR #3735 was only the partial foundation and merged; do not rewrite it or infer closure. No current full-parity PR. This note accompanies normal remote feature branches, not a Clubhouse worktree handoff. Sender retains ownership until a verified Mini receiver fetches the exact supplied SHA and explicitly accepts. Delivery alone is not takeover.
+
+## Branches and immutable dispositions
+
+Assigned accepted feature root: `origin/lane-full-remote-details/full-parity` at `f1220c2a2324d62021a222d24f0e637a8416ecc0` (tree `9a4d27b940f2046c0896ec9876ef85fe86f492ad`). Do not advance from component verdicts alone.
+
+Active cohesive work: `origin/lane-full-remote-details/connections-complete`, based on reviewed `2482e8bc2a93f55bcd39d4cd9f5fdcfff8053467`. The commit containing this note is WIP, not an independently approved freeze. Use `git rev-parse HEAD` on the fetched branch for its exact preservation SHA. Earlier pushed implementation `76a890b44` adds the unwired bounded inventory/source projection; current changes add development endpoint/UI continuation. Do not open a PR or claim full Connections/Details parity from passing development checks.
+
+Latest component acceptance: `2482e8bc2a93f55bcd39d4cd9f5fdcfff8053467` (tree `1d52067db1dd1726c17c0a0f6af12aa6ac46f023`), source identity correction atop normal durable saved/qualified-memory consumer `96fd884772c9b76b8f755aeebdfc1b2767b2eaf2`. Review was bounded: 8 files/332 PASS, tsc0, 16 mutation/restoration controls; canonical-role callbacks and parts of lifecycle modeled, no live-host proof. Rejected `133c9fe78869e2147ed99213052b630708b1d66a` and test-only actual-reader baseline `087e598ef220c7ffc899964136bef9737537ce84` remain history. Native ID equality never joins independently project-qualified manual/controller/native records; source defaults remain separate from effective authority.
+
+Other newer accepted components already in 2482 ancestry: source/metadata consumer `96fd88477`; helper composition `120f220e3`; observed-directory join `cdf20d328`; fresh per-root metadata `88b10c73e`; host-memory helper `f90369af9`; phase-local dedup `ae055159f`; metadata helper `39eedb6e2`; cold normal manual consumer `23acd59e3`. These are limited helper/consumer verdicts, not blanket runtime/security/authority/full-matrix acceptance. `18e4` and failed `0faddcc84` remain unaccepted history. Latest-main integration remains separate; 2482/root do not imply latest-main composition.
+
+## Active implementation and boundaries
+
+`registered-agent-display-page.ts`: private selected helper/Dispatcher saved relationship inventory. Fixed registered-project file, max16 roots/page,4096 explicit row visits,8MiB initial primary budget,4MiB/file,50 matching endpoints maximum,64 distinct parent directory alias probes. Project/agent primary evidence and observed-directory tuples retained privately; no ordinary project/agent load/recovery/collection/writes. Stable project IDs and custom display names survive reused agent IDs. Missing/unreadable/limited is distinct from verified empty; pages are independent observations, not a cross-page snapshot. Directory dev/ino checks are not continuous locks, historical ABA/incarnation/runtime/permission proof.
+
+`configured-registered-connections-display.ts`: default/max8 related endpoints/page; source-specific shared automatic starting switches; disposed/unknown versus configured; optional trusted passive already-loaded cache getter only AFTER a fresh relevant root receipt before EACH callback; final aggregate receipts retained for full endpoint assembly. Saved and host-memory fields remain separate. Callback receipts/maps/paths/namespaces never enter DTOs. Currentness rereads are separate from the initial byte budget and have no hard I/O deadline.
+
+WIP continuation: additive allowlisted source + numeric offsets on EXISTING paired/pinned eligible-desktop agent Details GET. No new discovery/path/write/phone authority. Optional `connectionPages:1` and echoed selected source/page distinguish older summary-only hosts. UI has Overview and independent binding/saved-source/helper/Dispatcher inventory pages; Next replaces prior evidence. Transport/selection/source/currentness fences must survive through client and rendering. Keep source/project/role identity separate from native binding identity. This wiring is not final proof or review. Current full-Details assembly still runs other cards for a source page; remaining global resource bounds must be audited, not implicitly certified.
+
+## Observed development evidence (no exact final-head verdict transfer)
+
+Local guarded logs named `3733-connections-complete-*` in the original workspace QA-report directory. These paths are provenance references, not a claim that the Mini has those laptop files. Essential results are summarized here; formal review needs a separately sealed exact-head package.
+
+- Initial inventory development: 3 FAIL/2 PASS (wrong Dispatcher project-ID fixture and nonconfigurable ESM fs spy); test-only repair followed by5 PASS, then10 PASS.
+- At64c48a03b: development4 actual10 PASS and tsc0.
+- Inventory + configured-source projection development5 actual2 files/20 PASS and tsc0 before subsequent endpoint edits.
+- Initial endpoint/UI development6 actual2 FAIL/115 PASS: old-host overview copy mismatch and test querying duplicated denial text. Preserved failure, not pass evidence.
+- Development7 actual1 FAIL/118 PASS: real offline copy state was incorrectly derived from supplied Details status after navigation reset. Corrected to use actual transport state; do not blame infrastructure.
+- Development8 actual3 files/191 PASS (Main selected-page final receipts, Card pages, renderer page controls). Tsc development3/4/5 passed on their respective earlier working trees; not final exact-head proof.
+- Route/client query tests and final current-tree tsc must be read from their actual completed logs before reporting results. No production dependency changes or installs. No GitHub job cancellations.
+
+## Finite remaining implementation checklist
+
+Use the accompanying fresh source-only local-versus-2482 checklist. Do not repeat already implemented lifecycle transport, old-host Settings fallback, current provider metadata, historical association, Actions presentation or Changes checkpoint/file paging as missing features.
+
+1. Finish cohesive Connections: supported cold helper/Canvas/group/tool/user/Dispatcher-wide origins; source-specific suspension/current eligibility with independent saved/memory/runtime evidence; bounded continuation; correct source/project/role identities and host-aware navigation; shared bounded inventory. Current WIP is incomplete: Canvas/group/tool cold readers and selected helper's parent source need completion; arbitrary source collect/inspect or normal initialization is forbidden. Do not substitute unsupported/empty for readable host evidence.
+2. Reuse inventory for structured helper status/project IDs/custom labels, Disposed fold/date, host-aware Open, runtime failed/Needs-you, extra work pages and sleeping inline presentation; selected-list continuation for Actions/canvas/managed/MCP beyond100. Changes already has50-path paging.
+3. Whole no-chat Dispatcher applicable card surface from existing bound host role evidence; never invent controller/chat ID or initialize/wake. Preserve offline/denied/old-host/never-created distinctions.
+4. Complete selected provider/subagent historical inventories beyond64 reports/children and2000-tail activity; preserve generation/app/native/provider/auth fences and no-report vs empty/partial. Never invent provider facts that were not reported.
+5. Small normal-card deltas: known0 usage, view-only elapsed clock/summary, honest selected last activity, unmanaged legacy migration/failure notices.
+6. Changes representation: known/partial aggregate additions/deletions, safe live/branch renames, link-own destination metadata without following contents. Preserve conservative reviewed text projection, no Git filter/process/hooks/lazy-fetch/network/object writes.
+7. Deferred resolved-card focus, bounded authorized unopened/omitted board navigation, grouped Skills/MCP with selected wires names/kinds. No Actions workflow/prompt/step-args/management expansion.
+8. Latest-main composition, complete role/provider/version/state field matrix, exact final source/contract/unit/renderer/RED/tsc/CI and independent review before PR. No accepted-slice test counts or source equality substitute for exact composed proof.
+
+Rough remaining estimate supplied to parent:20–40 focused agent-hours plus review/CI/guard queues, substantial uncertainty; not a wall-clock promise. Deadline does not authorize weakening scope/security/review or declaring WIP complete.
+
+## Reproduction and transfer constraints
+
+No installs. Existing dependency tree may be reused only if package-lock SHA256 equals `bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d`; the Mini must verify its own compatible dependencies and resource gate. Run Vitest maxWorkers2 under `~/.clubhouse/orch/desktop-test-gate.sh full-details 4 -- ...`; tsc gate minimum6. Refusal75 is not a test result; wait>=60s, max30min. No Electron/Playwright/E2E/live native CLI probes or GitHub cancellations.
+
+Preserve per-selected desktop/pin/role/target/project/run/app/native/display/provider/revocation and post-await/final serialization fences. No secrets/raw config/env/private definitions/unrelated agents, recovery/migration/sweep/timer/write/init fallback, grants/access changes, provider/network/tunnel/install/release/reset authority. Keep custom settings/text/agent identities. No worktree-Handoff API. No main/default/protected push, release, restart or deletion authority.
+
+#3611 phone/Go/TestFlight MERGE hold was superseded by explicit user instruction and landed; do NOT reinstate it. #3706 containing-desktop PUBLIC RELEASE HOLD remains. No live-phone/full-duplex/public-release acceptance follows from any source or unit verdict.

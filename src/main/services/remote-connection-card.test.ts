@@ -246,3 +246,28 @@ it('charges automatic source fields even when known binding rows fill the displa
   expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe(12); // 2 host + 34×3 binding + 2×4 automatic fields.
   expect.soft(c.rows.some((r) => r.label.endsWith('automatic starting switches'))).toBe(false); expect.soft(m.legacy).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
 });
+
+it('continues actual outgoing binding records without dropping late fields behind the Details row cap', async () => {
+  for (let i = 0; i < 41; i++) bindingManager.bind(selected, { targetId: 'terminal-' + i, targetKind: 'terminal', label: 'Bound terminal ' + i });
+  const first = await read(false, { page: { card: 'connections', source: 'outgoing', offset: 0 } });
+  expect(first.c.connectionPage).toMatchObject({ source: 'outgoing', offset: 0, known: 41, next: { offset: 8, projectOffset: 0 } });
+  expect(first.c.rows).toHaveLength(24); expect(first.c.omitted).toBe(0);
+  const last = await read(false, { page: { card: 'connections', source: 'outgoing', offset: 40 } });
+  expect(last.c.connectionPage).toMatchObject({ known: 41, next: null }); expect(last.c.rows[0].label).toBe('Bound terminal 40'); expect(last.c.omitted).toBe(0);
+  expect([...first.receipts, ...last.receipts].every((r) => r.current())).toBe(true);
+});
+it('renders project-qualified configured helpers independently of colliding native binding names and private paths', async () => {
+  const { readConfiguredRegisteredConnectionsForDisplay } = await import('./configured-registered-connections-display');
+  const { projectConnectionEndpointFieldsForDisplay } = await import('./connection-endpoint-fields-display');
+  const p = path.join(root, 'project'); await fs.promises.mkdir(path.join(p, '.clubhouse'), { recursive: true });
+  await put('projects.json', { version: 1, projects: [{ id: 'p', name: 'Custom project', path: p }] });
+  const config = { id: selected, name: 'Selected' }, child = { id: 'reused', name: 'Saved helper name', parentAgentId: selected };
+  await fs.promises.writeFile(path.join(p, '.clubhouse', 'agents.json'), JSON.stringify([config, child]));
+  const fields = projectConnectionEndpointFieldsForDisplay(selected, config); if (fields.state !== 'ok') throw new Error('fixture');
+  const receipts: Array<{ current(): boolean }> = [], registered = readConfiguredRegisteredConnectionsForDisplay({ agentId: selected, projectId: 'p', projectPath: p, fields: fields.value, receipt: { current: () => true } }, 'helper-children', { authorized: () => true, receipts });
+  expect(registered.state).toBe('ok'); bindingManager.bind(selected, { targetId: 'reused', targetKind: 'agent', label: 'PRIVATE_NATIVE_COLLISION' });
+  const before = await disk(), result = await read(false, { page: { card: 'connections', source: 'helpers' }, registered });
+  expect(result.c.connectionPage).toMatchObject({ source: 'helpers', known: 1, complete: true, next: null });
+  expect(result.c.rows[0]).toMatchObject({ label: 'Saved helper name · Custom project', value: expect.stringContaining('project p') });
+  expect(result.c.rows.filter((r) => r.label.endsWith('starting switches'))).toHaveLength(2); expect(JSON.stringify(result.c)).not.toMatch(/PRIVATE_|namespace|projectPath/); expect(JSON.stringify(result.c)).not.toContain(root); expect(await disk()).toEqual(before);
+});

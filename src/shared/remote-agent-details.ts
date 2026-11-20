@@ -1,3 +1,4 @@
+import { isRemoteConnectionPage, type RemoteConnectionPage } from './remote-details-query';
 import { ACTION_OUTCOMES, ACTION_RELATIONSHIPS, isActionRunTime, type RemoteActionRow } from './agent-action-groups';
 import { isRemoteAgentSettings, type RemoteAgentSettings } from './remote-agent-settings';
 import type { AgentStatus } from './types';
@@ -26,9 +27,13 @@ export interface RemoteDetailsCard {
   /** Rows outside the bounded result are counted, never silently hidden. */
   omitted: number;
   observedAt: number;
+  /** Optional bounded selected-source page. Older hosts omit it. */
+  connectionPage?: RemoteConnectionPage;
 }
 export interface RemoteAgentDetails {
   version: 1;
+  /** Additive selected-source continuation support, independent of older Details hosts. */
+  connectionPages?: 1;
   agentId: string;
   readOnly: true;
   readAt: number;
@@ -51,7 +56,7 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
   if (!value || typeof value !== 'object') return false;
   const v = value as RemoteAgentDetails;
   const text = (s: unknown) => typeof s === 'string' && s.length <= 2048;
-  return v.version === 1 && v.agentId === agentId && v.readOnly === true
+  return v.version === 1 && (v.connectionPages === undefined || v.connectionPages === 1) && v.agentId === agentId && v.readOnly === true
     && Number.isFinite(v.readAt) && v.readAt > 0 && text(v.providerId) && !!v.providerId && (v.providerLabel === undefined || text(v.providerLabel) && !!v.providerLabel) && typeof v.running === 'boolean'
     && ['running', 'sleeping', 'waking', 'creating', 'spawning', 'error'].includes(v.status)
     && (v.spawnedAt === null || Number.isFinite(v.spawnedAt) && v.spawnedAt > 0)
@@ -69,6 +74,7 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
       && ['ok', 'error', 'unsupported', 'not-applicable'].includes(c.state)
       && Number.isSafeInteger(c.omitted) && c.omitted >= 0
       && Number.isFinite(c.observedAt) && c.observedAt > 0
+      && (c.connectionPage === undefined || c.id === 'connections' && isRemoteConnectionPage(c.connectionPage))
       && Array.isArray(c.notes) && c.notes.length <= 20 && c.notes.every(text)
       && Array.isArray(c.rows) && c.rows.length <= REMOTE_DETAILS_MAX_ROWS
       && c.rows.every((r) => !!r && typeof r === 'object' && text(r.label) && text(r.value)

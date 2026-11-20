@@ -1,3 +1,4 @@
+import { RemoteConnectionsCard } from './RemoteConnectionsCard';
 import { RemoteActionsEvidence } from './RemoteActionsEvidence';
 /** Remote container: host reads and shared presentation only; no local config, git or action hooks. */
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -189,7 +190,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       {hydrated.evidence && hydrated.partial && <CardNote>Provider-reported subagents include this runtime’s earlier reports. Tool activity and timings still depend on the loaded transcript and may be incomplete.</CardNote>}
       <SubagentList agent={agent} state={session} map={map} selected={selectedSub} onSelect={setSelectedSub} onShowInStream={(id) => onShowInStream?.(id)} missedSubagentId={missedSubagentId} />
     </DetailsCard>}
-    {basic('connections', 'Connections')}
+    <RemoteConnectionsCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} dispatcher={dispatcher} open={open('connections')} onToggle={() => toggleCard('connections')} />
     {dispatcher && <DetailsCard id="other-machines" title="Other machines" summary={otherMachines ? otherMachinesSummary(otherMachines) : 'not shared here'} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
       {(!connected || snapshotUnavailable) && <CardNote>Last host snapshot; these states may be stale.</CardNote>}
       {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host} hasn’t shared its other machines here.</CardNote>}

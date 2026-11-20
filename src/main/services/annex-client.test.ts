@@ -3327,13 +3327,29 @@ describe('annex-client', () => {
         }, destroy: vi.fn() });
         return req;
       }) as any);
-      const pending = annexClient[method](FP, 'a1', { scope: 'branch' });
+      const pending = annexClient[method](FP, 'a1', method === 'requestAgentChanges' ? { scope: 'branch' } : undefined);
       annexClient._receiveSatelliteDisconnectForTesting(FP);
       vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
       annexClient.connect(FP);
       await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
       finish();
       expect(await pending).toEqual({ status: 'offline' });
+    });
+
+    it('binds bounded selected-source Details pages and refuses malformed/old-host page responses', async () => {
+      const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
+      const query = { card: 'connections' as const, source: 'helpers' as const, offset: 8, projectOffset: 16 };
+      const value = { version: 1, connectionPages: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id === 'connections' && { connectionPage: { source: 'helpers', offset: 8, projectOffset: 16, known: 9, complete: true, next: null } }) })) };
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
+      expect(requests[0]).toMatchObject({ method: 'GET' }); expect(requests[0].url).toContain('/agents/a1/details?card=connections&source=helpers&offset=8&projectOffset=16');
+      const before = requests.length;
+      expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, offset: 4097 })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
+      answers.push({ status: 200, body: { ...value, cards: value.cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { ...c.connectionPage, offset: 0 } } : c) } });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: { ...value, connectionPages: undefined, cards: value.cards.map((c) => ({ ...c, connectionPage: undefined })) } });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
     });
 
     it('reads bounded exact-agent Details and treats old/refused/malformed contracts explicitly', async () => {

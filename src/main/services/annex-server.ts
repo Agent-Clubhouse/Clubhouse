@@ -1,3 +1,4 @@
+import { isRemoteDetailsQuery } from '../../shared/remote-details-query';
 import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
 import { readRemoteAgentSettings } from './remote-agent-settings';
 import { resolveReadOnlyQuickChatTarget } from './read-only-quick-target';
@@ -4087,13 +4088,18 @@ async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: Re
   catch { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
   if (!agentId || agentId.length > 240) { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
   const params = new URL(ctx.url, 'http://localhost').searchParams;
+  const detailsQuery = params.size ? { card: params.get('card'), source: params.get('source'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('projectOffset') && { projectOffset: Number(params.get('projectOffset')) }) } : undefined;
+  if (match[2] === 'details' && detailsQuery !== undefined && ([...params.keys()].some((key) => !['card', 'source', 'offset', 'projectOffset'].includes(key))
+    || [...params.keys()].some((key) => params.getAll(key).length !== 1) || ['offset', 'projectOffset'].some((key) => params.has(key) && !/^(0|[1-9]\d{0,3})$/.test(params.get(key)!)) || !isRemoteDetailsQuery(detailsQuery))) {
+    sendJson(ctx.res, 400, { error: 'invalid_details_query' }); return;
+  }
   const changesQuery = { scope: params.get('scope'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('fileKey') && { fileKey: params.get('fileKey') }) };
   if (match[2] === 'changes' && ([...params.keys()].some((key) => !['scope', 'offset', 'fileKey'].includes(key))
     || [...params.keys()].some((key) => params.getAll(key).length !== 1) || params.has('offset') && !/^(0|[1-9]\d{0,4})$/.test(params.get('offset')!) || !isRemoteChangesQuery(changesQuery))) {
     sendJson(ctx.res, 400, { error: 'invalid_changes_query' }); return;
   }
   const result = match[2] === 'changes' && isRemoteChangesQuery(changesQuery) ? await readRemoteAgentChanges(agentId, changesQuery, authorized) : match[2] === 'details'
-    ? await readRemoteAgentDetails(agentId, authorized)
+    ? await readRemoteAgentDetails(agentId, authorized, detailsQuery && isRemoteDetailsQuery(detailsQuery) ? detailsQuery : undefined)
     : await readRemoteAgentSettings(agentId, authorized);
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'settings_read_refused' }); return; }
   ctx.res.setHeader('Cache-Control', 'no-store');

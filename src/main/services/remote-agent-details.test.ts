@@ -923,3 +923,31 @@ describe('whole Details joins configured sources only through admitted endpoint 
     } finally { capture.mockRestore(); stop(); sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); resetAllSettingsStoresForTests(); getPath.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
   });
 });
+
+describe('selected registered Connections pages at final Details assembly', () => {
+  it.each(['unchanged', 'related-primary-late', 'revoked'] as const)('keeps source continuation and final selected evidence fences: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-registered-page-'))), a = path.join(root, 'a'), b = path.join(root, 'b');
+    for (const folder of [a, b]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+    m.base = root; m.realConnections = true; m.realWitness = true;
+    const selected = { ...agent(), worktreePath: a, orchestrator: 'codex-cli' as const }, p = { ...project, path: a };
+    await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [p, { id: 'other-project', name: 'Other custom project', path: b }] }));
+    await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), JSON.stringify([selected]));
+    const relatedFile = path.join(b, '.clubhouse', 'agents.json'), children = Array.from({ length: 9 }, (_, i) => ({ id: 'helper-' + i, name: 'Helper ' + i, parentAgentId: 'a1', parentProjectPath: a, env: { token: 'PRIVATE_CREDENTIAL' } }));
+    await fs.writeFile(relatedFile, JSON.stringify(children)); m.target.mockResolvedValue({ agent: selected, project: p });
+    let allowed = true, reached = false, observed = false;
+    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
+    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((r) => r.label === 'Helper 8 · Other custom project'); });
+    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'related-primary-late') await fs.writeFile(relatedFile, '[]'); if (mode === 'revoked') allowed = false; return []; });
+    try {
+      const response = await readRemoteAgentDetails('a1', () => allowed, { card: 'connections', source: 'helpers', offset: 8, projectOffset: 0 });
+      expect(reached).toBe(true); expect(observed).toBe(true);
+      if (mode === 'unchanged') {
+        expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+        const body = response.body as RemoteAgentDetails, c = body.cards.find((c) => c.id === 'connections'); expect(body.connectionPages).toBe(1);
+        expect(c?.connectionPage).toMatchObject({ source: 'helpers', offset: 8, known: 9, next: null }); expect(c?.rows.some((r) => r.label.includes('Helper 0'))).toBe(false); expect(JSON.stringify(c)).not.toMatch(/PRIVATE_|projectPath|namespace/);
+      } else {
+        expect.soft(response.status).toBe(mode === 'revoked' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('providerId'); expect.soft(response.body).not.toHaveProperty('settings');
+      }
+    } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+});

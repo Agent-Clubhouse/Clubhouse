@@ -1,3 +1,5 @@
+import type { RemoteDetailsQuery } from '../../shared/remote-details-query';
+import type { ConfiguredRegisteredConnectionPage } from './configured-registered-connections-display';
 /** Selected Connections evidence only. No generic source/federation/credential readers. */
 import { createHash } from 'crypto';
 import { parseAgentAddress, formatAgentAddress } from '../../shared/agent-address';
@@ -27,6 +29,8 @@ import { row, display } from './remote-details-presentation';
 
 export interface ConnectionCardReadOptions {
   receipts: DisplayReceipt[];
+  page?: RemoteDetailsQuery;
+  registered?: DisplayValue<ConfiguredRegisteredConnectionPage>;
   authorized(): boolean;
   dispatcher?: boolean;
   /** Strictly admitted durable project only; Quick runs do not use saved durable links. */
@@ -107,25 +111,30 @@ const kindWords = (kind: Pair['kind']) => kind === 'group-project' ? 'group proj
 export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: string, options: ConnectionCardReadOptions): Promise<void> {
   if (!options.authorized()) throw new Error('revoked');
   if (!selected || selected.length > 200) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The selected connection identity exceeds the host display limit.'); return; }
+  if (options.page?.source === 'helpers' || options.page?.source === 'dispatcher-auto') {
+    renderRegisteredConnections(c, options.registered, options.page); return;
+  }
+  const pageSource = options.page?.source, pageOffset = options.page?.offset ?? 0;
+  const includes = (source: string) => !pageSource || pageSource === source;
   const refs = referenceNames(selected, options.name);
   const endpointTarget = options.endpoint?.target, endpointCache = options.endpoint?.readCache, projectPath = options.projectPath;
-  const automatic = options.automatic?.state === 'ok' ? options.automatic.value : [], controllerProject = options.automaticControllerProjectPath;
+  const automatic = !pageSource && options.automatic?.state === 'ok' ? options.automatic.value : [], controllerProject = options.automaticControllerProjectPath;
   const hasAutomaticPair = (from: string, to: string) => automatic.some((pair) => pair.agentId === from && pair.targetId === to);
   const nativeKey = (from: string, to: string) => `${from}\0${to}`;
   let endpointProjects: Map<string, string> | undefined;
   try {
-    const outgoing = bindingManager.readBindingsForDisplay(selected, { direction: 'outgoing', receipts: options.receipts });
-    const incoming = bindingManager.readBindingsForDisplay(selected, { direction: 'incoming', receipts: options.receipts });
-    const directions = readConnectionDirectionsForDisplay(selected, { receipts: options.receipts });
-    const sources = readCachedConnectionSourcesForDisplay(selected, { receipts: options.receipts });
+    const outgoing = bindingManager.readBindingsForDisplay(selected, { direction: 'outgoing', offset: pageSource === 'outgoing' ? pageOffset : 0, receipts: options.receipts });
+    const incoming = bindingManager.readBindingsForDisplay(selected, { direction: 'incoming', offset: pageSource === 'incoming' ? pageOffset : 0, receipts: options.receipts });
+    const directions = readConnectionDirectionsForDisplay(selected, { offset: pageSource === 'directions' ? pageOffset : 0, receipts: options.receipts });
+    const sources = readCachedConnectionSourcesForDisplay(selected, { offset: pageSource === 'sources' ? pageOffset : 0, receipts: options.receipts });
     let manual: ReturnType<typeof readSavedDispatcherLinksForDisplay> | undefined;
     let manualMemory: ReturnType<typeof readDispatcherLinkMemoryForDisplay> | undefined;
     let endpointMetadata: ReturnType<typeof readSavedDispatcherEndpointMetadataForDisplay> | undefined;
-    if (projectPath && !options.dispatcher && !options.family?.parentId) {
+    if (includes('manual-dispatcher') && projectPath && !options.dispatcher && !options.family?.parentId) {
       // Saved metadata and process-known state have different provenance. A
       // failed source field cannot erase independently readable bindings.
       try {
-        manual = readSavedDispatcherLinksForDisplay(selected, projectPath, { receipts: options.receipts });
+        manual = readSavedDispatcherLinksForDisplay(selected, projectPath, { offset: pageOffset, receipts: options.receipts });
       } catch { manual = { state: 'unavailable', reason: 'unreadable', inputs: [] }; }
       if (manual.state === 'ok') {
         try { manualMemory = readDispatcherLinkMemoryForDisplay(selected, projectPath, manual.value.rows, { receipts: options.receipts }); }
@@ -138,15 +147,23 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       }
     }
 
+    if (pageSource) {
+      const source = pageSource === 'outgoing' ? outgoing : pageSource === 'incoming' ? incoming : pageSource === 'directions' ? directions : pageSource === 'sources' ? sources : manual;
+      if (source?.state === 'ok') {
+        const total = source.value.total;
+        c.connectionPage = { source: pageSource, offset: pageOffset, projectOffset: 0, known: total, complete: !('complete' in source.value) || source.value.complete === true,
+          next: pageOffset + 8 < total ? { offset: pageOffset + 8, projectOffset: 0 } : null };
+      } else { c.state = 'error'; c.notes.push('The selected source page is unavailable; no empty page is inferred.'); }
+    }
     const outComplete = outgoing.state === 'ok' && outgoing.value.nextOffset === null;
     const inComplete = incoming.state === 'ok' && incoming.value.nextOffset === null;
     const savedComplete = directions.state === 'ok' && directions.value.nextOffset === null;
     const pairs = new Map<string, Pair>();
     const key = (from: string, to: string, kind: Pair['kind'], partition = '') => `${from}\0${to}\0${kind}\0${partition}`;
     const ensure = (from: string, to: string, kind: Pair['kind'], partition = ''): Pair => { if (typeof from !== 'string' || !from || from.length > 512 || typeof to !== 'string' || !to || to.length > 512 || from !== selected && (to !== selected || kind !== 'agent')) throw new Error('connection_scope'); const id = key(from, to, kind, partition); let p = pairs.get(id); if (!p) { p = { from, to, kind, sources: [] }; pairs.set(id, p); } return p; };
-    for (const page of [outgoing, incoming]) if (page.state === 'ok') for (const b of page.value.rows) ensure(b.agentId, b.targetId, b.targetKind).binding = b;
+    for (const [origin, page] of [['outgoing', outgoing], ['incoming', incoming]] as const) if ((includes(origin) || pageSource === 'sources') && page.state === 'ok') for (const b of pageSource && pageSource !== 'sources' ? page.value.rows.slice(0, 8) : page.value.rows) ensure(b.agentId, b.targetId, b.targetKind).binding = b;
     let limitedSourceDetails = 0, untypedIncomingSources = 0;
-    if (sources.state === 'ok') for (const p of sources.value.pairs) for (const source of p.sources) {
+    if (includes('sources') && sources.state === 'ok') for (const p of pageSource ? sources.value.pairs.slice(0, 8) : sources.value.pairs) for (const source of p.sources) {
       const b = value(source.binding);
       if (b && (b.agentId !== p.agentId || b.targetId !== p.targetId)) throw new Error('connection_source_scope');
       let pair: Pair;
@@ -164,9 +181,10 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       }
       pair.sources.push(source);
     }
+    if (pageSource === 'sources') for (const [key, pair] of pairs) if (!pair.sources.length) pairs.delete(key);
     if (limitedSourceDetails) c.notes.push(`Details unavailable for ${limitedSourceDetails} retained source record${limitedSourceDetails === 1 ? '' : 's'}; independently known connection fields are preserved.`);
     if (untypedIncomingSources) c.notes.push(`${untypedIncomingSources} incoming source record${untypedIncomingSources === 1 ? ' lacks' : 's lack'} an independently admitted target kind; its connection details are unavailable.`);
-    if (manual?.state === 'ok') for (const link of manual.value.rows) {
+    if (manual?.state === 'ok') for (const link of pageSource ? manual.value.rows.slice(0, 8) : manual.value.rows) {
       const collision = hasAutomaticPair(link.agentId, link.targetId);
       const pair = ensure(link.agentId, link.targetId, 'agent', collision ? 'manual' : ''); pair.manual = link;
       if (collision) {
@@ -179,7 +197,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       }
       if (manualMemory?.state === 'ok') pair.manualMemory = manualMemory.value.rows.find((state) => state.agentId === link.agentId && state.targetId === link.targetId);
     }
-    if (directions.state === 'ok') for (const d of directions.value.rows) {
+    if (includes('directions') && directions.state === 'ok') for (const d of pageSource ? directions.value.rows.slice(0, 8) : directions.value.rows) {
       const from = formatAgentAddress({ agentId: d.from.agentId, machine: d.from.machineId }), to = formatAgentAddress({ agentId: d.to.agentId, machine: d.to.machineId });
       const active = value(d.userLink) === true || value(d.cardLink) === true || !!value(d.makers)?.length;
       const uncertain = d.userLink.state !== 'ok' || d.cardLink.state !== 'ok' || d.makers.state !== 'ok';
@@ -348,9 +366,38 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       if (incomplete) c.notes.push(`${incomplete} registered source inventories are partial or unavailable; additional source ownership may be missing.`);
       if (sources.value.omitted) c.notes.push(`${sources.value.omitted} additional cached source pairs are outside this bounded page.`);
     }
-    if (!pairs.size && outComplete && inComplete && savedComplete && sources.state === 'ok' && sources.value.complete && sources.value.sourceStates.length && manual?.state !== 'unavailable' && options.automatic?.state !== 'unavailable') c.notes.push('No binding or active saved direction was reported in the available host records.');
+    if (!pageSource && !pairs.size && outComplete && inComplete && savedComplete && sources.state === 'ok' && sources.value.complete && sources.value.sourceStates.length && manual?.state !== 'unavailable' && options.automatic?.state !== 'unavailable') c.notes.push('No binding or active saved direction was reported in the available host records.');
+    if (pageSource) c.notes.push('This page shows one selected source or binding inventory. Other sources are independent; pages are fresh observations, not one frozen snapshot.');
     c.notes.push('Names, bindings and source ownership use saved or retained host records. Additional configured connections may be missing from this retained view. Other agents’ current availability and effective tool authority are not confirmed here.');
-    if (!pairs.size && (!outComplete || !inComplete || !savedComplete || sources.state !== 'ok' || !sources.value.complete || !sources.value.sourceStates.length || !!untypedIncomingSources || manual?.state === 'unavailable' || options.automatic?.state === 'unavailable')) { c.state = 'error'; c.summary = 'Connection information incomplete'; }
+    if (!pageSource && !pairs.size && (!outComplete || !inComplete || !savedComplete || sources.state !== 'ok' || !sources.value.complete || !sources.value.sourceStates.length || !!untypedIncomingSources || manual?.state === 'unavailable' || options.automatic?.state === 'unavailable')) { c.state = 'error'; c.summary = 'Connection information incomplete'; }
     if (!options.authorized()) throw new Error('revoked');
   } finally { c.notes.push(...refs.finish(options.receipts)); }
+}
+
+/** Project-qualified configured source rows stay separate from native-ID records.
+ * Source defaults describe saved composition, never effective permission or MCP Connected. */
+function renderRegisteredConnections(c: RemoteDetailsCard, read: DisplayValue<ConfiguredRegisteredConnectionPage> | undefined, query: RemoteDetailsQuery): void {
+  if (read?.state !== 'ok') { c.state = 'error'; c.summary = 'Configured relationships unavailable'; c.notes.push('The selected registered relationship page is unavailable; no empty list is inferred.'); return; }
+  const page = read.value;
+  c.connectionPage = { source: query.source, offset: page.matchOffset, projectOffset: page.projectOffset, known: page.knownMatches, complete: page.complete,
+    next: page.next ? { offset: page.next.matchOffset, projectOffset: page.next.projectOffset } : null };
+  c.summary = `${page.knownMatches} known configured relationships in this project page${page.complete ? '' : ' · partial'}`;
+  for (const entry of page.entries) {
+    const endpoint = entry.endpoint, fields = endpointCardFields({ agentId: '', targetId: endpoint.agentId, relationship: 'recorded',
+      endpoint: { state: 'ok', value: { record: 'registered-primary', fields: endpoint.fields }, inputs: [] }, hostCache: entry.hostCache });
+    const name = fields.displayName || endpoint.agentId, projectName = endpoint.projectName.state === 'ok' ? endpoint.projectName.value : 'Project name unavailable';
+    // Include both stable project identity and display label when names collide.
+    const label = `${name} · ${projectName}`;
+    row(c, label, `${entry.source === 'helper' ? 'Direct helper' : 'Automatic Dispatcher source'} · ${entry.applicability === 'configured' ? 'two configured directions' : entry.applicability === 'disposed' ? 'disposed; no configured directions' : 'configured applicability unknown'} · project ${endpoint.projectId}`);
+    row(c, `${label} saved settings`, fields.saved);
+    if (fields.memory) row(c, `${label} host memory`, fields.memory);
+    for (const direction of entry.directions) {
+      const tools = localDirectionTools(undefined, direction.disabledTools, direction.enabledTools);
+      row(c, `${label} ${direction.from === 'selected' ? 'outgoing' : 'incoming'} starting switches`, `Source defaults · On: ${labels(tools.allowed)}; Off: ${labels(tools.disabled)} · not effective tool authority`);
+    }
+  }
+  if (page.unknownRows) c.notes.push(`${page.unknownRows} relationship records could not be classified safely in this project page.`);
+  if (page.unavailableProjects) c.notes.push(`${page.unavailableProjects} project inventories are unavailable or exceed this read's bounds.`);
+  c.notes.push('Saved configured relationships are project-qualified and separate from native-ID bindings. Host-memory observations are shown separately. No current run, MCP handshake, reachability or effective tool authority is established.');
+  c.notes.push('At most eight related endpoints are shown per page. Pages are separately authorized observations; changing inventories can shift continuation.');
 }

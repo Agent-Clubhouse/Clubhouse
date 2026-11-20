@@ -1,3 +1,4 @@
+import type { RemoteDetailsQuery } from '../shared/remote-details-query';
 import { ipcRenderer } from 'electron';
 import type { RemoteAgentSettings } from '../shared/remote-agent-settings';
 import type { RemoteAgentDetails } from '../shared/remote-agent-details';
@@ -45,8 +46,8 @@ export const annexClient = {
   /** A page of a satellite chat agent's transcript and state (#2390). */
   agentSettings: (machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentSettings>> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_SETTINGS, machine, agentId),
-  agentDetails: (machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentDetails>> =>
-    ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DETAILS, machine, agentId),
+  agentDetails: (machine: string, agentId: string, query?: RemoteDetailsQuery): Promise<ControllerReadResult<RemoteAgentDetails>> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DETAILS, machine, agentId, query),
   agentChanges: (machine: string, agentId: string, query: RemoteChangesQuery): Promise<ControllerReadResult<RemoteAgentChanges>> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_CHANGES, machine, agentId, query),
   controllerChatPage: (machine: string, opts: ControllerChatQuery = {}): Promise<ControllerReadResult<ControllerChatPage>> =>

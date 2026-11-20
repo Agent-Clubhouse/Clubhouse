@@ -726,6 +726,21 @@ describe('annex-server', () => {
       expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
       expect(ptyManagerModule.write).not.toHaveBeenCalled();
     });
+    it('allows bounded source continuation only under the same GET desktop authority and rejects extra/duplicate fields before work', async () => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (id, authorized, query) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true); expect(query).toEqual({ card: 'connections', source: 'helpers', offset: 8, projectOffset: 16 });
+        return { status: 200, body: { readOnly: true } };
+      });
+      const { port } = await startAndPair();
+      const paged = route + '?card=connections&source=helpers&offset=8&projectOffset=16';
+      expect((await request(port, 'GET', paged)).status).toBe(200);
+      vi.mocked(readRemoteAgentDetails).mockClear();
+      for (const query of ['card=connections&source=helpers&offset=4097', 'card=connections&source=helpers&offset=', 'card=connections&source=helpers&offset=01', 'card=connections&source=helpers&source=incoming', 'card=connections&source=helpers&projectPath=/private', 'card=connections&source=collect', 'card=settings&source=helpers', 'card=connections&source=outgoing&projectOffset=16']) expect((await request(port, 'GET', route + '?' + query)).status).toBe(400);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, paged)).status).toBe(404);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' }); expect((await request(port, 'GET', paged)).status).toBe(403);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled(); expect(agentSystem.spawnAgent).not.toHaveBeenCalled(); expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
     it.each([undefined, 'phone', 'unknown'])('rejects ineligible device kind %s before any Details work', async (kind) => {
       const { port } = await startAndPair();
       vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind } as never);

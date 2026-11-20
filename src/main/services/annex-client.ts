@@ -1,3 +1,4 @@
+import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
 import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
 import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
 import { isRemoteAgentChanges, isRemoteChangesQuery, REMOTE_CHANGES_MAX_BYTES, type RemoteAgentChanges } from '../../shared/remote-agent-changes';
@@ -2475,18 +2476,27 @@ export async function requestAgentSettings(machine: string, agentId: string): Pr
 }
 
 /** Same pinned paired-desktop read, with a bounded allowlisted Details response. */
-export async function requestAgentDetails(machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentDetails>> {
+export async function requestAgentDetails(machine: string, agentId: string, query?: RemoteDetailsQuery): Promise<ControllerReadResult<RemoteAgentDetails>> {
+  if (query !== undefined && !isRemoteDetailsQuery(query)) return { status: 'error' };
+  // Capture the page identity before transport awaits; no caller object can retarget the response.
+  const page = query && { ...query };
+  const params = page ? new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset ?? 0), projectOffset: String(page.projectOffset ?? 0) }) : undefined;
   const sat = satelliteFor(machine);
   if (!sat || sat.state !== 'connected') return { status: 'offline' };
   const epoch = connectionEpochs.get(sat.id) ?? 0;
   const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
   try {
-    const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/details`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
+    const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/details${params ? `?${params}` : ''}`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
     if (!current()) return { status: 'offline' };
     if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
     if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
     if (res.status !== 200 || !isRemoteAgentDetails(res.body, agentId)) return { status: 'error' };
+    if (page) {
+      const response = res.body.cards.find((card) => card.id === 'connections')?.connectionPage;
+      if (!response) return { status: res.body.connectionPages === 1 ? 'error' : 'unavailable' }; // Older host ignored the additive page query.
+      if (response.source !== page.source || response.offset !== (page.offset ?? 0) || response.projectOffset !== (page.projectOffset ?? 0)) return { status: 'error' };
+    }
     return { status: 'ok', value: res.body };
   } catch {
     // telemetry-exempt: a bounded display status; remote errors are never shown verbatim.
