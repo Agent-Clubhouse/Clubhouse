@@ -48,15 +48,15 @@ export function applySnapshotDelta<T>(current: T, previous: unknown, next: unkno
         const oldOrder = ids(before);
         const newOrder = ids(after);
         const liveOrder = ids(value);
-        const common = new Set(oldOrder.filter((id) => newRows[id] !== undefined && liveRows[id] !== undefined));
+        const common = new Set(oldOrder.filter((id) => Object.prototype.hasOwnProperty.call(newRows, id) && Object.prototype.hasOwnProperty.call(liveRows, id)));
         const shared = (order: string[]) => order.filter((id) => common.has(id));
         const sourceReordered = !sameSnapshotValue(shared(oldOrder), shared(newOrder));
         const liveReordered = !sameSnapshotValue(shared(oldOrder), shared(liveOrder));
         const conflicting = sourceReordered && liveReordered && !sameSnapshotValue(shared(newOrder), shared(liveOrder));
         // Membership changes cannot prove placement relative to an independently
         // reordered/added live row. Keep the live order and defer that ambiguity.
-        const ambiguousPlacement = (liveReordered && newOrder.some((id) => !(id in oldRows)))
-          || (sourceReordered && liveOrder.some((id) => !(id in oldRows)));
+        const ambiguousPlacement = (liveReordered && newOrder.some((id) => !Object.prototype.hasOwnProperty.call(oldRows, id)))
+          || (sourceReordered && liveOrder.some((id) => !Object.prototype.hasOwnProperty.call(oldRows, id)));
         if (conflicting || ambiguousPlacement) onConflict?.();
         const keepLiveOrder = conflicting || ambiguousPlacement || liveReordered;
         const order = keepLiveOrder ? [...liveOrder, ...newOrder] : [...newOrder, ...liveOrder];
