@@ -109,6 +109,8 @@ export interface SatelliteConnection {
   mainPort: number;
   pairingPort: number;
   snapshot: SatelliteSnapshot | null;
+  /** Minted only by an accepted snapshot on the current pinned socket; never restored from cache. */
+  snapshotReceipt?: string;
   lastError: string | null;
   /** This connection's satellite said it can't build a snapshot yet, and is retrying. `snapshot` is from before, if there is one. */
   snapshotUnavailable?: boolean;
@@ -119,6 +121,7 @@ export interface SatelliteConnection {
 }
 
 export interface SatelliteSnapshot {
+  sessionPaused?: boolean;
   grantRequests?: import('../../shared/mobile-control').MobileGrantRequest[];
   pendingGrantRequests?: import('../../shared/grant-requests').DesktopPendingGrantRequest[];
   /** The machine this snapshot is from (#3063). */
@@ -179,6 +182,8 @@ interface SatelliteConnectionInternal {
   mainPort: number;
   pairingPort: number;
   snapshot: SatelliteSnapshot | null;
+  /** Minted only by an accepted snapshot on the current pinned socket; never restored from cache. */
+  snapshotReceipt?: string;
   lastError: string | null;
   /** The classified reason behind `lastError`. */
   problem?: { code: AnnexProblemCode; status?: number; port?: number } | null;
@@ -576,6 +581,7 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
     mainPort: s.mainPort,
     pairingPort: s.pairingPort,
     snapshot: s.snapshot,
+    ...(s.snapshotReceipt && s.state === 'connected' && s.ws?.readyState === WebSocket.OPEN && !s.needsPairing && !s.snapshotUnavailable && !s.snapshot?.sessionPaused && { snapshotReceipt: s.snapshotReceipt }),
     lastError: s.lastError,
     ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
     ...(s.needsPairing && { needsPairing: true }),
@@ -596,6 +602,8 @@ function setState(
 ): void {
   const prev = sat.state;
   sat.state = state;
+  // Preserve cached/offline snapshots for existing readers, but never their new-card admission.
+  if (state !== 'connected' || prev !== 'connected') sat.snapshotReceipt = undefined;
   // Output sent while disconnected is in neither cache, and a restarted
   // satellite's seqs start over, so caches are seeded again on reconnect.
   if (prev === 'connected' && state !== 'connected') {
@@ -1102,6 +1110,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
           meta: { machine: sat.fingerprint, requestId, source: 'snapshot' },
         });
         sat.snapshot = incoming;
+        sat.snapshotReceipt = sat.ws?.readyState === WebSocket.OPEN && sat.state === 'connected' && !sat.needsPairing && !incoming.sessionPaused ? randomUUID() : undefined;
         void import('./connection-card').then((m) => m.rememberConnectionSnapshot(sat.fingerprint, incoming)).catch((error) => {
           appLog('core:annex', 'warn', 'Could not save the network connection directory', { meta: { error: error instanceof Error ? error.message : String(error) } });
         });
@@ -1113,6 +1122,12 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         if (omitted) void fetchOmittedCanvases(sat);
         fetchSatelliteLeftOutIcons(sat);
       }
+      break;
+    }
+
+    case 'session:paused': {
+      sat.snapshotReceipt = undefined;
+      broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
     }
 
@@ -1130,6 +1145,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
     case 'error': {
       if ((msg.payload as { message?: unknown } | undefined)?.message === 'snapshot_failed') {
         sat.snapshotUnavailable = true;
+        sat.snapshotReceipt = undefined;
         connectFailed(sat.fingerprint, 'unknown');
         broadcastSatellitesChanged();
       }

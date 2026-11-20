@@ -539,6 +539,22 @@ describe('annexClientStore', () => {
   // -------------------------------------------------------------------------
 
   describe('session pause/resume events', () => {
+    it('drops only new-card admission on pause, never reattests on resume or synthetic snapshot events', () => {
+      const cached = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: [], pendingPermissions: [], lastSeq: 1 };
+      useAnnexClientStore.setState({ satellites: [{ ...SATELLITE, snapshot: cached, snapshotReceipt: 'main-receipt' }] });
+      let eventCallback!: (event: { satelliteId: string; type: string; payload: unknown }) => void;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: typeof eventCallback) => { eventCallback = cb; return vi.fn(); });
+      const cleanup = initAnnexClientListener();
+      eventCallback({ satelliteId: SATELLITE.id, type: 'session:paused', payload: {} });
+      expect(getState().satellites[0].snapshot).toBe(cached);
+      expect(getState().satellites[0].snapshotReceipt).toBeUndefined();
+      eventCallback({ satelliteId: SATELLITE.id, type: 'session:resumed', payload: {} });
+      eventCallback({ satelliteId: SATELLITE.id, type: 'snapshot', payload: JSON.parse(JSON.stringify(cached)) });
+      expect(getState().satellites[0].snapshot).toBe(cached);
+      expect(getState().satellites[0].snapshotReceipt).toBeUndefined();
+      cleanup();
+    });
+
     it('sets satellitePaused to true on session:paused', () => {
       let eventCallback: ((event: any) => void) | undefined;
       mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
