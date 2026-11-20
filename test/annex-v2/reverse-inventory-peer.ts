@@ -1010,6 +1010,10 @@ export async function createInventoryPeer(alias: string, exitAudit?: { sentinelP
       await agentConfig.flushAllAgentConfigs();
       await flushAllBulletinBoards();
       await flushAllGroupProjects();
+      if (mainGuard) {
+        agentConfig.clearAgentConfigCache(root);
+        await agentConfig.settleAgentsFileChecksForTests();
+      }
       policy?.restore();
       listenerAudit?.restore();
     },
