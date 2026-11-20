@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const W = vi.hoisted(() => ({ dir: '', budgetTest: false }));
+const W = vi.hoisted(() => ({ dir: '', budgetTest: false, quotaSampledAt: 0 }));
 vi.mock('electron', () => ({ app: { getPath: () => W.dir } }));
 vi.mock('./log-service', () => ({ appLog: () => undefined }));
 vi.mock('../orchestrators', () => {
@@ -31,12 +31,18 @@ vi.mock('./helper-model-catalog', () => ({
 }));
 vi.mock('./provider-quota', () => {
   const quota = { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null };
+  const sampledQuota = () => ({ state: 'low', source: 'cli_query', asOf: new Date(W.quotaSampledAt).toISOString(),
+    weekly: { usedPercent: 82, resetsAt: new Date(W.quotaSampledAt + 86400_000).toISOString() } });
   return {
     peekQuotaCalibrationPlan: () => undefined,
-    readProviderQuota: async (provider: string) => provider === 'claude-code' && W.budgetTest
-      ? { state: 'low', source: 'cli_query', asOf: new Date(Date.now()).toISOString(), weekly: { usedPercent: 82, resetsAt: new Date(Date.now() + 86400_000).toISOString() } } : quota,
+    readProviderQuota: async (provider: string) => {
+      if (provider !== 'claude-code' || !W.budgetTest) return quota;
+      W.quotaSampledAt = Date.now();
+      return sampledQuota();
+    },
+    // Match the production cache: peeking reuses evidence rather than sampling the clock again.
     peekProviderQuota: (provider: string) => provider === 'claude-code' && W.budgetTest
-      ? { state: 'low', source: 'cli_query', asOf: new Date(Date.now()).toISOString(), weekly: { usedPercent: 82, resetsAt: new Date(Date.now() + 86400_000).toISOString() } } : quota,
+      ? sampledQuota() : quota,
     isProviderCoolingDown: async () => false, isProviderCoolingDownNow: () => false,
   };
 });
@@ -64,6 +70,7 @@ let file: string;
 
 beforeEach(() => {
   W.budgetTest = false;
+  W.quotaSampledAt = 0;
   W.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'helper-generation-race-'));
   resetAllSettingsStoresForTests();
   _resetHelperAutoStateForTesting();
@@ -94,11 +101,22 @@ describe('reset-aware reserves with real persistence and prepared starts', () =>
     if (!result.ok || !result.plan) throw new Error('Expected prepared start');
     return result.plan;
   }
-  function allowed(plan: NonNullable<Awaited<ReturnType<typeof planHelperStart>>['plan']>): boolean {
-    const result = decideAutoPlan(plan, {});
+  function allowed(plan: NonNullable<Awaited<ReturnType<typeof planHelperStart>>['plan']>, now?: number): boolean {
+    const result = decideAutoPlan(plan, {}, now);
     if (result.ok && result.plan?.routing?.decisionId) settleAutoDecision(result.plan.routing.decisionId, 'creation_refused');
     return result.ok;
   }
+
+  it('keeps cached quota evidence at its sample time when the clock advances before the decision peek', async () => {
+    const sampledAt = 1_800_000_000_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(sampledAt);
+    const plan = await prepared(10);
+    // The decision captures its time before peeking. A peek must not invent a newer sample.
+    clock.mockReturnValue(sampledAt + 1);
+    expect(allowed(plan, sampledAt)).toBe(true);
+    // The same evidence really is future-dated for a decision before the sample.
+    expect(allowed(plan, sampledAt - 1)).toBe(false);
+  });
 
   it.each(['committed', 'failed'])('applies a queued higher reserve throughout metadata/mapping writes, then settles its own %s result', async (outcome) => {
     const plan = await prepared(10);
