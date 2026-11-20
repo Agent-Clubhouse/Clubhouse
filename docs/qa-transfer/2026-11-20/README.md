@@ -1,6 +1,8 @@
 # Independent QA continuation — 20 November 2026
 
-This is a documentation snapshot from qa-full-card-parity, task t_mwnsu8yl, for Clubhouse-Orchestrator. Repository: Agent-Clubhouse/Clubhouse. Remote task branch: qa-full-card-parity/standby. The branch starts at old source commit 596e7bc2bf6ba4766de7af120bb624f28981992a; this snapshot adds documentation only. Do not treat this branch's old product tree as a candidate for landing. The exact documentation commit is the commit containing this note, advertised separately to the orchestrator.
+This is a documentation snapshot from qa-full-card-parity, task t_mwnsu8yl, for Clubhouse-Orchestrator. Repository: Agent-Clubhouse/Clubhouse. Remote task branch: qa-full-card-parity/nov20-transfer. The branch starts at old source commit 596e7bc2bf6ba4766de7af120bb624f28981992a; this snapshot adds documentation only. Do not treat this branch's old product tree as a candidate for landing. The exact documentation commit is the commit containing this note, advertised separately to the orchestrator.
+
+Process exception: the initial preservation commit fab7d696fa57c3f8682a7942be4260bf97b80674 was incorrectly committed/pushed to standby. On the orchestrator's branch-hygiene correction, the named task branch above was created at that exact commit and pushed normally. Standby was not reset, deleted or rewritten, and original evidence remains intact. This correction and all further transfer/review documentation use the named task branch. No validation rerun or receiver takeover is implied.
 
 Ownership remains with the sender. No verified Mini receiver identity/link/fetch/acceptance has been supplied. Delivery or availability of this branch is not takeover. Navi coordinates the receiver. Do not invent a route or run Clubhouse worktree-Handoff APIs.
 
