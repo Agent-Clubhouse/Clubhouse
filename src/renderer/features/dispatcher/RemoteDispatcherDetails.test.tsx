@@ -167,6 +167,22 @@ describe('no-chat selected-host Dispatcher role consumer', () => {
     expect(api).toHaveBeenCalledTimes(2);
   });
 
+  it('invalidates role metadata on the selected host role event and ignores other hosts', async () => {
+    let event!: (value: { satelliteId: string; type: string; payload: unknown }) => void;
+    const unsubscribe = vi.fn();
+    vi.spyOn(window.clubhouse.annexClient, 'onSatelliteEvent').mockImplementation((callback) => { event = callback; return unsubscribe; });
+    const view = render(<RemoteDispatcherDetails machineId="target" />); await loaded();
+    act(() => event({ satelliteId: 'other-host', type: 'dispatcher:changed', payload: {} }));
+    expect(screen.getByText('HOST_MODEL')).toBeInTheDocument(); expect(api).toHaveBeenCalledTimes(1);
+    api.mockResolvedValue({ status: 'unavailable' });
+    act(() => event({ satelliteId: 'sat', type: 'dispatcher:changed', payload: { agentId: 'UNTRUSTED_EVENT_ID' } }));
+    expect(screen.queryByText('HOST_MODEL')).not.toBeInTheDocument();
+    await screen.findByText('This host does not share this Dispatcher role read, or an existing role is unavailable.', { selector: 'p[role="status"]' });
+    expect(api).toHaveBeenLastCalledWith('target');
+    expect(view.container.innerHTML).not.toContain('UNTRUSTED_EVENT_ID');
+    view.unmount(); expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('cancels a deferred read on unmount and does not poll without events', async () => {
     vi.useFakeTimers();
     try {

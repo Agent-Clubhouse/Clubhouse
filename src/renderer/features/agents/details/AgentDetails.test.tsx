@@ -343,7 +343,7 @@ describe('AgentDetails for a remote Dispatcher', () => {
     render(<AgentDetails agent={remote} />);
     expect(screen.queryByTestId('details-card-session')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('details-card-other-machines-toggle'));
-    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Mini hasn’t shared its other machines here.');
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld.');
     expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
     expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Host offline');
   });
