@@ -1,4 +1,4 @@
-/** UNWIRED selected saved Dispatcher relationships -> safe project-qualified metadata. */
+/** Selected saved Dispatcher relationships -> safe project-qualified metadata. */
 import * as path from 'path';
 import { getBaseDirPath } from './base-dir';
 import type { DisplayReceipt, DisplayValue } from './display-settings';

@@ -42,3 +42,8 @@ it('keeps verified blank name distinct from unavailable and uses existing displa
   expect(endpointCardFields(row({ name: 'x'.repeat(1025) })).saved).toContain('Name exceeds this read’s limit');
   const result = endpointCardFields(row({ name: 'apiKey=PRIVATE_CREDENTIAL' }, { name: 'x'.repeat(300) })); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_CREDENTIAL'); expect.soft(result.memory).toContain('[text truncated]');
 });
+
+it.each(['unreadable', 'limit', 'changed'] as const)('preserves explicit %s primary unavailability without adopting memory fields', (reason) => {
+  const value = row({}, { name: 'PRIVATE_UNADMITTED_MEMORY' }); value.endpoint = { state: 'unavailable', reason, inputs: [] };
+  const result = endpointCardFields(value); expect.soft(result.saved).toBe(reason === 'limit' ? 'Saved target details exceed this read’s limit' : 'Saved target details unavailable'); expect.soft(result.memory).toBeUndefined(); expect.soft(result.displayName).toBeUndefined(); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_');
+});
