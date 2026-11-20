@@ -199,3 +199,21 @@ it('keeps two distinct unchanged project roots useful with the actual passive ow
   ] } });
   expect.soft(reader.mock.calls.map((call) => call.slice(0, 2))).toEqual([[project, 'target'], [otherProject, 'other']]); expect(receipts.every((r) => r.current())).toBe(true); noWrites();
 });
+it('requires admitted directory association before adopting cached fields after a real same-path project replacement', async () => {
+  await warm(); const original = fs.statSync(project, { bigint: true });
+  expect(peekCachedDurableConfig(project, 'target')).toMatchObject({ name: 'Selected cache name' });
+  // Intentional temporary-fixture directory replacement. The ordinary owner
+  // cache is left warm; this is a new admission requirement discriminator,
+  // not a claim that its host-memory-only contract promised physical identity.
+  fs.renameSync(project, project + '-retired'); fs.mkdirSync(path.join(project, '.clubhouse'), { recursive: true });
+  fs.writeFileSync(file(), JSON.stringify([agent({ name: 'Expected replacement primary' })]));
+  const replacement = fs.statSync(project, { bigint: true });
+  expect(`${replacement.dev}:${replacement.ino}`).not.toBe(`${original.dev}:${original.ino}`);
+  expect(peekCachedDurableConfig(project, 'target')).toMatchObject({ name: 'Selected cache name' });
+  const receipts: DisplayReceipt[] = [], result = query(readAgentConnectionCacheForDisplay, receipts);
+  expect(result).toMatchObject({ state: 'ok', value: { rows: [{ endpoint: { value: { record: 'registered-primary', fields: { name: { value: 'Expected replacement primary' } } } } }] } });
+  expect(receipts.every((r) => r.current())).toBe(true);
+  if (result.state !== 'ok') return;
+  expect.soft(result.value.rows[0].hostCache).toMatchObject({ state: 'ok', value: { availability: 'namespace-unconfirmed' } });
+  expect.soft(JSON.stringify(result.value.rows[0].hostCache)).not.toContain('Selected cache name');
+});
