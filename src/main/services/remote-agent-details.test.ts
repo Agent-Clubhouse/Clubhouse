@@ -813,18 +813,20 @@ describe('admitted endpoint target fields at complete normal Details assembly', 
     const saved = await import('./dispatcher-saved-links-display'), parentReceipts: Array<{ current(): boolean }> = [];
     expect(saved.readSavedDispatcherLinksForDisplay('a1', a, { receipts: parentReceipts })).toMatchObject({ state: 'ok', value: { total: 1 } }); expect(parentReceipts.every((r) => r.current())).toBe(true);
     const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
-    let captured: import('../../shared/remote-agent-details').RemoteDetailsCard | undefined, allowed = true;
+    let captured: import('../../shared/remote-agent-details').RemoteDetailsCard | undefined, allowed = true, hookReached = false, mutated = false, oldReceiptsCurrent: boolean | undefined;
+    let observed: { name: boolean; saved?: string; memory?: string } | undefined;
     const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); captured = args[0]; });
     m.canvases.mockImplementationOnce(async () => {
-      expect(captured?.rows.some((r) => r.label === 'Qualified target')).toBe(true); expect(captured?.rows.find((r) => r.label === 'Qualified target saved target')?.value).toContain('Connect to Dispatcher Off');
-      expect(captured?.rows.find((r) => r.label === 'Qualified target host memory target')?.value).toBe('Host memory not loaded');
-      if (mode !== 'unchanged') await fs.writeFile(relatedFile, JSON.stringify([{ ...related, name: 'Changed related primary' }]));
-      expect(parentReceipts.every((r) => r.current())).toBe(true); // Old manual-record receipts cannot see target-file changes.
+      hookReached = true; observed = { name: captured?.rows.some((r) => r.label === 'Qualified target') === true, saved: captured?.rows.find((r) => r.label === 'Qualified target saved target')?.value, memory: captured?.rows.find((r) => r.label === 'Qualified target host memory target')?.value };
+      if (mode !== 'unchanged') { await fs.writeFile(relatedFile, JSON.stringify([{ ...related, name: 'Changed related primary' }])); mutated = true; }
+      oldReceiptsCurrent = parentReceipts.every((r) => r.current()); // Assert OUTSIDE application's section error catch.
       if (mode === 'revoked-and-related-primary') allowed = false;
       return [];
     });
     try {
       const response = await readRemoteAgentDetails('a1', () => allowed);
+      expect(hookReached).toBe(true); expect(observed?.name).toBe(true); expect(observed?.saved).toContain('Connect to Dispatcher Off'); expect(observed?.memory).toBe('Host memory not loaded'); expect(oldReceiptsCurrent).toBe(true); expect(mutated).toBe(mode !== 'unchanged');
+      if (mutated) expect(JSON.parse(await fs.readFile(relatedFile, 'utf8'))[0].name).toBe('Changed related primary');
       if (mode === 'unchanged') {
         expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
         const c = (response.body as RemoteAgentDetails).cards.find((c) => c.id === 'connections'); expect(c?.rows.some((r) => r.label === 'Qualified target')).toBe(true); expect(JSON.stringify(c)).not.toMatch(/PRIVATE_|expectedProjectNamespace|rootNamespace|agentProjectPath|targetProjectPath/); expect(JSON.stringify(c)).not.toContain(root);
