@@ -99,7 +99,10 @@ export function readConnectionEndpointMetadataForDisplay(requests: readonly Admi
   for (const [projectPath, group] of grouped) {
     // A later file read must not proceed solely on a relationship which has
     // already become invalid while the registry/earlier endpoints were read.
-    if (!group.some((request) => current(request.association))) { for (const request of group) results[request.index] = unknown('changed'); continue; }
+    // Deduplicate only within this candidate project's phase. False shared
+    // receipts must not reread their source once per pair; later projects and
+    // final assembly still check freshly, and distinct receipts remain distinct.
+    if (![...new Set(group.map((request) => request.association))].some(current)) { for (const request of group) results[request.index] = unknown('changed'); continue; }
     if (++roots > CONNECTION_METADATA_ROOTS) { for (const request of group) results[request.index] = unknown('limit'); continue; }
     try {
       const snapshot = readReadOnlyPrimaryMetadata(projectPath, '.clubhouse/agents.json', { budget });

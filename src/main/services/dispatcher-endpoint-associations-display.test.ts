@@ -154,3 +154,31 @@ it.each([20, 50])('bounds invalidated shared source rechecks for %s selected pai
   expect.soft(opened().filter((f) => f === source())).toHaveLength(6);
   expect.soft(sourceBytes).toBe(originalBytes * 6);
 });
+it('preserves distinct receipt checks for one project when the first source becomes unavailable', async () => {
+  await putAgents(b, [{ id: 'first', name: 'First' }, { id: 'second', name: 'Second' }]);
+  const actual = await vi.importActual<typeof import('fs')>('fs'); let changed = false;
+  const first = { current: vi.fn(() => !changed) }, second = { current: vi.fn(() => true) };
+  vi.mocked(fs.readSync).mockImplementation((...args: Parameters<typeof actual.readSync>) => {
+    const value = actual.readSync(...args); if (opened().at(-1) === path.join(m.base, 'projects.json')) changed = true; return value;
+  });
+  const result = readConnectionEndpointMetadataForDisplay([{ agentId: 'first', projectPath: b, association: first }, { agentId: 'second', projectPath: b, association: second }], { receipts: [] });
+  expect(changed).toBe(true); expect.soft(result).toMatchObject({ state: 'ok', value: [{ state: 'unavailable', reason: 'changed' }, { state: 'unavailable', reason: 'changed' }] });
+  // The second independently valid association admits this root, while the
+  // failed first association still withholds the combined result at finish.
+  expect.soft(opened()).toContain(agentFile(b)); expect.soft(first.current).toHaveBeenCalledTimes(3); expect.soft(second.current).toHaveBeenCalledTimes(2);
+});
+it('rechecks the same source freshly for a later project after it changes during the first project read', async () => {
+  const pairs = [pair('first'), pair('second')];
+  await putSource([saved(pairs[0]), saved({ ...pairs[1], targetProjectPath: c })]);
+  await putAgents(b, [{ id: 'first', name: 'First B' }]); await putAgents(c, [{ id: 'second', name: 'PRIVATE_LATER_PROJECT' }]);
+  const actual = await vi.importActual<typeof import('fs')>('fs'); let changed = false;
+  vi.mocked(fs.readSync).mockImplementation((...args: Parameters<typeof actual.readSync>) => {
+    const value = actual.readSync(...args);
+    if (!changed && opened().at(-1) === agentFile(b)) {
+      changed = true; actual.writeFileSync(source(), JSON.stringify({ version: 1, connections: [saved(pairs[0]), saved({ ...pairs[1], targetProjectPath: b })], removedByUser: [] }));
+    }
+    return value;
+  });
+  const result = query(pairs); expect(changed).toBe(true);
+  expect.soft(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect.soft(opened()).toContain(agentFile(b)); expect.soft(opened()).not.toContain(agentFile(c)); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_');
+});
