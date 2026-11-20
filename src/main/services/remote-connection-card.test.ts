@@ -169,12 +169,12 @@ it.each(['saved', 'pending-not-saved', 'owner-saved-copy-missing', 'override-pre
     expect.soft(c.rows.some((row) => row.label === 'manual-target')).toBe(true);
     expect.soft(c.rows.find((row) => row.label === 'manual-target sources')?.value).toContain('Made by the Dispatcher (saved record');
     const removal = c.rows.find((row) => row.label === 'manual-target saved Dispatcher link')?.value;
-    expect.soft(removal).toBe('No removal record in saved metadata');
+    expect.soft(removal).toBe('No removal record in saved settings');
     const availability = c.rows.find((row) => row.label === 'manual-target Dispatcher availability')?.value;
-    if (mode === 'pending-not-saved') expect.soft(availability).toContain('Removal queued; owner last save failed');
-    if (mode === 'owner-saved-copy-missing') expect.soft(availability).toContain('Removal queued; owner recorded a save');
-    if (mode === 'owner-unavailable') expect.soft(availability).toContain('Owner write outcome unavailable');
-    if (mode === 'owner-unavailable') expect.soft(availability).toContain('Process-known removal association unavailable');
+    if (mode === 'pending-not-saved') expect.soft(availability).toContain('Removal queued; last save failed');
+    if (mode === 'owner-saved-copy-missing') expect.soft(availability).toContain('Removal queued; save was reported successful');
+    if (mode === 'owner-unavailable') expect.soft(availability).toContain('File-save status unavailable');
+    if (mode === 'owner-unavailable') expect.soft(availability).toContain('Queued removal status unavailable');
     expect.soft(c.rows.find((row) => row.label === 'manual-target Dispatcher availability')?.value).toContain('This agent’s Connect to Dispatcher is off');
     if (mode === 'saved') expect.soft(c.rows.find((row) => row.label === 'manual-target outgoing switches')?.value).toContain('Configured manual link defaults');
     const switches = c.rows.find((row) => row.label === 'manual-target outgoing switches')?.value;
@@ -202,5 +202,5 @@ it('keeps an unavailable cold manual source distinct from a complete retained em
 });
 it('keeps cold manual source page and row omissions visible', async () => {
   const projectPath = path.join(root, 'selected-project'); await put('dispatcher-connections.json', { version: 1, connections: Array.from({ length: 51 }, (_, i) => ({ agentId: selected, targetId: `manual-${i}`, agentProjectPath: projectPath, targetProjectPath: '/other-project', createdAt: at, createdBy: 'controller' })), removedByUser: [] });
-  const { c, receipts } = await read(false, { projectPath }); expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBeGreaterThan(0); expect.soft(c.notes.join(' ')).toContain('1 additional saved Dispatcher links are outside this bounded page'); expect.soft(receipts.every((receipt) => receipt.current())).toBe(true);
+  const { c, receipts } = await read(false, { projectPath }); expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBeGreaterThan(0); expect.soft(c.notes.join(' ')).toContain('1 additional saved Dispatcher link is outside this bounded page'); expect.soft(receipts.every((receipt) => receipt.current())).toBe(true);
 });

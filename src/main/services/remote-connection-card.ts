@@ -210,14 +210,14 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       row(c, `${name} sources`, [...sourceLabels].join(', ') || (sources.state === 'ok' && sources.value.complete ? 'No source reported in the retained cache' : 'Source information unavailable'));
       if (pair.manual) {
         const queued = value(pair.manualMemory?.pendingRemoval), persisted = value(pair.manualMemory?.removalSaved), removed = value(pair.manual.removalRecorded);
-        row(c, `${name} saved Dispatcher link`, removed === true ? 'Removal record found in saved metadata' : removed === false ? 'No removal record in saved metadata' : 'Saved removal record unavailable');
-        const processRemoval = queued === true ? persisted === false ? 'Removal queued; owner last save failed' : persisted === true ? 'Removal queued; owner recorded a save' : 'Removal queued; owner save status unavailable'
-          : queued === false ? 'No process-known queued removal' : 'Process-known removal association unavailable';
+        row(c, `${name} saved Dispatcher link`, removed === true ? 'Removal record found in saved settings' : removed === false ? 'No removal record in saved settings' : 'Saved removal status unavailable');
+        const processRemoval = queued === true ? persisted === false ? 'Removal queued; last save failed' : persisted === true ? 'Removal queued; save was reported successful' : 'Removal queued; save status unavailable'
+          : queued === false ? 'No queued removal reported in this host session' : 'Queued removal status unavailable';
         const policy = value(options.connectToDispatcher), enabled = value(localDispatcher?.enabled);
         const writes = manualMemory?.state === 'ok' ? manualMemory.value.storeWrites : undefined;
         row(c, `${name} Dispatcher availability`, [enabled === false ? 'Host Dispatcher saved off' : enabled === undefined ? 'Host Dispatcher switch unavailable' : 'Host Dispatcher saved on',
           !options.dispatcher ? policy === false ? 'This agent’s Connect to Dispatcher is off' : policy === true ? 'This agent’s Connect to Dispatcher is on' : 'This agent’s Dispatcher setting unavailable' : '',
-          processRemoval, writes === 'recorded-blocked' ? 'Last owner write probe failed' : writes === 'recorded-writable' ? 'Owner previously saved here' : writes === 'unobserved' ? 'Owner write outcome unobserved' : 'Owner write outcome unavailable', 'Other endpoint eligibility not confirmed'].filter(Boolean).join(' · '));
+          processRemoval, writes === 'recorded-blocked' ? 'Last file-save check failed' : writes === 'recorded-writable' ? 'Earlier file-save check succeeded' : writes === 'unobserved' ? 'File-save checks not yet reported' : 'File-save status unavailable', 'Other endpoint eligibility not confirmed'].filter(Boolean).join(' · '));
       }
       if (makerField) row(c, `${name} made by`, makers.state === 'ok' ? makers.value.map((maker) => boundedName(value(maker.name)) || refs.get(formatAgentAddress({ agentId: maker.agentId, machine: maker.machineId })) || formatAgentAddress({ agentId: maker.agentId, machine: maker.machineId })).join(', ') : 'Unavailable from the saved record');
       if (pair.machine) {
@@ -254,9 +254,9 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     if (manual) {
       if (manual.state !== 'ok') c.notes.push('Saved manual Dispatcher link metadata is unavailable; no empty list or current link eligibility is inferred.');
       else {
-        if (manual.value.omitted) c.notes.push(`${manual.value.omitted} additional saved Dispatcher links are outside this bounded page.`);
+        if (manual.value.omitted) c.notes.push(`${manual.value.omitted} additional saved Dispatcher link${manual.value.omitted === 1 ? ' is' : 's are'} outside this bounded page.`);
         if (manual.value.excludedProjectRecords) c.notes.push(`${manual.value.excludedProjectRecords} saved Dispatcher link records belong to another project association and were excluded.`);
-        c.notes.push('Saved manual Dispatcher links show committed metadata and process-known removal records. Other endpoint eligibility and effective tools are not confirmed by those records.');
+        c.notes.push('Saved Dispatcher links show saved settings and removal reports from this host session. The other agent’s availability and current tool access are not confirmed by those records.');
       }
     }
     if (sources.state !== 'ok') c.notes.push('Registered source metadata is unavailable. Other sources may hold these connections.');
