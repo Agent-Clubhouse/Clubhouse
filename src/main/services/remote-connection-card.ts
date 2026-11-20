@@ -76,6 +76,7 @@ function referenceNames(selected: string, selectedName: string | undefined) {
 function toolsFor(pair: Pair, savedComplete: boolean): string {
   if (pair.switchAssociationUnknown) return 'Saved or bound switch association is unconfirmed for this configured endpoint; source defaults are listed separately';
   if (pair.automatic && savedComplete && !pair.binding && !pair.saved && !pair.sources.length) {
+    if (pair.manual) return 'Multiple configured sources; starting defaults are shown separately, without a bound or saved switch record';
     const defaults = localDirectionTools({ disabledTools: pair.automatic.disabledTools, enabledTools: pair.automatic.enabledTools });
     return `Configured automatic link defaults · On: ${labels(defaults.allowed)}; Off: ${labels(defaults.disabled)}`;
   }
@@ -231,7 +232,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       if (pair.kind === 'agent' && !pair.machine) { const address = parseAgentAddress(other); if (address.machine) { pair.machine = address.machine; pair.remoteAgent = address.agentId; } }
       const makers = pair.saved?.makers;
       const makerField = makers && (makers.state !== 'ok' || !!makers.value.length);
-      const fields = 3 + (pair.machine ? 3 + (options.dispatcher ? 1 : 0) : 0) + (makerField ? 1 : 0) + (pair.manual ? 2 : 0) + (pair.automatic ? 1 : 0) + (pair.manualFields ? 1 + (pair.manualFields.memory ? 1 : 0) : 0);
+      const fields = 3 + (pair.machine ? 3 + (options.dispatcher ? 1 : 0) : 0) + (makerField ? 1 : 0) + (pair.manual ? 2 : 0) + (pair.manual && pair.identityGroup ? 1 : 0) + (pair.automatic ? 1 : 0) + (pair.manualFields ? 1 + (pair.manualFields.memory ? 1 : 0) : 0);
       if (c.rows.length >= REMOTE_DETAILS_MAX_ROWS) { c.omitted += fields; continue; }
       const sourceBinding = pair.sources.map((source) => value(source.binding)).find((b) => !!b);
       const record = pair.binding ?? sourceBinding;
@@ -275,6 +276,10 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       if (pair.manual) sourceLabels.add(`Made by the Dispatcher (saved record${value(pair.manual.removalRecorded) === true || value(pair.manualMemory?.pendingRemoval) === true ? ', removal recorded' : ''})`);
 
       row(c, `${name} sources`, [...sourceLabels].join(', ') || (sources.state === 'ok' && sources.value.complete ? 'No source reported in the retained cache' : 'Source information unavailable'));
+      if (pair.manual && pair.identityGroup) {
+        const start = localDirectionTools(undefined);
+        row(c, `${name} manual starting switches`, `Configured manual source defaults · On: ${labels(start.allowed)}; Off: ${labels(start.disabled)} · not effective tool authority`);
+      }
       if (pair.automatic) {
         const start = localDirectionTools({ disabledTools: pair.automatic.disabledTools, enabledTools: pair.automatic.enabledTools });
         row(c, `${name} automatic starting switches`, `Configured source defaults · On: ${labels(start.allowed)}; Off: ${labels(start.disabled)} · not effective tool authority`);

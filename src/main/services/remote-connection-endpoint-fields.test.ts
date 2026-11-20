@@ -101,7 +101,7 @@ it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'd
   for (const fn of [fsp.writeFile, fsp.rename, fsp.mkdir, fs.watch]) expect.soft(fn).not.toHaveBeenCalled();
 });
 
-it.each(['cross-project-outgoing', 'cross-project-two-way', 'matching-role-folder', 'distinct-native-ids', 'convergent-admitted-role-folder', 'cross-project-same-name', 'cross-project-native-override', 'reverse-cross-project'] as const)('keeps configured controller and saved manual endpoint identities independent: %s', async (mode) => {
+it.each(['cross-project-outgoing', 'cross-project-two-way', 'matching-role-folder', 'distinct-native-ids', 'convergent-admitted-role-folder', 'cross-project-same-name', 'cross-project-native-override', 'reverse-cross-project', 'bounded-identity-page'] as const)('keeps configured controller and saved manual endpoint identities independent: %s', async (mode) => {
   const { configuredDispatcherDirections } = await import('./configured-dispatcher-directions');
   const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
   const { readSavedDispatcherLinksForDisplay } = await import('./dispatcher-saved-links-display');
@@ -128,14 +128,17 @@ it.each(['cross-project-outgoing', 'cross-project-two-way', 'matching-role-folde
   expect(metadata).toMatchObject({ state: 'ok', value: { rows: links.map(() => ({ relationship: 'recorded', endpoint: { state: 'ok', value: { record: 'registered-primary', fields: { id: manualId, name: { state: 'ok', value: same ? 'Operations' : related.name } } } } })) } }); expect(receipts.every((r) => r.current())).toBe(true);
   const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
   const snapshot = async (folder = root): Promise<unknown> => Object.fromEntries(await Promise.all((await actual.readdir(folder)).sort().map(async (name) => { const f = path.join(folder, name), st = await actual.lstat(f); return [name, st.isDirectory() ? { ino: st.ino, files: await snapshot(f) } : { ino: st.ino, mtime: st.mtimeMs, bytes: (await actual.readFile(f)).toString('base64') }]; })));
+  if (mode === 'bounded-identity-page') for (let i = 0; i < 34; i++) bindingManager.bind(selected.id, { targetId: 'terminal-' + i, targetKind: 'terminal', label: 'Selected terminal ' + i });
   const before = await snapshot();
   resetObservation(); await readPassiveConnectionCard(c, selected.id, { receipts, authorized: () => true, projectPath: selectedProject, name: selected.name, automatic, automaticControllerProjectPath: mode === 'matching-role-folder' ? undefined : roleProject, endpoint: { target: selectedReceipt, readCache: readAgentConnectionCacheForDisplay } });
   expect.soft(await snapshot()).toEqual(before);
   expect(receipts.every((r) => r.current())).toBe(true); expect(m.external).not.toHaveBeenCalled();
+  if (mode === 'bounded-identity-page') { expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe(20); expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|rootNamespace|targetProjectPath/); return; }
   const automaticSources = c.rows.filter((r) => r.label.endsWith(' sources') && r.value.includes('Connect to Dispatcher (saved policy)'));
   const manualSources = c.rows.filter((r) => r.label.endsWith(' sources') && r.value.includes('Made by the Dispatcher (saved record'));
   expect.soft(automaticSources).toHaveLength(2); expect.soft(automaticSources.every((r) => r.label.startsWith('Operations'))).toBe(true);
   expect.soft(manualSources).toHaveLength(links.length); expect.soft(manualSources.every((r) => r.label.startsWith(same ? 'Operations' : related.name))).toBe(true);
+  if (mode === 'cross-project-two-way') { const headers = c.rows.filter((r) => r.label.startsWith('Project agent') && r.value.startsWith('agent ·')); expect.soft(headers).toHaveLength(2); expect.soft(headers.every((r) => r.value.includes('two-way records'))).toBe(true); }
   if (mode === 'cross-project-outgoing') {
     const manualHeaders = c.rows.filter((r) => r.label.startsWith('Project agent') && r.value.startsWith('agent ·'));
     expect.soft(manualHeaders).toHaveLength(1); expect.soft(manualHeaders.every((r) => !r.value.includes('two-way records') && r.value.includes('sends to it'))).toBe(true);
@@ -148,6 +151,11 @@ it.each(['cross-project-outgoing', 'cross-project-two-way', 'matching-role-folde
     const defaults = c.rows.filter((r) => r.label.endsWith('automatic starting switches')); expect.soft(defaults).toHaveLength(2); expect.soft(defaults.every((r) => r.label.includes('(automatic Dispatcher)') && r.value.split('; Off:')[0].includes('Read output'))).toBe(true);
     const primary = c.rows.filter((r) => r.label.endsWith(' saved target')); expect.soft(primary).toHaveLength(links.length); expect.soft(primary.every((r) => r.label.includes('(saved Dispatcher link)') && r.value.includes(same ? 'Connect to Dispatcher On' : 'Connect to Dispatcher Off'))).toBe(true);
   }
+  const automaticDefaults = c.rows.filter((r) => r.label.endsWith('automatic starting switches')), manualDefaults = c.rows.filter((r) => r.label.endsWith('manual starting switches'));
+  expect.soft(automaticDefaults).toHaveLength(2); expect.soft(manualDefaults).toHaveLength(mode === 'distinct-native-ids' ? 0 : links.length);
+  expect.soft(automaticDefaults.every((r) => r.value.split('; Off:')[0].includes('Wake it') && r.value.split('; Off:')[1].includes('Clear its context'))).toBe(true);
+  expect.soft(manualDefaults.every((r) => r.value.split('; Off:')[0].includes('Clear its context') && r.value.split('; Off:')[1].includes('Wake it'))).toBe(true);
+  if (mode === 'convergent-admitted-role-folder') { const switches = c.rows.find((r) => r.label === 'Operations outgoing switches'); expect.soft(switches?.value).toContain('Multiple configured sources'); }
   if (mode === 'cross-project-native-override') {
     const native = c.rows.find((r) => r.label.includes('(native-ID records)') && r.label.endsWith('outgoing switches')); expect.soft(native?.value.split('; Off:')[1]).toContain('Read output');
     expect.soft(c.rows.filter((r) => r.label.includes('(automatic Dispatcher)') && /(?:outgoing|incoming) switches$/.test(r.label)).every((r) => r.value.includes('association is unconfirmed'))).toBe(true);
