@@ -1,0 +1,11 @@
+--- src/main/services/saved-group-connections-display.ts
++++ src/main/services/saved-group-connections-display.ts
+@@ -78,7 +78,7 @@
+         if (read.missing) continue;
+         const m = read.raw;
+         if (!record(m) || m.version !== 1 || typeof m.autoJoin !== 'boolean' || !Array.isArray(m.explicit) || !Array.isArray(m.excluded)) throw new Error('Invalid saved membership.');
+-        if (m.explicit.length + m.excluded.length > rowsLeft) { if (m.explicit.length + m.excluded.length <= 4096 && consumed > 1) { consumed--; break; } page.complete = false; page.unavailableGroups++; continue; }
++        if (m.explicit.length + m.excluded.length > rowsLeft) {  page.complete = false; page.unavailableGroups++; continue; }
+         rowsLeft -= m.explicit.length + m.excluded.length;
+         const scope: GroupProjectScope | undefined = record(g.scope) && (g.scope.reach === 'local' || g.scope.reach === 'network')
+           ? g.scope.level === 'app' && g.scope.projectId === undefined ? { level: 'app', reach: g.scope.reach }

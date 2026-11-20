@@ -1,0 +1,11 @@
+--- src/main/services/saved-canvas-connections-display.ts
++++ src/main/services/saved-canvas-connections-display.ts
+@@ -165,7 +165,7 @@
+         const outgoing = p.agentId === selected.agentId; if (!outgoing && !(p.targetKind === 'agent' && p.targetId === selected.agentId)) continue;
+         if (!selectedPath) { complete = false; unknownRows++; continue; } if (selectedPath !== selected.projectPath) continue;
+         if (++knownMatches > 4096) { knownMatches = 4096; complete = false; unknownRows++; break; }
+-        if (knownMatches <= offset || rows.length >= 8) continue;
++        if (rows.length >= 8) continue;
+         const disabled = p.disabledTools === undefined ? [] : p.disabledTools;
+         const validTools = Array.isArray(disabled) && disabled.length <= 64 && disabled.every(key);
+         const knownTools = validTools ? (disabled as string[]).filter((t) => CONNECTION_SWITCHES.some((s) => s.tool === t)) : [];

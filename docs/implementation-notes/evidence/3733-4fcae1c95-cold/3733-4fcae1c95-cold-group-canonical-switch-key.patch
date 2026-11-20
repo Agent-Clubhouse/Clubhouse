@@ -1,0 +1,11 @@
+--- src/main/services/saved-group-connections-display.ts
++++ src/main/services/saved-group-connections-display.ts
+@@ -112,7 +112,7 @@
+         if (!explicit && !excluded && !automatic) continue;
+         if (typeof g.name !== 'string' || !g.name || g.name.length > 1024) throw new Error('Invalid selected group name.');
+         let disabled: unknown, switchSource: SavedGroupConnection['switchSource'] = 'absent';
+-        const key = policyAddress ?? (automatic ? agentId : undefined);
++        const key = explicit?.address as string | undefined ?? (automatic ? agentId : undefined);
+         if (key !== undefined && record(m.disabledTools) && Object.prototype.hasOwnProperty.call(m.disabledTools, key)) { disabled = m.disabledTools[key]; switchSource = 'member'; }
+         else if (record(g.metadata) && Object.prototype.hasOwnProperty.call(g.metadata, 'defaultDisabledTools')) { disabled = g.metadata.defaultDisabledTools; switchSource = 'group'; }
+         const validTools = Array.isArray(disabled) && disabled.length <= 64 && disabled.every(id), toolList = validTools ? disabled as string[] : [], knownTools = toolList.filter((t) => (GROUP_PROJECT_TOOL_SUFFIXES as readonly string[]).includes(t));

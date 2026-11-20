@@ -1,0 +1,10 @@
+--- src/main/services/annex-identity.ts
++++ src/main/services/annex-identity.ts
+@@ -290,6 +290,7 @@
+ export function matchLoadedIdentityForDisplay(candidate: unknown, options: { receipts: DisplayReceipt[] }): DisplayValue<boolean> {
+   const inputs = [{ field: 'Loaded host identity association', source: 'host-cache' as const, observedAt: Date.now() }];
+   if (typeof candidate !== 'string' || candidate.length < 47 || candidate.length > 95 || !/^(?:[0-9a-f]{2}:){15,31}[0-9a-f]{2}$/i.test(candidate) || !Array.isArray(options?.receipts)) return { state: 'unavailable', reason: 'invalid', inputs };
++  getIdentity();
+   const normalized = candidate.toLowerCase(), origin = displayIdentityOrigin, fingerprint = loadedDisplayFingerprint(), profile = currentIdentityDisplayOrigin();
+   options.receipts.push(identityDisplayReceipt(origin, fingerprint, profile, displayIdentityGeneration));
+   return fingerprint && origin && origin === profile ? { state: 'ok', value: fingerprint === normalized, inputs } : { state: 'unavailable', reason: 'unreadable', inputs };

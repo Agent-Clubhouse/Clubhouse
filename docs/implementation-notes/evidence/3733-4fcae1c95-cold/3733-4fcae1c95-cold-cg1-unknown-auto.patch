@@ -1,0 +1,11 @@
+--- src/main/services/saved-group-connections-display.ts
++++ src/main/services/saved-group-connections-display.ts
+@@ -108,7 +108,7 @@
+         const automatic = projectId !== DISPATCHER_PROJECT_ID && m.autoJoin && inScope === true && localHost === true && helper === false && disposed === false;
+         const automaticUnknown = !explicit && !excluded && projectId !== DISPATCHER_PROJECT_ID && m.autoJoin && inScope !== false && localHost !== false && helper !== true && disposed !== true
+           && (inScope === undefined || localHost === undefined || helper === undefined || disposed === undefined);
+-        if (ambiguous || automaticUnknown) { page.complete = false; page.unknownRows++; }
++        if (ambiguous) { page.complete = false; page.unknownRows++; }
+         if (!explicit && !excluded && !automatic) continue;
+         if (typeof g.name !== 'string' || !g.name || g.name.length > 1024) throw new Error('Invalid selected group name.');
+         let disabled: unknown, switchSource: SavedGroupConnection['switchSource'] = 'absent';

@@ -1,0 +1,18 @@
+--- src/main/services/remote-quick-details.ts
++++ src/main/services/remote-quick-details.ts
+@@ -33,7 +33,6 @@
+     const runtime = bound ? getAgentRuntime(agentId) : undefined, running = rawRunning && bound;
+     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
+     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
+-    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
+     const state = agentDisplayState({ id: agentId }, running);
+     const status = run.finishedAt && !running ? run.completion === 'failed' ? 'error' : 'sleeping' : rawRunning && !bound ? 'spawning' : state.status;
+     // A requested default does not establish which provider actually started.
+@@ -127,6 +126,7 @@
+     byId.changes.notes.push('Comparisons require a folder confirmed by this quick run’s created runtime. A requested folder alone is not read. Session and last-turn evidence also requires its current chat session identity.');
+     if (!authorized()) return refused();
+     if (setupReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'quick_setup_evidence_changed' } };
++    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
+     const current = agentRegistry.get(agentId);
+     if (current !== registration || current?.nonce !== nonce || current?.runtime !== registeredRuntime || current?.orchestrator !== registeredProvider || current?.cwd !== registeredCwd
+       || isAgentRunning(agentId) !== rawRunning || quickRuntimeIsCurrent(run, current) !== bound || running && !registration && runtime?.kind !== 'chat'

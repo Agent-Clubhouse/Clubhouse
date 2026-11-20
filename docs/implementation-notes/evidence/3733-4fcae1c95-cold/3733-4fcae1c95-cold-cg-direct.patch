@@ -1,0 +1,156 @@
+diff --git a/docs/implementation-notes/3733-nov20-active.md b/docs/implementation-notes/3733-nov20-active.md
+index 7f4c4ebac..580fa62c4 100644
+--- a/docs/implementation-notes/3733-nov20-active.md
++++ b/docs/implementation-notes/3733-nov20-active.md
+@@ -37,3 +37,11 @@ Test-only86f34688a on production16e9ca834 reproduced2FAIL219SKIP: actual persist
+ Correction uses two native source keys per page (registered/cold-source pages retain their independent8-record bounds), so multiple admitted target kinds and uncertainty can remain represented within the100-row card limit. Totals/next advance by raw source keys and every variant is reachable. The response explicitly advertises `connectionPageEnvelope:1`; successful queried pages set `connectionPageOnly:true`. Other card bodies carry `requested:false`, zero rows/notes, truthful omitted counts and a not-included summary; settings/provider payload is not included in that page envelope. Full default Details still returns all card bodies and settings normally. Full/client page calls reject mismatched envelope context; older paged hosts without this additive capability remain compatible and get a limitation notice. No silent empty/unsupported substitution and no new route or access.
+ 
+ Requested rows are never popped for page byte pressure. If necessary, field/label/note text is bounded with explicit truncation markers/notices while every requested record/field remains represented. All original per-section reads and final selected/role/run/settings/source/authorization fences remain; this does not claim reduced global read work or hard deadlines. New controls cover40/40typed variants, last page, independent UTF8 envelope bounds/default and unsupported semantics, and client/UI mismatch refusals. Development6files283PASS + tsc0 and separate route/client16PASS815SKIP are observed before the final small context/copy followup; final exact proof remains required. Source-only/resource limits and full matrix/current eligibility/navigation remain open.
++
++## 03:30 Pacific preservation — CG correction, still unreviewed
++
++Current active source is now `origin/lane-full-remote-details/cold-group-cg1`; the commit carrying this additive note includes the test-only1472/ec79 CG baselines and the group correction. Original cold branch463515904480d0efd88581e49a61be776d616813 remains frozen and rejected for CG1/CG2; its formal driver was NEVER launched, and no exact463 final GREEN/tsc/canonical claim exists. Baseline ec79a9118f5ad85ba66ec80ce0e058b65bf64d3c has4FAIL7PASS8SKIP; all hard cache/primary/scope/receipt prestates pass before reached applicability/unknown failures. 1472 baseline has3FAIL5PASS8SKIP. Expected-failure wrappers exit0, not product passes.
++
++Correction preserves unknown automatic applicability as partial/unknown rows without inventing group membership; known helper/out-of-scope/auto-off remain verified exclusions. Explicit selected membership uses the actual shared host-relative memberInScope rule: a qualified local-machine member on another host's reach-local group remains a saved row but is out-of-scope; network and same-host positives remain configured recorded policy. Scope/key canonicalization and admitted selected scalar snapshots are private; loaded identity is still display evidence, not authority. Development working-tree result:5files236PASS and tsc0 at11:26:42–11:26:52Z. These are not exact frozen composition acceptance. Next is the risk-targeted full composed cold-source proof and independent review; do not advance f122 or open a full-parity PR.
++
++All89 lane worktrees were inspected at this checkpoint. Five historical detached proof worktrees retain test-only overlays (205,8db,a272,helper36-baseline,security866); preserve their exact diffs in portable evidence without restoring or treating them as active work. The current correction is the only source change. Portable baseline/evidence custody is being pushed separately to `origin/lane-full-remote-details/proof-connections-pages-67d`; use that branch's newest additive preservation manifest. No new large closeout group is started before transfer. Remaining source eligibility/navigation/non-Connections matrix work is still listed above. Sender keeps active ownership until Mini exact-fetch and ACTIVE remaining-work acceptance is explicitly relayed through parent→Navi→Tael→desktopbp83o0.
+diff --git a/src/main/services/remote-quick-details.test.ts b/src/main/services/remote-quick-details.test.ts
+index cd679d320..e1f2165e7 100644
+--- a/src/main/services/remote-quick-details.test.ts
++++ b/src/main/services/remote-quick-details.test.ts
+@@ -397,7 +397,7 @@ describe('attested Quick Connections continuation', () => {
+       if (mode.startsWith('display-')) { expect(m.runtime()).toBe(admittedRuntime); expect(admittedRuntime.getSessionId()).toBe('same-app-session'); expect(admittedRuntime.getNativeSessionId()).toBe('same-native-session'); expect(displayGeneration).toBe(mode === 'display-stable' ? 'admitted-display' : 'reopened-display'); if (mode === 'display-reopen-early') expect(earlyReached).toBe(true); }
+       if (mode === 'unchanged' || mode === 'display-stable') {
+         expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'quick')).toBe(true); const body = response.body as RemoteAgentDetails;
+-        expect(body.connectionPageSources).toEqual(['outgoing', 'incoming', 'directions', 'sources']); expect(body.cards.find((c) => c.id === 'connections')?.connectionPage).toMatchObject({ source: 'outgoing', offset: 40, known: 41, next: null }); expect(JSON.stringify(body)).not.toContain('PRIVATE_CURRENT_QUICK_NONCE');
++        expect(body.connectionPageOnly).toBe(true); expect(body.connectionPageEnvelope).toBe(1); expect(body.cards.filter((c) => c.id !== 'connections').every((c) => c.requested === false && c.rows.length === 0 && c.notes.length === 0)).toBe(true); expect(body.connectionPageSources).toEqual(['outgoing', 'incoming', 'directions', 'sources']); expect(body.cards.find((c) => c.id === 'connections')?.connectionPage).toMatchObject({ source: 'outgoing', offset: 40, known: 41, next: null }); expect(JSON.stringify(body)).not.toContain('PRIVATE_CURRENT_QUICK_NONCE');
+       } else { expect.soft(response.status).toBe(mode === 'revoked' || mode === 'display-reopen-revoked' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); }
+     } finally { capture.mockRestore(); m.realConnections = false; bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting(); }
+   });
+diff --git a/src/main/services/saved-group-connections-display.test.ts b/src/main/services/saved-group-connections-display.test.ts
+index 2f57476a1..4ae70c002 100644
+--- a/src/main/services/saved-group-connections-display.test.ts
++++ b/src/main/services/saved-group-connections-display.test.ts
+@@ -76,3 +76,34 @@ it('retains selected source/tombstone/identity receipts after return and refuses
+   const hidden: Array<{ current(): boolean }> = []; expect(read(s, { authorized: () => true, receipts: hidden }).state).toBe('ok'); await fs.writeFile(path.join(groupDir, 'tombstones.json'), JSON.stringify([{ groupProjectId: 'own' }])); expect(hidden.some((r) => !r.current())).toBe(true);
+   expect(read(s, { authorized: () => false, receipts: [] })).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect(read({ ...s, projectPath: root }, { authorized: () => true, receipts: [] })).toMatchObject({ state: 'unavailable', reason: 'changed' });
+ });
++it.each(['cold-host', 'warm-local', 'warm-other', 'unknown-helper', 'unknown-disposed', 'unknown-scope', 'known-helper', 'unknown-host-known-helper', 'out-of-scope', 'auto-off'] as const)('distinguishes unknown automatic group applicability from known empty: %s', async (mode) => {
++  const raw = mode === 'unknown-helper' || mode === 'out-of-scope' || mode === 'auto-off' ? { parentAgentId: {} } : mode === 'unknown-disposed' ? { disposedAt: null } : mode === 'known-helper' || mode === 'unknown-host-known-helper' ? { parentAgentId: 'parent' } : {};
++  const s = await selected(raw), modern = ['cold-host', 'warm-local', 'warm-other', 'unknown-host-known-helper'].includes(mode);
++  const g = group('automatic', { ...(modern && { host: { machine: fp } }), ...(mode === 'unknown-scope' && { scope: undefined }), ...(mode === 'out-of-scope' && { scope: { level: 'project', projectId: 'other-project', reach: 'local' } }) });
++  await putRegistry([g]); await put('automatic', membership({ autoJoin: mode !== 'auto-off', explicit: [], excluded: [] }));
++  if (mode === 'warm-local') await warm(); if (mode === 'warm-other') await warm(other);
++  const identity = await import('./annex-identity');
++  if (mode === 'cold-host') { expect(identity.matchLoadedIdentityForDisplay(fp, { receipts: [] }).state).toBe('unavailable'); expect(s.fields.helper).toMatchObject({ state: 'ok', value: false }); expect(s.fields.disposed).toMatchObject({ state: 'ok', value: false }); }
++  if (mode === 'unknown-helper' || mode === 'out-of-scope' || mode === 'auto-off') expect(s.fields.helper.state).toBe('unavailable'); if (mode === 'unknown-disposed') expect(s.fields.disposed.state).toBe('unavailable');
++  const receipts: Array<{ current(): boolean }> = [], before = await disk(), result = read(s, { authorized: () => true, receipts }); expect(result.state).toBe('ok'); expect(receipts.every((r) => r.current())).toBe(true);
++  const unknown = ['cold-host', 'unknown-helper', 'unknown-disposed', 'unknown-scope'].includes(mode);
++  expect.soft(result).toMatchObject({ state: 'ok', value: { complete: !unknown, unknownRows: unknown ? 1 : 0, knownMatches: mode === 'warm-local' ? 1 : 0 } });
++  if (result.state === 'ok') expect.soft(result.value.rows).toHaveLength(mode === 'warm-local' ? 1 : 0);
++  expect(await disk()).toEqual(before); expect(sync.readFileSync).not.toHaveBeenCalled(); expect(sync.writeFileSync).not.toHaveBeenCalled(); expect(sync.copyFileSync).not.toHaveBeenCalled();
++  if (mode === 'cold-host') { await warm(); expect(receipts.some((r) => !r.current())).toBe(true); }
++});
++it.each(['other-host-local', 'other-host-network', 'same-host-local'] as const)('keeps host-relative reach separate from saved explicit group membership: %s', async (mode) => {
++  const s = await selected(); await warm(); const host = mode === 'same-host-local' ? fp : other, scope = { level: 'project' as const, projectId: 'a', reach: mode === 'other-host-network' ? 'network' as const : 'local' as const };
++  const g = group('reach', { host: { machine: host }, scope }); await putRegistry([g]); await put('reach', membership({ explicit: [member({ address: 'selected@' + fp })] }));
++  const identity = await import('./annex-identity'); expect(identity.matchLoadedIdentityForDisplay(fp, { receipts: [] })).toMatchObject({ state: 'ok', value: true }); expect(identity.matchLoadedIdentityForDisplay(other, { receipts: [] })).toMatchObject({ state: 'ok', value: false });
++  const { canonicalMemberAddress } = await import('../../shared/group-project-members'), { memberInScope } = await import('../../shared/group-project-scope');
++  const canonical = canonicalMemberAddress('selected@' + fp, host); expect(memberInScope(scope, { address: canonical, projectId: 'a' })).toBe(mode !== 'other-host-local');
++  const before = await disk(), receipts: Array<{ current(): boolean }> = [], result = read(s, { authorized: () => true, receipts }); expect(result.state).toBe('ok'); if (result.state !== 'ok') throw new Error('fixture'); expect(result.value.rows).toHaveLength(1); expect(result.value.knownMatches).toBe(1); expect(receipts.every((r) => r.current())).toBe(true);
++  expect.soft(result.value.rows[0]).toMatchObject({ groupId: 'reach', membership: 'explicit', applicability: mode === 'other-host-local' ? 'out-of-scope' : 'configured' });
++  expect(await disk()).toEqual(before); expect(sync.readFileSync).not.toHaveBeenCalled(); expect(sync.writeFileSync).not.toHaveBeenCalled();
++});
++it('uses the host-canonical selected member switch key and retains the admitted selection across callbacks', async () => {
++  const s = await selected(); await warm(); await putRegistry([group('canonical', { host: { machine: fp } })]); await put('canonical', membership({ explicit: [member({ address: 'selected@' + fp })], disabledTools: { selected: ['post_bulletin'], ['selected@' + fp]: ['read_message'] } }));
++  const result = read(s, { authorized: () => { s.agentId = 'different'; s.projectId = 'different'; s.projectPath = root; s.fields.helper = { state: 'ok', value: true, inputs: [] }; return true; }, receipts: [] });
++  expect(result).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, rows: [{ membership: 'explicit', applicability: 'configured', disabledTools: ['post_bulletin'], switchSource: 'member' }] } });
++});
+diff --git a/src/main/services/saved-group-connections-display.ts b/src/main/services/saved-group-connections-display.ts
+index 17a87b490..d0961694d 100644
+--- a/src/main/services/saved-group-connections-display.ts
++++ b/src/main/services/saved-group-connections-display.ts
+@@ -3,6 +3,9 @@ import * as path from 'path';
+ import { app } from 'electron';
+ import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
+ import { isMachineFingerprint, parseAgentAddress } from '../../shared/agent-address';
++import { canonicalMemberAddress } from '../../shared/group-project-members';
++import { memberInScope } from '../../shared/group-project-scope';
++import type { GroupProjectScope } from '../../shared/group-project-types';
+ import { GROUP_PROJECT_TOOL_SUFFIXES } from '../../shared/group-project-permissions';
+ import type { DisplayReceipt, DisplayValue } from './display-settings';
+ import type { ConnectionEndpointFields } from './connection-endpoint-fields-display';
+@@ -37,9 +40,11 @@ export function readSavedGroupConnectionsForDisplay(selected: { agentId: string;
+   const unknown = (reason: 'invalid' | 'changed' | 'unreadable' | 'limit'): DisplayValue<SavedGroupConnectionPage> => ({ state: 'unavailable', reason, inputs });
+   const offset = options.offset ?? 0;
+   if (!selected || !id(selected.agentId) || selected.fields?.id !== selected.agentId || !Array.isArray(options.receipts) || !Number.isInteger(offset) || offset < 0 || offset > 4096 || (options.projectOffset ?? 0) !== 0) return unknown('invalid');
++  const agentId = selected.agentId, projectId = selected.projectId, projectPath = selected.projectPath;
++  const helper = selected.fields.helper.state === 'ok' ? selected.fields.helper.value : undefined, disposed = selected.fields.disposed.state === 'ok' ? selected.fields.disposed.value : undefined;
+   const target = selected.receipt, authorized = options.authorized, receipts = options.receipts, start = receipts.length;
+   const admitted = () => { try { return authorized() && current(target); } catch { return false; } }; if (!admitted()) return unknown('changed');
+-  const roots = readRegisteredProjectRootsForDisplay(selected, { authorized, receipts }); if (roots.state !== 'ok') return roots;
++  const roots = readRegisteredProjectRootsForDisplay({ projectId, projectPath, receipt: target }, { authorized, receipts }); if (roots.state !== 'ok') return roots;
+   const home = app.getPath('home'), packaged = !!app.isPackaged, directory = `${packaged ? '.clubhouse' : '.clubhouse-dev'}/group-projects/`;
+   receipts.push({ current: () => app.getPath('home') === home && !!app.isPackaged === packaged });
+   const page: SavedGroupConnectionPage = { rows: [], complete: true, unknownRows: 0, unavailableGroups: 0, knownMatches: 0, offset, next: null };
+@@ -75,38 +80,46 @@ export function readSavedGroupConnectionsForDisplay(selected: { agentId: string;
+         if (!record(m) || m.version !== 1 || typeof m.autoJoin !== 'boolean' || !Array.isArray(m.explicit) || !Array.isArray(m.excluded)) throw new Error('Invalid saved membership.');
+         if (m.explicit.length + m.excluded.length > rowsLeft) { if (m.explicit.length + m.excluded.length <= 4096 && consumed > 1) { consumed--; break; } page.complete = false; page.unavailableGroups++; continue; }
+         rowsLeft -= m.explicit.length + m.excluded.length;
+-        const scope = record(g.scope) && ['app', 'project'].includes(String(g.scope.level)) && ['local', 'network'].includes(String(g.scope.reach)) ? g.scope : undefined;
+-        const inScope = scope?.level === 'app' || scope?.level === 'project' && scope.projectId === selected.projectId;
++        const scope: GroupProjectScope | undefined = record(g.scope) && (g.scope.reach === 'local' || g.scope.reach === 'network')
++          ? g.scope.level === 'app' && g.scope.projectId === undefined ? { level: 'app', reach: g.scope.reach }
++            : g.scope.level === 'project' && id(g.scope.projectId) ? { level: 'project', projectId: g.scope.projectId, reach: g.scope.reach } : undefined : undefined;
++        const inScope = scope === undefined ? undefined : scope.level === 'app' || scope.projectId === projectId;
+         const hostMachine = g.host === undefined || record(g.host) && g.host.machine === null ? null : record(g.host) && typeof g.host.machine === 'string' && g.host.machine.length <= 95 && isMachineFingerprint(g.host.machine) ? g.host.machine.toLowerCase() : undefined;
+         const localHost = hostMachine === null ? true : localMachine(hostMachine);
+-        const addresses = new Set<string>(); let explicit: Record<string, unknown> | undefined, excluded = false, ambiguous = false, policyAddress: string | undefined;
++        const addresses = new Set<string>(); let explicit: Record<string, unknown> | undefined, excluded = false, ambiguous = false, policyAddress: string | undefined, relativeMemberAddress: string | undefined, memberProjectId: string | undefined;
+         const relevant = (entry: unknown, exclusion = false): entry is Record<string, unknown> & { address: string } => {
+           if (!record(entry) || typeof entry.address !== 'string' || entry.address.length > 512) throw new Error('Invalid membership address.');
+-          const address = parseAgentAddress(entry.address); if (!id(address.agentId)) throw new Error('Invalid member ID.');
++          const address = parseAgentAddress(entry.address.trim()); if (!id(address.agentId)) throw new Error('Invalid member ID.');
+           const normalized = JSON.stringify([address.agentId, address.machine ?? hostMachine]); if (addresses.has(normalized)) throw new Error('Duplicate membership address.'); addresses.add(normalized);
+-          if (address.agentId !== selected.agentId) return false;
++          if (address.agentId !== agentId) return false;
+           const machine = address.machine ? localMachine(address.machine) : localHost;
+           if (machine === false) return false;
+-          const project = entry.projectId === selected.projectId || entry.projectId === undefined && scope?.level === 'project' && scope.projectId === selected.projectId
++          const project = entry.projectId === projectId || entry.projectId === undefined && localHost === true && scope?.level === 'project' && scope.projectId === projectId
+             || exclusion && entry.projectId === undefined && explicit !== undefined
+-            || record(entry.autoProject) && entry.autoProject.projectId === selected.projectId && localMachine(entry.autoProject.machine) === true;
++            || record(entry.autoProject) && entry.autoProject.projectId === projectId && localMachine(entry.autoProject.machine) === true;
+           if (machine !== true || !project) { ambiguous = true; return false; }
+-          policyAddress = entry.address; return true;
++          relativeMemberAddress = hostMachine === undefined ? undefined : canonicalMemberAddress(entry.address, hostMachine === null && address.machine && machine === true ? address.machine : hostMachine);
++          policyAddress = relativeMemberAddress;
++          memberProjectId = id(entry.projectId) ? entry.projectId : localHost === true && scope?.level === 'project' ? scope.projectId : memberProjectId;
++          return true;
+         };
+         for (const e of m.explicit) { if (!record(e) || typeof e.addedAt !== 'string' || e.addedAt.length > 128 || !['durable', 'helper', 'quick'].includes(String(e.kind))) throw new Error('Invalid explicit member.'); if (relevant(e)) { if (explicit || !['durable', 'helper', 'quick'].includes(String(e.kind))) throw new Error('Ambiguous selected membership.'); explicit = e; } }
+         addresses.clear(); for (const e of m.excluded) { if (!record(e) || typeof e.excludedAt !== 'string' || e.excludedAt.length > 128) throw new Error('Invalid exclusion.'); if (relevant(e, true)) excluded = true; }
+-        const helper = selected.fields.helper.state === 'ok' ? selected.fields.helper.value : undefined, disposed = selected.fields.disposed.state === 'ok' ? selected.fields.disposed.value : undefined;
+-        const automatic = selected.projectId !== DISPATCHER_PROJECT_ID && m.autoJoin && inScope && localHost === true && helper === false && disposed === false;
+-        if (ambiguous) { page.complete = false; page.unknownRows++; }
++        const automatic = projectId !== DISPATCHER_PROJECT_ID && m.autoJoin && inScope === true && localHost === true && helper === false && disposed === false;
++        const automaticUnknown = !explicit && !excluded && projectId !== DISPATCHER_PROJECT_ID && m.autoJoin && inScope !== false && localHost !== false && helper !== true && disposed !== true
++          && (inScope === undefined || localHost === undefined || helper === undefined || disposed === undefined);
++        if (ambiguous || automaticUnknown) { page.complete = false; page.unknownRows++; }
+         if (!explicit && !excluded && !automatic) continue;
+         if (typeof g.name !== 'string' || !g.name || g.name.length > 1024) throw new Error('Invalid selected group name.');
+         let disabled: unknown, switchSource: SavedGroupConnection['switchSource'] = 'absent';
+-        const key = policyAddress ?? selected.agentId;
+-        if (record(m.disabledTools) && Object.prototype.hasOwnProperty.call(m.disabledTools, key)) { disabled = m.disabledTools[key]; switchSource = 'member'; }
++        const key = policyAddress ?? (automatic ? agentId : undefined);
++        if (key !== undefined && record(m.disabledTools) && Object.prototype.hasOwnProperty.call(m.disabledTools, key)) { disabled = m.disabledTools[key]; switchSource = 'member'; }
+         else if (record(g.metadata) && Object.prototype.hasOwnProperty.call(g.metadata, 'defaultDisabledTools')) { disabled = g.metadata.defaultDisabledTools; switchSource = 'group'; }
+         const validTools = Array.isArray(disabled) && disabled.length <= 64 && disabled.every(id), toolList = validTools ? disabled as string[] : [], knownTools = toolList.filter((t) => (GROUP_PROJECT_TOOL_SUFFIXES as readonly string[]).includes(t));
+         if (disabled !== undefined && !validTools) switchSource = 'invalid';
+-        page.rows.push({ groupId: g.id, name: display(g.name, 240), membership: excluded ? 'excluded' : explicit ? 'explicit' : 'auto', applicability: excluded ? 'excluded' : disposed === true ? 'disposed' : ambiguous || localHost === undefined || selected.projectId === DISPATCHER_PROJECT_ID || !scope || disposed !== false || explicit?.kind === 'quick' ? 'unknown' : !inScope ? 'out-of-scope' : 'configured',
++        const memberScope = scope && (relativeMemberAddress !== undefined || automatic)
++          ? memberInScope(scope, { address: relativeMemberAddress ?? agentId, projectId: memberProjectId ?? (automatic ? projectId : undefined) }) : undefined;
++        page.rows.push({ groupId: g.id, name: display(g.name, 240), membership: excluded ? 'excluded' : explicit ? 'explicit' : 'auto', applicability: excluded ? 'excluded' : disposed === true ? 'disposed' : memberScope === false ? 'out-of-scope' : ambiguous || localHost === undefined || projectId === DISPATCHER_PROJECT_ID || memberScope === undefined || disposed !== false || explicit?.kind === 'quick' ? 'unknown' : 'configured',
+           scope: scope?.level as SavedGroupConnection['scope'] ?? 'unknown', reach: scope?.reach as SavedGroupConnection['reach'] ?? 'unknown', host: hostMachine === null ? 'local-contract' : localHost === true ? 'loaded-local' : localHost === false ? 'loaded-other' : 'unknown',
+           ...(validTools && { disabledTools: knownTools }), unrecognizedTools: validTools ? toolList.length - knownTools.length : 0, switchSource }); page.knownMatches++;
+       } catch (error) {

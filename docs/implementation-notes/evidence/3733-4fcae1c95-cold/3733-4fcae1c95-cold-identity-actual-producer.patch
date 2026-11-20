@@ -1,0 +1,11 @@
+--- src/main/services/annex-identity.ts
++++ src/main/services/annex-identity.ts
+@@ -149,7 +149,7 @@
+       return { status: 'corrupt', identity: null };
+     }
+ 
+-    recordDisplayIdentityOrigin(boundedIdentityOrigin('disk', filePath));
++    recordDisplayIdentityOrigin(currentIdentityDisplayOrigin());
+     return { status: 'valid', identity: parsed };
+   } catch (error) {
+     if (!fs.existsSync(filePath)) {

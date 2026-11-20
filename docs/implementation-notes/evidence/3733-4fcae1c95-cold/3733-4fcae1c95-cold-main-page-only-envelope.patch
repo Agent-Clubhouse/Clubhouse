@@ -1,0 +1,11 @@
+--- src/main/services/remote-agent-details.ts
++++ src/main/services/remote-agent-details.ts
+@@ -267,7 +267,7 @@
+       }
+     }
+     // Enforce the envelope even when every section fits its individual row limit.
+-    if (query) selectedConnectionPageEnvelope(result);
++    if (false) selectedConnectionPageEnvelope(result);
+     while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) {
+       const largest = cards.filter((c) => c.rows.length).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];
+       if (!largest) throw new Error('details_limit');

@@ -1,0 +1,35 @@
+{
+  "root": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-cold-origins",
+  "reports": "/Users/masonallen/source/Clubhouse/.clubhouse/qa-reports",
+  "prefix": "3733-4fcae1c95",
+  "head": "4fcae1c956719300b5e052540a37bb9a391bb405",
+  "tree": "526af0578c7cbbdeb6989b75eb0468088c6d958c",
+  "green": [
+    "src/main/services/registered-agent-display-page.test.ts",
+    "src/main/services/configured-registered-connections-display.test.ts",
+    "src/main/services/registered-project-roots-display.test.ts",
+    "src/main/services/connection-source-primary-display.test.ts",
+    "src/main/services/read-only-agent-target-witness.test.ts",
+    "src/main/services/saved-tool-connections-display.test.ts",
+    "src/main/services/saved-canvas-connections-display.test.ts",
+    "src/main/services/helper-parent-connection-display.test.ts",
+    "src/main/services/saved-group-connections-display.test.ts",
+    "src/main/services/annex-identity-display.test.ts",
+    "src/main/services/annex-identity.test.ts",
+    "src/main/services/selected-connection-page-envelope.test.ts",
+    "src/main/services/remote-agent-details.test.ts",
+    "src/main/services/remote-quick-details.test.ts",
+    "src/main/services/remote-connection-card.test.ts",
+    "src/main/services/connection-endpoint-metadata-display.test.ts",
+    "src/renderer/features/agents/details/RemoteConnectionsCard.test.tsx",
+    "src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx",
+    "src/shared/remote-agent-details.test.ts",
+    "src/shared/remote-details-query.test.ts",
+    "src/shared/group-project-scope.test.ts"
+  ],
+  "routeFiles": [
+    "src/main/services/annex-server.test.ts",
+    "src/main/services/annex-client.test.ts"
+  ],
+  "routePattern": "remote full Details authority|selected-source Details pages|bounded exact-agent Details|in-place disconnect/reconnect epoch|schema-valid prior Details"
+}

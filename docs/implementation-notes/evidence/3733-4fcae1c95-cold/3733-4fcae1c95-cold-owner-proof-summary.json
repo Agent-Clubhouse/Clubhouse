@@ -1,0 +1,376 @@
+{
+  "head": "4fcae1c956719300b5e052540a37bb9a391bb405",
+  "tree": "526af0578c7cbbdeb6989b75eb0468088c6d958c",
+  "verifiedAt": "2026-11-20T11:42:59.299630+00:00",
+  "validMutationControls": 34,
+  "validInitialControls": 2,
+  "validContinuedControls": 32,
+  "ineffectiveOriginalControl": "main-generation-final pattern omitted intervening title text:0tests/168SKIP/exit0, restored; original driverexit1; no credit. Corrected continuation discriminates real reached200-vs409 assertions.",
+  "green": {
+    "files": 21,
+    "passed": 506,
+    "skipped": 0
+  },
+  "routeClient": {
+    "files": 2,
+    "passed": 16,
+    "skipped": 815
+  },
+  "canonical": {
+    "files": 1,
+    "passed": 68,
+    "writeMode": false
+  },
+  "tscExit": 0,
+  "fixtures": {
+    "count": 103,
+    "beforeAfterCommittedEqualEveryAdmittedLaunch": true
+  },
+  "admittedLaunches": 39,
+  "excludedRefusals": 1,
+  "continuedDriverExit": 0,
+  "originalDriverExit": 1,
+  "controls": [
+    {
+      "name": "main-final-source",
+      "log": "3733-4fcae1c95-main-final-source.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  10 failed | 15 passed | 143 skipped (168)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "quick-final-source",
+      "log": "3733-4fcae1c95-quick-final-source.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 8 passed | 33 skipped (42)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "main-generation-final",
+      "log": "3733-4fcae1c95-cold-main-generation-final.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 167 skipped (168)"
+      ],
+      "evidenceLimit": "Same runtime/app/native identities and generation callbacks modeled; actual source APIs/storage; soft status/body failures reached. No live reopen proof.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "main-generation-capture-late",
+      "log": "3733-4fcae1c95-cold-main-generation-capture-late.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 167 skipped (168)"
+      ],
+      "evidenceLimit": "Moves capture after awaited work: modeled early generation transition while runtime/app/native unchanged, real primary/source. No actual process lifecycle proof.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "quick-generation-final",
+      "log": "3733-4fcae1c95-cold-quick-generation-final.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 41 skipped (42)"
+      ],
+      "evidenceLimit": "Same runtime/app/native identities and generation callbacks modeled; actual source APIs/storage; soft status/body failures reached. No live reopen proof.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "quick-generation-capture-late",
+      "log": "3733-4fcae1c95-cold-quick-generation-capture-late.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 41 skipped (42)"
+      ],
+      "evidenceLimit": "Moves capture after awaited work: modeled early generation transition while runtime/app/native unchanged, real primary/source. No actual process lifecycle proof.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "tool-selected-project",
+      "log": "3733-4fcae1c95-cold-tool-selected-project.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 5 skipped (6)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. First row/count failure may stop later privacy/disk checks.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "tool-continuation",
+      "log": "3733-4fcae1c95-cold-tool-continuation.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 5 skipped (6)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "canvas-qualified-identity",
+      "log": "3733-4fcae1c95-cold-canvas-qualified-identity.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  3 failed | 12 skipped (15)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. First shape/count assertion may stop subsequent PRIVATE marker assertion.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "canvas-continuation",
+      "log": "3733-4fcae1c95-cold-canvas-continuation.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 14 skipped (15)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "zone-active-selection",
+      "log": "3733-4fcae1c95-cold-zone-active-selection.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 14 skipped (15)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Saved source preview, not unsaved runtime canvas.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "zone-expansion-bound",
+      "log": "3733-4fcae1c95-cold-zone-expansion-bound.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 14 skipped (15)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Explicit finite work counter only, not performance/hard deadline benchmark.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "source-backup-absence",
+      "log": "3733-4fcae1c95-cold-source-backup-absence.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 5 skipped (6)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Refusal failure does not itself establish write/recovery effects.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "source-aggregate-admission",
+      "log": "3733-4fcae1c95-cold-source-aggregate-admission.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 5 skipped (6)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Admission limits only; no hard I/O deadline.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "parent-project-association",
+      "log": "3733-4fcae1c95-cold-parent-project-association.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 6 skipped (7)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. First field mismatch may stop later privacy/disk assertions.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "group-host-association",
+      "log": "3733-4fcae1c95-cold-group-host-association.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  3 failed | 8 passed | 11 skipped (22)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Warm/cold actual identity cache producer; synthetic key material, no credential service.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "group-project-association",
+      "log": "3733-4fcae1c95-cold-group-project-association.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 21 skipped (22)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "group-deferred-budget",
+      "log": "3733-4fcae1c95-cold-group-deferred-budget.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 21 skipped (22)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. First continuation assertion fails; restored GREEN separately proves later selected retrieval.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "group-tombstone",
+      "log": "3733-4fcae1c95-cold-group-tombstone.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 21 skipped (22)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Mutant row absence failure, not recovery/write evidence.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "cg1-unknown-auto",
+      "log": "3733-4fcae1c95-cold-cg1-unknown-auto.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  4 failed | 6 passed | 12 skipped (22)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Reproduces unknown-vs-known-empty classification; later cold/warm currentness/no-IO checks remain separate.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "cg2-host-relative-scope",
+      "log": "3733-4fcae1c95-cold-cg2-host-relative-scope.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 2 passed | 19 skipped (22)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Existing explicit row and actual shared scope prestates distinguish saved membership from applicability, not permissions.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "group-canonical-switch-key",
+      "log": "3733-4fcae1c95-cold-group-canonical-switch-key.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 21 skipped (22)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Captured selection callback modeled; actual selected primary and membership; no independent helper-flag capture claim.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "identity-cold-getter",
+      "log": "3733-4fcae1c95-cold-identity-cold-getter.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 5 skipped (6)"
+      ],
+      "evidenceLimit": "Actual temporary corrupt identity and fs.readFileSync spy. Read call failure establishes getter IO; later writes/disk assertions may be unreached, no recovery write claim.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "identity-profile-association",
+      "log": "3733-4fcae1c95-cold-identity-profile-association.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  2 failed | 4 skipped (6)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Actual file producer/profile switch; observation only, not disk freshness or TLS identity validation.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "identity-generation",
+      "log": "3733-4fcae1c95-cold-identity-generation.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 5 skipped (6)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Actual same-fingerprint producer reset/reload; private receipt currentness only.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "identity-actual-producer",
+      "log": "3733-4fcae1c95-cold-identity-actual-producer.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 5 skipped (6)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Actual readFileSync hook changes profile after reading bytes; not actual separate process.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "typed-source-key-page-bound",
+      "log": "3733-4fcae1c95-cold-typed-source-key-page-bound.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 52 skipped (53)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Actual registry/rebuild/source/binding APIs. Source keys vs typed variants; no live collect or universal snapshot claim.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "main-page-only-envelope",
+      "log": "3733-4fcae1c95-cold-main-page-only-envelope.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 167 skipped (168)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Actual Tool source/temp primary; unrelated pressure rows modeled20. No original100-row timeout transfer.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "quick-page-only-envelope",
+      "log": "3733-4fcae1c95-cold-quick-page-only-envelope.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 41 skipped (42)"
+      ],
+      "evidenceLimit": "Real temporary primary/source files and actual selected reader; lifecycle/async ports modeled. Assertions establish only reached failures, not live host, universal origin or authority bypass. Explicit capability/pageOnly/requested-false positives now asserted; other-card global reads still run.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "envelope-truncation-notice",
+      "log": "3733-4fcae1c95-cold-envelope-truncation-notice.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 2 skipped (3)"
+      ],
+      "evidenceLimit": "Pure synthetic DTO actual UTF8 bytes/rows/markers; first missing notice assertion stops later byte/schema assertions in RED. Restored GREEN supplies those positive checks.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "client-page-envelope-context",
+      "log": "3733-4fcae1c95-cold-client-page-envelope-context.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 231 skipped (232)"
+      ],
+      "evidenceLimit": "Actual client request path with mocked HTTP body; schema-valid capability/full response refused. No live network/pin proof.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "client-full-envelope-context",
+      "log": "3733-4fcae1c95-cold-client-full-envelope-context.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 231 skipped (232)"
+      ],
+      "evidenceLimit": "Actual client mocked HTTP; pageOnly response to full request refused independently, not live host.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "ui-page-envelope-context",
+      "log": "3733-4fcae1c95-cold-ui-page-envelope-context.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 11 skipped (12)"
+      ],
+      "evidenceLimit": "Mocked renderer API, no DOM/E2E/live host. Normal client also rejects this body; proves renderer defense separately.",
+      "restorationVerifiedAgainstHeadBlob": true
+    },
+    {
+      "name": "schema-page-only-claim",
+      "log": "3733-4fcae1c95-cold-schema-page-only-claim.log",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 2 skipped (3)"
+      ],
+      "evidenceLimit": "Pure schema DTO malformed conditional claims; no transport behavior inferred.",
+      "restorationVerifiedAgainstHeadBlob": true
+    }
+  ],
+  "status": "OWNER proof, pending independent review. Not full parity/root/latest-main/PR/live/security/release approval."
+}

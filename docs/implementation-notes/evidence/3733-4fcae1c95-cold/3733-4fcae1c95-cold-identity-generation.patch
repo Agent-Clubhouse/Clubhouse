@@ -1,0 +1,11 @@
+--- src/main/services/annex-identity.ts
++++ src/main/services/annex-identity.ts
+@@ -285,7 +285,7 @@
+   return typeof value === 'string' && value.length >= 47 && value.length <= 95 && /^(?:[0-9a-f]{2}:){15,31}[0-9a-f]{2}$/i.test(value) ? value.toLowerCase() : undefined;
+ }
+ function identityDisplayReceipt(origin: string | undefined, fingerprint: string | undefined, profile: string | undefined, generation: symbol): DisplayReceipt {
+-  return { current: () => displayIdentityGeneration === generation && displayIdentityOrigin === origin && loadedDisplayFingerprint() === fingerprint && currentIdentityDisplayOrigin() === profile };
++  return { current: () => displayIdentityOrigin === origin && loadedDisplayFingerprint() === fingerprint && currentIdentityDisplayOrigin() === profile };
+ }
+ export function matchLoadedIdentityForDisplay(candidate: unknown, options: { receipts: DisplayReceipt[] }): DisplayValue<boolean> {
+   const inputs = [{ field: 'Loaded host identity association', source: 'host-cache' as const, observedAt: Date.now() }];

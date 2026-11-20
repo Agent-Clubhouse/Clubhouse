@@ -1,0 +1,11 @@
+--- src/main/services/saved-tool-connections-display.ts
++++ src/main/services/saved-tool-connections-display.ts
+@@ -83,7 +83,7 @@
+         if (folder(selectedEnd) && selectedEnd !== selectedPath) continue;
+         if (!folder(selectedEnd) || !id(raw.ownerId) || typeof raw.targetKind !== 'string' || !['agent', 'group-project'].includes(raw.targetKind)) { unknownRows++; complete = false; continue; }
+         knownMatches++;
+-        if (knownMatches <= offset || rows.length >= 8) continue;
++        if (rows.length >= 8) continue;
+         const row: SavedToolConnectionDisplay = { agentId: raw.agentId, targetId: raw.targetId, targetKind: raw.targetKind as SavedToolConnectionDisplay['targetKind'], direction: outgoing ? 'outgoing' : 'incoming',
+           sourceProjectId: project.id, sourceProjectName: project.name, createdAt: date(raw.createdAt), declaredScope: raw.scope === 'granted' ? 'granted' : raw.scope === undefined ? 'helper-family' : 'unknown',
+           disabledTools: [...AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink.disabledTools], enabledTools: [...AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink.enabledTools] };

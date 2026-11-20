@@ -1,0 +1,11 @@
+--- src/main/services/read-only-agent-target-witness.ts
++++ src/main/services/read-only-agent-target-witness.ts
+@@ -228,7 +228,7 @@
+   return [...chain.values()].map((s) => `${s.dev}:${s.ino}`).join('/') + ':' + missing;
+ }
+ function absentConnectionSource(root: string, relative: string): string {
+-  return absentConnectionSourcePath(root, relative) + '\0' + absentConnectionSourcePath(root, relative + '.bak');
++  return absentConnectionSourcePath(root, relative);
+ }
+ function absentConnectionSourceReceipt(root: string, relative: string, signature: string): { current(): boolean } {
+   return { current: () => { try { return absentConnectionSource(root, relative) === signature; } catch { return false; } } };

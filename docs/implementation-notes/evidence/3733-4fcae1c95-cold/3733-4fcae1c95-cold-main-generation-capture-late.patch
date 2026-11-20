@@ -1,0 +1,18 @@
+--- src/main/services/remote-agent-details.ts
++++ src/main/services/remote-agent-details.ts
+@@ -78,7 +78,6 @@
+     const runtime = getAgentRuntime(agentId);
+     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
+     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
+-    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
+     const lifecycle = agentDisplayState(agent, running);
+     const cwd = agentRegistry.get(agentId)?.cwd || agent.worktreePath || project.path;
+     const cards = [card('settings', 'Settings'), card('dispatcher', 'Dispatcher'), card('orchestrate', 'Orchestration'), card('connections', 'Connections'), card('actions', 'Actions'), card('skills-mcp', 'Skills and MCP'), card('session', 'Session'), card('canvases', 'Canvases'), card('changes', 'Changes')];
+@@ -243,6 +242,7 @@
+       c.notes = c.notes.map((note) => display(note));
+       if (c.notes.length > 20) c.notes = [...c.notes.slice(0, 19), `${c.notes.length - 19} more notices omitted by the host’s display limit.`];
+     }
++    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
+     const currentRegistration = agentRegistry.get(agentId);
+     // The complete response has finished awaiting. A stopped parent has no run
+     // registration, and an earlier helper work check cannot attest later membership.

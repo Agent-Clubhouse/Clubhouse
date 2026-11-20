@@ -1,0 +1,10 @@
+--- src/shared/remote-agent-details.ts
++++ src/shared/remote-agent-details.ts
+@@ -66,7 +66,6 @@
+   const text = (s: unknown) => typeof s === 'string' && s.length <= 2048;
+   return v.version === 1 && (v.connectionPages === undefined || v.connectionPages === 1)
+     && (v.connectionPageEnvelope === undefined || v.connectionPages === 1 && v.connectionPageEnvelope === 1)
+-    && (v.connectionPageOnly === undefined || v.connectionPageOnly === true && v.connectionPageEnvelope === 1 && v.settings === null && v.providerEvidence === undefined && Array.isArray(v.cards) && v.cards.every((c) => !!c && typeof c === 'object') && v.cards.some((c) => c.id === 'connections' && c.connectionPage !== undefined) && v.cards.every((c) => c.id === 'connections' ? c.requested === undefined : c.requested === false && Array.isArray(c.rows) && !c.rows.length && Array.isArray(c.notes) && !c.notes.length))
+     && (v.connectionPageSources === undefined || v.connectionPages === 1 && Array.isArray(v.connectionPageSources) && v.connectionPageSources.length <= 16
+       && new Set(v.connectionPageSources).size === v.connectionPageSources.length && v.connectionPageSources.every((source) => REMOTE_CONNECTION_PAGE_SOURCES.includes(source))) && v.agentId === agentId && v.readOnly === true
+     && Number.isFinite(v.readAt) && v.readAt > 0 && text(v.providerId) && !!v.providerId && (v.providerLabel === undefined || text(v.providerLabel) && !!v.providerLabel) && typeof v.running === 'boolean'

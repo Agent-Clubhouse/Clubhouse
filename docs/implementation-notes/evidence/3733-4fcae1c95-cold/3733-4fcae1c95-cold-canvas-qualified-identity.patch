@@ -1,0 +1,11 @@
+--- src/main/services/saved-canvas-connections-display.ts
++++ src/main/services/saved-canvas-connections-display.ts
+@@ -159,7 +159,7 @@
+       const endpointPath = (agentId: string): string | undefined => {
+         const paths = endpointPaths.get(agentId); return paths?.size === 1 && !paths.has(undefined) ? paths.values().next().value : undefined;
+       };
+-      const selectedPath = endpointPath(selected.agentId);
++      const selectedPath = selected.projectPath;
+       const association = combine([target, ...receipts.slice(start)]);
+       for (const p of pairs) {
+         const outgoing = p.agentId === selected.agentId; if (!outgoing && !(p.targetKind === 'agent' && p.targetId === selected.agentId)) continue;

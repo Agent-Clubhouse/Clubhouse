@@ -1,0 +1,8 @@
+main-final-source exit 1 at 2026-11-20T11:36:40.440213+00:00
+quick-final-source exit 1 at 2026-11-20T11:36:42.483068+00:00
+main-generation-final exit 0 at 2026-11-20T11:36:44.497934+00:00
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/qa-reports/3733-4fcae1c95-proof-driver.py", line 47, in <module>
+    assert result.returncode not in [0,75],control['name']+' ineffective or unadmitted'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: main-generation-final ineffective or unadmitted

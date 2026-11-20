@@ -1,0 +1,11 @@
+--- src/main/services/saved-group-connections-display.ts
++++ src/main/services/saved-group-connections-display.ts
+@@ -70,7 +70,7 @@
+     const budget = createReadOnlyMetadataBudget(); let rowsLeft = 4096, consumed = 0;
+     for (const g of registry.raw.slice(offset, offset + 8)) {
+       if (!admitted() || !roots.value.receipt.current() || !registry.receipt.current() || !tombstones.receipt.current()) return unknown('changed');
+-      consumed++; if (!record(g) || !groupId(g.id) || hidden.has(g.id)) continue;
++      consumed++; if (!record(g) || !groupId(g.id) ) continue;
+       try {
+         const read = readReadOnlyConnectionSourceMetadata(path.join(home, directory, g.id), 'membership.json', { budget }); receipts.push(read.receipt);
+         // Missing membership means unmanaged: Canvas/source records are separate,

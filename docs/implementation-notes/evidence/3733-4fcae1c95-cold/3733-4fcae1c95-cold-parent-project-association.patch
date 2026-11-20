@@ -1,0 +1,11 @@
+--- src/main/services/helper-parent-connection-display.ts
++++ src/main/services/helper-parent-connection-display.ts
+@@ -20,7 +20,7 @@
+   const observedAt = Date.now(), inputs = [{ field: 'Selected helper saved parent reference', source: 'primary' as const, observedAt }];
+   const unknown = (reason: 'invalid' | 'changed' | 'unreadable'): DisplayValue<ConfiguredRegisteredConnectionPage> => ({ state: 'unavailable', reason, inputs });
+   if (!selected || !id(selected.agentId) || selected.fields?.id !== selected.agentId || !Array.isArray(options.receipts) || (options.offset ?? 0) !== 0 || (options.projectOffset ?? 0) !== 0) return unknown('invalid');
+-  const target = selected.receipt, authorized = options.authorized, receipts = options.receipts, parentId = selected.parentAgentId, parentPath = selected.parentProjectPath ?? selected.projectPath, start = receipts.length;
++  const target = selected.receipt, authorized = options.authorized, receipts = options.receipts, parentId = selected.parentAgentId, parentPath = selected.projectPath, start = receipts.length;
+   const admitted = () => { try { return authorized() && current(target); } catch { return false; } }; if (!admitted()) return unknown('changed');
+   const page: ConfiguredRegisteredConnectionPage = { entries: [], knownMatches: 0, complete: true, unknownRows: 0, unavailableProjects: 0, next: null, projectOffset: 0, matchOffset: 0, observedAt };
+   if (parentId === undefined || parentId === '') { receipts.push(target); return { state: 'ok', value: page, inputs }; }

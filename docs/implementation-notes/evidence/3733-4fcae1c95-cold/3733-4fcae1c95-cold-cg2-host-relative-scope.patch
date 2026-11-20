@@ -1,0 +1,11 @@
+--- src/main/services/saved-group-connections-display.ts
++++ src/main/services/saved-group-connections-display.ts
+@@ -119,7 +119,7 @@
+         if (disabled !== undefined && !validTools) switchSource = 'invalid';
+         const memberScope = scope && (relativeMemberAddress !== undefined || automatic)
+           ? memberInScope(scope, { address: relativeMemberAddress ?? agentId, projectId: memberProjectId ?? (automatic ? projectId : undefined) }) : undefined;
+-        page.rows.push({ groupId: g.id, name: display(g.name, 240), membership: excluded ? 'excluded' : explicit ? 'explicit' : 'auto', applicability: excluded ? 'excluded' : disposed === true ? 'disposed' : memberScope === false ? 'out-of-scope' : ambiguous || localHost === undefined || projectId === DISPATCHER_PROJECT_ID || memberScope === undefined || disposed !== false || explicit?.kind === 'quick' ? 'unknown' : 'configured',
++        page.rows.push({ groupId: g.id, name: display(g.name, 240), membership: excluded ? 'excluded' : explicit ? 'explicit' : 'auto', applicability: excluded ? 'excluded' : disposed === true ? 'disposed' : false ? 'out-of-scope' : ambiguous || localHost === undefined || projectId === DISPATCHER_PROJECT_ID || memberScope === undefined || disposed !== false || explicit?.kind === 'quick' ? 'unknown' : 'configured',
+           scope: scope?.level as SavedGroupConnection['scope'] ?? 'unknown', reach: scope?.reach as SavedGroupConnection['reach'] ?? 'unknown', host: hostMachine === null ? 'local-contract' : localHost === true ? 'loaded-local' : localHost === false ? 'loaded-other' : 'unknown',
+           ...(validTools && { disabledTools: knownTools }), unrecognizedTools: validTools ? toolList.length - knownTools.length : 0, switchSource }); page.knownMatches++;
+       } catch (error) {

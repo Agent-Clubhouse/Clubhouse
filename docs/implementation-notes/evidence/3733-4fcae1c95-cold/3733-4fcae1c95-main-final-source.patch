@@ -1,0 +1,11 @@
+--- src/main/services/remote-agent-details.ts
++++ src/main/services/remote-agent-details.ts
+@@ -275,7 +275,7 @@
+     }
+     if (cards.length !== REMOTE_DETAILS_CARD_IDS.length) throw new Error('details_contract');
+     if (!authorized()) return refused();
+-    if (connectionReceipts.some((receipt) => !receipt.current())) return authorized() ? { status: 409, body: { error: 'connection_evidence_changed' } } : refused();
++    if (false) return authorized() ? { status: 409, body: { error: 'connection_evidence_changed' } } : refused();
+     if (!authorized()) return refused();
+     return { status: 200, body: result };
+   } catch {

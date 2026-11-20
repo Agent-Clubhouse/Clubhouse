@@ -1,0 +1,11 @@
+--- src/main/services/saved-canvas-connections-display.ts
++++ src/main/services/saved-canvas-connections-display.ts
+@@ -64,7 +64,7 @@
+   if (!Array.isArray(raw) || raw.length > 4096) throw new Error('Invalid saved zone wires.');
+   const byId = new Map(views.map((v, i) => [v.id, { v, i }])), byAgent = new Map<string, View>(), zones = new Map<string, { agents: View[]; widgets: View[]; selected: boolean }>(), seen = new Set<string>(), pairs: Pair[] = [];
+   for (const v of views) if (v.type === 'agent' && v.agentId && !byAgent.has(v.agentId)) byAgent.set(v.agentId, v);
+-  let left = 65536, limited = false;
++  let left = 10000000, limited = false;
+   const charge = () => { if (--left < 0) { limited = true; return false; } return true; };
+   const contents = (id: string): { agents: View[]; widgets: View[]; selected: boolean } => {
+     if (zones.has(id)) return zones.get(id)!;

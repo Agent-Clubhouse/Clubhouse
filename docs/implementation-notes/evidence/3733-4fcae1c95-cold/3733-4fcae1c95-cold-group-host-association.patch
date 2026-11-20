@@ -1,0 +1,11 @@
+--- src/main/services/saved-group-connections-display.ts
++++ src/main/services/saved-group-connections-display.ts
+@@ -85,7 +85,7 @@
+             : g.scope.level === 'project' && id(g.scope.projectId) ? { level: 'project', projectId: g.scope.projectId, reach: g.scope.reach } : undefined : undefined;
+         const inScope = scope === undefined ? undefined : scope.level === 'app' || scope.projectId === projectId;
+         const hostMachine = g.host === undefined || record(g.host) && g.host.machine === null ? null : record(g.host) && typeof g.host.machine === 'string' && g.host.machine.length <= 95 && isMachineFingerprint(g.host.machine) ? g.host.machine.toLowerCase() : undefined;
+-        const localHost = hostMachine === null ? true : localMachine(hostMachine);
++        const localHost = true;
+         const addresses = new Set<string>(); let explicit: Record<string, unknown> | undefined, excluded = false, ambiguous = false, policyAddress: string | undefined, relativeMemberAddress: string | undefined, memberProjectId: string | undefined;
+         const relevant = (entry: unknown, exclusion = false): entry is Record<string, unknown> & { address: string } => {
+           if (!record(entry) || typeof entry.address !== 'string' || entry.address.length > 512) throw new Error('Invalid membership address.');

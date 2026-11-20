@@ -1,0 +1,10 @@
+--- src/main/services/annex-identity.ts
++++ src/main/services/annex-identity.ts
+@@ -292,5 +292,5 @@
+   if (typeof candidate !== 'string' || candidate.length < 47 || candidate.length > 95 || !/^(?:[0-9a-f]{2}:){15,31}[0-9a-f]{2}$/i.test(candidate) || !Array.isArray(options?.receipts)) return { state: 'unavailable', reason: 'invalid', inputs };
+   const normalized = candidate.toLowerCase(), origin = displayIdentityOrigin, fingerprint = loadedDisplayFingerprint(), profile = currentIdentityDisplayOrigin();
+   options.receipts.push(identityDisplayReceipt(origin, fingerprint, profile, displayIdentityGeneration));
+-  return fingerprint && origin && origin === profile ? { state: 'ok', value: fingerprint === normalized, inputs } : { state: 'unavailable', reason: 'unreadable', inputs };
+-}
++  return fingerprint && origin ? { state: 'ok', value: fingerprint === normalized, inputs } : { state: 'unavailable', reason: 'unreadable', inputs };
++}

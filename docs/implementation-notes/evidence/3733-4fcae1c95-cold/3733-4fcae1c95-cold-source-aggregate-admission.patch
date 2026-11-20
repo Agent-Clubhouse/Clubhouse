@@ -1,0 +1,11 @@
+--- src/main/services/read-only-agent-target-witness.ts
++++ src/main/services/read-only-agent-target-witness.ts
+@@ -245,7 +245,7 @@
+     || !CONNECTION_SOURCE_METADATA.includes(relative)) throw new Error('Connection source root was not admitted.');
+   if (!options?.budget) throw new ReadOnlyMetadataLimitError('Connection source budget was not admitted.');
+   try {
+-    const { value, signature, byteLength } = inventory(root, relative, options.maxBytes, options.budget);
++    const { value, signature, byteLength } = inventory(root, relative, options.maxBytes);
+     return { raw: value, missing: false, receipt: primaryMetadataReceipt(root, relative, signature, Math.max(1, byteLength)) };
+   } catch (error) {
+     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;

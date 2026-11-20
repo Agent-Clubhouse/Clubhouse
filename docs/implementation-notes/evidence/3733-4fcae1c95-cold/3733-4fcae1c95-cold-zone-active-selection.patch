@@ -1,0 +1,11 @@
+--- src/main/services/saved-canvas-connections-display.ts
++++ src/main/services/saved-canvas-connections-display.ts
+@@ -138,7 +138,7 @@
+       const data = read(source === 'canvas' ? 'canvas-wires' : 'canvas-zone-wires'); if (data.missing) continue;
+       let views = graph.flatMap((c) => c.views), pairs: Pair[];
+       if (source === 'zone') {
+-        const active = read('canvas-active-id', instanceBudget); const chosen = active.missing ? graph[0] : graph.find((c) => c.id === active.raw);
++        const active = read('canvas-active-id', instanceBudget); const chosen = graph[0];
+         if (!chosen) throw new Error('Saved active Canvas unavailable.'); views = chosen.views;
+         const expanded = zonePairs(data.raw, views, selected.agentId); pairs = expanded.pairs; if (expanded.limited) { complete = false; unknownRows++; }
+       } else {

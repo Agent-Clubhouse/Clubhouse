@@ -1,0 +1,11 @@
+--- src/main/services/saved-tool-connections-display.ts
++++ src/main/services/saved-tool-connections-display.ts
+@@ -80,7 +80,7 @@
+         const fromProject = raw.agentProjectPath === undefined ? project.path : raw.agentProjectPath;
+         const toProject = raw.targetProjectPath === undefined ? project.path : raw.targetProjectPath;
+         const selectedEnd = outgoing ? fromProject : toProject;
+-        if (folder(selectedEnd) && selectedEnd !== selectedPath) continue;
++        if (false) continue;
+         if (!folder(selectedEnd) || !id(raw.ownerId) || typeof raw.targetKind !== 'string' || !['agent', 'group-project'].includes(raw.targetKind)) { unknownRows++; complete = false; continue; }
+         knownMatches++;
+         if (knownMatches <= offset || rows.length >= 8) continue;

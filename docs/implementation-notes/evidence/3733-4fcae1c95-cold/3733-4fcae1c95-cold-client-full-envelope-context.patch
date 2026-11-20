@@ -1,0 +1,10 @@
+--- src/main/services/annex-client.ts
++++ src/main/services/annex-client.ts
+@@ -2492,7 +2492,6 @@
+     if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
+     if (res.status !== 200 || !isRemoteAgentDetails(res.body, agentId)) return { status: 'error' };
+-    if (!page && res.body.connectionPageOnly === true) return { status: 'error' };
+     if (page) {
+       if (res.body.connectionPageEnvelope === 1 && res.body.cards.find((card) => card.id === 'connections')?.connectionPage && res.body.connectionPageOnly !== true) return { status: 'error' };
+       const response = res.body.cards.find((card) => card.id === 'connections')?.connectionPage;

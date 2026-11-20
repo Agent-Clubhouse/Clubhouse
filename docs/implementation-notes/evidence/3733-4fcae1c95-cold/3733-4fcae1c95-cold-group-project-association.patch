@@ -1,0 +1,13 @@
+--- src/main/services/saved-group-connections-display.ts
++++ src/main/services/saved-group-connections-display.ts
+@@ -94,9 +94,7 @@
+           if (address.agentId !== agentId) return false;
+           const machine = address.machine ? localMachine(address.machine) : localHost;
+           if (machine === false) return false;
+-          const project = entry.projectId === projectId || entry.projectId === undefined && localHost === true && scope?.level === 'project' && scope.projectId === projectId
+-            || exclusion && entry.projectId === undefined && explicit !== undefined
+-            || record(entry.autoProject) && entry.autoProject.projectId === projectId && localMachine(entry.autoProject.machine) === true;
++          const project = true;
+           if (machine !== true || !project) { ambiguous = true; return false; }
+           relativeMemberAddress = hostMachine === undefined ? undefined : canonicalMemberAddress(entry.address, hostMachine === null && address.machine && machine === true ? address.machine : hostMachine);
+           policyAddress = relativeMemberAddress;
