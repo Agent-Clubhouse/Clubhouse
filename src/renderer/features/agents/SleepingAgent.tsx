@@ -1,3 +1,6 @@
+import { RemoteAgentDetailsView } from './details/RemoteAgentDetailsView';
+import { CardNote } from './details/DetailsCard';
+import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ATTR, tel } from '../../telemetry';
 import { Agent } from '../../../shared/types';
@@ -99,6 +102,11 @@ export function SleepingAgent({ agent, details = false }: {
   // Below 640px of pane there's no room beside the view, so details hides, as for a running agent.
   const paneNarrow = useNarrow(rootRef);
   const detailsOpen = useAgentDetailsStore((s) => s.open) && details && !paneNarrow;
+  const [remoteInlineTarget, setRemoteInlineTarget] = useState<HTMLDivElement | null>(null);
+  const remoteProject = isRemote && isDurable && agent.projectId ? parseNamespacedId(agent.projectId) : null;
+  const remoteHelperCandidate = isRemote && isDurable && !isDispatcher && remoteProject?.agentId !== DISPATCHER_PROJECT_ID;
+  const remoteHelperAdmitted = remoteHelperCandidate && !!remoteParts?.satelliteId && !!remoteParts.agentId && remoteParts.agentId.length <= 240 && !!remoteProject?.agentId && remoteProject.agentId.length <= 240 && remoteParts.satelliteId === remoteProject.satelliteId;
+  const remoteInlineVisible = !compact && !detailsOpen;
   const [task, setTask] = useState('');
   const [waking, setWaking] = useState(false);
   const [wakeError, setWakeError] = useState<string | null>(null);
@@ -336,6 +344,7 @@ export function SleepingAgent({ agent, details = false }: {
 
             {/* An orchestrator's cards sit here while asleep (#2232), unless the details column shows them. */}
             {!compact && !detailsOpen && isDurable && !isRemote && agentProject && <SleepingOrchestration agent={agent} projectPath={agentProject.path} />}
+            {remoteHelperCandidate && <div ref={setRemoteInlineTarget} data-testid="sleeping-remote-helper-slot">{remoteInlineVisible && !remoteHelperAdmitted && <CardNote>The selected remote agent and project do not identify the same host. Helper details are unavailable here.</CardNote>}</div>}
 
             {/* The Dispatcher's last session is its conversation: no branch or files. */}
             {!compact && last && ((last.loading && last.sessionId) || last.summary || (!isDispatcher && (last.filesModified.length > 0 || agent.branch))) && (
@@ -348,7 +357,9 @@ export function SleepingAgent({ agent, details = false }: {
             )}
           </div>
         </div>
-        {detailsOpen && <AgentDetails agent={agent} lastSession={last} />}
+        {/* One remote Details read owner survives moving its helper card between inline and column views. */}
+        {remoteHelperAdmitted ? <RemoteAgentDetailsView agent={agent} helpersOnly={!detailsOpen} readEnabled={detailsOpen || remoteInlineVisible} inlineTarget={remoteInlineTarget} />
+          : detailsOpen && <AgentDetails agent={agent} lastSession={last} />}
       </div>
 
       {wakeMenu && (

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { RemoteHelpersCard } from './RemoteHelpersCard';
 import { useNow } from './useNow';
 import { RemoteSessionHistory } from './RemoteSessionHistory';
@@ -46,7 +47,7 @@ function resultMessage(status: Result['status']): string {
   }
 }
 
-export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSubagentId }: AgentDetailsProps) {
+export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSubagentId, helpersOnly = false, readEnabled = true, inlineTarget }: AgentDetailsProps & { helpersOnly?: boolean; readEnabled?: boolean; inlineTarget?: HTMLElement | null }) {
   const address = remoteDetailsAddress(agent.id);
   const project = parseNamespacedId(agent.projectId);
   const satellite = useAnnexClientStore((s) => s.satellites.find((sat) => sat.id === address?.satelliteId));
@@ -55,21 +56,21 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const snapshot = satellite?.snapshot;
   const snapshotUnavailable = satellite?.snapshotUnavailable;
   const dispatcher = !!address && (snapshot?.dispatcher?.agent?.id === address.agentId || project?.agentId === DISPATCHER_PROJECT_ID);
+  const readAdmitted = readEnabled && (!helpersOnly || !dispatcher && !snapshotUnavailable);
   const [retry, setRetry] = useState(0);
   const [selectedSub, setSelectedSub] = useState<string | null>(null);
   const setOpen = useAgentDetailsStore((s) => s.setOpen);
   const focus = useAgentDetailsStore((s) => s.focus);
-  const { openCards, setOpenCards, toggleCard } = useDetailsCardState(agent.id, false);
-  const transport = useRef({ connected, snapshotUnavailable, generation: 0 });
-  if (transport.current.connected !== connected || transport.current.snapshotUnavailable !== snapshotUnavailable) transport.current = { connected, snapshotUnavailable, generation: transport.current.generation + 1 };
+  const transport = useRef({ connected, snapshotUnavailable, readEnabled: readAdmitted, generation: 0 });
+  if (transport.current.connected !== connected || transport.current.snapshotUnavailable !== snapshotUnavailable || transport.current.readEnabled !== readAdmitted) transport.current = { connected, snapshotUnavailable, readEnabled: readAdmitted, generation: transport.current.generation + 1 };
   const refreshKey = `${agent.id}:${agent.status}:${retry}:${chat?.sessionId ?? ''}:${chat?.nativeSessionId ?? ''}:${chat?.turnId ?? ''}:${chat?.workspaceRevision ?? 0}:${transport.current.generation}`;
   const [read, setRead] = useState<{ key: string; snapshot: typeof snapshot; result: Result } | null>(null);
   const satelliteId = address?.satelliteId;
   const agentId = address?.agentId;
   useEffect(() => {
-    if (!connected || !satelliteId || !agentId) return;
+    if (!readAdmitted || !connected || !satelliteId || !agentId) return;
     let active = true;
-    // The view is already behind the user's Details toggle. Coalesce rapid host snapshots/tool events.
+    // One visible Details or inline-helper surface owns this read. Coalesce rapid host snapshots/tool events.
     const timer = setTimeout(() => {
       Promise.resolve().then(() => window.clubhouse.annexClient.agentDetails(satelliteId, agentId)).then(
         (result) => { if (active) setRead({ key: refreshKey, snapshot, result }); },
@@ -78,12 +79,14 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       );
     }, 150);
     return () => { active = false; clearTimeout(timer); };
-  }, [connected, snapshotUnavailable, satelliteId, agentId, refreshKey, snapshot]);
-  const received: Result = !address ? { status: 'unavailable' } : !connected ? { status: 'offline' }
+  }, [readAdmitted, connected, snapshotUnavailable, satelliteId, agentId, refreshKey, snapshot]);
+  const received: Result = !readAdmitted ? { status: 'loading' } : !address ? { status: 'unavailable' } : !connected ? { status: 'offline' }
     : read?.key === refreshKey && read.snapshot === snapshot ? read.result : { status: 'loading' };
   const result: Result = received.status === 'ok' && received.value.agentId !== agentId ? { status: 'error' } : received;
   const details = result.status === 'ok' ? result.value : null;
-  const hydrated = useRemoteDetailsChat(agent.id, details, connected, snapshot, transport.current.generation);
+  const { openCards, setOpenCards, toggleCard } = useDetailsCardState(agent.id, helpersOnly && (details?.helperPage?.pendingCount ?? 0) > 0);
+  // Inline helpers never hydrate provider/transcript data outside this selected read-only surface.
+  const hydrated = useRemoteDetailsChat(agent.id, helpersOnly || !readEnabled ? null : details, connected, snapshot, transport.current.generation);
   const runKey = `${agent.id}:${details?.providerId ?? ''}:${details?.sessionId ?? ''}:${details?.nativeSessionId ?? ''}:${details?.spawnedAt ?? ''}:${transport.current.generation}:${details?.providerEvidence?.runId ?? ''}`;
   const suspectRun = useRef<string | null>(null);
   const retriedRun = useRef<string | null>(null);
@@ -180,6 +183,19 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const limits = session?.capabilities?.limits ? session.usage.limits : [];
   const skillReport = reportedSkillsFor(agent, session, details ? { orchestrator: details.providerId } : undefined);
   const otherMachines = snapshot?.dispatcherPresence?.remotes;
+  if (!readEnabled) return null;
+  if (helpersOnly) {
+    if (!inlineTarget || dispatcher || agent.kind !== 'durable') return null;
+    const helpers = details?.helperPage, policy = card('orchestrate');
+    const unknown = !details || !helpers || helpers.state === 'unavailable' || helpers.liveCount === null || helpers.disposedCount === null || helpers.pendingCount === null || policy?.state === 'error' || policy?.state === 'unsupported';
+    const relevant = unknown || !!helpers?.liveCount || !!helpers?.disposedCount || !!helpers?.pendingCount || policy?.rows.some((r) => r.label === 'Orchestration' && r.value === 'On');
+    if (!relevant || policy?.state === 'not-applicable') return null;
+    return createPortal(<section className="w-full mt-[30px] text-left flex flex-col gap-2" aria-label={`${agent.name} orchestration`} data-testid="sleeping-remote-orchestration">
+      <CardNote>Helpers and policy read from the selected host. Read-only.</CardNote>
+      {snapshotUnavailable && <CardNote>The host snapshot is unavailable. Helper details are withheld until it is current.</CardNote>}
+      <RemoteHelpersCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} />
+    </section>, inlineTarget);
+  }
   return <aside className="w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 pt-2.5 pb-3 pr-3.5 pl-1" data-testid="agent-details" aria-label={`${agent.name} details`}
     onKeyDown={(e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); setOpen(false); } }}>
     <div className="flex items-center gap-2 px-1 text-xs text-ctp-overlay1"><span className="font-semibold">Details</span><span className="truncate">{agent.name}</span><button type="button" className="ml-auto" aria-label="Hide details" data-testid="agent-details-close" onClick={() => setOpen(false)}>×</button></div>
