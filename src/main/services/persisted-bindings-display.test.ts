@@ -68,3 +68,18 @@ it('fences producer replacement even after an identical safe cache page is rebui
   const safe = (value: unknown) => JSON.stringify(value, (key, v) => key === 'inputs' ? undefined : v);
   expect(safe(fresh.value)).toBe(safe(old.value)); expect(old.receipts[0].current()).toBe(false); expect(fresh.receipts[0].current()).toBe(true);
 });
+
+it.each([
+  { prune: undefined, unrelated: false }, { prune: false, unrelated: false },
+  { prune: undefined, unrelated: true }, { prune: false, unrelated: true },
+])('includes a later non-pruning claim after established listing %j', async ({ prune, unrelated }) => {
+  const collect = vi.fn(async () => unrelated ? [wire('other-agent', 'other-target')] : []);
+  registerPersistedBindingSource({ id: 'non-pruning', ...(prune !== undefined && { prune }), collect });
+  await rebuildPersistedBindings(); collect.mockClear();
+  const old = capture(); expect(old.value).toMatchObject({ state: 'ok', value: { total: 0, complete: true } }); expect(old.receipts[0].current()).toBe(true);
+  expect(claimSourceBinding('non-pruning', wire())).toBe('created');
+  expect(bindingManager.getBindingsForAgent(selected)).toMatchObject([{ agentId: selected, targetId: 'target-agent', label: 'Selected label' }]);
+  const fresh = capture();
+  expect.soft(fresh.value).toMatchObject({ state: 'ok', value: { total: 1, pairs: [{ agentId: selected, targetId: 'target-agent', sources: [{ sourceId: 'non-pruning', binding: { state: 'ok', value: { label: { value: 'Selected label' } } } }] }] } });
+  expect.soft(old.receipts[0].current()).toBe(false); expect.soft(collect).not.toHaveBeenCalled();
+});
