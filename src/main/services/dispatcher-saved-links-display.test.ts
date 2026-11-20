@@ -45,7 +45,7 @@ it.each(['known-false', 'broken', 'backup-only', 'invalid-shape', 'future', 'bad
 });
 it.each(['bytes', 'entries', 'combined-removals', 'duplicate', 'empty-path', 'relative-path', 'invalid-selected-date', 'invalid-scope'] as const)('bounds and validates %s before inferring selected source completeness', async (mode) => {
   if (mode === 'bytes') await put(store, { version: 1, connections: [link()], removedByUser: [], padding: 'x'.repeat(1024 * 1024) });
-  else if (mode === 'entries') await putStore(Array.from({ length: SAVED_LINK_DISPLAY_SCAN + 1 }, (_, i) => link({ agentId: `other-${i}`, targetId: 'other-target' })));
+  else if (mode === 'entries') await putStore(Array.from({ length: SAVED_LINK_DISPLAY_SCAN + 1 }, (_, i) => ({ agentId: `other-${i}`, targetId: 'other-target' })));
   else if (mode === 'combined-removals') await putStore([link()], Array.from({ length: SAVED_LINK_DISPLAY_SCAN }, (_, i) => ({ agentId: `other-${i}`, targetId: 'other-target' })));
   else if (mode === 'duplicate') await putStore([link(), link()]);
   else await putStore([mode === 'invalid-scope' ? { agentId: null, targetId: 'other' } : link(mode === 'empty-path' ? { agentProjectPath: '' } : mode === 'relative-path' ? { targetProjectPath: '../relative' } : { createdAt: 'bad' })]);
