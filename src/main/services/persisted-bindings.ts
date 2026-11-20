@@ -188,7 +188,7 @@ export interface CachedSourcePage {
   /** All registered cache scopes examined; never fresh committed-store completeness. */
   complete: boolean;
   pairs: Array<{ agentId: string; targetId: string; sources: CachedSourceDisplay[] }>;
-  sourceStates: Array<{ sourceId: string; state: 'known' | 'partial' | 'unavailable'; reason?: 'uninitialized' | 'limit' | 'unverified' }>;
+  sourceStates: Array<{ sourceId: string; state: 'known' | 'partial' | 'unavailable'; reason?: 'uninitialized' | 'limit' | 'unverified' | 'unlisted' }>;
   total: number;
   offset: number;
   omitted: number;
@@ -209,15 +209,16 @@ function projectCachedSourcesForDisplay(agentId: string, offset: number): Displa
     if (!sourceDisplayId(id, 128) || id !== source.id) return unknown();
     const inspected = inspectedGuidance.get(source), current = guidanceSourceInstances.get(id) === source, listed = current ? lastListedBySource.get(id) : undefined;
     const claimed = current ? guidanceBySource.get(id) : undefined;
-    const originals = listed ? claimed : inspected?.bindings ?? claimed;
+    const inspectedOriginals = inspected?.bindings;
     const unverified = inspected?.unverified;
     const partial = !listed && !inspected;
-    const provenance = listed ? 'last-reconciled' : inspected ? 'last-inspected' : 'claimed-cache';
     if (!listed && !inspected && !claimed) { sourceStates.push({ sourceId: id, state: 'unavailable', reason: 'uninitialized' }); continue; }
-    const size = listed ? listed.size : (originals?.size ?? 0) + (unverified?.size ?? 0);
+    // Claims can update guidance/inspection without updating the last listing
+    // for non-pruning sources. Admit the UNION, counting every inventory visit
+    // (including repeated keys), rather than treating an empty Set as final.
+    const size = (listed?.size ?? 0) + (claimed?.size ?? 0) + (inspectedOriginals?.size ?? 0) + (unverified?.size ?? 0);
     if (size > SOURCE_DISPLAY_KEY_LIMIT - keysScanned) { sourceStates.push({ sourceId: id, state: 'unavailable', reason: 'limit' }); continue; }
     keysScanned += size; const sourceState: CachedSourcePage['sourceStates'][number] = { sourceId: id, state: partial ? 'partial' : 'known', ...(partial && { reason: 'uninitialized' }) }; sourceStates.push(sourceState);
-    const view: View = { sourceId: id, provenance, originals, unverified };
     const seen = new Set<string>();
     // Streaming cache iterators only. No collectors/inspectors, Set copies,
     // global guidance serialization, lifecycle callbacks or repair work.
@@ -229,6 +230,7 @@ function projectCachedSourcesForDisplay(agentId: string, offset: number): Displa
       const from = key.slice(0, separator), to = key.slice(separator + 1);
       if (!sourceDisplayId(from, 512) || !sourceDisplayId(to, 512)) return false;
       if (from !== agentId && to !== agentId) return true;
+      const originals = claimed?.has(key) ? claimed : inspectedOriginals;
       // A widget may legitimately have the same raw ID as the selected agent.
       // An incoming cache key alone cannot establish a selected relationship.
       // Inspect bounded identities only; unknown/ambiguous scopes disclose no
@@ -243,13 +245,16 @@ function projectCachedSourcesForDisplay(agentId: string, offset: number): Displa
         if (copies.every((b) => b.targetKind !== 'agent')) return true;
         if (!copies.every((b) => b.targetKind === 'agent')) return uncertain('unverified');
       }
-      const refs = pairs.get(key) ?? []; refs.push({ view, verified: !partial && !unverified?.has(key) }); pairs.set(key, refs); return true;
+      const reconciled = listed?.has(key) === true;
+      if (listed && !reconciled) { sourceState.state = 'partial'; sourceState.reason = 'unlisted'; }
+      const provenance: CachedSourceDisplay['provenance'] = originals === claimed ? reconciled ? 'last-reconciled' : 'claimed-cache' : 'last-inspected';
+      const view: View = { sourceId: id, provenance, originals, unverified };
+      const refs = pairs.get(key) ?? []; refs.push({ view, verified: (listed ? reconciled : !!inspectedOriginals?.has(key)) && !unverified?.has(key) }); pairs.set(key, refs); return true;
     };
-    if (listed) { for (const key of listed) if (!add(key)) return unknown(); }
-    else {
-      if (originals) for (const key of originals.keys()) if (!add(key)) return unknown();
-      if (unverified) for (const key of unverified) if (!add(key)) return unknown();
-    }
+    if (listed) for (const key of listed) if (!add(key)) return unknown();
+    if (claimed) for (const key of claimed.keys()) if (!add(key)) return unknown();
+    if (inspectedOriginals) for (const key of inspectedOriginals.keys()) if (!add(key)) return unknown();
+    if (unverified) for (const key of unverified) if (!add(key)) return unknown();
   }
   const page: CachedSourcePage['pairs'] = []; let index = 0, originalsScanned = 0;
   for (const [key, refs] of pairs) {

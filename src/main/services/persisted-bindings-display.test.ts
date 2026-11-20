@@ -68,3 +68,44 @@ it('fences producer replacement even after an identical safe cache page is rebui
   const safe = (value: unknown) => JSON.stringify(value, (key, v) => key === 'inputs' ? undefined : v);
   expect(safe(fresh.value)).toBe(safe(old.value)); expect(old.receipts[0].current()).toBe(false); expect(fresh.receipts[0].current()).toBe(true);
 });
+
+it.each([
+  { prune: undefined, unrelated: false }, { prune: false, unrelated: false },
+  { prune: undefined, unrelated: true }, { prune: false, unrelated: true },
+])('includes a later non-pruning claim after established listing %j', async ({ prune, unrelated }) => {
+  const collect = vi.fn(async () => unrelated ? [wire('other-agent', 'other-target')] : []);
+  registerPersistedBindingSource({ id: 'non-pruning', ...(prune !== undefined && { prune }), collect });
+  await rebuildPersistedBindings(); collect.mockClear();
+  const old = capture(); expect(old.value).toMatchObject({ state: 'ok', value: { total: 0, complete: true } }); expect(old.receipts[0].current()).toBe(true);
+  expect(claimSourceBinding('non-pruning', wire())).toBe('created');
+  expect(bindingManager.getBindingsForAgent(selected)).toMatchObject([{ agentId: selected, targetId: 'target-agent', label: 'Selected label' }]);
+  const fresh = capture();
+  expect.soft(fresh.value).toMatchObject({ state: 'ok', value: { total: 1, complete: false, sourceStates: [{ sourceId: 'non-pruning', state: 'partial', reason: 'unlisted' }], pairs: [{ agentId: selected, targetId: 'target-agent', sources: [{ sourceId: 'non-pruning', binding: { state: 'ok', value: { label: { value: 'Selected label' } } } }] }] } });
+  expect.soft(old.receipts[0].current()).toBe(false); expect.soft(collect).not.toHaveBeenCalled();
+});
+
+it.each([undefined, false])('includes a later incoming non-pruning claim with prune=%s', async (prune) => {
+  registerPersistedBindingSource({ id: 'incoming-claim', ...(prune !== undefined && { prune }), collect: async () => [] }); await rebuildPersistedBindings(); const old = capture(); expect(old.value).toMatchObject({ value: { complete: true, total: 0 } });
+  expect(claimSourceBinding('incoming-claim', wire('sender-agent', selected))).toBe('created');
+  const fresh = capture(); expect.soft(fresh.value).toMatchObject({ value: { total: 1, complete: false, sourceStates: [{ state: 'partial', reason: 'unlisted' }], pairs: [{ agentId: 'sender-agent', targetId: selected, sources: [{ verified: false, provenance: 'claimed-cache', binding: { state: 'ok' } }] }] } }); expect.soft(old.receipts[0].current()).toBe(false);
+});
+it('includes selected later inspection keys outside an established empty listing', async () => {
+  const inspect = vi.fn(async () => [wire()]); registerPersistedBindingSource({ id: 'inspected-extra', collect: async () => [], inspect }); await rebuildPersistedBindings(); const old = capture(); expect(old.value).toMatchObject({ value: { complete: true, total: 0 } });
+  await inspectConnectionGuidance(selected, 'target-agent'); inspect.mockClear(); const fresh = capture();
+  expect.soft(fresh.value).toMatchObject({ value: { total: 1, complete: false, sourceStates: [{ state: 'partial', reason: 'unlisted' }], pairs: [{ sources: [{ sourceId: 'inspected-extra', provenance: 'last-inspected', verified: false, binding: { state: 'ok' } }] }] } }); expect.soft(old.receipts[0].current()).toBe(false); expect.soft(inspect).not.toHaveBeenCalled();
+});
+it('charges repeated keys in every traversed inventory while preserving a later readable source', async () => {
+  const count = Math.floor(SOURCE_DISPLAY_KEY_LIMIT / 3) + 1; source('triple-inventory', Array.from({ length: count }, (_, i) => wire(i ? `other-${i}` : selected, 'target-agent'))); await rebuildPersistedBindings(); const small = source('small-later'); claimSourceBinding(small.descriptor.id, wire());
+  const { value } = capture(); expect(value).toMatchObject({ value: { complete: false, total: 1, sourceStates: [{ sourceId: 'triple-inventory', state: 'unavailable', reason: 'limit' }, { sourceId: 'small-later', state: 'partial' }], pairs: [{ sources: [{ sourceId: 'small-later', binding: { state: 'ok' } }] }] } });
+});
+it('does not adopt a later inspected widget collision from the new inventory union', async () => {
+  registerPersistedBindingSource({ id: 'inspected-widget', collect: async () => [], inspect: async () => [wire('PRIVATE_LATER_WIDGET_OWNER', selected, { targetKind: 'browser', label: 'PRIVATE_LATER_WIDGET_LABEL' })] }); await rebuildPersistedBindings(); await inspectConnectionGuidance('PRIVATE_LATER_WIDGET_OWNER', selected);
+  const { value } = capture(); expect.soft(value).toMatchObject({ value: { complete: true, total: 0, pairs: [] } }); expect.soft(JSON.stringify(value)).not.toMatch(/PRIVATE_LATER_WIDGET/);
+});
+it('reads a later guidance-only claim after an ordinary failed inspection removed the inspected cache', async () => {
+  const inspect = vi.fn(async (): Promise<PersistedBinding[]> => { throw new Error('fixture inspection unavailable'); });
+  registerPersistedBindingSource({ id: 'guidance-only', collect: async () => [], inspect }); await rebuildPersistedBindings(); await inspectConnectionGuidance(selected, 'target-agent');
+  expect(capture().value).toMatchObject({ value: { total: 0, complete: false, sourceStates: [{ state: 'unavailable' }] } });
+  expect(claimSourceBinding('guidance-only', wire())).toBe('created'); inspect.mockClear();
+  expect(capture().value).toMatchObject({ value: { total: 1, complete: false, sourceStates: [{ state: 'partial', reason: 'unlisted' }], pairs: [{ sources: [{ provenance: 'claimed-cache', binding: { state: 'ok' } }] }] } }); expect(inspect).not.toHaveBeenCalled();
+});
