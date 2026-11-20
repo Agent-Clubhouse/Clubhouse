@@ -953,7 +953,7 @@ describe('selected registered Connections pages at final Details assembly', () =
 });
 
 describe('cold saved tool-source connection pages in Details', () => {
-  it.each(['unchanged', 'source-late', 'endpoint-late', 'revoked'] as const)('projects source data without operational collection and retains final evidence: %s', async (mode) => {
+  it.each(['unchanged', 'source-late', 'endpoint-late', 'revoked', 'display-reopen'] as const)('projects source data without operational collection and retains final evidence: %s', async (mode) => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-tool-page-'))), a = path.join(root, 'a'), b = path.join(root, 'b');
     for (const folder of [a, b]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
     m.base = root; m.realConnections = true; m.realWitness = true;
@@ -963,13 +963,17 @@ describe('cold saved tool-source connection pages in Details', () => {
     const endpoint = path.join(b, '.clubhouse', 'agents.json'); await fs.writeFile(endpoint, JSON.stringify([{ id: 'tool-target', name: 'Qualified tool target', env: { key: 'PRIVATE_ENDPOINT_ENV' } }]));
     const sourceFile = path.join(a, '.clubhouse', '.local', 'orchestrator-connections.json'); await fs.mkdir(path.dirname(sourceFile));
     await fs.writeFile(sourceFile, JSON.stringify({ version: 1, connections: [{ ownerId: 'a1', agentId: 'a1', targetId: 'tool-target', targetKind: 'agent', targetProjectPath: b, scope: 'granted', rawArgs: 'PRIVATE_ARGS', createdAt: '2026-11-20T00:00:00Z' }] }));
+    let displayGeneration = 'admitted-display';
+    const admittedRuntime = { kind: 'chat', getSessionId: () => 'same-app-session', getNativeSessionId: () => 'same-native-session', getDisplayRunId: () => displayGeneration };
+    if (mode === 'display-reopen') { m.running.mockReturnValue(true); m.runtime.mockReturnValue(admittedRuntime); m.registration.mockReturnValue({ nonce: 'same-registration', runtime: 'chat', orchestrator: 'codex-cli', cwd: a, projectPath: a }); }
     m.target.mockResolvedValue({ agent: selected, project: p }); let allowed = true, reached = false, observed = false, scopeObserved = false;
     const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
     const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((r) => r.label === 'Qualified tool target · Project'); scopeObserved = args[0].rows.some((r) => r.value.includes('current grant not evaluated')); });
-    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'source-late') await fs.writeFile(sourceFile, '{"version":1,"connections":[]}'); if (mode === 'endpoint-late') await fs.writeFile(endpoint, '[]'); if (mode === 'revoked') allowed = false; return []; });
+    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'source-late') await fs.writeFile(sourceFile, '{"version":1,"connections":[]}'); if (mode === 'endpoint-late') await fs.writeFile(endpoint, '[]'); if (mode === 'revoked') allowed = false; if (mode === 'display-reopen') displayGeneration = 'reopened-display'; return []; });
     try {
       const response = await readRemoteAgentDetails('a1', () => allowed, { card: 'connections', source: 'tool-records', offset: 0, projectOffset: 0 });
       expect(reached).toBe(true); expect(observed).toBe(true); expect(scopeObserved).toBe(true);
+      if (mode === 'display-reopen') { expect(m.runtime()).toBe(admittedRuntime); expect(admittedRuntime.getSessionId()).toBe('same-app-session'); expect(admittedRuntime.getNativeSessionId()).toBe('same-native-session'); expect(displayGeneration).toBe('reopened-display'); }
       if (mode === 'unchanged') {
         expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true); const body = response.body as RemoteAgentDetails;
         expect(body.connectionPageSources).toContain('tool-records'); const c = body.cards.find((c) => c.id === 'connections'); expect(c?.connectionPage).toMatchObject({ source: 'tool-records', known: 1, complete: true, next: null });

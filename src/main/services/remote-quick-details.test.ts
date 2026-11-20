@@ -376,20 +376,23 @@ it('keeps current Quick bindings while refusing inapplicable saved durable Dispa
 });
 
 describe('attested Quick Connections continuation', () => {
-  it.each(['unchanged', 'binding-late', 'replacement', 'finished', 'revoked'] as const)('binds the final source page to this exact Quick run: %s', async (mode) => {
+  it.each(['unchanged', 'binding-late', 'replacement', 'finished', 'revoked', 'display-reopen'] as const)('binds the final source page to this exact Quick run: %s', async (mode) => {
     const { bindingManager } = await import('./clubhouse-mcp/binding-manager'), sources = await import('./persisted-bindings');
     m.realConnections = true; bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting(); bindingManager.setConnectionToolsSource(null, null); bindingManager.setConnectionInstructionsSource(null);
-    const run = start(), registration: AgentRegistration = { projectPath: project, cwd: project, runtime: 'pty', orchestrator: 'codex-cli', nonce: 'PRIVATE_CURRENT_QUICK_NONCE' };
-    m.registration.mockReturnValue(registration); m.running.mockReturnValue(true); m.runtime.mockReturnValue({ kind: 'pty' }); noteQuickAgentRuntime(run, registration, () => m.registration() === registration);
+    let displayGeneration = 'admitted-display';
+    const admittedRuntime = { kind: 'chat', getSessionId: () => 'same-app-session', getNativeSessionId: () => 'same-native-session', getDisplayRunId: () => displayGeneration };
+    const run = start(), registration: AgentRegistration = { projectPath: project, cwd: project, runtime: mode === 'display-reopen' ? 'chat' : 'pty', orchestrator: 'codex-cli', nonce: 'PRIVATE_CURRENT_QUICK_NONCE' };
+    m.registration.mockReturnValue(registration); m.running.mockReturnValue(true); m.runtime.mockReturnValue(mode === 'display-reopen' ? admittedRuntime : { kind: 'pty' }); noteQuickAgentRuntime(run, registration, () => m.registration() === registration);
     for (let i = 0; i < 41; i++) bindingManager.bind('quick', { targetId: 'terminal-' + i, targetKind: 'terminal', label: 'Quick terminal ' + i });
     let allowed = true, reached = false, observed = false;
     const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
     const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((row) => row.label === 'Quick terminal 40'); });
-    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'binding-late') bindingManager.updateBinding('quick', 'terminal-40', { label: 'Changed terminal' }); if (mode === 'replacement') m.registration.mockReturnValue({ ...registration, nonce: 'replacement' }); if (mode === 'finished') finishQuickAgentRun(run, 'completed'); if (mode === 'revoked') allowed = false; return []; });
+    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'binding-late') bindingManager.updateBinding('quick', 'terminal-40', { label: 'Changed terminal' }); if (mode === 'replacement') m.registration.mockReturnValue({ ...registration, nonce: 'replacement' }); if (mode === 'finished') finishQuickAgentRun(run, 'completed'); if (mode === 'revoked') allowed = false; if (mode === 'display-reopen') displayGeneration = 'reopened-display'; return []; });
     try {
       const target = await resolveReadOnlyQuickTarget('quick', () => allowed); expect(target).not.toBeNull();
       const response = await readRemoteQuickDetails(target!, () => allowed, { card: 'connections', source: 'outgoing', offset: 40 });
       expect(reached).toBe(true); expect(observed).toBe(true);
+      if (mode === 'display-reopen') { expect(m.runtime()).toBe(admittedRuntime); expect(admittedRuntime.getSessionId()).toBe('same-app-session'); expect(admittedRuntime.getNativeSessionId()).toBe('same-native-session'); expect(displayGeneration).toBe('reopened-display'); }
       if (mode === 'unchanged') {
         expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'quick')).toBe(true); const body = response.body as RemoteAgentDetails;
         expect(body.connectionPageSources).toEqual(['outgoing', 'incoming', 'directions', 'sources']); expect(body.cards.find((c) => c.id === 'connections')?.connectionPage).toMatchObject({ source: 'outgoing', offset: 40, known: 41, next: null }); expect(JSON.stringify(body)).not.toContain('PRIVATE_CURRENT_QUICK_NONCE');
