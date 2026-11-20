@@ -149,4 +149,25 @@ it('excludes a registered filesystem alias of the admitted canonical role direct
   const role = captureReadOnlyRoleTargetWitness(target, () => true), receipts: DisplayReceipt[] = []; expect(role.current()).toBe(true);
   const result = readRegisteredAgentDisplayPage({ agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role }, 'dispatcher-auto', { authorized: () => true, receipts });
   expect(result).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, unknownRows: 0, entries: [{ agentId: 'normal', projectId: 'b' }], next: null } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_ROLE'); expect(receipts.every((r) => r.current())).toBe(true);
+  await fsp.unlink(alias); await fsp.symlink(b, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  expect(role.current()).toBe(true); expect(receipts.some((r) => !r.current())).toBe(true);
+});
+it('keeps unsupported canonical or registered directory identity explicitly unavailable', async () => {
+  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
+  const controller = agent('controller'); await put(a, [controller]); await put(b, [agent('normal', { orchestration: { connectToDispatcher: true } })]);
+  const target = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a } } as unknown as import('./agent-config-reader').AgentConfigTarget;
+  const role = captureReadOnlyRoleTargetWitness(target, () => true); expect(role.current()).toBe(true);
+  const chosen = { agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role };
+  const original = fs.lstatSync, unsupported = vi.spyOn(fs, 'lstatSync').mockImplementation(((file: fs.PathLike, options: { bigint?: boolean }) => {
+    const value = original(file, options as { bigint: true });
+    return String(file) === b && options?.bigint ? new Proxy(value, { get: (v, key) => key === 'ino' ? 0n : Reflect.get(v, key) }) : value;
+  }) as typeof fs.lstatSync);
+  try { expect(readRegisteredAgentDisplayPage(chosen, 'dispatcher-auto', { authorized: () => true, receipts: [] })).toMatchObject({ state: 'ok', value: { entries: [], complete: false, unavailableProjects: 1 } }); }
+  finally { unsupported.mockRestore(); }
+  const stat = fs.statSync, noCanonical = vi.spyOn(fs, 'statSync').mockImplementation(((file: fs.PathLike, options: { bigint?: boolean }) => {
+    const value = stat(file, options as { bigint: true });
+    return String(file) === a && options?.bigint ? new Proxy(value, { get: (v, key) => key === 'ino' ? 0n : Reflect.get(v, key) }) : value;
+  }) as typeof fs.statSync);
+  try { expect(readRegisteredAgentDisplayPage(chosen, 'dispatcher-auto', { authorized: () => true, receipts: [] })).toMatchObject({ state: 'unavailable', reason: 'unreadable' }); }
+  finally { noCanonical.mockRestore(); }
 });
