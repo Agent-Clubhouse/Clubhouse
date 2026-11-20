@@ -9,7 +9,7 @@ import { DetailsCard, CardNote } from './DetailsCard';
 import { Evidence } from './RemoteDetailsEvidence';
 
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
-const label: Record<RemoteConnectionPageSource, string> = { outgoing: 'Outgoing bindings', incoming: 'Incoming bindings', directions: 'Saved switches', sources: 'Retained sources', 'manual-dispatcher': 'Saved Dispatcher links', helpers: 'Helper relationships', 'dispatcher-auto': 'Automatic agent links' };
+const label: Record<RemoteConnectionPageSource, string> = { outgoing: 'Outgoing bindings', incoming: 'Incoming bindings', directions: 'Saved switches', sources: 'Retained sources', 'manual-dispatcher': 'Saved Dispatcher links', helpers: 'Helper relationships', 'dispatcher-auto': 'Automatic agent links', 'tool-records': 'Saved tool links' };
 const message = (status: Result['status']) => status === 'offline' ? 'Host offline. Reconnect to read connection pages.'
   : status === 'forbidden' ? 'The host does not allow this Details read.' : status === 'unavailable' ? 'This host does not share this connection page. It may need an update.'
     : status === 'error' ? 'Couldn’t read this connection page from the host. Refresh to try again.' : status === 'rate_limited' ? 'The host is busy. Try again shortly.' : 'Loading connections from the host…';
@@ -46,7 +46,8 @@ export function RemoteConnectionsCard({ agent, details, status, freshnessKey, di
   const current = query && page?.source === query.source && page.offset === (query.offset ?? 0) && page.projectOffset === (query.projectOffset ?? 0) ? candidate : undefined;
   const overview = eligible ? details?.cards.find((c) => c.id === 'connections') : undefined;
   const card = query ? current : overview;
-  const sources: RemoteConnectionPageSource[] = ['outgoing', 'incoming', 'directions', 'sources', ...(dispatcher ? ['dispatcher-auto' as const] : agent.kind === 'durable' ? [...(!agent.parentAgentId ? ['manual-dispatcher' as const] : []), 'helpers' as const] : [])];
+  const candidates: RemoteConnectionPageSource[] = ['outgoing', 'incoming', 'directions', 'sources', ...(dispatcher ? ['dispatcher-auto' as const] : agent.kind === 'durable' ? [...(!agent.parentAgentId ? ['manual-dispatcher' as const] : []), 'helpers' as const] : [])];
+  const sources = [...candidates, ...(details?.connectionPageSources?.includes('tool-records') ? ['tool-records' as const] : [])].filter((source) => !details?.connectionPageSources || details.connectionPageSources.includes(source));
   const select = (source: RemoteConnectionPageSource) => setNavigation({ identity, query: { card: 'connections', source, offset: 0, projectOffset: 0 }, previous: [] });
   const overviewStatus = !address ? 'unavailable' : !connected ? 'offline' : status;
   const overviewMessage = overviewStatus === 'unavailable' ? 'This host does not share these details, or this agent is no longer available. The host may need an update.' : message(overviewStatus);

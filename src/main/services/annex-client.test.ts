@@ -3348,6 +3348,8 @@ describe('annex-client', () => {
       expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, offset: 4097 })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
       answers.push({ status: 200, body: { ...value, cards: value.cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { ...c.connectionPage, offset: 0 } } : c) } });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      answers.push({ status: 400, body: { error: 'invalid_details_query' } });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, source: 'tool-records' })).toEqual({ status: 'unavailable' });
       answers.push({ status: 200, body: { ...value, connectionPages: undefined, cards: value.cards.map((c) => ({ ...c, connectionPage: undefined })) } });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
     });

@@ -5,6 +5,7 @@ it('admits only bounded selected-source continuation, with no paths, discovery, 
   for (const extra of [{ offset: -1 }, { offset: 4097 }, { offset: 1.5 }, { offset: '1' }, { projectOffset: 1 }, { projectPath: '/private' }, { agentId: 'other' }, { source: 'collect' }, { card: 'settings' }])
     expect(isRemoteDetailsQuery({ card: 'connections', source: 'sources', ...extra })).toBe(false);
   expect(isRemoteDetailsQuery({ card: 'connections', source: 'helpers', projectOffset: 16, offset: 8 })).toBe(true);
+  expect(isRemoteDetailsQuery({ card: 'connections', source: 'tool-records', projectOffset: 16, offset: 8 })).toBe(true);
 });
 it('binds the returned page to a forward bounded continuation and explicit completeness', () => {
   const page = { source: 'helpers', projectOffset: 0, offset: 8, next: { projectOffset: 16, offset: 0 }, known: 19, complete: false };

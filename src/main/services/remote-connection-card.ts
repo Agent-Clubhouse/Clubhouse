@@ -1,3 +1,4 @@
+import type { SavedToolConnectionPage } from './saved-tool-connections-display';
 import type { RemoteDetailsQuery } from '../../shared/remote-details-query';
 import type { ConfiguredRegisteredConnectionPage } from './configured-registered-connections-display';
 /** Selected Connections evidence only. No generic source/federation/credential readers. */
@@ -31,6 +32,7 @@ export interface ConnectionCardReadOptions {
   receipts: DisplayReceipt[];
   page?: RemoteDetailsQuery;
   registered?: DisplayValue<ConfiguredRegisteredConnectionPage>;
+  tools?: DisplayValue<SavedToolConnectionPage>;
   authorized(): boolean;
   dispatcher?: boolean;
   /** Strictly admitted durable project only; Quick runs do not use saved durable links. */
@@ -111,6 +113,7 @@ const kindWords = (kind: Pair['kind']) => kind === 'group-project' ? 'group proj
 export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: string, options: ConnectionCardReadOptions): Promise<void> {
   if (!options.authorized()) throw new Error('revoked');
   if (!selected || selected.length > 200) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The selected connection identity exceeds the host display limit.'); return; }
+  if (options.page?.source === 'tool-records') { renderSavedToolConnections(c, options.tools, options.page); return; }
   if (options.page?.source === 'helpers' || options.page?.source === 'dispatcher-auto') {
     renderRegisteredConnections(c, options.registered, options.page); return;
   }
@@ -400,4 +403,27 @@ function renderRegisteredConnections(c: RemoteDetailsCard, read: DisplayValue<Co
   if (page.unavailableProjects) c.notes.push(`${page.unavailableProjects} project inventories are unavailable or exceed this read's bounds.`);
   c.notes.push('Saved configured relationships are project-qualified and separate from native-ID bindings. Host-memory observations are shown separately. No current run, MCP handshake, reachability or effective tool authority is established.');
   c.notes.push('At most eight related endpoints are shown per page. Pages are separately authorized observations; changing inventories can shift continuation.');
+}
+
+/** Recorded source data stays independent of operational collection/permission. */
+function renderSavedToolConnections(c: RemoteDetailsCard, read: DisplayValue<SavedToolConnectionPage> | undefined, query: RemoteDetailsQuery): void {
+  if (read?.state !== 'ok') { c.state = 'error'; c.summary = 'Saved tool records unavailable'; c.notes.push('The selected saved tool-source page is unavailable; no empty list is inferred.'); return; }
+  const page = read.value;
+  c.connectionPage = { source: query.source, offset: page.offset, projectOffset: page.projectOffset, known: page.knownMatches, complete: page.complete, next: page.next };
+  c.summary = `${page.knownMatches} known saved tool records in this project page${page.complete ? '' : ' · partial'}`;
+  for (const entry of page.rows) {
+    const endpointId = entry.direction === 'outgoing' ? entry.targetId : entry.agentId;
+    const fields = entry.endpoint ? endpointCardFields({ agentId: entry.agentId, targetId: entry.targetId, relationship: 'recorded', endpoint: entry.endpoint }) : undefined;
+    const projectName = entry.sourceProjectName.state === 'ok' ? entry.sourceProjectName.value : 'Project name unavailable';
+    const name = `${fields?.displayName || endpointId} · ${projectName}`;
+    row(c, name, `Saved tool-created ${entry.targetKind} record · ${entry.direction} · source project ${entry.sourceProjectId} · current source eligibility unconfirmed`);
+    const tools = localDirectionTools(undefined, entry.disabledTools, entry.enabledTools);
+    row(c, `${name} starting switches`, `Source defaults · On: ${labels(tools.allowed)}; Off: ${labels(tools.disabled)} · not effective tool authority`);
+    row(c, `${name} saved declaration`, entry.declaredScope === 'granted' ? 'Grant-scoped creation recorded; current grant not evaluated here' : entry.declaredScope === 'helper-family' ? 'Helper-family creation recorded; current owner/helper membership not evaluated here' : 'Creation scope unavailable');
+    if (entry.createdAt) row(c, `${name} recorded`, entry.createdAt);
+    if (fields) row(c, `${name} saved target`, fields.saved);
+  }
+  if (page.unknownRows) c.notes.push(`${page.unknownRows} candidate tool-source records could not be classified safely.`);
+  if (page.unavailableProjects) c.notes.push(`${page.unavailableProjects} saved tool-source inventories are unavailable or exceed this read's bounds.`);
+  c.notes.push('These are selected project-qualified saved records, not a source collection or live binding report. Current owner membership, grants, availability and effective tool authority remain separate.');
 }

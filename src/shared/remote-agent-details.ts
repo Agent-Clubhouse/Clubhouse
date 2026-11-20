@@ -1,4 +1,4 @@
-import { isRemoteConnectionPage, type RemoteConnectionPage } from './remote-details-query';
+import { isRemoteConnectionPage, REMOTE_CONNECTION_PAGE_SOURCES, type RemoteConnectionPage, type RemoteConnectionPageSource } from './remote-details-query';
 import { ACTION_OUTCOMES, ACTION_RELATIONSHIPS, isActionRunTime, type RemoteActionRow } from './agent-action-groups';
 import { isRemoteAgentSettings, type RemoteAgentSettings } from './remote-agent-settings';
 import type { AgentStatus } from './types';
@@ -34,6 +34,8 @@ export interface RemoteAgentDetails {
   version: 1;
   /** Additive selected-source continuation support, independent of older Details hosts. */
   connectionPages?: 1;
+  /** Additive supported origin list; absent on the first paged-host version. */
+  connectionPageSources?: RemoteConnectionPageSource[];
   agentId: string;
   readOnly: true;
   readAt: number;
@@ -56,7 +58,9 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
   if (!value || typeof value !== 'object') return false;
   const v = value as RemoteAgentDetails;
   const text = (s: unknown) => typeof s === 'string' && s.length <= 2048;
-  return v.version === 1 && (v.connectionPages === undefined || v.connectionPages === 1) && v.agentId === agentId && v.readOnly === true
+  return v.version === 1 && (v.connectionPages === undefined || v.connectionPages === 1)
+    && (v.connectionPageSources === undefined || v.connectionPages === 1 && Array.isArray(v.connectionPageSources) && v.connectionPageSources.length <= 16
+      && new Set(v.connectionPageSources).size === v.connectionPageSources.length && v.connectionPageSources.every((source) => REMOTE_CONNECTION_PAGE_SOURCES.includes(source))) && v.agentId === agentId && v.readOnly === true
     && Number.isFinite(v.readAt) && v.readAt > 0 && text(v.providerId) && !!v.providerId && (v.providerLabel === undefined || text(v.providerLabel) && !!v.providerLabel) && typeof v.running === 'boolean'
     && ['running', 'sleeping', 'waking', 'creating', 'spawning', 'error'].includes(v.status)
     && (v.spawnedAt === null || Number.isFinite(v.spawnedAt) && v.spawnedAt > 0)

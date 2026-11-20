@@ -49,3 +49,10 @@ it('rejects a successful response for a different page instead of rendering its 
   expect.soft(screen.queryByText('PRIVATE_WRONG_PAGE')).not.toBeInTheDocument();
   expect.soft(screen.getByTestId('details-card-connections')).toHaveTextContent('did not return the selected source page');
 });
+
+it('offers new saved-source views only when the admitted host explicitly advertises them', async () => {
+  const view = show(); expect(screen.queryByRole('button', { name: 'Saved tool links' })).not.toBeInTheDocument();
+  view.rerender(<RemoteConnectionsCard agent={agent} details={{ ...details, connectionPageSources: ['tool-records'] }} status="ok" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} />);
+  expect(screen.queryByRole('button', { name: 'Outgoing bindings' })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Saved tool links' }));
+  await waitFor(() => expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'tool-records', offset: 0, projectOffset: 0 }));
+});

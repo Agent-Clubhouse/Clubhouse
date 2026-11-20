@@ -2488,7 +2488,7 @@ export async function requestAgentDetails(machine: string, agentId: string, quer
   try {
     const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/details${params ? `?${params}` : ''}`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
     if (!current()) return { status: 'offline' };
-    if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
+    if (res.status === 404 || res.status === 405 || page && res.status === 400) return { status: 'unavailable' };
     if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
     if (res.status !== 200 || !isRemoteAgentDetails(res.body, agentId)) return { status: 'error' };

@@ -51,3 +51,10 @@ describe('remote Details contract', () => {
   });
 
 });
+
+it('accepts additive supported source lists only with bounded unique known source identities and page capability', () => {
+  const value = { ...fixture(), connectionPages: 1, connectionPageSources: ['outgoing', 'tool-records'] };
+  expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
+  for (const connectionPageSources of [['outgoing', 'outgoing'], ['collect'], ['x'.repeat(300)], null, {}]) expect(isRemoteAgentDetails({ ...value, connectionPageSources }, 'a1')).toBe(false);
+  expect(isRemoteAgentDetails({ ...value, connectionPages: undefined }, 'a1')).toBe(false);
+});
