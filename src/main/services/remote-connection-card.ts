@@ -185,8 +185,16 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
         ? pair.kind === 'group-project' ? boundedName(value(record?.projectName)) ?? boundedName(value(record?.targetName)) ?? boundedName(value(record?.label))
           : boundedName(value(record?.targetName)) ?? boundedName(value(record?.label))
         : boundedName(value(record?.agentName));
-      const resolved = (pair.kind === 'agent' && isDispatcherIdentityAgentId(other) ? refs.get(other) : undefined)
+      const independentSavedLink = value(pair.saved?.userLink) === true || value(pair.saved?.cardLink) === true || !!value(pair.saved?.makers)?.length;
+      const savedOnlyIdentity = !!pair.manual && !pair.binding && !sourceBinding && !independentSavedLink;
+      // A saved project-qualified manual entry does not authorize borrowing a
+      // current cached name for a reused native ID in another project.
+      const resolved = savedOnlyIdentity ? undefined : (pair.kind === 'agent' && isDispatcherIdentityAgentId(other) ? refs.get(other) : undefined)
         ?? ordinary ?? (pair.kind === 'agent' ? refs.get(other) : undefined);
+      if (savedOnlyIdentity) {
+        const note = 'The saved target’s current project identity is not confirmed; its saved ID is shown.';
+        if (!c.notes.includes(note)) c.notes.push(note);
+      }
       const label = resolved ?? pair.remoteAgent ?? other;
       if (pair.machine && !resolved) {
         const note = 'A saved target name is unavailable or ambiguous in retained host metadata; its saved address is shown.';
@@ -256,7 +264,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       else {
         if (manual.value.omitted) c.notes.push(`${manual.value.omitted} additional saved Dispatcher link${manual.value.omitted === 1 ? ' is' : 's are'} outside this bounded page.`);
         if (manual.value.excludedProjectRecords) c.notes.push(`${manual.value.excludedProjectRecords} saved Dispatcher link records belong to another project association and were excluded.`);
-        c.notes.push('Saved Dispatcher links show saved settings and removal reports from this host session. The other agent’s availability and current tool access are not confirmed by those records.');
+        c.notes.push('Saved Dispatcher links show saved settings and removal reports from this host session. The saved target’s current project, availability and tool access are not confirmed by those records.');
       }
     }
     if (sources.state !== 'ok') c.notes.push('Registered source metadata is unavailable. Other sources may hold these connections.');

@@ -146,7 +146,7 @@ it.each([true, false])('does not guess incoming widget identity from an untyped 
   const { c } = await read(); expect.soft(c.state).toBe(hasKnown ? 'ok' : 'error'); expect.soft(c.rows.some((row) => row.label === 'Known connection')).toBe(hasKnown); expect.soft(c.notes.join(' ')).toContain('an independently admitted target kind'); expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_WIDGET_OWNER');
 });
 
-it.each(['saved', 'pending-not-saved', 'owner-saved-copy-missing', 'override-present', 'override-unavailable', 'primary-unavailable', 'owner-unavailable', 'primary-late', 'owner-late'] as const)('composes cold saved Dispatcher records and independent owner evidence: %s', async (mode) => {
+it.each(['saved', 'unqualified-cached-name', 'pending-not-saved', 'owner-saved-copy-missing', 'override-present', 'override-unavailable', 'primary-unavailable', 'owner-unavailable', 'primary-late', 'owner-late'] as const)('composes cold saved Dispatcher records and independent owner evidence: %s', async (mode) => {
   const projectPath = path.join(root, 'selected-project'), file = 'dispatcher-connections.json', pending = 'dispatcher-connections.pending-removals.json';
   const link = { agentId: selected, targetId: 'manual-target', agentProjectPath: projectPath, targetProjectPath: '/other-project', createdAt: at, createdBy: 'controller', PRIVATE_ARGS: 'PRIVATE_CONFIG' };
   const putLinks = (version = 1, targetId = 'manual-target') => put(file, { version, connections: [{ ...link, targetId }], removedByUser: [] });
@@ -161,6 +161,8 @@ it.each(['saved', 'pending-not-saved', 'owner-saved-copy-missing', 'override-pre
   if (mode === 'override-present') await put('connection-grants.json', { version: 1, directions: [{ from: { agentId: selected }, to: { agentId: 'manual-target' }, disabledTools: ['read_output'], enabledTools: ['wake_agent'] }] });
   if (mode === 'override-unavailable') await fs.promises.writeFile(path.join(root, 'connection-grants.json'), '{broken');
   if (mode === 'owner-unavailable') { const owner = await import('./dispatcher-connections'); vi.spyOn(owner, 'readDispatcherLinkMemoryForDisplay').mockImplementation(() => { throw new Error('PRIVATE_OWNER_ERROR'); }); }
+  if (mode === 'unqualified-cached-name') m.names.set('manual-target', 'PRIVATE_REUSED_ID_NAME');
+  const nameRead = mode === 'unqualified-cached-name' ? vi.spyOn(m.names, 'get') : undefined;
   m.side.mockClear(); m.legacy.mockClear(); const before = await disk(), { c, receipts } = await read(false, { projectPath, connectToDispatcher: { state: 'ok', value: false, inputs: [] } });
   expect.soft(c.state).toBe('ok'); expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|agentProjectPath|targetProjectPath|createdBy|"current"\s*:|receipts/);
   if (mode === 'primary-unavailable') {
@@ -182,6 +184,7 @@ it.each(['saved', 'pending-not-saved', 'owner-saved-copy-missing', 'override-pre
     if (mode === 'override-unavailable') { expect.soft(switches).toContain('Saved override unavailable'); expect.soft(switches).not.toContain('Configured manual link defaults'); }
 
   }
+  if (mode === 'unqualified-cached-name') { expect.soft(nameRead).not.toHaveBeenCalled(); expect.soft(c.notes.join(' ')).toContain('current project identity is not confirmed'); }
   expect.soft(receipts.every((receipt) => receipt.current())).toBe(true); expect.soft(m.legacy).not.toHaveBeenCalled(); expect.soft(m.side).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
   if (mode === 'primary-late') { await putLinks(1, 'changed-target'); expect(receipts.some((receipt) => !receipt.current())).toBe(true); }
   if (mode === 'owner-late') { await putLinks(2); expect(await recordUserRemoval({ agentId: selected, targetId: 'manual-target' })).toBe(true); await putLinks(); expect(receipts.some((receipt) => !receipt.current())).toBe(true); }
