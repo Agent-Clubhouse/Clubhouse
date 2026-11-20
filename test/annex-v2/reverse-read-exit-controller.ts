@@ -8,6 +8,7 @@ import {
   assertAcceptAudit, assertDialAudit, captureOwnedReverseAudit, closeServer, readMainDialAudit,
   rpcPeer, sentinel, transparentForward, type MainDialAudit, type OwnedAuditPeer, type RpcPeer,
 } from './reverse-parity-fixture';
+import { readOwnedResourceDiagnostics } from './owned-resource-diagnostics';
 
 interface ProcessRow {
   pid: number;
@@ -101,9 +102,10 @@ async function main() {
   const launch = {
     utc: new Date().toISOString(), argv: process.argv, controllerPid: process.pid, nonce,
     head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), sourceStatus: git('status', '--porcelain'),
-    tokenUnset: true, mode: 'bootstrap-quiesce-exit-only', opener: 'A',
+    tokenUnset: true, mode: 'bootstrap-quiesce-public-resource-diagnostic-only', opener: 'A',
     driverSha256: createHash('sha256').update(readArtifact(__filename)).digest('hex'),
     helperSha256: createHash('sha256').update(readArtifact(path.join(__dirname, 'reverse-parity-fixture.js'))).digest('hex'),
+    diagnosticSha256: createHash('sha256').update(readArtifact(path.join(__dirname, 'owned-resource-diagnostics.js'))).digest('hex'),
   };
   fs.writeFileSync(path.join(output, 'launch.json'), JSON.stringify(launch, null, 2) + '\n', { flag: 'wx' });
   let forward: Awaited<ReturnType<typeof transparentForward>> | undefined;
@@ -281,6 +283,7 @@ async function main() {
         CLUBHOUSE_ANNEX_OWNED_EXIT: '1', CLUBHOUSE_ANNEX_OWNED_ROLE: role, CLUBHOUSE_ANNEX_OWNED_NONCE: nonce,
         CLUBHOUSE_ANNEX_OWNED_AUDIT: auditPath, CLUBHOUSE_ANNEX_OWNED_SENTINEL: String(sentinelPort),
         CLUBHOUSE_ANNEX_OWNED_PROFILE: profile,
+        CLUBHOUSE_ANNEX_OWNED_DIAGNOSTICS: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -430,10 +433,24 @@ async function main() {
     if (remaining.length || peers.some((peer) => fs.existsSync(peer.profile))) {
       errors.push(errorDetails(new Error('Owned process/profile teardown is not clean')));
     }
+    const resourceDiagnostics = peers.map((peer) => {
+      try {
+        if (!peer.bootstrap || !peer.child.pid) throw new Error(`${peer.role} diagnostic identity missing`);
+        const diagnostic = readOwnedResourceDiagnostics({ role: peer.role, nonce, auditPath: peer.auditPath }, {
+          pid: peer.bootstrap.pid, cliPid: peer.child.pid, controllerPid: process.pid,
+        });
+        if (diagnostic.status !== 'captured') errors.push(errorDetails(new Error(`${peer.role} resource diagnostic phases missing`)));
+        return diagnostic;
+      } catch (error) {
+        errors.push(errorDetails(error));
+        return { role: peer.role, status: 'partial', error: errorDetails(error) };
+      }
+    });
     const result = {
       status: errors.length === 0 && capture?.status === 'complete' && sentinelClosed && sentinelAccepts === 0 ? 'complete' : 'failed',
-      scope: 'one A-opener supported-public-graceful bootstrap/quiesce/actual-exit calibration; no read-route cases',
+      scope: 'one A-opener public-resource diagnostic reproduction; no read-route cases',
       launch, elapsedMs: Date.now() - started, capture,
+      resourceDiagnostics,
       sentinel: { accepts: sentinelAccepts, closed: sentinelClosed },
       peakNodeProcesses, peakAggregateRssKiB, peakAggregateCpuPercent,
       rssIncludesSharedMemoryDoubleCounting: true, processLedger: [...ledger.values()], samples: samples.length,

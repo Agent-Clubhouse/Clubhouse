@@ -2,6 +2,7 @@ import * as net from 'net';
 import { describe, it, vi } from 'vitest';
 import { createInventoryPeer } from './reverse-inventory-peer';
 import { rpcPeer } from './reverse-parity-fixture';
+import { createPeerResourceDiagnostics } from './owned-resource-diagnostics';
 
 const owned = vi.hoisted(() => {
   if (process.env.CLUBHOUSE_ANNEX_OWNED_EXIT !== '1') return undefined;
@@ -19,6 +20,10 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
     if (owned && (!auditPath || !Number.isInteger(sentinelPort) || sentinelPort <= 0 || sentinelPort > 65535)) {
       throw new Error('Invalid owned peer audit endpoints');
     }
+    const diagnosticMode = process.env.CLUBHOUSE_ANNEX_OWNED_DIAGNOSTICS === '1';
+    if (diagnosticMode && (!owned || !auditPath)) throw new Error('Resource diagnostics require an owned peer');
+    const diagnostics = diagnosticMode && owned && auditPath
+      ? createPeerResourceDiagnostics({ ...owned, auditPath }) : undefined;
     const peer = await createInventoryPeer(owned?.role ?? 'B', owned && auditPath ? { auditPath, sentinelPort } : undefined);
     let stop!: () => void;
     const stopped = new Promise<void>((resolve) => { stop = resolve; });
@@ -29,11 +34,15 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
       switch (method) {
         case 'info': return peer.info;
         case 'exitAuditInfo': return peer.exitAuditInfo();
-        case 'quiesce':
+        case 'quiesce': {
           if (params !== undefined && (!Array.isArray(params) || !params.every((port) => Number.isInteger(port) && port > 0 && port <= 65535))) {
             throw new Error('Invalid expected owned source ports');
           }
-          return peer.quiesce(params as number[] | undefined);
+          diagnostics?.capture('before-service-quiesce');
+          const audit = await peer.quiesce(params as number[] | undefined);
+          diagnostics?.capture('after-service-quiesce');
+          return audit;
+        }
         case 'configure': return peer.configure(params as Parameters<typeof peer.configure>[0]);
         case 'status': return peer.status();
         case 'prepareControllerReads': return peer.prepareControllerReads();
@@ -119,7 +128,10 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'nativeSummary': return peer.nativeSummary();
         case 'transcript': return peer.transcript();
         case 'stop':
+          diagnostics?.capture('before-service-close');
           await peer.close();
+          diagnostics?.capture('after-service-close');
+          diagnostics?.armDelayedSample();
           closed = true;
           setImmediate(stop);
           return true;

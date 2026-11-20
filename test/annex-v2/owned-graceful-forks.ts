@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ForksPoolWorker, type PoolOptions, type WorkerRequest } from 'vitest/node';
+import { captureCliResources, publishObservedStopAck, type OwnedResourceIdentity } from './owned-resource-diagnostics';
 
 type NativeEnd = { code: unknown; signal: unknown };
 let instances = 0;
@@ -14,6 +15,7 @@ export class OwnedGracefulForks extends ForksPoolWorker {
   private readonly role: 'A' | 'B';
   private readonly nonce: string;
   private readonly eventPath: string;
+  private readonly diagnostics?: OwnedResourceIdentity;
   private requested = false;
   private acknowledgment?: Record<string, unknown>;
   private nativeExit?: NativeEnd;
@@ -36,6 +38,7 @@ export class OwnedGracefulForks extends ForksPoolWorker {
     this.role = role;
     this.nonce = nonce;
     this.eventPath = path.join(output, `${role}-native-events.jsonl`);
+    if (options.env.CLUBHOUSE_ANNEX_OWNED_DIAGNOSTICS === '1') this.diagnostics = { role, nonce, auditPath };
     instances++;
     this.emitRecord('pool-created', { instances });
     if (instances !== 1) throw new Error('Owned pool must have exactly one unreplaced fork per CLI');
@@ -54,6 +57,10 @@ export class OwnedGracefulForks extends ForksPoolWorker {
       if (this.acknowledgment) throw new Error('Duplicate graceful stop acknowledgment');
       this.acknowledgment = value;
       this.emitRecord('runtime-stopped', { response: value });
+      if (this.diagnostics) {
+        captureCliResources(this.diagnostics, 'after-runtime-stop-ack');
+        publishObservedStopAck(this.diagnostics, value.error === undefined);
+      }
     });
     this.on('exit', (code: unknown, signal?: unknown) => {
       this.nativeExit = { code, signal };
@@ -72,6 +79,7 @@ export class OwnedGracefulForks extends ForksPoolWorker {
       if (this.requested) throw new Error('Duplicate graceful stop request');
       this.requested = true;
       this.emitRecord('stop-request', { tagged: message.__vitest_worker_request__ });
+      if (this.diagnostics) captureCliResources(this.diagnostics, 'before-runtime-stop-ack');
     }
     super.send(message);
   }
