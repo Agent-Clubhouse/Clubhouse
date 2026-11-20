@@ -7,9 +7,9 @@ import { isRemoteInventoryPage, type RemoteInventoryQuery, type RemoteInventoryS
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { remoteDetailsAddress } from './remote-details-address';
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
-const cardFor = (source: RemoteInventorySource) => source === 'selected-action-relationships' ? 'actions' : 'skills-mcp';
+const cardFor = (source: RemoteInventorySource) => source === 'selected-canvas-memberships' ? 'canvases' : source === 'selected-action-relationships' ? 'actions' : 'skills-mcp';
 export function useSelectedInventoryPage({ agent, details, status, freshnessKey, open, readable, card, onRefused }: {
-  agent: Agent; details: RemoteAgentDetails | null; status: Result['status']; freshnessKey: string; open: boolean; readable: boolean; card: 'actions' | 'skills-mcp'; onRefused?(): void;
+  agent: Agent; details: RemoteAgentDetails | null; status: Result['status']; freshnessKey: string; open: boolean; readable: boolean; card: 'actions' | 'skills-mcp' | 'canvases'; onRefused?(): void;
 }) {
   const address = remoteDetailsAddress(agent.id);
   const satellite = useAnnexClientStore((s) => s.satellites.find((h) => h.id === address?.satelliteId));
@@ -44,7 +44,7 @@ export function useSelectedInventoryPage({ agent, details, status, freshnessKey,
   const select = (source: RemoteInventorySource, offset = 0, selection?: string) => {
     if (cardFor(source) !== card) return;
     const common = { offset, ...(selection && { selection }) };
-    const next: RemoteInventoryQuery = source === 'selected-action-relationships' ? { card: 'actions', source, ...common } : { card: 'skills-mcp', source, ...common };
+    const next: RemoteInventoryQuery = source === 'selected-canvas-memberships' ? { card: 'canvases', source, ...common } : source === 'selected-action-relationships' ? { card: 'actions', source, ...common } : { card: 'skills-mcp', source, ...common };
     setNavigation({ identity, query: next, revision: (selected?.revision ?? 0) + 1 });
   };
   return { eligible, contextReadable, query, key, page, result: result.status === 'ok' && query && !page ? { status: 'error' as const } : result, select };

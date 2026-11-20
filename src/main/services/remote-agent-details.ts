@@ -1,3 +1,5 @@
+import { REMOTE_CANVAS_MEMBERSHIP_SOURCE } from '../../shared/remote-canvas-membership-page';
+import { readSelectedCanvasMembershipPage } from './selected-canvas-membership-page';
 import { createHash } from 'crypto';
 import { readSelectedManagedPartsPage } from './selected-managed-parts-page';
 import { REMOTE_MANAGED_INVENTORY_SOURCES } from '../../shared/remote-inventory-page';
@@ -91,14 +93,14 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     if (dispatcher) for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes'] as const) byId[id].state = 'not-applicable';
     if (agent.parentAgentId) byId.dispatcher.state = 'not-applicable';
     const result: RemoteAgentDetails = { version: 1, connectionPages: 1, connectionPageEnvelope: 1, connectionPageSources: REMOTE_CONNECTION_PAGE_SOURCES.filter((source) => source === 'helper-parent' ? !!agent.parentAgentId && !dispatcher : source === 'dispatcher-auto' ? dispatcher : source === 'manual-dispatcher' ? !dispatcher && !agent.parentAgentId : source === 'helpers' ? !dispatcher : true), readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
-    result.inventoryPages = 1; result.inventorySources = [REMOTE_ACTION_PAGE_SOURCE, ...(!dispatcher && agent.managed?.version === 1 ? REMOTE_MANAGED_INVENTORY_SOURCES : [])];
-    if (query?.card === 'skills-mcp' || query?.card === 'actions') {
+    result.inventoryPages = 1; result.inventorySources = [REMOTE_ACTION_PAGE_SOURCE, ...(!dispatcher ? [REMOTE_CANVAS_MEMBERSHIP_SOURCE] : []), ...(!dispatcher && agent.managed?.version === 1 ? REMOTE_MANAGED_INVENTORY_SOURCES : [])];
+    if (query?.card === 'skills-mcp' || query?.card === 'actions' || query?.card === 'canvases') {
       if (!result.inventorySources.includes(query.source)) return { status: 400, body: { error: 'unsupported_inventory_page' } };
       const receipts: Array<{ current(): boolean }> = [];
       result.inventoryPage = query.card === 'actions' ? await readSelectedActionDetailsPageForAgent(agentId, project.id, dispatcher, {
         offset: query.offset ?? 0, selection: query.selection, authorized, target: targetWitness, receipts,
         names: () => actionDetailsNames(peekActionProjectName, { agentId, projectId: project.id, agentName: agent.name, projectName: project.displayName || project.name }).names,
-      }) : await readSelectedManagedPartsPage(target, query, { authorized, target: targetWitness, receipts });
+      }) : query.card === 'canvases' ? await readSelectedCanvasMembershipPage(target, query, { authorized, target: targetWitness, receipts }) : await readSelectedManagedPartsPage(target, query, { authorized, target: targetWitness, receipts });
       if (!authorized()) return refused();
       if (!targetWitness.current()) return { status: 409, body: { error: 'agent_inventory_changed' } };
       if (!providerRead.receipt.current()) return { status: 409, body: { error: 'settings_evidence_changed' } };

@@ -29,3 +29,15 @@ it('allows only source-appropriate bounded metadata, no content/IDs or fabricate
   const unavailable = { version: 1, source: 'selected-managed-skills', offset: 100, observedAt: 1, notes: [], state: 'unavailable', reason: 'changed' };
   expect(isRemoteInventoryPage(unavailable)).toBe(true); expect(isRemoteInventoryPage({ ...unavailable, rows: [] })).toBe(false);
 });
+
+it('admits Canvas pages only for the matching source/card and enclosing selected agent', () => {
+  const query = { card: 'canvases', source: 'selected-canvas-memberships', offset: 100, selection };
+  expect(isRemoteDetailsQuery(query)).toBe(true);
+  for (const patch of [{ card: 'actions' }, { source: 'selected-managed-skills' }, { selection: undefined }, { projectOffset: 0 }]) expect(isRemoteDetailsQuery({ ...query, ...patch })).toBe(false);
+  const inventoryPage = { version: 1, source: query.source, agentId: 'a1', projectId: 'p1', state: 'recorded', offset: 100, selection, next: null, total: 101, observedAt: 1, notes: [], rows: [{ key: 'c'.repeat(64), name: 'Last membership', scope: 'project', canvasId: 'board', viewId: 'view' }] };
+  const value = { version: 1, inventoryPages: 1, inventorySources: [query.source], inventoryPageOnly: true, inventoryPage, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+    cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'canvases' && { requested: false }) })) };
+  expect(isRemoteInventoryPage(inventoryPage)).toBe(true); expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
+  for (const patch of [{ agentId: 'other' }, { definition: 'PRIVATE' }, { rows: [{ ...inventoryPage.rows[0], payload: 'PRIVATE' }] }]) expect(isRemoteAgentDetails({ ...value, inventoryPage: { ...inventoryPage, ...patch } }, 'a1')).toBe(false);
+  expect(isRemoteAgentDetails({ ...value, cards: value.cards.map((c) => ({ ...c, requested: c.id === 'actions' ? undefined : false })) }, 'a1')).toBe(false);
+});

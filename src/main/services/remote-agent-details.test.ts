@@ -1241,3 +1241,53 @@ it.each(['target', 'ordering', 'reference-name', 'revoked'] as const)('fences th
     expect(JSON.stringify(response.body)).not.toMatch(/Selected Action|Reference|PRIVATE_ACTION_TEXT/);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+it.each(['all-pages', 'home-source', 'project-source', 'target', 'registration', 'home-namespace', 'revoked'] as const)('integrates actual selected Canvas primary metadata and final publication receipts: %s', async (mode) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-canvas-details-integration-'));
+  const home = path.join(root, 'home'), projectPath = path.join(root, 'selected'), profile = path.join(root, 'profile');
+  const appFile = path.join(home, '.clubhouse/plugin-data/canvas/kv/canvas-instances.json'), projectFile = path.join(projectPath, '.clubhouse/plugin-data-local/canvas/kv/canvas-instances.json');
+  const homeSpy = vi.spyOn(app, 'getPath').mockReturnValue(home);
+  const source = await import('./selected-canvas-membership-page'), actualRead = source.readSelectedCanvasMembershipPage;
+  let allowed = true;
+  try {
+    m.realWitness = true; m.base = profile;
+    const selected = { ...agent(), worktreePath: projectPath }, selectedProject = { ...project, path: projectPath };
+    await fs.mkdir(profile); await fs.mkdir(path.dirname(appFile), { recursive: true }); await fs.mkdir(path.dirname(projectFile), { recursive: true });
+    await fs.writeFile(path.join(projectPath, '.clubhouse/agents.json'), JSON.stringify([selected]));
+    await fs.writeFile(path.join(profile, 'projects.json'), JSON.stringify({ version: 1, projects: [selectedProject] }));
+    const board = (i: number, scope: 'app' | 'project') => ({ id: `board-${String(i).padStart(3, '0')}`, name: `Saved ${scope} ${i}`, views: [{ id: `view-${i}`, type: 'agent', agentId: 'a1', projectId: project.id }, { id: `sticky-${i}`, type: 'sticky-note', content: 'PRIVATE_BOARD_CONTENT' }] });
+    await fs.writeFile(appFile, JSON.stringify([board(0, 'app')]));
+    await fs.writeFile(projectFile, JSON.stringify(Array.from({ length: 105 }, (_, i) => board(i, 'project'))));
+    m.target.mockResolvedValue({ agent: selected, project: selectedProject });
+    // Real source and receipt path, with an explicit publication-boundary mutation.
+    const publication = vi.spyOn(source, 'readSelectedCanvasMembershipPage').mockImplementation(async (...args) => {
+      const value = await actualRead(...args);
+      if (mode === 'home-source') await fs.writeFile(appFile, JSON.stringify([board(999, 'app')]));
+      if (mode === 'project-source') await fs.writeFile(projectFile, JSON.stringify([board(999, 'project')]));
+      if (mode === 'target') await fs.writeFile(path.join(projectPath, '.clubhouse/agents.json'), '[]');
+      if (mode === 'registration') await fs.writeFile(path.join(profile, 'projects.json'), JSON.stringify({ version: 1, projects: [] }));
+      if (mode === 'home-namespace') homeSpy.mockReturnValue(path.join(root, 'replacement-home'));
+      if (mode === 'revoked') allowed = false;
+      return value;
+    });
+    try {
+      let offset = 0, selection: string | undefined; const rows: Array<{ name: string; scope: string }> = [];
+      for (;;) {
+        const response = await readRemoteAgentDetails('a1', () => allowed, { card: 'canvases', source: 'selected-canvas-memberships', offset, ...(selection && { selection }) });
+        if (mode !== 'all-pages') {
+          expect(response.status).toBe(mode === 'revoked' ? 403 : 409); expect(response.body).not.toHaveProperty('inventoryPage'); expect(JSON.stringify(response.body)).not.toMatch(/Saved|PRIVATE_BOARD_CONTENT/); break;
+        }
+        expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+        const value = response.body as RemoteAgentDetails, page = value.inventoryPage;
+        if (page?.source !== 'selected-canvas-memberships' || page.state !== 'recorded') throw new Error('Expected Canvas membership page');
+        expect(page.agentId).toBe('a1'); expect(page.projectId).toBe(project.id); expect(page.total).toBe(106);
+        selection ??= page.selection; expect(page.selection).toBe(selection); rows.push(...page.rows);
+        expect(value.cards.every((c) => !c.rows.length && !c.notes.length && (c.id === 'canvases' || c.requested === false))).toBe(true);
+        expect(JSON.stringify(value)).not.toContain('PRIVATE_BOARD_CONTENT');
+        if (page.next === null) break; offset = page.next;
+      }
+      if (mode === 'all-pages') { expect(rows).toHaveLength(106); expect(rows[105]).toMatchObject({ name: 'Saved project 104', scope: 'project' }); }
+      expect(m.canvases).not.toHaveBeenCalled(); expect(m.settings).not.toHaveBeenCalled(); expect(m.actions).not.toHaveBeenCalled(); expect(m.entries).not.toHaveBeenCalled();
+    } finally { publication.mockRestore(); }
+  } finally { homeSpy.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+});

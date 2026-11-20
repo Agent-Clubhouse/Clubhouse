@@ -1,13 +1,14 @@
+import { isRemoteCanvasMembershipPage, isRemoteCanvasMembershipQuery, REMOTE_CANVAS_MEMBERSHIP_SOURCE, type RemoteCanvasMembershipPage, type RemoteCanvasMembershipQuery } from './remote-canvas-membership-page';
 /** Metadata pages only. New sources require their own safe producer and validator. */
 import { isRemoteActionRelationshipPage, REMOTE_ACTION_PAGE_SOURCE, type RemoteActionRelationshipPage } from './remote-action-page';
 export const REMOTE_INVENTORY_PAGE_SIZE = 25;
 export const REMOTE_INVENTORY_MAX_ITEMS = 4096;
 export const REMOTE_MANAGED_INVENTORY_SOURCES = ['selected-managed-blocks', 'selected-managed-skills', 'selected-managed-mcps'] as const;
 export type RemoteManagedInventorySource = typeof REMOTE_MANAGED_INVENTORY_SOURCES[number];
-export const REMOTE_INVENTORY_SOURCES = [...REMOTE_MANAGED_INVENTORY_SOURCES, REMOTE_ACTION_PAGE_SOURCE] as const;
+export const REMOTE_INVENTORY_SOURCES = [...REMOTE_MANAGED_INVENTORY_SOURCES, REMOTE_ACTION_PAGE_SOURCE, REMOTE_CANVAS_MEMBERSHIP_SOURCE] as const;
 export type RemoteInventorySource = typeof REMOTE_INVENTORY_SOURCES[number];
 export interface RemoteManagedInventoryQuery { card: 'skills-mcp'; source: RemoteManagedInventorySource; offset?: number; selection?: string }
-export type RemoteInventoryQuery = RemoteManagedInventoryQuery | { card: 'actions'; source: typeof REMOTE_ACTION_PAGE_SOURCE; offset?: number; selection?: string };
+export type RemoteInventoryQuery = RemoteCanvasMembershipQuery | RemoteManagedInventoryQuery | { card: 'actions'; source: typeof REMOTE_ACTION_PAGE_SOURCE; offset?: number; selection?: string };
 export const isInventorySelection = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 export const isInventoryOffset = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0 && Number(v) < REMOTE_INVENTORY_MAX_ITEMS && Number(v) % REMOTE_INVENTORY_PAGE_SIZE === 0;
 export type RemoteManagedPartRecord = { key: string; kind: 'block' | 'skill' | 'mcp' } & (
@@ -17,12 +18,13 @@ export type RemoteManagedInventoryPage = { version: 1; source: RemoteManagedInve
   { state: 'recorded'; selection: string; rows: RemoteManagedPartRecord[]; total: number; next: number | null }
   | { state: 'unavailable'; reason: 'invalid' | 'unreadable' | 'limit' | 'changed' | 'unsupported' }
 );
-export type RemoteInventoryPage = RemoteManagedInventoryPage | RemoteActionRelationshipPage;
+export type RemoteInventoryPage = RemoteManagedInventoryPage | RemoteActionRelationshipPage | RemoteCanvasMembershipPage;
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const keys = (v: object, allowed: string[]) => Object.keys(v).every((key) => allowed.includes(key));
 const text = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 240 && Array.from(v).every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127);
 export function isRemoteInventoryQuery(value: unknown): value is RemoteInventoryQuery {
   if (!record(value)) return false;
+  if (value.card === 'canvases') return isRemoteCanvasMembershipQuery(value);
   return keys(value, ['card', 'source', 'offset', 'selection']) && (value.card === 'skills-mcp'
     && REMOTE_MANAGED_INVENTORY_SOURCES.includes(value.source as RemoteManagedInventorySource) || value.card === 'actions' && value.source === REMOTE_ACTION_PAGE_SOURCE)
     && (value.offset === undefined || isInventoryOffset(value.offset))
@@ -47,5 +49,6 @@ export function isRemoteManagedInventoryPage(value: unknown): value is RemoteMan
       && Number.isSafeInteger(r.revision) && Number(r.revision) >= 1 && typeof r.builtin === 'boolean'));
 }
 export function isRemoteInventoryPage(value: unknown): value is RemoteInventoryPage {
+  if (record(value) && value.source === REMOTE_CANVAS_MEMBERSHIP_SOURCE) return isRemoteCanvasMembershipPage(value);
   return record(value) && value.source === REMOTE_ACTION_PAGE_SOURCE ? isRemoteActionRelationshipPage(value) : isRemoteManagedInventoryPage(value);
 }

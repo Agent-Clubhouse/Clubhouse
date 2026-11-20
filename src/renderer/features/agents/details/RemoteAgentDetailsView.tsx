@@ -25,8 +25,7 @@ import { reportedSkillsFor } from './reported-skills';
 import { RemoteSkillsMcpEvidence } from './RemoteSkillsMcpEvidence';
 import { SelectedManagedPartsPage } from './SelectedManagedPartsPage';
 import { useRemoteDetailsChat } from './useRemoteDetailsChat';
-import { CanvasMembershipList } from './CanvasMembershipList';
-import { jumpToCanvas, remoteCanvasJumpUnavailable } from './agent-canvases';
+import { RemoteCanvasesCard } from './RemoteCanvasesCard';
 import { RemoteChangesCard } from './RemoteChangesCard';
 import { Evidence } from './RemoteDetailsEvidence';
 import { RemoteQuickSettingsCard } from './RemoteQuickSettingsCard';
@@ -158,11 +157,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     const c = card(id);
     if (c?.state === 'not-applicable') return null;
     return <DetailsCard key={id} id={id} title={c?.title ?? title} summary={c?.summary || resultMessage(result.status)} open={open(id)} onToggle={() => toggleCard(id)}>
-      {c ? id === 'canvases' ? <>
-        <CanvasMembershipList hits={c.rows.filter((r) => r.canvas).map((r) => ({ ...r.canvas!, name: r.label }))} onJump={(hit) => jumpToCanvas(agent, hit)} unavailable={(hit) => remoteCanvasJumpUnavailable(agent, hit)} />
-        <Evidence card={{ ...c, rows: c.rows.filter((r) => !r.canvas) }} />
-        {c.rows.some((r) => !r.canvas) && <CardNote>This host shared membership names without navigation identities.</CardNote>}
-      </> : <Evidence card={c} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
+      {c ? <Evidence card={c} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
     </DetailsCard>;
   };
   const sessionCard = card('session');
@@ -247,6 +242,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       {sessionCard ? <Evidence card={{ ...sessionCard, rows: (sessionRows ?? []).filter((r) => !runtimeUnconfirmed || r.label !== 'Status') }} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
       <RemoteSessionHistory agent={agent} details={details} ready={!!session && !runtimeUnconfirmed} generation={transport.current.generation} />
     </DetailsCard>}
-    {!dispatcher && basic('canvases', 'Canvases')}
+    {!dispatcher && <RemoteCanvasesCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('canvases')} readable={!snapshotUnavailable && !runtimeUnconfirmed}
+      message={resultMessage(result.status)} onToggle={() => toggleCard('canvases')} onRefused={() => setRetry((n) => n + 1)} />}
   </aside>;
 }

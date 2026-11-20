@@ -1,0 +1,11 @@
+Selected Canvas membership integration
+
+Exact base b458b4c89fb478d0f605553d85c0e821c389bf23 contains reviewed Actions integration and approved Canvas source74e16620. This separate slice wires only selected saved Canvas membership pages through the existing authorized desktop Details GET.
+
+The strict common envelope validates canvases/selected-canvas-memberships only, fixed25 offsets and continuation selection, matching selected agent echo and an inventory-only body. Host passes selected target/project plus authorization and all source receipts to the real saved-primary reader and checks them before publication. Existing provider/run/target witnesses and final HTTP peer gate remain in force. Quick/Dispatcher do not advertise this source. No board payload export, new endpoint, recovery read or local renderer fallback is introduced.
+
+Renderer adapter validates the enclosing Details identity/status/page-only contract before extracting a page. The source view checks selected project and agent echoes, source/offset/selection, current Details identity/read time, host snapshot/readability and late callbacks. Refusal refreshes enclosing Details. Existing mixed-version summaries remain separate. CanvasMembershipList and remoteCanvasJumpUnavailable retain the current snapshot/navigation guard; membership is never board-content authority. Omitted-board navigation remains deferred.
+
+Source limits remain4096 visited boards/views and the existing aggregate metadata byte limits; missing or invalid/recovery-only stores remain unavailable rather than empty. Pages describe saved Home and selected-project metadata only; unsaved live membership is not inspected. Existing source notes document per-page observation rather than global atomic catalog claims.
+
+Exact checkpoint validation pending the serialized lane. No installs, restarts or live tests.

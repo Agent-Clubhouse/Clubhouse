@@ -677,3 +677,25 @@ it('keeps withheld request text out of visible, title and accessibility paths an
   expect(card).toHaveTextContent('Task withheld (conservative display policy)'); expect(card).toHaveTextContent('HOST_CREATED · HOST_EXPIRES'); expect(card).toHaveTextContent('Review visible changes');
   expect(container.innerHTML).not.toMatch(/PRIVATE_CACHED|PRIVATE_LOCAL/); expect(screen.queryByTestId('helper-request-task')).not.toBeInTheDocument(); expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
 });
+
+it('composes Canvas paging with enclosing Details and drops its private summary after page refusal', async () => {
+  const value = fixture(); value.inventoryPages = 1; value.inventorySources = ['selected-canvas-memberships'];
+  value.running = false; value.status = 'sleeping'; value.sessionId = null; value.nativeSessionId = null;
+  value.cards.find((c) => c.id === 'canvases')!.rows = [{ label: 'Private saved summary', value: 'Saved membership' }];
+  const selected: RemoteAgentDetails = { ...value, settings: null, inventoryPageOnly: true,
+    cards: value.cards.map((c) => ({ ...c, rows: [], notes: [], omitted: 0, ...(c.id !== 'canvases' && { requested: false as const }) })),
+    inventoryPage: { version: 1, source: 'selected-canvas-memberships', agentId: 'a1', projectId: 'p1', offset: 0, observedAt: 1, notes: [], state: 'recorded', selection: 'a'.repeat(64), total: 1, next: null, rows: [{ key: 'b'.repeat(64), scope: 'project', canvasId: 'omitted-board', viewId: 'saved-view', name: 'Private selected membership' }] } };
+  let refused = false;
+  read.mockImplementation(async (_host, _id, query) => query?.card === 'canvases' ? refused ? { status: 'forbidden' } : { status: 'ok', value: selected } : refused ? { status: 'forbidden' } : { status: 'ok', value });
+  useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'canvases' });
+  render(<AgentDetails agent={agent} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Read saved Canvas memberships' }));
+  await screen.findByText('Private selected membership');
+  expect(screen.getByTestId('details-canvas-row')).toBeDisabled();
+  expect(screen.getByText('Private saved summary')).toBeInTheDocument();
+  refused = true; fireEvent.click(screen.getByRole('button', { name: 'Restart saved membership pages' }));
+  await waitFor(() => expect(screen.queryByText('Private saved summary')).not.toBeInTheDocument());
+  expect(screen.queryByText('Private selected membership')).not.toBeInTheDocument();
+  await waitFor(() => expect(read.mock.calls.filter(([, , query]) => !query)).toHaveLength(2));
+  expect(window.clubhouse.canvas.getAgentCanvases).not.toHaveBeenCalled(); expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
+});
