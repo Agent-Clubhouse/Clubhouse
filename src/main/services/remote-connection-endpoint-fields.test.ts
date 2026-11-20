@@ -66,11 +66,11 @@ it.each(['saved-and-memory', 'cold-cache', 'changed-directory'] as const)('integ
   const target = captureReadOnlyAgentTargetWitness({ agent: selected, project: selectedRecord }); expect(target.current()).toBe(true);
   resetObservation(); const c = card('connections', 'Connections'), receipts: DisplayReceipt[] = [];
   await readPassiveConnectionCard(c, 'selected', { receipts, authorized: () => true, projectPath: selectedProject, name: 'Selected', endpoint: { target, readCache: readAgentConnectionCacheForDisplay } });
-  const label = kind === 'changed-directory' ? 'New registered primary' : 'Selected cache name';
-  expect(c.rows.some((r) => r.label === label)).toBe(true); expect(c.rows.find((r) => r.label === label + ' saved target')?.value).toContain(label);
+  const label = kind === 'changed-directory' ? 'New registered primary' : kind === 'saved-and-memory' ? 'Host accepted custom name' : 'Selected cache name';
+  expect(c.rows.some((r) => r.label === label)).toBe(true); expect(c.rows.find((r) => r.label === label + ' saved target')?.value).toContain(kind === 'changed-directory' ? 'New registered primary' : 'Selected cache name');
   const memory = c.rows.find((r) => r.label === label + ' host memory target')?.value;
   expect.soft(memory).toContain(kind === 'saved-and-memory' ? 'Host accepted custom name' : kind === 'cold-cache' ? 'Host memory not loaded' : 'Host memory project association unconfirmed');
-  expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|expectedProjectNamespace|rootNamespace|agentProjectPath|targetProjectPath|"current"/); expect.soft(JSON.stringify(c)).not.toContain(root); expect.soft(c.notes.join(' ')).toContain('neither establishes current runtime eligibility');
+  expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|expectedProjectNamespace|rootNamespace|agentProjectPath|targetProjectPath|"current"/); expect.soft(JSON.stringify(c)).not.toContain(root); expect.soft(c.notes.join(' ')).toContain('do not confirm that this link works now');
   expect(receipts.every((r) => r.current())).toBe(true); expect.soft(m.external).not.toHaveBeenCalled();
   for (const fn of [fsp.writeFile, fsp.rename, fsp.mkdir, fs.watch]) expect.soft(fn).not.toHaveBeenCalled();
 });

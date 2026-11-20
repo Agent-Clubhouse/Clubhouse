@@ -206,10 +206,10 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       const savedOnlyIdentity = !!pair.manual && !pair.binding && !sourceBinding && !independentSavedLink;
       // A saved project-qualified manual entry does not authorize borrowing a
       // current cached name for a reused native ID in another project.
-      const resolved = savedOnlyIdentity ? pair.manualFields?.savedName : (pair.kind === 'agent' && isDispatcherIdentityAgentId(other) ? refs.get(other) : undefined)
+      const resolved = savedOnlyIdentity ? pair.manualFields?.displayName : (pair.kind === 'agent' && isDispatcherIdentityAgentId(other) ? refs.get(other) : undefined)
         ?? ordinary ?? (pair.kind === 'agent' ? refs.get(other) : undefined);
       if (savedOnlyIdentity) {
-        const note = pair.manualFields?.primaryAdmitted ? 'Saved target fields come from its registered project primary. Host memory fields are separate observations; neither establishes current runtime eligibility.' : 'The saved target’s current project identity is not confirmed; its saved ID is shown.';
+        const note = pair.manualFields?.primaryAdmitted ? 'Saved target settings are shown with host memory values separately. These observations do not confirm that this link works now.' : 'The saved target’s current project identity is not confirmed; its saved ID is shown.';
         if (!c.notes.includes(note)) c.notes.push(note);
       }
       const label = resolved ?? pair.remoteAgent ?? other;
