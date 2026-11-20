@@ -1,3 +1,4 @@
+import { selectedConnectionPageEnvelope } from './remote-details-presentation';
 import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
 /** Quick runs are retained launch identities, never synthetic durable configs. */
 import { REMOTE_DETAILS_CARD_IDS, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails, type RemoteDetailsCard } from '../../shared/remote-agent-details';
@@ -41,7 +42,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
     const cards = REMOTE_DETAILS_CARD_IDS.map((id) => card(id, ({ settings: 'Settings', dispatcher: 'Dispatcher', orchestrate: 'Orchestration', connections: 'Connections', actions: 'Actions', 'skills-mcp': 'Skills and MCP', session: running ? 'Session' : 'Last session', canvases: 'Canvases', changes: 'Changes' })[id]));
     const byId = Object.fromEntries(cards.map((c) => [c.id, c])) as Record<typeof REMOTE_DETAILS_CARD_IDS[number], RemoteDetailsCard>;
     byId.dispatcher.state = byId.orchestrate.state = 'not-applicable';
-    const result: RemoteAgentDetails = { version: 1, connectionPages: 1, connectionPageSources: running && bound ? ['outgoing', 'incoming', 'directions', 'sources'] : [], readOnly: true, readAt: Date.now(), agentId, providerId, providerLabel: providerId === 'unknown' ? 'Not reported by host' : display(providerName(providerId)), running, status, spawnedAt: run.startedAt, sessionId, nativeSessionId, settings: null, cards };
+    const result: RemoteAgentDetails = { version: 1, connectionPages: 1, connectionPageEnvelope: 1, connectionPageSources: running && bound ? ['outgoing', 'incoming', 'directions', 'sources'] : [], readOnly: true, readAt: Date.now(), agentId, providerId, providerLabel: providerId === 'unknown' ? 'Not reported by host' : display(providerName(providerId)), running, status, spawnedAt: run.startedAt, sessionId, nativeSessionId, settings: null, cards };
     const checked = async <T>(work: Promise<T>) => { const value = await work; if (!authorized()) throw new Error('revoked'); return value; };
     const read = async (id: typeof REMOTE_DETAILS_CARD_IDS[number], fn: (c: RemoteDetailsCard) => Promise<void> | void) => {
       if (!authorized()) throw new Error('revoked');
@@ -141,6 +142,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
       c.notes = c.notes.map((note) => display(note));
       if (c.notes.length > 20) c.notes = [...c.notes.slice(0, 19), `${c.notes.length - 19} more notices omitted by the host’s display limit.`];
     }
+    if (query) selectedConnectionPageEnvelope(result);
     while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) {
       const largest = cards.filter((c) => c.rows.length).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];
       if (!largest) throw new Error('details_limit'); largest.rows.pop(); largest.omitted++;

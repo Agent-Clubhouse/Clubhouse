@@ -7,7 +7,7 @@ import { readConfiguredRegisteredConnectionsForDisplay } from './configured-regi
 import { projectConnectionEndpointFieldsForDisplay } from './connection-endpoint-fields-display';
 /** Read-only host projections for the selected agent's Details cards (#3733). */
 import { readHistoricalSessionCard } from './remote-session-history';
-import { card, row, section, display } from './remote-details-presentation';
+import { card, row, section, display, selectedConnectionPageEnvelope } from './remote-details-presentation';
 import { readConnectionCard, readActionCard, readCanvasCard } from './remote-details-cards';
 import { resolveReadOnlyQuickTarget } from './read-only-quick-target';
 import { readRemoteQuickDetails } from './remote-quick-details';
@@ -85,7 +85,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const byId = Object.fromEntries(cards.map((c) => [c.id, c])) as Record<RemoteDetailsCardId, RemoteDetailsCard>;
     if (dispatcher) for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes'] as const) byId[id].state = 'not-applicable';
     if (agent.parentAgentId) byId.dispatcher.state = 'not-applicable';
-    const result: RemoteAgentDetails = { version: 1, connectionPages: 1, connectionPageSources: REMOTE_CONNECTION_PAGE_SOURCES.filter((source) => source === 'helper-parent' ? !!agent.parentAgentId && !dispatcher : source === 'dispatcher-auto' ? dispatcher : source === 'manual-dispatcher' ? !dispatcher && !agent.parentAgentId : source === 'helpers' ? !dispatcher : true), readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
+    const result: RemoteAgentDetails = { version: 1, connectionPages: 1, connectionPageEnvelope: 1, connectionPageSources: REMOTE_CONNECTION_PAGE_SOURCES.filter((source) => source === 'helper-parent' ? !!agent.parentAgentId && !dispatcher : source === 'dispatcher-auto' ? dispatcher : source === 'manual-dispatcher' ? !dispatcher && !agent.parentAgentId : source === 'helpers' ? !dispatcher : true), readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
     const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });
     if (!authorized()) return refused();
     // A failed freshness/authority check is a refusal of this assembly, not
@@ -267,6 +267,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       }
     }
     // Enforce the envelope even when every section fits its individual row limit.
+    if (query) selectedConnectionPageEnvelope(result);
     while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) {
       const largest = cards.filter((c) => c.rows.length).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];
       if (!largest) throw new Error('details_limit');

@@ -2,6 +2,7 @@ import type { RemoteDetailsCard } from '../../../../shared/remote-agent-details'
 import { CardNote, CardRow } from './DetailsCard';
 
 export function Evidence({ card }: { card: RemoteDetailsCard }) {
+  if (card.requested === false) return <CardNote>This section is not included in the selected Connections page. Refresh full Details to read it.</CardNote>;
   return <>
     {card.rows.map((r, i) => <CardRow key={i} label={r.label} labelWidth="wide"><span className="break-words">{r.value}</span></CardRow>)}
     {card.notes.map((note, i) => <CardNote key={i}>{note}</CardNote>)}

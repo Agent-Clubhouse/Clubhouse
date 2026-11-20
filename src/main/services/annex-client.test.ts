@@ -3337,13 +3337,18 @@ describe('annex-client', () => {
     });
 
     it('binds bounded selected-source Details pages and refuses malformed/old-host page responses', async () => {
-      const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
       const query = { card: 'connections' as const, source: 'helpers' as const, offset: 8, projectOffset: 16 };
       const value = { version: 1, connectionPages: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
         cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id === 'connections' && { connectionPage: { source: 'helpers', offset: 8, projectOffset: 16, known: 9, complete: true, next: null } }) })) };
       answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0]).toMatchObject({ method: 'GET' }); expect(requests[0].url).toContain('/agents/a1/details?card=connections&source=helpers&offset=8&projectOffset=16');
+      const { selectedConnectionPageEnvelope } = await import('./remote-details-presentation');
+      const independent = structuredClone(value) as unknown as import('../../shared/remote-agent-details').RemoteAgentDetails; selectedConnectionPageEnvelope(independent);
+      expect(isRemoteAgentDetails(independent, 'a1')).toBe(true); answers.push({ status: 200, body: independent }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value: independent });
+      answers.push({ status: 200, body: independent }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
+      const ignored = { ...value, connectionPageEnvelope: 1 }; expect(isRemoteAgentDetails(ignored, 'a1')).toBe(true); answers.push({ status: 200, body: ignored }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
       const before = requests.length;
       expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, offset: 4097 })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
       answers.push({ status: 200, body: { ...value, cards: value.cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { ...c.connectionPage, offset: 0 } } : c) } });

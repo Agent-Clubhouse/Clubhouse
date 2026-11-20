@@ -150,7 +150,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
         catch { manualMemory = { state: 'unavailable', reason: 'unreadable', inputs: [] }; }
         if (endpointTarget && manual.value.rows.length) {
           if (manual.value.rows.some((link) => hasAutomaticPair(link.agentId, link.targetId))) endpointProjects = new Map();
-          endpointMetadata = readSavedDispatcherEndpointMetadataForDisplay({ agentId: selected, projectPath, target: endpointTargetReceipt(options.authorized, endpointTarget) }, manual.value.rows,
+          endpointMetadata = readSavedDispatcherEndpointMetadataForDisplay({ agentId: selected, projectPath, target: endpointTargetReceipt(options.authorized, endpointTarget) }, pageSource ? manual.value.rows.slice(0, 2) : manual.value.rows,
             { receipts: options.receipts, readLoadedCache: endpointCache, endpointProjects });
         }
       }
@@ -161,7 +161,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       if (source?.state === 'ok') {
         const total = source.value.total;
         c.connectionPage = { source: pageSource, offset: pageOffset, projectOffset: 0, known: total, complete: !('complete' in source.value) || source.value.complete === true,
-          next: pageOffset + 8 < total ? { offset: pageOffset + 8, projectOffset: 0 } : null };
+          next: pageOffset + 2 < total ? { offset: pageOffset + 2, projectOffset: 0 } : null };
       } else { c.state = 'error'; c.notes.push('The selected source page is unavailable; no empty page is inferred.'); }
     }
     const outComplete = outgoing.state === 'ok' && outgoing.value.nextOffset === null;
@@ -170,9 +170,9 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     const pairs = new Map<string, Pair>();
     const key = (from: string, to: string, kind: Pair['kind'], partition = '') => `${from}\0${to}\0${kind}\0${partition}`;
     const ensure = (from: string, to: string, kind: Pair['kind'], partition = ''): Pair => { if (typeof from !== 'string' || !from || from.length > 512 || typeof to !== 'string' || !to || to.length > 512 || from !== selected && (to !== selected || kind !== 'agent')) throw new Error('connection_scope'); const id = key(from, to, kind, partition); let p = pairs.get(id); if (!p) { p = { from, to, kind, sources: [] }; pairs.set(id, p); } return p; };
-    for (const [origin, page] of [['outgoing', outgoing], ['incoming', incoming]] as const) if ((includes(origin) || pageSource === 'sources') && page.state === 'ok') for (const b of pageSource && pageSource !== 'sources' ? page.value.rows.slice(0, 8) : page.value.rows) ensure(b.agentId, b.targetId, b.targetKind).binding = b;
+    for (const [origin, page] of [['outgoing', outgoing], ['incoming', incoming]] as const) if ((includes(origin) || pageSource === 'sources') && page.state === 'ok') for (const b of pageSource && pageSource !== 'sources' ? page.value.rows.slice(0, 2) : page.value.rows) ensure(b.agentId, b.targetId, b.targetKind).binding = b;
     let limitedSourceDetails = 0, untypedIncomingSources = 0;
-    if (includes('sources') && sources.state === 'ok') for (const p of pageSource ? sources.value.pairs.slice(0, 8) : sources.value.pairs) for (const source of p.sources) {
+    if (includes('sources') && sources.state === 'ok') for (const p of pageSource ? sources.value.pairs.slice(0, 2) : sources.value.pairs) for (const source of p.sources) {
       const b = value(source.binding);
       if (b && (b.agentId !== p.agentId || b.targetId !== p.targetId)) throw new Error('connection_source_scope');
       let pair: Pair;
@@ -193,7 +193,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     if (pageSource === 'sources') for (const [key, pair] of pairs) if (!pair.sources.length) pairs.delete(key);
     if (limitedSourceDetails) c.notes.push(`Details unavailable for ${limitedSourceDetails} retained source record${limitedSourceDetails === 1 ? '' : 's'}; independently known connection fields are preserved.`);
     if (untypedIncomingSources) c.notes.push(`${untypedIncomingSources} incoming source record${untypedIncomingSources === 1 ? ' lacks' : 's lack'} an independently admitted target kind; its connection details are unavailable.`);
-    if (manual?.state === 'ok') for (const link of pageSource ? manual.value.rows.slice(0, 8) : manual.value.rows) {
+    if (manual?.state === 'ok') for (const link of pageSource ? manual.value.rows.slice(0, 2) : manual.value.rows) {
       const collision = hasAutomaticPair(link.agentId, link.targetId);
       const pair = ensure(link.agentId, link.targetId, 'agent', collision ? 'manual' : ''); pair.manual = link;
       if (collision) {
@@ -206,7 +206,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       }
       if (manualMemory?.state === 'ok') pair.manualMemory = manualMemory.value.rows.find((state) => state.agentId === link.agentId && state.targetId === link.targetId);
     }
-    if (includes('directions') && directions.state === 'ok') for (const d of pageSource ? directions.value.rows.slice(0, 8) : directions.value.rows) {
+    if (includes('directions') && directions.state === 'ok') for (const d of pageSource ? directions.value.rows.slice(0, 2) : directions.value.rows) {
       const from = formatAgentAddress({ agentId: d.from.agentId, machine: d.from.machineId }), to = formatAgentAddress({ agentId: d.to.agentId, machine: d.to.machineId });
       const active = value(d.userLink) === true || value(d.cardLink) === true || !!value(d.makers)?.length;
       const uncertain = d.userLink.state !== 'ok' || d.cardLink.state !== 'ok' || d.makers.state !== 'ok';
@@ -457,7 +457,7 @@ function renderSavedCanvasConnections(c: RemoteDetailsCard, read: DisplayValue<S
   }
   if (page.unknownRows) c.notes.push(`${page.unknownRows} candidate records or bounded expansion segments could not be classified safely.`);
   if (page.unavailableStores) c.notes.push(`${page.unavailableStores} saved stores are unavailable or exceed this read’s bounds.`);
-  c.notes.push('Saved project-qualified Canvas records or a preview of saved active-canvas zone containment. Unsaved host changes, group scope/membership, user removal, current bindings and effective authority are separate; no source collection is run. Names and labels are bounded display text.');
+  c.notes.push('Saved project-qualified Canvas records or a preview of saved active-canvas zone containment (first saved canvas when no active key is recorded). Unsaved host changes, group scope/membership, user removal, current bindings and effective authority are separate; no source collection is run. Names and labels are bounded display text.');
 }
 
 function renderSavedGroupConnections(c: RemoteDetailsCard, read: DisplayValue<SavedGroupConnectionPage> | undefined): void {

@@ -27,6 +27,8 @@ export interface RemoteDetailsCard {
   /** Rows outside the bounded result are counted, never silently hidden. */
   omitted: number;
   observedAt: number;
+  /** Explicitly omitted from a selected-source response, never a verified empty card. */
+  requested?: false;
   /** Optional bounded selected-source page. Older hosts omit it. */
   connectionPage?: RemoteConnectionPage;
 }
@@ -34,6 +36,10 @@ export interface RemoteAgentDetails {
   version: 1;
   /** Additive selected-source continuation support, independent of older Details hosts. */
   connectionPages?: 1;
+  /** Explicit selected-source-only envelope support; absent on older paged hosts. */
+  connectionPageEnvelope?: 1;
+  /** Other card bodies are not included, rather than empty/unsupported. */
+  connectionPageOnly?: true;
   /** Additive supported origin list; absent on the first paged-host version. */
   connectionPageSources?: RemoteConnectionPageSource[];
   agentId: string;
@@ -59,6 +65,8 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
   const v = value as RemoteAgentDetails;
   const text = (s: unknown) => typeof s === 'string' && s.length <= 2048;
   return v.version === 1 && (v.connectionPages === undefined || v.connectionPages === 1)
+    && (v.connectionPageEnvelope === undefined || v.connectionPages === 1 && v.connectionPageEnvelope === 1)
+    && (v.connectionPageOnly === undefined || v.connectionPageOnly === true && v.connectionPageEnvelope === 1 && v.settings === null && v.providerEvidence === undefined && Array.isArray(v.cards) && v.cards.every((c) => !!c && typeof c === 'object') && v.cards.some((c) => c.id === 'connections' && c.connectionPage !== undefined) && v.cards.every((c) => c.id === 'connections' ? c.requested === undefined : c.requested === false && Array.isArray(c.rows) && !c.rows.length && Array.isArray(c.notes) && !c.notes.length))
     && (v.connectionPageSources === undefined || v.connectionPages === 1 && Array.isArray(v.connectionPageSources) && v.connectionPageSources.length <= 16
       && new Set(v.connectionPageSources).size === v.connectionPageSources.length && v.connectionPageSources.every((source) => REMOTE_CONNECTION_PAGE_SOURCES.includes(source))) && v.agentId === agentId && v.readOnly === true
     && Number.isFinite(v.readAt) && v.readAt > 0 && text(v.providerId) && !!v.providerId && (v.providerLabel === undefined || text(v.providerLabel) && !!v.providerLabel) && typeof v.running === 'boolean'
@@ -76,6 +84,7 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
     && new Set(v.cards.map((c) => c.id)).size === REMOTE_DETAILS_CARD_IDS.length
     && v.cards.every((c) => REMOTE_DETAILS_CARD_IDS.includes(c.id) && text(c.title) && text(c.summary)
       && ['ok', 'error', 'unsupported', 'not-applicable'].includes(c.state)
+      && (c.requested === undefined || v.connectionPageOnly === true && c.id !== 'connections' && c.requested === false)
       && Number.isSafeInteger(c.omitted) && c.omitted >= 0
       && Number.isFinite(c.observedAt) && c.observedAt > 0
       && (c.connectionPage === undefined || c.id === 'connections' && isRemoteConnectionPage(c.connectionPage))

@@ -77,3 +77,7 @@ it('offers the selected saved group registry page only with explicit host suppor
   view.rerender(<RemoteConnectionsCard agent={agent} details={{ ...details, connectionPageSources: ['group-records'] }} status="ok" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} />);
   fireEvent.click(screen.getByRole('button', { name: 'Saved group membership' })); await screen.findByText('First helper'); expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'group-records', offset: 0, projectOffset: 0 });
 });
+it('withholds a declared independent page which omits its page-only envelope flag', async () => {
+  request.mockResolvedValue({ status: 'ok', value: { ...details, connectionPageEnvelope: 1, cards: [{ ...card, rows: [{ label: 'PRIVATE_IGNORED_ENVELOPE', value: 'wrong' }], connectionPage: { source: 'helpers', offset: 0, projectOffset: 0, known: 1, complete: true, next: null } }] } });
+  show(); fireEvent.click(screen.getByRole('button', { name: 'Helper relationships' })); await waitFor(() => expect(request).toHaveBeenCalledTimes(1)); await act(async () => { await Promise.resolve(); }); expect(screen.queryByText('PRIVATE_IGNORED_ENVELOPE')).not.toBeInTheDocument(); expect(screen.getByTestId('details-card-connections')).toHaveTextContent('did not return');
+});

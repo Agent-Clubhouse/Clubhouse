@@ -250,8 +250,8 @@ it('charges automatic source fields even when known binding rows fill the displa
 it('continues actual outgoing binding records without dropping late fields behind the Details row cap', async () => {
   for (let i = 0; i < 41; i++) bindingManager.bind(selected, { targetId: 'terminal-' + i, targetKind: 'terminal', label: 'Bound terminal ' + i });
   const first = await read(false, { page: { card: 'connections', source: 'outgoing', offset: 0 } });
-  expect(first.c.connectionPage).toMatchObject({ source: 'outgoing', offset: 0, known: 41, next: { offset: 8, projectOffset: 0 } });
-  expect(first.c.rows).toHaveLength(24); expect(first.c.omitted).toBe(0);
+  expect(first.c.connectionPage).toMatchObject({ source: 'outgoing', offset: 0, known: 41, next: { offset: 2, projectOffset: 0 } });
+  expect(first.c.rows).toHaveLength(6); expect(first.c.omitted).toBe(0);
   const last = await read(false, { page: { card: 'connections', source: 'outgoing', offset: 40 } });
   expect(last.c.connectionPage).toMatchObject({ known: 41, next: null }); expect(last.c.rows[0].label).toBe('Bound terminal 40'); expect(last.c.omitted).toBe(0);
   expect([...first.receipts, ...last.receipts].every((r) => r.current())).toBe(true);

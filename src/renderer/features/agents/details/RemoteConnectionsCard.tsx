@@ -41,7 +41,7 @@ export function RemoteConnectionsCard({ agent, details, status, freshnessKey, di
   }, [open, eligible, query, satelliteId, agentId, details?.connectionPages, key, snapshot]);
   const result: Result = !address ? { status: 'unavailable' } : !connected ? { status: 'offline' } : !eligible ? { status: status === 'ok' ? 'loading' : status } as Result
     : read?.key === key && read.snapshot === snapshot ? read.result : { status: 'loading' };
-  const candidate = result.status === 'ok' && result.value.agentId === agentId ? result.value.cards.find((c) => c.id === 'connections') : undefined;
+  const candidate = result.status === 'ok' && result.value.agentId === agentId && (result.value.connectionPageEnvelope !== 1 || result.value.connectionPageOnly === true) ? result.value.cards.find((c) => c.id === 'connections') : undefined;
   const page = candidate?.connectionPage;
   const current = query && page?.source === query.source && page.offset === (query.offset ?? 0) && page.projectOffset === (query.projectOffset ?? 0) ? candidate : undefined;
   const overview = eligible ? details?.cards.find((c) => c.id === 'connections') : undefined;
@@ -58,8 +58,9 @@ export function RemoteConnectionsCard({ agent, details, status, freshnessKey, di
     </div>}
     {card ? <Evidence card={card} /> : <CardNote>{query && result.status === 'ok' ? 'The host did not return the selected source page.' : query ? message(result.status) : overviewMessage}</CardNote>}
     {eligible && details?.connectionPages !== 1 && <CardNote>This host shares the summary only. Selected source continuation needs a host update.</CardNote>}
+    {query && current && result.status === 'ok' && result.value.connectionPageEnvelope !== 1 && <CardNote>This host uses an older shared Details envelope; other card limits may omit source fields. Update the host for independent source pages.</CardNote>}
     {query && current && page && <>
-      <CardNote>{page.known} known records in this inventory page{page.complete ? '' : ' · additional records may be unavailable'}. Pages are separate host observations.</CardNote>
+      <CardNote>{page.known} known {page.source === 'sources' ? 'retained source keys' : 'records'} in this inventory page{page.complete ? '' : ' · additional records may be unavailable'}. Pages are separate host observations.</CardNote>
       <div className="flex gap-3 pl-[33px] text-xs">
         <button type="button" onClick={() => select(query.source)}>First page</button>
         <button type="button" disabled={!selected?.previous.length} onClick={() => selected && setNavigation({ identity, query: selected.previous[selected.previous.length - 1], previous: selected.previous.slice(0, -1) })}>Previous</button>
