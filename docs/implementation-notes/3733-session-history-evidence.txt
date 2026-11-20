@@ -2,8 +2,10 @@
 
 Base: f901f452edfcfdda3422c39bb986241b69d5c863
 Branch: Nov20RootDiagnostics/3733-session-history
-Tested implementation: f2a667a8a70d2f0d91090e790bef8b4dccc59b01
-This evidence-only successor changes no source/test blob from that implementation.
+Behavioral implementation proof: f2a667a8a70d2f0d91090e790bef8b4dccc59b01
+Display-copy successor: f285fa86027e26751e3ce7b92cee4ff5b1874ecb
+The latter changes only two report visibility strings and a none-capability test
+assertion. The final evidence-only successor changes no source/test blob from it.
 
 Scope and gate
 
@@ -53,7 +55,8 @@ lists remain distinct. Shortened/omitted events stay partial. Tool activity/dura
 is attributed only where this page records the child relationship; missing starts,
 tokens, cost, scope or totals are not fabricated or added across pages. Known0 stays0.
 
-Exact implementation proof (existing dependencies, no installs, serial one worker)
+Exact behavioral implementation proof at f2a667 (existing dependencies, no installs,
+serial one worker)
 
 128PASS / five suites / zero fail or skipped:
 node node_modules/vitest/vitest.mjs run --project main --project renderer
@@ -87,6 +90,15 @@ reproduced against the exact base with identical diagnostic/offending source lin
 Other12 files clean. One final lint comparison wrapper hit Node stdout buffering;
 it was excluded and rerun successfully with file-backed output. Earlier122/126
 development passes are not substituted for this final128-case source proof.
+
+Final copy correction at exact f285fa8: a none-capability page counts events SHOWN,
+not an assertion that hidden child reports were absent. No read/data/control logic
+changed. Three capability cases PASS /18 deselected on that exact successor:
+node node_modules/vitest/vitest.mjs run --project renderer
+  src/renderer/features/agents/details/RemoteSessionHistory.test.tsx
+  -t 'preserves the .* child capability' --maxWorkers=1 --no-file-parallelism
+Scoped lint on the two changed renderer/test files:0errors/0warnings. These three
+overlap the128-case suite; do not add the counts or credit128 as rerun on f285fa8.
 
 Limits and remaining work
 
