@@ -1,6 +1,7 @@
 /** Saved fields only. Registration/relationship admission and final witnesses belong to the reader. */
-import { projectOrchestrationAgentFieldsForDisplay } from './orchestration-display';
-import { ownDisplayValue, type DisplayValue } from './display-settings';
+import { projectOrchestrationAgentFieldsForDisplay } from './orchestration-agent-fields';
+import type { DisplayValue } from './display-settings';
+const ownDisplayValue = (raw: Record<string, unknown>, key: string): unknown => Object.prototype.hasOwnProperty.call(raw, key) ? raw[key] : undefined;
 import type { OrchestrationPolicySource } from '../../shared/orchestration-policy';
 
 export interface ConnectionEndpointFields {
@@ -38,4 +39,13 @@ export function configuredConnectionEndpointEligibility(fields: ConnectionEndpoi
   if (fields.disposed.state === 'ok' && fields.disposed.value || fields.helper.state === 'ok' && fields.helper.value) return known('gone', 'configured eligibility');
   if (fields.disposed.state !== 'ok' || fields.helper.state !== 'ok' || fields.connectToDispatcher.state !== 'ok') return unavailable('configured eligibility');
   return known(fields.connectToDispatcher.value ? 'eligible' : 'connect-off', 'configured eligibility');
+}
+
+/** Same bounded fields, observed in host-session cache; not actual runtime or disk freshness. */
+export function projectLoadedConnectionEndpointFieldsForDisplay(expectedId: string, raw: unknown): DisplayValue<ConnectionEndpointFields> {
+  const projected = projectConnectionEndpointFieldsForDisplay(expectedId, raw), observedAt = Date.now();
+  const evidence = <T>(value: DisplayValue<T>): DisplayValue<T> => ({ ...value, inputs: value.inputs.map((input) => ({ ...input, source: 'host-cache', observedAt })) });
+  if (projected.state !== 'ok') return evidence(projected);
+  const fields = projected.value;
+  return { ...evidence(projected), state: 'ok', value: { ...fields, name: evidence(fields.name), helper: evidence(fields.helper), disposed: evidence(fields.disposed), connectToDispatcher: evidence(fields.connectToDispatcher) } };
 }
