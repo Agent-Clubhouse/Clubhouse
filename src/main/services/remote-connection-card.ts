@@ -20,6 +20,8 @@ import { readDispatcherLinkMemoryForDisplay, type DispatcherLinkMemoryDisplay } 
 import { readDispatcherEnablementForDisplay } from './dispatcher/dispatcher-settings';
 import { isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
 import type { DisplayReceipt, DisplayValue } from './display-settings';
+import { readSavedDispatcherEndpointMetadataForDisplay } from './dispatcher-endpoint-associations-display';
+import { endpointCardFields, type EndpointCardFields } from './connection-endpoint-card-fields';
 import { row, display } from './remote-details-presentation';
 
 export interface ConnectionCardReadOptions {
@@ -29,10 +31,12 @@ export interface ConnectionCardReadOptions {
   /** Strictly admitted durable project only; Quick runs do not use saved durable links. */
   projectPath?: string;
   connectToDispatcher?: DisplayValue<boolean>;
+  /** Strict selected normal-durable target; no route-supplied paths/getters. */
+  endpoint?: { target: DisplayReceipt; readCache?: NonNullable<Parameters<typeof readSavedDispatcherEndpointMetadataForDisplay>[2]['readLoadedCache']> };
   name?: string;
   family?: { parentId?: string; helperIds: ReadonlySet<string> };
 }
-type Pair = { from: string; to: string; kind: BindingDisplayRow['targetKind'] | 'unknown'; binding?: BindingDisplayRow; saved?: ConnectionDirectionDisplay; sources: CachedSourceDisplay[]; machine?: string; remoteAgent?: string; manual?: SavedDispatcherLinkDisplay; manualMemory?: DispatcherLinkMemoryDisplay['rows'][number] };
+type Pair = { from: string; to: string; kind: BindingDisplayRow['targetKind'] | 'unknown'; binding?: BindingDisplayRow; saved?: ConnectionDirectionDisplay; sources: CachedSourceDisplay[]; machine?: string; remoteAgent?: string; manual?: SavedDispatcherLinkDisplay; manualMemory?: DispatcherLinkMemoryDisplay['rows'][number]; manualFields?: EndpointCardFields };
 const value = <T>(v: DisplayValue<T> | undefined): T | undefined => v?.state === 'ok' ? v.value : undefined;
 const hash = (v: unknown) => createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const boundedName = (v: unknown): string | undefined => typeof v === 'string' && !!v && v.length <= 1024 ? v : undefined;
@@ -45,6 +49,9 @@ function retainedMachine(machine: string) {
 function machineReceipt(machine: string, key: string): DisplayReceipt { return { current: () => { try { return hash(retainedMachine(machine)) === key; } catch { return false; } } }; }
 function nameReceipt(keys: string[], selected: string, name: string | undefined, key: string): DisplayReceipt {
   return { current: () => { try { const resolver = actionDetailsNames(() => undefined, { agentId: selected, projectId: '', agentName: name }); return hash(keys.map((id) => [id, boundedName(resolver.names.agent(id)) ?? null])) === key; } catch { return false; } } };
+}
+function endpointTargetReceipt(authorized: () => boolean, target: DisplayReceipt): DisplayReceipt {
+  return { current: () => authorized() && target.current() };
 }
 function referenceNames(selected: string, selectedName: string | undefined) {
   const name = boundedName(selectedName), resolver = actionDetailsNames(() => undefined, { agentId: selected, projectId: '', agentName: name });
@@ -90,6 +97,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
   if (!options.authorized()) throw new Error('revoked');
   if (!selected || selected.length > 200) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The selected connection identity exceeds the host display limit.'); return; }
   const refs = referenceNames(selected, options.name);
+  const endpointTarget = options.endpoint?.target, endpointCache = options.endpoint?.readCache;
   try {
     const outgoing = bindingManager.readBindingsForDisplay(selected, { direction: 'outgoing', receipts: options.receipts });
     const incoming = bindingManager.readBindingsForDisplay(selected, { direction: 'incoming', receipts: options.receipts });
@@ -97,6 +105,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     const sources = readCachedConnectionSourcesForDisplay(selected, { receipts: options.receipts });
     let manual: ReturnType<typeof readSavedDispatcherLinksForDisplay> | undefined;
     let manualMemory: ReturnType<typeof readDispatcherLinkMemoryForDisplay> | undefined;
+    let endpointMetadata: ReturnType<typeof readSavedDispatcherEndpointMetadataForDisplay> | undefined;
     if (options.projectPath && !options.dispatcher && !options.family?.parentId) {
       // Saved metadata and process-known state have different provenance. A
       // failed source field cannot erase independently readable bindings.
@@ -106,6 +115,10 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       if (manual.state === 'ok') {
         try { manualMemory = readDispatcherLinkMemoryForDisplay(selected, options.projectPath, manual.value.rows, { receipts: options.receipts }); }
         catch { manualMemory = { state: 'unavailable', reason: 'unreadable', inputs: [] }; }
+        if (endpointTarget && manual.value.rows.length) {
+          endpointMetadata = readSavedDispatcherEndpointMetadataForDisplay({ agentId: selected, projectPath: options.projectPath, target: endpointTargetReceipt(options.authorized, endpointTarget) }, manual.value.rows,
+            { receipts: options.receipts, readLoadedCache: endpointCache });
+        }
       }
     }
 
@@ -139,6 +152,10 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     if (untypedIncomingSources) c.notes.push(`${untypedIncomingSources} incoming source record${untypedIncomingSources === 1 ? ' lacks' : 's lack'} an independently admitted target kind; its connection details are unavailable.`);
     if (manual?.state === 'ok') for (const link of manual.value.rows) {
       const pair = ensure(link.agentId, link.targetId, 'agent'); pair.manual = link;
+      if (endpointTarget) {
+        const metadata = endpointMetadata?.state === 'ok' ? endpointMetadata.value.rows.find((row) => row.agentId === link.agentId && row.targetId === link.targetId) : undefined;
+        pair.manualFields = metadata ? endpointCardFields(metadata) : { saved: endpointMetadata?.state === 'unavailable' && endpointMetadata.reason === 'limit' ? 'Saved target metadata exceeds this read’s limit' : 'Saved target metadata unavailable' };
+      }
       if (manualMemory?.state === 'ok') pair.manualMemory = manualMemory.value.rows.find((state) => state.agentId === link.agentId && state.targetId === link.targetId);
     }
     if (directions.state === 'ok') for (const d of directions.value.rows) {
@@ -174,7 +191,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       if (pair.kind === 'agent' && !pair.machine) { const address = parseAgentAddress(other); if (address.machine) { pair.machine = address.machine; pair.remoteAgent = address.agentId; } }
       const makers = pair.saved?.makers;
       const makerField = makers && (makers.state !== 'ok' || !!makers.value.length);
-      const fields = 3 + (pair.machine ? 3 + (options.dispatcher ? 1 : 0) : 0) + (makerField ? 1 : 0) + (pair.manual ? 2 : 0);
+      const fields = 3 + (pair.machine ? 3 + (options.dispatcher ? 1 : 0) : 0) + (makerField ? 1 : 0) + (pair.manual ? 2 : 0) + (pair.manualFields ? 1 + (pair.manualFields.memory ? 1 : 0) : 0);
       if (c.rows.length >= REMOTE_DETAILS_MAX_ROWS) { c.omitted += fields; continue; }
       const sourceBinding = pair.sources.map((source) => value(source.binding)).find((b) => !!b);
       const record = pair.binding ?? sourceBinding;
@@ -189,10 +206,10 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       const savedOnlyIdentity = !!pair.manual && !pair.binding && !sourceBinding && !independentSavedLink;
       // A saved project-qualified manual entry does not authorize borrowing a
       // current cached name for a reused native ID in another project.
-      const resolved = savedOnlyIdentity ? undefined : (pair.kind === 'agent' && isDispatcherIdentityAgentId(other) ? refs.get(other) : undefined)
+      const resolved = savedOnlyIdentity ? pair.manualFields?.savedName : (pair.kind === 'agent' && isDispatcherIdentityAgentId(other) ? refs.get(other) : undefined)
         ?? ordinary ?? (pair.kind === 'agent' ? refs.get(other) : undefined);
       if (savedOnlyIdentity) {
-        const note = 'The saved target’s current project identity is not confirmed; its saved ID is shown.';
+        const note = pair.manualFields?.primaryAdmitted ? 'Saved target fields come from its registered project primary. Host memory fields are separate observations; neither establishes current runtime eligibility.' : 'The saved target’s current project identity is not confirmed; its saved ID is shown.';
         if (!c.notes.includes(note)) c.notes.push(note);
       }
       const label = resolved ?? pair.remoteAgent ?? other;
@@ -216,6 +233,10 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       if (pair.manual) sourceLabels.add(`Made by the Dispatcher (saved record${value(pair.manual.removalRecorded) === true || value(pair.manualMemory?.pendingRemoval) === true ? ', removal recorded' : ''})`);
 
       row(c, `${name} sources`, [...sourceLabels].join(', ') || (sources.state === 'ok' && sources.value.complete ? 'No source reported in the retained cache' : 'Source information unavailable'));
+      if (pair.manualFields) {
+        row(c, `${name} saved target`, pair.manualFields.saved);
+        if (pair.manualFields.memory) row(c, `${name} host memory target`, pair.manualFields.memory);
+      }
       if (pair.manual) {
         const queued = value(pair.manualMemory?.pendingRemoval), persisted = value(pair.manualMemory?.removalSaved), removed = value(pair.manual.removalRecorded);
         row(c, `${name} saved Dispatcher link`, removed === true ? 'Removal record found in saved settings' : removed === false ? 'No removal record in saved settings' : 'Saved removal status unavailable');

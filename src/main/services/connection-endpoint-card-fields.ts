@@ -4,7 +4,7 @@ import type { ConnectionEndpointFields } from './connection-endpoint-fields-disp
 import type { DisplayValue } from './display-settings';
 import { display } from './remote-details-presentation';
 
-export interface EndpointCardFields { savedName?: string; saved: string; memory?: string }
+export interface EndpointCardFields { primaryAdmitted?: true; savedName?: string; saved: string; memory?: string }
 const known = <T>(field: DisplayValue<T>): T | undefined => field.state === 'ok' ? field.value : undefined;
 const name = (fields: ConnectionEndpointFields): string | undefined => {
   const value = known(fields.name);
@@ -28,7 +28,7 @@ export function endpointCardFields(row: SavedDispatcherEndpointMetadataRow): End
   if (!endpoint || endpoint.state !== 'ok') return { saved: endpoint?.reason === 'limit' ? 'Saved target metadata exceeds this read’s limit' : 'Saved target metadata unavailable' };
   if (endpoint.value.record !== 'registered-primary') return { saved: endpoint.value.record === 'project-not-registered'
     ? 'Saved target project is not registered' : 'Target ID not found in the verified primary' };
-  const fields = endpoint.value.fields, result: EndpointCardFields = { savedName: name(fields), saved: describe(fields) };
+  const fields = endpoint.value.fields, result: EndpointCardFields = { primaryAdmitted: true, savedName: name(fields), saved: describe(fields) };
   const cache = row.hostCache;
   if (!cache) return result;
   if (cache.state !== 'ok') return { ...result, memory: 'Host memory fields unavailable' };

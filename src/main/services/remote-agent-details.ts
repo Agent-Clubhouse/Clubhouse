@@ -29,6 +29,7 @@ import { HELPER_TRANSFORM_UNAVAILABLE, readOnlyHelperWork } from './read-only-he
 import { helpersSummary, workSummary } from '../../shared/helper-work-summary';
 import { captureReadOnlyConfigTargetWitness } from './read-only-config-target';
 import { captureDisplayProvider } from './display-provider';
+import { readAgentConnectionCacheForDisplay } from './agent-config';
 
 /** No caller-supplied paths, store objects, instructions, action prompts or MCP definitions leave here. */
 export async function readRemoteAgentDetails(agentId: string, authorized: () => boolean): Promise<{ status: number; body: unknown }> {
@@ -153,7 +154,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     });
     await read('dispatcher', (c) => readDispatcherCard(c, target, readPolicy().fields.connectToDispatcher, { receipts: dispatcherReceipts, authorized, controller }));
     await read('connections', async (c) => {
-      if (!dispatcher) return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: agent.name, projectPath: project.path, connectToDispatcher: readPolicy().fields.connectToDispatcher, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
+      if (!dispatcher) return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: agent.name, projectPath: project.path, connectToDispatcher: readPolicy().fields.connectToDispatcher, endpoint: !agent.parentAgentId ? { target: targetWitness, readCache: readAgentConnectionCacheForDisplay } : undefined, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
       const canonical = await controller();
       if (!authorized()) return;
       if (!canonical) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The host Dispatcher’s canonical connection identity is unavailable. Connections cannot be verified until its host identity is available.'); return; }
