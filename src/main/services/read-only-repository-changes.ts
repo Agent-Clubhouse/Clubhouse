@@ -16,7 +16,9 @@ const MAX_PATHS = 2000;
 const MAX_CONTENT = 1024 * 1024;
 const MAX_TOTAL_CONTENT = 32 * 1024 * 1024;
 const MAX_GIT_OUTPUT = 2 * 1024 * 1024;
+const MAX_EXACT_RENAME_CHECKS = 32;
 type TreeEntry = { oid: string; size: number; mode: string };
+type ExactRenameFile = { path: string; bytes: Buffer; observedBytes: Buffer; mode: string };
 export interface ReadOnlyComparison { root: string; from: string; to?: string; identity: string }
 
 export class ReadOnlyGitError extends Error {
@@ -71,7 +73,29 @@ async function tree(root: string, ref: string): Promise<Map<string, TreeEntry>> 
 }
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const keyFor = (comparison: ReadOnlyComparison, file: string) => hash(Buffer.from(`${comparison.identity}\0${comparison.root}\0${comparison.from}\0${comparison.to ?? 'worktree'}\0${file}`));
+// Two opaque endpoint tags keep the existing 64-hex query shape while binding
+// both names. Every lookup requires a unique destination AND source; these are
+// selection witnesses, never an authorization substitute.
+const renameKeyFor = (comparison: ReadOnlyComparison, destination: string, source: string) => keyFor(comparison, destination).slice(0, 32) + keyFor(comparison, source).slice(0, 32);
 const privatePath = (p: string) => p.split('/').some((part) => /^(?:\.git|\.clubhouse|\.claude|\.codex|\.aws|\.ssh|\.azure|\.kube|\.netrc|\.npmrc|\.pypirc|\.env(?:\..*)?|credentials(?:\..*)?|id_(?:rsa|ed25519)|.*\.(?:pem|key|p12|pfx))$/i.test(part));
+const displayPath = (p: string) => redactSecretValues(p).replace(/\p{Cc}/gu, ' ').slice(0, 2048);
+
+/** Exact regular-file object identity only. Duplicate prior content is ambiguous,
+ * including copies at withheld paths: never use those to infer a rename. */
+function exactRenameSource(before: Map<string, TreeEntry>, file: ExactRenameFile): string | undefined {
+  const matches: string[] = [];
+  const oids = new Map<number, string>();
+  for (const [name, entry] of before) {
+    if (!['100644', '100755'].includes(entry.mode) || entry.mode !== file.mode || entry.size !== file.bytes.length) continue;
+    let oid = oids.get(entry.oid.length);
+    if (!oid) {
+      oid = createHash(entry.oid.length === 64 ? 'sha256' : 'sha1').update(`blob ${file.bytes.length}\0`).update(file.bytes).digest('hex');
+      oids.set(entry.oid.length, oid);
+    }
+    if (entry.oid === oid) matches.push(name);
+  }
+  return matches.length === 1 && !privatePath(matches[0]) ? matches[0] : undefined;
+}
 
 async function blobs(root: string, entries: Map<string, TreeEntry>, budget: { bytes: number }): Promise<Map<string, Buffer>> {
   const selected = [...new Map([...entries.values()].filter((v) => v.mode !== '160000' && v.mode !== '120000' && v.size <= MAX_CONTENT).map((e) => [e.oid, e])).values()]
@@ -121,7 +145,13 @@ export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, 
   const renamedFrom = new Set(renames.values());
   const all = [...new Set([...before.keys(), ...(after?.keys() ?? worktree)])].filter((p) => !renamedFrom.has(p)).sort();
   const eligible = all.filter((p) => !privatePath(p) && !restrictedRenames.has(p));
-  const paths = query.fileKey ? eligible.filter((file) => keyFor(comparison, file) === query.fileKey) : eligible.slice(0, MAX_PATHS);
+  const renameDestinations = !after && query.fileKey ? eligible.filter((file) => !before.has(file) && keyFor(comparison, file).slice(0, 32) === query.fileKey!.slice(0, 32)) : [];
+  const renameSources = !after && query.fileKey ? eligible.filter((file) => before.has(file) && keyFor(comparison, file).slice(0, 32) === query.fileKey!.slice(32)) : [];
+  const selectedRename = renameDestinations.length === 1 && renameSources.length === 1 ? { destination: renameDestinations[0], source: renameSources[0] } : undefined;
+  const ordinarySelection = query.fileKey ? eligible.filter((file) => keyFor(comparison, file) === query.fileKey) : [];
+  if (ordinarySelection.length && selectedRename) throw new Error('Ambiguous file evidence.');
+  const paths = query.fileKey ? selectedRename ? [selectedRename.destination] : ordinarySelection : eligible.slice(0, MAX_PATHS);
+  if (query.fileKey && paths.length > 1) throw new Error('Ambiguous file evidence.');
   const attributes = new Map<string, Record<string, string>>();
   let autoCrlf = false;
   if (!after && paths.length) {
@@ -131,7 +161,8 @@ export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, 
       autoCrlf = value !== 'false';
     }
     catch (error) { if (!(error instanceof ReadOnlyGitError) || error.code !== 1) throw error; }
-    const values = (await checked(readOnlyGit(anchor, ['check-attr', '-z', '--stdin', 'text', 'eol', 'filter'], MAX_GIT_OUTPUT, paths.join('\0') + '\0'))).toString().split('\0');
+    const attributePaths = selectedRename ? [...paths, selectedRename.source] : paths;
+    const values = (await checked(readOnlyGit(anchor, ['check-attr', '-z', '--stdin', 'text', 'eol', 'filter'], MAX_GIT_OUTPUT, attributePaths.join('\0') + '\0'))).toString().split('\0');
     for (let i = 0; i + 2 < values.length; i += 3) attributes.set(values[i], { ...attributes.get(values[i]), [values[i + 1]]: values[i + 2] });
   }
   const wanted = (entries: Map<string, TreeEntry>) => new Map(paths.filter((p) => !privatePath(p)).map((p) => [p, entries.get(p)]).filter((pair): pair is [string, TreeEntry] => !!pair[1]));
@@ -141,8 +172,20 @@ export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, 
   const beforeBlobs = await checked(blobs(anchor, beforeWanted, budget));
   const afterBlobs = after ? await checked(blobs(anchor, wanted(after), budget)) : new Map<string, Buffer>();
   const files: RemoteChangedFile[] = [];
+  const additions = new Map<string, ExactRenameFile>();
+  const deletions = new Set<string>();
+  let unprovenAddition = false;
   const diffBudget = { remaining: 4_000_000 };
   let patch: RemoteAgentChanges['patch'];
+  const revalidateRename = async (source: string, destination: ExactRenameFile): Promise<boolean> => {
+    // A zero-byte no-follow read checks absence without reading recreated content.
+    if ((await checked(readOnlyWorktreeFile(anchor, source, 0))).state !== 'missing' || budget.bytes < destination.observedBytes.length) return false;
+    const current = await checked(readOnlyWorktreeFile(anchor, destination.path, Math.min(MAX_CONTENT, budget.bytes)));
+    if (current.state !== 'ok') return false;
+    budget.bytes -= current.bytes.length;
+    if (current.mode !== destination.mode || !current.bytes.equals(destination.observedBytes)) return false;
+    return (await checked(readOnlyWorktreeFile(anchor, source, 0))).state === 'missing';
+  };
   for (const p of paths) {
     check();
     const oldPath = renames.get(p);
@@ -176,7 +219,22 @@ export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, 
     if (evidence === 'text' && !diff) evidence = 'too-large';
     const label = redactSecretValues(p).replace(/[\x00-\x1f\x7f]/g, ' ');
     files.push({ path: label.length > 2048 ? label.slice(0, 2020) + '… [path truncated]' : label, ...(oldPath && { oldPath: redactSecretValues(oldPath).replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 2048) }), fileKey, status: filtered || !oldBytes || !newBytes ? 'unknown' : oldPath ? 'renamed' : !left ? 'added' : (after ? !right : current?.state === 'missing') ? 'deleted' : 'modified', additions: diff?.additions ?? 0, deletions: diff?.deletions ?? 0, binary: evidence === 'binary', countsKnown: !!diff, evidence });
+    if (!after && evidence === 'text' && diff) {
+      if (!left && current?.state === 'ok' && newBytes) additions.set(p, { path: p, bytes: current.bytes, observedBytes: current.bytes, mode: current.mode });
+      if (left && current?.state === 'missing') deletions.add(p);
+    }
+    if (!after && !left && !additions.has(p)) unprovenAddition = true;
     if (query.fileKey) {
+      if (p === selectedRename?.destination) {
+        const destination = additions.get(p);
+        const source = destination && exactRenameSource(before, destination);
+        const sourceFilter = attributes.get(selectedRename.source)?.filter;
+        patch = sourceFilter && !['unspecified', 'unset'].includes(sourceFilter) ? { fileKey: query.fileKey, state: 'filtered' }
+          : source && source === selectedRename.source && await revalidateRename(source, destination!)
+          ? { fileKey: query.fileKey, state: 'text', text: `rename from ${displayPath(source)}\nrename to ${displayPath(p)}\n` }
+          : { fileKey: query.fileKey, state: 'stale' };
+        continue;
+      }
       const beforeText = oldBytes?.toString('utf8') ?? '', afterText = newBytes?.toString('utf8') ?? '';
       const safeBefore = redactChangeText(beforeText), safeAfter = redactChangeText(afterText);
       if (safeBefore === null || safeAfter === null) { patch = { fileKey, state: 'unsafe', redacted: true }; continue; }
@@ -189,11 +247,31 @@ export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, 
           : { fileKey, state: evidence, ...(text !== undefined && { text }), ...(redacted && { redacted: true }) };
     }
   }
+  const pairedSources = new Set<string>();
+  // No matching over a cut/private/unknown inventory. Only a unique prior source
+  // and a unique observed addition qualify; edited/similar files are not guessed.
+  if (!after && !query.fileKey && all.length === paths.length && !unprovenAddition) {
+    const candidates = new Map<string, ExactRenameFile[]>();
+    for (const destination of additions.values()) {
+      const source = exactRenameSource(before, destination);
+      if (source && deletions.has(source)) candidates.set(source, [...candidates.get(source) ?? [], destination]);
+    }
+    let attempts = 0;
+    for (const [source, destinations] of candidates) {
+      if (destinations.length !== 1 || attempts++ >= MAX_EXACT_RENAME_CHECKS) continue;
+      const destination = destinations[0];
+      if (!await revalidateRename(source, destination)) continue;
+      const row = files.find((file) => file.fileKey === keyFor(comparison, destination.path))!;
+      Object.assign(row, { oldPath: displayPath(source), status: 'renamed', additions: 0, deletions: 0, countsKnown: true, fileKey: renameKeyFor(comparison, destination.path, source) });
+      pairedSources.add(keyFor(comparison, source));
+    }
+  }
+  const presented = files.filter((file) => !pairedSources.has(file.fileKey));
   const offset = query.offset ?? 0;
   check();
-  if (query.fileKey && !patch) patch = { fileKey: query.fileKey, state: paths.length ? 'unchanged' : 'stale' };
-  return { files: query.fileKey ? [] : files.slice(offset, offset + REMOTE_CHANGES_PAGE_SIZE), totalFiles: files.length, offset,
-    ...(!query.fileKey && { diffstat: remoteChangesDiffstat(files) }),
-    nextOffset: !query.fileKey && offset + REMOTE_CHANGES_PAGE_SIZE < files.length ? offset + REMOTE_CHANGES_PAGE_SIZE : null,
+  if (query.fileKey && !patch) patch = { fileKey: query.fileKey, state: paths.length && !selectedRename ? 'unchanged' : 'stale' };
+  return { files: query.fileKey ? [] : presented.slice(offset, offset + REMOTE_CHANGES_PAGE_SIZE), totalFiles: presented.length, offset,
+    ...(!query.fileKey && { diffstat: remoteChangesDiffstat(presented) }),
+    nextOffset: !query.fileKey && offset + REMOTE_CHANGES_PAGE_SIZE < presented.length ? offset + REMOTE_CHANGES_PAGE_SIZE : null,
     uncompared: query.fileKey ? 0 : Math.max(0, all.length - paths.length), ...(patch && { patch }) };
 }

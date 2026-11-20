@@ -54,7 +54,9 @@ export function RemoteChangesCard({ agent, details, status, freshnessKey, open, 
     if (response.status !== 'ok') return { unavailable: message(response.status) };
     const patch = response.value.patch;
     if (response.value.agentId !== agentId || response.value.scope !== scope || patch?.fileKey !== fileKey) return { unavailable: 'The host did not return the selected file evidence.' };
-    return patch.state === 'text' && patch.text ? { type: 'diff', path: value?.files.find((f) => f.fileKey === fileKey)?.path ?? '', unifiedDiff: patch.text, ...(patch.redacted && { notice: 'Sensitive values were redacted; line positions may differ.' }) }
+    const selected = value?.files.find((f) => f.fileKey === fileKey);
+    const notice = [selected?.status === 'renamed' && selected.oldPath ? `Rename: ${selected.oldPath} → ${selected.path}.` : '', patch.redacted ? 'Sensitive values were redacted; line positions may differ.' : ''].filter(Boolean).join(' ');
+    return patch.state === 'text' && patch.text ? { type: 'diff', path: selected?.path ?? '', unifiedDiff: patch.text, ...(notice && { notice }) }
       : { unavailable: patchMessage[patch.state] ?? 'No text diff was reported by the host.' };
   }, [eligible, connected, status, satelliteId, agentId, scope, value, key, snapshot]);
   const statusMessage = !address ? 'The remote agent identity is unavailable. Select it again after the host refreshes.' : message(result.status);
@@ -77,7 +79,9 @@ export function RemoteChangesCard({ agent, details, status, freshnessKey, open, 
         {value.sessionId && <CardRow label="Session">{value.sessionId}</CardRow>}
         {value.shared && <CardNote>Another agent worked in the same folder during this comparison; its edits may be included.</CardNote>}
         {scope !== 'branch' && <CardNote>{value.live ? scope === 'session' ? 'Compared with the current worktree from the first retained session checkpoint.' : 'Compared with the current worktree.' : 'Compared between the saved turn checkpoints.'}</CardNote>}
-        {scope !== 'branch' && value.live && <CardNote>Live working-tree renames are listed as deletion and addition. Saved turn comparisons include Git’s rename detection.</CardNote>}
+        {value.live && <CardNote>Only verified, unambiguous identical regular-file moves can be paired as renames. Other moves may remain as deletion and addition.</CardNote>}
+        {scope !== 'branch' && !value.live && <CardNote>Saved turn comparisons include Git’s rename detection.</CardNote>}
+        <CardNote>Link destinations are not shared by this passive read. Link target contents are never read.</CardNote>
         {!value.diffstat && (value.offset !== 0 || value.nextOffset !== null || value.files.length !== value.totalFiles) && <CardNote>This host does not share aggregate line totals. Available line counts cover only this page.</CardNote>}
         {value.diffstat && value.diffstat.knownFiles < value.totalFiles && <CardNote>Line totals are known for {value.diffstat.knownFiles} of {value.totalFiles} listed paths; the remaining line counts are unavailable.</CardNote>}
         <FileList key={`${key}:${value.observedAt}`} files={value.files} loadDiff={loadDiff} />

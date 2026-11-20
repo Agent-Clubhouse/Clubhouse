@@ -4,6 +4,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { readOnlyGit, readOnlyRepositoryChanges, readOnlyRepositoryRoot } from './read-only-repository-changes';
+import * as worktreeFiles from './read-only-worktree-file';
 
 let root: string;
 function git(...args: string[]): Promise<string> {
@@ -22,6 +23,151 @@ beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhou
 afterEach(async () => { vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); });
 const tree = () => git('write-tree');
 describe('passive repository comparison', () => {
+  it.each(['branch', 'session', 'turn'] as const)('pairs a unique identical live %s move with endpoint-bound metadata and zero line edits', async (scope) => {
+    await fs.writeFile(path.join(root, 'old-name'), 'same content\n');
+    await git('add', '.');
+    const from = await tree();
+    await fs.rename(path.join(root, 'old-name'), path.join(root, 'new-name'));
+    const before = await snapshot(root);
+    const comparison = { root, from, identity: 'selected-run' };
+    const result = await readOnlyRepositoryChanges(comparison, { scope });
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0]).toMatchObject({ path: 'new-name', oldPath: 'old-name', status: 'renamed', additions: 0, deletions: 0, countsKnown: true });
+    expect(result.diffstat).toEqual({ additions: 0, deletions: 0, knownFiles: 1 });
+    const patch = await readOnlyRepositoryChanges(comparison, { scope, fileKey: result.files[0].fileKey });
+    expect(patch.patch).toEqual({ fileKey: result.files[0].fileKey, state: 'text', text: 'rename from old-name\nrename to new-name\n' });
+    expect(await snapshot(root)).toEqual(before);
+  });
+  it.each(['duplicate source', 'duplicate destination', 'edited destination', 'unknown addition', 'private path'] as const)('does not guess a live move with %s', async (condition) => {
+    await fs.writeFile(path.join(root, 'old-name'), 'same content\n');
+    if (condition === 'duplicate source') await fs.writeFile(path.join(root, 'copy'), 'same content\n');
+    await git('add', '.');
+    const from = await tree();
+    await fs.rename(path.join(root, 'old-name'), path.join(root, 'new-name'));
+    if (condition === 'duplicate destination') await fs.writeFile(path.join(root, 'second-new'), 'same content\n');
+    if (condition === 'edited destination') await fs.writeFile(path.join(root, 'new-name'), 'different content\n');
+    if (condition === 'unknown addition') await fs.symlink('/no-target-reads', path.join(root, 'link'));
+    if (condition === 'private path') await fs.writeFile(path.join(root, '.env'), 'WITHHELD_METADATA');
+    const before = await snapshot(root);
+    const result = await readOnlyRepositoryChanges({ root, from, identity: 'selected-run' }, { scope: 'branch' });
+    expect(result.files.some((f) => f.status === 'renamed' || f.oldPath)).toBe(false);
+    expect(result.files.find((f) => f.path === 'new-name')?.status).toBe('added');
+    expect(result.files.find((f) => f.path === 'old-name')?.status).toBe('deleted');
+    expect(JSON.stringify(result)).not.toContain('WITHHELD_METADATA');
+    if (condition === 'unknown addition') expect(result.files.find((f) => f.path === 'link')).toMatchObject({ evidence: 'unsafe', countsKnown: false });
+    expect(await snapshot(root)).toEqual(before);
+  });
+  it.each(['source reappeared', 'destination changed source', 'destination edited', 'destination removed', 'source filtered', ...(process.platform === 'win32' ? [] : ['mode changed' as const])] as const)('refuses an opened exact-rename witness when %s', async (condition) => {
+    await fs.writeFile(path.join(root, 'old-name'), 'same content\n');
+    await fs.writeFile(path.join(root, 'different-source'), 'other content\n');
+    await git('add', '.');
+    const from = await tree();
+    await fs.rename(path.join(root, 'old-name'), path.join(root, 'new-name'));
+    const comparison = { root, from, identity: 'selected-run' };
+    const result = await readOnlyRepositoryChanges(comparison, { scope: 'branch' });
+    const fileKey = result.files.find((f) => f.path === 'new-name')!.fileKey;
+    if (condition === 'source reappeared') await fs.writeFile(path.join(root, 'old-name'), 'same content\n');
+    if (condition === 'destination changed source') {
+      await fs.rm(path.join(root, 'different-source'));
+      await fs.writeFile(path.join(root, 'new-name'), 'other content\n');
+    }
+    if (condition === 'destination edited') await fs.writeFile(path.join(root, 'new-name'), 'edited content\n');
+    if (condition === 'destination removed') await fs.rm(path.join(root, 'new-name'));
+    if (condition === 'source filtered') await fs.writeFile(path.join(root, '.gitattributes'), 'old-name filter=private\n');
+    if (condition === 'mode changed') await fs.chmod(path.join(root, 'new-name'), 0o755);
+    const patch = await readOnlyRepositoryChanges(comparison, { scope: 'branch', fileKey });
+    expect(patch.patch).toEqual({ fileKey, state: condition === 'source filtered' ? 'filtered' : 'stale' });
+  });
+  it('rechecks both endpoints, refuses a recreated source and honors revocation during revalidation', async () => {
+    await fs.writeFile(path.join(root, 'old-name'), 'same content\n');
+    await git('add', '.');
+    const from = await tree();
+    await fs.rename(path.join(root, 'old-name'), path.join(root, 'new-name'));
+    const comparison = { root, from, identity: 'selected-run' };
+    const read = worktreeFiles.readOnlyWorktreeFile;
+    const spy = vi.spyOn(worktreeFiles, 'readOnlyWorktreeFile').mockImplementation(async (...args) => {
+      const result = await read(...args);
+      if (args[1] === 'new-name' && spy.mock.calls.filter((call) => call[1] === 'new-name').length === 2) await fs.writeFile(path.join(root, 'old-name'), 'recreated\n');
+      return result;
+    });
+    const list = await readOnlyRepositoryChanges(comparison, { scope: 'branch' });
+    expect(list.files.some((f) => f.status === 'renamed')).toBe(false);
+    expect(spy.mock.calls.filter((call) => call[1] === 'old-name' && call[2] === 0)).toHaveLength(2);
+    await fs.rm(path.join(root, 'old-name'));
+    let allowed = true;
+    spy.mockImplementation(async (...args) => {
+      const result = await read(...args);
+      if (args[1] === 'old-name' && args[2] === 0) allowed = false;
+      return result;
+    });
+    await expect(readOnlyRepositoryChanges(comparison, { scope: 'branch' }, () => allowed)).rejects.toThrow('read_revoked');
+  });
+  it('pages the paired representation and derives its diffstat from represented changes', async () => {
+    await fs.writeFile(path.join(root, 'old-name'), 'same content\n');
+    await git('add', '.');
+    const from = await tree();
+    await fs.rename(path.join(root, 'old-name'), path.join(root, 'new-name'));
+    for (let i = 0; i < 50; i++) await fs.writeFile(path.join(root, `extra-${i}`), `extra content ${i}\n`);
+    const comparison = { root, from, identity: 'selected-run' };
+    const first = await readOnlyRepositoryChanges(comparison, { scope: 'branch' });
+    const last = await readOnlyRepositoryChanges(comparison, { scope: 'branch', offset: 50 });
+    expect(first).toMatchObject({ totalFiles: 51, nextOffset: 50, diffstat: { additions: 50, deletions: 0, knownFiles: 51 } });
+    expect(last).toMatchObject({ totalFiles: 51, nextOffset: null, diffstat: first.diffstat });
+    expect([...first.files, ...last.files].filter((f) => f.status === 'renamed')).toHaveLength(1);
+  });
+  it('bounds endpoint rechecks and keeps unpaired line counts honest', async () => {
+    for (let i = 0; i < 33; i++) await fs.writeFile(path.join(root, `old-${i}`), `unique ${i}\n`);
+    await git('add', '.');
+    const from = await tree();
+    for (let i = 0; i < 33; i++) await fs.rename(path.join(root, `old-${i}`), path.join(root, `new-${i}`));
+    const result = await readOnlyRepositoryChanges({ root, from, identity: 'selected-run' }, { scope: 'branch' });
+    expect(result.files.filter((f) => f.status === 'renamed')).toHaveLength(32);
+    expect(result.files.filter((f) => f.status === 'added')).toHaveLength(1);
+    expect(result.files.filter((f) => f.status === 'deleted')).toHaveLength(1);
+    expect(result.diffstat).toEqual({ additions: 1, deletions: 1, knownFiles: 34 });
+  });
+  it('keeps a configured-filter move unpaired without running a filter', async () => {
+    await fs.writeFile(path.join(root, 'old-name'), 'same content\n');
+    await fs.writeFile(path.join(root, '.gitattributes'), 'new-name filter=private\n');
+    await git('add', '.');
+    const from = await tree();
+    await fs.rename(path.join(root, 'old-name'), path.join(root, 'new-name'));
+    const result = await readOnlyRepositoryChanges({ root, from, identity: 'selected-run' }, { scope: 'branch' });
+    expect(result.files.some((f) => f.status === 'renamed')).toBe(false);
+    expect(result.files.find((f) => f.path === 'new-name')).toMatchObject({ evidence: 'filtered', countsKnown: false });
+  });
+  it('redacts and sanitizes exact-rename metadata using display labels, never raw endpoint names', async () => {
+    const token = `ghp_${'a'.repeat(36)}`;
+    const old = `old-${token}`, next = process.platform === 'win32' ? 'new-name' : 'new\nname';
+    const label = process.platform === 'win32' ? 'new-name' : 'new name';
+    await fs.writeFile(path.join(root, old), 'same content\n');
+    await git('add', '.');
+    const from = await tree();
+    await fs.rename(path.join(root, old), path.join(root, next));
+    const comparison = { root, from, identity: 'selected-run' };
+    const result = await readOnlyRepositoryChanges(comparison, { scope: 'branch' });
+    expect(result.files[0]).toMatchObject({ path: label, status: 'renamed' });
+    const patch = await readOnlyRepositoryChanges(comparison, { scope: 'branch', fileKey: result.files[0].fileKey });
+    expect(patch.patch?.text).toContain(`rename to ${label}\n`);
+    expect(JSON.stringify({ result, patch })).not.toContain(token);
+  });
+  it.each([false, true])('keeps changed link-own destinations refused with unknown counts, saved=%s', async (saved) => {
+    const file = path.join(root, 'link');
+    await fs.symlink('UNSHARED_LINK_DESTINATION', file);
+    await git('add', '.');
+    const from = await tree();
+    await fs.unlink(file);
+    await fs.symlink('CHANGED_UNSHARED_DESTINATION', file);
+    let to: string | undefined;
+    if (saved) { await git('add', '.'); to = await tree(); }
+    const comparison = { root, from, to, identity: 'selected-run' };
+    const result = await readOnlyRepositoryChanges(comparison, { scope: saved ? 'turn' : 'branch' });
+    expect(result.files[0]).toMatchObject({ path: 'link', evidence: 'unsafe', countsKnown: false });
+    expect(result.diffstat).toEqual({ additions: 0, deletions: 0, knownFiles: 0 });
+    const patch = await readOnlyRepositoryChanges(comparison, { scope: saved ? 'turn' : 'branch', fileKey: result.files[0].fileKey });
+    expect(patch.patch?.state).toBe('unsafe');
+    expect(JSON.stringify({ result, patch })).not.toMatch(/UNSHARED_LINK_DESTINATION|CHANGED_UNSHARED_DESTINATION/);
+  });
   it.each([0, 1, 2, 3, 4, 5])('isolates selected repository reads from inherited Git directory/worktree/index/object/config overrides, variant %s', async (variant) => {
     await fs.writeFile(path.join(root, 'selected'), 'SELECTED\n');
     await git('add', '.');
@@ -269,5 +415,23 @@ describe('passive repository comparison', () => {
     const patch = await readOnlyRepositoryChanges(comparison, { scope: 'turn', fileKey: result.files[0].fileKey });
     expect(patch.patch?.text).toContain('rename from old-name\nrename to new-name');
     expect(await snapshot(root)).toEqual(before);
+  });
+  it('retains saved-turn edited-rename counts and text instead of applying the exact-live rule', async () => {
+    const original = Array.from({ length: 20 }, (_, i) => `line ${i}\n`).join('');
+    await fs.writeFile(path.join(root, 'old-name'), original);
+    await git('add', '.');
+    const from = await tree();
+    await fs.rename(path.join(root, 'old-name'), path.join(root, 'new-name'));
+    await fs.writeFile(path.join(root, 'new-name'), original.replace('line 10\n', 'edited line\n'));
+    await git('add', '-A');
+    const to = await tree();
+    const comparison = { root, from, to, identity: 'selected-run' };
+    const result = await readOnlyRepositoryChanges(comparison, { scope: 'turn' });
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0]).toMatchObject({ status: 'renamed', oldPath: 'old-name', countsKnown: true, additions: 1, deletions: 1 });
+    expect(result.diffstat).toEqual({ additions: 1, deletions: 1, knownFiles: 1 });
+    const patch = await readOnlyRepositoryChanges(comparison, { scope: 'turn', fileKey: result.files[0].fileKey });
+    expect(patch.patch?.text).toContain('rename from old-name\nrename to new-name\n');
+    expect(patch.patch?.text).toContain('+edited line\n');
   });
 });
