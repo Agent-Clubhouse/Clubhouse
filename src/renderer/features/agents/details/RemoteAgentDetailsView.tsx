@@ -132,14 +132,21 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   }
   for (const c of details?.cards ?? []) if (c.state === 'not-applicable') available.delete(c.id);
   const focusTarget = requested && available.has(requested) ? requested : dispatcher ? 'actions' : 'session';
-  const handled = useRef<number | null>(null);
+  const handled = useRef<{ key: string; targets: Set<CardId>; fulfilled: boolean } | null>(null);
   useEffect(() => {
-    if (!focus || focus.agentId !== agent.id || handled.current === focus.nonce) return;
-    handled.current = focus.nonce;
+    if (!focus || focus.agentId !== agent.id) return;
+    const key = `${agent.id}:${focus.nonce}`;
+    if (handled.current?.key !== key) handled.current = { key, targets: new Set(), fulfilled: false };
+    const request = handled.current;
+    // Try fallback cards once while waiting; fulfilling the requested card is final
+    // for this request, including across snapshot invalidation and rehydration.
+    if (request.fulfilled || request.targets.has(focusTarget)) return;
+    request.targets.add(focusTarget);
+    request.fulfilled = focusTarget === requested;
     if (focusTarget === 'settings') useAgentDetailsStore.getState().setSettingsOpen(true);
     else if (focusTarget) setOpenCards((s) => new Set(s).add(focusTarget));
     if (focus.subagentId) setSelectedSub(focus.subagentId);
-  }, [focus, agent.id, focusTarget, setOpenCards]);
+  }, [focus, agent.id, focusTarget, requested, setOpenCards]);
   const open = (id: CardId) => openCards.has(id);
   const basic = (id: RemoteDetailsCardId, title: string) => {
     const c = card(id);

@@ -44,6 +44,105 @@ describe('remote full Details host evidence', () => {
       subagents: [{ subagentId: 'initial-sub', name: 'Initial reviewer', status: 'completed' as const, toolCount: 4, usage: { total: 42 } }],
       sessionUsage: { costUsd: 0, tokens: { total: 123 } }, context: { used: 100, size: 200_000 },
     }, observedAt: { cliVersion: 2000, model: 2000, effort: 2000, level: 1000, capabilities: 1000, mcpServers: 2000, skills: 2000, subagents: 2500, sessionUsage: 2600, context: 2600 }, omitted: {} });
+  it('resolves a pending Subagents focus after hydration, expands the requested child, and handles it once', async () => {
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: evidence() } });
+    let finish!: (value: ReturnType<typeof page>) => void;
+    chatPage.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'subagents', subagentId: 'initial-sub' });
+    const jump = vi.fn();
+    const view = render(<AgentDetails agent={agent} onShowInStream={jump} />);
+    await waitFor(() => expect(chatPage).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('details-card-session-toggle')).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();
+    await act(async () => { finish(page('1.2.3', { displayRunId: 'runtime-a' })); });
+    await waitFor(() => expect(screen.getByTestId('details-card-subagents-toggle')).toHaveAttribute('aria-expanded', 'true'));
+    const child = screen.getByTestId('agent-map-node');
+    expect(child).toHaveAttribute('data-subagent-id', 'initial-sub');
+    expect(within(child).getByRole('button', { name: /Initial reviewer/ })).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(within(child).getByRole('button', { name: 'Show in conversation' }));
+    expect(jump).toHaveBeenCalledExactlyOnceWith('initial-sub');
+    fireEvent.click(screen.getByTestId('details-card-subagents-toggle'));
+    view.rerender(<AgentDetails agent={{ ...agent, name: 'Renamed remote' }} onShowInStream={jump} />);
+    expect(screen.getByTestId('details-card-subagents-toggle')).toHaveAttribute('aria-expanded', 'false');
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+    expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
+  });
+
+  it('tries the fallback once while refresh delays first fulfillment, ignoring superseded hydration', async () => {
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: evidence() } });
+    const finishes: Array<(value: ReturnType<typeof page>) => void> = [];
+    chatPage.mockImplementation(() => new Promise((resolve) => { finishes.push(resolve); }));
+    useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'subagents', subagentId: 'initial-sub' });
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(chatPage).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('details-card-session-toggle')).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByTestId('details-card-session-toggle'));
+    act(() => satellite());
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('details-card-session-toggle')).toHaveAttribute('aria-expanded', 'false');
+    // Transcript refreshes serialize; settling the superseded read admits the next one.
+    await act(async () => { finishes[0](page('1.2.3', { displayRunId: 'runtime-a' })); });
+    await waitFor(() => expect(chatPage).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();
+    await act(async () => { finishes[1](page('1.2.3', { displayRunId: 'runtime-a' })); });
+    await waitFor(() => expect(screen.getByTestId('details-card-subagents-toggle')).toHaveAttribute('aria-expanded', 'true'));
+    expect(within(screen.getByTestId('agent-map-node')).getByRole('button', { name: /Initial reviewer/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('details-card-session-toggle')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it.each([false, true])('keeps fulfilled focus collapsed across refresh (fallback manually closed: %s), and accepts a new nonce', async (closeFallback) => {
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: evidence() } });
+    chatPage.mockResolvedValue(page('1.2.3', { displayRunId: 'runtime-a' }));
+    useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'subagents', subagentId: 'initial-sub' });
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(screen.getByTestId('details-card-subagents-toggle')).toHaveAttribute('aria-expanded', 'true'));
+    // A user closes the requested child/card, optionally also the initial fallback.
+    fireEvent.click(within(screen.getByTestId('agent-map-node')).getByRole('button', { name: /Initial reviewer/ }));
+    fireEvent.click(screen.getByTestId('details-card-subagents-toggle'));
+    if (closeFallback) fireEvent.click(screen.getByTestId('details-card-session-toggle'));
+    const fallbackExpanded = closeFallback ? 'false' : 'true';
+    expect(screen.getByTestId('details-card-session-toggle')).toHaveAttribute('aria-expanded', fallbackExpanded);
+    const nonce = useAgentDetailsStore.getState().focus!.nonce;
+    let finish!: (value: ReturnType<typeof page>) => void;
+    chatPage.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    // Normal host snapshot refresh invalidates Details, then waits for matching hydration.
+    act(() => satellite());
+    expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-session-toggle')).toHaveAttribute('aria-expanded', fallbackExpanded);
+    await waitFor(() => expect(chatPage).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('details-card-session-toggle')).toHaveAttribute('aria-expanded', fallbackExpanded);
+    await act(async () => { finish(page('1.2.3', { displayRunId: 'runtime-a' })); });
+    await waitFor(() => expect(screen.getByTestId('details-card-subagents-toggle')).toHaveAttribute('aria-expanded', 'false'));
+    expect(useAgentDetailsStore.getState().focus!.nonce).toBe(nonce);
+    fireEvent.click(screen.getByTestId('details-card-subagents-toggle'));
+    expect(within(screen.getByTestId('agent-map-node')).getByRole('button', { name: /Initial reviewer/ })).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(screen.getByTestId('details-card-subagents-toggle'));
+    act(() => useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'subagents', subagentId: 'initial-sub' }));
+    expect(screen.getByTestId('details-card-subagents-toggle')).toHaveAttribute('aria-expanded', 'true');
+    expect(within(screen.getByTestId('agent-map-node')).getByRole('button', { name: /Initial reviewer/ })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('does not replay a pending focus or late hydration into a different host with the same raw agent id', async () => {
+    read.mockResolvedValueOnce({ status: 'ok', value: { ...fixture(), providerEvidence: evidence() } });
+    let finish!: (value: ReturnType<typeof page>) => void;
+    chatPage.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'subagents', subagentId: 'initial-sub' });
+    const view = render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(chatPage).toHaveBeenCalledTimes(1));
+    const other = { ...agent, id: 'remote||other-host||a1', projectId: 'remote||other-host||p1' };
+    act(() => useAnnexClientStore.setState((s) => ({ satellites: [...s.satellites, { id: 'other-host', alias: 'Other host', state: 'connected', snapshot: {} } as never] })));
+    view.rerender(<AgentDetails agent={other} />);
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith('other-host', 'a1'));
+    await screen.findByText('Host CLI 1.2.3');
+    await act(async () => { finish(page('1.2.3', { displayRunId: 'runtime-a' })); });
+    expect(screen.getByTestId('details-card-session-toggle')).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();
+    expect(screen.queryByText('Initial reviewer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Read from Other host');
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+    expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['known total zero', { tokens: { total: 0 } }, 'tokens', '0 tokens'],
     ['absent', undefined, 'tokens', 'Not reported in the loaded session snapshot'],
