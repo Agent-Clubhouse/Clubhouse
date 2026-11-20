@@ -381,7 +381,7 @@ function renderRegisteredConnections(c: RemoteDetailsCard, read: DisplayValue<Co
   const page = read.value;
   c.connectionPage = { source: query.source, offset: page.matchOffset, projectOffset: page.projectOffset, known: page.knownMatches, complete: page.complete,
     next: page.next ? { offset: page.next.matchOffset, projectOffset: page.next.projectOffset } : null };
-  c.summary = `${page.knownMatches} known configured relationships in this project page${page.complete ? '' : ' · partial'}`;
+  c.summary = `${page.knownMatches} known ${query.source === 'helpers' ? 'helper records' : 'Dispatcher policy records'} in this project page${page.complete ? '' : ' · partial'}`;
   for (const entry of page.entries) {
     const endpoint = entry.endpoint, fields = endpointCardFields({ agentId: '', targetId: endpoint.agentId, relationship: 'recorded',
       endpoint: { state: 'ok', value: { record: 'registered-primary', fields: endpoint.fields }, inputs: [] }, hostCache: entry.hostCache });
@@ -389,6 +389,7 @@ function renderRegisteredConnections(c: RemoteDetailsCard, read: DisplayValue<Co
     // Include both stable project identity and display label when names collide.
     const label = `${name} · ${projectName}`;
     row(c, label, `${entry.source === 'helper' ? 'Direct helper' : 'Automatic Dispatcher source'} · ${entry.applicability === 'configured' ? 'two configured directions' : entry.applicability === 'disposed' ? 'disposed; no configured directions' : 'configured applicability unknown'} · project ${endpoint.projectId}`);
+    if (endpoint.identityAmbiguous) row(c, `${label} identity`, 'This project record reuses the controller’s native ID. The endpoint association is ambiguous; configured directions are unavailable.');
     row(c, `${label} saved settings`, fields.saved);
     if (fields.memory) row(c, `${label} host memory`, fields.memory);
     for (const direction of entry.directions) {

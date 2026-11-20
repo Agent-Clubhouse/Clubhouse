@@ -973,3 +973,22 @@ describe('admitted Details display generation', () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 });
+
+describe('qualified Dispatcher native-ID policy ambiguity at final Details', () => {
+  it.each(['unchanged', 'normal-primary-late', 'revoked'] as const)('retains independent project fields and final source refusal: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-dispatcher-native-policy-'))), a = path.join(root, 'dispatcher'), chatFolder = path.join(root, 'dispatcher-chat'), b = path.join(root, 'normal'); for (const folder of [a, chatFolder, b]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+    m.base = root; m.realWitness = true; m.realConnections = true;
+    const chat = { ...agent(), name: 'Dispatcher chat', worktreePath: chatFolder }, canonical = { ...agent(), id: 'controller1', name: 'Operations', worktreePath: a }, ordinary = { ...agent(), id: canonical.id, name: 'Normal project agent', worktreePath: b, orchestration: { connectToDispatcher: true } };
+    const roleProject = { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a }; await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'normal', name: 'Normal custom project', path: b }] })); await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), JSON.stringify([canonical])); await fs.writeFile(path.join(chatFolder, '.clubhouse', 'agents.json'), JSON.stringify([chat])); const normalFile = path.join(b, '.clubhouse', 'agents.json'); await fs.writeFile(normalFile, JSON.stringify([ordinary]));
+    m.dispatcher.mockReturnValue({ agentId: canonical.id, chatAgentId: chat.id }); m.target.mockImplementation(async (id: string) => ({ agent: id === canonical.id ? canonical : chat, project: id === canonical.id ? roleProject : { ...roleProject, path: chatFolder } }));
+    let allowed = true, reached = false, observed = false, ambiguous = false; const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
+    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((r) => r.label === 'Normal project agent · Normal custom project'); ambiguous = args[0].rows.some((r) => r.value.includes('endpoint association is ambiguous')); });
+    const native = await import('fs'); m.actions.mockImplementation(() => { reached = true; if (mode === 'normal-primary-late') native.writeFileSync(normalFile, '[]'); if (mode === 'revoked') allowed = false; return []; });
+    try {
+      const response = await readRemoteAgentDetails(chat.id, () => allowed, { card: 'connections', source: 'dispatcher-auto' });
+      expect(reached).toBe(true); expect(observed).toBe(true); expect(ambiguous).toBe(true);
+      if (mode === 'unchanged') { expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, chat.id)).toBe(true); const c = (response.body as RemoteAgentDetails).cards.find((c) => c.id === 'connections'); expect(c?.connectionPage).toMatchObject({ known: 1, complete: false, next: null }); expect(c?.rows.some((r) => r.label.endsWith('starting switches') || r.value.includes('two configured directions'))).toBe(false); expect(JSON.stringify(c)).not.toContain(root); }
+      else { expect.soft(response.status).toBe(mode === 'revoked' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId'); }
+    } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+});

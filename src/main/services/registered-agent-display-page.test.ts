@@ -139,3 +139,14 @@ it('excludes the admitted canonical role folder while preserving a distinct-ID r
   const last = readRegisteredAgentDisplayPage({ agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role }, 'dispatcher-auto', { authorized: () => true, receipts: [], limit: 8, matchOffset: 8 });
   expect.soft(last).toMatchObject({ state: 'ok', value: { entries: [{ agentId: 'normal-8' }], next: null, knownMatches: 9 } });
 });
+it('excludes a registered filesystem alias of the admitted canonical role directory without borrowing its internal records', async () => {
+  const { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
+  const controller = agent('controller'), internal = agent('internal-worker', { name: 'PRIVATE_ROLE_ALIAS_WORKER', orchestration: { connectToDispatcher: true } });
+  await put(a, [controller, internal]); await put(b, [agent('normal', { orchestration: { connectToDispatcher: true } })]);
+  const alias = path.join(root, 'registered-role-alias'); await fsp.symlink(a, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'a', name: 'Role folder', path: a }, { id: 'b', name: 'Normal project', path: b }, { id: 'alias', name: 'Role alias', path: alias }] }));
+  const target = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: a } } as unknown as import('./agent-config-reader').AgentConfigTarget;
+  const role = captureReadOnlyRoleTargetWitness(target, () => true), receipts: DisplayReceipt[] = []; expect(role.current()).toBe(true);
+  const result = readRegisteredAgentDisplayPage({ agentId: controller.id, projectId: DISPATCHER_PROJECT_ID, projectPath: a, receipt: role }, 'dispatcher-auto', { authorized: () => true, receipts });
+  expect(result).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, unknownRows: 0, entries: [{ agentId: 'normal', projectId: 'b' }], next: null } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_ROLE'); expect(receipts.every((r) => r.current())).toBe(true);
+});

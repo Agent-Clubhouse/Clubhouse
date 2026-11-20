@@ -20,6 +20,9 @@ export interface RegisteredDisplayAgent {
   fields: ConnectionEndpointFields;
   /** Included only after the selected parent/project relationship is established. */
   parentAgentId?: string;
+  /** A normal project record reuses the selected controller's native ID.
+   * Its primary fields remain useful, but no live/configured direction is inferred. */
+  identityAmbiguous?: true;
 }
 export interface RegisteredDisplayRoot { projectPath: string; namespace?: string; receipt: DisplayReceipt }
 export interface RegisteredAgentDisplayPage {
@@ -113,7 +116,7 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
     if (projectOffset > 0 && projectOffset >= projects.length) return unknown('changed');
     let selectedDirectory: string | undefined, selectedDirectoryReceipt: DisplayReceipt | undefined;
     const aliases = new Map<string, { key: string | null; receipt?: DisplayReceipt }>();
-    if (purpose === 'helper-children') {
+    {
       try { selectedDirectory = directoryKey(selectedPath); selectedDirectoryReceipt = directoryReceipt(selectedPath, selectedDirectory); evidence.push(selectedDirectoryReceipt); }
       catch { return unknown('unreadable'); }
     }
@@ -130,8 +133,15 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
     const rootPage = projects.slice(projectOffset, projectOffset + REGISTERED_DISPLAY_PROJECTS), namespaces = new Set<string>();
     for (const [index, project] of rootPage.entries()) {
       if (!admitted()) return unknown('changed');
+      // Role-owned controller/chat/work primaries are not ordinary agent
+      // sources. The admitted role folder, never native ID alone, binds this.
+      if (purpose === 'dispatcher-auto' && project.path === selectedPath) continue;
       try {
         const data = readReadOnlyPrimaryMetadata(project.path, '.clubhouse/agents.json', { budget }); evidence.push(data.receipt);
+        // A registered alias of the observed canonical directory is also
+        // role-owned. Both directory + primary receipts remain final fences;
+        // this tuple is no runtime/permission or historical-incarnation proof.
+        if (purpose === 'dispatcher-auto' && data.rootNamespace && data.rootNamespace === selectedDirectory) continue;
         if (!Array.isArray(data.raw)) { unavailableProjects++; complete = false; continue; }
         // Both duplicate-ID admission and relationship projection visit every row.
         if (data.raw.length * 2 > rowsLeft) {
@@ -161,17 +171,19 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
           if (projected.state !== 'ok') { unknownRows++; complete = false; continue; }
           const fields = projected.value;
           if (purpose === 'dispatcher-auto') {
-            if (agent.id === selectedId || fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value
+            if (fields.connectToDispatcher.state === 'ok' && !fields.connectToDispatcher.value
               || fields.disposed.state === 'ok' && fields.disposed.value || fields.helper.state === 'ok' && fields.helper.value) continue;
             if (fields.connectToDispatcher.state !== 'ok' || fields.disposed.state !== 'ok' || fields.helper.state !== 'ok') { unknownRows++; complete = false; continue; }
           }
+          const identityAmbiguous = purpose === 'dispatcher-auto' && agent.id === selectedId;
+          if (identityAmbiguous) { unknownRows++; complete = false; }
           knownMatches++;
           if (knownMatches <= matchOffset || entries.length >= limit) continue;
           const stamp = <T>(value: DisplayValue<T>): DisplayValue<T> => ({ ...value, inputs: value.inputs.map((input) => ({ ...input, source: 'primary', observedAt })) });
           entries.push({ agentId: agent.id, projectId: project.id, projectName: project.name,
             fields: { ...fields, name: fields.name.state === 'ok' ? { ...stamp(fields.name), state: 'ok', value: display(fields.name.value, 240) } : stamp(fields.name),
               helper: stamp(fields.helper), disposed: stamp(fields.disposed), connectToDispatcher: stamp(fields.connectToDispatcher) },
-            ...(purpose === 'helper-children' && { parentAgentId: selectedId }) });
+            ...(purpose === 'helper-children' && { parentAgentId: selectedId }), ...(identityAmbiguous && { identityAmbiguous: true as const }) });
         }
         if (entries.length > emittedBefore) localRoots.set(project.id, { projectPath: project.path, namespace: data.rootNamespace,
           receipt: combine([selectedReceipt, profile(base), snapshot.receipt, data.receipt, ...relevantAliases]) });
