@@ -35,7 +35,7 @@ function fixture(observed = false) {
   const phases: ResourcePhase[] = ['before-service-quiesce', 'after-service-quiesce',
     'before-service-close', 'after-service-close', 'observer-armed'];
   if (observed) phases.push('delayed-callback-entered', 'after-runtime-stop-ack');
-  const peer = phases.map((phase, index) => ({
+  const peer: ResourceSample[] = phases.map((phase, index) => ({
     ...sample('peer', phase, index), ...(phase === 'after-runtime-stop-ack' && { ack: { ...ack } }),
   }));
   const nativeEvents: Record<string, unknown>[] = [
