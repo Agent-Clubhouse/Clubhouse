@@ -207,3 +207,24 @@ it('keeps cold manual source page and row omissions visible', async () => {
   const projectPath = path.join(root, 'selected-project'); await put('dispatcher-connections.json', { version: 1, connections: Array.from({ length: 51 }, (_, i) => ({ agentId: selected, targetId: `manual-${i}`, agentProjectPath: projectPath, targetProjectPath: '/other-project', createdAt: at, createdBy: 'controller' })), removedByUser: [] });
   const { c, receipts } = await read(false, { projectPath }); expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBeGreaterThan(0); expect.soft(c.notes.join(' ')).toContain('1 additional saved Dispatcher link is outside this bounded page'); expect.soft(receipts.every((receipt) => receipt.current())).toBe(true);
 });
+
+it.each(['on', 'off', 'unknown-controller', 'unknown-name', 'saved-override', 'unreadable-override', 'mixed-source'] as const)('shows selected configured automatic Dispatcher directions without collecting sources: %s', async (mode) => {
+  const { configuredDispatcherDirections } = await import('./configured-dispatcher-directions'); m.ownOn = mode !== 'off';
+  const collect = vi.fn(async () => { fs.writeFileSync(path.join(root, 'unexpected-marker'), 'called'); return []; }); stops.push(registerPersistedBindingSource({ id: 'dispatcher-wires', collect, inspect: collect }));
+  if (mode === 'saved-override') await put('connection-grants.json', { version: 1, directions: [direction('controller', false, { disabledTools: ['read_output'] })] });
+  if (mode === 'unreadable-override') await fs.promises.writeFile(path.join(root, 'connection-grants.json'), '{broken');
+  if (mode === 'mixed-source') bindingManager.bind(selected, { targetId: 'controller', targetKind: 'agent', label: 'Bound controller name' });
+  if (mode === 'unknown-name') m.names.set('controller', 'PRIVATE_UNQUALIFIED_NAME');
+  const automatic = configuredDispatcherDirections({ id: selected, name: 'Selected custom name' }, { state: 'ok', value: true, inputs: [] }, mode === 'unknown-controller' ? undefined : { id: 'controller', name: mode === 'unknown-name' ? undefined : 'Admitted controller' });
+  const before = await disk(), { c, receipts } = await read(false, { automatic });
+  if (mode === 'unknown-controller') { expect.soft(c.rows).toHaveLength(0); expect.soft(c.state).toBe('error'); expect.soft(c.notes.join(' ')).toContain('Automatic Dispatcher source details are unavailable'); }
+  else {
+    const name = mode === 'unknown-name' ? 'controller' : mode === 'mixed-source' ? 'Bound controller name' : 'Admitted controller';
+    expect(c.rows.some((r) => r.label === name && r.value.includes('two-way records'))).toBe(true);
+    const switches = c.rows.find((r) => r.label === name + ' outgoing switches')?.value;
+    expect.soft(switches).toContain(mode === 'saved-override' ? 'Saved · Allowed:' : mode === 'unreadable-override' ? 'Saved override unavailable' : mode === 'mixed-source' ? 'Binding record' : 'Configured automatic link defaults');
+    if (mode === 'saved-override') expect.soft(switches?.split('; Off:')[1]).toContain('Read output');
+    expect.soft(c.rows.filter((r) => r.label.endsWith('automatic starting switches'))).toHaveLength(2); expect.soft(c.rows.find((r) => r.label === 'Host Dispatcher')?.value).toBe(mode === 'off' ? 'Off' : 'On'); expect.soft(c.notes.join(' ')).toContain('do not establish current bindings');
+  }
+  expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_'); expect.soft(collect).not.toHaveBeenCalled(); expect.soft(m.legacy).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before); expect.soft(receipts.every((r) => r.current())).toBe(true);
+});
