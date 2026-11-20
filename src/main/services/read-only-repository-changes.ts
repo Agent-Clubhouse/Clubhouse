@@ -7,7 +7,7 @@ import * as os from 'os';
 import { cleanInheritedEnv, cleanSpawnEnv } from '../util/shell';
 import { readOnlyTextDiff } from '../../shared/read-only-diff';
 import type { RemoteChangedFile, RemoteChangesQuery, RemoteAgentChanges } from '../../shared/remote-agent-changes';
-import { REMOTE_CHANGES_PAGE_SIZE } from '../../shared/remote-agent-changes';
+import { REMOTE_CHANGES_PAGE_SIZE, remoteChangesDiffstat } from '../../shared/remote-agent-changes';
 import { readOnlyWorktreeFile } from './read-only-worktree-file';
 import { redactSecretValues } from '../telemetry/diag-redaction';
 import { redactChangeText } from './read-only-display-text';
@@ -91,7 +91,7 @@ async function blobs(root: string, entries: Map<string, TreeEntry>, budget: { by
   return out;
 }
 
-export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, query: RemoteChangesQuery, authorized: () => boolean = () => true): Promise<Pick<RemoteAgentChanges, 'files' | 'totalFiles' | 'offset' | 'nextOffset' | 'uncompared' | 'patch'>> {
+export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, query: RemoteChangesQuery, authorized: () => boolean = () => true): Promise<Pick<RemoteAgentChanges, 'files' | 'totalFiles' | 'diffstat' | 'offset' | 'nextOffset' | 'uncompared' | 'patch'>> {
   const check = () => { if (!authorized()) throw new Error('read_revoked'); };
   const checked = async <T>(work: Promise<T>): Promise<T> => { const value = await work; check(); return value; };
   check();
@@ -193,6 +193,7 @@ export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, 
   check();
   if (query.fileKey && !patch) patch = { fileKey: query.fileKey, state: paths.length ? 'unchanged' : 'stale' };
   return { files: query.fileKey ? [] : files.slice(offset, offset + REMOTE_CHANGES_PAGE_SIZE), totalFiles: files.length, offset,
+    ...(!query.fileKey && { diffstat: remoteChangesDiffstat(files) }),
     nextOffset: !query.fileKey && offset + REMOTE_CHANGES_PAGE_SIZE < files.length ? offset + REMOTE_CHANGES_PAGE_SIZE : null,
     uncompared: query.fileKey ? 0 : Math.max(0, all.length - paths.length), ...(patch && { patch }) };
 }

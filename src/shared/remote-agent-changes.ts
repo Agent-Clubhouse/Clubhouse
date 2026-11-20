@@ -10,6 +10,18 @@ export interface RemoteChangedFile extends Omit<ChangedFile, 'status'> {
   countsKnown: boolean;
   evidence: 'text' | 'binary' | 'unsafe' | 'too-large' | 'unreadable' | 'directory' | 'submodule' | 'budget' | 'filtered';
 }
+export interface RemoteChangesDiffstat { additions: number; deletions: number; knownFiles: number }
+/** Sum only approved known counts; never turn missing counts or overflow into zero. */
+export function remoteChangesDiffstat(files: readonly RemoteChangedFile[]): RemoteChangesDiffstat | undefined {
+  const total = { additions: 0, deletions: 0, knownFiles: 0 };
+  for (const file of files) {
+    if (!file.countsKnown) continue;
+    if (![file.additions, file.deletions].every((n) => Number.isSafeInteger(n) && n >= 0)) return undefined;
+    total.additions += file.additions; total.deletions += file.deletions; total.knownFiles++;
+    if (!Number.isSafeInteger(total.additions) || !Number.isSafeInteger(total.deletions)) return undefined;
+  }
+  return total;
+}
 export interface RemoteAgentChanges {
   version: 1;
   readOnly: true;
@@ -25,6 +37,9 @@ export interface RemoteAgentChanges {
   shared: boolean;
   files: RemoteChangedFile[];
   totalFiles: number;
+  /** Whole bounded comparison, before paging. Unknown/uncompared paths are excluded.
+   * Absent on older hosts and file-patch responses; absence is not a zero total. */
+  diffstat?: RemoteChangesDiffstat;
   offset: number;
   nextOffset: number | null;
   /** Comparison bounds are not zero changes. */
@@ -48,6 +63,16 @@ export function isRemoteAgentChanges(value: unknown, agentId: string, query: Rem
   const nullable = (s: unknown) => s === null || text(s);
   const count = (n: unknown) => Number.isSafeInteger(n) && (n as number) >= 0;
   const states = ['text', 'binary', 'unsafe', 'too-large', 'unreadable', 'directory', 'submodule', 'budget', 'filtered'];
+  const validDiffstat = () => {
+    if (r.diffstat === undefined) return true;
+    const d = r.diffstat;
+    if (query.fileKey || r.state !== 'ok' || !d || typeof d !== 'object' || !count(d.additions) || !count(d.deletions) || !count(d.knownFiles)) return false;
+    const page = remoteChangesDiffstat(r.files);
+    const unknown = r.files.filter((f) => !f.countsKnown).length;
+    if (!page || d.knownFiles < page.knownFiles || d.knownFiles > r.totalFiles - unknown || d.additions < page.additions || d.deletions < page.deletions) return false;
+    // If the page contains every known count, no unseen line totals can be invented.
+    return d.knownFiles !== page.knownFiles || d.additions === page.additions && d.deletions === page.deletions;
+  };
   return r.version === 1 && r.readOnly === true && r.agentId === agentId && r.scope === query.scope
     && Number.isFinite(r.observedAt) && r.observedAt > 0 && ['ok', 'not-git', 'no-base', 'no-checkpoint', 'unsupported'].includes(r.state)
     && nullable(r.branch) && nullable(r.base) && nullable(r.sessionId) && nullable(r.turnId)
@@ -61,6 +86,7 @@ export function isRemoteAgentChanges(value: unknown, agentId: string, query: Rem
     && r.files.every((f) => !!f && typeof f === 'object' && text(f.path) && !!f.path && (f.oldPath === undefined || text(f.oldPath))
       && ['added', 'modified', 'deleted', 'renamed', 'unknown'].includes(f.status) && count(f.additions) && count(f.deletions)
       && typeof f.binary === 'boolean' && typeof f.countsKnown === 'boolean' && states.includes(f.evidence) && /^[a-f0-9]{64}$/.test(f.fileKey))
+    && validDiffstat()
     && (r.patch === undefined || !!query.fileKey && !!r.patch && r.patch.fileKey === query.fileKey && [...states, 'unchanged', 'stale'].includes(r.patch.state) && (r.patch.redacted === undefined || typeof r.patch.redacted === 'boolean')
       && (r.patch.text === undefined || r.patch.state === 'text' && typeof r.patch.text === 'string' && r.patch.text.length <= 128 * 1024));
 }

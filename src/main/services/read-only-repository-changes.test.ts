@@ -176,14 +176,18 @@ describe('passive repository comparison', () => {
     expect(result.totalFiles).toBe(57);
     expect(result.uncompared).toBe(1);
     expect(result.nextOffset).toBe(50);
+    expect(result.diffstat).toEqual({ additions: 56, deletions: 1, knownFiles: 57 });
     expect(JSON.stringify(result)).not.toContain('PRIVATE_VALUE');
     const rest = await readOnlyRepositoryChanges(comparison, { scope: 'turn', offset: 50 });
     expect(rest.files).toHaveLength(7);
     expect(rest.nextOffset).toBeNull();
+    expect(rest.diffstat).toEqual(result.diffstat);
     expect(await snapshot(root)).toEqual(before);
     await fs.symlink('/private/no-reads', path.join(root, 'unsafe-link'));
     const live = await readOnlyRepositoryChanges({ root, from, identity: 'selected-run' }, { scope: 'branch', offset: 50 });
     expect(live.files.find((f) => f.path === 'unsafe-link')).toMatchObject({ evidence: 'unsafe', status: 'unknown', countsKnown: false });
+    expect(live.diffstat).toEqual({ additions: 56, deletions: 1, knownFiles: 57 });
+    expect(live.totalFiles).toBe(58);
   });
   it('distinguishes a nonrepository from a bad or unreadable immutable base', async () => {
     expect(await readOnlyRepositoryRoot(root)).toBe(await fs.realpath(root));

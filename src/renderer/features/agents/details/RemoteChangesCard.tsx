@@ -3,9 +3,10 @@ import type { Agent } from '../../../../shared/types';
 import type { RemoteAgentDetails } from '../../../../shared/remote-agent-details';
 import type { ControllerReadResult } from '../../../../shared/controller-chat';
 import type { RemoteAgentChanges, RemoteChangesScope } from '../../../../shared/remote-agent-changes';
+import { remoteChangesDiffstat } from '../../../../shared/remote-agent-changes';
 import { remoteDetailsAddress } from './remote-details-address';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
-import { CardNote, CardRow, DetailsCard } from './DetailsCard';
+import { CardNote, CardRow, DetailsCard, PlusMinus } from './DetailsCard';
 import { FileList, type DiffResult } from './ChangesCard';
 
 type Result = ControllerReadResult<RemoteAgentChanges> | { status: 'loading' };
@@ -13,6 +14,14 @@ const message = (status: Result['status']) => status === 'offline' ? 'Host offli
   : status === 'forbidden' ? 'The host does not allow this changes read.' : status === 'unavailable' ? 'This host does not share read-only changes here. It may need an update.'
     : status === 'error' ? 'Couldn’t read changes from the host. Refresh to try again.' : status === 'rate_limited' ? 'The host is busy. Try again shortly.' : 'Loading changes from the host…';
 const patchMessage: Record<string, string> = { filtered: 'This file uses a custom Git filter. Passive Details does not run it; compare it on the host.', binary: 'Binary file; no text diff.', unsafe: 'This path or its content could not be safely shared. File counts remain available; compare the text on the host.', 'too-large': 'This comparison exceeds the host’s bounded diff limit.', unreadable: 'The host could not read this file. No empty diff is inferred.', directory: 'This path is a directory; its contents were not read as a file.', submodule: 'Nested repository; a text diff is not available here.', budget: 'The host’s comparison read limit was reached.', unchanged: 'The file no longer differs from this base.', stale: 'The change selection moved. Refresh changes to select the current file.' };
+
+function ChangesDiffstat({ value }: { value: RemoteAgentChanges }) {
+  const counts = value.diffstat ?? remoteChangesDiffstat(value.files);
+  const pageOnly = !value.diffstat && (value.offset !== 0 || value.nextOffset !== null || value.files.length !== value.totalFiles);
+  const partial = pageOnly || value.uncompared > 0 || !counts || counts.knownFiles !== value.totalFiles;
+  const unavailable = !counts || counts.knownFiles === 0 && (value.totalFiles > 0 || value.uncompared > 0);
+  return <>{value.totalFiles} paths · {unavailable ? 'line counts unavailable' : <><PlusMinus added={counts.additions} removed={counts.deletions} />{pageOnly ? ' on this page' : partial ? ' known' : ''}</>}{partial && ' · partial'}</>;
+}
 
 export function RemoteChangesCard({ agent, details, status, freshnessKey, open, onToggle }: { agent: Agent; details: RemoteAgentDetails | null; status: Result['status']; freshnessKey: string; open: boolean; onToggle: () => void }) {
   const address = remoteDetailsAddress(agent.id);
@@ -49,7 +58,7 @@ export function RemoteChangesCard({ agent, details, status, freshnessKey, open, 
       : { unavailable: patchMessage[patch.state] ?? 'No text diff was reported by the host.' };
   }, [eligible, connected, status, satelliteId, agentId, scope, value, key, snapshot]);
   const statusMessage = !address ? 'The remote agent identity is unavailable. Select it again after the host refreshes.' : message(result.status);
-  const summary = value?.state === 'ok' ? `${value.totalFiles} paths${value.uncompared || value.files.some((f) => !f.countsKnown) ? ' · partial' : ''}` : details?.cards.find((c) => c.id === 'changes')?.summary || statusMessage;
+  const summary = value?.state === 'ok' ? <ChangesDiffstat value={value} /> : details?.cards.find((c) => c.id === 'changes')?.summary || statusMessage;
   const legacy = eligible && result.status === 'unavailable' ? details?.cards.find((c) => c.id === 'changes') : null;
   return <DetailsCard id="changes" title="Changes" summary={summary} open={open} onToggle={onToggle}>
     <div className="flex gap-2 pl-[33px] pr-3.5 pb-1">{(['branch', 'session', 'turn'] as const).map((s) => <button type="button" key={s} aria-pressed={scope === s} onClick={() => { setScope(s); setOffset(0); }} className="text-xs text-ctp-overlay1 hover:text-ctp-text">{s === 'branch' ? 'Branch' : s === 'session' ? 'Session' : 'Last turn'}</button>)}</div>
@@ -69,6 +78,8 @@ export function RemoteChangesCard({ agent, details, status, freshnessKey, open, 
         {value.shared && <CardNote>Another agent worked in the same folder during this comparison; its edits may be included.</CardNote>}
         {scope !== 'branch' && <CardNote>{value.live ? scope === 'session' ? 'Compared with the current worktree from the first retained session checkpoint.' : 'Compared with the current worktree.' : 'Compared between the saved turn checkpoints.'}</CardNote>}
         {scope !== 'branch' && value.live && <CardNote>Live working-tree renames are listed as deletion and addition. Saved turn comparisons include Git’s rename detection.</CardNote>}
+        {!value.diffstat && (value.offset !== 0 || value.nextOffset !== null || value.files.length !== value.totalFiles) && <CardNote>This host does not share aggregate line totals. Available line counts cover only this page.</CardNote>}
+        {value.diffstat && value.diffstat.knownFiles < value.totalFiles && <CardNote>Line totals are known for {value.diffstat.knownFiles} of {value.totalFiles} listed paths; the remaining line counts are unavailable.</CardNote>}
         <FileList key={`${key}:${value.observedAt}`} files={value.files} loadDiff={loadDiff} />
         {value.totalFiles === 0 && !value.uncompared && <CardNote>No changes in this comparison.</CardNote>}
         {value.uncompared > 0 && <CardNote>{value.uncompared} paths were not compared because they are protected or exceed the host’s bounded inventory. They are not known unchanged.</CardNote>}
