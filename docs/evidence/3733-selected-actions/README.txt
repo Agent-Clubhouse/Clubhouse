@@ -96,3 +96,9 @@ actual remote Actions card integration; live/hosted role/provider matrix; any
 extra Action drilldown/history/management. Sleeping remote hidden-Details helper
 read-only surface remains a separate next increment. No grants/permissions,
 raw workflow exports, probes, installs/restarts or management APIs.
+
+Lightweight source-lint follow-up
+The six new producer/DTO/presentation source+fixture files pass ESLint with zero
+errors/warnings after correcting test regex escaping and documenting private
+fail-closed receipts. This0.24s static check does not replace the still-pending
+coordinated tests/typecheck or central integration proof.

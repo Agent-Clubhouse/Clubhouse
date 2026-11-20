@@ -27,7 +27,12 @@ export function readSelectedActionRelationshipPage(engine: Pick<ActionsEngine, '
   const subject = { agentId: input?.agentId, projectId: input?.projectId, dispatcher: input?.dispatcher }, offset = options.offset, expectedSelection = options.selection;
   const authorized = options.authorized, target = options.target, sourceCurrent = options.sourceCurrent, names = options.names, receipts = options.receipts;
   const unavailable = (reason: Extract<RemoteActionRelationshipPage, { state: 'unavailable' }>['reason']) => unavailableActionRelationshipPage(offset, reason);
-  const admitted = () => { try { return authorized() && target.current() && sourceCurrent(); } catch { return false; } };
+  const admitted = () => {
+    try { return authorized() && target.current() && sourceCurrent(); }
+    catch { // telemetry-exempt: failed private admission withholds this source.
+      return false;
+    }
+  };
   if (!admitted()) return unavailable('changed');
   if (!id(subject.agentId) || typeof subject.dispatcher !== 'boolean' || !subject.dispatcher && !id(subject.projectId) || subject.projectId !== undefined && !id(subject.projectId)
     || !Number.isSafeInteger(offset) || offset < 0 || offset > REMOTE_ACTION_RELATIONSHIP_LIMIT || offset % REMOTE_ACTION_PAGE_SIZE
@@ -63,7 +68,12 @@ export function readSelectedActionRelationshipPage(engine: Pick<ActionsEngine, '
     const value = snapshot(); if (typeof value === 'string') return unavailable(value);
     if (!admitted()) return unavailable('changed');
     const signature = hash(value);
-    receipts.push({ current: () => { try { return admitted() && hash(snapshot()) === signature && admitted(); } catch { return false; } } });
+    receipts.push({ current: () => {
+      try { return admitted() && hash(snapshot()) === signature && admitted(); }
+      catch { // telemetry-exempt: changed/unreadable private receipt prevents serialization.
+        return false;
+      }
+    } });
     return { version: 1, source: REMOTE_ACTION_PAGE_SOURCE, state: 'recorded', offset, ...value, next: offset + REMOTE_ACTION_PAGE_SIZE < value.totalRelationships ? offset + REMOTE_ACTION_PAGE_SIZE : null,
       observedAt: Date.now(), notes: ['Relationship rows are grouped by owner, target and trigger, ordered by saved creation time and stable identity. One Action may appear in multiple groups.',
         'Descriptions and last-run outcome/time use recorded host display fields. They do not confirm execution, delivery or current tool authority.'] };
