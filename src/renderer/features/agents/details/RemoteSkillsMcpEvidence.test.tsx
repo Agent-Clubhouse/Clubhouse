@@ -114,3 +114,10 @@ it('distinguishes a known empty configured list and renders reported names liter
   expect(container.querySelector('script, img')).toBeNull();
   expect(screen.queryByRole('list', { name: 'Configured-only MCP servers' })).not.toBeInTheDocument();
 });
+
+it.each(['error', 'unsupported', 'not-applicable', 'unrequested', 'missing'] as const)('does not expose additive Wires on an unreadable or inapplicable %s MCP surface', (state) => {
+  const p = props(); p.card = state === 'missing' ? undefined : { ...p.card!, state: state === 'unrequested' ? 'ok' : state, ...(state === 'unrequested' && { requested: false }) };
+  render(<RemoteSkillsMcpEvidence {...p} outgoingWires={{ source: 'selected-outgoing-binding-records', state: 'recorded', total: 1, omitted: 0, rows: [{ name: 'WITHHELD_WIRE_NAME', kind: 'agent' }] }} />);
+  expect(screen.queryByText(/WITHHELD_WIRE_NAME/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('list', { name: 'Recorded outgoing wires' })).not.toBeInTheDocument();
+});

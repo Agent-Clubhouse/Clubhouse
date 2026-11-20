@@ -1,6 +1,6 @@
 /** Selected host display evidence only. No local inventories, probes or writes. */
 import type { ReactNode } from 'react';
-import type { RemoteDetailsCard } from '../../../../shared/remote-agent-details';
+import type { RemoteDetailsCard, RemoteOutgoingWires } from '../../../../shared/remote-agent-details';
 import type { RemoteAgentSettings } from '../../../../shared/remote-agent-settings';
 import type { ChatDetailsEvidence } from '../../../../shared/chat/details-evidence';
 import type { ChatMcpServer } from '../../../../shared/chat';
@@ -9,6 +9,7 @@ import { CardNote, CardRow } from './DetailsCard';
 import { Evidence } from './RemoteDetailsEvidence';
 import { McpServerRow, mcpRows } from './McpCard';
 import { ProviderInventory } from './ProviderEvidenceNotes';
+import { RemoteOutgoingWiresEvidence } from './RemoteOutgoingWiresEvidence';
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return <section aria-label={title}>
@@ -22,9 +23,10 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 const installedSuffix = ' · Installation recorded by Clubhouse';
 const setupSuffix = ' · Configured in Clubhouse';
 
-export function RemoteSkillsMcpEvidence({ card, setup, live, skills, evidence, currentRun, sessionAvailable, message }: {
+export function RemoteSkillsMcpEvidence({ card, setup, live, skills, evidence, currentRun, sessionAvailable, message, outgoingWires }: {
   card?: RemoteDetailsCard; setup?: RemoteAgentSettings['setup']; live: ChatMcpServer[] | null;
   skills: ReportedSkills; evidence?: ChatDetailsEvidence; currentRun: boolean; sessionAvailable: boolean; message: string;
+  outgoingWires?: RemoteOutgoingWires;
 }) {
   if (card?.requested === false) return <Evidence card={card} />;
   const installed = currentRun ? card?.rows.filter((r) => r.label === 'Skill' && r.value.endsWith(installedSuffix)) ?? [] : [];
@@ -68,7 +70,7 @@ export function RemoteSkillsMcpEvidence({ card, setup, live, skills, evidence, c
       </Group>}
       {!configuredKnown && <CardNote>The host has not shared a configured MCP inventory. Missing names are unknown.</CardNote>}
       {configuredKnown && !configured.length && <CardNote>The host explicitly shared no configured MCP names.</CardNote>}
-      <Group title="Wires"><CardNote>This host does not share verified wire names and kinds in this card. Wiring is unknown here; saved connection descriptions do not confirm a current wire.</CardNote></Group>
+      <Group title="Wires"><RemoteOutgoingWiresEvidence wires={card?.state === 'ok' ? outgoingWires : undefined} /></Group>
     </Group>
     <Group title="Provider inventory"><ProviderInventory evidence={evidence} />{!evidence?.values.inventory && <CardNote>No separate provider inventory report is available.</CardNote>}</Group>
     {card ? <Evidence card={{ ...card, rows: remaining }} /> : <CardNote>{message}</CardNote>}

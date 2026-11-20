@@ -211,6 +211,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     {!dispatcher && <DetailsCard id="skills-mcp" title="Skills and MCP" summary={asleep ? 'last session evidence' : 'connections and session reports'} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')}>
       {runtimeUnconfirmed && <CardNote>The session stopped or reported an error after the host read. Current MCP status is unconfirmed.</CardNote>}
       <RemoteSkillsMcpEvidence card={card('skills-mcp')} setup={details?.settings?.setup} live={session?.mcpServers ?? null} skills={skillReport}
+        outgoingWires={agent.kind === 'durable' && !snapshotUnavailable && !runtimeUnconfirmed && details?.connectionPageOnly !== true ? details?.outgoingWires : undefined}
         evidence={hydrated.evidence} currentRun={!!details?.running && !asleep && !runtimeUnconfirmed} sessionAvailable={!!session} message={resultMessage(result.status)} />
     </DetailsCard>}
     {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={asleep ? lastSummary : sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>

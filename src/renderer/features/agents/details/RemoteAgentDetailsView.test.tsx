@@ -562,6 +562,7 @@ describe('remote full Details host evidence', () => {
   });
   it('invalidates a successful live receipt after a later same-session stop, including a failed lifecycle reread', async () => {
     const value = fixture();
+    value.outgoingWires = { source: 'selected-outgoing-binding-records', state: 'recorded', total: 1, omitted: 0, rows: [{ name: 'CURRENT_WIRE_RECORD', kind: 'agent' }] };
     value.cards.find((c) => c.id === 'skills-mcp')!.rows.push({ label: 'Clubhouse MCP', value: 'Connected · CURRENT_HANDSHAKE' });
     read.mockResolvedValueOnce({ status: 'ok', value }).mockResolvedValue({ status: 'error' });
     render(<AgentDetails agent={agent} />);
@@ -569,15 +570,68 @@ describe('remote full Details host evidence', () => {
     fireEvent.click(screen.getByTestId('details-card-skills-mcp-toggle'));
     expect(screen.getByText('host-skill')).toBeInTheDocument();
     expect(screen.getByText('PROVIDER_MCP')).toBeInTheDocument();
+    expect(screen.getByText('Recorded wire to CURRENT_WIRE_RECORD')).toBeInTheDocument();
     act(() => useChatStore.getState().applyEvent({ v: 2, agentId: agent.id, sessionId: 's1', seq: 4, ts: 4, type: 'session_ended', data: { reason: 'error' } }));
     expect(screen.queryByText('Host CLI 1.2.3')).not.toBeInTheDocument();
     expect(screen.queryByText('host-skill')).not.toBeInTheDocument();
     expect(screen.queryByText('PROVIDER_MCP')).not.toBeInTheDocument();
     expect(screen.queryByText(/CURRENT_HANDSHAKE/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/CURRENT_WIRE_RECORD/)).not.toBeInTheDocument();
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Couldn’t read details'));
     expect(screen.queryByText(/CURRENT_HANDSHAKE/)).not.toBeInTheDocument();
     expect(screen.queryByText('Host CLI 1.2.3')).not.toBeInTheDocument();
+  });
+});
+
+describe('selected host outgoing Wires consumer', () => {
+  const selected = () => ({ ...fixture(), outgoingWires: { source: 'selected-outgoing-binding-records' as const, state: 'recorded' as const, total: 2, omitted: 1, rows: [{ name: 'SELECTED_HOST_WIRE', kind: 'browser' as const }] } });
+  const openSkills = () => { const toggle = screen.getByTestId('details-card-skills-mcp-toggle'); if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle); };
+
+  it.each(['running', 'sleeping'] as const)('shows selected %s host records independent of provider/handshake health and without fallback reads', async (status) => {
+    const value = { ...selected(), status, running: status === 'running', sessionId: null, nativeSessionId: null };
+    value.cards.find((c) => c.id === 'skills-mcp')!.rows = [];
+    expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
+    read.mockResolvedValue({ status: 'ok', value });
+    render(<AgentDetails agent={{ ...agent, status }} />); await waitFor(() => expect(read).toHaveBeenCalled()); openSkills();
+    await screen.findByText('Recorded wire to SELECTED_HOST_WIRE');
+    const wires = screen.getByRole('region', { name: 'Wires' });
+    expect(wires).toHaveTextContent('browser'); expect(wires).toHaveTextContent('1 additional outgoing binding records omitted');
+    expect(wires).toHaveTextContent('do not establish health, reachability, authorization or a live connection');
+    expect(within(wires).queryByRole('button')).not.toBeInTheDocument(); expect(within(wires).queryByRole('link')).not.toBeInTheDocument();
+    expect(window.clubhouse.mcpBinding.getAgentConnection).not.toHaveBeenCalled(); expect(window.clubhouse.managed.getSetup).not.toHaveBeenCalled();
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled(); expect(read).toHaveBeenCalledTimes(1); expect(chatPage).not.toHaveBeenCalled();
+  });
+
+  it.each(['offline', 'snapshot-unavailable', 'denied', 'dispatcher-role', 'quick-role'] as const)('withholds prior wire records across %s continuity changes', async (mode) => {
+    read.mockResolvedValue({ status: 'ok', value: selected() });
+    const view = render(<AgentDetails agent={agent} />); await waitFor(() => expect(read).toHaveBeenCalled()); openSkills();
+    await screen.findByText('Recorded wire to SELECTED_HOST_WIRE');
+    if (mode === 'offline') act(() => satellite({ state: 'disconnected' }));
+    if (mode === 'snapshot-unavailable') act(() => satellite({ snapshotUnavailable: true }));
+    if (mode === 'denied') { read.mockResolvedValue({ status: 'forbidden' }); act(() => satellite()); }
+    if (mode === 'dispatcher-role') act(() => satellite({ snapshot: { dispatcher: { agent: { id: 'a1' } } } }));
+    if (mode === 'quick-role') view.rerender(<AgentDetails agent={{ ...agent, kind: 'quick' }} />);
+    expect(screen.queryByText(/SELECTED_HOST_WIRE/)).not.toBeInTheDocument();
+    if (mode === 'snapshot-unavailable' || mode === 'denied') {
+      await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 180)); });
+      expect(screen.queryByText(/SELECTED_HOST_WIRE/)).not.toBeInTheDocument();
+    }
+    expect(window.clubhouse.mcpBinding.getAgentConnection).not.toHaveBeenCalled(); expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not replay a late previous-host wire record into a different host with the same native agent id', async () => {
+    let finish!: (value: unknown) => void;
+    read.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; })).mockResolvedValue({ status: 'forbidden' });
+    const view = render(<AgentDetails agent={agent} />); await waitFor(() => expect(read).toHaveBeenCalled());
+    act(() => satellite({ id: 'other-host' }));
+    view.rerender(<AgentDetails agent={{ ...agent, id: 'remote||other-host||a1', projectId: 'remote||other-host||p1' }} />);
+    await act(async () => { finish({ status: 'ok', value: selected() }); });
+    openSkills(); await waitFor(() => expect(read).toHaveBeenCalledWith('other-host', 'a1'));
+    expect(screen.queryByText(/SELECTED_HOST_WIRE/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Recorded outgoing wires' })).not.toBeInTheDocument();
+    expect(window.clubhouse.mcpBinding.getAgentConnection).not.toHaveBeenCalled();
   });
 });
 
