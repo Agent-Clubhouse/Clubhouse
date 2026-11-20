@@ -55,7 +55,8 @@ still use the guarded correct-host jump; no missing click handler is claimed.
 
 Safe improvement delivered
 
-CanvasMembershipList now labels its list, distinguishes Project from Home, and
+CanvasMembershipList now labels its list, gives rows spaced accessible names,
+distinguishes Project from Home, and
 connects each disabled row to its visible reason through aria-describedby with
 unique per-list IDs. Scope/canvasId/viewId callbacks, disabled behavior, host
 guards and hydration ownership are unchanged. No ID-to-label fallback is added.

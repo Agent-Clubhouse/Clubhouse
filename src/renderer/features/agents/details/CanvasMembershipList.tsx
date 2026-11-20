@@ -9,6 +9,7 @@ export function CanvasMembershipList({ hits, onJump, unavailable }: { hits: Canv
     const reasonId = `${descriptionId}-${index}-unavailable`;
     return <li key={`${c.scope}:${c.canvasId}:${c.viewId}`}>
       <button type="button" onClick={() => onJump(c)} disabled={!!reason} title={reason ?? undefined} aria-describedby={reason ? reasonId : undefined}
+        aria-label={`${c.name} ${c.scope === 'app' ? 'Home' : 'Project'} ${reason ? 'Unavailable' : 'Jump'}`}
         className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"
         data-testid="details-canvas-row">
         <span className="text-[12.5px] text-ctp-text truncate">{c.name}</span>
