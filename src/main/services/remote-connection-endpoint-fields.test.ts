@@ -71,8 +71,12 @@ it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'd
   let allowed = true, revoked = false; const paths = new Map<number, string>(), actualSync = await vi.importActual<typeof import('fs')>('fs');
   const opens = vi.spyOn(fs, 'openSync').mockImplementation(((...args: Parameters<typeof actualSync.openSync>) => { const fd = actualSync.openSync(...args); paths.set(fd, String(args[0])); return fd; }) as typeof fs.openSync);
   const reads = vi.spyOn(fs, 'readSync').mockImplementation(((...args: Parameters<typeof actualSync.readSync>) => { const n = actualSync.readSync(...args); if (kind === 'revoked-before-metadata' && !revoked && paths.get(Number(args[0])) === path.join(getBaseDirPath(), 'dispatcher-connections.json') && n > 0) { revoked = true; allowed = false; } return n; }) as typeof fs.readSync);
+  let failure: unknown;
   try { await readPassiveConnectionCard(c, 'selected', { receipts, authorized: () => allowed, projectPath: selectedProject, name: 'Selected', dispatcher: kind === 'dispatcher-inapplicable', family: kind === 'helper-inapplicable' ? { parentId: 'parent', helperIds: new Set() } : undefined, endpoint: { target, readCache: cacheRead } }); if (kind === 'dispatcher-inapplicable' || kind === 'helper-inapplicable') expect.soft(sourceRead).not.toHaveBeenCalled(); }
+  catch (error) { failure = error; }
   finally { sourceRead.mockRestore(); reads.mockRestore(); opens.mockRestore(); }
+  if (kind === 'revoked-before-metadata') expect(failure).toEqual(new Error('revoked'));
+  else expect(failure).toBeUndefined();
   if (kind === 'dispatcher-inapplicable' || kind === 'helper-inapplicable') {
     expect.soft(cacheRead).not.toHaveBeenCalled(); expect.soft(JSON.stringify(c)).not.toMatch(/Selected cache name|saved target|host memory target/); expect.soft(await snapshot()).toEqual(before); expect.soft(m.external).not.toHaveBeenCalled(); return;
   }
