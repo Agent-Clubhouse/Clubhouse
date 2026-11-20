@@ -633,4 +633,82 @@ describe('satellite catalog reconciliation (#3695)', () => {
     expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
   });
 
+  it.each([['list', 'roundtrip'], ['read', 'roundtrip'], ['list', 'unknown'], ['read', 'unknown']])('HY3: %s cannot admit cached permission addition after %s settlement ABA', async (source, mode) => {
+    const cached = snapshot({ pendingPermissions: [] });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    if (mode === 'roundtrip') {
+      send('permission:request', permission);
+      expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+    }
+    send('permission:response', { requestId: 'request' });
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    const updated = { ...structuredClone(cached), pendingPermissions: [permission], projectIcons: { project: 'independent-icon' } };
+    if (source === 'list') changed(list(updated));
+    else { read.mockResolvedValueOnce(list(updated)); await useAnnexClientStore.getState().loadSatellites(); }
+    expect(catalog().remoteProjectIcons[projectId]).toBe('independent-icon');
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it.each(['list', 'read'])('HY3: %s cannot re-add a canvas row after an observed add/delete roundtrip', async (source) => {
+    const canvas = { id: 'canvas', name: 'Synthetic', views: [], viewport: {}, nextZIndex: 0, zoomedViewId: null, selectedViewId: null };
+    const cached = snapshot({ canvasState: { project: { canvases: [canvas], activeCanvasId: 'canvas' } } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    const views = () => (catalog().remoteCanvasState[projectId].canvases as Array<{ views: unknown[] }>)[0].views;
+    expect(views()).toEqual([]);
+    vi.useFakeTimers();
+    try {
+      const event = (value: unknown[]) => ({ projectId: 'project', state: { ...canvas, canvasId: 'canvas', views: value, allCanvasTabs: [{ id: 'canvas', name: 'Synthetic' }] } });
+      send('canvas:state', event([{ id: 'new-view', agentId: 'agent' }]));
+      vi.runOnlyPendingTimers();
+      expect(views()).toMatchObject([{ id: 'new-view', agentId }]);
+      send('canvas:state', event([]));
+      vi.runOnlyPendingTimers();
+      expect(views()).toEqual([]);
+    } finally { vi.useRealTimers(); }
+    const updated = structuredClone(cached);
+    updated.canvasState!.project.canvases = [{ ...canvas, views: [{ id: 'new-view', agentId: 'agent' }] }];
+    if (source === 'list') changed(list(updated));
+    else { read.mockResolvedValueOnce(list(updated)); await useAnnexClientStore.getState().loadSatellites(); }
+    expect(views()).toEqual([]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY3: pause/resume ABA cannot admit an older cached pause', async () => {
+    const cached = snapshot({ sessionPaused: false });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(false);
+    send('session:paused', {});
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(true);
+    send('session:resumed', {});
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(false);
+    changed(list({ ...cached, sessionPaused: true }));
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(false);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY3: running/sleeping/running ABA cannot admit an older cached sleep', async () => {
+    const cached = snapshot({ pendingPermissions: [] });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    expect(catalog().remoteAgents[agentId].status).toBe('running');
+    send('pty:exit', { agentId: 'agent' });
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    send('agent:woken', { agentId: 'agent' });
+    expect(catalog().remoteAgents[agentId].status).toBe('running');
+    const updated = structuredClone(cached);
+    updated.agents.project[0].status = 'sleeping';
+    changed(list(updated));
+    expect(catalog().remoteAgents[agentId].status).toBe('running');
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
 });
