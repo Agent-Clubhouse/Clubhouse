@@ -62,6 +62,16 @@ describe('helperRouting.update parsing (#2671)', () => {
     }
   });
 
+  it('accepts only the bounded, non-relaxing budget schema and preserves old partial commands', () => {
+    const autoBudgetPolicy = { version: 1, enabled: true, reserves: { 'claude-code': 10, 'codex-cli': 10 } };
+    expect(parseMobileCommand({ ...base, autoBudgetPolicy })).toMatchObject({ autoBudgetPolicy });
+    expect(parseMobileCommand({ ...base, auto: false })).not.toHaveProperty('autoBudgetPolicy');
+    for (const invalid of [null, { ...autoBudgetPolicy, version: 2 }, { ...autoBudgetPolicy, relaxation: 5 },
+      { ...autoBudgetPolicy, reserves: { ...autoBudgetPolicy.reserves, 'copilot-cli': 0 } }]) {
+      expect(() => parseMobileCommand({ ...base, autoBudgetPolicy: invalid })).toThrow(MobileControlError);
+    }
+  });
+
   it.each([
     [{ cells: [] }],
     [{ cells: 'x' }],

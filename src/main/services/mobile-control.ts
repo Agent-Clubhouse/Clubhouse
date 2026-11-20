@@ -1,3 +1,4 @@
+import { isAutoBudgetPolicy } from '../../shared/helper-auto-budget';
 import { AgentResumeError, AgentTransitionError } from './agent-transition';
 import { withSettingsSurface, type SettingsAuditSurface } from './settings-audit';
 import { INPUT_WINDOW_NOTE, type ContextLimits } from '../../shared/context-window';
@@ -55,11 +56,11 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'dispatcher.setModels': ['byHand', 'role', 'provider', 'model', 'effort', 'contextWindow'],
   'dispatcher.clearChat': ['expectedState'],
   'dispatcher.forgetEverything': ['expectedState'],
-  'helperRouting.update': ['revision', 'scope', 'projectId', 'cells', 'reset', 'auto', 'copilotAuto'],
+  'helperRouting.update': ['revision', 'scope', 'projectId', 'cells', 'reset', 'auto', 'copilotAuto', 'autoBudgetPolicy'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
 const OPTIONAL = new Set(['reviewedDigest', 'delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset', 'expectedProvider', 'expectedSessionId', 'waitForStopped', 'updateMode']);
-const ROUTING_OPTIONAL = new Set(['projectId', 'auto', 'copilotAuto']);
+const ROUTING_OPTIONAL = new Set(['projectId', 'auto', 'copilotAuto', 'autoBudgetPolicy']);
 const CREATE_OPTIONAL = new Set(['managed', 'templateId', 'blank', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'access', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
 /** Commands whose fields are all optional, with at least one set: Settings > Dispatcher's (#3206). */
 const ANY_OF = new Set<string>(['dispatcher.update', 'dispatcher.setModels']);
@@ -113,6 +114,8 @@ export function parseMobileCommand(value: unknown): MobileCommand {
     } else if (key === 'cells') {
       // Checked against the presets rules when the command runs, so errors can say why.
       if (!Array.isArray(v) || v.length === 0 || v.length > 32 || v.some((c) => !record(c))) throw new MobileControlError('invalid_command', 400);
+    } else if (key === 'autoBudgetPolicy') {
+      if (!isAutoBudgetPolicy(v)) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'personality') {
       // Checked against the personality rules when the command runs, so errors can say why.
       if (!record(v) || Object.keys(v).length === 0 || Object.keys(v).some((k) => k !== 'preset' && k !== 'text')) throw new MobileControlError('invalid_command', 400);
@@ -130,7 +133,7 @@ export function parseMobileCommand(value: unknown): MobileCommand {
   }
   if (value.delivery !== undefined && !['auto', 'prompt', 'steer', 'queued'].includes(value.delivery as string)) throw new MobileControlError('invalid_command', 400);
   if ((type === 'agent.update' || ANY_OF.has(type)) && !fields.some((k) => k !== 'agentId' && value[k] !== undefined)) throw new MobileControlError('invalid_command', 400);
-  if (type === 'helperRouting.update' && value.cells === undefined && value.reset === undefined && value.auto === undefined && value.copilotAuto === undefined) throw new MobileControlError('invalid_command', 400);
+  if (type === 'helperRouting.update' && value.cells === undefined && value.reset === undefined && value.auto === undefined && value.copilotAuto === undefined && value.autoBudgetPolicy === undefined) throw new MobileControlError('invalid_command', 400);
   if (type === 'agent.start' && value.expectedSessionId !== undefined && (value.resume !== true || !text(value.expectedProvider))) throw new MobileControlError('invalid_command', 400);
   if ((type === 'agent.providerPreview' || type === 'agent.providerChange') && value.contractVersion !== 2
     && (value.model !== undefined || value.effort !== undefined)) throw new MobileControlError('unsupported_version', 400);

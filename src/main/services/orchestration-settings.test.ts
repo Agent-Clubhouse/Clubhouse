@@ -9,7 +9,8 @@ vi.mock('electron', () => ({
   app: { getPath: () => userData },
 }));
 
-import { ensurePresetCellGenerations, getCopilotAuto, getGlobalHelperCap, getPresetCellGeneration, getPresets, getPresetsRevision, getSettings, saveAutoHelpers, saveCopilotAuto, savePresets, saveSettings } from './orchestration-settings';
+import { ensurePresetCellGenerations, getCopilotAuto, getGlobalHelperCap, getPresetCellGeneration, getPresets, getPresetsRevision, getSettings, saveAutoHelpers, saveCopilotAuto, savePresets, saveSettings, getAutoBudgetSetting, getAutoBudgetRules, saveAutoBudgetPolicy, stageAutoBudgetRestriction } from './orchestration-settings';
+import { defaultAutoBudgetPolicy } from '../../shared/helper-auto-budget';
 import { resetAllSettingsStoresForTests } from './settings-store';
 
 const file = path.join(userData, 'orchestration-settings.json');
@@ -25,6 +26,55 @@ afterAll(() => {
 });
 
 describe('orchestration settings', () => {
+  it('preserves legacy absence and explicitly selected budgets through old-client cap, preset and Copilot writes', async () => {
+    expect(getAutoBudgetSetting()).toBeUndefined();
+    expect(getAutoBudgetRules()).toBeUndefined();
+    await ensurePresetCellGenerations();
+    const generation = getPresetCellGeneration('claude-code', 'hard');
+    await saveAutoBudgetPolicy(defaultAutoBudgetPolicy());
+    expect(getPresetsRevision()).toBe(1);
+    await saveSettings({ globalHelperCap: 8 });
+    await saveCopilotAuto(false);
+    await savePresets({});
+    resetAllSettingsStoresForTests();
+    expect(getAutoBudgetSetting()).toEqual(defaultAutoBudgetPolicy());
+    expect(getPresetCellGeneration('claude-code', 'hard')).toBe(generation);
+    expect(getCopilotAuto()).toBe(false);
+    expect(getAutoBudgetRules()).toEqual({ mode: 'reset_aware', reserves: defaultAutoBudgetPolicy().reserves });
+    await saveAutoBudgetPolicy({ ...defaultAutoBudgetPolicy(), enabled: false });
+    expect(getAutoBudgetRules()).toBeUndefined();
+    expect(getAutoBudgetSetting()).toMatchObject({ enabled: false, reserves: defaultAutoBudgetPolicy().reserves });
+  });
+
+  it('keeps present invalid/future schemas fail-closed across unrelated writes until explicitly repaired', async () => {
+    fs.writeFileSync(file, JSON.stringify({ globalHelperCap: 5, helperAutoBudget: { version: 99, enabled: true } }));
+    resetAllSettingsStoresForTests();
+    expect(getAutoBudgetSetting()).toBe('invalid');
+    expect(getAutoBudgetRules()).toEqual({ mode: 'invalid' });
+    await saveSettings({ globalHelperCap: 8 });
+    resetAllSettingsStoresForTests();
+    expect(getAutoBudgetSetting()).toBe('invalid');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).helperAutoBudget).toEqual({ version: 99, enabled: true });
+    await saveAutoBudgetPolicy({ ...defaultAutoBudgetPolicy(), enabled: false });
+    expect(getAutoBudgetRules()).toBeUndefined();
+  });
+
+  it('composes restrictive queued edits but never activates urgency or loosens admission before commit', async () => {
+    const pending = stageAutoBudgetRestriction({ ...defaultAutoBudgetPolicy(), reserves: { 'claude-code': 20, 'codex-cli': 0 } });
+    const later = stageAutoBudgetRestriction({ ...defaultAutoBudgetPolicy(), reserves: { 'claude-code': 10, 'codex-cli': 30 } });
+    try {
+      expect(getAutoBudgetSetting()).toBeUndefined();
+      expect(getAutoBudgetRules()).toEqual({ mode: 'reserve_only', reserves: { 'claude-code': 20, 'codex-cli': 30 } });
+      pending();
+      expect(getAutoBudgetRules()).toEqual({ mode: 'reserve_only', reserves: { 'claude-code': 10, 'codex-cli': 30 } });
+    } finally { pending(); later(); }
+    expect(getAutoBudgetRules()).toBeUndefined();
+    await saveAutoBudgetPolicy(defaultAutoBudgetPolicy());
+    const loosening = stageAutoBudgetRestriction({ ...defaultAutoBudgetPolicy(), reserves: { 'claude-code': 0, 'codex-cli': 0 } });
+    try { expect(getAutoBudgetRules()).toEqual({ mode: 'reset_aware', reserves: defaultAutoBudgetPolicy().reserves }); }
+    finally { loosening(); }
+  });
+
   it('defaults the global helper cap to 20', () => {
     expect(getSettings()).toEqual({ globalHelperCap: 20 });
     expect(getGlobalHelperCap()).toBe(20);

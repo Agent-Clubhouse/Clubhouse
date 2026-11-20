@@ -56,7 +56,7 @@ const EVENT_VALUE_KEYS: ReadonlySet<string> = new Set([
   'clubhouseFeatures', 'defaultMode', 'defaultAccess', 'provider', 'globalHelperCap', 'themeId',
   'defaultHelperTemplate', 'helperTemplateChoice',
 ]);
-const EVENT_VALUE_FAMILIES = ['orchestration.', 'helper_presets.'];
+const EVENT_VALUE_FAMILIES = ['orchestration.', 'helper_presets.', 'helper_auto.budget.'];
 /**
  * A key whose name says it may hold a secret or content never carries a value,
  * even if listed above or a boolean: destination endpoints, headers and tokens,

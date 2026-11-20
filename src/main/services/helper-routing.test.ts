@@ -1,5 +1,7 @@
 import * as pressureLedger from '../telemetry/helper-decision-ledger';
 import { preparePressure } from './helper-burn-pressure';
+import { defaultAutoBudgetPolicy } from '../../shared/helper-auto-budget';
+import { classifyQuota } from '../../shared/helper-routing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelInfo, ModelList } from '../orchestrators';
 
@@ -20,6 +22,7 @@ const W = vi.hoisted(() => ({
   telemetry: [] as unknown[][],
   appAuto: false,
   copilotAuto: true,
+  budget: undefined as import('../../shared/helper-auto-budget').AutoBudgetSetting | undefined,
   enabled: [] as string[],
   projects: new Map<string, Record<string, unknown>>(),
   quota: new Map<string, unknown>(),
@@ -65,6 +68,10 @@ vi.mock('./orchestration-settings', () => ({
   getPresetCellGeneration: (provider: string, level: string) => W.generationError ? undefined : W.generations.get(`${provider}:${level}`) ?? '11111111-1111-4111-8111-111111111111',
   ensurePresetCellGenerations: async () => { if (W.generationError) throw new Error('test failure'); },
   savePresets: async (presets: typeof W.saved) => { W.saved = presets; W.revision++; },
+  getAutoBudgetSetting: () => W.budget,
+  getAutoBudgetRules: () => W.budget === 'invalid' ? { mode: 'invalid' } : W.budget?.enabled ? { mode: 'reset_aware', reserves: W.budget.reserves } : undefined,
+  stageAutoBudgetRestriction: () => () => undefined,
+  saveAutoBudgetPolicy: async (policy: NonNullable<typeof W.budget>) => { W.budget = policy; W.revision++; },
   getAutoHelpers: () => W.appAuto,
   saveAutoHelpers: async (on: boolean) => { W.appAuto = on; W.revision++; },
   getCopilotAuto: () => W.copilotAuto,
@@ -169,6 +176,7 @@ beforeEach(() => {
   W.telemetry = [];
   W.appAuto = false;
   W.copilotAuto = true;
+  W.budget = undefined;
   W.enabled = [];
   W.projects = new Map();
   W.quota = new Map();
@@ -189,7 +197,7 @@ describe('planHelperStart: precedence', () => {
     const result = await plan({ difficulty: 'hard', orchestratorCli: 'codex-cli' });
     expect(result).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' });
     expect(result!.routing).toMatchObject({
-      mode: 'preset', balanced: false, policyVersion: 3, reason: 'preset_on_cli', fallback: 'none',
+      mode: 'preset', balanced: false, policyVersion: 4, reason: 'preset_on_cli', fallback: 'none',
       requested: { provider: null, model: null, effort: null, difficulty: 'hard' },
       resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: 'hard' },
       source: { provider: 'orchestrator', model: 'builtin_mapping', effort: 'builtin_mapping' },
@@ -299,6 +307,30 @@ describe('planHelperStart: stale and unverified presets', () => {
 });
 
 describe('readHelperRouting', () => {
+  it('exposes budget capability and committed values, preserves old partial updates, and refuses project/stale/relaxation edits', async () => {
+    expect((await readHelperRouting()).autoBudget).toEqual({ policy: null, invalid: false, editable: true });
+    W.copilotAuto = false;
+    const policy = defaultAutoBudgetPolicy();
+    const revision = helperRoutingRevision();
+    await updateHelperPresets({ revision, autoBudgetPolicy: policy }, { surface: 'ui' });
+    expect(W.budget).toEqual(policy);
+    expect(W.appAuto).toBe(false);
+    expect(W.copilotAuto).toBe(false);
+    expect(W.saved).toEqual({});
+    await expect(updateHelperPresets({ revision, autoBudgetPolicy: { ...policy, enabled: false } }, { surface: 'ui' }))
+      .rejects.toMatchObject({ code: 'helper_routing_stale' });
+    await updateHelperPresets({ revision: helperRoutingRevision(), reset: {} }, { surface: 'mcp' });
+    expect(W.budget).toEqual(policy);
+    expect((await readHelperRouting({ projectPath: '/p' })).autoBudget?.editable).toBe(false);
+    await expect(updateHelperPresets({ revision: helperRoutingRevision(), autoBudgetPolicy: policy }, { surface: 'mobile', projectPath: '/p' }))
+      .rejects.toMatchObject({ code: 'invalid_helper_routing' });
+    await expect(updateHelperPresets({ revision: helperRoutingRevision(), autoBudgetPolicy: { ...policy, relaxation: 5 } } as never, { surface: 'ui' }))
+      .rejects.toMatchObject({ code: 'invalid_helper_routing' });
+    expect(W.audit).toContainEqual(expect.objectContaining({ key: 'helper_auto.budget.claude-code', after: 10 }));
+    W.budget = 'invalid';
+    expect((await readHelperRouting()).autoBudget).toEqual({ policy: null, invalid: true, editable: true });
+  });
+
   it('returns every provider, with one that has no mapping excluded and a reason', async () => {
     W.extraProvider = true;
     const settings = await readHelperRouting();
@@ -813,7 +845,7 @@ describe('Copilot (#3085)', () => {
       plan: {
         provider: 'copilot-cli', model: 'claude-haiku-5.5', effort: 'low',
         routing: { reason: 'last_resort_unmeasured', quotaBasis: 'unknown_fallback', quota: { 'copilot-cli': { state: 'unknown', unknownReason: 'not_supported' } } },
-        decision: { reason: 'last_resort_unmeasured', policyVersion: 3, candidates: expect.arrayContaining([
+        decision: { reason: 'last_resort_unmeasured', policyVersion: 4, candidates: expect.arrayContaining([
           expect.objectContaining({ provider: 'copilot-cli', chosen: true, eligible: true, tier: 3, mapped: expect.objectContaining({ verified: true }), score: { basis: 'unmeasured', rank: 0 } }),
         ]) },
       },
@@ -902,13 +934,87 @@ describe('Auto (#2671)', () => {
     W.quota.set('codex-cli', known);
   });
 
-  it('uses qualified remaining subscription pressure on the actual fresh Auto start path', async () => {
+  it('uses calendar urgency on the real fresh start path while rechecking quota and saved Copilot opt-out under lock', async () => {
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    W.budget = defaultAutoBudgetPolicy();
+    W.copilotAuto = false;
+    const quota = (used: number, hours: number) => ({ state: used >= 80 ? 'low' : 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
+      weekly: { usedPercent: used, resetsAt: new Date(now + hours * 3600_000).toISOString() } });
+    W.quota.set('claude-code', quota(82, 24));
+    W.quota.set('codex-cli', quota(20, 144));
+    const first = await decided();
+    expect(first).toMatchObject({ provider: 'claude-code', routing: { reason: 'reset_urgency',
+      autoBudget: { retainedPercent: 10, forecast: 'unavailable', urgency: 'within_24h' },
+      skipped: { 'copilot-cli': 'auto_disabled' } } });
+    settleAutoDecision(first.routing!.decisionId!, 'creation_refused');
+    const prepared = await auto();
+    if (!prepared.ok) throw new Error(prepared.message);
+    W.quota.set('claude-code', quota(90, 24));
+    const rechecked = decideAutoPlan(prepared.plan!, {}, now);
+    expect(rechecked).toMatchObject({ ok: true, plan: { provider: 'codex-cli', routing: { skipped: { 'claude-code': 'auto_reserve' } } } });
+    if (rechecked.ok) settleAutoDecision(rechecked.plan!.routing!.decisionId!, 'creation_refused');
+    W.quota.set('codex-cli', quota(90, 144));
+    expect(await auto()).toMatchObject({ ok: true }); // admission is decided only under the start lock.
+    W.copilotAuto = true;
+    const lastResort = await auto();
+    if (!lastResort.ok) throw new Error(lastResort.message);
+    expect(decideAutoPlan(lastResort.plan!, {}, now)).toMatchObject({ ok: true, plan: { provider: 'copilot-cli',
+      routing: { reason: 'last_resort_unmeasured' } } });
+    W.copilotAuto = false;
+    const refused = decideAutoPlan(lastResort.plan!, {}, now);
+    expect(refused).toMatchObject({ ok: false, decision: { candidates: expect.arrayContaining([
+      expect.objectContaining({ provider: 'copilot-cli', excluded: 'auto_disabled' }),
+      expect.objectContaining({ provider: 'claude-code', excluded: 'auto_reserve' }),
+    ]) } });
+  });
+
+  it('invalidates expired reset evidence even with a fresh short window, and admits only a newly observed epoch', async () => {
+    const now = 1_800_000_000_000, later = now + 2 * 3600_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    W.enabled = ['claude-code']; W.copilotAuto = false; W.budget = defaultAutoBudgetPolicy();
+    W.quota.set('claude-code', { state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
+      weekly: { usedPercent: 40, resetsAt: new Date(now + 3600_000).toISOString() } });
+    const prepared = await auto();
+    if (!prepared.ok) throw new Error(prepared.message);
+    const windows = [
+      { name: 'week', usedPercent: 40, resetsAt: now + 3600_000, asOf: now },
+      { name: '5h', usedPercent: 20, resetsAt: now + 5 * 3600_000, asOf: later },
+    ];
+    W.quota.set('claude-code', { ...classifyQuota(windows, later), source: 'cli_query' });
+    expect(decideAutoPlan(prepared.plan!, {}, later)).toMatchObject({ ok: false, decision: { candidates: expect.arrayContaining([
+      expect.objectContaining({ provider: 'claude-code', excluded: 'quota_incomplete' }),
+    ]) } });
+    windows[0] = { name: 'week', usedPercent: 2, resetsAt: later + 7 * 24 * 3600_000, asOf: later };
+    W.quota.set('claude-code', { ...classifyQuota(windows, later), source: 'cli_query' });
+    const fresh = decideAutoPlan(prepared.plan!, {}, later);
+    expect(fresh).toMatchObject({ ok: true, plan: { provider: 'claude-code', routing: {
+      autoBudget: { forecast: 'unavailable', usableBp: 8800 },
+    } } });
+  });
+
+  it('does not apply reset policy to explicit/preset starts or an already resolved helper plan', async () => {
+    W.budget = 'invalid';
+    const explicit = await plan({ cli: 'claude-code', model: 'opus' });
+    const preset = await plan({ cli: 'claude-code', difficulty: 'hard' });
+    expect(explicit!.routing.mode).toBe('explicit');
+    expect(preset!.routing.mode).toBe('preset');
+    expect(preset!.routing).not.toHaveProperty('autoBudget');
+    const resolved = decideAutoPlan(preset!, { 'claude-code': { live: 5, reserved: 5 } });
+    expect(resolved.ok && resolved.plan).toBe(preset);
+    expect(resolved).not.toHaveProperty('decision');
+  });
+
+  it.each([false, true])('uses qualified remaining pressure on the actual fresh Auto path (reset-aware=%s, including AR1)', async (resetAware) => {
     const now = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(now);
     const reset = now + 86_400_000;
     const history: pressureLedger.LedgerEntry[] = [];
     W.enabled = ['claude-code', 'codex-cli'];
-    for (const [provider, burn, used] of [['claude-code', 800, 40], ['codex-cli', 100, 42]] as const) {
+    if (resetAware) W.budget = defaultAutoBudgetPolicy();
+    const scenarios: Array<['claude-code' | 'codex-cli', number, number]> = resetAware
+      ? [['claude-code', 100, 82], ['codex-cli', 6800, 20]] : [['claude-code', 800, 40], ['codex-cli', 100, 42]];
+    for (const [provider, burn, used] of scenarios) {
       W.saved[provider] = { hard: { model: 'model-v1', effort: 'high' } };
       W.lists.set(provider, { ...live([m('model-v1')]), fetchedAt: now });
       W.quota.set(provider, { state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
@@ -932,11 +1038,11 @@ describe('Auto (#2671)', () => {
     const prepared = await auto({ taskProfile: 'review' });
     if (!prepared.ok) throw new Error(prepared.message);
     const result = decideAutoPlan(prepared.plan!, {}, now);
-    expect(result).toMatchObject({ ok: true, plan: { provider: 'codex-cli', decision: {
+    expect(result).toMatchObject({ ok: true, plan: { provider: resetAware ? 'claude-code' : 'codex-cli', decision: {
       taskProfile: 'review', pressure: { windows: [{ band: { meanBp: 100, coverageBp: 10_000 } }] },
       candidates: expect.arrayContaining([
-        expect.objectContaining({ provider: 'claude-code', score: expect.objectContaining({ pressureBp: 4800 }) }),
-        expect.objectContaining({ provider: 'codex-cli', chosen: true, score: expect.objectContaining({ pressureBp: 4300 }) }),
+        expect.objectContaining({ provider: 'claude-code', score: expect.objectContaining({ pressureBp: resetAware ? 8300 : 4800 }) }),
+        expect.objectContaining({ provider: 'codex-cli', score: expect.objectContaining({ pressureBp: resetAware ? 8800 : 4300 }) }),
       ]),
     } } });
     expect(W.listCalls).toHaveLength(4); // mapping and effort checks only; inference never calls a provider.
@@ -1104,7 +1210,7 @@ describe('Auto (#2671)', () => {
     const plan = await decided({ 'claude-code': 2 });
     expect(plan).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' });
     expect(plan.routing).toMatchObject({
-      mode: 'auto', balanced: true, policyVersion: 3, reason: 'lower_load', fallback: 'none', quotaBasis: 'known',
+      mode: 'auto', balanced: true, policyVersion: 4, reason: 'lower_load', fallback: 'none', quotaBasis: 'known',
       decisionId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       requested: { provider: 'auto', model: null, effort: null, difficulty: 'hard' },
       resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: 'hard' },
@@ -1118,7 +1224,7 @@ describe('Auto (#2671)', () => {
     const plan = await decided({ 'claude-code': 2 });
     const record = plan.decision!;
     expect(record).toMatchObject({
-      decisionId: plan.routing.decisionId, policyVersion: 3, mode: 'auto', outcome: 'chosen', orchestratorProvider: 'claude-code',
+      decisionId: plan.routing.decisionId, policyVersion: 4, mode: 'auto', outcome: 'chosen', orchestratorProvider: 'claude-code',
       requested: { provider: 'auto', difficulty: 'hard' }, resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol' },
       reason: 'lower_load', mappingKind: 'builtin', mappingRevision: helperRoutingRevision(),
       tie: { setSize: 2, bandBp: 0, reason: 'lower_load', byLoad: true },

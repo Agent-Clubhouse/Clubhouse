@@ -22,6 +22,7 @@ import {
   type ProviderRoutingView,
   type QuotaView,
 } from '../../../shared/helper-routing';
+import { defaultAutoBudgetPolicy, isAutoReserveProvider } from '../../../shared/helper-auto-budget';
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
 import { SettingsBlock, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
@@ -58,7 +59,7 @@ function statusText(view: Eligible): string | null {
 }
 
 /** What Auto can pick from now, in the page's intro. */
-function autoIntro(providers: [string, ProviderRoutingView][], copilotAuto: boolean): string {
+function autoIntro(providers: [string, ProviderRoutingView][], copilotAuto: boolean, resetAware = false): string {
   const active = providers.filter((entry): entry is [string, Eligible] => entry[1].autoEligible && entry[1].autoCandidate !== false && inactiveReason(entry[1]) === null);
   const name = (id: string) => PROVIDER_NAMES[id] ?? id;
   const main = active.filter(([id]) => id !== 'copilot-cli').map(([id]) => name(id));
@@ -66,7 +67,7 @@ function autoIntro(providers: [string, ProviderRoutingView][], copilotAuto: bool
   const tail = ' It balances plan use, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project can turn it off.';
   if (main.length === 0 && !lastResort) return `Auto has nothing to pick right now. No provider is turned on and available, and Copilot is not allowed as a last resort.${tail}`;
   if (main.length === 0) return `Lets an orchestrator ask Clubhouse to start a helper on Copilot, the only provider turned on and available right now.${tail}`;
-  const pick = main.length > 1 ? `pick between ${main.join(' and ')} for a helper, favoring the CLI that has used less of its plan limit` : `start a helper on ${main[0]}, the only provider ${lastResort ? 'besides Copilot ' : ''}that is turned on and available right now`;
+  const pick = main.length > 1 ? `pick between ${main.join(' and ')} for a helper, ${resetAware ? 'preferring usable weekly budget within 48 hours of reset, especially the final 24 hours' : 'favoring the CLI that has used less of its plan limit'}` : `start a helper on ${main[0]}, the only provider ${lastResort ? 'besides Copilot ' : ''}that is turned on and available right now`;
   return `Lets an orchestrator ask Clubhouse to ${pick}${lastResort ? ', with Copilot as a last resort' : ''}.${tail}`;
 }
 
@@ -270,8 +271,35 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
         )}
         {settings && (
           <p className={settingsHelp}>
-            {autoIntro(providers, settings.copilotAuto !== false)}
+            {autoIntro(providers, settings.copilotAuto !== false, settings.autoBudget?.policy?.enabled === true)}
           </p>
+        )}
+        {settings?.autoBudget && (
+          <div className="mt-2" data-testid="helper-budget-policy">
+            <label className="flex items-center gap-2.5 text-[13px] text-ctp-text">
+              <Toggle
+                checked={settings.autoBudget.policy?.enabled === true}
+                disabled={busy || !settings.autoBudget.editable}
+                aria-label="Prefer useful work before quota resets"
+                data-testid="helper-budget-enabled"
+                onChange={(enabled) => void update({ autoBudgetPolicy: { ...(settings.autoBudget!.policy ?? defaultAutoBudgetPolicy()), enabled } })}
+              />
+              <span>Prefer useful work before quota resets</span>
+            </label>
+            <p className={settingsHelp}>
+              For new Auto helpers, prefer eligible weekly budget within 48 hours of reset, with stronger priority in the final 24 hours. Uses your existing tasks and mapped models. Does not enable Auto itself.
+            </p>
+            <p className={settingsHelp}>
+              Reserves apply to each provider’s shared local login across orchestrators and every applicable reported window. Auto stops admitting at the threshold; running or outside work can still use more. Reserves never relax automatically. Burn pace is not measured.
+            </p>
+            {settings.autoBudget.invalid && (
+              <p className="text-xs text-ctp-error" role="alert">The saved budget policy could not be read. Auto starts are paused. Choose this preference again, or turn it off, to save a valid policy.</p>
+            )}
+            {settings.autoBudget.invalid && (
+              <Button kind="quiet" disabled={busy || !settings.autoBudget.editable}
+                onClick={() => void update({ autoBudgetPolicy: { ...defaultAutoBudgetPolicy(), enabled: false } })}>Use legacy selection</Button>
+            )}
+          </div>
         )}
         <p className={settingsHelp}>
           An orchestrator can name a difficulty instead of a model. These are what it picks on each CLI. They are starting choices, so change them to suit your work. Anything an orchestrator names itself still wins.
@@ -306,6 +334,21 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
               <p className="mt-0.5 text-xs text-ctp-overlay1" data-testid={`helper-presets-${provider}-quota`}>
                 {quotaLine(view.quota, settings!)} Limits for one model aren’t included.
               </p>
+              {settings?.autoBudget?.policy?.enabled && isAutoReserveProvider(provider) && (
+                <label className="mt-1 flex items-center gap-2.5 text-[13px] text-ctp-text">
+                  <span>Keep for me (%)</span>
+                  <select className={`${settingsInput} w-24`}
+                    value={settings.autoBudget.policy.reserves[provider]}
+                    disabled={busy || !settings.autoBudget.editable}
+                    aria-label={`${PROVIDER_NAMES[provider]} retained reserve percent`}
+                    data-testid={`helper-budget-${provider}`}
+                    onChange={(event) => void update({ autoBudgetPolicy: { ...settings.autoBudget!.policy!,
+                      reserves: { ...settings.autoBudget!.policy!.reserves, [provider]: Number(event.target.value) } } })}
+                  >
+                    {Array.from({ length: 101 }, (_, value) => <option key={value} value={value}>{value}%</option>)}
+                  </select>
+                </label>
+              )}
               {provider === 'copilot-cli' && view.autoCandidate && (
                 <>
                   <label className="mt-1 flex items-center gap-2.5 text-[13px] text-ctp-text">

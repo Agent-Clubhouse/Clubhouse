@@ -644,6 +644,9 @@ vi.mock('./agent-settings-service', () => ({
 vi.mock('./orchestration-settings', () => ({
   getSettings: () => ({ globalHelperCap: 20 }),
   getGlobalHelperCap: () => 20,
+  getAutoBudgetSetting: () => undefined,
+  getAutoBudgetRules: () => undefined,
+  stageAutoBudgetRestriction: () => () => undefined,
   getPresets: () => W.presets,
   getPresetsRevision: () => W.presetsRevision,
   savePresets: async (presets: unknown) => { W.presets = presets as never; W.presetsRevision++; },
@@ -756,6 +759,10 @@ import { annexPtyHost } from '../../shared/annex-pty';
 
 const FIXTURE_DIR = path.resolve(__dirname, '../../..', 'test/fixtures/annex-mobile');
 const WRITE = process.env.ANNEX_MOBILE_FIXTURES === 'write';
+// Bounded routing-only regeneration/check: preserve unrelated fixtures and run only their four producer cases.
+const ROUTING_PROFILE = process.env.ANNEX_MOBILE_ROUTING_FIXTURES;
+const ROUTING_FILES = new Set(['capabilities.json', 'commands/_fields.json', 'commands/helperRouting.update.json',
+  'helper-routing.json', 'helper-routing-changed.json', 'helper-routing-quota.json', 'helper-routing-helper.json', 'helper-routing-auto.json']);
 const NOW = 1_800_000_000_000; // 2027-01-15T08:00:00.000Z
 const fixtures = new Map<string, unknown>();
 
@@ -803,6 +810,29 @@ function withoutDispatcherOffFields(value: unknown): unknown {
 
 function render(): Map<string, string> {
   const ids = new Map<string, string>();
+  const routingIds = new Map<string, string>(), routingCommands = new Map<string, string>();
+  const routingRevisions: number[] = [];
+  const collect = (value: unknown, key?: string): void => {
+    if ((key === 'revision' || key === 'helperRoutingRevision') && typeof value === 'string' && /^r\d+\.\d+$/.test(value)) routingRevisions.push(Number(value.slice(1).split('.')[0]));
+    else if (Array.isArray(value)) value.forEach((item) => collect(item));
+    else if (value && typeof value === 'object') Object.entries(value).forEach(([k, item]) => collect(item, k));
+  };
+  for (const name of ROUTING_FILES) collect(fixtures.get(name));
+  const routingBase = Math.min(...routingRevisions);
+  // Routing examples use local opaque IDs, relative revisions and an illustrative event sequence.
+  // Keep incrementing the global UUID map too, so unrelated vendored fixtures retain their identities.
+  const routingExample = (value: unknown, key?: string): unknown => {
+    if (key === 'commandId' && typeof value === 'string') {
+      if (!routingCommands.has(value)) routingCommands.set(value, `routing_cmd_${String(routingCommands.size + 1).padStart(3, '0')}`);
+      return routingCommands.get(value);
+    }
+    if ((key === 'revision' || key === 'helperRoutingRevision') && typeof value === 'string' && /^r\d+\.\d+$/.test(value)) {
+      const [saved, state] = value.slice(1).split('.'); return `r${Number(saved) - routingBase}.${state}`;
+    }
+    if (Array.isArray(value)) return value.map((item) => routingExample(item));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, item]) => [k, routingExample(item, k)]));
+    return value;
+  };
   const out = new Map<string, string>();
   const providerTokens = new Map<string, string>();
   const normalizeProviderTokens = (value: unknown, key?: string): unknown => {
@@ -815,10 +845,15 @@ function render(): Map<string, string> {
     return value;
   };
   for (const name of [...fixtures.keys()].sort()) {
-    const value = name === 'provider-control-v2.json' ? normalizeProviderTokens(fixtures.get(name)) : fixtures.get(name);
+    const raw = name === 'provider-control-v2.json' ? normalizeProviderTokens(fixtures.get(name)) : fixtures.get(name);
+    const value = ROUTING_FILES.has(name) ? routingExample(raw) : raw;
     const text = `${JSON.stringify(stable(DISPATCHER_OFF_FIXTURES.has(name) ? value : withoutDispatcherOffFields(value)), null, 2)}\n`.replace(UUID, (id) => {
       const key = id.toLowerCase();
       if (!ids.has(key)) ids.set(key, `00000000-0000-4000-8000-${String(ids.size + 1).padStart(12, '0')}`);
+      if (ROUTING_FILES.has(name)) {
+        if (!routingIds.has(key)) routingIds.set(key, `00000000-0000-4000-8000-${String(routingIds.size + 1).padStart(12, '0')}`);
+        return routingIds.get(key)!;
+      }
       return ids.get(key)!;
     });
     out.set(name, text);
@@ -2307,7 +2342,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(set.body.result.providers['codex-cli'].cells.easy).toMatchObject({ source: 'custom', effective: { model: 'gpt-6.1-terra' } });
     const changed = frames(ws).filter((f) => f.type === 'helper_routing:changed');
     expect(changed.at(-1).payload).toEqual({ revision: set.body.result.revision });
-    fixtures.set('helper-routing-changed.json', { direction: 'desktop-to-phone', frames: [changed.at(-1)] });
+    fixtures.set('helper-routing-changed.json', { direction: 'desktop-to-phone', frames: [{ ...changed.at(-1), seq: 1 }] });
     // Fresh values come back with the refusal, and nothing is written. A client doesn't retry.
     const stale = await command('helper_routing_stale', write({ revision: fresh, cells: [{ provider: 'codex-cli', difficulty: 'easy', model: 'gpt-6-luna', effort: 'low' }] }));
     expect(stale).toMatchObject({ status: 409, body: { error: { code: 'helper_routing_stale' }, revision: set.body.result.revision, settings: { revision: set.body.result.revision } } });
@@ -4131,6 +4166,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
 
   it('every command type has an accepted request and receipt', () => {
     for (const type of MOBILE_COMMAND_TYPES) {
+      if (ROUTING_PROFILE && type !== 'helperRouting.update') continue;
       const list = commandFixtures.get(type) ?? [];
       expect(list.some((c) => c.response.body?.status === 'completed'), type).toBe(true);
       fixtures.set(`commands/${type}.json`, { type, cases: list });
@@ -4148,19 +4184,21 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   });
 
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {
-    const rendered = render();
-    if (WRITE) {
-      fs.rmSync(FIXTURE_DIR, { recursive: true, force: true });
+    const rendered = new Map([...render()].filter(([name]) => !ROUTING_PROFILE || ROUTING_FILES.has(name)));
+    if (ROUTING_PROFILE) expect([...rendered.keys()].sort()).toEqual([...ROUTING_FILES].sort());
+    if (WRITE || ROUTING_PROFILE === 'write') {
+      if (!ROUTING_PROFILE) fs.rmSync(FIXTURE_DIR, { recursive: true, force: true });
       for (const [name, text] of rendered) {
         fs.mkdirSync(path.dirname(path.join(FIXTURE_DIR, name)), { recursive: true });
         fs.writeFileSync(path.join(FIXTURE_DIR, name), text);
       }
-      fs.writeFileSync(path.join(FIXTURE_DIR, 'index.json'), `${JSON.stringify({ version: 1, files: [...rendered.keys()].sort() }, null, 2)}\n`);
+      if (!ROUTING_PROFILE) fs.writeFileSync(path.join(FIXTURE_DIR, 'index.json'), `${JSON.stringify({ version: 1, files: [...rendered.keys()].sort() }, null, 2)}\n`);
       return;
     }
     const onDisk = fs.existsSync(FIXTURE_DIR) ? fs.readdirSync(FIXTURE_DIR, { recursive: true }).map(String).filter((f) => f.endsWith('.json') && f !== 'index.json').map((f) => f.split(path.sep).join('/')).sort() : [];
+    const selectedDisk = ROUTING_PROFILE ? onDisk.filter((name) => ROUTING_FILES.has(name)) : onDisk;
     const stale = [...rendered].filter(([name, text]) => !fs.existsSync(path.join(FIXTURE_DIR, name)) || fs.readFileSync(path.join(FIXTURE_DIR, name), 'utf8').replace(/\r\n/g, '\n') !== text).map(([name]) => name);
-    const extra = onDisk.filter((name) => !rendered.has(name));
+    const extra = selectedDisk.filter((name) => !rendered.has(name));
     // The first line that differs in each stale file, so a CI failure says what changed.
     const firstDifference = Object.fromEntries(stale.map((name) => {
       const file = path.join(FIXTURE_DIR, name);

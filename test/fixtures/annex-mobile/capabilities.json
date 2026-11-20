@@ -244,8 +244,10 @@
           "unknown_fallback",
           "last_resort_unmeasured",
           "sticky",
-          "default_order"
+          "default_order",
+          "reset_urgency"
         ],
+        "resetAwareBudget": 1,
         "scopes": [
           "app",
           "project",
@@ -260,7 +262,10 @@
           "mapping_changed",
           "cooling_down",
           "quota_near_limit",
-          "quota_exhausted"
+          "quota_exhausted",
+          "auto_reserve",
+          "quota_incomplete",
+          "auto_budget_invalid"
         ],
         "snapshotField": "helperRoutingRevision",
         "unknownReasons": [

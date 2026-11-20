@@ -1,4 +1,5 @@
 import { preparePressure } from './helper-burn-pressure';
+import { isAutoBudgetPolicy } from '../../shared/helper-auto-budget';
 import { forecastHistory } from '../telemetry/helper-decision-ledger';
 import type { PressureDecision } from '../../shared/helper-burn-pressure';
 /**
@@ -471,7 +472,7 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
   // A stable order for what's shown. The choice doesn't depend on it.
   options.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   const usable = options.filter((o) => o.quota.state !== 'exhausted' && o.quota.state !== 'near_limit');
-  if (usable.length === 0) return noCandidate(difficulty, skipped, options, orchestratorCli);
+  if (usable.length === 0 && !orchestrationSettings.getAutoBudgetRules()) return noCandidate(difficulty, skipped, options, orchestratorCli);
   return {
     ok: true,
     plan: {
@@ -489,6 +490,7 @@ function noCandidate(
   context: { now?: number; load?: Readonly<Record<string, AutoLoad>>; decision?: AutoDecision } = {},
 ): Extract<StartPlanResult, { ok: false }> {
   const all = { ...skipped };
+  for (const e of context.decision?.evaluations ?? []) if (e.excluded) all[e.provider] = e.excluded;
   for (const option of options) {
     if (all[option.provider]) continue;
     if (option.quota.state === 'exhausted') all[option.provider] = 'quota_exhausted';
@@ -588,6 +590,7 @@ function autoDecisionRecord(args: {
       mapped: { model: option.cell.cell.model, effort, source: option.cell.source, verified: option.cell.fallback !== 'model_unverified' },
       load: loadOf(id),
       quota: recordQuota(option.quota, option.cell.cell.model),
+      ...(evaluation?.budget && { autoBudget: evaluation.budget }),
       accountKnown: false,
       ...(evaluation?.tier && { tier: AUTO_TIERS.indexOf(evaluation.tier) }),
       ...(evaluation && {
@@ -606,6 +609,7 @@ function autoDecisionRecord(args: {
   const sources = new Set(options.map((o) => o.cell.source));
   const tie = decision?.ok ? decision.tie : undefined;
   const enabled = getOrchestratorSettings().enabled ?? [];
+  const budgetRules = orchestrationSettings.getAutoBudgetRules();
   return {
     decisionId,
     ...(args.pressure && { pressure: args.pressure }),
@@ -630,8 +634,10 @@ function autoDecisionRecord(args: {
     }),
     mappingFingerprint: mappingFingerprint(options),
     mappingKind: sources.size === 0 ? 'none' : sources.size > 1 ? 'mixed' : sources.has('custom_mapping') ? 'custom' : 'builtin',
-    settings: { autoEnabled: true, enabledProviders: enabled.length > 0 ? enabled.length : getAllProviders().length },
-    thresholds: AUTO_THRESHOLDS,
+    settings: { autoEnabled: true, enabledProviders: enabled.length > 0 ? enabled.length : getAllProviders().length,
+      ...(budgetRules && { autoBudgetMode: budgetRules.mode }) },
+    thresholds: budgetRules
+      ? { quotaLowBp: QUOTA_LOW_PERCENT * 100, quotaStaleMs: QUOTA_STALE_MS } : AUTO_THRESHOLDS,
     candidates,
     ...(tie && {
       tie: {
@@ -706,18 +712,21 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
   const pressures = new Map<string, PressureDecision>();
   const candidates: AutoCandidate[] = eligible.map((o) => {
     const weekly = o.quota.weekly;
+    const observed = recordQuota(o.quota, o.cell.cell.model);
     const identity = peekHelperCalibrationModel(o.provider, o.cell.cell.model, now);
     const generation = orchestrationSettings.getPresetCellGeneration(o.provider, difficulty);
     const pressure = o.cell.fallback === 'none' && generation && generation === o.configuredGeneration && identity.model
       ? preparePressure({ decisionId, decidedAtMs: now, provider: o.provider, model: o.cell.cell.model,
         effort: o.cell.cell.effort ?? null, difficulty, taskProfile, calibration: { model: identity.model, revision: generation } },
-      history, total(o.provider), recordQuota(o.quota, o.cell.cell.model), now, peekQuotaCalibrationPlan(o.provider, now)) : undefined;
+      history, total(o.provider), observed, now, peekQuotaCalibrationPlan(o.provider, now)) : undefined;
     if (pressure) pressures.set(o.provider, pressure);
     const qualified = pressure && pressure.windows.every((w) => w.band)
       && !o.quota.unreadableWindows?.length && !o.quota.otherWindows?.length && !o.quota.modelWindows?.length;
     return {
       ...(qualified && { expectedBurnBp: pressure.windows.find((w) => w.name === 'weekly')?.band?.meanBp,
-        remainingPressure: pressure.windows.map((w) => ({ usedBp: w.usedBp, upperBp: w.band!.upperBp })) }),
+        remainingPressure: pressure.windows.map((w) => ({ name: w.name, resetsAtMs: w.resetsAtMs, usedBp: w.usedBp, upperBp: w.band!.upperBp })) }),
+      budgetQuota: { ...observed, windows: observed.windows ?? [],
+        complete: !o.quota.unreadableWindows?.length && !o.quota.incompleteWindows?.length },
       key: o.key,
       provider: o.provider,
       quotaState: o.quota.state,
@@ -727,7 +736,7 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
       load: total(o.provider),
     };
   });
-  const decision = decideAutoProvider({ now, candidates, cursors: rotationCursors(), options: { useBurnForecasts: true } });
+  const decision = decideAutoProvider({ now, candidates, cursors: rotationCursors(), options: { useBurnForecasts: true, budget: orchestrationSettings.getAutoBudgetRules() } });
   if (decision.ok === false) return noCandidate(difficulty, skipped, options, orchestratorCli, { now, load, decision });
   const chosen = options.find((o) => o.key === decision.key)!;
   const allSkipped: Record<string, HelperRoutingSkip> = { ...skipped };
@@ -744,6 +753,9 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
     resolved: { provider: decision.provider, model: cell.cell.model, effort: effort ?? null, difficulty },
     source: { provider: 'auto', model: cell.source, effort: effort ? cell.source : 'cli_default' },
     reason: decision.reason,
+    ...(decision.evaluations.find((e) => e.key === decision.key)?.budget && {
+      autoBudget: decision.evaluations.find((e) => e.key === decision.key)!.budget,
+    }),
     fallback: cell.fallback !== 'none' ? cell.fallback : Object.values(allSkipped).some((code) => code !== 'auto_not_supported') ? 'candidate_skipped' : 'none',
     context: { status: 'none' },
     load: Object.fromEntries(options.map((o) => [o.provider, total(o.provider)])),
@@ -980,7 +992,9 @@ export async function readHelperRouting(options: { projectPath?: string; autoCon
     }
   }
   const auto = await readHelperAuto(options.autoContext ?? (options.projectPath ? { projectPath: options.projectPath } : {}));
-  return { revision: helperRoutingRevision(), serverTime: new Date(Date.now()).toISOString(), labels: HELPER_ROUTING_LABELS, providers, auto, copilotAuto: orchestrationSettings.getCopilotAuto() };
+  const budget = orchestrationSettings.getAutoBudgetSetting();
+  return { autoBudget: { policy: budget === 'invalid' ? null : budget ?? null, invalid: budget === 'invalid', editable: !options.projectPath },
+    revision: helperRoutingRevision(), serverTime: new Date(Date.now()).toISOString(), labels: HELPER_ROUTING_LABELS, providers, auto, copilotAuto: orchestrationSettings.getCopilotAuto() };
 }
 
 // ── Changing them ────────────────────────────────────────────────────────
@@ -1020,8 +1034,9 @@ interface PresetWriteOrigin {
 function checkShape(update: HelperRoutingUpdate): void {
   const invalid = (message: string) => new HelperRoutingError('invalid_helper_routing', message);
   if (typeof update?.revision !== 'string' || savedPartOf(update.revision) === null) throw invalid('Send the revision this change was made from.');
-  if (!update.cells?.length && !update.reset && update.auto === undefined && update.copilotAuto === undefined) throw invalid('Send cells to change, a reset, auto, or copilotAuto.');
+  if (!update.cells?.length && !update.reset && update.auto === undefined && update.copilotAuto === undefined && update.autoBudgetPolicy === undefined) throw invalid('Send cells to change, a reset, auto, copilotAuto, or autoBudgetPolicy.');
   if (update.copilotAuto !== undefined && typeof update.copilotAuto !== 'boolean') throw invalid('copilotAuto must be true or false.');
+  if (update.autoBudgetPolicy !== undefined && !isAutoBudgetPolicy(update.autoBudgetPolicy)) throw invalid('autoBudgetPolicy needs version 1, enabled, and whole retained percentages from 0 to 100 for Claude Code and Codex.');
   for (const cell of update.cells ?? []) {
     if (!isPresetProvider(cell?.provider)) throw invalid(`${String(cell?.provider)} has no presets.`);
     if (!isAutoLevel(cell.difficulty)) throw invalid(`difficulty must be one of ${AUTO_LEVELS.join(', ')}.`);
@@ -1068,13 +1083,16 @@ async function auditPresetChanges(before: SavedPresets, after: SavedPresets, sur
  * so a person sees them and decides. Nothing retries it. Throws HelperRoutingError.
  */
 export function updateHelperPresets(update: HelperRoutingUpdate, origin: PresetWriteOrigin): Promise<HelperRoutingSettings> {
-  const run = writeChain.catch((): undefined => undefined).then(() => writePresets(update, origin));
+  const release: () => void = !origin.projectPath && isAutoBudgetPolicy(update?.autoBudgetPolicy)
+    && savedPartOf(update.revision) === orchestrationSettings.getPresetsRevision()
+    ? orchestrationSettings.stageAutoBudgetRestriction(update.autoBudgetPolicy) : () => undefined;
+  const run = writeChain.catch((): undefined => undefined).then(() => writePresets(update, origin)).finally(release);
   writeChain = run.catch((): undefined => undefined);
   return run;
 }
 
 async function writePresets(update: HelperRoutingUpdate, { surface, projectPath }: PresetWriteOrigin): Promise<HelperRoutingSettings> {
-  const action = (update?.auto !== undefined || update?.copilotAuto !== undefined) && !update.cells?.length && !update.reset ? 'toggle'
+  const action = (update?.auto !== undefined || update?.copilotAuto !== undefined || update?.autoBudgetPolicy !== undefined) && !update.cells?.length && !update.reset ? 'toggle'
     : update?.reset && !update.cells?.length
     ? update.reset.difficulty ? 'reset_cell' : update.reset.provider ? 'reset_provider' : 'reset_all'
     : 'set';
@@ -1088,7 +1106,7 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
     checkShape(update);
     const invalid = (message: string) => new HelperRoutingError('invalid_helper_routing', message);
     if (projectPath) {
-      if (update.cells?.length || update.reset || update.copilotAuto !== undefined) throw invalid('A project can only turn Auto off.');
+      if (update.cells?.length || update.reset || update.copilotAuto !== undefined || update.autoBudgetPolicy !== undefined) throw invalid('A project can only turn Auto off.');
       if (update.auto !== 'off' && update.auto !== null) throw invalid('A project can only set auto to off or null.');
     } else if (update.auto !== undefined && typeof update.auto !== 'boolean') {
       throw invalid('App-wide, auto is true or false.');
@@ -1139,6 +1157,16 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
     const before = orchestrationSettings.getCopilotAuto();
     await orchestrationSettings.saveCopilotAuto(update.copilotAuto);
     await appendSettingsAudit({ surface, scope: 'app', key: 'helper_auto.copilot-cli', before, after: update.copilotAuto, outcome: 'ok' });
+  }
+  if (update.autoBudgetPolicy !== undefined) {
+    const before = orchestrationSettings.getAutoBudgetSetting();
+    await orchestrationSettings.saveAutoBudgetPolicy(update.autoBudgetPolicy);
+    await appendSettingsAudit({ surface, scope: 'app', key: 'helper_auto.budget.enabled',
+      before: before && before !== 'invalid' ? before.enabled : null, after: update.autoBudgetPolicy.enabled, outcome: 'ok' });
+    for (const provider of ['claude-code', 'codex-cli'] as const) {
+      await appendSettingsAudit({ surface, scope: 'app', key: `helper_auto.budget.${provider}`,
+        before: before && before !== 'invalid' ? before.reserves[provider] : null, after: update.autoBudgetPolicy.reserves[provider], outcome: 'ok' });
+    }
   }
   if (projectPath || (!update.cells?.length && !update.reset)) {
     helperPresetsChanged(action, surface, true);

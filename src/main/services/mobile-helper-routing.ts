@@ -57,6 +57,7 @@ export function helperRoutingCapability() {
     autoCandidates: AUTO_CANDIDATE_PROVIDERS,
     lastResortCandidates: ['copilot-cli'] as const,
     copilotAuto: true,
+    resetAwareBudget: 1,
     reasons: HELPER_ROUTING_REASONS,
     fallbacks: HELPER_ROUTING_FALLBACKS,
     skipped: HELPER_ROUTING_SKIPS,
@@ -123,7 +124,7 @@ export async function runHelperRoutingUpdate(
   assertAuthorized();
   try {
     return await updateHelperPresets(
-      { revision: command.revision, cells: command.cells, reset: command.reset, ...(command.auto !== undefined && { auto: command.auto }), ...(command.copilotAuto !== undefined && { copilotAuto: command.copilotAuto }) },
+      { revision: command.revision, cells: command.cells, reset: command.reset, ...(command.auto !== undefined && { auto: command.auto }), ...(command.copilotAuto !== undefined && { copilotAuto: command.copilotAuto }), ...(command.autoBudgetPolicy !== undefined && { autoBudgetPolicy: command.autoBudgetPolicy }) },
       { surface: 'mobile', ...(projectPath && { projectPath }) },
     );
   } catch (err) {
