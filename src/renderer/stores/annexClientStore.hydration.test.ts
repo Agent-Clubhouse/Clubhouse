@@ -434,4 +434,31 @@ describe('satellite catalog reconciliation (#3695)', () => {
     await tick();
   });
 
+  it.each(['list', 'read'])('HY1: cached canvas/icon changes through %s do not replay older agent, permission or pause state', async (source) => {
+    const cached = snapshot({ sessionPaused: true });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    send('pty:exit', { agentId: 'agent', exitCode: 0 });
+    send('permission:response', { requestId: 'request' });
+    send('session:resumed', {});
+    // Main folds canvas events into sat.snapshot, but does not fold the three
+    // events above. A later local list/read therefore legitimately mixes them.
+    const updated = structuredClone(cached);
+    updated.canvasState = { project: { canvases: [{ id: 'canvas', views: [{ agentId: 'agent' }] }], activeCanvasId: 'canvas' } };
+    updated.projectIcons = { project: 'data:image/png;base64,updated' };
+    if (source === 'list') changed(list(updated));
+    else {
+      read.mockResolvedValueOnce(list(updated));
+      await useAnnexClientStore.getState().loadSatellites();
+    }
+    expect(catalog().remoteCanvasState[projectId].canvases).toMatchObject([{ views: [{ agentId }] }]);
+    expect(catalog().remoteProjectIcons[projectId]).toBe(updated.projectIcons.project);
+    expect({
+      status: catalog().remoteAgents[agentId].status,
+      permission: usePendingPermissionStore.getState().byRequestId[requestId],
+      paused: useAnnexClientStore.getState().satellitePaused[satellite.id],
+    }).toEqual({ status: 'sleeping', permission: undefined, paused: false });
+  });
+
 });
