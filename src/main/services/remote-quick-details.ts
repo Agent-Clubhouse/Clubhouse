@@ -32,6 +32,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
     const runtime = bound ? getAgentRuntime(agentId) : undefined, running = rawRunning && bound;
     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
+    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
     const state = agentDisplayState({ id: agentId }, running);
     const status = run.finishedAt && !running ? run.completion === 'failed' ? 'error' : 'sleeping' : rawRunning && !bound ? 'spawning' : state.status;
     // A requested default does not establish which provider actually started.
@@ -128,7 +129,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
     const current = agentRegistry.get(agentId);
     if (current !== registration || current?.nonce !== nonce || current?.runtime !== registeredRuntime || current?.orchestrator !== registeredProvider || current?.cwd !== registeredCwd
       || isAgentRunning(agentId) !== rawRunning || quickRuntimeIsCurrent(run, current) !== bound || running && !registration && runtime?.kind !== 'chat'
-      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)
+      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId || (runtime.getDisplayRunId?.() ?? null) !== displayRunId)
       || !target.current()) return { status: 409, body: { error: 'quick_run_changed' } };
     result.providerEvidenceState = runtime?.kind === 'chat' && runtime.getDetailsEvidence ? 'unavailable' : 'unsupported';
     if (running && bound && runtime?.kind === 'chat') {
