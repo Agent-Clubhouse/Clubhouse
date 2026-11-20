@@ -1,0 +1,11 @@
+# Generation-corrected Connections source — pending independent review
+
+Source017f7ec9dae90361f09c6c5c8858b3534c95a281/treeaae189a702f38fb73b337a10e9be48b1600a2727 on origin/lane-full-remote-details/connections-generation-correction. Isolated atop67, ONLY normal/Quick private generation fence + appended tests/note. No cold tool/source or Quick-paging WIP. Accepted feature root f122 unchanged.
+
+Final57-artifact manifest SHA256463043ad579c525a2b61060fcfb15483f1f748b812a9d29d04e02e0ce211d528. Every named artifact includes immutable source identities/patches,15RED/restorations, actual11files348PASS + separate16PASS815SKIP route/client +tsc0,103committed fixture identities unchanged across18admitted launches, and sealed aggregate driverexit0. Read owner report/scope for actual-vs-modeled/first-hard-assert/bounds/unsupported/authorization/history limits. This is no independent approval/fullparity/CI/live/native reopen/disclosure/public release claim.
+
+Original48b failing baseline is on9a9WIP, NOT executed67; source/primary files real, runtime and card-await transitions modeled. Initial fresh-cwd collection failures are preserved and CURRENT-linked where no launch hash existed. Unchanged67 overlay in same cwd failed bare tls too and restored all current bytes. Exact017 executed successfully in the previously used cwd with identical compatible dependencies; no prod/dependency/cache/config workaround. Mechanism unresolved. Do not imply universal portability or blanket infrastructure attribution.
+
+Proof scripts retain original absolute paths as provenance. For a new Mini run, copy configuration/driver into a NEW evidence directory and adapt only those fresh copies to an isolated exact source checkout and local compatible already-installed dependencies/resource gate. Preserve originals. Include original67 builder dependency if regenerating control specs; driver+controls+configuration are independently sufficient for execution. No installs/restarts/resets/re-pair/job cancellations/releases. No Handoff API or authority expansion. #3611 merge hold superseded; #3706 public release hold remains.
+
+This proof branch adds artifacts only. Custody does not transfer active ownership; verified Mini exact-fetch/explicit active acceptance must arrive through the established parent/Navi/Tael route.

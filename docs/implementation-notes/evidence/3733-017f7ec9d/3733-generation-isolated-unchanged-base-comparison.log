@@ -1,0 +1,52 @@
+{"base": "67d8782abdcd97bfaa19b88d2e7809e84a3d3358", "command": ["/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh", "full-details", "4", "--", "node_modules/.bin/vitest", "run", "src/main/services/remote-agent-details.test.ts", "src/main/services/remote-quick-details.test.ts", "--maxWorkers=2", "--testNamePattern", "shows retained launch choices without creating a durable config"], "cwd": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction", "overlay": {"src/main/services/remote-agent-details.test.ts": {"baseSHA256": "8ddf142e00a058ce6dc90d5d862800da05d77b6c77bc7931c001f914a1917557", "currentSHA256": "5cda9720b51c63cead177a92e37f7f904df6d6b081a87af2d936297547b48873"}, "src/main/services/remote-agent-details.ts": {"baseSHA256": "a1c581dd9fc4a36ef081317b3270c240cf5e156d0d7730c07d6a574c2aac5bb0", "currentSHA256": "cd8aba6bfbeb61b00b52db8ac97134a41a6e50010e307dfd900148b52b04aefe"}, "src/main/services/remote-quick-details.test.ts": {"baseSHA256": "79fb6ce4eeafd2d4da32852012f5d2490bfd8a6571fbb08096e688c73764fe05", "currentSHA256": "e4cb80eff1f439b270c5c678e1baf0b991daa9579ab52f87e142a6cf9dbe1ff5"}, "src/main/services/remote-quick-details.ts": {"baseSHA256": "6ae0865d32a3a65c280eab474fa9a945125d25c72b0cb14b7b7cd7f04b0f15a8", "currentSHA256": "0f6a784f3425cd15e1d70260bdbcdebe88b899f44be3d2384f495ded5098c1b1"}}, "restoredAllCurrentBytes": true, "restoredSHA256": {"src/main/services/remote-agent-details.test.ts": "5cda9720b51c63cead177a92e37f7f904df6d6b081a87af2d936297547b48873", "src/main/services/remote-agent-details.ts": "cd8aba6bfbeb61b00b52db8ac97134a41a6e50010e307dfd900148b52b04aefe", "src/main/services/remote-quick-details.test.ts": "e4cb80eff1f439b270c5c678e1baf0b991daa9579ab52f87e142a6cf9dbe1ff5", "src/main/services/remote-quick-details.ts": "0f6a784f3425cd15e1d70260bdbcdebe88b899f44be3d2384f495ded5098c1b1"}, "scope": "Controlled same-CWD unchanged-base collection comparison; production restored afterward. No cache/dependency/runtime changes.", "testExit": 1}
+2026-11-20T09:36:44Z START full-details idle=83% unused=11G avail=30456M freepct=77 comp=7484M swap=1836M pid=19663 cmd=node_modules/.bin/vitest run src/main/services/remote-agent-details.test.ts src/main/services/remote-quick-details.test.ts --maxWorkers=2 --testNamePattern shows retained launch choices without creating a durable config
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction
+
+ ❯ |main| src/main/services/remote-quick-details.test.ts (0 test)
+ ❯ |main| src/main/services/remote-agent-details.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts [ src/main/services/remote-agent-details.test.ts ]
+Error: [vitest] There was an error when mocking a module. If you are using "vi.mock" factory, make sure there are no top level variables inside, since this call is hoisted to top of the file. Read more: https://vitest.dev/api/vi.html#vi-mock
+ ❯ src/main/services/remote-agent-details.ts:7:1
+      5| import { readHistoricalSessionCard } from './remote-session-history';
+      6| import { card, row, section, display } from './remote-details-presenta…
+      7| import { readConnectionCard, readActionCard, readCanvasCard } from './…
+       | ^
+      8| import { resolveReadOnlyQuickTarget } from './read-only-quick-target';
+      9| import { readRemoteQuickDetails } from './remote-quick-details';
+
+Caused by: Error: Cannot find module '/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction/tls' imported from /Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/vitest/dist/module-evaluator.js
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'ERR_MODULE_NOT_FOUND', url: 'file:///Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction/tls' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/remote-quick-details.test.ts [ src/main/services/remote-quick-details.test.ts ]
+Error: [vitest] There was an error when mocking a module. If you are using "vi.mock" factory, make sure there are no top level variables inside, since this call is hoisted to top of the file. Read more: https://vitest.dev/api/vi.html#vi-mock
+ ❯ src/main/services/remote-quick-details.ts:11:1
+      9| import type { ReadOnlyQuickTarget } from './read-only-quick-target';
+     10| import { card, row, display, section } from './remote-details-presenta…
+     11| import { readActionCard, readCanvasCard, readConnectionCard } from './…
+       | ^
+     12| import { getAgentConnection, getCurrentAgentConnection } from './clubh…
+     13| import { managedAgents } from './managed-agents';
+
+Caused by: Error: Cannot find module '/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction/tls' imported from /Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/vitest/dist/module-evaluator.js
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'ERR_MODULE_NOT_FOUND', url: 'file:///Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction/tls' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  no tests
+   Start at  01:36:44
+   Duration  564ms (transform 744ms, setup 11ms, import 0ms, tests 0ms, environment 0ms)
+
+2026-11-20T09:36:44Z END full-details rc=1
+
+EXIT_CODE=1

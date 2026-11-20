@@ -1,0 +1,27 @@
+{
+  "head": "017f7ec9dae90361f09c6c5c8858b3534c95a281",
+  "tree": "aae189a702f38fb73b337a10e9be48b1600a2727",
+  "parent": "67d8782abdcd97bfaa19b88d2e7809e84a3d3358",
+  "onlyDeltaPaths": [
+    "docs/implementation-notes/3733-generation-correction.md",
+    "src/main/services/remote-agent-details.test.ts",
+    "src/main/services/remote-agent-details.ts",
+    "src/main/services/remote-quick-details.test.ts",
+    "src/main/services/remote-quick-details.ts"
+  ],
+  "entireOtherTreeEntriesEqual": true,
+  "productionMinusTwoGuardAdditions": {
+    "src/main/services/remote-agent-details.ts": {
+      "parentBlob": "92a86c461354e75c7fa0b2a02c54c0d8b378caab",
+      "headBlob": "05af251acf132d4f034aa32c47ab7308078fe784",
+      "equalAfterRemovingOnlyCapturedGenerationAndFinalComparison": true
+    },
+    "src/main/services/remote-quick-details.ts": {
+      "parentBlob": "16c0a55f2cac272137b215e03e56b351c6ba53f8",
+      "headBlob": "5f3707af3029fa5d009e00271dbcae1b9084a429",
+      "equalAfterRemovingOnlyCapturedGenerationAndFinalComparison": true
+    }
+  },
+  "originalTestsAreUnchangedPrefixes": true,
+  "coldSuccessorExcluded": true
+}

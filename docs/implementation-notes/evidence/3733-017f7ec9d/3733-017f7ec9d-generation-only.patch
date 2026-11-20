@@ -1,0 +1,113 @@
+diff --git a/docs/implementation-notes/3733-generation-correction.md b/docs/implementation-notes/3733-generation-correction.md
+new file mode 100644
+index 000000000..1fa229b9e
+--- /dev/null
++++ b/docs/implementation-notes/3733-generation-correction.md
+@@ -0,0 +1,11 @@
++# Details generation correction — pending exact proof and independent review
++
++This branch is isolated atop frozen67d8782abdcd97bfaa19b88d2e7809e84a3d3358. It excludes the active cold tool-source and Quick-paging implementation branch. The only production changes capture the admitted ChatRuntime display generation before the first awaited card read and compare it in the existing final run fence, in normal and Quick Details. Runtime/app/native/registration/selected-project/auth checks remain. Missing optional generation support stays compatible; no generation/receipt/nonce field is added to the DTO and no new authority or fallback is introduced.
++
++New controls keep the same runtime object, registration, app session and native session, changing only the display generation during the first Settings/template await or a later Canvas await. Stable generation and absent optional method remain200; generation changes require409; simultaneous revocation requires403 and no cards. Runtime/lifecycle/await callbacks are modeled; selected primary/project files are real temporary fixtures. This is no live native reopen or actual provider-payload disclosure proof.
++
++The separately preserved observed baseline48b4b9436aaae5e366381bdb47d4e5d2e2974c8d is test-only on9a9 Quick/tool WIP, NOT executed67. Actual2FAIL181SKIP with tuple/generation hard prestates followed by stale200/no-card soft failures. Remote evidence branch origin/lane-full-remote-details/proof-connections-pages-67d now includes the original3-artifact baseline at docs/implementation-notes/evidence/3733-48b4b9436-display-generation-baseline/. Original manifest cc76bde98a520396d22bbb48ab4f145191e80ebc204fedcb33ab2a567173b125 is unchanged; added source-linkage is CURRENT inspection only.
++
++Development qualification: a fresh connections-generation-correction workspace failed collection for both suites, resolving bare tls as a workspace path; no tests ran. An unchanged67 four-file overlay in the SAME cwd and compatible dependencies failed the same import before tests; all new bytes were restored and hashes recorded. Mechanism remains unresolved; this does not establish a source defect or blanket infrastructure/cache cause. No production/dependency/cache/config workaround, install or timeout increase was made. Exact source must be checked in an environment that actually executes tests before any pass claim.
++
++Accepted root f122 remains unchanged. Mini bp83o0 has verified frozen67 source/proof custody only; active ownership stays with the sender until explicit exact-fetch/active acceptance over parent→Navi→Tael. No Handoff APIs, job cancellations, restart/reset/deletion/access/pairing/release changes. #3611 merge hold superseded; #3706 public containing-desktop RELEASE HOLD remains. Full Connections/Details matrix and latest-main integration remain open.
+diff --git a/src/main/services/remote-agent-details.test.ts b/src/main/services/remote-agent-details.test.ts
+index 357bbbad8..ff54a9a3e 100644
+--- a/src/main/services/remote-agent-details.test.ts
++++ b/src/main/services/remote-agent-details.test.ts
+@@ -951,3 +951,25 @@ describe('selected registered Connections pages at final Details assembly', () =
+     } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+   });
+ });
++
++describe('admitted Details display generation', () => {
++  it.each(['stable', 'unsupported', 'early-reopen', 'late-reopen', 'revoked-reopen'] as const)('fences a same-object/app/native runtime across card awaits: %s', async (mode) => {
++    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-display-generation-'))), folder = path.join(root, 'selected'); await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
++    m.base = root; m.realWitness = true;
++    const selected = { ...agent(), worktreePath: folder, orchestrator: 'codex-cli' as const }, p = { ...project, path: folder };
++    await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [p] })); await fs.writeFile(path.join(folder, '.clubhouse', 'agents.json'), JSON.stringify([selected]));
++    let generation = 'admitted-display', allowed = true, early = false, late = false;
++    const runtime = { kind: 'chat', getSessionId: () => 'same-app', getNativeSessionId: () => 'same-native', getDisplayRunId: mode === 'unsupported' ? undefined : () => generation };
++    const registration = { projectPath: folder, cwd: folder, runtime: 'chat', orchestrator: 'codex-cli', nonce: 'PRIVATE_ADMITTED_NONCE' };
++    m.target.mockResolvedValue({ agent: selected, project: p }); m.runtime.mockReturnValue(runtime); m.running.mockReturnValue(true); m.registration.mockReturnValue(registration);
++    if (mode === 'early-reopen') m.settings.mockImplementationOnce(async () => { early = true; generation = 'reopened-display'; return { status: 200, body: setting() }; });
++    m.canvases.mockImplementationOnce(async () => { late = true; if (mode === 'late-reopen' || mode === 'revoked-reopen') generation = 'reopened-display'; if (mode === 'revoked-reopen') allowed = false; return []; });
++    try {
++      const response = await readRemoteAgentDetails('a1', () => allowed);
++      expect(late).toBe(true); expect(early).toBe(mode === 'early-reopen'); expect(m.runtime()).toBe(runtime); expect(m.registration()).toBe(registration); expect(runtime.getSessionId()).toBe('same-app'); expect(runtime.getNativeSessionId()).toBe('same-native');
++      expect(generation).toBe(mode.endsWith('reopen') ? 'reopened-display' : 'admitted-display');
++      if (mode === 'stable' || mode === 'unsupported') { expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true); expect(JSON.stringify(response.body)).not.toContain('PRIVATE_ADMITTED_NONCE'); }
++      else { expect.soft(response.status).toBe(mode === 'revoked-reopen' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId'); }
++    } finally { await fs.rm(root, { recursive: true, force: true }); }
++  });
++});
+diff --git a/src/main/services/remote-agent-details.ts b/src/main/services/remote-agent-details.ts
+index 92a86c461..05af251ac 100644
+--- a/src/main/services/remote-agent-details.ts
++++ b/src/main/services/remote-agent-details.ts
+@@ -74,6 +74,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () =>
+     const runtime = getAgentRuntime(agentId);
+     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
+     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
++    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
+     const lifecycle = agentDisplayState(agent, running);
+     const cwd = agentRegistry.get(agentId)?.cwd || agent.worktreePath || project.path;
+     const cards = [card('settings', 'Settings'), card('dispatcher', 'Dispatcher'), card('orchestrate', 'Orchestration'), card('connections', 'Connections'), card('actions', 'Actions'), card('skills-mcp', 'Skills and MCP'), card('session', 'Session'), card('canvases', 'Canvases'), card('changes', 'Changes')];
+@@ -228,7 +229,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () =>
+       || currentRegistration !== registration || currentRegistration?.nonce !== registeredNonce || currentRegistration?.runtime !== registeredRuntime
+       || currentRegistration?.orchestrator !== registeredProvider || currentRegistration?.cwd !== registeredCwd
+       || isAgentRunning(agentId) !== running
+-      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)) {
++      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId || (runtime.getDisplayRunId?.() ?? null) !== displayRunId)) {
+       return { status: 409, body: { error: 'agent_run_changed' } };
+     }
+     result.providerEvidenceState = runtime?.kind === 'chat' && runtime.getDetailsEvidence ? 'unavailable' : 'unsupported';
+diff --git a/src/main/services/remote-quick-details.test.ts b/src/main/services/remote-quick-details.test.ts
+index e438ff986..71347bcd6 100644
+--- a/src/main/services/remote-quick-details.test.ts
++++ b/src/main/services/remote-quick-details.test.ts
+@@ -374,3 +374,19 @@ it('keeps current Quick bindings while refusing inapplicable saved durable Dispa
+   try { const result = await read(); expect.soft(result.cards.find((card) => card.id === 'connections')?.rows.some((row) => row.label === 'Current receiver')).toBe(true); expect.soft(savedRead).not.toHaveBeenCalled(); expect.soft(memoryRead).not.toHaveBeenCalled(); expect.soft(JSON.stringify(result)).not.toMatch(/PRIVATE_INAPPLICABLE_TARGET|PRIVATE_RUN_NONCE/); }
+   finally { m.realConnections = false; bindings.bindingManager._resetForTesting(); sources._resetPersistedBindingSourcesForTesting(); }
+ });
++
++describe('admitted Quick Details display generation', () => {
++  it.each(['stable', 'unsupported', 'early-reopen', 'late-reopen', 'revoked-reopen'] as const)('fences a same-object/app/native Quick runtime across card awaits: %s', async (mode) => {
++    let generation = 'admitted-display', allowed = true, early = false, late = false;
++    const runtime = { kind: 'chat', getSessionId: () => 'same-app', getNativeSessionId: () => 'same-native', getDisplayRunId: mode === 'unsupported' ? undefined : () => generation };
++    const run = start(), registration: AgentRegistration = { projectPath: project, cwd: project, runtime: 'chat', orchestrator: 'codex-cli', nonce: 'PRIVATE_ADMITTED_NONCE' };
++    m.runtime.mockReturnValue(runtime); m.running.mockReturnValue(true); m.registration.mockReturnValue(registration); noteQuickAgentRuntime(run, registration, () => m.registration() === registration);
++    if (mode === 'early-reopen') m.template.mockImplementationOnce(async () => { early = true; generation = 'reopened-display'; return { name: 'Review template', source: 'primary', observedAt: Date.now() }; });
++    m.canvases.mockImplementationOnce(async () => { late = true; if (mode === 'late-reopen' || mode === 'revoked-reopen') generation = 'reopened-display'; if (mode === 'revoked-reopen') allowed = false; return []; });
++    const target = await resolveReadOnlyQuickTarget('quick', () => allowed); expect(target).not.toBeNull();
++    const response = await readRemoteQuickDetails(target!, () => allowed);
++    expect(late).toBe(true); expect(early).toBe(mode === 'early-reopen'); expect(m.runtime()).toBe(runtime); expect(m.registration()).toBe(registration); expect(runtime.getSessionId()).toBe('same-app'); expect(runtime.getNativeSessionId()).toBe('same-native'); expect(generation).toBe(mode.endsWith('reopen') ? 'reopened-display' : 'admitted-display');
++    if (mode === 'stable' || mode === 'unsupported') { expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'quick')).toBe(true); expect(JSON.stringify(response.body)).not.toContain('PRIVATE_ADMITTED_NONCE'); }
++    else { expect.soft(response.status).toBe(mode === 'revoked-reopen' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('providerId'); }
++  });
++});
+diff --git a/src/main/services/remote-quick-details.ts b/src/main/services/remote-quick-details.ts
+index 16c0a55f2..5f3707af3 100644
+--- a/src/main/services/remote-quick-details.ts
++++ b/src/main/services/remote-quick-details.ts
+@@ -28,6 +28,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
+     const runtime = bound ? getAgentRuntime(agentId) : undefined, running = rawRunning && bound;
+     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
+     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
++    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
+     const state = agentDisplayState({ id: agentId }, running);
+     const status = run.finishedAt && !running ? run.completion === 'failed' ? 'error' : 'sleeping' : rawRunning && !bound ? 'spawning' : state.status;
+     // A requested default does not establish which provider actually started.
+@@ -124,7 +125,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
+     const current = agentRegistry.get(agentId);
+     if (current !== registration || current?.nonce !== nonce || current?.runtime !== registeredRuntime || current?.orchestrator !== registeredProvider || current?.cwd !== registeredCwd
+       || isAgentRunning(agentId) !== rawRunning || quickRuntimeIsCurrent(run, current) !== bound || running && !registration && runtime?.kind !== 'chat'
+-      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)
++      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId || (runtime.getDisplayRunId?.() ?? null) !== displayRunId)
+       || !target.current()) return { status: 409, body: { error: 'quick_run_changed' } };
+     result.providerEvidenceState = runtime?.kind === 'chat' && runtime.getDetailsEvidence ? 'unavailable' : 'unsupported';
+     if (running && bound && runtime?.kind === 'chat') {

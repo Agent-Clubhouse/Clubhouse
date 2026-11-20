@@ -1,0 +1,49 @@
+2026-11-20T09:34:04Z START full-details idle=78% unused=810M avail=24938M freepct=74 comp=7725M swap=1836M pid=18205 cmd=node_modules/.bin/vitest run src/main/services/remote-agent-details.test.ts src/main/services/remote-quick-details.test.ts --maxWorkers=2 --testNamePattern admitted.*Details display generation
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction
+
+ ❯ |main| src/main/services/remote-quick-details.test.ts (0 test)
+ ❯ |main| src/main/services/remote-agent-details.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts [ src/main/services/remote-agent-details.test.ts ]
+Error: [vitest] There was an error when mocking a module. If you are using "vi.mock" factory, make sure there are no top level variables inside, since this call is hoisted to top of the file. Read more: https://vitest.dev/api/vi.html#vi-mock
+ ❯ src/main/services/remote-agent-details.ts:7:1
+      5| import { readHistoricalSessionCard } from './remote-session-history';
+      6| import { card, row, section, display } from './remote-details-presenta…
+      7| import { readConnectionCard, readActionCard, readCanvasCard } from './…
+       | ^
+      8| import { resolveReadOnlyQuickTarget } from './read-only-quick-target';
+      9| import { readRemoteQuickDetails } from './remote-quick-details';
+
+Caused by: Error: Cannot find module '/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction/tls' imported from /Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/vitest/dist/module-evaluator.js
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'ERR_MODULE_NOT_FOUND', url: 'file:///Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction/tls' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/remote-quick-details.test.ts [ src/main/services/remote-quick-details.test.ts ]
+Error: [vitest] There was an error when mocking a module. If you are using "vi.mock" factory, make sure there are no top level variables inside, since this call is hoisted to top of the file. Read more: https://vitest.dev/api/vi.html#vi-mock
+ ❯ src/main/services/remote-quick-details.ts:11:1
+      9| import type { ReadOnlyQuickTarget } from './read-only-quick-target';
+     10| import { card, row, display, section } from './remote-details-presenta…
+     11| import { readActionCard, readCanvasCard, readConnectionCard } from './…
+       | ^
+     12| import { getAgentConnection, getCurrentAgentConnection } from './clubh…
+     13| import { managedAgents } from './managed-agents';
+
+Caused by: Error: Cannot find module '/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction/tls' imported from /Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/vitest/dist/module-evaluator.js
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'ERR_MODULE_NOT_FOUND', url: 'file:///Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-full-remote-details/.clubhouse/.local/fixes/connections-generation-correction/tls' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  no tests
+   Start at  01:34:04
+   Duration  654ms (transform 914ms, setup 10ms, import 0ms, tests 0ms, environment 0ms)
+
+2026-11-20T09:34:05Z END full-details rc=1

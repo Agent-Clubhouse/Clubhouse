@@ -1,0 +1,22 @@
+{"startedAt": "2026-11-20T09:40:59.269281+00:00", "command": ["python3", "/Users/masonallen/source/Clubhouse/.clubhouse/qa-reports/3733-017f7ec9d-proof-driver.py", "/Users/masonallen/source/Clubhouse/.clubhouse/qa-reports/3733-017f7ec9d-configuration.json"]}
+red-ignore-parent-project exit 1 at 2026-11-20T09:41:02.463233+00:00
+red-ignore-match-offset exit 1 at 2026-11-20T09:41:03.979608+00:00
+red-lose-byte-deferred-root exit 1 at 2026-11-20T09:41:05.468952+00:00
+red-lose-row-deferred-root exit 1 at 2026-11-20T09:41:06.985627+00:00
+red-ignore-cache-root-currentness exit 1 at 2026-11-20T09:41:08.491464+00:00
+red-promote-disposed-directions exit 1 at 2026-11-20T09:41:10.035903+00:00
+red-drop-final-source-receipts exit 1 at 2026-11-20T09:41:12.405300+00:00
+red-ignore-client-page-echo exit 1 at 2026-11-20T09:41:14.185507+00:00
+red-ignore-renderer-page-echo exit 1 at 2026-11-20T09:41:16.521846+00:00
+red-bypass-desktop-page-eligibility exit 1 at 2026-11-20T09:41:20.294862+00:00
+red-drop-query-route-admission exit 1 at 2026-11-20T09:41:24.073414+00:00
+red-main-drop-display-final-fence exit 1 at 2026-11-20T09:41:26.138245+00:00
+red-main-capture-display-after-first-await exit 1 at 2026-11-20T09:41:28.290581+00:00
+red-quick-drop-display-final-fence exit 1 at 2026-11-20T09:41:30.485597+00:00
+red-quick-capture-display-after-first-await exit 1 at 2026-11-20T09:41:32.944976+00:00
+green exit 0 at 2026-11-20T09:41:49.628433+00:00
+route-client exit 0 at 2026-11-20T09:41:53.444570+00:00
+tsc exit 0 at 2026-11-20T09:42:09.083636+00:00
+ALL_CONTROLS_RESTORED_AND_GREEN 017f7ec9dae90361f09c6c5c8858b3534c95a281 aae189a702f38fb73b337a10e9be48b1600a2727 2026-11-20T09:42:09.156449+00:00
+
+{"driverExit": 0, "endedAt": "2026-11-20T09:42:09.159913+00:00"}

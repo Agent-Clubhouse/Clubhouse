@@ -1,0 +1,11 @@
+--- src/main/services/annex-server.ts
++++ src/main/services/annex-server.ts
+@@ -4081,7 +4081,7 @@
+ async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+   if (ctx.requireMtls()) return;
+   // Same paired-controller read authority as existing agent settings; recheck after disk reads.
+-  const authorized = () => desktopDetailsAuthorized(ctx);
++  const authorized = () => true;
+   if (!authorized()) { sendJson(ctx.res, 403, { error: 'desktop_controller_required' }); return; }
+   let agentId: string;
+   try { agentId = decodeURIComponent(match[1]); }

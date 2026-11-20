@@ -1,0 +1,18 @@
+--- src/main/services/remote-quick-details.ts
++++ src/main/services/remote-quick-details.ts
+@@ -28,7 +28,6 @@
+     const runtime = bound ? getAgentRuntime(agentId) : undefined, running = rawRunning && bound;
+     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
+     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
+-    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
+     const state = agentDisplayState({ id: agentId }, running);
+     const status = run.finishedAt && !running ? run.completion === 'failed' ? 'error' : 'sleeping' : rawRunning && !bound ? 'spawning' : state.status;
+     // A requested default does not establish which provider actually started.
+@@ -95,6 +94,7 @@
+         if (selected.template.omitted) { c.omitted += selected.template.omitted; c.notes.push('Further launch part choices were outside the retained display limit.'); }
+       }
+     });
++    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;
+     await read('connections', (c) => {
+       if (!running || !bound) { c.state = 'error'; c.summary = 'Connection run association unavailable'; c.notes.push('The host cannot associate current connection records with this stopped or unconfirmed quick run.'); return; }
+       return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: run.name });

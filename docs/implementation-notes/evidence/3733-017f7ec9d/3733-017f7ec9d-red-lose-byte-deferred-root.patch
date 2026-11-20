@@ -1,0 +1,11 @@
+--- src/main/services/registered-agent-display-page.ts
++++ src/main/services/registered-agent-display-page.ts
+@@ -179,7 +179,7 @@
+         // A fresh request can read the deferred root with a new aggregate
+         // budget. File-size/schema refusals remain explicit, not an endless
+         // next-page retry of the same oversized file.
+-        if (error instanceof ReadOnlyMetadataLimitError && error.reason === 'aggregate' && index > 0) { deferredProject = projectOffset + index; break; }
++        if (error instanceof ReadOnlyMetadataLimitError && false) { deferredProject = projectOffset + index; break; }
+         unavailableProjects++; complete = false;
+       }
+     }

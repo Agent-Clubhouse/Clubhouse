@@ -1,0 +1,235 @@
+[
+  {
+    "name": "red-ignore-parent-project",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "if (related === false) continue;",
+        "if (related === false) { /* MUTANT: adopt unrelated same-ID parent. */ }"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts"
+    ],
+    "pattern": "same-ID parent",
+    "evidenceLimit": "Real selected/other project primary and same parent nativeID. Reached relationship/privacy assertions; no runtime/permission authority."
+  },
+  {
+    "name": "red-ignore-match-offset",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "knownMatches <= matchOffset || entries.length >= limit",
+        "entries.length >= limit"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts"
+    ],
+    "pattern": "continues selected helper matches|supported later root",
+    "evidenceLimit": "Real last-page record retrieval; all currentness checks remain. No cross-page frozen-snapshot claim."
+  },
+  {
+    "name": "red-lose-byte-deferred-root",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "error.reason === 'aggregate' && index > 0",
+        "false"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts"
+    ],
+    "pattern": "aggregate byte budget",
+    "evidenceLimit": "Real three3MiB files; selected row/next boundary reached. Memory/disk I/O byte admission, not hard latency evidence."
+  },
+  {
+    "name": "red-lose-row-deferred-root",
+    "file": "src/main/services/registered-agent-display-page.ts",
+    "changes": [
+      [
+        "data.raw.length * 2 <= REGISTERED_DISPLAY_ROWS && index > 0",
+        "false"
+      ]
+    ],
+    "tests": [
+      "src/main/services/registered-agent-display-page.test.ts"
+    ],
+    "pattern": "page agent-row budget",
+    "evidenceLimit": "Real later2048-row root after earlier row visits; eventual last helper retrieval. Explicit visit budget, not parser heap proof."
+  },
+  {
+    "name": "red-ignore-cache-root-currentness",
+    "file": "src/main/services/configured-registered-connections-display.ts",
+    "changes": [
+      [
+        "!admitted() || !root || !current(root.receipt)",
+        "!admitted() || !root"
+      ]
+    ],
+    "tests": [
+      "src/main/services/configured-registered-connections-display.test.ts"
+    ],
+    "pattern": "refuses the next cache callback",
+    "evidenceLimit": "Actual primary/registry mutations in trusted modeled synchronous callback. Final withholding remains; discriminates unwanted later cache callback, not disclosure."
+  },
+  {
+    "name": "red-promote-disposed-directions",
+    "file": "src/main/services/configured-registered-connections-display.ts",
+    "changes": [
+      [
+        "directions: applicability === 'configured' ?",
+        "directions: true ?"
+      ]
+    ],
+    "tests": [
+      "src/main/services/configured-registered-connections-display.test.ts"
+    ],
+    "pattern": "disposed history",
+    "evidenceLimit": "Real selected related primary, safe projection. Configured applicability only, not binding/grant/runtime."
+  },
+  {
+    "name": "red-drop-final-source-receipts",
+    "file": "src/main/services/remote-agent-details.ts",
+    "changes": [
+      [
+        "if (connectionReceipts.some((receipt) => !receipt.current()))",
+        "if (false)"
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-agent-details.test.ts"
+    ],
+    "pattern": "selected registered Connections pages",
+    "evidenceLimit": "Real related primary mutation during modeled later canvas await. Revocation guard remains. No live-host HTTP/process proof."
+  },
+  {
+    "name": "red-ignore-client-page-echo",
+    "file": "src/main/services/annex-client.ts",
+    "changes": [
+      [
+        "if (response.source !== page.source || response.offset !== (page.offset ?? 0) || response.projectOffset !== (page.projectOffset ?? 0))",
+        "if (false)"
+      ]
+    ],
+    "tests": [
+      "src/main/services/annex-client.test.ts"
+    ],
+    "pattern": "selected-source Details pages",
+    "evidenceLimit": "Mocked pinned HTTPS response for wrong offset. Other client/renderer fences remain; no actual external host."
+  },
+  {
+    "name": "red-ignore-renderer-page-echo",
+    "file": "src/renderer/features/agents/details/RemoteConnectionsCard.tsx",
+    "changes": [
+      [
+        "const current = query && page?.source === query.source && page.offset === (query.offset ?? 0) && page.projectOffset === (query.projectOffset ?? 0) ? candidate : undefined;",
+        "const current = query ? candidate : undefined;"
+      ]
+    ],
+    "tests": [
+      "src/renderer/features/agents/details/RemoteConnectionsCard.test.tsx"
+    ],
+    "pattern": "successful response for a different page",
+    "evidenceLimit": "Modeled page read, actual renderer output; soft wrong-page marker and safe-state assertions both reached. No live app/E2E."
+  },
+  {
+    "name": "red-bypass-desktop-page-eligibility",
+    "file": "src/main/services/annex-server.ts",
+    "changes": [
+      [
+        "const authorized = () => desktopDetailsAuthorized(ctx);",
+        "const authorized = () => true;"
+      ]
+    ],
+    "tests": [
+      "src/main/services/annex-server.test.ts"
+    ],
+    "pattern": "allows bounded source continuation",
+    "evidenceLimit": "Actual local HTTP unit route with mocked peer/principal/Details reader. Phone refusal assertion discriminates device gate, not real mTLS/network."
+  },
+  {
+    "name": "red-drop-query-route-admission",
+    "file": "src/main/services/annex-server.ts",
+    "changes": [
+      [
+        "pattern: /^\\/api\\/v1\\/agents\\/([^/?]+)\\/(details)(\\?.*)?$/",
+        "pattern: /^\\/api\\/v1\\/agents\\/([^/]+)\\/(details)$/"
+      ]
+    ],
+    "tests": [
+      "src/main/services/annex-server.test.ts"
+    ],
+    "pattern": "allows bounded source continuation",
+    "evidenceLimit": "Retains observed404 development regression. First positive200 fails before authority negatives; no claim on unreached checks."
+  },
+  {
+    "name": "red-main-drop-display-final-fence",
+    "file": "src/main/services/remote-agent-details.ts",
+    "changes": [
+      [
+        " || (runtime.getDisplayRunId?.() ?? null) !== displayRunId",
+        ""
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-agent-details.test.ts"
+    ],
+    "pattern": "admitted.*Details display generation",
+    "evidenceLimit": "Same-object/registration/app/native hard prestates plus early/late generation changes modeled. Stable/unsupported and revoked403 remain independent. No live/provider-payload disclosure claim."
+  },
+  {
+    "name": "red-main-capture-display-after-first-await",
+    "file": "src/main/services/remote-agent-details.ts",
+    "changes": [
+      [
+        "    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;\n",
+        ""
+      ],
+      [
+        "    const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });\n",
+        "    const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });\n    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;\n"
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-agent-details.test.ts"
+    ],
+    "pattern": "early-reopen",
+    "evidenceLimit": "Generation changed in the first modeled settings/template await; source/target primary evidence real where applicable. Exact placement/order discrimination, not latency or real runtime proof."
+  },
+  {
+    "name": "red-quick-drop-display-final-fence",
+    "file": "src/main/services/remote-quick-details.ts",
+    "changes": [
+      [
+        " || (runtime.getDisplayRunId?.() ?? null) !== displayRunId",
+        ""
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-quick-details.test.ts"
+    ],
+    "pattern": "admitted.*Details display generation",
+    "evidenceLimit": "Same-object/registration/app/native hard prestates plus early/late generation changes modeled. Stable/unsupported and revoked403 remain independent. No live/provider-payload disclosure claim."
+  },
+  {
+    "name": "red-quick-capture-display-after-first-await",
+    "file": "src/main/services/remote-quick-details.ts",
+    "changes": [
+      [
+        "    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;\n",
+        ""
+      ],
+      [
+        "    await read('connections', (c) => {\n",
+        "    const displayRunId = runtime?.kind === 'chat' ? runtime.getDisplayRunId?.() ?? null : null;\n    await read('connections', (c) => {\n"
+      ]
+    ],
+    "tests": [
+      "src/main/services/remote-quick-details.test.ts"
+    ],
+    "pattern": "early-reopen",
+    "evidenceLimit": "Generation changed in the first modeled settings/template await; source/target primary evidence real where applicable. Exact placement/order discrimination, not latency or real runtime proof."
+  }
+]

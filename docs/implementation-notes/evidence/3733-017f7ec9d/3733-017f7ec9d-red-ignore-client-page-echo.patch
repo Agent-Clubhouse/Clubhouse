@@ -1,0 +1,11 @@
+--- src/main/services/annex-client.ts
++++ src/main/services/annex-client.ts
+@@ -2495,7 +2495,7 @@
+     if (page) {
+       const response = res.body.cards.find((card) => card.id === 'connections')?.connectionPage;
+       if (!response) return { status: res.body.connectionPages === 1 ? 'error' : 'unavailable' }; // Older host ignored the additive page query.
+-      if (response.source !== page.source || response.offset !== (page.offset ?? 0) || response.projectOffset !== (page.projectOffset ?? 0)) return { status: 'error' };
++      if (false) return { status: 'error' };
+     }
+     return { status: 'ok', value: res.body };
+   } catch {

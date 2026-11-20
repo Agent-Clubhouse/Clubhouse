@@ -1,0 +1,11 @@
+--- src/main/services/registered-agent-display-page.ts
++++ src/main/services/registered-agent-display-page.ts
+@@ -166,7 +166,7 @@
+             if (fields.connectToDispatcher.state !== 'ok' || fields.disposed.state !== 'ok' || fields.helper.state !== 'ok') { unknownRows++; complete = false; continue; }
+           }
+           knownMatches++;
+-          if (knownMatches <= matchOffset || entries.length >= limit) continue;
++          if (entries.length >= limit) continue;
+           const stamp = <T>(value: DisplayValue<T>): DisplayValue<T> => ({ ...value, inputs: value.inputs.map((input) => ({ ...input, source: 'primary', observedAt })) });
+           entries.push({ agentId: agent.id, projectId: project.id, projectName: project.name,
+             fields: { ...fields, name: fields.name.state === 'ok' ? { ...stamp(fields.name), state: 'ok', value: display(fields.name.value, 240) } : stamp(fields.name),

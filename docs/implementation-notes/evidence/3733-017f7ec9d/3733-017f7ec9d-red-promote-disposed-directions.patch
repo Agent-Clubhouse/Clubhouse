@@ -1,0 +1,11 @@
+--- src/main/services/configured-registered-connections-display.ts
++++ src/main/services/configured-registered-connections-display.ts
+@@ -64,7 +64,7 @@
+     const first = purpose === 'helper-children' ? AUTOMATIC_CONNECTION_SWITCHES.parentToHelper : AUTOMATIC_CONNECTION_SWITCHES.dispatcherToAgent;
+     const second = purpose === 'helper-children' ? AUTOMATIC_CONNECTION_SWITCHES.helperToParent : AUTOMATIC_CONNECTION_SWITCHES.agentToDispatcher;
+     return { endpoint, source: purpose === 'helper-children' ? 'helper' : 'dispatcher-auto', applicability,
+-      directions: applicability === 'configured' ? [{ from: 'selected', disabledTools: [...first.disabledTools], enabledTools: [...first.enabledTools] },
++      directions: true ? [{ from: 'selected', disabledTools: [...first.disabledTools], enabledTools: [...first.enabledTools] },
+         { from: 'endpoint', disabledTools: [...second.disabledTools], enabledTools: [...second.enabledTools] }] : [] };
+   }) };
+   if (readCache) for (const entry of result.entries) {
