@@ -223,6 +223,35 @@ async function main() {
         if (result.code !== 0 || result.signal) throw new Error(`${peer.role} runner exit ${JSON.stringify(result)}`);
         if (!peer.bootstrap) throw new Error(`${peer.role} has no actual fork identity`);
         if (processes().some((row) => row.pid === peer.bootstrap?.pid)) throw new Error(`${peer.role} fork remains alive`);
+        const native = readArtifact(path.join(output, `${peer.role}-native-events.jsonl`)).trim().split('\n').map((line) => {
+          const value: unknown = JSON.parse(line);
+          if (!record(value) || value.role !== peer.role || value.nonce !== nonce || value.cliPid !== peer.child.pid) {
+            throw new Error(`${peer.role} native event identity mismatch`);
+          }
+          return value;
+        });
+        const kind = (name: string) => native.filter((event) => event.kind === name);
+        assert.equal(kind('pool-created').length, 1);
+        assert.equal(kind('pool-created')[0].instances, 1);
+        assert.equal(kind('stop-request').length, 1);
+        assert.equal(kind('stop-request')[0].tagged, true);
+        assert.equal(kind('runtime-stopped').length, 1);
+        const response = kind('runtime-stopped')[0].response;
+        assert.ok(record(response) && response.type === 'stopped' && response.__vitest_worker_response__ === true
+          && response.error === undefined);
+        for (const name of ['native-exit', 'native-close']) {
+          assert.equal(kind(name).length, 1);
+          assert.equal(kind(name)[0].code, 0);
+          assert.equal(kind(name)[0].signal, null);
+        }
+        assert.equal(kind('native-exit')[0].premature, false);
+        assert.equal(kind('dead-cleanup-complete').length, 1);
+        const ordered = ['stop-request', 'runtime-stopped', 'native-exit', 'native-close', 'dead-cleanup-start', 'dead-cleanup-complete'];
+        const positions = ordered.map((name) => native.findIndex((event) => event.kind === name));
+        assert.ok(positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1])));
+        fs.writeFileSync(path.join(output, `${peer.role}-native-verified.json`), JSON.stringify({
+          pid: peer.bootstrap.pid, ppid: peer.bootstrap.ppid, role: peer.role, nonce, events: native,
+        }, null, 2) + '\n', { flag: 'wx' });
       } catch (error) {
         closeErrors.push(error);
         try { await forceStop(peer); }
@@ -243,8 +272,8 @@ async function main() {
     const connected = new Promise<net.Socket>((resolve) => ipc.once('connection', resolve));
     await new Promise<void>((resolve, reject) => { ipc.once('error', reject); ipc.listen(ipcPath, resolve); });
     const child = spawn(process.execPath, [
-      path.resolve('node_modules/vitest/vitest.mjs'), 'run', '--project', 'integration',
-      'test/annex-v2/reverse-inventory-worker.test.ts', '--pool=forks', '--maxWorkers=1',
+      path.resolve('node_modules/vitest/vitest.mjs'), 'run', '--config', 'test/annex-v2/vitest.owned-exit.config.ts',
+      '--project', 'integration', 'test/annex-v2/reverse-inventory-worker.test.ts', '--maxWorkers=1',
       '--fileParallelism=false', '--disableConsoleIntercept',
     ], {
       env: {
@@ -341,10 +370,23 @@ async function main() {
   finally {
     proofActive = false;
     if (forward && peers.length === 2) {
+      const quiesceCounts = new Map<string, number>();
       const ownedPeers = peers.map((peer): OwnedAuditPeer => ({
-        quiesce: (ports) => {
-          if (!peer.rpc) return Promise.reject(new Error(`${peer.role} has no quiesce IPC`));
-          return peer.rpc.call<MainDialAudit>('quiesce', ports);
+        quiesce: async (ports) => {
+          const invocation = (quiesceCounts.get(peer.role) ?? 0) + 1;
+          quiesceCounts.set(peer.role, invocation);
+          const file = path.join(output, `${peer.role}-quiesce-${String(invocation).padStart(2, '0')}`);
+          const identity = { role: peer.role, pid: peer.bootstrap?.pid, nonce, expectedSourcePorts: ports, utc: new Date().toISOString() };
+          try {
+            if (!peer.rpc) throw new Error(`${peer.role} has no quiesce IPC`);
+            const audit = await peer.rpc.call<MainDialAudit>('quiesce', ports);
+            assert.ok(audit && audit.phase === 'live' && audit.installed === true && audit.sealed === true && audit.pending === 0);
+            fs.writeFileSync(`${file}.json`, JSON.stringify({ ...identity, kind: 'live-quiesce', audit }, null, 2) + '\n', { flag: 'wx' });
+            return audit;
+          } catch (error) {
+            fs.writeFileSync(`${file}-error.json`, JSON.stringify({ ...identity, error: errorDetails(error) }, null, 2) + '\n', { flag: 'wx' });
+            throw error;
+          }
         },
         close: () => closePeer(peer),
         readFinal: async () => readMainDialAudit(peer.auditPath),
@@ -390,7 +432,7 @@ async function main() {
     }
     const result = {
       status: errors.length === 0 && capture?.status === 'complete' && sentinelClosed && sentinelAccepts === 0 ? 'complete' : 'failed',
-      scope: 'one A-opener bootstrap/quiesce/actual-exit calibration; no read-route cases',
+      scope: 'one A-opener supported-public-graceful bootstrap/quiesce/actual-exit calibration; no read-route cases',
       launch, elapsedMs: Date.now() - started, capture,
       sentinel: { accepts: sentinelAccepts, closed: sentinelClosed },
       peakNodeProcesses, peakAggregateRssKiB, peakAggregateCpuPercent,
