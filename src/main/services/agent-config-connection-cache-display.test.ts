@@ -105,13 +105,13 @@ it('keeps stable selected fields current when only their observation time advanc
   const receipts: DisplayReceipt[] = []; expect(read(receipts).availability).toBe('loaded'); expect(receipts[0].current()).toBe(true); expect(receipts[0].current()).toBe(true); assertNoReadEffects();
 });
 it('withholds a loaded index whose owner namespace was not re-established after a real cache-clear commit race', async () => {
-  await warm();
+  await warm(); expect(read().availability).toBe('loaded');
   // Real owner API, intentional temporary-fixture write. The commit callback
   // retires the original cache; writeAgents then creates an index without the
   // old directory identity. Presence alone must not certify its namespace.
-  await updateDurableConfig(project, 'target', { model: 'fixture-namespace-unknown' }, async () => { clearAgentConfigCache(project); });
+  await updateDurableConfig(project, 'target', { orchestrator: 'codex-cli' }, async () => { clearAgentConfigCache(project); });
   await flushAgentConfig(project); await new Promise<void>((resolve) => setImmediate(resolve));
-  expect(peekCachedDurableConfig(project, 'target')).toMatchObject({ model: 'fixture-namespace-unknown' }); resetObservation();
+  expect(peekCachedDurableConfig(project, 'target')).toMatchObject({ id: 'target', name: 'Selected cache name', orchestrator: 'codex-cli' }); resetObservation();
   const receipts: DisplayReceipt[] = [], result = read(receipts);
   expect.soft(result).toMatchObject({ availability: 'namespace-unconfirmed' }); expect.soft(result.fields).toBeUndefined(); expect.soft(receipts).toEqual([]); assertNoReadEffects();
 });
