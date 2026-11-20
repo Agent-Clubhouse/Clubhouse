@@ -47,6 +47,8 @@ export interface SatelliteConnection {
   lastError: string | null;
   /** This connection's satellite can't build a snapshot yet, and is retrying. */
   snapshotUnavailable?: boolean;
+  /** Renderer-only: cached catalog reconciliation was incomplete; await a live snapshot. */
+  catalogIncomplete?: boolean;
   /** The pairing can't be used any more; `lastError` says why. Pair again to connect. */
   needsPairing?: boolean;
 }
@@ -67,13 +69,195 @@ function syncRemotePermissions(satelliteId: string, permissions: unknown[]): voi
   usePendingPermissionStore.getState().hydrateRemote(satelliteId, permissions.map((p) => remotePermission(satelliteId, p)).filter((p) => p !== null));
 }
 
-function syncSatellitePermissions(satellites: SatelliteConnection[]): void {
-  for (const sat of useAnnexClientStore.getState().satellites) {
-    if (!satellites.some((next) => next.id === sat.id && next.state === 'connected')) syncRemotePermissions(sat.id, []);
+// Invalidates local reads when any newer IPC update (including an incremental event)
+// arrives. A second read also supersedes the first, regardless of completion order.
+let satelliteRevision = 0;
+let satelliteListRevision = 0;
+let satelliteReadId = 0;
+let startupRead: { promise: Promise<void>; listRevision: number } | null = null;
+
+// IPC clones have no shared object identity or socket epoch. Keep an independent
+// comparison copy: this is duplicate suppression, not a freshness/sequence test.
+const comparedSnapshots = new WeakMap<SatelliteConnection, SatelliteSnapshot>();
+function sameSnapshot(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length
+    && keys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && sameSnapshot(left[key], right[key]));
+}
+
+function applySnapshot(satellite: SatelliteConnection, snapshot: SatelliteSnapshot): void {
+  useRemoteProjectStore.getState().applySatelliteSnapshot(satellite.id, satellite.alias, snapshot);
+  syncRemotePermissions(satellite.id, snapshot.pendingPermissions ?? []);
+  useAnnexClientStore.setState((state) => ({
+    satellitePaused: { ...state.satellitePaused, [satellite.id]: !!snapshot.sessionPaused },
+  }));
+}
+
+type SatelliteEvent = { satelliteId: string; type: string; payload: unknown };
+type CatalogOperation =
+  | { kind: 'run'; agentId: string; status: 'running' | 'sleeping'; clearPermissions: boolean }
+  | { kind: 'status'; agentId: string; status: import('../../shared/types').AgentDetailedStatus }
+  | { kind: 'permission'; permission: PendingPermissionInfo }
+  | { kind: 'settled'; requestId: string }
+  | { kind: 'pause'; paused: boolean };
+
+// Startup only: a local read can contain a snapshot older than an event already
+// delivered to this renderer. Main doesn't fold status/permission events into its
+// cache. Retain bounded projection operations until the first catalog is seeded.
+// Never retain PTY/chat bodies or arbitrary events. Unsupported changes defer the
+// catalog rather than claim the cached inventory is current.
+function startupJournal() {
+  const hosts = new Map<string, { operations: CatalogOperation[]; bytes: number; blocked: boolean }>();
+  let bytes = 0;
+  let overflow = false;
+  let active = true;
+  let snapshots = 0;
+  const size = (value: unknown, budget = 2048, depth = 0): number => {
+    if (depth > 12) return Infinity;
+    if (value == null || typeof value === 'boolean' || typeof value === 'number') return 8;
+    if (typeof value === 'string') return value.length * 2;
+    if (typeof value !== 'object') return Infinity;
+    let total = 0;
+    for (const key of Object.keys(value)) {
+      total += key.length * 2 + size((value as Record<string, unknown>)[key], budget - total, depth + 1);
+      if (total > budget) return Infinity;
+    }
+    return total;
+  };
+  const clear = (id: string) => {
+    const host = hosts.get(id);
+    if (host) bytes -= host.bytes;
+    hosts.delete(id);
+  };
+  const blocked = (id: string) => active && !useRemoteProjectStore.getState().satelliteProjects[id]
+    && (overflow || !!hosts.get(id)?.blocked);
+  return {
+    get snapshotRevision() { return snapshots; },
+    clear,
+    blocked,
+    stop() { active = false; hosts.clear(); bytes = 0; },
+    defer() { overflow = true; },
+    record({ satelliteId, type, payload }: SatelliteEvent) {
+      if (!active) return;
+      if (type === 'snapshot') {
+        clear(satelliteId);
+        // An authoritative snapshot replaces every preceding operation. If its
+        // host metadata isn't here yet, one new local read can fetch that cache.
+        if (!useAnnexClientStore.getState().satellites.some((sat) => sat.id === satelliteId && sat.state === 'connected')) snapshots++;
+        return;
+      }
+      const satellite = useAnnexClientStore.getState().satellites.find((sat) => sat.id === satelliteId);
+      if ((satellite && satellite.state !== 'connected') || useRemoteProjectStore.getState().satelliteProjects[satelliteId]) return;
+      if (['pty:data', 'chat:event', 'theme:changed', 'error'].includes(type)) return;
+      let host = hosts.get(satelliteId);
+      if (!host) {
+        if (hosts.size >= 8 || satelliteId.length > 256) { overflow = true; return; }
+        host = { operations: [], bytes: satelliteId.length * 2, blocked: false };
+        bytes += host.bytes;
+        hosts.set(satelliteId, host);
+      }
+      if (host.blocked) return;
+      const p = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+      const agentId = p.agentId ?? p.id;
+      const validId = (id: unknown): id is string => typeof id === 'string' && id.length > 0 && id.length <= 256;
+      const operations: CatalogOperation[] = [];
+      if (type === 'pty:exit' || type === 'agent:completed' || type === 'agent:woken') {
+        if (validId(agentId)) operations.push({ kind: 'run', agentId, status: type === 'agent:woken' ? 'running' : 'sleeping', clearPermissions: type !== 'agent:woken' });
+      } else if (type === 'agent:status' || type === 'hook:event' || type === 'structured:event') {
+        if (validId(agentId)) {
+          if (type === 'agent:status' && (p.status === 'running' || p.status === 'sleeping')) operations.push({ kind: 'run', agentId, status: p.status, clearPermissions: false });
+          const status = p.detailedStatus as import('../../shared/types').AgentDetailedStatus;
+          if (status && ['idle', 'working', 'needs_permission', 'tool_error'].includes(status.state)
+            && typeof status.message === 'string' && Number.isFinite(status.timestamp)
+            && (status.toolName === undefined || typeof status.toolName === 'string')) {
+            operations.push({ kind: 'status', agentId, status: { state: status.state, message: status.message, timestamp: status.timestamp, ...(status.toolName && { toolName: status.toolName }) } });
+          }
+        }
+      } else if (type === 'permission:response') {
+        if (validId(p.requestId)) operations.push({ kind: 'settled', requestId: p.requestId });
+      } else if (type === 'permission:request') {
+        const permission = remotePermission(satelliteId, payload);
+        if (permission && validId(p.requestId) && validId(p.agentId)) {
+          // Copy only the validated permission projection, never sibling payload fields.
+          operations.push({ kind: 'permission', permission: {
+            requestId: permission.requestId, agentId: permission.agentId, toolName: permission.toolName,
+            createdAt: permission.createdAt, timeoutMs: permission.timeoutMs,
+            ...(permission.toolInput && { toolInput: permission.toolInput }),
+            ...(typeof permission.message === 'string' && { message: permission.message }),
+          } });
+        }
+      } else if (type === 'session:paused' || type === 'session:resumed') {
+        operations.push({ kind: 'pause', paused: type === 'session:paused' });
+      }
+      const retained = size(operations);
+      if (!operations.length || host.operations.length + operations.length > 32 || retained > 2048 || bytes + retained > 32768) {
+        bytes -= host.bytes;
+        host.operations = [];
+        host.bytes = 0;
+        host.blocked = true;
+        return;
+      }
+      host.operations.push(...structuredClone(operations));
+      host.bytes += retained;
+      bytes += retained;
+    },
+    replay(id: string) {
+      for (const operation of hosts.get(id)?.operations ?? []) {
+        const store = useRemoteProjectStore.getState();
+        if (operation.kind === 'run') {
+          if (operation.clearPermissions) usePendingPermissionStore.getState().clearForAgent(namespacedAgentId(id, operation.agentId));
+          store.updateRemoteAgentRunState(id, operation.agentId, operation.status);
+        } else if (operation.kind === 'status') store.updateRemoteAgentStatus(id, operation.agentId, operation.status);
+        else if (operation.kind === 'permission') usePendingPermissionStore.getState().addPending(operation.permission);
+        else if (operation.kind === 'settled') usePendingPermissionStore.getState().removePending(namespacedAgentId(id, operation.requestId));
+        else useAnnexClientStore.setState((state) => ({ satellitePaused: { ...state.satellitePaused, [id]: operation.paused } }));
+      }
+      clear(id);
+    },
+  };
+}
+type StartupJournal = ReturnType<typeof startupJournal>;
+
+function reconcileSatellites(satellites: SatelliteConnection[], journal?: StartupJournal): void {
+  const previous = useAnnexClientStore.getState().satellites;
+  const paused = { ...useAnnexClientStore.getState().satellitePaused };
+  for (const sat of previous) {
+    if (!satellites.some((next) => next.id === sat.id && next.state === 'connected')) {
+      syncRemotePermissions(sat.id, []);
+      delete paused[sat.id];
+    }
+    // Keep last-known catalog on disconnect, as before; forgetting removes it.
+    if (!satellites.some((next) => next.id === sat.id)) {
+      useRemoteProjectStore.getState().removeSatellite(sat.id);
+      journal?.clear(sat.id);
+    }
   }
-  for (const sat of satellites) {
-    if (sat.state === 'connected' && sat.snapshot) syncRemotePermissions(sat.id, sat.snapshot.pendingPermissions ?? []);
-  }
+  const next = satellites.map((sat) => {
+    const old = previous.find((item) => item.id === sat.id);
+    const comparison = old && comparedSnapshots.get(old);
+    const duplicate = comparison !== undefined && sameSnapshot(comparison, sat.snapshot);
+    const missingCatalog = !useRemoteProjectStore.getState().satelliteProjects[sat.id];
+    const cachedBeforeReconnect = duplicate && old?.state !== 'connected' && sat.state === 'connected' && missingCatalog;
+    const incomplete = old?.catalogIncomplete || journal?.blocked(sat.id) || cachedBeforeReconnect;
+    const connection = { ...sat, snapshot: duplicate ? old!.snapshot : sat.snapshot, ...(incomplete && { catalogIncomplete: true }) };
+    if (sat.snapshot) comparedSnapshots.set(connection, duplicate ? comparison : structuredClone(sat.snapshot));
+    if (sat.state !== 'connected') {
+      syncRemotePermissions(sat.id, []);
+      delete paused[sat.id];
+      journal?.clear(sat.id);
+    } else if (!incomplete && sat.snapshot && (!duplicate || missingCatalog)) {
+      applySnapshot(connection, sat.snapshot);
+      journal?.replay(sat.id);
+      paused[sat.id] = useAnnexClientStore.getState().satellitePaused[sat.id];
+    }
+    return connection;
+  });
+  useAnnexClientStore.setState({ satellites: next, satellitePaused: paused });
 }
 
 // ---------------------------------------------------------------------------
@@ -149,10 +333,15 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   satellitePaused: {},
 
   loadSatellites: async () => {
+    // Settings may request the same initial catalog while the app bridge starts.
+    // Share its overlay/read rather than race a second unprotected hydration.
+    if (startupRead?.listRevision === satelliteListRevision) return startupRead.promise;
+    const readId = ++satelliteReadId;
+    const revision = satelliteRevision;
     try {
-      const satellites = await window.clubhouse.annexClient.getSatellites();
-      syncSatellitePermissions(satellites);
-      set({ satellites });
+      const satellites: SatelliteConnection[] = await window.clubhouse.annexClient.getSatellites();
+      if (readId !== satelliteReadId || revision !== satelliteRevision) return;
+      reconcileSatellites(satellites);
     } catch (err) {
       console.warn('[annex-client] loadSatellites failed:', err);
     }
@@ -423,46 +612,36 @@ function throttledHookUpdate(
 
 /** Listen for satellite updates pushed from main process. */
 export function initAnnexClientListener(): () => void {
+  let active = true;
+  const journal = startupJournal();
   const unsubSatellites = window.clubhouse.annexClient.onSatellitesChanged((satellites: SatelliteConnection[]) => {
-    syncSatellitePermissions(satellites);
-    // Clear paused state for satellites that are no longer connected —
-    // prevents stale "paused" badges when a satellite dies unexpectedly.
-    const currentPaused = useAnnexClientStore.getState().satellitePaused;
-    const updatedPaused = { ...currentPaused };
-    let pausedChanged = false;
-    for (const sat of satellites) {
-      if (sat.state === 'disconnected' && updatedPaused[sat.id]) {
-        delete updatedPaused[sat.id];
-        pausedChanged = true;
-      }
-    }
-    useAnnexClientStore.setState({
-      satellites,
-      ...(pausedChanged ? { satellitePaused: updatedPaused } : {}),
-    });
+    if (!active) return;
+    satelliteRevision++;
+    satelliteListRevision++;
+    reconcileSatellites(satellites, journal);
   });
 
   const unsubDiscovered = window.clubhouse.annexClient.onDiscoveredChanged((services: DiscoveredService[]) => {
+    if (!active) return;
     useAnnexClientStore.setState({ discoveredServices: services });
   });
 
   const unsubEvents = window.clubhouse.annexClient.onSatelliteEvent((event: { satelliteId: string; type: string; payload: unknown }) => {
+    if (!active) return;
     const { satelliteId, type, payload } = event;
 
+    satelliteRevision++;
+    journal.record(event);
     if (type === 'snapshot') {
-      // Find satellite name from current satellites list
       const satellite = useAnnexClientStore.getState().satellites.find((s) => s.id === satelliteId);
-      const satelliteName = satellite?.alias || satelliteId;
+      // A late frame cannot restore a removed host's catalog or permissions.
+      if (satellite?.state !== 'connected') return;
       const snap = payload as SatelliteSnapshot;
-      if (satellite?.state === 'connected') syncRemotePermissions(satelliteId, snap.pendingPermissions ?? []);
-      useRemoteProjectStore.getState().applySatelliteSnapshot(
-        satelliteId,
-        satelliteName,
-        snap,
-      );
-      // Sync pause state from snapshot so reconnects clear stale paused flags
+      applySnapshot(satellite, snap);
+      const connection = { ...satellite, snapshot: snap, catalogIncomplete: false };
+      comparedSnapshots.set(connection, structuredClone(snap));
       useAnnexClientStore.setState((state) => ({
-        satellitePaused: { ...state.satellitePaused, [satelliteId]: !!snap.sessionPaused },
+        satellites: state.satellites.map((sat) => sat.id === satelliteId ? connection : sat),
       }));
       for (const listener of [...snapshotListeners]) {
         try { listener(satelliteId); } catch { /* telemetry-exempt: one listener failing must not stop the others */ }
@@ -734,7 +913,43 @@ export function initAnnexClientListener(): () => void {
     }
   });
 
+  // Subscribe first. The startup-only overlay can preserve events delivered
+  // before the initial catalog exists; ordinary later reads reject stale data.
+  const readInitial = async (retried = false): Promise<void> => {
+    const readId = ++satelliteReadId;
+    const revision = satelliteRevision;
+    const listRevision = satelliteListRevision;
+    const snapshotRevision = journal.snapshotRevision;
+    try {
+      const satellites: SatelliteConnection[] = await window.clubhouse.annexClient.getSatellites();
+      if (!active || readId !== satelliteReadId || listRevision !== satelliteListRevision) return;
+      if (snapshotRevision !== journal.snapshotRevision) {
+        if (!retried) return readInitial(true);
+        // No retry loop under sustained snapshots. A live snapshot with host
+        // metadata is the only authority that can clear this incomplete state.
+        journal.defer();
+      }
+      const current = useAnnexClientStore.getState().satellites;
+      reconcileSatellites(revision === satelliteRevision ? satellites : satellites.map((sat) => {
+        const existing = current.find((item) => item.id === sat.id);
+        return existing && useRemoteProjectStore.getState().satelliteProjects[sat.id] ? existing : sat;
+      }), journal);
+    } catch (err) {
+      console.warn('[annex-client] loadSatellites failed:', err);
+    }
+  };
+  const initialRead = { promise: readInitial(), listRevision: satelliteListRevision };
+  startupRead = initialRead;
+  void initialRead.promise.finally(() => {
+    journal.stop();
+    if (startupRead === initialRead) startupRead = null;
+  });
+
   return () => {
+    if (startupRead === initialRead) startupRead = null;
+    active = false;
+    journal.stop();
+    satelliteRevision++;
     unsubSatellites();
     unsubDiscovered();
     unsubEvents();

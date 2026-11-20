@@ -369,7 +369,10 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
                 {satellite?.host && ` \u00B7 ${satellite.host}`}
               </p>
             </div>
-            {satellite?.snapshotUnavailable && projects.length > 0 && (
+            {satellite?.catalogIncomplete && projects.length > 0 && (
+              <p className="text-xs text-ctp-subtext0 mt-0.5">Project updates are incomplete. Waiting for a fresh project snapshot.</p>
+            )}
+            {!satellite?.catalogIncomplete && satellite?.snapshotUnavailable && projects.length > 0 && (
               <p className="text-xs text-ctp-subtext0 mt-0.5">This may be out of date. Retrying to load the latest.</p>
             )}
           </div>
@@ -398,7 +401,12 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
           </>
         )}
 
-        {projects.length === 0 && (satellite?.snapshotUnavailable ? (
+        {projects.length === 0 && (satellite?.catalogIncomplete ? (
+          <EmptyState
+            title="Project catalog is incomplete"
+            description="Waiting for a fresh project snapshot."
+          />
+        ) : satellite?.snapshotUnavailable ? (
           <EmptyState
             title="Can't load this satellite yet"
             description="Retrying. Its projects will show here when it answers."
