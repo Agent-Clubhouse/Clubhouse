@@ -43,6 +43,7 @@ export interface RegisteredDisplaySelection {
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const id = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !/[\x00-\x1f\x7f]/.test(v);
+const localId = (v: unknown): v is string => id(v) && !v.includes('@') && !v.includes('||');
 const folder = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 4096 && path.isAbsolute(v) && !v.includes('\0');
 const current = (receipt: DisplayReceipt) => { try { return receipt.current(); } catch { return false; } };
 /** Keep receipts in a separate lexical scope; no parsed root/agent document is captured. */
@@ -72,7 +73,7 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
   const observedAt = Date.now(), inputs: DisplayInput[] = [{ field: 'Selected registered relationship inventory', source: 'primary', observedAt }];
   const unknown = (reason: 'invalid' | 'unreadable' | 'limit' | 'changed'): DisplayValue<RegisteredAgentDisplayPage> => ({ state: 'unavailable', reason, inputs });
   const projectOffset = options.projectOffset ?? 0, matchOffset = options.matchOffset ?? 0, rootsOut = options.rootEvidence;
-  if (!selected || !id(selected.agentId) || !id(selected.projectId) || !folder(selected.projectPath) || typeof selected.receipt?.current !== 'function'
+  if (!selected || !localId(selected.agentId) || !id(selected.projectId) || !folder(selected.projectPath) || typeof selected.receipt?.current !== 'function'
     || !Array.isArray(options.receipts) || rootsOut !== undefined && (!(rootsOut instanceof Map) || rootsOut.size)
     || !Number.isInteger(projectOffset) || projectOffset < 0 || projectOffset > REGISTERED_DISPLAY_ROWS
     || !Number.isInteger(matchOffset) || matchOffset < 0 || matchOffset > REGISTERED_DISPLAY_ROWS
@@ -89,31 +90,34 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
     if (!Array.isArray(raw)) return unknown('unreadable');
     if (raw.length > rowsLeft) return unknown('limit'); rowsLeft -= raw.length;
     const projects: Project[] = [], ids = new Set<string>(), paths = new Set<string>();
+    let selectedRegistered = false;
     for (const value of raw) {
       if (!record(value) || !id(value.id) || !folder(value.path) || ids.has(value.id) || paths.has(value.path)) return unknown('unreadable');
       ids.add(value.id); paths.add(value.path);
+      if (value.id === selected.projectId && value.path === selected.projectPath) selectedRegistered = true;
       const label = typeof value.displayName === 'string' && value.displayName ? value.displayName : value.name;
       const name: DisplayValue<string> = typeof label === 'string' && label.length <= 1024 ? { state: 'ok', value: display(label, 240), inputs }
         : { state: 'unavailable', reason: typeof label === 'string' ? 'limit' : 'invalid', inputs };
       projects.push({ id: value.id, path: value.path, name });
     }
-    if (purpose === 'helper-children' && !projects.some((p) => p.id === selected.projectId && p.path === selected.projectPath)) return unknown('changed');
+    if (purpose === 'helper-children' && !selectedRegistered) return unknown('changed');
     if (!admitted() || !snapshot.receipt.current()) return unknown('changed');
-    let selectedDirectory: string | undefined;
-    const aliases = new Map<string, string | null>();
+    if (projectOffset > 0 && projectOffset >= projects.length) return unknown('changed');
+    let selectedDirectory: string | undefined, selectedDirectoryReceipt: DisplayReceipt | undefined;
+    const aliases = new Map<string, { key: string | null; receipt?: DisplayReceipt }>();
     if (purpose === 'helper-children') {
-      try { selectedDirectory = directoryKey(selected.projectPath); evidence.push(directoryReceipt(selected.projectPath, selectedDirectory)); }
+      try { selectedDirectory = directoryKey(selected.projectPath); selectedDirectoryReceipt = directoryReceipt(selected.projectPath, selectedDirectory); evidence.push(selectedDirectoryReceipt); }
       catch { return unknown('unreadable'); }
     }
-    const relatedParent = (parent: unknown): boolean | undefined => {
+    const relatedParent = (parent: unknown, relevant: Set<DisplayReceipt>): boolean | undefined => {
       if (!folder(parent)) return undefined;
       if (parent === selected.projectPath) return true;
       // An unregistered UNC/network spelling is not an admitted alias probe.
       if ((parent.startsWith('\\\\') || parent.startsWith('//')) && !paths.has(parent)) return undefined;
-      if (aliases.has(parent)) { const found = aliases.get(parent); return found === null ? undefined : found === selectedDirectory; }
+      if (aliases.has(parent)) { const found = aliases.get(parent)!; if (found.receipt) relevant.add(found.receipt); return found.key === null ? undefined : found.key === selectedDirectory; }
       if (aliases.size >= REGISTERED_DISPLAY_ALIAS_PROBES || !admitted()) return undefined;
-      try { const found = directoryKey(parent); aliases.set(parent, found); evidence.push(directoryReceipt(parent, found)); return found === selectedDirectory; }
-      catch { aliases.set(parent, null); return undefined; }
+      try { const found = directoryKey(parent), receipt = directoryReceipt(parent, found); aliases.set(parent, { key: found, receipt }); evidence.push(receipt); relevant.add(receipt); return found === selectedDirectory; }
+      catch { aliases.set(parent, { key: null }); return undefined; }
     };
     const rootPage = projects.slice(projectOffset, projectOffset + REGISTERED_DISPLAY_PROJECTS), namespaces = new Set<string>();
     for (const project of rootPage) {
@@ -121,25 +125,27 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
       try {
         const data = readReadOnlyPrimaryMetadata(project.path, '.clubhouse/agents.json', { budget }); evidence.push(data.receipt);
         if (!Array.isArray(data.raw)) { unavailableProjects++; complete = false; continue; }
-        if (data.raw.length > rowsLeft) { unavailableProjects++; complete = false; continue; }
-        rowsLeft -= data.raw.length;
+        // Both duplicate-ID admission and relationship projection visit every row.
+        if (data.raw.length * 2 > rowsLeft) { unavailableProjects++; complete = false; continue; }
+        rowsLeft -= data.raw.length * 2;
         if (data.rootNamespace && namespaces.has(data.rootNamespace)) return unknown('unreadable');
         if (data.rootNamespace) namespaces.add(data.rootNamespace);
         const counts = new Map<string, number>();
-        for (const agent of data.raw) if (record(agent) && id(agent.id)) counts.set(agent.id, (counts.get(agent.id) ?? 0) + 1);
-        const rootReceipt = combine([selected.receipt, profile(base), snapshot.receipt, data.receipt]);
-        localRoots.set(project.id, { projectPath: project.path, namespace: data.rootNamespace, receipt: rootReceipt });
+        for (const agent of data.raw) if (record(agent) && localId(agent.id)) counts.set(agent.id, (counts.get(agent.id) ?? 0) + 1);
+        const relevantAliases = new Set<DisplayReceipt>(), emittedBefore = entries.length;
+        if (selectedDirectoryReceipt) relevantAliases.add(selectedDirectoryReceipt);
         for (const agent of data.raw) {
           if (!record(agent)) { unknownRows++; complete = false; continue; }
           if (purpose === 'helper-children') {
             if (agent.parentAgentId === undefined) continue;
             if (typeof agent.parentAgentId === 'string' && agent.parentAgentId !== selected.agentId) continue;
             if (agent.parentAgentId !== selected.agentId || agent.id === selected.agentId) { unknownRows++; complete = false; continue; }
-            const related = relatedParent(agent.parentProjectPath === undefined ? project.path : agent.parentProjectPath);
+            const related = agent.parentProjectPath === undefined && data.rootNamespace ? data.rootNamespace === selectedDirectory
+              : relatedParent(agent.parentProjectPath === undefined ? project.path : agent.parentProjectPath, relevantAliases);
             if (related === false) continue;
             if (related === undefined) { unknownRows++; complete = false; continue; }
           }
-          if (!id(agent.id) || counts.get(agent.id) !== 1) { unknownRows++; complete = false; continue; }
+          if (!localId(agent.id) || counts.get(agent.id) !== 1) { unknownRows++; complete = false; continue; }
           const projected = projectConnectionEndpointFieldsForDisplay(agent.id, agent);
           if (projected.state !== 'ok') { unknownRows++; complete = false; continue; }
           const fields = projected.value;
@@ -156,10 +162,13 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
               helper: stamp(fields.helper), disposed: stamp(fields.disposed), connectToDispatcher: stamp(fields.connectToDispatcher) },
             ...(purpose === 'helper-children' && { parentAgentId: selected.agentId }) });
         }
+        if (entries.length > emittedBefore) localRoots.set(project.id, { projectPath: project.path, namespace: data.rootNamespace,
+          receipt: combine([selected.receipt, profile(base), snapshot.receipt, data.receipt, ...relevantAliases]) });
       } catch (error) { unavailableProjects++; complete = false; if (!(error instanceof ReadOnlyMetadataLimitError)) continue; }
     }
     const receipt = combine(evidence); options.receipts.push(receipt);
     if (!admitted() || !receipt.current()) return unknown('changed');
+    if (matchOffset > 0 && matchOffset >= knownMatches) return unknown('changed');
     if (rootsOut) for (const [key, value] of localRoots) rootsOut.set(key, value);
     const next = knownMatches > matchOffset + entries.length ? { projectOffset, matchOffset: matchOffset + entries.length }
       : projectOffset + rootPage.length < projects.length ? { projectOffset: projectOffset + rootPage.length, matchOffset: 0 } : null;
