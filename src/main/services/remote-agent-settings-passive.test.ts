@@ -48,8 +48,30 @@ it('withholds selected runtime evidence changed during the later instructions aw
 });
 it('prioritizes revocation over changed display evidence after an actual settings edit', async () => {
   for (const file of files) write(file, {}); let allowed = true;
+  agent.persona = 'qa'; agent.managedMigrationFailure = { at: '2026-11-19', code: 'invalid', message: 'PRIVATE_REASON' };
   m.instructions.mockImplementation(async () => { write('chat-runtime-settings.json', { 'claude-code': { mode: 'terminal' } }); allowed = false; return { instructions: { text: '', truncated: false } }; });
   expect(await readRemoteAgentSettings(agent.id, () => allowed)).toEqual({ status: 403, body: { error: 'settings_read_refused' } });
+});
+
+it.each(['available', 'unknown-runtime', 'provider-unavailable', 'instructions-failed'] as const)('keeps selected passive notices independent of provider/setup availability without initializing files: %s', async (mode) => {
+  agent.persona = '/PRIVATE/persona'; agent.managedMigrationFailure = { at: '/PRIVATE/time', code: 'invalid', message: 'PRIVATE_REASON /private/secret' };
+  if (mode === 'unknown-runtime') fs.writeFileSync(path.join(root, 'chat-runtime-settings.json'), '{broken');
+  if (mode === 'provider-unavailable') agent.orchestrator = 'uninstalled-provider';
+  if (mode === 'instructions-failed') m.instructions.mockRejectedValue(new Error('PRIVATE_ERROR'));
+  temps(); const before = disk();
+  const result = await readRemoteAgentSettings(agent.id, () => true);
+  expect(result.status).toBe(['unknown-runtime', 'provider-unavailable'].includes(mode) ? 503 : 200);
+  expect(result.display?.rows).toContainEqual({ label: 'Legacy setup', value: 'A legacy persona is still recorded for this unmanaged agent.' });
+  expect(result.display?.rows).toContainEqual({ label: 'Migration failed', value: 'Clubhouse could not switch this agent to managed when it updated. The saved setup could not be converted.' });
+  expect(JSON.stringify(result)).not.toMatch(/PRIVATE_|\/private\//);
+  expect(disk()).toEqual(before);
+  if (mode === 'provider-unavailable') expect(m.instructions).not.toHaveBeenCalled();
+});
+
+it('withholds passive notices if the selected inventory changes during instructions read', async () => {
+  agent.persona = 'qa'; agent.managedMigrationFailure = { at: '2026-11-19', code: 'invalid', message: 'PRIVATE_REASON' };
+  m.instructions.mockImplementation(async () => { m.current = false; return { instructions: { text: '', truncated: false } }; });
+  expect(await readRemoteAgentSettings(agent.id, () => true)).toEqual({ status: 409, body: { error: 'agent_inventory_changed' } });
 });
 
 it('preserves explicit terminal and access choices independently of unrelated unreadable globals', async () => {

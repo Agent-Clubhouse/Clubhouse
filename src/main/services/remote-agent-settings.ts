@@ -14,6 +14,7 @@ import { captureReadOnlyConfigTargetWitness } from './read-only-config-target';
 import type { DisplayReceipt, DisplayValue } from './display-settings';
 import type { RemoteDetailsCard } from '../../shared/remote-agent-details';
 import { card, row } from './remote-details-presentation';
+import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 
 const label = (text: string) => Array.from(text, (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 ? ' ' : char).join('').slice(0, 240);
 
@@ -76,6 +77,20 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
       shown.notes.push('Unavailable settings are not inferred from this machine or from a previous run. Other host fields are shown independently.');
     }
     row(shown, 'Next start effort', agent.effort);
+    // These are selected saved markers, independent of provider/setup reads.
+    // Do not open legacy persona files or trigger migration to display them.
+    if (!agent.managed && project.id !== DISPATCHER_PROJECT_ID) {
+      if (agent.persona) row(shown, 'Legacy setup', 'A legacy persona is still recorded for this unmanaged agent.');
+      if (agent.managedMigrationFailure) {
+        // Messages can contain custom part names, paths and raw errors. Only
+        // fixed reason categories leave the host, never the saved free text.
+        const reason = agent.managedMigrationFailure.code === 'agent_transition_busy' ? 'It was changing state at the time.'
+          : agent.managedMigrationFailure.code === 'invalid' ? 'The saved setup could not be converted.'
+          : 'The reason is available on the host.';
+        row(shown, 'Migration failed', `Clubhouse could not switch this agent to managed when it updated. ${reason}`);
+      }
+      if (agent.persona || agent.managedMigrationFailure) shown.notes.push('Legacy and migration notices are selected saved metadata, not a new migration attempt or a verification of legacy files.');
+    }
     shown.notes.push('Saved next-start preferences; current runtime reports are shown separately.');
     const inputs = [...providerRead.selection.inputs, ...mode.inputs, ...(access?.inputs ?? []), ...(idle?.inputs ?? [])];
     for (const input of inputs) shown.notes.push(`${input.field}: ${input.source === 'host-cache' ? 'established host cache' : input.source === 'primary' ? 'host primary metadata' : 'selected agent metadata'} observed ${new Date(input.observedAt).toISOString()}.`);
