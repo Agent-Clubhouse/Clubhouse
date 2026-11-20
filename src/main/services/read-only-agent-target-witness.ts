@@ -23,7 +23,7 @@ function metadataAdmission(budget: ReadOnlyMetadataBudget | undefined, bytes: nu
   if (file) budget.remainingFiles--;
 }
 
-function inventory(root: string, relative: string, maxBytes = MAX_INVENTORY_BYTES, budget?: ReadOnlyMetadataBudget): { value: unknown; signature: string; byteLength: number } {
+function inventory(root: string, relative: string, maxBytes = MAX_INVENTORY_BYTES, budget?: ReadOnlyMetadataBudget): { value: unknown; signature: string; byteLength: number; rootNamespace?: string } {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_INVENTORY_BYTES) throw new ReadOnlyMetadataLimitError('Invalid metadata read bound.');
   metadataAdmission(budget, 0, true);
   const anchor = fs.realpathSync(root);
@@ -63,7 +63,14 @@ function inventory(root: string, relative: string, maxBytes = MAX_INVENTORY_BYTE
     if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) throw new Error('Inventory changed while reading.');
     const digest = createHash('sha256').update(bytes.subarray(0, size)).digest('hex');
     const identity = [...chain.values()].map((stat) => `${stat.dev}:${stat.ino}`).join('/');
-    return { value: JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size))), signature: `${identity}:${after.size}:${after.mtimeNs}:${after.ctimeNs}:${digest}`, byteLength: size };
+    const rootInfo = chain.get(anchor)!;
+    // This is the SAME held/verified root used for the primary witness. Only
+    // a usable inode tuple may join a cache namespace; a path fallback cannot
+    // prove directory replacement. Dev/ino is not universal ABA/runtime proof.
+    const namespace = relative === '.clubhouse/agents.json' && rootInfo.isDirectory()
+      && typeof rootInfo.dev === 'bigint' && typeof rootInfo.ino === 'bigint' && rootInfo.ino > 0n ? `ino:${rootInfo.dev}:${rootInfo.ino}` : undefined;
+    const rootNamespace = namespace && namespace.length <= 8192 ? namespace : undefined;
+    return { rootNamespace, value: JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size))), signature: `${identity}:${after.size}:${after.mtimeNs}:${after.ctimeNs}:${digest}`, byteLength: size };
   } finally { fs.closeSync(fd); }
 }
 
@@ -99,13 +106,15 @@ function absentMetadataReceipt(root: string, signature: string): { current(): bo
  */
 export function readReadOnlyPrimaryMetadata(root: string, relative: 'projects.json' | '.clubhouse/agents.json' | 'dispatcher-connections.json', options: { maxBytes?: number; budget: ReadOnlyMetadataBudget }): {
   raw: unknown; missing: boolean; receipt: { current(): boolean };
+  /** Internal observed root tuple only; never serialized or used as authority. */
+  rootNamespace?: string;
 } {
   if (typeof root !== 'string' || !root || root.length > 4096 || !path.isAbsolute(root) || root.includes('\0')
     || !['projects.json', '.clubhouse/agents.json', 'dispatcher-connections.json'].includes(relative)) throw new Error('Metadata root was not admitted.');
   if (!options?.budget) throw new ReadOnlyMetadataLimitError('Metadata budget was not admitted.');
   try {
-    const { value, signature, byteLength } = inventory(root, relative, options.maxBytes, options.budget);
-    return { raw: value, missing: false, receipt: primaryMetadataReceipt(root, relative, signature, Math.max(1, byteLength)) };
+    const { value, signature, byteLength, rootNamespace } = inventory(root, relative, options.maxBytes, options.budget);
+    return { raw: value, missing: false, rootNamespace, receipt: primaryMetadataReceipt(root, relative, signature, Math.max(1, byteLength)) };
   } catch (error) {
     if (relative !== '.clubhouse/agents.json' || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     const signature = absentAgentInventory(root);

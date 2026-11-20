@@ -9,7 +9,7 @@ vi.mock('./agent-config', () => ({ listDurable: m.generic, getDurableConfig: m.g
 vi.mock('./orchestration-settings', () => ({ readAutoHelpersForDisplay: m.generic, readGlobalHelperCapForDisplay: m.generic }));
 vi.mock('./settings-store', () => ({ peekMetadataFileForDisplaySync: m.generic, peekStoredSettingsSync: m.generic }));
 vi.mock('fs', async (original) => { const actual = await original<typeof import('fs')>(); return { ...actual, readSync: vi.fn(actual.readSync), openSync: vi.fn(actual.openSync) }; });
-import { readConnectionEndpointMetadataForDisplay, CONNECTION_METADATA_REQUESTS, CONNECTION_METADATA_ROOTS, type AdmittedConnectionEndpoint } from './connection-endpoint-metadata-display';
+import { readConnectionEndpointMetadataForDisplay, CONNECTION_METADATA_REQUESTS, CONNECTION_METADATA_ROOTS, type AdmittedConnectionEndpoint, type ConnectionEndpointProjectReceipt } from './connection-endpoint-metadata-display';
 import type { DisplayReceipt } from './display-settings';
 let root: string, a: string, b: string;
 const file = (project: string) => path.join(project, '.clubhouse', 'agents.json');
@@ -163,7 +163,7 @@ it('invalidates the private witness on host profile replacement without serializ
   expect.soft(receipts[0].current()).toBe(false); expect.soft(JSON.stringify(result)).not.toContain(root); expect.soft(JSON.stringify(receipts)).toBe('[{}]');
 });
 it('supplies private root-specific registered-primary receipts without coupling unrelated project primary edits', async () => {
-  const roots = new Map<string, DisplayReceipt>(), receipts: DisplayReceipt[] = [];
+  const roots = new Map<string, ConnectionEndpointProjectReceipt>(), receipts: DisplayReceipt[] = [];
   const result = readConnectionEndpointMetadataForDisplay([request('target', a), request('target', b)], { receipts, projectReceipts: roots });
   expect(result).toMatchObject({ state: 'ok', value: [{ value: { record: 'registered-primary' } }, { value: { record: 'registered-primary' } }] });
   expect(roots.size).toBe(2); expect([...roots.values()].every((r) => r.current())).toBe(true); expect(receipts.every((r) => r.current())).toBe(true);
@@ -172,7 +172,7 @@ it('supplies private root-specific registered-primary receipts without coupling 
 });
 it('includes the relevant registry and distinct selected associations in each private root receipt', async () => {
   let first = true, second = true;
-  const roots = new Map<string, DisplayReceipt>();
+  const roots = new Map<string, ConnectionEndpointProjectReceipt>();
   const firstReceipt = { current: () => first }, secondReceipt = { current: () => second };
   const result = readConnectionEndpointMetadataForDisplay([request('target', b, firstReceipt), request('PRIVATE_OTHER', b, secondReceipt)], { receipts: [], projectReceipts: roots });
   expect(result.state).toBe('ok'); expect(roots.get(b)?.current()).toBe(true);
@@ -180,6 +180,6 @@ it('includes the relevant registry and distinct selected associations in each pr
   await registry([{ id: 'a', path: a }]); expect(roots.get(b)?.current()).toBe(false);
 });
 it('refuses a reused private project-receipt sink before any inventory reads', () => {
-  const roots = new Map<string, DisplayReceipt>([[b, { current: () => true }]]);
+  const roots = new Map<string, ConnectionEndpointProjectReceipt>([[b, { current: () => true, cacheNamespace: () => undefined }]]);
   expect(readConnectionEndpointMetadataForDisplay([request()], { receipts: [], projectReceipts: roots })).toMatchObject({ state: 'unavailable', reason: 'invalid' }); expect(opened()).toEqual([]);
 });

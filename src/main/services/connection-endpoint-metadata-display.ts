@@ -15,6 +15,15 @@ export interface AdmittedConnectionEndpoint {
   /** Must bind this exact other-end project association, not just a path-free card page. */
   association: DisplayReceipt;
 }
+/** Private observed-directory tuple access; no path/tuple/receipt is a DTO or authority. */
+export interface ConnectionEndpointProjectReceipt extends DisplayReceipt {
+  cacheNamespace(): string | undefined;
+}
+function projectReceipt(receipts: readonly DisplayReceipt[], namespace: string | undefined): ConnectionEndpointProjectReceipt {
+  const evidence = combinedReceipt(receipts);
+  return { current: () => evidence.current(), cacheNamespace: () => namespace };
+}
+
 export type ConnectionEndpointMetadata =
   | { record: 'registered-primary'; fields: ConnectionEndpointFields }
   | { record: 'absent-from-primary' | 'project-not-registered' };
@@ -41,7 +50,7 @@ function combinedReceipt(receipts: readonly DisplayReceipt[]): DisplayReceipt {
  */
 export function readConnectionEndpointMetadataForDisplay(requests: readonly AdmittedConnectionEndpoint[], options: { receipts: DisplayReceipt[];
   /** Private per-query output for later root admission; never DTOs or route input. Must start empty. */
-  projectReceipts?: Map<string, DisplayReceipt>;
+  projectReceipts?: Map<string, ConnectionEndpointProjectReceipt>;
 }): DisplayValue<DisplayValue<ConnectionEndpointMetadata>[]> {
   const observedAt = Date.now();
   const inputs = [{ field: 'Related registered-project saved metadata', source: 'primary' as const, observedAt }];
@@ -139,7 +148,7 @@ export function readConnectionEndpointMetadataForDisplay(requests: readonly Admi
         // bounded registry (<=4MiB), THIS primary (<=4MiB), profile and distinct
         // selected association callbacks. At most16 root receipts are created;
         // checks do not reuse a previous phase's currentness result.
-        projectReceipts.set(projectPath, combinedReceipt([profile, registryReceipt, snapshot.receipt, ...group.map((request) => request.association)]));
+        projectReceipts.set(projectPath, projectReceipt([profile, registryReceipt, snapshot.receipt, ...group.map((request) => request.association)], snapshot.rootNamespace));
       }
     } catch (error) {
       const reason = error instanceof ReadOnlyMetadataLimitError ? 'limit' : 'unreadable';

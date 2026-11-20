@@ -1537,17 +1537,22 @@ function connectionCacheDisplayReceipt(projectPath: string, agentId: string, cac
  * run/auth/pin receipts. Namespace association here is host-memory evidence,
  * never authoritative registration, actual runtime or effective permission.
  */
-export function readAgentConnectionCacheForDisplay(projectPath: string, agentId: string, options: { receipts: DisplayReceipt[] }): AgentConnectionCacheDisplay {
+export function readAgentConnectionCacheForDisplay(projectPath: string, agentId: string, options: { receipts: DisplayReceipt[]; expectedProjectNamespace?: string }): AgentConnectionCacheDisplay {
   const observedAt = Date.now();
   const unavailable = (availability: AgentConnectionCacheDisplay['availability']): AgentConnectionCacheDisplay => ({ scope: 'host-session-cache', availability, observedAt });
   if (typeof projectPath !== 'string' || !projectPath || projectPath.length > 4096 || !path.isAbsolute(projectPath) || projectPath.includes('\0')
     || typeof agentId !== 'string' || !agentId.trim() || agentId.length > 200 || /[\x00-\x1f\x7f]/.test(agentId) || !Array.isArray(options?.receipts)) return unavailable('invalid');
+  // Private admission input from the held primary root, never a route value.
+  // Equality joins observed namespace tuples only, not runtime/authority/ABA.
+  const expectedNamespace = options.expectedProjectNamespace;
+  if (expectedNamespace !== undefined && (typeof expectedNamespace !== 'string' || !expectedNamespace || expectedNamespace.length > 8192 || expectedNamespace.includes('\0'))) return unavailable('invalid');
   const entry = configCache.get(projectPath);
   if (!entry) return unavailable('not-loaded');
   const agent = entry.agentsById.get(agentId);
   if (!agent) return unavailable('not-in-loaded-index');
   const namespace = entry.identity;
-  if (typeof namespace !== 'string' || !namespace || namespace.length > 8192 || agentIdOwners.get(agentId) !== namespace) return unavailable('namespace-unconfirmed');
+  if (typeof namespace !== 'string' || !namespace || namespace.length > 8192 || agentIdOwners.get(agentId) !== namespace
+    || expectedNamespace !== undefined && expectedNamespace !== namespace) return unavailable('namespace-unconfirmed');
   try {
     const fields = projectLoadedConnectionEndpointFieldsForDisplay(agentId, agent);
     if (fields.state !== 'ok') return unavailable('invalid');

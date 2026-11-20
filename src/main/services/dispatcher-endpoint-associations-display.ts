@@ -4,7 +4,7 @@ import { getBaseDirPath } from './base-dir';
 import type { DisplayReceipt, DisplayValue } from './display-settings';
 import type { AgentConnectionCacheDisplay } from './agent-config';
 import { createReadOnlyMetadataBudget, readReadOnlyPrimaryMetadata, ReadOnlyMetadataLimitError } from './read-only-agent-target-witness';
-import { readConnectionEndpointMetadataForDisplay, type AdmittedConnectionEndpoint, type ConnectionEndpointMetadata } from './connection-endpoint-metadata-display';
+import { readConnectionEndpointMetadataForDisplay, type AdmittedConnectionEndpoint, type ConnectionEndpointMetadata, type ConnectionEndpointProjectReceipt } from './connection-endpoint-metadata-display';
 
 interface Pair { agentId: string; targetId: string }
 export interface SavedDispatcherEndpointMetadataRow extends Pair {
@@ -41,7 +41,7 @@ function profile(base: string): DisplayReceipt { return { current: () => getBase
  */
 export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentId: string; projectPath: string; target: DisplayReceipt }, pairs: readonly Pair[], options: { receipts: DisplayReceipt[];
   /** Trusted internal synchronous passive getter only; never a route-supplied callback or loader. */
-  readLoadedCache?: (projectPath: string, agentId: string, options: { receipts: DisplayReceipt[] }) => AgentConnectionCacheDisplay;
+  readLoadedCache?: (projectPath: string, agentId: string, options: { receipts: DisplayReceipt[]; expectedProjectNamespace?: string }) => AgentConnectionCacheDisplay;
 }): DisplayValue<SavedDispatcherEndpointMetadata> {
   const inputs = [{ field: 'Selected saved Dispatcher endpoint associations', source: 'primary' as const, observedAt: Date.now() }];
   const unknown = (reason: 'invalid' | 'unreadable' | 'limit' | 'changed'): DisplayValue<SavedDispatcherEndpointMetadata> => ({ state: 'unavailable', reason, inputs });
@@ -89,7 +89,7 @@ export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentI
       const match = matches.get(key(admitted[index])); if (!match) continue;
       queries.push({ agentId: match.otherId, projectPath: match.otherProject, association }); positions.push(index);
     }
-    const projectMetadataReceipts = readLoadedCache ? new Map<string, DisplayReceipt>() : undefined;
+    const projectMetadataReceipts = readLoadedCache ? new Map<string, ConnectionEndpointProjectReceipt>() : undefined;
     const metadata = readConnectionEndpointMetadataForDisplay(queries, { receipts: options.receipts, projectReceipts: projectMetadataReceipts });
     if (!association.current()) return unknown('changed');
     if (metadata.state !== 'ok') {
@@ -118,9 +118,14 @@ export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentI
       for (const [projectPath, group] of groups) {
         const projectReceipt = projectMetadataReceipts?.get(projectPath);
         if (!projectReceipt || !current(projectReceipt)) return unknown('changed');
+        const expectedProjectNamespace = projectReceipt.cacheNamespace();
+        if (!expectedProjectNamespace) {
+          for (const { row } of group) row.hostCache = { state: 'unavailable', reason: 'unreadable', inputs: [{ field: 'Related agent directory association', source: 'primary', observedAt: Date.now() }] };
+          continue; // Preserve primary fields; no path/ID-only cache adoption.
+        }
         for (const { row, query } of group) {
           const cacheInputs = [{ field: 'Related agent host-session fields', source: 'host-cache' as const, observedAt: Date.now() }];
-          try { row.hostCache = { state: 'ok', value: readLoadedCache(projectPath, query.agentId, { receipts: options.receipts }), inputs: cacheInputs }; }
+          try { row.hostCache = { state: 'ok', value: readLoadedCache(projectPath, query.agentId, { receipts: options.receipts, expectedProjectNamespace }), inputs: cacheInputs }; }
           catch { row.hostCache = { state: 'unavailable', reason: 'unreadable', inputs: cacheInputs }; }
         }
       }
