@@ -76,3 +76,19 @@ it('retains selected source/tombstone/identity receipts after return and refuses
   const hidden: Array<{ current(): boolean }> = []; expect(read(s, { authorized: () => true, receipts: hidden }).state).toBe('ok'); await fs.writeFile(path.join(groupDir, 'tombstones.json'), JSON.stringify([{ groupProjectId: 'own' }])); expect(hidden.some((r) => !r.current())).toBe(true);
   expect(read(s, { authorized: () => false, receipts: [] })).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect(read({ ...s, projectPath: root }, { authorized: () => true, receipts: [] })).toMatchObject({ state: 'unavailable', reason: 'changed' });
 });
+it.each(['cold-host', 'warm-local', 'warm-other', 'unknown-helper', 'unknown-disposed', 'known-helper', 'out-of-scope', 'auto-off'] as const)('distinguishes unknown automatic group applicability from known empty: %s', async (mode) => {
+  const raw = mode === 'unknown-helper' || mode === 'out-of-scope' || mode === 'auto-off' ? { parentAgentId: {} } : mode === 'unknown-disposed' ? { disposedAt: null } : mode === 'known-helper' ? { parentAgentId: 'parent' } : {};
+  const s = await selected(raw), modern = ['cold-host', 'warm-local', 'warm-other'].includes(mode);
+  const g = group('automatic', { ...(modern && { host: { machine: fp } }), ...(mode === 'out-of-scope' && { scope: { level: 'project', projectId: 'other-project', reach: 'local' } }) });
+  await putRegistry([g]); await put('automatic', membership({ autoJoin: mode !== 'auto-off', explicit: [], excluded: [] }));
+  if (mode === 'warm-local') await warm(); if (mode === 'warm-other') await warm(other);
+  const identity = await import('./annex-identity');
+  if (mode === 'cold-host') { expect(identity.matchLoadedIdentityForDisplay(fp, { receipts: [] }).state).toBe('unavailable'); expect(s.fields.helper).toMatchObject({ state: 'ok', value: false }); expect(s.fields.disposed).toMatchObject({ state: 'ok', value: false }); }
+  if (mode === 'unknown-helper' || mode === 'out-of-scope' || mode === 'auto-off') expect(s.fields.helper.state).toBe('unavailable'); if (mode === 'unknown-disposed') expect(s.fields.disposed.state).toBe('unavailable');
+  const receipts: Array<{ current(): boolean }> = [], before = await disk(), result = read(s, { authorized: () => true, receipts }); expect(result.state).toBe('ok'); expect(receipts.every((r) => r.current())).toBe(true);
+  const unknown = ['cold-host', 'unknown-helper', 'unknown-disposed'].includes(mode);
+  expect.soft(result).toMatchObject({ state: 'ok', value: { complete: !unknown, unknownRows: unknown ? 1 : 0, knownMatches: mode === 'warm-local' ? 1 : 0 } });
+  if (result.state === 'ok') expect.soft(result.value.rows).toHaveLength(mode === 'warm-local' ? 1 : 0);
+  expect(await disk()).toEqual(before); expect(sync.readFileSync).not.toHaveBeenCalled(); expect(sync.writeFileSync).not.toHaveBeenCalled(); expect(sync.copyFileSync).not.toHaveBeenCalled();
+  if (mode === 'cold-host') { await warm(); expect(receipts.some((r) => !r.current())).toBe(true); }
+});
