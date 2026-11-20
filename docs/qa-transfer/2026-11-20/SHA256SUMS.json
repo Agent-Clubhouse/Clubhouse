@@ -72,6 +72,12 @@
       "originalSourceSha256": "1f803fba34a2d7495db6ec212b44b573ae1a8a22b9b3b6a97d5e36a09bbb996a",
       "bytes": 10358,
       "sha256": "656af660a7d8741bb6b4ee5a8644e5d14108a7162b74f64e3e5c52e6b1b2bca9"
+    },
+    {
+      "path": "reports/3733-bf6b3fd01-pg1-baseline-independent-inspection.txt",
+      "originalSourceSha256": "c4ddd8856dfc938dd7502c30103eeca2d0e87ae54b82892f56b5aca02f474f90",
+      "bytes": 3867,
+      "sha256": "ab9a273e2f30ac7d73679f3c45ab96c9ef58ab134692135e05d690a25a8a1a2b"
     }
   ],
   "copyNote": "Only redundant blank lines at EOF normalized in Git copies; original reports unchanged. Original and copied hashes retained."

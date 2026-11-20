@@ -1,0 +1,22 @@
+PG1 baseline independently corroborated; b576 correction source review pending exact proof
+
+Repaired test-only bf6b3fd01b717b5690b982217993a3d6abceb81a/treefd0b115bc3f8abb1621e355ee3f4d9d19990506e. Only registered-agent-display-page.test.ts and configured-registered-connections-display.test.ts differ from rejected017f7ec9; all production unchanged.
+Manifest SHA25699bc877ea1e020c40fdcdee53a25bbc7a29c9c8b0c0888263908b428a2d25fa1 verified. Existing log/test patch/result hashes match. Fourth listed3733-run-pg1-baseline.py is absent from qa-reports at inspection; parent requested actual original bytes/current linkage in portable successor package, no rerun/reconstruction. This is a package gap, not an invented failed product assertion.
+
+Actual2files3FAIL24SKIP / exit1 expected-failure capture; not a product pass. Header exactbf6/treefd0,103 fixture hashes equal pre/post and generic fixture-write flag absent. Test source establishes actual primary/registry rows and real role witness currentness before calls; role admission callback modeled.
+Reached SOFT failures:
+- same-native-ID ordinary-project row omitted/complete retained instead of known1/partial/ambiguous.
+- configured consumer first page expected9matches/partial/next8 instead shows8 ordinary distinct records; first-entry ambiguity/no-direction checks and later-page check execute separately (repairedbf6 separates array-length check from identity). The originalf9 mixed-array assertion failure is preserved; no stronger assertion credit retroactively applied.
+- registered canonical-role folder internal worker appears and spoils distinct-source counts/continuation; standalone synthetic role-worker marker exclusion assertion is reached/fails. This is intentional fixture privacy/classification evidence, not a live role, authorization bypass or disclosure claim.
+Relevant receipts/currentness and late primary mutation checks execute under soft assertions; real fixture edits are intentional test actions, not reader writes.
+
+Queued successor source b576f1a6fd63f09b368305a59fa6e60ff59fc3e4/tree38c7df5f8b1ebeffe9e2dd6569440bf7f03751b0, parentf9, isolated atop017 plus tests/note. No verdict yet;225PASS/tsc are owner DEVELOPMENT only.
+Static correction:
+- computes observed selected directory tuple for Dispatcher purpose as well as helpers.
+- excludes exact admitted selected canonical path; observed canonical directory namespace aliases excluded after bounded primary read with data receipt retained.
+- different/unproven same-native-ID normal Connect=true records survive with identityAmbiguous:true, completefalse/unknown count; configured adapter forces applicabilityunknown/directions[]; card explicitly explains ambiguity and counts policy records rather than configured relationships.
+- existing selected directory/role/registry/alias-primary receipts remain in final combined evidence; aliases cannot supply unrelated role-internal rows. A changed alias resolves another path/signature and invalidates its primary receipt by source inspection. This does not establish universal inode incarnation/ABA, runtime, permission or continuous path locking.
+- new actualCard/finalDetails source controls use actual temp primaries, modeled role/await callbacks and late primary/revocation schedules.
+- no configuredtwo-way is invented: owner confirmed ordinary dispatcherWiresForProject's matching-nativeID skip is a restore/source limitation, not permission to present an effective link.
+
+Remaining review dependencies: exact successor sealed package, original missing runner bytes/current linkage, observedalias currentness/replacement control evidence, source/patch/restoration linkage and final actual counts. No reviewer tests or scripts executed; no source edits/live/CI/PR/root acceptance. Frozen017 remains REQUEST CHANGES; source/baseline positive facts do not preapprove successor.
