@@ -190,7 +190,9 @@ export function captureReadOnlyAgentTargetWitness(target: AgentConfigTarget): { 
 /** Fixed saved connection sources only. Root admission/selection belongs to
  * the consumer, which retains its separate target/role/auth/profile receipts. */
 const CONNECTION_SOURCE_METADATA = [
-  'connection-card.json', 'registry.json', 'membership.json', '.clubhouse/.local/orchestrator-connections.json',
+  'connection-card.json', 'registry.json', 'membership.json',
+  '.clubhouse/group-projects/registry.json', '.clubhouse/group-projects/tombstones.json',
+  '.clubhouse-dev/group-projects/registry.json', '.clubhouse-dev/group-projects/tombstones.json', '.clubhouse/.local/orchestrator-connections.json',
   '.clubhouse/plugin-data/canvas/kv/canvas-instances.json', '.clubhouse/plugin-data/canvas/kv/canvas-instances-backup.json',
   '.clubhouse/plugin-data/canvas/kv/canvas-active-id.json',
   '.clubhouse/plugin-data/canvas/kv/canvas-wires.json', '.clubhouse/plugin-data/canvas/kv/canvas-zone-wires.json',

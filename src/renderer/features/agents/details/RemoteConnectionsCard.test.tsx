@@ -67,3 +67,13 @@ it.each([['canvas-records', 'Saved Canvas wires'], ['zone-records', 'Saved zone 
   fireEvent.click(screen.getByRole('button', { name: label })); await screen.findByText('First helper'); expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source, offset: 0, projectOffset: 0 });
   fireEvent.click(screen.getByRole('button', { name: 'Next', exact: true })); await screen.findByText('Final helper'); expect(screen.queryByText('First helper')).not.toBeInTheDocument();
 });
+it('uses admitted host parent applicability even when cached snapshot helper metadata is absent', async () => {
+  const view = show(); expect(screen.queryByRole('button', { name: 'Saved parent link' })).not.toBeInTheDocument();
+  view.rerender(<RemoteConnectionsCard agent={agent} details={{ ...details, connectionPageSources: ['helper-parent'] }} status="ok" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Saved parent link' })); await screen.findByText('First helper'); expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'helper-parent', offset: 0, projectOffset: 0 });
+});
+it('offers the selected saved group registry page only with explicit host support', async () => {
+  const view = show(); expect(screen.queryByRole('button', { name: 'Saved group membership' })).not.toBeInTheDocument();
+  view.rerender(<RemoteConnectionsCard agent={agent} details={{ ...details, connectionPageSources: ['group-records'] }} status="ok" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Saved group membership' })); await screen.findByText('First helper'); expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'group-records', offset: 0, projectOffset: 0 });
+});

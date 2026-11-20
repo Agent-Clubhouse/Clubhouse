@@ -1028,3 +1028,41 @@ describe('qualified Dispatcher native-ID policy ambiguity at final Details', () 
     } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
   });
 });
+
+describe('selected helper parent connection in full Details', () => {
+  it.each(['stable', 'parent-removed', 'reparented', 'revoked'] as const)('retains exact parent evidence until final assembly: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-parent-page-'))), a = path.join(root, 'a'), b = path.join(root, 'b'); for (const folder of [a, b]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+    m.base = root; m.realConnections = true; m.realWitness = true;
+    const selected = { ...agent(), parentAgentId: 'parent', parentProjectPath: b, worktreePath: a }, p = { ...project, path: a }; const ownFile = path.join(a, '.clubhouse', 'agents.json'), parentFile = path.join(b, '.clubhouse', 'agents.json');
+    await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [p, { id: 'parent-project', name: 'Parent custom project', path: b }] })); await fs.writeFile(ownFile, JSON.stringify([selected])); await fs.writeFile(parentFile, JSON.stringify([{ id: 'parent', name: 'Qualified parent' }]));
+    m.target.mockResolvedValue({ agent: selected, project: p }); let allowed = true, reached = false, observed = false;
+    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
+    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((r) => r.label === 'Qualified parent · Parent custom project'); });
+    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'parent-removed') await fs.writeFile(parentFile, '[]'); if (mode === 'reparented') await fs.writeFile(ownFile, JSON.stringify([{ ...selected, parentAgentId: 'other' }])); if (mode === 'revoked') allowed = false; return []; });
+    try {
+      const response = await readRemoteAgentDetails(selected.id, () => allowed, { card: 'connections', source: 'helper-parent' }); expect(reached).toBe(true); expect(observed).toBe(true);
+      if (mode === 'stable') { expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, selected.id)).toBe(true); const body = response.body as RemoteAgentDetails; expect(body.cards.find((c) => c.id === 'connections')?.connectionPage).toMatchObject({ source: 'helper-parent', known: 1, complete: true, next: null }); expect(JSON.stringify(body)).not.toMatch(/projectPath|ProjectPath|"receipts"/); }
+      else { expect.soft(response.status).toBe(mode === 'revoked' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId'); }
+    } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+});
+
+describe('selected saved group membership in full Details', () => {
+  it.each(['stable', 'membership-late', 'tombstone-late', 'identity-reloaded', 'revoked'] as const)('retains selected group and loaded identity evidence through final assembly: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-group-page-'))), a = path.join(root, 'a'); await fs.mkdir(path.join(a, '.clubhouse'), { recursive: true });
+    const home = vi.spyOn(app, 'getPath').mockReturnValue(root), packaged = !!app.isPackaged, groups = path.join(root, packaged ? '.clubhouse' : '.clubhouse-dev', 'group-projects'); await fs.mkdir(path.join(groups, 'group'), { recursive: true }); m.base = root; m.realConnections = true; m.realWitness = true;
+    const selected = { ...agent(), worktreePath: a }, p = { ...project, path: a }, fp = 'aa:'.repeat(15) + 'aa'; await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [p] })); await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), JSON.stringify([selected]));
+    const identity = await import('./annex-identity'); identity.resetForTests(); await fs.writeFile(path.join(root, 'annex-identity.json'), JSON.stringify({ publicKey: 'PRIVATE_PUBLIC_FIXTURE', privateKey: 'PRIVATE_KEY_FIXTURE', fingerprint: fp, createdAt: '2026-11-20' })); expect(identity.getIdentity()?.fingerprint).toBe(fp);
+    await fs.writeFile(path.join(groups, 'registry.json'), JSON.stringify([{ id: 'group', name: 'Selected group', createdAt: '2026-11-20', scope: { level: 'project', projectId: p.id, reach: 'local' }, host: { machine: fp }, metadata: {} }]));
+    const memberFile = path.join(groups, 'group', 'membership.json'); await fs.writeFile(memberFile, JSON.stringify({ version: 1, autoJoin: false, explicit: [{ address: selected.id, kind: 'durable', projectId: p.id, addedAt: '2026-11-20', name: 'PRIVATE_RAW_NAME' }], excluded: [], instructions: { [selected.id]: { '*': 'PRIVATE_PROMPT' } } }));
+    m.target.mockResolvedValue({ agent: selected, project: p }); let allowed = true, reached = false, observed = false;
+    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
+    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((r) => r.label === 'Selected group'); });
+    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'membership-late') await fs.writeFile(memberFile, '{"version":1,"autoJoin":false,"explicit":[],"excluded":[]}'); if (mode === 'tombstone-late') await fs.writeFile(path.join(groups, 'tombstones.json'), '[{"groupProjectId":"group"}]'); if (mode === 'identity-reloaded' || mode === 'revoked') { identity.resetForTests(); expect(identity.getIdentity()?.fingerprint).toBe(fp); } if (mode === 'revoked') allowed = false; return []; });
+    try {
+      const response = await readRemoteAgentDetails(selected.id, () => allowed, { card: 'connections', source: 'group-records' }); expect(reached).toBe(true); expect(observed).toBe(true);
+      if (mode === 'stable') { expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, selected.id)).toBe(true); const body = response.body as RemoteAgentDetails; expect(body.cards.find((c) => c.id === 'connections')?.connectionPage).toMatchObject({ source: 'group-records', known: 1, complete: true, next: null }); expect(JSON.stringify(body)).not.toMatch(/PRIVATE_|projectPath|ProjectPath|aa:|"receipts"/); }
+      else { expect.soft(response.status).toBe(mode === 'revoked' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId'); }
+    } finally { capture.mockRestore(); identity.resetForTests(); home.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+});

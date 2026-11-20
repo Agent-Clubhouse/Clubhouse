@@ -1,5 +1,5 @@
 /** Selected Connections pages over the existing paired-desktop Details GET. */
-export const REMOTE_CONNECTION_PAGE_SOURCES = ['outgoing', 'incoming', 'directions', 'sources', 'manual-dispatcher', 'helpers', 'dispatcher-auto', 'tool-records', 'canvas-records', 'zone-records'] as const;
+export const REMOTE_CONNECTION_PAGE_SOURCES = ['outgoing', 'incoming', 'directions', 'sources', 'manual-dispatcher', 'helpers', 'dispatcher-auto', 'tool-records', 'canvas-records', 'zone-records', 'helper-parent', 'group-records'] as const;
 export type RemoteConnectionPageSource = typeof REMOTE_CONNECTION_PAGE_SOURCES[number];
 export interface RemoteDetailsQuery { card: 'connections'; source: RemoteConnectionPageSource; offset?: number; projectOffset?: number }
 export interface RemoteConnectionPage {

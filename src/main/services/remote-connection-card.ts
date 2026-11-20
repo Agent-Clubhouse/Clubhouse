@@ -1,3 +1,4 @@
+import type { SavedGroupConnectionPage } from './saved-group-connections-display';
 import type { SavedCanvasConnectionPage } from './saved-canvas-connections-display';
 import type { SavedToolConnectionPage } from './saved-tool-connections-display';
 import type { RemoteDetailsQuery } from '../../shared/remote-details-query';
@@ -35,6 +36,7 @@ export interface ConnectionCardReadOptions {
   registered?: DisplayValue<ConfiguredRegisteredConnectionPage>;
   tools?: DisplayValue<SavedToolConnectionPage>;
   canvas?: DisplayValue<SavedCanvasConnectionPage>;
+  groups?: DisplayValue<SavedGroupConnectionPage>;
   authorized(): boolean;
   dispatcher?: boolean;
   /** Strictly admitted durable project only; Quick runs do not use saved durable links. */
@@ -116,8 +118,9 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
   if (!options.authorized()) throw new Error('revoked');
   if (!selected || selected.length > 200) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The selected connection identity exceeds the host display limit.'); return; }
   if (options.page?.source === 'tool-records') { renderSavedToolConnections(c, options.tools, options.page); return; }
+  if (options.page?.source === 'group-records') { renderSavedGroupConnections(c, options.groups); return; }
   if (options.page?.source === 'canvas-records' || options.page?.source === 'zone-records') { renderSavedCanvasConnections(c, options.canvas, options.page); return; }
-  if (options.page?.source === 'helpers' || options.page?.source === 'dispatcher-auto') {
+  if (options.page?.source === 'helpers' || options.page?.source === 'dispatcher-auto' || options.page?.source === 'helper-parent') {
     renderRegisteredConnections(c, options.registered, options.page); return;
   }
   const pageSource = options.page?.source, pageOffset = options.page?.offset ?? 0;
@@ -387,14 +390,15 @@ function renderRegisteredConnections(c: RemoteDetailsCard, read: DisplayValue<Co
   const page = read.value;
   c.connectionPage = { source: query.source, offset: page.matchOffset, projectOffset: page.projectOffset, known: page.knownMatches, complete: page.complete,
     next: page.next ? { offset: page.next.matchOffset, projectOffset: page.next.projectOffset } : null };
-  c.summary = `${page.knownMatches} known ${query.source === 'helpers' ? 'helper records' : 'Dispatcher policy records'} in this project page${page.complete ? '' : ' · partial'}`;
+  c.summary = `${page.knownMatches} known ${query.source === 'helpers' ? 'helper records' : query.source === 'helper-parent' ? 'saved parent references' : 'Dispatcher policy records'} in this project page${page.complete ? '' : ' · partial'}`;
+  if (page.parentReference) row(c, 'Saved parent reference', `${page.parentReference.agentId}${page.parentReference.projectName?.state === 'ok' ? ` · ${page.parentReference.projectName.value}` : ' · project association unavailable'}`);
   for (const entry of page.entries) {
     const endpoint = entry.endpoint, fields = endpointCardFields({ agentId: '', targetId: endpoint.agentId, relationship: 'recorded',
       endpoint: { state: 'ok', value: { record: 'registered-primary', fields: endpoint.fields }, inputs: [] }, hostCache: entry.hostCache });
     const name = fields.displayName || endpoint.agentId, projectName = endpoint.projectName.state === 'ok' ? endpoint.projectName.value : 'Project name unavailable';
     // Include both stable project identity and display label when names collide.
     const label = `${name} · ${projectName}`;
-    row(c, label, `${entry.source === 'helper' ? 'Direct helper' : 'Automatic Dispatcher source'} · ${entry.applicability === 'configured' ? 'two configured directions' : entry.applicability === 'disposed' ? 'disposed; no configured directions' : 'configured applicability unknown'} · project ${endpoint.projectId}`);
+    row(c, label, `${entry.source === 'helper' ? 'Direct helper' : entry.source === 'helper-parent' ? 'Selected helper’s parent' : 'Automatic Dispatcher source'} · ${entry.applicability === 'configured' ? 'two configured directions' : entry.applicability === 'disposed' ? 'disposed; no configured directions' : 'configured applicability unknown'} · project ${endpoint.projectId}`);
     if (endpoint.identityAmbiguous) row(c, `${label} identity`, 'This project record reuses the controller’s native ID. The endpoint association is ambiguous; configured directions are unavailable.');
     row(c, `${label} saved settings`, fields.saved);
     if (fields.memory) row(c, `${label} host memory`, fields.memory);
@@ -454,4 +458,19 @@ function renderSavedCanvasConnections(c: RemoteDetailsCard, read: DisplayValue<S
   if (page.unknownRows) c.notes.push(`${page.unknownRows} candidate records or bounded expansion segments could not be classified safely.`);
   if (page.unavailableStores) c.notes.push(`${page.unavailableStores} saved stores are unavailable or exceed this read’s bounds.`);
   c.notes.push('Saved project-qualified Canvas records or a preview of saved active-canvas zone containment. Unsaved host changes, group scope/membership, user removal, current bindings and effective authority are separate; no source collection is run. Names and labels are bounded display text.');
+}
+
+function renderSavedGroupConnections(c: RemoteDetailsCard, read: DisplayValue<SavedGroupConnectionPage> | undefined): void {
+  if (read?.state !== 'ok') { c.state = 'error'; c.summary = 'Saved group records unavailable'; c.notes.push('The selected saved group-source page is unavailable; no empty membership is inferred.'); return; }
+  const page = read.value;
+  c.connectionPage = { source: 'group-records', offset: page.offset, projectOffset: 0, known: page.knownMatches, complete: page.complete, next: page.next };
+  c.summary = `${page.knownMatches} known selected group records in this registry page${page.complete ? '' : ' · partial'}`;
+  for (const entry of page.rows) {
+    row(c, entry.name, `Saved group-project record · ${entry.groupId} · ${entry.membership === 'auto' ? 'auto-join policy' : entry.membership === 'excluded' ? 'excluded' : 'explicit entry'} · saved applicability ${entry.applicability}`);
+    row(c, `${entry.name} scope`, `${entry.scope} scope · ${entry.reach} reach · ${entry.host === 'local-contract' ? 'local host record contract' : entry.host === 'loaded-local' ? 'host matches loaded local identity' : entry.host === 'loaded-other' ? 'recorded other host' : 'host association unavailable'}`);
+    row(c, `${entry.name} saved switches`, entry.disabledTools ? `${entry.switchSource === 'member' ? 'Selected member' : 'Group default'} disabled tools: ${entry.disabledTools.join(', ') || 'none'}${entry.unrecognizedTools ? `; ${entry.unrecognizedTools} unrecognized names withheld` : ''} · not effective tool authority` : entry.switchSource === 'invalid' ? 'Saved switch list unavailable' : 'No switch list saved; no effective defaults inferred');
+  }
+  if (page.unknownRows) c.notes.push(`${page.unknownRows} candidate group relationships have unconfirmed host/project association or applicability.`);
+  if (page.unavailableGroups) c.notes.push(`${page.unavailableGroups} saved membership records are unavailable or exceed this read’s bounds.`);
+  c.notes.push('Only selected saved membership/policy fields are shown. Loaded identity comparison is display evidence, not pairing or transport authority. Pending owner changes, current resolution/bindings, network availability and effective permissions are separate; no migration or collection is run.');
 }

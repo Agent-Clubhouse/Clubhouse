@@ -1,3 +1,4 @@
+import type { DisplayReceipt, DisplayValue } from './display-settings';
 /**
  * Annex V2 Identity System (#859)
  *
@@ -43,6 +44,9 @@ const IDENTITY_FILENAME = 'annex-identity.json';
 // ---------------------------------------------------------------------------
 
 let cachedIdentity: AnnexIdentity | null = null;
+/** Observational only: actual producer path/profile for cache-only display association. */
+let displayIdentityOrigin: string | undefined;
+let displayIdentityGeneration = Symbol();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,6 +96,7 @@ function saveIdentity(identity: AnnexIdentity): void {
     encoding: 'utf-8',
     mode: 0o600,
   });
+  recordDisplayIdentityOrigin(boundedIdentityOrigin('disk', filePath));
 
   // Restrict permissions to owner-only (ignore errors on Windows)
   try {
@@ -144,6 +149,7 @@ function loadIdentity(): { status: 'missing' | 'corrupt' | 'valid'; identity: An
       return { status: 'corrupt', identity: null };
     }
 
+    recordDisplayIdentityOrigin(boundedIdentityOrigin('disk', filePath));
     return { status: 'valid', identity: parsed };
   } catch (error) {
     if (!fs.existsSync(filePath)) {
@@ -176,6 +182,7 @@ export function getOrCreateIdentity(): AnnexIdentity {
 
   if (ephemeral) {
     cachedIdentity = generateIdentity();
+    recordDisplayIdentityOrigin(currentIdentityDisplayOrigin());
     return cachedIdentity;
   }
 
@@ -240,6 +247,7 @@ export function getPublicIdentity(): { publicKey: string; fingerprint: string } 
 export function deleteIdentity(): void {
   const ephemeral = annexEphemeralSession();
   cachedIdentity = null;
+  recordDisplayIdentityOrigin(undefined);
   if (ephemeral) return;
   try {
     fs.unlinkSync(getIdentityPath());
@@ -255,5 +263,34 @@ export function deleteIdentity(): void {
  */
 export function resetForTests(): void {
   cachedIdentity = null;
+  recordDisplayIdentityOrigin(undefined);
   identityWasReset = false;
+}
+
+/** No ordinary getter, IO, initialization, credentials or public fingerprint.
+ * This only compares an already-loaded identity observed in this exact profile.
+ * A boolean association is display evidence, never transport/pin/auth authority. */
+function recordDisplayIdentityOrigin(origin: string | undefined): void {
+  displayIdentityOrigin = origin; displayIdentityGeneration = Symbol();
+}
+function boundedIdentityOrigin(mode: 'disk' | 'ephemeral', file: string): string | undefined {
+  return typeof file === 'string' && !!file && file.length <= 4096 ? `${mode}:${file}` : undefined;
+}
+function currentIdentityDisplayOrigin(): string | undefined {
+  try { return boundedIdentityOrigin(process.env.CLUBHOUSE_ANNEX_EPHEMERAL === '1' ? 'ephemeral' : 'disk', getIdentityPath()); }
+  catch { return undefined; }
+}
+function loadedDisplayFingerprint(): string | undefined {
+  const value = cachedIdentity?.fingerprint;
+  return typeof value === 'string' && value.length >= 47 && value.length <= 95 && /^(?:[0-9a-f]{2}:){15,31}[0-9a-f]{2}$/i.test(value) ? value.toLowerCase() : undefined;
+}
+function identityDisplayReceipt(origin: string | undefined, fingerprint: string | undefined, profile: string | undefined, generation: symbol): DisplayReceipt {
+  return { current: () => displayIdentityGeneration === generation && displayIdentityOrigin === origin && loadedDisplayFingerprint() === fingerprint && currentIdentityDisplayOrigin() === profile };
+}
+export function matchLoadedIdentityForDisplay(candidate: unknown, options: { receipts: DisplayReceipt[] }): DisplayValue<boolean> {
+  const inputs = [{ field: 'Loaded host identity association', source: 'host-cache' as const, observedAt: Date.now() }];
+  if (typeof candidate !== 'string' || candidate.length < 47 || candidate.length > 95 || !/^(?:[0-9a-f]{2}:){15,31}[0-9a-f]{2}$/i.test(candidate) || !Array.isArray(options?.receipts)) return { state: 'unavailable', reason: 'invalid', inputs };
+  const normalized = candidate.toLowerCase(), origin = displayIdentityOrigin, fingerprint = loadedDisplayFingerprint(), profile = currentIdentityDisplayOrigin();
+  options.receipts.push(identityDisplayReceipt(origin, fingerprint, profile, displayIdentityGeneration));
+  return fingerprint && origin && origin === profile ? { state: 'ok', value: fingerprint === normalized, inputs } : { state: 'unavailable', reason: 'unreadable', inputs };
 }

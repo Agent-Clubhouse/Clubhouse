@@ -10,7 +10,7 @@ import { readRegisteredAgentDisplayPage, type RegisteredDisplayAgent, type Regis
 export const CONFIGURED_REGISTERED_PAGE_SIZE = 8;
 export interface ConfiguredRegisteredConnection {
   endpoint: RegisteredDisplayAgent;
-  source: 'helper' | 'dispatcher-auto';
+  source: 'helper' | 'helper-parent' | 'dispatcher-auto';
   /** Saved applicability, never a live binding, MCP handshake or effective grant. */
   applicability: 'configured' | 'disposed' | 'unknown';
   directions: Array<{ from: 'selected' | 'endpoint'; disabledTools: string[]; enabledTools: string[] }>;
@@ -18,6 +18,8 @@ export interface ConfiguredRegisteredConnection {
 }
 export interface ConfiguredRegisteredConnectionPage extends Omit<RegisteredAgentDisplayPage, 'entries'> {
   entries: ConfiguredRegisteredConnection[];
+  /** Independently known selected saved parent ID, even if target metadata is unavailable. */
+  parentReference?: { agentId: string; projectName?: DisplayValue<string> };
 }
 const current = (r: DisplayReceipt) => { try { return r.current(); } catch { return false; } };
 /** Detached receipt list only; no primary, path map or returned field object retained. */
