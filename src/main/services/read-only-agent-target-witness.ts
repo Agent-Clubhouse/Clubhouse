@@ -186,3 +186,66 @@ export function captureReadOnlyAgentTargetWitness(target: AgentConfigTarget): { 
   const admitted = read();
   return { current: () => { try { return read() === admitted; } catch { return false; } } };
 }
+
+/** Fixed saved connection sources only. Root admission/selection belongs to
+ * the consumer, which retains its separate target/role/auth/profile receipts. */
+const CONNECTION_SOURCE_METADATA = [
+  'connection-card.json', 'registry.json', 'membership.json', '.clubhouse/.local/orchestrator-connections.json',
+  '.clubhouse/plugin-data/canvas/kv/canvas-instances.json', '.clubhouse/plugin-data/canvas/kv/canvas-instances-backup.json',
+  '.clubhouse/plugin-data/canvas/kv/canvas-wires.json', '.clubhouse/plugin-data/canvas/kv/canvas-zone-wires.json',
+  '.clubhouse/plugin-data-local/canvas/kv/canvas-instances.json', '.clubhouse/plugin-data-local/canvas/kv/canvas-instances-backup.json',
+  '.clubhouse/plugin-data-local/canvas/kv/canvas-wires.json', '.clubhouse/plugin-data-local/canvas/kv/canvas-zone-wires.json',
+] as const;
+export type ReadOnlyConnectionSourceMetadata = typeof CONNECTION_SOURCE_METADATA[number];
+/** Observe the first absent component in a fixed primary/backup path. Never
+ * follows a descendant link or opens/creates a recovery file. Existing ancestor
+ * identities are checked again before accepting absence. */
+function absentConnectionSourcePath(root: string, relative: string): string {
+  const anchor = fs.realpathSync(root), first = fs.lstatSync(anchor, { bigint: true });
+  if (!first.isDirectory()) throw new Error('Source root unavailable.');
+  const chain = new Map<string, fs.BigIntStats>([[anchor, first]]); let file = anchor, missing = '';
+  for (const part of relative.split('/')) {
+    if (!part || part === '.' || part === '..') throw new Error('Invalid source path.');
+    file = path.join(file, part);
+    try {
+      const stat = fs.lstatSync(file, { bigint: true });
+      if (stat.isSymbolicLink()) throw new Error('Source path is linked.');
+      chain.set(file, stat);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      missing = path.relative(anchor, file); break;
+    }
+  }
+  if (!missing) throw new Error('Source primary or recovery copy is present.');
+  for (const [member, stat] of chain) {
+    const now = fs.lstatSync(member, { bigint: true });
+    if (!now.isDirectory() || now.isSymbolicLink() || stat.dev !== now.dev || stat.ino !== now.ino) throw new Error('Source directory changed.');
+  }
+  return [...chain.values()].map((s) => `${s.dev}:${s.ino}`).join('/') + ':' + missing;
+}
+function absentConnectionSource(root: string, relative: string): string {
+  return absentConnectionSourcePath(root, relative) + '\0' + absentConnectionSourcePath(root, relative + '.bak');
+}
+function absentConnectionSourceReceipt(root: string, relative: string, signature: string): { current(): boolean } {
+  return { current: () => { try { return absentConnectionSource(root, relative) === signature; } catch { return false; } } };
+}
+/** Internal bounded primary-only source read; no generic settings/Canvas/group
+ * loader, collection, migration, quarantine, cache warmup, timers or writes.
+ * Missing is verified against the primary AND .bak. A separate Canvas recovery
+ * key must be checked by its consumer before declaring a never-saved store.
+ * Raw is transient internal evidence, NEVER a response/retained DTO. */
+export function readReadOnlyConnectionSourceMetadata(root: string, relative: ReadOnlyConnectionSourceMetadata, options: { maxBytes?: number; budget: ReadOnlyMetadataBudget }): {
+  raw: unknown; missing: boolean; receipt: { current(): boolean };
+} {
+  if (typeof root !== 'string' || !root || root.length > 4096 || !path.isAbsolute(root) || root.includes('\0')
+    || !CONNECTION_SOURCE_METADATA.includes(relative)) throw new Error('Connection source root was not admitted.');
+  if (!options?.budget) throw new ReadOnlyMetadataLimitError('Connection source budget was not admitted.');
+  try {
+    const { value, signature, byteLength } = inventory(root, relative, options.maxBytes, options.budget);
+    return { raw: value, missing: false, receipt: primaryMetadataReceipt(root, relative, signature, Math.max(1, byteLength)) };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    const signature = absentConnectionSource(root, relative);
+    return { raw: undefined, missing: true, receipt: absentConnectionSourceReceipt(root, relative, signature) };
+  }
+}
