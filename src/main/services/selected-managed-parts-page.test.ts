@@ -55,5 +55,5 @@ it('refuses stale ordered selection and oversized sources before metadata reads'
 it('keeps the existing4MiB catalog bound unavailable without recovery or claiming empty metadata', async () => {
   put({ chosen: entry('chosen') }, { padding: 'x'.repeat(CATALOG_DISPLAY_MAX_BYTES) }); const before = fs.readFileSync(path.join(root, 'catalog.json'));
   expect(await readSelectedManagedPartsPage(target(['chosen']), query(), { authorized: () => true, target: { current: () => true }, receipts: [] })).toMatchObject({ state: 'unavailable', reason: 'unreadable' });
-  expect(fs.readFileSync(path.join(root, 'catalog.json'))).toEqual(before); expect(fs.readdirSync(root)).toEqual(['catalog.json']);
+  expect(fs.readFileSync(path.join(root, 'catalog.json')).equals(before)).toBe(true); expect(fs.readdirSync(root)).toEqual(['catalog.json']);
 });

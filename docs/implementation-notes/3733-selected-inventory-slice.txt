@@ -41,3 +41,9 @@ late target/auth/catalog changes, source identity, host envelope and client
 binding, old-host/changed states and renderer late/offline/denied pages.
 Exact-head results/limits and review status are reported separately to the
 Clubhouse-Orchestrator. This checkpoint does not accept all §3/full PR parity.
+
+First exact-head batch on e5c07d627:210 tests across6 files passed; the catalog
+test worker hit the512MiB heap while the assertion matcher expanded a4MiB
+Buffer comparison. Replaced that test comparison with Buffer.equals, keeping
+the same bound, bytes proof and heap cap. That producer suite and semantic/
+transport/regression checks still require successor validation and review.
