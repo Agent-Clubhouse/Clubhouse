@@ -77,7 +77,11 @@ it.each(['full', 'ids_only', 'none'] as const)('preserves the %s child capabilit
   if (mode === 'full') expect(screen.getByText(/CAPABILITY_HIDDEN_NAME/)).toHaveTextContent('completed');
   else expect(screen.queryByText(/CAPABILITY_HIDDEN_NAME/)).not.toBeInTheDocument();
   if (mode === 'ids_only') expect(screen.getByText(/Child thread: child-id/)).toHaveTextContent('Name and status are not reported');
-  if (mode === 'none') expect(screen.getByText(/does not expose child details/)).toBeInTheDocument();
+  if (mode === 'none') {
+    expect(screen.getByText(/does not expose child details/)).toBeInTheDocument();
+    expect(screen.getByText(/0 provider or child report events shown/)).toBeInTheDocument();
+    expect(screen.getByText(/No provider or child reports can be shown/)).toBeInTheDocument();
+  }
 });
 it('withholds the last archived page after denial without exposing raw host errors', async () => {
   show();

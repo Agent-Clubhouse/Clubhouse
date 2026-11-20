@@ -68,10 +68,10 @@ function Reports({ page, binding }: { page: RemoteHistoryPage; binding: RemoteSe
       || e.type === 'tool_call_update' && childTools.has(e.data.toolCallId)
       || (e.type === 'agent_message' || e.type === 'agent_thought') && text(e.data.subagentId)));
   return <div className="pr-3.5 pl-[33px] text-xs break-words" data-testid="remote-history-reports">
-    <p>{reports.length} provider or child report events in this page. No facts from other pages are inferred.</p>
+    <p>{reports.length} provider or child report events shown from this page. No facts from other pages are inferred.</p>
     {page.events.some((event) => 'truncated' in event.data || event.type === 'notice' && event.data.code === 'event_omitted') && <p>The host shortened or omitted some recorded events. Reading to the page end does not recover those fields.</p>}
     {binding.subagents === 'none' && <p>The provider does not expose child details with its current capability.</p>}
-    {!reports.length && <p>No provider or child reports are present in this event page; other pages and unrecorded facts remain unknown.</p>}
+    {!reports.length && <p>No provider or child reports can be shown from this event page; other pages and unrecorded facts remain unknown.</p>}
     {reports.slice(offset, offset + 50).map((event) => <section key={event.seq} aria-label={`Archived report ${event.seq}`}><p>Recorded {new Date(event.ts).toLocaleString()} · event {event.seq}</p><Report event={event} binding={binding} childTools={childTools} /></section>)}
     {reports.length > 50 && <><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous reports</button>{' '}<button type="button" disabled={offset + 50 >= reports.length} onClick={() => setOffset(offset + 50)}>Next reports</button></>}
   </div>;
