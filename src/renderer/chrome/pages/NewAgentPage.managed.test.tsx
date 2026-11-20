@@ -273,7 +273,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate] } as never);
     const previewDraft = vi.spyOn(m(), 'previewDraft').mockResolvedValue({ ok: true, value: {
       instructions: 'You are keen-heron.', rawInstructions: 'You are @@AgentName.',
-      blocks: [{ id: 'b-identity', name: 'Identity', builtin: true, usedBy: 0, startLine: 1, endLine: 1 }],
+      blocks: [{ id: 'b-identity', name: 'Identity', builtin: true, usedBy: 0, startLine: 1, endLine: 1, rawStartLine: 1, rawEndLine: 1 }],
       skills: [], mcps: [], missing: [],
       settings: [{ key: 'model', label: 'Model', value: 'opus' }],
     } } as never);
@@ -284,7 +284,11 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Customize Orchestrator' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Preview' }));
 
-    expect((await screen.findByTestId('managed-preview-text')).textContent).toBe('You are keen-heron.');
+    const preview = await screen.findByRole('list', { name: 'Instruction blocks and their text' });
+    const block = within(preview).getByTestId('managed-preview-block');
+    expect(within(preview).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(block).getByTestId('managed-preview-block-text').textContent).toBe('You are keen-heron.');
+    expect(within(block).getByTestId('managed-preview-block-label').textContent).toBe('1 IdentityBuilt-in · lines 1 to 1');
     expect(screen.queryByText('The preview appears once the agent exists.')).toBeNull();
     expect(previewDraft).toHaveBeenCalledWith('/tmp/ch', {
       name: 'keen-heron',
@@ -293,7 +297,11 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     });
     expect(screen.getByTestId('managed-preview-setting-model').textContent).toBe('opus');
     fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
-    expect(screen.getByTestId('managed-preview-text').textContent).toBe('You are @@AgentName.');
+    const rawPreview = screen.getByRole('list', { name: 'Instruction blocks and their text' });
+    const rawBlock = within(rawPreview).getByTestId('managed-preview-block');
+    expect(within(rawPreview).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(rawBlock).getByTestId('managed-preview-block-text').textContent).toBe('You are @@AgentName.');
+    expect(within(rawBlock).getByTestId('managed-preview-block-label').textContent).toBe('1 IdentityBuilt-in · lines 1 to 1');
   });
 
   it('Build from scratch starts the builder with the identity block and the Clubhouse MCP server', async () => {
