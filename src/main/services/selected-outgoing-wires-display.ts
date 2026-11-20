@@ -20,5 +20,7 @@ export function readSelectedOutgoingWiresForDisplay(selected: string, options: {
         const name = (record.targetKind === 'group-project' ? text(record.projectName) : undefined) ?? text(record.targetName) ?? text(record.label);
         return { name: name ? display(name, 240) : null, kind: record.targetKind };
       }) };
-  } catch { return { source, state: 'unavailable', reason: 'unreadable' }; }
+  } catch { // telemetry-exempt: a bounded unavailable state replaces private binding-reader errors.
+    return { source, state: 'unavailable', reason: 'unreadable' };
+  }
 }

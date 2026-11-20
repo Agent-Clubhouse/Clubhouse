@@ -75,6 +75,10 @@ node node_modules/typescript/bin/tsc --noEmit
 Exact committed SHA, final results, and isolated push verification are reported
 to the orchestrator after those checks. Dependencies are preinstalled, with no
 install. Heavy lane serialized through the orchestrator, after process checks.
+Scoped ESLint found an existing no-control-regex error at unchanged
+remote-details-presentation.ts:6 (the same regex exists in the exact base), plus
+existing catch-must-report warnings. This slice does not alter that regex.
+The new producer catch explicitly documents its safe unavailable response.
 
 Acceptance/limits
 Host source slice only. No renderer card blocks changed. The Skills/MCP owner
