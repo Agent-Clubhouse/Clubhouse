@@ -5,7 +5,9 @@ import * as os from 'os';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import { installAcceptAudit, installDialPolicy, sizedPng, type RpcPeer } from './reverse-parity-fixture';
+import {
+  installAcceptAudit, installDialPolicy, installMainGuard, sizedPng, type GuardGlobal, type RpcPeer,
+} from './reverse-parity-fixture';
 import type { ConfigurePeer, PeerInfo } from './reverse-client-peer';
 import type { IPty } from 'node-pty';
 
@@ -30,7 +32,17 @@ const fixture = vi.hoisted(() => {
   // Keep the real PTY cwd check: macOS's /private/var temporary directory is restricted.
   const cache = path.join(process.cwd(), 'node_modules', '.cache');
   fs.mkdirSync(cache, { recursive: true });
-  const dir = fs.mkdtempSync(path.join(cache, 'annex-inventory-'));
+  const ownedProfile = process.env.CLUBHOUSE_ANNEX_OWNED_PROFILE;
+  const ownedRole = process.env.CLUBHOUSE_ANNEX_OWNED_ROLE;
+  if (process.env.CLUBHOUSE_ANNEX_OWNED_EXIT === '1' && (
+    !ownedProfile || (ownedRole !== 'A' && ownedRole !== 'B')
+    || path.basename(ownedProfile) !== `peer-${ownedRole}`
+    || !path.basename(path.dirname(ownedProfile)).startsWith('owned-exit-')
+    || path.dirname(path.dirname(ownedProfile)) !== path.join(cache, 'p8-evidence')
+    || !fs.statSync(ownedProfile).isDirectory()
+  )) throw new Error('Invalid disposable owned peer profile');
+  const dir = process.env.CLUBHOUSE_ANNEX_OWNED_EXIT === '1'
+    ? ownedProfile! : fs.mkdtempSync(path.join(cache, 'annex-inventory-'));
   process.env.HOME = dir;
   process.env.USERPROFILE = dir;
   process.env.CLAUDE_CONFIG_DIR = path.join(dir, '.claude');
@@ -191,10 +203,17 @@ export const LARGE_TEXT_BYTES = 9 * 1024 * 1024;
 afterAll(() => { fs.rmSync(fixture.dir, { recursive: true, force: true }); });
 
 /** Real server route table, stores, client and control; no Electron or provider process. */
-export async function createInventoryPeer(alias: string) {
-  const listenerAudit = installAcceptAudit();
+export async function createInventoryPeer(alias: string, exitAudit?: { sentinelPort: number; auditPath: string }) {
+  const calibration = exitAudit && await installMainGuard(
+    { app: { getPath: () => fixture.dir } }, { ...exitAudit, profile: fixture.dir },
+  );
+  const mainGuard = exitAudit ? (globalThis as GuardGlobal).__reverseP8 : undefined;
+  if (exitAudit && !mainGuard) throw new Error('Owned peer main guard was not installed');
+  const listenerAudit = mainGuard ? undefined : installAcceptAudit();
   let forwardPort: number | null = null;
-  const policy = installDialPolicy((host, port) => forwardPort !== null && host === '127.0.0.1' && port === forwardPort);
+  const policy = mainGuard ? undefined : installDialPolicy(
+    (host, port) => forwardPort !== null && host === '127.0.0.1' && port === forwardPort,
+  );
   await settings.saveSettings({
     ...settings.getSettings(), enableServer: true, enableClient: true, networkEnabled: true,
     loopbackOnly: true, alias, deviceName: alias, autoReconnect: true,
@@ -295,8 +314,32 @@ export async function createInventoryPeer(alias: string) {
   let readAbort: AbortController | undefined;
   let controllerReadsCleanup: (() => void) | undefined;
   let controllerPublication: 'ready' | 'off' | 'unknown' = 'ready';
+  let quiescing: Promise<void> | undefined;
+  const stopProducers = async () => {
+    controllerReadsCleanup?.();
+    dropGrantRequestsFor(agent.id);
+    dropStartRequestsFor(agent.id);
+    await stopHandoffs();
+    stopGroupMembership();
+    hookServer.stop();
+    mcpBridge.stop();
+    fixture.lifecycleRoot = null;
+    linkedState.stop();
+    stopLinkedNetwork();
+    stopLinks();
+    stopGroups();
+    stopAgentCalls();
+    client.stopClient();
+    await runtime.stop();
+    await imageFixture?.runtime.stop();
+    clearChatRuntimes();
+  };
   return {
     info,
+    exitAuditInfo() {
+      if (!mainGuard || !exitAudit) throw new Error('Peer is not in owned-exit mode');
+      return { pid: process.pid, profile: fixture.dir, auditPath: exitAudit.auditPath, calibration };
+    },
     async configure(config: Omit<ConfigurePeer, 'peer'> & { peer: InventoryPeerInfo }) {
       remote = config.peer;
       routePort = config.routePort;
@@ -309,15 +352,21 @@ export async function createInventoryPeer(alias: string) {
       await setConnectionLink({ agentId: agent.id }, { agentId: remote.agentId, machineId: remote.fingerprint }, true);
       bindingManager.bind(agent.id, { targetId: `${remote.agentId}@${remote.fingerprint}`, targetKind: 'agent', label: remote.alias, agentName: agent.name, targetName: `${remote.alias} agent`, projectName: project.name });
       forwardPort = config.forwardPort;
+      if (mainGuard && forwardPort !== null) mainGuard.setForward(forwardPort);
       client.startClient();
     },
     status() {
+      const audit = mainGuard ? mainGuard.read() : (() => {
+        if (!policy || !listenerAudit) throw new Error('Peer dial audit was not installed');
+        return { attempts: policy.attempts, accepts: listenerAudit.accepts };
+      })();
       return {
         readiness: remote && control.getLinkReadiness(remote.fingerprint),
         connected: remote && client.isMachineConnected(remote.fingerprint),
         direct: remote && client.isMachineDirectConnected(remote.fingerprint),
         snapshot: remote && client.getSatellite(remote.fingerprint)?.snapshot,
-        attempts: policy.attempts, accepts: listenerAudit.accepts, events: fixture.events, logs: fixture.logs,
+        attempts: audit.attempts, accepts: audit.accepts,
+        events: fixture.events, logs: fixture.logs,
       };
     },
     prepareControllerReads() {
@@ -943,31 +992,26 @@ export async function createInventoryPeer(alias: string) {
         running: runtime.isRunning(), pendingWork: runtime.hasPendingWork(), cached: !!agentConfig.peekCachedDurableConfig(root, agent.id),
       };
     },
+    async quiesce(expectedSourcePorts?: number[]) {
+      if (!mainGuard) throw new Error('Peer is not in owned-exit mode');
+      quiescing ??= stopProducers();
+      await quiescing;
+      return mainGuard.seal(expectedSourcePorts && { port: info.port, sourcePorts: expectedSourcePorts });
+    },
     async close() {
-      controllerReadsCleanup?.();
-      dropGrantRequestsFor(agent.id);
-      dropStartRequestsFor(agent.id);
-      await stopHandoffs();
-      stopGroupMembership();
-      hookServer.stop();
-      mcpBridge.stop();
-      fixture.lifecycleRoot = null;
-      linkedState.stop();
-      stopLinkedNetwork();
-      stopLinks();
-      stopGroups();
-      stopAgentCalls();
-      client.stopClient();
-      await runtime.stop();
-      await imageFixture?.runtime.stop();
-      clearChatRuntimes();
+      if (mainGuard) {
+        quiescing ??= stopProducers();
+        await quiescing;
+      } else {
+        await stopProducers();
+      }
       server.stop();
       control.resetControlForTests();
       await agentConfig.flushAllAgentConfigs();
       await flushAllBulletinBoards();
       await flushAllGroupProjects();
-      policy.restore();
-      listenerAudit.restore();
+      policy?.restore();
+      listenerAudit?.restore();
     },
   };
 }

@@ -1,11 +1,25 @@
 import * as net from 'net';
-import { describe, it } from 'vitest';
+import { describe, it, vi } from 'vitest';
 import { createInventoryPeer } from './reverse-inventory-peer';
 import { rpcPeer } from './reverse-parity-fixture';
 
+const owned = vi.hoisted(() => {
+  if (process.env.CLUBHOUSE_ANNEX_OWNED_EXIT !== '1') return undefined;
+  const role = process.env.CLUBHOUSE_ANNEX_OWNED_ROLE;
+  const nonce = process.env.CLUBHOUSE_ANNEX_OWNED_NONCE;
+  if ((role !== 'A' && role !== 'B') || !nonce) throw new Error('Invalid owned peer identity');
+  process.stdout.write(`OWNED_PEER_BOOTSTRAP ${JSON.stringify({ role, nonce, pid: process.pid, ppid: process.ppid })}\n`);
+  return { role, nonce };
+});
+
 describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated full-server parity peer', () => {
   it('serves the parent over IPC until stopped', async () => {
-    const peer = await createInventoryPeer('B');
+    const auditPath = process.env.CLUBHOUSE_ANNEX_OWNED_AUDIT;
+    const sentinelPort = Number(process.env.CLUBHOUSE_ANNEX_OWNED_SENTINEL);
+    if (owned && (!auditPath || !Number.isInteger(sentinelPort) || sentinelPort <= 0 || sentinelPort > 65535)) {
+      throw new Error('Invalid owned peer audit endpoints');
+    }
+    const peer = await createInventoryPeer(owned?.role ?? 'B', owned && auditPath ? { auditPath, sentinelPort } : undefined);
     let stop!: () => void;
     const stopped = new Promise<void>((resolve) => { stop = resolve; });
     const socket = net.connect(process.env.CLUBHOUSE_ANNEX_INVENTORY_IPC!);
@@ -14,6 +28,12 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
     const rpc = rpcPeer(socket, async (method, params) => {
       switch (method) {
         case 'info': return peer.info;
+        case 'exitAuditInfo': return peer.exitAuditInfo();
+        case 'quiesce':
+          if (params !== undefined && (!Array.isArray(params) || !params.every((port) => Number.isInteger(port) && port > 0 && port <= 65535))) {
+            throw new Error('Invalid expected owned source ports');
+          }
+          return peer.quiesce(params as number[] | undefined);
         case 'configure': return peer.configure(params as Parameters<typeof peer.configure>[0]);
         case 'status': return peer.status();
         case 'prepareControllerReads': return peer.prepareControllerReads();
