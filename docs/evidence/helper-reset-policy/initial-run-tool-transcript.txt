@@ -1,0 +1,18 @@
+Original run, copied from the exec/write_stdin tool transcript (stdout/stderr were not redirected on this first invocation).
+Command:
+/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh auto-reset-policy-design 4 -- node /Users/masonallen/source/Clubhouse/node_modules/vitest/vitest.mjs run --project main src/main/services/helper-reset-replay.test.ts src/main/services/helper-auto-replay.test.ts --maxWorkers=2
+
+2026-11-20T05:38:34Z START auto-reset-policy-design idle=43% unused=172M avail=25137M freepct=74 comp=7569M swap=1892M pid=45552 cmd=node /Users/masonallen/source/Clubhouse/node_modules/vitest/vitest.mjs run --project main src/main/services/helper-reset-replay.test.ts src/main/services/helper-auto-replay.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design
+
+
+ Test Files  2 passed (2)
+      Tests  36 passed (36)
+   Start at  21:38:34
+   Duration  154ms (transform 65ms, setup 10ms, import 78ms, tests 18ms, environment 0ms)
+
+2026-11-20T05:38:34Z END auto-reset-policy-design rc=0
