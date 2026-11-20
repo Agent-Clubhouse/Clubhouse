@@ -78,6 +78,12 @@ it('detaches returned field objects and ignores unrelated private definition cha
   const selected = await getDurableConfig(project, 'target'); selected!.instructions = 'PRIVATE_LATE_TEXT';
   expect.soft(read()).toMatchObject({ fields: { value: { name: { value: 'Selected cache name' } } } }); expect(receipts[0].current()).toBe(true); assertNoReadEffects();
 });
+it('does not copy or inspect raw private definition properties while projecting selected fields', async () => {
+  await warm(); const selected = await getDurableConfig(project, 'target'); expect(selected).not.toBeNull();
+  const privateRead = vi.fn(() => { throw new Error('PRIVATE_DEFINITION_MUST_NOT_BE_READ'); });
+  Object.defineProperty(selected!, 'instructions', { configurable: true, enumerable: true, get: privateRead });
+  const receipts: DisplayReceipt[] = []; expect(read(receipts).availability).toBe('loaded'); expect(receipts[0].current()).toBe(true); expect.soft(privateRead).not.toHaveBeenCalled(); assertNoReadEffects();
+});
 it('invalidates a cleared/reloaded cache even when ID and all projected fields are reused', async () => {
   await warm(); const receipts: DisplayReceipt[] = []; const before = read(receipts); expect(before.availability).toBe('loaded'); expect(receipts[0].current()).toBe(true);
   clearAgentConfigCache(project); expect(receipts[0].current()).toBe(false); await warm();
@@ -87,7 +93,10 @@ it('invalidates actual same-cache agent replacement after a refused same-provide
   await warm(); const receipts: DisplayReceipt[] = []; expect(read(receipts).availability).toBe('loaded'); const before = await getDurableConfig(project, 'target'); expect(receipts[0].current()).toBe(true);
   const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
   vi.mocked(fsp.rename).mockImplementation(async (from, to) => { if (String(to) === file()) throw Object.assign(new Error('Intentional fixture rename refusal'), { code: 'EROFS' }); return actual.rename(from, to); });
-  await expect(updateDurableConfig(project, 'target', { orchestrator: 'codex-cli' }, async () => {})).rejects.toThrow();
+  // Change a non-displayed setting: an identical update is correctly a no-op.
+  // Same provider remains selected; the intended rename refusal triggers the
+  // real rollback clone/index replacement while displayed fields stay equal.
+  await expect(updateDurableConfig(project, 'target', { orchestrator: 'codex-cli', model: 'fixture-other-model' }, async () => {})).rejects.toThrow();
   const after = await getDurableConfig(project, 'target'); expect(after).not.toBe(before); expect(after?.orchestrator).toBe(before?.orchestrator); expect(after?.name).toBe(before?.name);
   resetObservation(); expect(read()).toMatchObject({ availability: 'loaded', fields: { value: { name: { value: 'Selected cache name' } } } }); expect(receipts[0].current()).toBe(false); assertNoReadEffects();
 });
