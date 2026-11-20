@@ -243,3 +243,14 @@ it('withholds cache evidence if a later read replaces an earlier admitted direct
   const result = query(reader, [], [pair(), pair('other')]); expect(calls).toBe(2);
   expect.soft(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect.soft(JSON.stringify(result)).not.toMatch(/Selected cache name|Other host name/);
 });
+
+it.each(['registered', 'unregistered', 'wrong-selected', 'prefilled'] as const)('exports private endpoint project identity only after admitted current primary evidence: %s', async (mode) => {
+  if (mode === 'unregistered') await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects: [] }));
+  if (mode === 'wrong-selected') await putLinks([link({ agentProjectPath: otherProject })]);
+  const projects = new Map<string, string>(mode === 'prefilled' ? [['not-a-pair', 'PRIVATE_UNADMITTED_PATH']] : []), receipts: DisplayReceipt[] = [], before = await disk(); resetObservation();
+  const result = readSavedDispatcherEndpointMetadataForDisplay({ agentId: 'selected', projectPath: selectedProject, target: { current: () => m.selected } }, [pair()], { receipts, readLoadedCache: readAgentConnectionCacheForDisplay, endpointProjects: projects });
+  if (mode === 'registered') { expect(result).toMatchObject({ state: 'ok', value: { rows: [{ endpoint: { value: { record: 'registered-primary' } } }] } }); expect.soft([...projects]).toEqual([['selected\0target', project]]); expect(receipts.every((r) => r.current())).toBe(true); m.selected = false; expect.soft(receipts.some((r) => !r.current())).toBe(true); }
+  else if (mode === 'prefilled') { expect.soft(result).toMatchObject({ state: 'unavailable', reason: 'invalid' }); assertNoReadEffects(); }
+  else expect.soft(projects.size).toBe(0);
+  expect.soft(JSON.stringify(result)).not.toContain(root); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_'); noWrites(); expect.soft(await disk()).toEqual(before);
+});

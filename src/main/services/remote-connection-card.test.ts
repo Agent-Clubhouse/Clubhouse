@@ -221,11 +221,18 @@ it.each(['on', 'off', 'unknown-controller', 'unknown-name', 'saved-override', 'u
   const before = await disk(), { c, receipts } = await read(false, { automatic });
   if (mode === 'unknown-controller') { expect.soft(c.rows).toHaveLength(0); expect.soft(c.state).toBe('error'); expect.soft(c.notes.join(' ')).toContain('Automatic Dispatcher source details are unavailable'); expect.soft(c.notes.join(' ')).not.toContain('No binding or active saved direction'); }
   else {
-    const name = mode === 'unknown-name' ? 'controller' : mode === 'mixed-source' ? 'Bound controller name' : 'Admitted controller';
+    const separateNative = mode === 'mixed-source' || mode === 'saved-override';
+    const name = mode === 'unknown-name' ? 'controller' : separateNative ? 'Admitted controller (automatic Dispatcher)' : 'Admitted controller';
     expect(c.rows.some((r) => r.label === name && r.value.includes('two-way records'))).toBe(true);
     const switches = c.rows.find((r) => r.label === name + ' outgoing switches')?.value;
-    expect.soft(switches).toContain(mode === 'saved-override' ? 'Saved · Allowed:' : mode === 'unreadable-override' ? 'Saved override unavailable' : mode === 'mixed-source' ? 'Binding record' : 'Configured automatic link defaults');
-    if (mode === 'saved-override') expect.soft(switches?.split('; Off:')[1]).toContain('Read output');
+    expect.soft(switches).toContain(separateNative ? 'switch association is unconfirmed' : mode === 'unreadable-override' ? 'Saved override unavailable' : 'Configured automatic link defaults');
+    if (separateNative) {
+      const native = mode === 'mixed-source' ? 'Bound controller name (native-ID records)' : 'controller (native-ID records)';
+      expect.soft(c.rows.some((r) => r.label === native && r.value.includes('outgoing') && !r.value.includes('two-way records'))).toBe(true);
+      const nativeSwitches = c.rows.find((r) => r.label === native + ' outgoing switches')?.value;
+      expect.soft(nativeSwitches).toContain(mode === 'mixed-source' ? 'Binding record' : 'Saved · Allowed:');
+      if (mode === 'saved-override') expect.soft(nativeSwitches?.split('; Off:')[1]).toContain('Read output');
+    }
     expect.soft(c.rows.filter((r) => r.label.endsWith('automatic starting switches'))).toHaveLength(2); expect.soft(c.rows.find((r) => r.label === 'Host Dispatcher')?.value).toBe(mode === 'off' ? 'Off' : 'On'); expect.soft(c.notes.join(' ')).toContain('do not establish current bindings');
   }
   expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_'); expect.soft(collect).not.toHaveBeenCalled(); expect.soft(m.legacy).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before); expect.soft(receipts.every((r) => r.current())).toBe(true);
