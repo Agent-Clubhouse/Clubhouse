@@ -55,13 +55,14 @@ it('does not read a primary body beyond admission limits or turn its missing hel
   const result = read(); spy.mockRestore(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, unavailableProjects: 1, entries: [] } }); expect(opened).not.toContain(path.join(b, '.clubhouse', 'agents.json'));
 });
 
-it('captures selection facts before authorization callbacks and withholds an in-read revocation', () => {
+it('captures selection facts before authorization callbacks and withholds an in-read revocation', async () => {
+  await put(b, [agent('wanted', { parentAgentId: 'parent', parentProjectPath: a }), agent('PRIVATE_OTHER_HELPER', { parentAgentId: 'different', parentProjectPath: b })]);
   const selected = selection(); let called = false;
   const result = readRegisteredAgentDisplayPage(selected, 'helper-children', { receipts: [], authorized: () => { if (!called) { called = true; selected.agentId = 'different'; selected.projectId = 'b'; selected.projectPath = b; } return true; } });
-  expect(result).toMatchObject({ state: 'ok', value: { entries: [], complete: true } });
-  const actual = vi.mocked(fs.openSync).getMockImplementation()!;
+  expect(result).toMatchObject({ state: 'ok', value: { entries: [{ agentId: 'wanted' }], complete: true } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_OTHER_HELPER');
+  const actual = (await vi.importActual<typeof import('fs')>('fs')).openSync;
   const open = vi.spyOn(fs, 'openSync').mockImplementation(((...args: Parameters<typeof fs.openSync>) => { const fd = actual(...args); m.allowed = false; return fd; }) as typeof fs.openSync);
-  m.allowed = true; expect(read().state).toBe('unavailable'); open.mockRestore();
+  m.allowed = true; expect(read().state).toBe('unavailable'); expect(m.allowed).toBe(false); open.mockRestore();
 });
 it('admits only a bounded number of distinct parent alias probes and labels the remaining association unknown', async () => {
   const aliases = Array.from({ length: 65 }, (_, i) => a + (path.sep + '.' + path.sep).repeat(i + 1));

@@ -24,6 +24,7 @@ export interface RegisteredDisplayAgent {
 export interface RegisteredDisplayRoot { projectPath: string; namespace?: string; receipt: DisplayReceipt }
 export interface RegisteredAgentDisplayPage {
   entries: RegisteredDisplayAgent[];
+  /** Completeness of this root page; next may still identify more registered roots. */
   complete: boolean;
   knownMatches: number;
   unknownRows: number;
