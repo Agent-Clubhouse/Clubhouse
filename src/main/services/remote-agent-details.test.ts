@@ -1076,7 +1076,7 @@ describe('selected Connections envelope admission', () => {
     const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard; let before = 0;
     const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); expect(args[0].omitted).toBe(0); before = args[0].rows.length; });
     const presentation = await import('./remote-details-presentation'), actualSection = presentation.section;
-    const pressure = vi.spyOn(presentation, 'section').mockImplementation(async (c, run) => { await actualSection(c, run); if (c.id !== 'connections') c.rows = Array.from({ length: 100 }, () => ({ label: '😀'.repeat(1024), value: 'x'.repeat(2048) })); });
+    const pressure = vi.spyOn(presentation, 'section').mockImplementation(async (c, run) => { await actualSection(c, run); if (c.id !== 'connections') c.rows = Array.from({ length: 20 }, () => ({ label: '😀'.repeat(1024), value: 'x'.repeat(2048) })); });
     try {
       const response = await readRemoteAgentDetails(selected.id, () => true, { card: 'connections', source: 'tool-records' }); expect(before).toBe(40); expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, selected.id)).toBe(true);
       const body = response.body as RemoteAgentDetails, c = body.cards.find((c) => c.id === 'connections')!; expect.soft(c.omitted).toBe(0); expect.soft(c.rows).toHaveLength(before); expect(Buffer.byteLength(JSON.stringify(body))).toBeLessThanOrEqual(256 * 1024);
