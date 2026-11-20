@@ -781,6 +781,7 @@ describe('cold manual Dispatcher link evidence at final Details assembly', () =>
       if (mode === 'unchanged') {
         expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
         expect((response.body as RemoteAgentDetails).cards.find((card) => card.id === 'connections')?.rows.find((row) => row.label === 'manual-target saved Dispatcher link')?.value).toBe('No removal record in saved metadata');
+        expect((response.body as RemoteAgentDetails).cards.find((card) => card.id === 'connections')?.rows.find((row) => row.label === 'manual-target Dispatcher availability')?.value).toContain('This agent’s Connect to Dispatcher is off');
         expect(JSON.stringify(response.body)).not.toMatch(/PRIVATE_|createdBy|targetProjectPath/);
       } else {
         expect.soft(response.status).toBe(mode === 'revoked-and-primary' ? 403 : 409); expect.soft(response.body).toEqual({ error: mode === 'revoked-and-primary' ? 'details_read_refused' : 'connection_evidence_changed' });

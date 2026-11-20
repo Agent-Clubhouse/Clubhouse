@@ -146,16 +146,20 @@ it.each([true, false])('does not guess incoming widget identity from an untyped 
   const { c } = await read(); expect.soft(c.state).toBe(hasKnown ? 'ok' : 'error'); expect.soft(c.rows.some((row) => row.label === 'Known connection')).toBe(hasKnown); expect.soft(c.notes.join(' ')).toContain('an independently admitted target kind'); expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_WIDGET_OWNER');
 });
 
-it.each(['saved', 'pending-not-saved', 'primary-unavailable', 'owner-unavailable', 'primary-late', 'owner-late'] as const)('composes cold saved Dispatcher records and independent owner evidence: %s', async (mode) => {
+it.each(['saved', 'pending-not-saved', 'owner-saved-copy-missing', 'override-present', 'override-unavailable', 'primary-unavailable', 'owner-unavailable', 'primary-late', 'owner-late'] as const)('composes cold saved Dispatcher records and independent owner evidence: %s', async (mode) => {
   const projectPath = path.join(root, 'selected-project'), file = 'dispatcher-connections.json', pending = 'dispatcher-connections.pending-removals.json';
   const link = { agentId: selected, targetId: 'manual-target', agentProjectPath: projectPath, targetProjectPath: '/other-project', createdAt: at, createdBy: 'controller', PRIVATE_ARGS: 'PRIVATE_CONFIG' };
   const putLinks = (version = 1, targetId = 'manual-target') => put(file, { version, connections: [{ ...link, targetId }], removedByUser: [] });
   if (mode === 'pending-not-saved') {
     await putLinks(2); m.failPendingSave = true;
     expect(await recordUserRemoval({ agentId: selected, targetId: 'manual-target' })).toBe(true); m.failPendingSave = false; await putLinks();
+  } else if (mode === 'owner-saved-copy-missing') {
+    await putLinks(2); expect(await recordUserRemoval({ agentId: selected, targetId: 'manual-target' })).toBe(true); await putLinks(); await fs.promises.unlink(path.join(root, pending));
   } else if (mode === 'primary-unavailable') {
     bindingManager.bind(selected, wire()); await fs.promises.writeFile(path.join(root, file), '{broken');
   } else await putLinks();
+  if (mode === 'override-present') await put('connection-grants.json', { version: 1, directions: [{ from: { agentId: selected }, to: { agentId: 'manual-target' }, disabledTools: ['read_output'], enabledTools: ['wake_agent'] }] });
+  if (mode === 'override-unavailable') await fs.promises.writeFile(path.join(root, 'connection-grants.json'), '{broken');
   if (mode === 'owner-unavailable') { const owner = await import('./dispatcher-connections'); vi.spyOn(owner, 'readDispatcherLinkMemoryForDisplay').mockImplementation(() => { throw new Error('PRIVATE_OWNER_ERROR'); }); }
   m.side.mockClear(); m.legacy.mockClear(); const before = await disk(), { c, receipts } = await read(false, { projectPath, connectToDispatcher: { state: 'ok', value: false, inputs: [] } });
   expect.soft(c.state).toBe('ok'); expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|agentProjectPath|targetProjectPath|createdBy|"current"\s*:|receipts/);
@@ -168,9 +172,15 @@ it.each(['saved', 'pending-not-saved', 'primary-unavailable', 'owner-unavailable
     expect.soft(removal).toBe('No removal record in saved metadata');
     const availability = c.rows.find((row) => row.label === 'manual-target Dispatcher availability')?.value;
     if (mode === 'pending-not-saved') expect.soft(availability).toContain('Removal queued; owner last save failed');
+    if (mode === 'owner-saved-copy-missing') expect.soft(availability).toContain('Removal queued; owner recorded a save');
+    if (mode === 'owner-unavailable') expect.soft(availability).toContain('Owner write outcome unavailable');
     if (mode === 'owner-unavailable') expect.soft(availability).toContain('Process-known removal association unavailable');
     expect.soft(c.rows.find((row) => row.label === 'manual-target Dispatcher availability')?.value).toContain('This agent’s Connect to Dispatcher is off');
     if (mode === 'saved') expect.soft(c.rows.find((row) => row.label === 'manual-target outgoing switches')?.value).toContain('Configured manual link defaults');
+    const switches = c.rows.find((row) => row.label === 'manual-target outgoing switches')?.value;
+    if (mode === 'override-present') { expect.soft(switches?.split('; Off:')[0]).toContain('Wake it'); expect.soft(switches?.split('; Off:')[1]).toContain('Read output'); }
+    if (mode === 'override-unavailable') { expect.soft(switches).toContain('Saved override unavailable'); expect.soft(switches).not.toContain('Configured manual link defaults'); }
+
   }
   expect.soft(receipts.every((receipt) => receipt.current())).toBe(true); expect.soft(m.legacy).not.toHaveBeenCalled(); expect.soft(m.side).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
   if (mode === 'primary-late') { await putLinks(1, 'changed-target'); expect(receipts.some((receipt) => !receipt.current())).toBe(true); }
@@ -183,4 +193,14 @@ it.each(['dispatcher', 'helper'] as const)('does not adopt manual Dispatcher-lin
   const savedRead = vi.spyOn(saved, 'readSavedDispatcherLinksForDisplay'), memoryRead = vi.spyOn(owner, 'readDispatcherLinkMemoryForDisplay');
   const { c } = await read(role === 'dispatcher', { projectPath, ...(role === 'helper' ? { family: { parentId: 'parent-agent', helperIds: new Set<string>() } } : {}) });
   expect.soft(savedRead).not.toHaveBeenCalled(); expect.soft(memoryRead).not.toHaveBeenCalled(); expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_INAPPLICABLE_TARGET');
+});
+
+it('keeps an unavailable cold manual source distinct from a complete retained empty cache', async () => {
+  const collect = vi.fn(async () => []); registerPersistedBindingSource({ id: 'established-source', collect }); await rebuildPersistedBindings(); collect.mockClear();
+  await fs.promises.writeFile(path.join(root, 'dispatcher-connections.json'), '{broken'); const { c } = await read(false, { projectPath: path.join(root, 'selected-project') });
+  expect.soft(c.state).toBe('error'); expect.soft(c.summary).toBe('Connection information incomplete'); expect.soft(c.notes.join(' ')).not.toContain('No binding or active saved direction was reported'); expect.soft(collect).not.toHaveBeenCalled();
+});
+it('keeps cold manual source page and row omissions visible', async () => {
+  const projectPath = path.join(root, 'selected-project'); await put('dispatcher-connections.json', { version: 1, connections: Array.from({ length: 51 }, (_, i) => ({ agentId: selected, targetId: `manual-${i}`, agentProjectPath: projectPath, targetProjectPath: '/other-project', createdAt: at, createdBy: 'controller' })), removedByUser: [] });
+  const { c, receipts } = await read(false, { projectPath }); expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBeGreaterThan(0); expect.soft(c.notes.join(' ')).toContain('1 additional saved Dispatcher links are outside this bounded page'); expect.soft(receipts.every((receipt) => receipt.current())).toBe(true);
 });
