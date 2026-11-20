@@ -130,3 +130,27 @@ it('bounds actual source file rechecks independently of twenty selected pairs sh
   // final checks: no repeated full-source parse for each of the twenty pairs.
   expect(opened().filter((f) => f === source())).toHaveLength(6);
 });
+it.each([20, 50])('bounds invalidated shared source rechecks for %s selected pairs without opening either project', async (count) => {
+  const pairs = Array.from({ length: count }, (_, i) => pair(`target-${i}`));
+  await putSource(pairs.map((p) => saved(p))); await putAgents(b, pairs.map((p) => ({ id: p.targetId, name: `Saved ${p.targetId}` })));
+  const actual = await vi.importActual<typeof import('fs')>('fs'), originalBytes = actual.statSync(source()).size;
+  expect(originalBytes).toBeLessThan(1024 * 1024); let changed = false, sourceBytes = 0;
+  vi.mocked(fs.readSync).mockImplementation((...args: Parameters<typeof actual.readSync>) => {
+    const openedFile = opened().at(-1), value = actual.readSync(...args);
+    if (openedFile === source()) sourceBytes += value;
+    if (!changed && openedFile === path.join(m.base, 'projects.json')) {
+      changed = true;
+      actual.writeFileSync(source(), JSON.stringify({ version: 1, connections: pairs.map((p) => saved({ ...p, targetProjectPath: c })), removedByUser: [] }));
+      // A growing file can refuse before body reads; preserve size so repeated
+      // false receipts exercise the actual descriptor/decoder I/O path.
+      expect(actual.statSync(source()).size).toBe(originalBytes);
+    }
+    return value;
+  });
+  const result = query(pairs);
+  expect(changed).toBe(true); expect(result).toMatchObject({ state: 'unavailable', reason: 'changed' });
+  expect.soft(JSON.stringify(result)).not.toMatch(/Saved target|PRIVATE_/);
+  expect.soft(opened()).not.toContain(agentFile(b)); expect.soft(opened()).not.toContain(agentFile(c));
+  expect.soft(opened().filter((f) => f === source())).toHaveLength(6);
+  expect.soft(sourceBytes).toBe(originalBytes * 6);
+});
