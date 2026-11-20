@@ -20,7 +20,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });
   if (!authorized()) return refused();
   if (query !== undefined && !isRemoteDetailsQuery(query)) return { status: 400, body: { error: 'invalid_details_query' } };
-  if (query?.card === 'skills-mcp') return { status: 400, body: { error: 'unsupported_inventory_page' } };
+  if (query?.card === 'skills-mcp' || query?.card === 'actions') return { status: 400, body: { error: 'unsupported_inventory_page' } };
   if (query && !['outgoing', 'incoming', 'directions', 'sources'].includes(query.source)) return { status: 404, body: { error: 'quick_source_not_applicable' } };
   query = query && { ...query };
   try {

@@ -753,6 +753,22 @@ describe('annex-server', () => {
       vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' }); expect((await request(port, 'GET', paged)).status).toBe(403); expect(readRemoteAgentDetails).not.toHaveBeenCalled();
       expect(agentSystem.spawnAgent).not.toHaveBeenCalled(); expect(ptyManagerModule.write).not.toHaveBeenCalled();
     });
+    it('binds selected inventory source/card/order queries under the frozen desktop GET and final revocation gate', async () => {
+      const selection = 'a'.repeat(64), paged = route + `?card=actions&source=selected-action-relationships&offset=25&selection=${selection}`;
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (id, authorized, query) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true); expect(query).toEqual({ card: 'actions', source: 'selected-action-relationships', offset: 25, selection });
+        return { status: 200, body: { readOnly: true } };
+      });
+      const { port } = await startAndPair(); expect((await request(port, 'GET', paged)).status).toBe(200); vi.mocked(readRemoteAgentDetails).mockClear();
+      for (const query of [`card=skills-mcp&source=selected-action-relationships&selection=${selection}`, `card=actions&source=selected-managed-skills&selection=${selection}`, 'card=actions&source=selected-action-relationships&offset=25', `card=actions&source=selected-action-relationships&offset=25&selection=${selection}&selection=${selection}`, `card=actions&source=selected-action-relationships&offset=25&selection=${selection}&projectOffset=0`]) expect((await request(port, 'GET', route + '?' + query)).status).toBe(400);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, paged)).status).toBe(404);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' }); expect((await request(port, 'GET', paged)).status).toBe(403); expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async () => { await Promise.resolve(); vi.mocked(annexPeers.getPeer).mockReturnValue(undefined); return { status: 200, body: { PRIVATE_LATE_ACTIONS: true } }; });
+      const refused = await request(port, 'GET', paged); expect(refused.status).toBe(403); expect(JSON.stringify(refused.body)).not.toContain('PRIVATE_LATE_ACTIONS');
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled(); expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
     it.each([undefined, 'phone', 'unknown'])('rejects ineligible device kind %s before any Details work', async (kind) => {
       const { port } = await startAndPair();
       vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind } as never);

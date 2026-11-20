@@ -1,0 +1,12 @@
+Selected Actions integration checkpoint
+
+Base: approved managed inventory 3116ab759f16459857fb5de6e06abea962773271.
+Dependency: independently reviewed Actions source 37d642a869ed8631a7c94d114b51b39659b9c3f1 (complete three-commit slice composed).
+
+The existing selected Details GET admits only card=actions/source=selected-action-relationships, fixed25 offset with the source selection token. The common inventory-only envelope strips unrelated cards and page bodies. The actual Details assembler calls the existing-engine reader with selected root/project/dispatcher identity, current authorization and target receipts, fresh passive display-name resolvers and final ordering/name/source receipts. No engine initialization, workflows, arguments, local renderer fallback or management operations are added.
+
+The Actions card uses explicit browsing and the shared selected-page transport/context hook. Old-host summaries remain available. Selected rows are withheld on source mismatch, selection mismatch, changed frame, stale host snapshot, disconnect or read refusal. Recorded outcome/description fields do not establish execution, delivery or authority. Source caps remain4096 Actions/relationships; repeated relationship groups are intentionally distinct. Canvas membership integration and omitted-board content navigation are deferred.
+
+Current-connection 401/403 handling belongs to the role/Details owner and is preserved verbatim here. Combined transport proof is deferred until that reviewed dependency is composed. No source-module tests alone count as host/client/view integration proof.
+
+Validation: pending exact frozen checkpoint; evidence will be appended after the serialized lane runs. No live application, installs, restarts or writes to production services.

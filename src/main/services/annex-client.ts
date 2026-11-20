@@ -2496,7 +2496,7 @@ export async function requestAgentDetails(machine: string, agentId: string, quer
   if (query !== undefined && !isRemoteDetailsQuery(query)) return { status: 'error' };
   // Capture the page identity before transport awaits; no caller object can retarget the response.
   const page = query && { ...query };
-  const params = page ? new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset ?? 0), ...(page.card === 'skills-mcp' ? page.selection ? { selection: page.selection } : {} : { projectOffset: String(page.projectOffset ?? 0) }) }) : undefined;
+  const params = page ? new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset ?? 0), ...((page.card === 'skills-mcp' || page.card === 'actions') ? page.selection ? { selection: page.selection } : {} : { projectOffset: String(page.projectOffset ?? 0) }) }) : undefined;
   const sat = satelliteFor(machine);
   if (!sat || sat.state !== 'connected') return { status: 'offline' };
   const epoch = connectionEpochs.get(sat.id) ?? 0;
@@ -2509,7 +2509,7 @@ export async function requestAgentDetails(machine: string, agentId: string, quer
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
     if (res.status !== 200 || !isRemoteAgentDetails(res.body, agentId)) return { status: 'error' };
     if (!page && (res.body.connectionPageOnly === true || res.body.helperPageOnly === true || res.body.inventoryPageOnly === true)) return { status: 'error' };
-    if (page?.card === 'skills-mcp') {
+    if (page?.card === 'skills-mcp' || page?.card === 'actions') {
       if (res.body.inventoryPages !== 1) return { status: 'unavailable' };
       if (!res.body.inventoryPage) return { status: 'error' };
       const response = res.body.inventoryPage;
