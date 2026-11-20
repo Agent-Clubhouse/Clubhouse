@@ -282,3 +282,18 @@ it.each(['canvas', 'zone'] as const)('renders independently qualified saved %s r
   const result = await read(false, { canvas, page: { card: 'connections', source: source === 'canvas' ? 'canvas-records' : 'zone-records' }, receipts });
   expect(result.c.state).toBe('ok'); expect(result.c.rows.some((r) => r.label === 'Qualified other · Source project')).toBe(true); expect(result.c.rows.some((r) => r.value.includes('current eligibility unconfirmed'))).toBe(true); expect(result.c.rows.some((r) => r.value.includes('No starting switch list saved'))).toBe(true); expect(result.c.rows.some((r) => r.value.includes('On:'))).toBe(false); expect(JSON.stringify(result.c)).not.toMatch(/PRIVATE_|instructions|projectPath/); expect(await disk()).toEqual(before); expect(receipts.every((r) => r.current())).toBe(true);
 });
+
+it('keeps same-ID ordinary Dispatcher metadata visible with explicit ambiguity and no configured switch/direction claim', async () => {
+  const { DISPATCHER_PROJECT_ID } = await import('../../shared/dispatcher-types'), { captureReadOnlyRoleTargetWitness } = await import('./read-only-agent-target-witness');
+  const { readConfiguredRegisteredConnectionsForDisplay } = await import('./configured-registered-connections-display'), { projectConnectionEndpointFieldsForDisplay } = await import('./connection-endpoint-fields-display');
+  const roleFolder = path.join(root, 'role'), normalFolder = path.join(root, 'normal'); for (const folder of [roleFolder, normalFolder]) await fs.promises.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+  const controller = { id: selected, name: 'Canonical controller' }, ordinary = { id: selected, name: 'Normal project agent', orchestration: { connectToDispatcher: true } };
+  await put('projects.json', { version: 1, projects: [{ id: 'normal', name: 'Normal custom project', path: normalFolder }] }); await fs.promises.writeFile(path.join(roleFolder, '.clubhouse', 'agents.json'), JSON.stringify([controller])); const normalFile = path.join(normalFolder, '.clubhouse', 'agents.json'); await fs.promises.writeFile(normalFile, JSON.stringify([ordinary]));
+  const roleTarget = { agent: controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Host Dispatcher', path: roleFolder } } as unknown as import('./agent-config-reader').AgentConfigTarget;
+  const role = captureReadOnlyRoleTargetWitness(roleTarget, () => true), fields = projectConnectionEndpointFieldsForDisplay(selected, controller); if (fields.state !== 'ok') throw new Error('fixture'); expect(role.current()).toBe(true);
+  const receipts: Array<{ current(): boolean }> = [], registered = readConfiguredRegisteredConnectionsForDisplay({ agentId: selected, projectId: DISPATCHER_PROJECT_ID, projectPath: roleFolder, receipt: role, fields: fields.value }, 'dispatcher-auto', { authorized: () => true, receipts });
+  const result = await read(true, { page: { card: 'connections', source: 'dispatcher-auto' }, registered });
+  expect(result.c.connectionPage).toMatchObject({ source: 'dispatcher-auto', known: 1, complete: false, next: null }); expect(result.c.rows.some((r) => r.label === 'Normal project agent · Normal custom project')).toBe(true); expect(result.c.rows.some((r) => r.value.includes('endpoint association is ambiguous'))).toBe(true);
+  expect(result.c.rows.some((r) => r.label.endsWith('starting switches') || r.value.includes('two configured directions'))).toBe(false); expect(JSON.stringify(result.c)).not.toContain(root); expect(receipts.every((r) => r.current())).toBe(true);
+  await fs.promises.writeFile(normalFile, '[]'); expect(role.current()).toBe(true); expect(receipts.some((r) => !r.current())).toBe(true);
+});

@@ -60,7 +60,7 @@ export function readConfiguredRegisteredConnectionsForDisplay(selected: Register
   if (page.state !== 'ok') return page;
   const result: ConfiguredRegisteredConnectionPage = { ...page.value, entries: page.value.entries.map((endpoint) => {
     const disposed = endpoint.fields.disposed.state === 'ok' ? endpoint.fields.disposed.value : undefined;
-    const applicability = disposed || selectedDisposed ? 'disposed' : disposed === false && selectedDisposed === false ? 'configured' : 'unknown';
+    const applicability = endpoint.identityAmbiguous ? 'unknown' : disposed || selectedDisposed ? 'disposed' : disposed === false && selectedDisposed === false ? 'configured' : 'unknown';
     const first = purpose === 'helper-children' ? AUTOMATIC_CONNECTION_SWITCHES.parentToHelper : AUTOMATIC_CONNECTION_SWITCHES.dispatcherToAgent;
     const second = purpose === 'helper-children' ? AUTOMATIC_CONNECTION_SWITCHES.helperToParent : AUTOMATIC_CONNECTION_SWITCHES.agentToDispatcher;
     return { endpoint, source: purpose === 'helper-children' ? 'helper' : 'dispatcher-auto', applicability,
