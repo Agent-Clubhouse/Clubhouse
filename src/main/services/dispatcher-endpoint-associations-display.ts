@@ -36,7 +36,8 @@ function profile(base: string): DisplayReceipt { return { current: () => getBase
  * relevant selected pairs. No Quick/helper/Dispatcher-role discovery here.
  * target must bind that selected target/role; caller separately keeps existing
  * transport/pin/auth/run receipts. No paths come from a route parameter.
- * This exposes saved metadata, never current eligibility/effective authority.
+ * Saved fields and optional host-memory fields remain distinct; neither
+ * establishes current eligibility/effective authority.
  */
 export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentId: string; projectPath: string; target: DisplayReceipt }, pairs: readonly Pair[], options: { receipts: DisplayReceipt[];
   /** Trusted internal synchronous passive getter only; never a route-supplied callback or loader. */
