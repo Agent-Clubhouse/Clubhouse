@@ -249,7 +249,7 @@ export async function createHandoffQuarantine(staging: string, options: Quaranti
     const roots: string[] = [];
     for (const candidate of candidates) {
       try { roots.push(await canonicalRoot(candidate)); }
-      catch (error) { // Closed classification only; try another existing short parent.
+      catch (error) { // telemetry-exempt: closed classification logged below; try another existing short parent
         appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(new RootFailure('canonical', error)), elapsedMs: Math.floor(performance.now() - started) } });
       }
     }

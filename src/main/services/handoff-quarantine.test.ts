@@ -280,7 +280,7 @@ it.each(['ineligible', 'canonical', 'length'] as const)('reports the %s admissio
   const roots = gate === 'ineligible' ? [] : gate === 'canonical' ? [path.join(short, 'missing-parent', 'root')] : [path.join(fixture, 'x'.repeat(260))];
   await expect(createHandoffQuarantine(staging, { roots, windows: true })).rejects.toMatchObject(failClosed);
   const { events } = capture.snapshot();
-  expect(events.at(-1)).toEqual({ event: 'allocation_rejected', eligible: gate === 'ineligible' ? 0 : 1, canonical: gate === 'length' ? 1 : 0, fitting: 0, admitted: false, elapsedMs: expect.any(Number) });
+  expect(events[events.length - 1]).toEqual({ event: 'allocation_rejected', eligible: gate === 'ineligible' ? 0 : 1, canonical: gate === 'length' ? 1 : 0, fitting: 0, admitted: false, elapsedMs: expect.any(Number) });
   if (gate === 'canonical') expect(events[0]).toMatchObject({ event: 'root_rejected', failure: 'canonical:other' });
   expect(JSON.stringify(events)).not.toContain(fixture);
 });
