@@ -97,6 +97,11 @@ it('charges unrelated source entries before walking them and keeps the count dis
   expect((await fs.promises.stat(source())).size).toBeLessThan(1024 * 1024);
   expect(query()).toMatchObject({ state: 'unavailable', reason: 'limit' }); expect.soft(opened()).not.toContain(path.join(m.base, 'projects.json'));
 });
+it('bounds the source primary bytes independently of its selected row count', async () => {
+  await fs.promises.writeFile(source(), JSON.stringify({ version: 1, connections: [saved()], unused: 'x'.repeat(1024 * 1024) }));
+  const size = (await fs.promises.stat(source())).size; expect(size).toBeGreaterThan(1024 * 1024); expect(size).toBeLessThan(4 * 1024 * 1024);
+  expect(query()).toMatchObject({ state: 'unavailable', reason: 'limit' }); expect.soft(opened()).not.toContain(path.join(m.base, 'projects.json'));
+});
 it('refuses duplicate selected source associations instead of choosing a convenient project', async () => {
   await putSource([saved(), saved({ targetProjectPath: c })]); expect(query()).toMatchObject({ state: 'unavailable', reason: 'unreadable' }); expect.soft(opened()).not.toContain(agentFile(b)); expect.soft(opened()).not.toContain(agentFile(c));
 });
