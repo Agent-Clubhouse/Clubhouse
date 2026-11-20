@@ -71,6 +71,13 @@ export interface OwnedCliExit {
   monotonicNs: string;
 }
 
+type OwnedDiagnosticResult = { contractVersion: number; missing: string[] } & (
+  | { kind: 'observed-post-ack'; sampleObserved: true; resourceTypes: string[] }
+  | { kind: 'verified-early-exit-without-sample'; sampleObserved: false; resourceTypes: null;
+    nominalCutoffNs: string;
+    timing: { stopIssuedNs: string; stopReplyObservedNs: string; cliExitObservedNs: string } }
+);
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -317,7 +324,7 @@ export function evaluateOwnedResourceDiagnostics(input: {
   cliExit: unknown;
   finalAudit: unknown;
   timing: unknown;
-}) {
+}): OwnedDiagnosticResult {
   if (input.contractVersion !== OWNED_DIAGNOSTIC_CONTRACT_VERSION) throw new Error('Unsupported diagnostic artifact contract version');
   const { expected } = input;
   if (!record(input.diagnostics)) throw new Error('Missing resource diagnostic evidence');
