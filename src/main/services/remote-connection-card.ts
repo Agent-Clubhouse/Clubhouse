@@ -93,9 +93,27 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     const key = (from: string, to: string, kind: Pair['kind']) => `${from}\0${to}\0${kind}`;
     const ensure = (from: string, to: string, kind: Pair['kind']): Pair => { if (typeof from !== 'string' || !from || from.length > 512 || typeof to !== 'string' || !to || to.length > 512 || from !== selected && (to !== selected || kind !== 'agent')) throw new Error('connection_scope'); const id = key(from, to, kind); let p = pairs.get(id); if (!p) { p = { from, to, kind, sources: [] }; pairs.set(id, p); } return p; };
     for (const page of [outgoing, incoming]) if (page.state === 'ok') for (const b of page.value.rows) ensure(b.agentId, b.targetId, b.targetKind).binding = b;
+    let limitedSourceDetails = 0, untypedIncomingSources = 0;
     if (sources.state === 'ok') for (const p of sources.value.pairs) for (const source of p.sources) {
-      const b = value(source.binding); const pair = ensure(p.agentId, p.targetId, b?.targetKind ?? 'unknown'); pair.sources.push(source);
+      const b = value(source.binding);
+      if (b && (b.agentId !== p.agentId || b.targetId !== p.targetId)) throw new Error('connection_source_scope');
+      let pair: Pair;
+      if (b) pair = ensure(p.agentId, p.targetId, b.targetKind);
+      else {
+        limitedSourceDetails++;
+        // A source's identity check and its field projection have independent
+        // budgets. Keep an already admitted typed pair when fields hit a limit;
+        // an untyped cache key cannot invent an incoming agent/widget identity.
+        const admitted = [...pairs.values()].filter((candidate) => candidate.from === p.agentId && candidate.to === p.targetId && candidate.kind !== 'unknown');
+        if (admitted.length === 1) pair = admitted[0];
+        else if (p.agentId === selected) pair = ensure(p.agentId, p.targetId, 'unknown');
+        else if (p.targetId === selected) { untypedIncomingSources++; continue; }
+        else throw new Error('connection_source_scope');
+      }
+      pair.sources.push(source);
     }
+    if (limitedSourceDetails) c.notes.push(`Details unavailable for ${limitedSourceDetails} retained source record${limitedSourceDetails === 1 ? '' : 's'}; independently known connection fields are preserved.`);
+    if (untypedIncomingSources) c.notes.push(`${untypedIncomingSources} incoming source record${untypedIncomingSources === 1 ? ' lacks' : 's lack'} an independently admitted target kind; its connection details are unavailable.`);
     if (directions.state === 'ok') for (const d of directions.value.rows) {
       const from = formatAgentAddress({ agentId: d.from.agentId, machine: d.from.machineId }), to = formatAgentAddress({ agentId: d.to.agentId, machine: d.to.machineId });
       const active = value(d.userLink) === true || value(d.cardLink) === true || !!value(d.makers)?.length;
@@ -154,7 +172,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       const family = pair.kind === 'agent' && options.family ? options.family.parentId === other ? ' · orchestrator' : options.family.helperIds.has(other) ? ' · helper' : '' : '';
       row(c, name, `${kindWords(pair.kind)} · ${grouped.get(groupKey(pair))?.direction === 'two-way' ? 'two-way records' : outgoingPair ? 'sends to it' : 'sends to this agent'}${family} · ${outgoingPair ? 'outgoing' : 'incoming'} ${status}${pair.machine ? ` · saved network link · ${resolved ? 'names from retained metadata' : 'target name unavailable'}` : ''}`);
       row(c, `${name} ${outgoingPair ? 'outgoing' : 'incoming'} switches`, toolsFor(pair, savedComplete));
-      const sourceLabels = new Set(pair.sources.map((source) => `${CONNECTION_SOURCE_LABELS[connectionSourceKind(source.sourceId)]}${source.removedByUser ? ' (removed here)' : !source.verified ? ' (unverified or unreconciled)' : ''}${dispatcherSource(source) && localDispatcher?.enabled.state === 'ok' && !localDispatcher.enabled.value ? ' (host Dispatcher off)' : ''}`));
+      const sourceLabels = new Set(pair.sources.map((source) => `${CONNECTION_SOURCE_LABELS[connectionSourceKind(source.sourceId)]}${source.removedByUser ? ' (removed here)' : !source.verified ? ' (unverified or unreconciled)' : ''}${source.binding.state !== 'ok' ? ' (details unavailable)' : ''}${dispatcherSource(source) && localDispatcher?.enabled.state === 'ok' && !localDispatcher.enabled.value ? ' (host Dispatcher off)' : ''}`));
       if (value(pair.saved?.userLink)) sourceLabels.add(CONNECTION_SOURCE_LABELS.user_link);
       if (value(pair.saved?.cardLink)) sourceLabels.add(CONNECTION_SOURCE_LABELS.card_link);
       if (value(pair.saved?.makers)?.length) sourceLabels.add(CONNECTION_SOURCE_LABELS.tool_link);
@@ -202,7 +220,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     }
     if (!pairs.size && outComplete && inComplete && savedComplete && sources.state === 'ok' && sources.value.complete && sources.value.sourceStates.length) c.notes.push('No binding or active saved direction was reported in the available host records.');
     c.notes.push('Names, bindings and source ownership use saved or retained host records. Additional configured connections may be missing from this retained view. Other agents’ current availability and effective tool authority are not confirmed here.');
-    if (!pairs.size && (!outComplete || !inComplete || !savedComplete || sources.state !== 'ok' || !sources.value.complete || !sources.value.sourceStates.length)) { c.state = 'error'; c.summary = 'Connection information incomplete'; }
+    if (!pairs.size && (!outComplete || !inComplete || !savedComplete || sources.state !== 'ok' || !sources.value.complete || !sources.value.sourceStates.length || !!untypedIncomingSources)) { c.state = 'error'; c.summary = 'Connection information incomplete'; }
     if (!options.authorized()) throw new Error('revoked');
   } finally { c.notes.push(...refs.finish(options.receipts)); }
 }

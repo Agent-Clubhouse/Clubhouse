@@ -126,6 +126,17 @@ it.each(['typed-incoming', 'unbound-incoming', 'widget-and-unrelated'] as const)
   expect.soft(c.state).toBe('ok');
   for (let i = 0; i < 5; i++) expect.soft(c.rows.some((row) => row.label === `Known target ${i}`)).toBe(true);
   if (mode !== 'unbound-incoming') expect.soft(c.rows.some((row) => row.label === 'Known incoming sender')).toBe(true);
-  expect.soft(c.notes.join(' ')).toContain('source');
+  expect.soft(c.notes.join(' ')).toContain('Details unavailable for 1 retained source record');
+  if (mode === 'unbound-incoming') { expect.soft(c.notes.join(' ')).toContain('an independently admitted target kind'); expect.soft(c.rows.some((row) => row.label === 'Known incoming sender')).toBe(false); }
+  else expect.soft(c.rows.find((row) => row.label === 'Known incoming sender sources')?.value).toContain('details unavailable');
   expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|Selected target label/); expect.soft(collect).not.toHaveBeenCalled(); expect.soft(receipts.every((receipt) => receipt.current())).toBe(true);
+});
+
+it.each([true, false])('does not guess incoming widget identity from an untyped source field result with known rows=%s', async (hasKnown) => {
+  if (hasKnown) bindingManager.bind(selected, { targetId: 'known', targetKind: 'agent', label: 'Known connection' });
+  // A defensive internal-contract negative, separate from the actual-API
+  // budget controls above: unknown source fields must not become an agent.
+  const module = await import('./persisted-bindings');
+  vi.spyOn(module, 'readCachedConnectionSourcesForDisplay').mockReturnValue({ state: 'ok', inputs: [], value: { scope: 'registered-cache-only', complete: true, sourceStates: [{ sourceId: 'canvas-wires', state: 'known' }], pairs: [{ agentId: 'PRIVATE_WIDGET_OWNER', targetId: selected, sources: [{ sourceId: 'canvas-wires', provenance: 'last-reconciled', verified: false, removedByUser: false, copies: 1, binding: { state: 'unavailable', inputs: [], reason: 'limit' } }] }], total: 1, offset: 0, omitted: 0, nextOffset: null } });
+  const { c } = await read(); expect.soft(c.state).toBe(hasKnown ? 'ok' : 'error'); expect.soft(c.rows.some((row) => row.label === 'Known connection')).toBe(hasKnown); expect.soft(c.notes.join(' ')).toContain('an independently admitted target kind'); expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_WIDGET_OWNER');
 });
