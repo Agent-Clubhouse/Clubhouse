@@ -1,0 +1,70 @@
+#3733 finite checklist 7: omitted-board navigation boundary
+
+Investigated base: 532f2ee4b523be23516146defc73acc7cc4d1efa.
+Source investigation only; no live app, network reads, installs or grant changes.
+This artifact does NOT accept omitted-board navigation or full Canvas parity.
+
+Existing readable information
+
+Remote Details readCanvasCard (remote-details-cards.ts) sends selected membership
+names plus scope/canvasId/viewId from the strict host membership reader. It does
+not send board views/content or a receipt authorizing another content read.
+Local canvas.getAgentCanvases is an app-window IPC into local persisted stores.
+Its authority and data do not extend to a remote host. Local readForNavigation
+is also app-window/local navigation, not an Annex selected-agent board read.
+
+There ARE remote canvas-content routes: annex-server.ts handleMobileCanvasRoute,
+GET /api/v1/mobile/canvas and /api/v1/mobile/canvas/:projectId. Main-server requests
+have the existing paired-controller pinned-certificate admission. These routes
+return a whole Home/project canvas store (and wire definitions), not one selected
+agent/board/member. They do not take or return a selected-board membership/read
+receipt or perform the Details reader's selected/final authorization checks.
+They call readCanvasState -> plugin-storage.readKey: corrupt JSON can be renamed
+into quarantine, and backup fallback is ordinary recovery behavior. Therefore
+this existing route is not an admissible passive selected-board read under this
+task. This conclusion is not a claim that the route lacks transport admission.
+
+annex-client.ts fetchOmittedCanvases/refetchOmittedCanvas use those routes as
+automatic snapshot synchronization. The client can retain prior board data when
+a snapshot omits canvases and can fetch broad project/Home stores. Its omission
+marker is not an independent selected-board content receipt. Reusing a retained
+store or clearing that marker would misstate the provenance. No selected-board
+read method is exposed in preload/annexClient.ts or Annex client IPC; canvasMutation
+is a write path and is outside this task.
+
+Existing navigation boundary remains
+
+agent-canvases.ts remoteCanvasJumpUnavailable checks the current connected host,
+namespaced project, omission/unavailable markers, and the exact board/view/agent
+membership in the current host snapshot. jumpToRemoteCanvas rechecks selection
+and current snapshot before focus, requires a matching remoteSource host AND
+snapshot object, and refuses colliding local/other-host boards. It does not
+hydrate a copied retained board. Canvas plugin main.ts owns save-flush/failure
+preservation and remote hydration before the queued jump may focus a view.
+These gates are unchanged by this artifact.
+
+Missing contract / deferred work
+
+There is no established passive, bounded, selected-board content contract with
+strict selected host/project/board/member binding and final auth/source receipts
+usable here. Membership evidence is not content-read authority. Implementing
+one, or treating the broad recovery-capable route as equivalent, exceeds this
+assignment's no-new-endpoint/no-grant-equivalence boundary. Omitted boards remain
+Unavailable with the existing open-on-host reason. Existing readable snapshots
+still use the guarded correct-host jump; no missing click handler is claimed.
+
+Safe improvement delivered
+
+CanvasMembershipList now labels its list, distinguishes Project from Home, and
+connects each disabled row to its visible reason through aria-describedby with
+unique per-list IDs. Scope/canvasId/viewId callbacks, disabled behavior, host
+guards and hydration ownership are unchanged. No ID-to-label fallback is added.
+
+Continuation coordination: preserve scope/canvasId/viewId and host/project
+selection when paging memberships later. List continuation must retain its own
+read/auth receipts and omission accounting; it does not authorize board content.
+No membership paging, global scan or completeness claim is added here.
+
+Validation scope: focused membership presentation, existing agent-canvases
+navigation guards, and remote Details membership display. Exact-head results
+and limits are reported to Clubhouse-Orchestrator for independent review.
