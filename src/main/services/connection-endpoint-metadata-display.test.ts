@@ -162,3 +162,24 @@ it('invalidates the private witness on host profile replacement without serializ
   expect(receipts[0].current()).toBe(true); m.base = a;
   expect.soft(receipts[0].current()).toBe(false); expect.soft(JSON.stringify(result)).not.toContain(root); expect.soft(JSON.stringify(receipts)).toBe('[{}]');
 });
+it('supplies private root-specific registered-primary receipts without coupling unrelated project primary edits', async () => {
+  const roots = new Map<string, DisplayReceipt>(), receipts: DisplayReceipt[] = [];
+  const result = readConnectionEndpointMetadataForDisplay([request('target', a), request('target', b)], { receipts, projectReceipts: roots });
+  expect(result).toMatchObject({ state: 'ok', value: [{ value: { record: 'registered-primary' } }, { value: { record: 'registered-primary' } }] });
+  expect(roots.size).toBe(2); expect([...roots.values()].every((r) => r.current())).toBe(true); expect(receipts.every((r) => r.current())).toBe(true);
+  await put(a, [row('target', 'Changed earlier project')]);
+  expect.soft(roots.get(a)?.current()).toBe(false); expect.soft(roots.get(b)?.current()).toBe(true); expect.soft(receipts.every((r) => r.current())).toBe(false);
+});
+it('includes the relevant registry and distinct selected associations in each private root receipt', async () => {
+  let first = true, second = true;
+  const roots = new Map<string, DisplayReceipt>();
+  const firstReceipt = { current: () => first }, secondReceipt = { current: () => second };
+  const result = readConnectionEndpointMetadataForDisplay([request('target', b, firstReceipt), request('PRIVATE_OTHER', b, secondReceipt)], { receipts: [], projectReceipts: roots });
+  expect(result.state).toBe('ok'); expect(roots.get(b)?.current()).toBe(true);
+  first = false; expect.soft(roots.get(b)?.current()).toBe(false); first = true; second = false; expect.soft(roots.get(b)?.current()).toBe(false); second = true; expect(roots.get(b)?.current()).toBe(true);
+  await registry([{ id: 'a', path: a }]); expect(roots.get(b)?.current()).toBe(false);
+});
+it('refuses a reused private project-receipt sink before any inventory reads', () => {
+  const roots = new Map<string, DisplayReceipt>([[b, { current: () => true }]]);
+  expect(readConnectionEndpointMetadataForDisplay([request()], { receipts: [], projectReceipts: roots })).toMatchObject({ state: 'unavailable', reason: 'invalid' }); expect(opened()).toEqual([]);
+});

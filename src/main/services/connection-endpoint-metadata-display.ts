@@ -39,12 +39,17 @@ function combinedReceipt(receipts: readonly DisplayReceipt[]): DisplayReceipt {
  * primary evidence, not the loaded agent namespace, liveness or permissions.
  * Caller retains these receipts alongside its target/role/run/auth receipts.
  */
-export function readConnectionEndpointMetadataForDisplay(requests: readonly AdmittedConnectionEndpoint[], options: { receipts: DisplayReceipt[] }): DisplayValue<DisplayValue<ConnectionEndpointMetadata>[]> {
+export function readConnectionEndpointMetadataForDisplay(requests: readonly AdmittedConnectionEndpoint[], options: { receipts: DisplayReceipt[];
+  /** Private per-query output for later root admission; never DTOs or route input. Must start empty. */
+  projectReceipts?: Map<string, DisplayReceipt>;
+}): DisplayValue<DisplayValue<ConnectionEndpointMetadata>[]> {
   const observedAt = Date.now();
   const inputs = [{ field: 'Related registered-project saved metadata', source: 'primary' as const, observedAt }];
   const unknown = <T>(reason: 'invalid' | 'unreadable' | 'limit' | 'changed'): DisplayValue<T> => ({ state: 'unavailable', reason, inputs });
   const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs });
   if (!Array.isArray(requests) || requests.length > CONNECTION_METADATA_REQUESTS || !Array.isArray(options?.receipts)) return unknown('limit');
+  const projectReceipts = options.projectReceipts;
+  if (projectReceipts !== undefined && (!(projectReceipts instanceof Map) || projectReceipts.size !== 0)) return unknown('invalid');
   // Per-entry unavailable states are retained as metadata records below, rather
   // than making one malformed/unreadable endpoint erase other useful fields.
   const results: DisplayValue<ConnectionEndpointMetadata>[] = requests.map(() => unknown('invalid'));
@@ -65,15 +70,18 @@ export function readConnectionEndpointMetadataForDisplay(requests: readonly Admi
   if (!admitted.length) return known(results);
   const base = getBaseDirPath(), budget = createReadOnlyMetadataBudget();
   if (!folder(base)) return unknown('invalid');
-  evidence.push(profileReceipt(base));
+  const profile = profileReceipt(base);
+  evidence.push(profile);
   let rowsLeft = CONNECTION_METADATA_ROWS;
   const charge = (length: number) => {
     if (length > rowsLeft) throw new ReadOnlyMetadataLimitError('Related metadata row limit reached.');
     rowsLeft -= length;
   };
   let registered: Set<string>;
+  let registryReceipt: DisplayReceipt | undefined;
   try {
     const snapshot = readReadOnlyPrimaryMetadata(base, 'projects.json', { budget });
+    registryReceipt = snapshot.receipt;
     evidence.push(snapshot.receipt);
     const rows = Array.isArray(snapshot.raw) ? snapshot.raw : record(snapshot.raw) && snapshot.raw.version === 1 ? snapshot.raw.projects : undefined;
     if (!Array.isArray(rows)) throw new Error('Invalid registered-project primary.');
@@ -125,6 +133,13 @@ export function readConnectionEndpointMetadataForDisplay(requests: readonly Admi
         const primary = <T>(value: DisplayValue<T>): DisplayValue<T> => ({ ...value, inputs });
         results[request.index] = known({ record: 'registered-primary', fields: { ...fields,
           name: primary(fields.name), helper: primary(fields.helper), disposed: primary(fields.disposed), connectToDispatcher: primary(fields.connectToDispatcher) } });
+      }
+      if (projectReceipts && registryReceipt) {
+        // No other root's primary is captured here. Each check re-reads the
+        // bounded registry (<=4MiB), THIS primary (<=4MiB), profile and distinct
+        // selected association callbacks. At most16 root receipts are created;
+        // checks do not reuse a previous phase's currentness result.
+        projectReceipts.set(projectPath, combinedReceipt([profile, registryReceipt, snapshot.receipt, ...group.map((request) => request.association)]));
       }
     } catch (error) {
       const reason = error instanceof ReadOnlyMetadataLimitError ? 'limit' : 'unreadable';

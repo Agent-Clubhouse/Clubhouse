@@ -89,7 +89,8 @@ export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentI
       const match = matches.get(key(admitted[index])); if (!match) continue;
       queries.push({ agentId: match.otherId, projectPath: match.otherProject, association }); positions.push(index);
     }
-    const metadata = readConnectionEndpointMetadataForDisplay(queries, { receipts: options.receipts });
+    const projectMetadataReceipts = readLoadedCache ? new Map<string, DisplayReceipt>() : undefined;
+    const metadata = readConnectionEndpointMetadataForDisplay(queries, { receipts: options.receipts, projectReceipts: projectMetadataReceipts });
     if (!association.current()) return unknown('changed');
     if (metadata.state !== 'ok') {
       for (const index of positions) rows[index].endpoint = { state: 'unavailable', reason: metadata.reason, inputs: metadata.inputs };
@@ -111,10 +112,12 @@ export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentI
         if (group) group.push({ row, query }); else groups.set(query.projectPath, [{ row, query }]);
       }
       // At most16 admitted metadata roots/50 selected identities. Check the
-      // source freshly per project, not once per repeated identity, and never
-      // carry a previous phase's truth across registry/cache work.
+      // relevant registry+primary+association freshly per project, not the
+      // entire assembly or once per repeated identity. Global final checks
+      // still fence all previously read roots after the last callback.
       for (const [projectPath, group] of groups) {
-        if (!association.current()) return unknown('changed');
+        const projectReceipt = projectMetadataReceipts?.get(projectPath);
+        if (!projectReceipt || !current(projectReceipt)) return unknown('changed');
         for (const { row, query } of group) {
           const cacheInputs = [{ field: 'Related agent host-session fields', source: 'host-cache' as const, observedAt: Date.now() }];
           try { row.hostCache = { state: 'ok', value: readLoadedCache(projectPath, query.agentId, { receipts: options.receipts }), inputs: cacheInputs }; }

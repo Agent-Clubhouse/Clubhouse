@@ -181,3 +181,21 @@ it.each(['registered-project-removed', 'endpoint-primary-removed'] as const)('SC
   expect(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect(JSON.stringify(result)).not.toMatch(/Selected cache name|Other host name/);
   expect.soft(calls).not.toContain('other'); expect.soft(calls).toEqual(['target']);
 });
+it('rechecks only the relevant next primary while preserving final refusal for a changed earlier primary', async () => {
+  await warm(); await warmSecond(); const pairs = [pair(), pair('other')], calls: string[] = [];
+  expect(query(readAgentConnectionCacheForDisplay, [], pairs)).toMatchObject({ state: 'ok', value: { rows: [{ hostCache: { value: { availability: 'loaded' } } }, { hostCache: { value: { availability: 'loaded' } } }] } });
+  const reader: typeof readAgentConnectionCacheForDisplay = (folder, id, options) => {
+    const value = readAgentConnectionCacheForDisplay(folder, id, options); expect(value.availability).toBe('loaded'); calls.push(id);
+    if (id === 'target') fs.writeFileSync(file(), JSON.stringify([agent({ name: 'Changed earlier primary' })]));
+    return value;
+  };
+  const result = query(reader, [], pairs); expect.soft(calls).toEqual(['target', 'other']); expect.soft(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect.soft(JSON.stringify(result)).not.toMatch(/Selected cache name|Other host name/);
+});
+it('keeps two distinct unchanged project roots useful with the actual passive owner getter', async () => {
+  await warm(); await warmSecond(); const reader = vi.fn(readAgentConnectionCacheForDisplay), receipts: DisplayReceipt[] = [];
+  expect(query(reader, receipts, [pair(), pair('other')])).toMatchObject({ state: 'ok', value: { rows: [
+    { endpoint: { value: { fields: { name: { value: 'Selected cache name' } } } }, hostCache: { value: { availability: 'loaded' } } },
+    { endpoint: { value: { fields: { name: { value: 'Other host name' } } } }, hostCache: { value: { availability: 'loaded' } } },
+  ] } });
+  expect.soft(reader.mock.calls.map((call) => call.slice(0, 2))).toEqual([[project, 'target'], [otherProject, 'other']]); expect(receipts.every((r) => r.current())).toBe(true); noWrites();
+});
