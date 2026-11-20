@@ -1,0 +1,40 @@
+Bounded implementation APPROVE — exact reset-aware Auto f7be061e73006cf094403dbc0e8b2739087d3e67
+Tree9eb1ae175523d98110af907478f821a405e37c62; branchauto-reset-policy-design/implement-reset-aware-auto; base approved researchf386b143fda60d969c705dcb397c9458b6ae0035.
+Reviewer source/artifact inspection only; no validation rerun, source edits, settings activation, process/provider starts, CI action, PR/merge/release authority or ownership transfer.
+
+No actionable implementation blocker found within the requested opt-in48h/stronger24h/configurable10% reserve/no-relaxation/Copilot/cold-admission scope. This approval covers the implementation, not empirical savings, physical quota preservation, current-main integration or hostedCI.
+
+Exact source and portable provenance
+- Source f7 parentc29c0c9ab208de37482d8cd8ce387dace1af61c3; c29->f7 changes only validation script's source-manifest paths (nonexistent main/services/agent-helpers replaced by real shared helper types, MCP/Actions start witnesses). Production/tests unchanged; c29 wrapper failure preceded tests and supplies no success transfer.
+- Portable evidence head02d70988400c0b05cf5f84b5dd4cebfd27d2e61d/treec7e4f39dab5cb8f75c42647b5e1fae1f2037663b, branchauto-reset-policy-design/reset-aware-auto-evidence; remote readback confirms both exact refs.
+- Evidence head adds only18 docs/receipt paths to f7; all other tracked contents remain unchanged. Do not merge evidence branch as product.
+- docs/evidence/helper-reset-implementation/f7be061e7/manifest.json SHA256cba1edfe43e50243e8832c8fc8971d87b54b6c087e5508f4eb28754dc1fa303f;16 listed artifacts all match hashes. Portable four JSON/raw pairs byte-equal inspected local records.
+- Every seal before/after clean f7/tree9eb,42 source SHA256 entries each match exact Git blobs; raw output hashes match, commands/exits captured. Before/after evidence is not continuous process/environment attestation.
+
+Source assessment
+1. Policy/schema/defaults: shared/helper-auto-budget.ts closedversion1 enabledbool, exact two provider integer0..100 percentages; default10 only on explicit opt-in. Absent/off retains legacy; present invalid/future schema fails closed for Auto and survives unrelated cap/preset/Copilot writes. Explicit valid repair/off allowed, no hidden migration/enablement. Older binary preservation is explicitly not promised.
+2. Persistence: orchestration-settings.ts140–177 and helper-routing.ts1085–1091 combine stricter pending reserves before service/store queues; newly enabling enforces reserve-only until commit; loosening/disable uses committed values until durable update. Concurrent restrictions use per-provider maxima/token-specific release, failed/stale restrictions release their own token. Settings revision changes without mapping generation changes. Project budget edits refused; old partial current-server writers preserve policy.
+3. Admission: existing prepare/read and MCP/Actions lock paths preserved; decideAutoPlan687–739 re-peeks/reclassifies quota under lock plus mutable provider/Copilot/mapping/cooldown checks. All represented applicable short/model/other windows, provider limitReached and completeness/freshness precede calendar preference. Equality at observed ceiling refuses. No extra quota probe/rate buffer/periodic worker added.
+4. Forecasts: one existing qualified subscription-group bound must cover every applicable window and exact sample/reset; otherwise unavailable and observation-only admission. No unknown-as-zero comparison against qualified means; equal-band/reset candidates use comparable forecast coverage or common observed pressure, then load/rotation across old tier boundary. Actual producer pressure qualification retained; no invented helper-count conversion.
+5. Calendar/unknowns: inclusive24/48h bands, earlier deadline, verified measured usable weekly budget; missing reset disables urgency, expired window never becomes zero. Diagnostic original tier retained after comparison projection. Copilot remains unknown/unscored last-resort and saved allowance checked under lock; no numeric Copilot reserve/forecast. Invalid policy refuses Auto, explicit/preset/already-resolved plans unaffected.
+6. UI/contracts/privacy: explicit app-scope preference/reserve edits retain selected settings, Copilot and Auto flags; older host capability absence supported, invalid-policy repair explicit. Existing mobile parser/route gains closed optionalfield/capability only, no grant/control-path expansion. Selected budget audit/decision details use existing local-only telemetry. Protocol normalization changes local example UUIDs/relative revisions/one illustrative seq, plus new optionalfields/reasons/incomplete-window metadata; no global fixture-join guarantee invented.
+
+Independently verified exact evidence
+-990PASS /15files/no skips,08:49:46–08:49:50Z, Vitest maxWorkers2. Covers production selector, legacy replay, quota/pressure, routing, actual temporary persistence/queued-write races, closed schema, renderer component, parser and telemetry.
+-Full unchanged root ES2020 tsconfig tsc--noEmit exit0,08:49:56–08:50:05Z. Root excludes test sources as before; not a whole-test-source typecheck.
+-Changed22-file lint exit0,08:52:51–08:52:52Z,0errors65warnings. No measured baseline comparison supports the word “existing”; retain65warnings unqualified.
+-Targeted routing protocol4PASS64intentionallyunselected/profilecheck,08:52:02–08:52:11Z; source/fixtures stable in captured pre/post checks. Not a full68case/wholeprotocol pass.
+-Real SettingsStore temp files and mocked rename barriers/failures substantiate persistence; provider/model/quota/runtime inputs are modeled, pressure histories synthetic. “Actual fresh-start path” means real planning/decision functions with modeled inputs, not live provider start/quota savings/physical accounting.
+-Current dependency-linkage record now restored:true; observed owner node_modules is a directory with0 immediate symlinks, original-backup path absent, retained linked-layout present. LockSHA bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d matches sealed unchanged source;810 per-package links during checks/excluded shared cache names recorded. This is current layout plus owner restoration record, not independent historical inode/content/continuous shared-cache attestation.
+-Generic ANNEX_MOBILE_FIXTURES value is not in the captured seal. Producer writes when that genericflag=write even if routing profilecheck, so no independent nonwrite-execution claim. Credit targeted source-stable result only. This provenance limit does not reveal an implementation defect or authorize a rerun/waiver.
+-Refusals/development/compiler errors remain historical, not passes. Portable refusal snippets alone do not independently establish every retry interval. No blanket gate-pacing claim.
+
+Limits and remaining gates
+Reserves are admission thresholds. Running/pending/outside work, stale-but-admissible samples and concurrent cold starts may overshoot; documented89->93 example remains possible. Qualified aggregate bounds are empirical, not physical guarantees. No sustainable-rate estimate/task quality/paid experiment/cross-epoch running-task completion evidence. No automatic retry/replay, task inflation or late provider movement introduced.
+
+Proceed to authorized PR preparation/hostedCI/normal repository review as separate gates; no merge/release/install/live opt-in authorized by this verdict. Full#3733 remains open, unrelated Details9a9/48b evidence not reviewed here, and no source/count/verdict transfer. #3706 release hold remains. Settings/3744 coordination is with Mini; Auto independent review completed here, no receiver takeover inferred.
+
+Remote source:
+https://github.com/Agent-Clubhouse/Clubhouse/tree/f7be061e73006cf094403dbc0e8b2739087d3e67
+Portable evidence:
+https://github.com/Agent-Clubhouse/Clubhouse/blob/02d70988400c0b05cf5f84b5dd4cebfd27d2e61d/docs/evidence/helper-reset-implementation/TRANSFER.md

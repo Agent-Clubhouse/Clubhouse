@@ -60,6 +60,12 @@
       "originalSourceSha256": "681a5136eef67937b93e6e9c69a439ec49765ecb118a9aa0a196de3813fb40ff",
       "bytes": 5787,
       "sha256": "ea0a237cc231fed7cc26786cc6ecaea83ad34d30745d0b85521c7ee9a3bba135"
+    },
+    {
+      "path": "reports/auto-reset-f7be061e7-independent-final-verdict.txt",
+      "originalSourceSha256": "14abac72ea9f0571d6f613370b539114cd243498ef39385d8473c906da05992d",
+      "bytes": 7984,
+      "sha256": "ff9b051c5472382004ab50e75e2e8f409aedf7df496eaaf0fbc7250231195d56"
     }
   ],
   "copyNote": "Only redundant blank lines at EOF normalized in Git copies; original reports unchanged. Original and copied hashes retained."
