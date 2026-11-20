@@ -214,7 +214,8 @@ export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, 
       && (autoCrlf || attrs?.text === 'set' || attrs?.text === 'auto' || ['lf', 'crlf'].includes(attrs?.eol ?? ''))) newBytes = Buffer.from(newBytes.toString('utf8').replace(/\r\n/g, '\n'));
     const nextMode = after ? right?.mode : current?.state === 'ok' ? current.mode : undefined;
     const modeChanged = !!left && !!nextMode && (after || fileMode) && left.mode !== nextMode;
-    if (!oldPath && !filtered && oldBytes && newBytes && oldBytes.equals(newBytes) && !modeChanged) continue;
+    const presenceChanged = !!left !== (after ? !!right : current?.state === 'ok');
+    if (!oldPath && !filtered && oldBytes && newBytes && oldBytes.equals(newBytes) && !modeChanged && !presenceChanged) continue;
     const diff = evidence === 'text' && oldBytes && newBytes ? readOnlyTextDiff(oldBytes.toString('utf8'), newBytes.toString('utf8'), p, 2_000_000, 128 * 1024, diffBudget) : null;
     if (evidence === 'text' && !diff) evidence = 'too-large';
     const label = redactSecretValues(p).replace(/[\x00-\x1f\x7f]/g, ' ');

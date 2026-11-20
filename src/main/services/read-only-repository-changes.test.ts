@@ -23,8 +23,8 @@ beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhou
 afterEach(async () => { vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); });
 const tree = () => git('write-tree');
 describe('passive repository comparison', () => {
-  it.each(['branch', 'session', 'turn'] as const)('pairs a unique identical live %s move with endpoint-bound metadata and zero line edits', async (scope) => {
-    await fs.writeFile(path.join(root, 'old-name'), 'same content\n');
+  it.each((['branch', 'session', 'turn'] as const).flatMap((scope) => [false, true].map((empty) => ({ scope, empty }))))('pairs a unique identical live $scope move with endpoint-bound metadata, empty=$empty', async ({ scope, empty }) => {
+    await fs.writeFile(path.join(root, 'old-name'), empty ? '' : 'same content\n');
     await git('add', '.');
     const from = await tree();
     await fs.rename(path.join(root, 'old-name'), path.join(root, 'new-name'));
@@ -78,7 +78,7 @@ describe('passive repository comparison', () => {
     const patch = await readOnlyRepositoryChanges(comparison, { scope: 'branch', fileKey });
     expect(patch.patch).toEqual({ fileKey, state: condition === 'source filtered' ? 'filtered' : 'stale' });
   });
-  it('rechecks both endpoints, refuses a recreated source and honors revocation during revalidation', async () => {
+  it.each(['source', 'destination'] as const)('rechecks both endpoints, refuses a changed %s and honors revocation during revalidation', async (endpoint) => {
     await fs.writeFile(path.join(root, 'old-name'), 'same content\n');
     await git('add', '.');
     const from = await tree();
@@ -86,14 +86,16 @@ describe('passive repository comparison', () => {
     const comparison = { root, from, identity: 'selected-run' };
     const read = worktreeFiles.readOnlyWorktreeFile;
     const spy = vi.spyOn(worktreeFiles, 'readOnlyWorktreeFile').mockImplementation(async (...args) => {
+      if (endpoint === 'destination' && args[1] === 'new-name' && spy.mock.calls.filter((call) => call[1] === 'new-name').length === 2) await fs.writeFile(path.join(root, 'new-name'), 'changed destination\n');
       const result = await read(...args);
-      if (args[1] === 'new-name' && spy.mock.calls.filter((call) => call[1] === 'new-name').length === 2) await fs.writeFile(path.join(root, 'old-name'), 'recreated\n');
+      if (endpoint === 'source' && args[1] === 'new-name' && spy.mock.calls.filter((call) => call[1] === 'new-name').length === 2) await fs.writeFile(path.join(root, 'old-name'), 'recreated\n');
       return result;
     });
     const list = await readOnlyRepositoryChanges(comparison, { scope: 'branch' });
     expect(list.files.some((f) => f.status === 'renamed')).toBe(false);
-    expect(spy.mock.calls.filter((call) => call[1] === 'old-name' && call[2] === 0)).toHaveLength(2);
-    await fs.rm(path.join(root, 'old-name'));
+    expect(spy.mock.calls.filter((call) => call[1] === 'old-name' && call[2] === 0)).toHaveLength(endpoint === 'source' ? 2 : 1);
+    await fs.rm(path.join(root, 'old-name'), { force: true });
+    await fs.writeFile(path.join(root, 'new-name'), 'same content\n');
     let allowed = true;
     spy.mockImplementation(async (...args) => {
       const result = await read(...args);
@@ -101,6 +103,16 @@ describe('passive repository comparison', () => {
       return result;
     });
     await expect(readOnlyRepositoryChanges(comparison, { scope: 'branch' }, () => allowed)).rejects.toThrow('read_revoked');
+  });
+  it('preserves ambiguous empty-file presence changes as known zero-line additions/deletions', async () => {
+    await fs.writeFile(path.join(root, 'old-name'), '');
+    await fs.writeFile(path.join(root, 'copy'), '');
+    await git('add', '.');
+    const from = await tree();
+    await fs.rename(path.join(root, 'old-name'), path.join(root, 'new-name'));
+    const result = await readOnlyRepositoryChanges({ root, from, identity: 'selected-run' }, { scope: 'branch' });
+    expect(result.files.map((file) => [file.path, file.status, file.countsKnown])).toEqual([['new-name', 'added', true], ['old-name', 'deleted', true]]);
+    expect(result.diffstat).toEqual({ additions: 0, deletions: 0, knownFiles: 2 });
   });
   it('pages the paired representation and derives its diffstat from represented changes', async () => {
     await fs.writeFile(path.join(root, 'old-name'), 'same content\n');

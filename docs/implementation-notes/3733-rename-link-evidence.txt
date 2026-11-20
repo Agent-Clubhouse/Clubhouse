@@ -1,0 +1,72 @@
+#3733 §6 exact live rename / passive link refusal — bounded display slice
+
+Base: 6d7cac9b243a160ce775a2b41e3f7b0496a31c2c
+Branch: Nov20RootDiagnostics/3733-rename-link-metadata
+Separate from aggregate review: parent reported independent approval of 6d7cac9
+with its existing caveats, already included in Mini integration WIP. That verdict
+does not approve this successor or establish full #3733/§6 acceptance.
+
+Source: read-only-repository-changes.ts derives a regular-file match from existing
+immutable tree OID/size/mode and already-compared raw worktree bytes. Exactly one
+prior source and one observed addition must match. No fuzzy/similarity matching
+is added to live Branch/Session/Last-turn reads. Saved-turn Git rename evidence,
+including edited-file counts/text, retains its existing implementation.
+
+Live list pairing requires a complete eligible bounded inventory with no unknown
+added endpoint. Private/cut inventories, duplicate prior content (including private
+copies), duplicate added destinations, edited/filtered/binary/unsafe/mode-uncertain
+endpoints stay unpaired. At most 32 candidate pairs receive endpoint rechecks,
+which consume the existing remaining total-content budget. Source absence is
+checked with the existing zero-byte no-follow reader, destination raw bytes/mode
+are reread unchanged, then source absence is checked again. No new external
+program, Git write, filter execution, network, grant or link-target read is added.
+The existing check-attr invocation also checks the selected source on rename-open.
+
+The same 64-hex opaque query shape binds both source and destination with two
+128-bit endpoint tags derived from the existing comparison-scoped keys. Lookups
+must uniquely identify both endpoints and refuse ordinary/rename ambiguity;
+these are selection witnesses, never authorization. Opening re-derives the exact
+unique prior source and rechecks both endpoints. A replaced source, destination
+edit/removal/mode change or substitution to a different prior source returns stale;
+a newly filtered source stays refused. Every awaited read still checks authority;
+the outer selected agent/root/HEAD/run/session/native/target witnesses are unchanged.
+
+Paired rows show sanitized old/new labels, zero line edits and an authorized rename
+notice on open. Aggregate diffstat/pagination use the represented rows. Unpaired
+additions/deletions retain their own counts; no missing count becomes zero.
+An existing equal-bytes shortcut now also checks side presence, so empty-file
+add/delete/move paths survive as known zero-line changes instead of false empty.
+
+Link-own metadata: explicitly REFUSED under the current passive contract, as the
+parent directed. No readlink call, symlink blob admission or target dereference is
+introduced. Changed live/saved links retain unsafe evidence and unknown line
+counts. UI states that destinations are not shared and target contents are not
+read; it invents neither a destination nor zero known line counts. This display
+gap remains a contract limitation, not full local link-metadata equivalence.
+
+Validation with existing dependencies, no installs, one worker:
+node node_modules/vitest/vitest.mjs run --project main --project shared --project renderer
+  src/main/services/read-only-repository-changes.test.ts
+  src/main/services/read-only-worktree-file.test.ts
+  src/main/services/remote-agent-changes.test.ts
+  src/main/services/remote-agent-changes-target-fence.test.ts
+  src/shared/remote-agent-changes.test.ts
+  src/renderer/features/agents/details/RemoteChangesCard.test.tsx
+  src/renderer/features/agents/details/ChangesCard.test.tsx
+  --maxWorkers=1 --no-file-parallelism
+Observed: 144 passed, seven suites, no failures/skips on local macOS. Earlier
+source run passed139 before the presence/during-recheck followup; do not substitute
+that count for final proof. Mode-change fixture is POSIX-only; control-character
+filename sanitization uses a valid ordinary name on Windows. No Windows/live proof.
+Unchanged-config source tsc --noEmit passes. Scoped four-file ESLint retains the
+producer's two existing no-control-regex errors and catch-must-report warning;
+the other three changed files are clean. These findings are reproduced against
+6d7cac9; lint is not green and is not waived as full-project acceptance.
+
+Limits: exact content correspondence is inferred from observations, not proof of
+a historical filesystem rename or an atomic cross-file/cross-page snapshot.
+Revalidation is not a continuous lock. Similar/edited live moves, ambiguous/cut/
+private/unknown evidence, candidates beyond the pair cap or remaining budget are
+not claimed paired. Saved comparisons retain their previously bounded Git rules.
+No required historical provider refusal was replayed; no link authority was widened.
+No live E2E, restart, PR, merge, release or complete Details/§6 acceptance claimed.
