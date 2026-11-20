@@ -43,7 +43,14 @@ it('refuses invalid UTF-8 and leaves primary/backup/temp bytes untouched', async
 });
 it('refuses a real same-path edit during its descriptor read and closes the admitted descriptor', async () => {
   await put([{ id: 'target', name: 'Before' }]); const actual = await vi.importActual<typeof import('fs')>('fs'); let fd: number | undefined, changed = false;
-  vi.spyOn(fs, 'readSync').mockImplementation((...args: Parameters<typeof actual.readSync>) => { const result = actual.readSync(...args); fd = args[0]; if (!changed) { changed = true; actual.writeFileSync(file(), '[{"id":"target","name":"Changed while reading"}]'); } return result; });
+  const originalSize = actual.statSync(file()).size;
+  vi.spyOn(fs, 'readSync').mockImplementation((...args: Parameters<typeof actual.readSync>) => { const result = actual.readSync(...args); fd = args[0]; if (!changed) {
+    changed = true; actual.writeFileSync(file(), '[{"id":"target","name":"After!"}]');
+    // Equal bytes avoid a later overflow/JSON-parse refusal masking this fence.
+    // Explicit fixture mtime avoids relying on filesystem timestamp resolution.
+    actual.utimesSync(file(), new Date(), new Date(Date.now() + 60_000));
+    expect(actual.statSync(file()).size).toBe(originalSize);
+  } return result; });
   expect(() => readReadOnlyPrimaryMetadata(root, '.clubhouse/agents.json')).toThrow(); expect(changed).toBe(true); expect(fd).toBeTypeOf('number'); expect(() => actual.fstatSync(fd!)).toThrow();
 });
 it('rejects non-file metadata and caller-provided arbitrary filenames before decoding', async () => {

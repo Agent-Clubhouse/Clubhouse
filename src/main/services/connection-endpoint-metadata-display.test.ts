@@ -15,7 +15,7 @@ let root: string, a: string, b: string;
 const file = (project: string) => path.join(project, '.clubhouse', 'agents.json');
 const row = (id: string, name: string, extra = {}) => ({ id, name, orchestration: { connectToDispatcher: true }, ...extra });
 const put = (project: string, rows: unknown) => fs.promises.writeFile(file(project), JSON.stringify(rows));
-const registry = (projects: Array<{ id: string; path: string }>) => fs.promises.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects }));
+const registry = (projects: Array<{ id: string; path: string }>) => fs.promises.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects: projects.map((p) => ({ ...p, name: 'Registered project' })) }));
 const request = (agentId = 'target', projectPath = b, association: DisplayReceipt = { current: () => true }): AdmittedConnectionEndpoint => ({ agentId, projectPath, association });
 const query = (requests = [request()], receipts: DisplayReceipt[] = []) => readConnectionEndpointMetadataForDisplay(requests, { receipts });
 const opened = () => vi.mocked(fs.openSync).mock.calls.map((args) => String(args[0]));
@@ -81,6 +81,15 @@ it.each(['duplicate-id', 'malformed-row', 'duplicate-project', 'future-version']
   if (mode === 'duplicate-project') await registry([{ id: 'a', path: a }, { id: 'b', path: b }, { id: 'duplicate', path: b }]);
   if (mode === 'future-version') await fs.promises.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 2, projects: [{ id: 'b', path: b }] }));
   expect(query()).toMatchObject({ state: 'ok', value: [{ state: 'unavailable', reason: 'unreadable' }] });
+});
+it.each([undefined, 42, {}, []])('refuses malformed registry name %j before reading a project primary', async (name) => {
+  // project-store.isValidProject requires a string name. A malformed record
+  // is not an admitted project merely because its id/path happen to match.
+  await fs.promises.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'b', path: b, name }] }));
+  const result = query();
+  expect.soft(result).toMatchObject({ state: 'ok', value: [{ state: 'unavailable', reason: 'unreadable' }] });
+  expect.soft(opened()).not.toContain(file(b));
+  expect.soft(JSON.stringify(result)).not.toContain('Expected project name');
 });
 it('charges nonmatching registry/agent rows and keeps a previous independent result when a later inventory exceeds the total visit budget', async () => {
   await put(b, Array.from({ length: 4094 }, (_, i) => row(`unrelated-${i}`, 'Unrelated')));
