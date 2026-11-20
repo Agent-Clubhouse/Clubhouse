@@ -12,7 +12,7 @@ import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-di
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
-const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), connectionFixture: vi.fn(), sourceFrame: { pairs: [], unreadable: [] } as import('../../shared/connection-sources').AgentConnectionSources, satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realConnections: false, realWitness: false, realDispatcher: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), connectionFixture: vi.fn(), sourceFrame: { pairs: [], unreadable: [] } as import('../../shared/connection-sources').AgentConnectionSources, satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realConnections: false, realWitness: false, realDispatcher: false, realPolicy: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
 const liveProbes = vi.hoisted(() => ({ model: vi.fn(() => { throw new Error('Historical Details must not probe live models.'); }), quota: vi.fn(() => { throw new Error('Historical Details must not probe live quota.'); }) }));
 // Native transcript lookup/parser stay real. Their unrelated live CLI probe
 // ports must remain unused, without importing a spawn/transport graph here.
@@ -37,7 +37,8 @@ vi.mock('./agent-runtime', async (original) => {
   return { ...actual, getAgentRuntime: (id: string) => m.useRealRuntime ? actual.getAgentRuntime(id) : m.runtime() };
 });
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: m.registration } }));
-vi.mock('./orchestration-display', () => ({ readOrchestrationForDisplay: (target: { agent: { id: string } }) => {
+vi.mock('./orchestration-display', async (original) => { const actual = await original<typeof import('./orchestration-display')>(); return { readOrchestrationForDisplay: (target: Parameters<typeof actual.readOrchestrationForDisplay>[0], options: Parameters<typeof actual.readOrchestrationForDisplay>[1]) => {
+  if (m.realPolicy) return actual.readOrchestrationForDisplay(target, options);
   const policy = m.policies().get(target.agent.id) ?? ORCHESTRATION_DEFAULTS;
   return { fields: Object.fromEntries(Object.entries(ORCHESTRATION_DEFAULTS).map(([key]) => [key, { state: 'ok', value: policy[key], inputs: [] }])), sources: policy.sources ?? {}, globalCap: { state: 'ok', value: 20, inputs: [] }, autoEffective: { state: 'ok', value: policy.autoEffective ?? { effective: false, source: 'default' }, inputs: [] } };
 } }));
@@ -88,7 +89,7 @@ const PEER_MACHINE = 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa';
 const setting = () => ({ version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } });
 beforeEach(() => {
   _resetAgentDisplayStateForTesting();
-  m.realConnections = false; m.envCached.mockReturnValue(true); m.realDispatcher = false; m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
+  m.realConnections = false; m.realPolicy = false; m.envCached.mockReturnValue(true); m.realDispatcher = false; m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
   m.target.mockResolvedValue({ agent: agent(), project });
   m.settings.mockResolvedValue({ status: 200, body: setting() });
   m.provider.mockReturnValue({ id: 'codex-cli', conventions: {}, readSessionTranscript: m.transcript });
@@ -167,7 +168,7 @@ describe('host selected-agent Details projections', () => {
         const card = (response.body as RemoteAgentDetails).cards.find((c) => c.id === 'dispatcher')!;
         const unknown = ['missing-source', 'legacy-source', 'broken-index'].includes(mode), noController = ['missing-controller', 'wrong-role', 'name-collision'].includes(mode);
         expect(card.state).toBe(mode === 'switch-off' ? 'not-applicable' : unknown || noController || mode === 'switch-unknown' ? 'error' : 'ok');
-        if (mode === 'switch-off') { expect(card.rows).toEqual([]); expect(m.target.mock.calls).toHaveLength(1); }
+        if (mode === 'switch-off') { expect(card.rows).toEqual([]); expect(m.target.mock.calls.map(([id]) => id)).toEqual(['a1', 'controller1']); expect(m.target.mock.calls.every(([, , options]) => options?.strict === true)).toBe(true); }
         else if (mode === 'connected-off') { expect(card.summary).toBe('not connected'); expect(card.rows).toEqual([{ label: 'Connected', value: 'Off' }]); }
         else {
           expect(card.title).toBe(noController ? 'Dispatcher' : 'Operations');
@@ -834,5 +835,50 @@ describe('admitted endpoint target fields at complete normal Details assembly', 
         expect.soft(response.status).toBe(mode === 'revoked-and-related-primary' ? 403 : 409); expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId');
       }
     } finally { capture.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+});
+
+describe('cold selected saved automatic Dispatcher source at whole Details assembly', () => {
+  it.each(['on', 'off', 'unknown-controller', 'wrong-role', 'unreadable-controller', 'controller-late-off', 'role-late-off', 'selected-late-off', 'revoked-off'] as const)('uses passive admitted policy/controller and final receipts: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-automatic-'))), a = path.join(root, 'selected'), d = path.join(root, 'dispatcher');
+    const selected = { ...agent(), worktreePath: a, orchestration: { orchestrate: false, connectToDispatcher: true } }, selectedProject = { ...project, path: a };
+    const canonical = { ...agent(), id: 'controller1', name: 'Admitted Operations', worktreePath: d, env: { token: 'PRIVATE_CONTROLLER_ENV' } };
+    for (const folder of [a, d]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+    const selectedFile = path.join(a, '.clubhouse', 'agents.json'), controllerFile = path.join(d, '.clubhouse', 'agents.json');
+    await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify({ version: 1, projects: [selectedProject] })); await fs.writeFile(selectedFile, JSON.stringify([selected])); await fs.writeFile(controllerFile, mode === 'unreadable-controller' ? '{broken' : JSON.stringify([canonical]));
+    await fs.writeFile(path.join(root, 'dispatcher-settings.json'), JSON.stringify({ enabled: mode === 'on' }));
+    m.base = root; m.realConnections = true; m.realPolicy = true; m.realDispatcher = true; m.realWitness = true; resetAllSettingsStoresForTests();
+    m.dispatcher.mockReturnValue({ agentId: mode === 'unknown-controller' ? null : 'controller1', chatAgentId: 'chat1' });
+    m.target.mockImplementation(async (id: string) => id === 'a1' ? { agent: selected, project: selectedProject } : { agent: canonical, project: mode === 'wrong-role' ? selectedProject : { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: d } });
+    const sources = await import('./persisted-bindings'), { bindingManager } = await import('./clubhouse-mcp/binding-manager'); sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting();
+    const collect = vi.fn(async () => { await fs.writeFile(path.join(root, 'unexpected-marker'), 'called'); return []; }); const stop = sources.registerPersistedBindingSource({ id: 'dispatcher-wires', collect, inspect: collect });
+    const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard; let captured: RemoteAgentDetails['cards'][number] | undefined, reached = false, observed = false, allowed = true;
+    const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); captured = args[0]; });
+    m.canvases.mockImplementationOnce(async () => {
+      reached = true; observed = captured?.rows.some((r) => r.label === 'Admitted Operations' && r.value.includes('two-way records')) === true;
+      if (mode === 'controller-late-off') await fs.writeFile(controllerFile, JSON.stringify([{ ...canonical, disposedAt: '2026-11-19' }]));
+      if (mode === 'role-late-off') m.dispatcher.mockReturnValue({ agentId: 'replacement-controller', chatAgentId: 'chat1' });
+      if (mode === 'selected-late-off') await fs.writeFile(selectedFile, JSON.stringify([{ ...selected, orchestration: { orchestrate: false, connectToDispatcher: false } }]));
+      if (mode === 'revoked-off') allowed = false;
+      return [];
+    });
+    const snapshot = async (folder = root): Promise<unknown> => Object.fromEntries(await Promise.all((await fs.readdir(folder)).sort().map(async (name) => { const f = path.join(folder, name), st = await fs.lstat(f); return [name, st.isDirectory() ? { ino: st.ino, files: await snapshot(f) } : { ino: st.ino, mtime: st.mtimeMs, bytes: (await fs.readFile(f)).toString('base64') }]; })));
+    const before = await snapshot();
+    try {
+      const response = await readRemoteAgentDetails('a1', () => allowed), unknown = ['unknown-controller', 'wrong-role', 'unreadable-controller'].includes(mode), late = mode.endsWith('-late-off');
+      expect(reached).toBe(true); expect(observed).toBe(!unknown); expect(collect).not.toHaveBeenCalled(); expect(m.connectionFixture).not.toHaveBeenCalled(); expect(m.target.mock.calls.every(([, , options]) => options?.strict === true)).toBe(true);
+      if (mode === 'controller-late-off') expect(JSON.parse(await fs.readFile(controllerFile, 'utf8'))[0].disposedAt).toBe('2026-11-19');
+      if (mode === 'selected-late-off') expect(JSON.parse(await fs.readFile(selectedFile, 'utf8'))[0].orchestration.connectToDispatcher).toBe(false);
+      if (mode === 'role-late-off') expect(m.dispatcher().agentId).toBe('replacement-controller');
+      expect.soft(response.status).toBe(mode === 'revoked-off' ? 403 : late ? 409 : 200);
+      if (late || mode === 'revoked-off') { expect.soft(response.body).not.toHaveProperty('cards'); expect.soft(response.body).not.toHaveProperty('settings'); expect.soft(response.body).not.toHaveProperty('providerId'); }
+      else {
+        expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true); const c = (response.body as RemoteAgentDetails).cards.find((c) => c.id === 'connections');
+        if (unknown) expect.soft(c?.notes.join(' ')).toContain('Automatic Dispatcher source details are unavailable');
+        else { expect.soft(c?.rows.find((r) => r.label === 'Host Dispatcher')?.value).toBe(mode === 'on' ? 'On' : 'Off'); expect.soft(c?.rows.filter((r) => r.label.endsWith('automatic starting switches'))).toHaveLength(2); }
+        expect.soft(JSON.stringify(response.body)).not.toMatch(/PRIVATE_|controllerReceipts|primarySignature|"current":/);
+      }
+      if (!late) expect.soft(await snapshot()).toEqual(before);
+    } finally { capture.mockRestore(); stop(); sources._resetPersistedBindingSourcesForTesting(); bindingManager._resetForTesting(); resetAllSettingsStoresForTests(); await fs.rm(root, { recursive: true, force: true }); }
   });
 });
