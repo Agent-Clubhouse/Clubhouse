@@ -2164,8 +2164,7 @@ describe('provider turn attribution', () => {
 
 describe('federation input follows actual runtime dispatch (#3553)', () => {
   const remote = (id: string) => ({ id, cause: { rootId: id, depth: 4 } } as FederatedRequest);
-  it.each([['direct', 'stop'], ['direct', 'clear'], ['queued', 'stop'], ['queued', 'clear']] as const)
-    ('Q4 late rejection of a submitted %s request after %s stays unconfirmed without replay', async (path, change) => {
+  it.each([['direct', 'stop'], ['direct', 'clear'], ['queued', 'stop'], ['queued', 'clear']] as const)('Q4 late rejection of a submitted %s request after %s stays unconfirmed without replay', async (path, change) => {
       const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
       let reject!: (error: Error) => void;
       const reply = new Promise<'prompt'>((_resolve, rejectReply) => { reject = rejectReply; });
