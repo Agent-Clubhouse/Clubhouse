@@ -59,3 +59,10 @@ Further source preservation, not takeover:
 For each remaining transfer record exact fetched SHA, explicit remaining-scope acceptance, timestamp and sender stop boundary. Delivery alone is not takeover.
 
 Existing #3613 validation drafts #3736 and #3721 remain DO NOT MERGE. The old #3611 merge hold is superseded; #3706 public desktop release hold remains. No default-branch push, merge or release authority is created by this document.
+
+
+## Private text custody completion (09:57Z)
+
+Tael's actual receipt establishes all 27 selected original UTF-8 records (105,833 bytes) durably saved and reread/hash-verified on Mini, with no missing/refused records. Manifest SHA256 `58f2f5c887b68912f46b83fdc4c5077d8955ec7533c8b100b452d96c1b53eae7`; receipt SHA256 `f997302a7757ef64acece693cd7e16fba10fa9d94dc04766d187df8e79583597` (14,993 bytes). Sender independently matched each record to local originals; Navi independently matched the full manifest and source/epoch linkage. Source is233a, treee3cf, epoch17e6 as recorded above.
+
+The receipt is retained in private durable evidence locations on both machines, outside temporary delivery. Originals remain intact. This is selected-text BYTE CUSTODY ONLY: no full144 package custody, raw assessment approval, implementation takeover, route proof, new-run permission, merge or release. Omitted original/binary evidence remains source-held/deferred. Receiving assessment scope still requires explicit acceptance.
