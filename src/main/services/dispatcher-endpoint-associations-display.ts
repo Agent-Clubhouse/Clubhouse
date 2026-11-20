@@ -42,11 +42,14 @@ function profile(base: string): DisplayReceipt { return { current: () => getBase
 export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentId: string; projectPath: string; target: DisplayReceipt }, pairs: readonly Pair[], options: { receipts: DisplayReceipt[];
   /** Trusted internal synchronous passive getter only; never a route-supplied callback or loader. */
   readLoadedCache?: (projectPath: string, agentId: string, options: { receipts: DisplayReceipt[]; expectedProjectNamespace?: string }) => AgentConnectionCacheDisplay;
+  /** Private output keyed by agentId\0targetId, only for registered primary results. Must start empty; never a DTO. */
+  endpointProjects?: Map<string, string>;
 }): DisplayValue<SavedDispatcherEndpointMetadata> {
   const inputs = [{ field: 'Selected saved Dispatcher endpoint associations', source: 'primary' as const, observedAt: Date.now() }];
   const unknown = (reason: 'invalid' | 'unreadable' | 'limit' | 'changed'): DisplayValue<SavedDispatcherEndpointMetadata> => ({ state: 'unavailable', reason, inputs });
   if (!selected || !identifier(selected.agentId) || !folder(selected.projectPath) || typeof selected.target?.current !== 'function' || !Array.isArray(options?.receipts)) return unknown('invalid');
-  const selectedId = selected.agentId, selectedProject = selected.projectPath, selectedTarget = selected.target, readLoadedCache = options.readLoadedCache;
+  const selectedId = selected.agentId, selectedProject = selected.projectPath, selectedTarget = selected.target, readLoadedCache = options.readLoadedCache, endpointProjects = options.endpointProjects;
+  if (endpointProjects !== undefined && (!(endpointProjects instanceof Map) || endpointProjects.size !== 0)) return unknown('invalid');
   if (readLoadedCache !== undefined && typeof readLoadedCache !== 'function') return unknown('invalid');
   if (!Array.isArray(pairs) || pairs.length > 50) return unknown('limit');
   const admitted: Pair[] = [], seen = new Set<string>();
@@ -132,6 +135,15 @@ export function readSavedDispatcherEndpointMetadataForDisplay(selected: { agentI
       // Cache callbacks are synchronous and passive by contract, but their
       // selected evidence still must survive later rows and final assembly.
       if (!combine(options.receipts.slice(evidenceStart)).current()) return unknown('changed');
+    }
+    if (endpointProjects) {
+      // Expose no path before all selected association/registry/primary/cache
+      // evidence is current. The caller keeps those private receipts too.
+      if (!combine(options.receipts.slice(evidenceStart)).current()) return unknown('changed');
+      for (const row of rows) if (row.relationship === 'recorded' && row.endpoint?.state === 'ok' && row.endpoint.value.record === 'registered-primary') {
+        const match = matches.get(key(row));
+        if (match) endpointProjects.set(key(row), match.otherProject);
+      }
     }
     return known(rows);
   } catch (error) { return unknown(error instanceof ReadOnlyMetadataLimitError ? 'limit' : 'unreadable'); }

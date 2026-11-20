@@ -36,10 +36,12 @@ export interface ConnectionCardReadOptions {
   endpoint?: { target: DisplayReceipt; readCache?: NonNullable<Parameters<typeof readSavedDispatcherEndpointMetadataForDisplay>[2]['readLoadedCache']> };
   /** Selected normal-agent saved automatic source; caller retains selected/controller admission receipts. */
   automatic?: DisplayValue<ConfiguredDispatcherDirection[]>;
+  /** Existing strict canonical controller's exact primary folder; private, never a route parameter or DTO. */
+  automaticControllerProjectPath?: string;
   name?: string;
   family?: { parentId?: string; helperIds: ReadonlySet<string> };
 }
-type Pair = { from: string; to: string; kind: BindingDisplayRow['targetKind'] | 'unknown'; binding?: BindingDisplayRow; saved?: ConnectionDirectionDisplay; sources: CachedSourceDisplay[]; machine?: string; remoteAgent?: string; manual?: SavedDispatcherLinkDisplay; manualMemory?: DispatcherLinkMemoryDisplay['rows'][number]; manualFields?: EndpointCardFields; automatic?: ConfiguredDispatcherDirection };
+type Pair = { from: string; to: string; kind: BindingDisplayRow['targetKind'] | 'unknown'; binding?: BindingDisplayRow; saved?: ConnectionDirectionDisplay; sources: CachedSourceDisplay[]; machine?: string; remoteAgent?: string; manual?: SavedDispatcherLinkDisplay; manualMemory?: DispatcherLinkMemoryDisplay['rows'][number]; manualFields?: EndpointCardFields; automatic?: ConfiguredDispatcherDirection; identityGroup?: string; labelScope?: 'manual' | 'automatic' | 'native'; switchAssociationUnknown?: boolean };
 const value = <T>(v: DisplayValue<T> | undefined): T | undefined => v?.state === 'ok' ? v.value : undefined;
 const hash = (v: unknown) => createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const boundedName = (v: unknown): string | undefined => typeof v === 'string' && !!v && v.length <= 1024 ? v : undefined;
@@ -72,6 +74,7 @@ function referenceNames(selected: string, selectedName: string | undefined) {
   };
 }
 function toolsFor(pair: Pair, savedComplete: boolean): string {
+  if (pair.switchAssociationUnknown) return 'Saved or bound switch association is unconfirmed for this configured endpoint; source defaults are listed separately';
   if (pair.automatic && savedComplete && !pair.binding && !pair.saved && !pair.sources.length) {
     const defaults = localDirectionTools({ disabledTools: pair.automatic.disabledTools, enabledTools: pair.automatic.enabledTools });
     return `Configured automatic link defaults · On: ${labels(defaults.allowed)}; Off: ${labels(defaults.disabled)}`;
@@ -105,6 +108,10 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
   if (!selected || selected.length > 200) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The selected connection identity exceeds the host display limit.'); return; }
   const refs = referenceNames(selected, options.name);
   const endpointTarget = options.endpoint?.target, endpointCache = options.endpoint?.readCache, projectPath = options.projectPath;
+  const automatic = options.automatic?.state === 'ok' ? options.automatic.value : [], controllerProject = options.automaticControllerProjectPath;
+  const hasAutomaticPair = (from: string, to: string) => automatic.some((pair) => pair.agentId === from && pair.targetId === to);
+  const nativeKey = (from: string, to: string) => `${from}\0${to}`;
+  let endpointProjects: Map<string, string> | undefined;
   try {
     const outgoing = bindingManager.readBindingsForDisplay(selected, { direction: 'outgoing', receipts: options.receipts });
     const incoming = bindingManager.readBindingsForDisplay(selected, { direction: 'incoming', receipts: options.receipts });
@@ -123,8 +130,9 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
         try { manualMemory = readDispatcherLinkMemoryForDisplay(selected, projectPath, manual.value.rows, { receipts: options.receipts }); }
         catch { manualMemory = { state: 'unavailable', reason: 'unreadable', inputs: [] }; }
         if (endpointTarget && manual.value.rows.length) {
+          if (manual.value.rows.some((link) => hasAutomaticPair(link.agentId, link.targetId))) endpointProjects = new Map();
           endpointMetadata = readSavedDispatcherEndpointMetadataForDisplay({ agentId: selected, projectPath, target: endpointTargetReceipt(options.authorized, endpointTarget) }, manual.value.rows,
-            { receipts: options.receipts, readLoadedCache: endpointCache });
+            { receipts: options.receipts, readLoadedCache: endpointCache, endpointProjects });
         }
       }
     }
@@ -133,13 +141,9 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     const inComplete = incoming.state === 'ok' && incoming.value.nextOffset === null;
     const savedComplete = directions.state === 'ok' && directions.value.nextOffset === null;
     const pairs = new Map<string, Pair>();
-    const key = (from: string, to: string, kind: Pair['kind']) => `${from}\0${to}\0${kind}`;
-    const ensure = (from: string, to: string, kind: Pair['kind']): Pair => { if (typeof from !== 'string' || !from || from.length > 512 || typeof to !== 'string' || !to || to.length > 512 || from !== selected && (to !== selected || kind !== 'agent')) throw new Error('connection_scope'); const id = key(from, to, kind); let p = pairs.get(id); if (!p) { p = { from, to, kind, sources: [] }; pairs.set(id, p); } return p; };
+    const key = (from: string, to: string, kind: Pair['kind'], partition = '') => `${from}\0${to}\0${kind}\0${partition}`;
+    const ensure = (from: string, to: string, kind: Pair['kind'], partition = ''): Pair => { if (typeof from !== 'string' || !from || from.length > 512 || typeof to !== 'string' || !to || to.length > 512 || from !== selected && (to !== selected || kind !== 'agent')) throw new Error('connection_scope'); const id = key(from, to, kind, partition); let p = pairs.get(id); if (!p) { p = { from, to, kind, sources: [] }; pairs.set(id, p); } return p; };
     for (const page of [outgoing, incoming]) if (page.state === 'ok') for (const b of page.value.rows) ensure(b.agentId, b.targetId, b.targetKind).binding = b;
-    if (options.automatic?.state === 'ok') for (const automatic of options.automatic.value) {
-      if (options.dispatcher || automatic.agentId !== selected && automatic.targetId !== selected) throw new Error('automatic_connection_scope');
-      ensure(automatic.agentId, automatic.targetId, 'agent').automatic = automatic;
-    }
     let limitedSourceDetails = 0, untypedIncomingSources = 0;
     if (sources.state === 'ok') for (const p of sources.value.pairs) for (const source of p.sources) {
       const b = value(source.binding);
@@ -162,7 +166,12 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     if (limitedSourceDetails) c.notes.push(`Details unavailable for ${limitedSourceDetails} retained source record${limitedSourceDetails === 1 ? '' : 's'}; independently known connection fields are preserved.`);
     if (untypedIncomingSources) c.notes.push(`${untypedIncomingSources} incoming source record${untypedIncomingSources === 1 ? ' lacks' : 's lack'} an independently admitted target kind; its connection details are unavailable.`);
     if (manual?.state === 'ok') for (const link of manual.value.rows) {
-      const pair = ensure(link.agentId, link.targetId, 'agent'); pair.manual = link;
+      const collision = hasAutomaticPair(link.agentId, link.targetId);
+      const pair = ensure(link.agentId, link.targetId, 'agent', collision ? 'manual' : ''); pair.manual = link;
+      if (collision) {
+        const folder = endpointProjects?.get(nativeKey(link.agentId, link.targetId));
+        pair.identityGroup = folder && controllerProject && folder === controllerProject ? 'controller' : folder ? `manual:${folder}` : `manual-unconfirmed:${nativeKey(link.agentId, link.targetId)}`;
+      }
       if (endpointTarget) {
         const metadata = endpointMetadata?.state === 'ok' ? endpointMetadata.value.rows.find((row) => row.agentId === link.agentId && row.targetId === link.targetId) : undefined;
         pair.manualFields = metadata ? endpointCardFields(metadata) : { saved: endpointMetadata?.state === 'unavailable' && endpointMetadata.reason === 'limit' ? 'Saved target details exceed this read’s limit' : 'Saved target details unavailable' };
@@ -177,6 +186,26 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       const pair = existing ?? ensure(from, to, 'agent'); pair.saved = d;
       const other = d.from.machineId ? d.from : d.to.machineId ? d.to : undefined; if (other?.machineId) { pair.machine = other.machineId.toLowerCase(); pair.remoteAgent = other.agentId; }
     }
+    const ambiguousIdentities = new Set<string>(), nativeIdentities = new Set<string>();
+    for (const direction of automatic) {
+      if (options.dispatcher || direction.agentId !== selected && direction.targetId !== selected) throw new Error('automatic_connection_scope');
+      const other = direction.agentId === selected ? direction.targetId : direction.agentId;
+      const manualPair = pairs.get(key(direction.agentId, direction.targetId, 'agent', 'manual'));
+      const nativePair = pairs.get(key(direction.agentId, direction.targetId, 'agent'));
+      if (nativePair) { nativePair.identityGroup = 'native'; nativeIdentities.add(other); ambiguousIdentities.add(other); }
+      if (manualPair && manualPair.identityGroup !== 'controller') ambiguousIdentities.add(other);
+      // Native IDs do not join project-qualified manual records to the role.
+      // Only the same exact privately admitted primary folder can converge.
+      const pair = manualPair?.identityGroup === 'controller' ? manualPair : ensure(direction.agentId, direction.targetId, 'agent', 'automatic');
+      pair.identityGroup = 'controller'; pair.automatic = direction;
+    }
+    for (const pair of pairs.values()) {
+      const other = pair.from === selected ? pair.to : pair.from;
+      if (!ambiguousIdentities.has(other) || pair.kind !== 'agent') continue;
+      pair.labelScope = pair.identityGroup === 'controller' ? 'automatic' : pair.manual ? 'manual' : 'native';
+      if (pair.labelScope !== 'native' && nativeIdentities.has(other)) pair.switchAssociationUnknown = true;
+    }
+    if (ambiguousIdentities.size) c.notes.push('Records sharing a native ID are listed by their separate configured source or native-ID record. Their endpoint projects are not verified equal here; names, direction grouping and source defaults are kept separate.');
     const dispatcherSource = (source: CachedSourceDisplay) => ['dispatcher_auto', 'dispatcher_link', 'dispatcher_federation'].includes(connectionSourceKind(source.sourceId));
     const needsDispatcher = options.dispatcher || [...pairs.values()].some((pair) => pair.sources.some(dispatcherSource) || !!pair.manual || !!pair.automatic);
     const localDispatcher = needsDispatcher ? readDispatcherEnablementForDisplay({ receipts: options.receipts }) : undefined;
@@ -188,7 +217,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
     const own = options.dispatcher ? captureOwnPairingForDisplay({ receipts: options.receipts }) : undefined;
     const machines = new Map<string, ReturnType<typeof readPeerMetadataForDisplay>>();
     const grouped = new Map<string, { direction: 'to' | 'from' | 'two-way'; remote: boolean }>();
-    const groupKey = (pair: Pair) => `${pair.kind}\0${pair.from === selected ? pair.to : pair.from}`;
+    const groupKey = (pair: Pair) => `${pair.kind}\0${pair.identityGroup ?? ''}\0${pair.from === selected ? pair.to : pair.from}`;
     for (const pair of pairs.values()) {
       const other = pair.from === selected ? pair.to : pair.from;
       if (pair.kind === 'agent' && !pair.machine) { const address = parseAgentAddress(other); if (address.machine) { pair.machine = address.machine; pair.remoteAgent = address.agentId; } }
@@ -218,7 +247,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       // A saved project-qualified manual entry does not authorize borrowing a
       // current cached name for a reused native ID in another project.
       const automaticOnlyIdentity = !!pair.automatic && !pair.binding && !sourceBinding && !independentSavedLink;
-      const resolved = savedOnlyIdentity ? pair.manualFields?.displayName : automaticOnlyIdentity ? boundedName(outgoingPair ? pair.automatic?.targetName : pair.automatic?.agentName) : (pair.kind === 'agent' && isDispatcherIdentityAgentId(other) ? refs.get(other) : undefined)
+      const resolved = savedOnlyIdentity ? pair.manualFields?.displayName : pair.labelScope === 'native' ? ordinary : automaticOnlyIdentity ? boundedName(outgoingPair ? pair.automatic?.targetName : pair.automatic?.agentName) : (pair.kind === 'agent' && isDispatcherIdentityAgentId(other) ? refs.get(other) : undefined)
         ?? ordinary ?? boundedName(outgoingPair ? pair.automatic?.targetName : pair.automatic?.agentName) ?? (pair.kind === 'agent' ? refs.get(other) : undefined);
       if (savedOnlyIdentity) {
         const note = pair.manualFields?.primaryAdmitted ? 'Saved target settings are shown with host memory values separately. These observations do not confirm that this link works now.' : 'The saved target’s current project identity is not confirmed; its saved ID is shown.';
@@ -229,7 +258,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
         const note = 'A saved target name is unavailable or ambiguous in retained host metadata; its saved address is shown.';
         if (!c.notes.includes(note)) c.notes.push(note);
       }
-      const name = display(label, 240);
+      const name = display(label, 240) + (pair.labelScope === 'automatic' ? ' (automatic Dispatcher)' : pair.labelScope === 'manual' ? ' (saved Dispatcher link)' : pair.labelScope === 'native' ? ' (native-ID records)' : '');
       const bound = !!pair.binding;
       const complete = outgoingPair ? outComplete : inComplete;
       const status = bound ? 'binding recorded in host memory' : complete && pair.kind !== 'unknown' ? 'saved or retained, not bound now' : 'binding presence unavailable';

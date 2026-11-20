@@ -160,7 +160,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
         const canonical = connect.state === 'ok' && connect.value ? await controller() : undefined;
         if (!authorized()) return;
         const automatic = configuredDispatcherDirections({ id: agentId, name: agent.name }, connect, canonical && { id: canonical.agent.id, name: canonical.agent.name });
-        return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: agent.name, projectPath: project.path, connectToDispatcher: connect, automatic, endpoint: !agent.parentAgentId ? { target: targetWitness, readCache: readAgentConnectionCacheForDisplay } : undefined, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
+        return readConnectionCard(c, agentId, { receipts: connectionReceipts, authorized, name: agent.name, projectPath: project.path, connectToDispatcher: connect, automatic, automaticControllerProjectPath: canonical?.project.path, endpoint: !agent.parentAgentId ? { target: targetWitness, readCache: readAgentConnectionCacheForDisplay } : undefined, family: { parentId: agent.parentAgentId, helperIds: connectionHelpers } });
       }
       const canonical = await controller();
       if (!authorized()) return;
