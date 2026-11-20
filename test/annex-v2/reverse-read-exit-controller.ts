@@ -353,7 +353,7 @@ async function main() {
       if (capture.status === 'failed') errors.push(...capture.errors.map(errorDetails));
       else {
         try {
-          if (!guard || !peers[0].info || !peers[1].info) throw new Error('Missing final peer/sentinel identity');
+          assert.ok(guard && peers[0].info && peers[1].info, 'Missing final peer/sentinel identity');
           assertDialAudit(capture.audits[0].attempts, { host: '127.0.0.1', port: forward.port }, capture.forward.sourcePorts, guard.accepts());
           assertDialAudit(capture.audits[1].attempts, null, [], guard.accepts());
           assertAcceptAudit(capture.audits[0].accepts, peers[0].info.port, []);
