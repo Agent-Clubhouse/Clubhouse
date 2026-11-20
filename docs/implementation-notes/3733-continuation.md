@@ -30,7 +30,7 @@ Local guarded logs named `3733-connections-complete-*` in the original workspace
 - Initial endpoint/UI development6 actual2 FAIL/115 PASS: old-host overview copy mismatch and test querying duplicated denial text. Preserved failure, not pass evidence.
 - Development7 actual1 FAIL/118 PASS: real offline copy state was incorrectly derived from supplied Details status after navigation reset. Corrected to use actual transport state; do not blame infrastructure.
 - Development8 actual3 files/191 PASS (Main selected-page final receipts, Card pages, renderer page controls). Tsc development3/4/5 passed on their respective earlier working trees; not final exact-head proof.
-- Route/client query tests and final current-tree tsc must be read from their actual completed logs before reporting results. No production dependency changes or installs. No GitHub job cancellations.
+- Initial route/client development actual1 FAIL/15 PASS/815 SKIP: the existing route-table Details regex did not admit a query, returning404 before the handler. The query-aware regex was then corrected: successor actual2files16 PASS/815 SKIP. Exact4ee96d3d9 tsc0 observed. These remain development evidence, not a sealed final-head proof or independent acceptance. No production dependency changes or installs. No GitHub job cancellations.
 
 ## Finite remaining implementation checklist
 
