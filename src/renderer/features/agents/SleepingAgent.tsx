@@ -103,7 +103,7 @@ export function SleepingAgent({ agent, details = false }: {
   const paneNarrow = useNarrow(rootRef);
   const detailsOpen = useAgentDetailsStore((s) => s.open) && details && !paneNarrow;
   const [remoteInlineTarget, setRemoteInlineTarget] = useState<HTMLDivElement | null>(null);
-  const remoteProject = isRemote ? parseNamespacedId(agent.projectId) : null;
+  const remoteProject = isRemote && isDurable && agent.projectId ? parseNamespacedId(agent.projectId) : null;
   const remoteHelperCandidate = isRemote && isDurable && !isDispatcher && remoteProject?.agentId !== DISPATCHER_PROJECT_ID;
   const remoteHelperAdmitted = remoteHelperCandidate && !!remoteParts?.satelliteId && !!remoteParts.agentId && remoteParts.agentId.length <= 240 && !!remoteProject?.agentId && remoteProject.agentId.length <= 240 && remoteParts.satelliteId === remoteProject.satelliteId;
   const remoteInlineVisible = !compact && !detailsOpen;

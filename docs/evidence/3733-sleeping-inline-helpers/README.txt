@@ -28,3 +28,25 @@ one initial read across Details toggle, offline/reconnect/refusal, wrong-host
 identity and delayed prior-parent response. Exact proof is pending coordinated
 lane; this source checkpoint is not accepted or claimed tested. Other hold
 boundaries and independent review remain required. No PR/merge/default push.
+
+Development proof and final boundary
+The first scoped renderer run had135PASS/1FAIL: the new offline text assertion
+matched both summary and body. Privacy/current-target assertions stayed intact;
+selectors now target the exact helper card (different parents may start collapsed).
+Focused source fixture then6/6PASS in3.33s; full tsc --noEmit exited0. Scoped
+three-file ESLint exited0. Logs retained at
+/tmp/nov20autoci-sleeping-inline-{dev,focused,tsc,eslint}.log.
+A further visibility re-enable discriminator requires a new read and withholds
+retained helper facts before that response, including a subsequent refusal.
+The final committed successor's exact renderer/tsc/lint results and SHA are
+reported separately. No browser/live-host lifecycle or whole#3733 parity
+acceptance is claimed by these tests.
+
+The inline surface reuses the existing selected full Details GET (and displays
+only helpers/policy); no permissions or host API are broadened. A normal remote
+selected agent/project host match is required. Unsupported/denied/offline/old
+hosts stay explicit; no legacy local config or settings read is substituted.
+Unavailable current host snapshots disable inline requests and explain why
+facts are withheld. The full Details column retains its established behavior.
+Compact hidden surfaces disable the owner; refresh generation changes before
+any later reveal. Dispatcher/Quick inline helper surfaces remain absent.

@@ -4,6 +4,7 @@ import type { Agent } from '../../../../shared/types';
 import type { RemoteAgentDetails } from '../../../../shared/remote-agent-details';
 import { REMOTE_DETAILS_CARD_IDS } from '../../../../shared/remote-agent-details';
 import { SleepingAgent } from '../SleepingAgent';
+import { RemoteAgentDetailsView } from '../details/RemoteAgentDetailsView';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { useProjectStore } from '../../../stores/projectStore';
@@ -38,8 +39,8 @@ it('keeps one read owner while moving between hidden Details inline and the Deta
 });
 it('withholds old helper facts across disconnect, reconnect and subsequent refusal', async () => {
   render(<SleepingAgent agent={agent} details />); await screen.findByText('Host helper');
-  act(() => satellite('disconnected')); expect(screen.queryByText('Host helper')).not.toBeInTheDocument(); expect(screen.getByText(/Host offline/)).toBeInTheDocument();
-  read.mockResolvedValue({ status: 'forbidden' }); act(() => satellite()); await screen.findByText('The host does not allow this helper read.'); expect(screen.queryByText('Host helper')).not.toBeInTheDocument();
+  act(() => satellite('disconnected')); expect(screen.queryByText('Host helper')).not.toBeInTheDocument(); expect(screen.getByTestId('details-card-orchestrate')).toHaveTextContent('Host offline. Reconnect to read helpers.');
+  read.mockResolvedValue({ status: 'forbidden' }); act(() => satellite()); await waitFor(() => expect(screen.getByTestId('details-card-orchestrate')).toHaveTextContent('The host does not allow this helper read.')); expect(screen.queryByText('Host helper')).not.toBeInTheDocument();
 });
 it('does not read when agent/project host identities disagree', async () => {
   render(<SleepingAgent agent={{ ...agent, projectId: 'remote||other||p1' }} details />); expect(screen.getByText(/do not identify the same host/)).toBeInTheDocument(); await new Promise((resolve) => setTimeout(resolve, 200)); expect(read).not.toHaveBeenCalled();
@@ -48,5 +49,22 @@ it('ignores an old parent read that completes after selection changed', async ()
   let finish!: (result: unknown) => void; read.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
   const view = render(<SleepingAgent agent={agent} details />); await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
   read.mockResolvedValue({ status: 'forbidden' }); view.rerender(<SleepingAgent agent={{ ...agent, id: 'remote||sat||other', name: 'Other parent' }} details />);
-  await act(async () => finish({ status: 'ok', value: fixture() })); await screen.findByText('The host does not allow this helper read.'); expect(screen.queryByText('Host helper')).not.toBeInTheDocument();
+  await act(async () => finish({ status: 'ok', value: fixture() })); await waitFor(() => expect(screen.getByTestId('details-card-orchestrate')).toHaveTextContent('The host does not allow this helper read.')); expect(screen.queryByText('Host helper')).not.toBeInTheDocument();
+});
+
+it('does not admit inline helper reads while the current host snapshot is unavailable', async () => {
+  useAnnexClientStore.setState({ satellites: [{ id: 'sat', state: 'connected', snapshot: {}, snapshotUnavailable: true }] as never });
+  render(<SleepingAgent agent={agent} details />); expect(screen.getByText(/host snapshot is unavailable/)).toBeInTheDocument();
+  await new Promise((resolve) => setTimeout(resolve, 200)); expect(read).not.toHaveBeenCalled(); expect(screen.queryByText('Host helper')).not.toBeInTheDocument();
+});
+
+it('requires a fresh read after visibility was disabled instead of reviving retained helper facts', async () => {
+  const target = document.createElement('div'); document.body.appendChild(target);
+  const view = render(<RemoteAgentDetailsView agent={agent} helpersOnly readEnabled inlineTarget={target} />);
+  try {
+    await screen.findByText('Host helper'); view.rerender(<RemoteAgentDetailsView agent={agent} helpersOnly readEnabled={false} inlineTarget={target} />); expect(screen.queryByText('Host helper')).not.toBeInTheDocument();
+    let finish!: (value: unknown) => void; read.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    view.rerender(<RemoteAgentDetailsView agent={agent} helpersOnly readEnabled inlineTarget={target} />); expect(screen.queryByText('Host helper')).not.toBeInTheDocument(); await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await act(async () => finish({ status: 'forbidden' })); expect(screen.queryByText('Host helper')).not.toBeInTheDocument(); expect(screen.getByTestId('details-card-orchestrate')).toHaveTextContent('The host does not allow this helper read.');
+  } finally { view.unmount(); target.remove(); }
 });

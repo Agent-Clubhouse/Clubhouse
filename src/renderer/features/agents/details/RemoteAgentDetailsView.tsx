@@ -55,7 +55,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const snapshot = satellite?.snapshot;
   const snapshotUnavailable = satellite?.snapshotUnavailable;
   const dispatcher = !!address && (snapshot?.dispatcher?.agent?.id === address.agentId || project?.agentId === DISPATCHER_PROJECT_ID);
-  const readAdmitted = readEnabled && (!helpersOnly || !dispatcher);
+  const readAdmitted = readEnabled && (!helpersOnly || !dispatcher && !snapshotUnavailable);
   const [retry, setRetry] = useState(0);
   const [selectedSub, setSelectedSub] = useState<string | null>(null);
   const setOpen = useAgentDetailsStore((s) => s.setOpen);
@@ -191,6 +191,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     if (!relevant || policy?.state === 'not-applicable') return null;
     return createPortal(<section className="w-full mt-[30px] text-left flex flex-col gap-2" aria-label={`${agent.name} orchestration`} data-testid="sleeping-remote-orchestration">
       <CardNote>Helpers and policy read from the selected host. Read-only.</CardNote>
+      {snapshotUnavailable && <CardNote>The host snapshot is unavailable. Helper details are withheld until it is current.</CardNote>}
       <RemoteHelpersCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} />
     </section>, inlineTarget);
   }
