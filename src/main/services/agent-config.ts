@@ -39,6 +39,8 @@ import { trackOperation } from './main-stall-monitor';
 import { dropGrantRequestsFor } from './grant-requests';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { assertDeleteReview, noteDeleteReviewEffect } from './delete-review-guard';
+import { projectLoadedConnectionEndpointFieldsForDisplay } from './connection-endpoint-fields-display';
+import type { DisplayReceipt } from './display-settings';
 
 interface DurableCreationGit {
   active?: boolean;
@@ -1494,6 +1496,66 @@ export async function getDurableConfig(projectPath: string, agentId: string, opt
 export function peekCachedDurableConfig(projectPath: string, agentId: string): Readonly<DurableAgentConfig> | null {
   const agent = configCache.get(projectPath)?.agentsById.get(agentId);
   return agent ? structuredClone(agent) : null;
+}
+
+export interface AgentConnectionCacheDisplay {
+  scope: 'host-session-cache';
+  availability: 'loaded' | 'not-loaded' | 'not-in-loaded-index' | 'namespace-unconfirmed' | 'invalid' | 'changed';
+  /** When the cache was inspected, not a load/spawn/disk verification time. */
+  observedAt: number;
+  fields?: ReturnType<typeof projectLoadedConnectionEndpointFieldsForDisplay>;
+}
+// Receipt tokens have no backreferences. Weak keys do not make a retired cache
+// or raw agent record live merely because a selected display receipt survives.
+const connectionDisplayCacheTokens = new WeakMap<CacheEntry, object>();
+const connectionDisplayAgentTokens = new WeakMap<DurableAgentConfig, object>();
+function connectionDisplayToken<T extends object>(tokens: WeakMap<T, object>, key: T): object {
+  let token = tokens.get(key);
+  if (!token) { token = {}; tokens.set(key, token); }
+  return token;
+}
+function connectionDisplayFieldsSignature(fields: ReturnType<typeof projectLoadedConnectionEndpointFieldsForDisplay>): string {
+  // Only the already bounded selected projection, never the raw config.
+  return JSON.stringify(fields, (key, value) => key === 'inputs' ? undefined : value);
+}
+/** Separate factory retains primitives/tokens, not old CacheEntry/agent objects. */
+function connectionCacheDisplayReceipt(projectPath: string, agentId: string, cacheToken: object, agentToken: object, namespace: string, signature: string): DisplayReceipt {
+  return { current: () => {
+    try {
+      const entry = configCache.get(projectPath);
+      if (!entry || connectionDisplayCacheTokens.get(entry) !== cacheToken || entry.identity !== namespace || agentIdOwners.get(agentId) !== namespace) return false;
+      const agent = entry.agentsById.get(agentId);
+      return !!agent && connectionDisplayAgentTokens.get(agent) === agentToken
+        && connectionDisplayFieldsSignature(projectLoadedConnectionEndpointFieldsForDisplay(agentId, agent)) === signature;
+    } catch { return false; }
+  } };
+}
+/**
+ * Selected relationship metadata from an ALREADY LOADED owner cache only.
+ * No load/clone/disk/watcher/claim/provider/default/grant/flush calls. Caller
+ * separately admits the exact related project and retains source/target/role/
+ * run/auth/pin receipts. Namespace association here is host-memory evidence,
+ * never authoritative registration, actual runtime or effective permission.
+ */
+export function readAgentConnectionCacheForDisplay(projectPath: string, agentId: string, options: { receipts: DisplayReceipt[] }): AgentConnectionCacheDisplay {
+  const observedAt = Date.now();
+  const unavailable = (availability: AgentConnectionCacheDisplay['availability']): AgentConnectionCacheDisplay => ({ scope: 'host-session-cache', availability, observedAt });
+  if (typeof projectPath !== 'string' || !projectPath || projectPath.length > 4096 || !path.isAbsolute(projectPath) || projectPath.includes('\0')
+    || typeof agentId !== 'string' || !agentId.trim() || agentId.length > 200 || /[\x00-\x1f\x7f]/.test(agentId) || !Array.isArray(options?.receipts)) return unavailable('invalid');
+  const entry = configCache.get(projectPath);
+  if (!entry) return unavailable('not-loaded');
+  const agent = entry.agentsById.get(agentId);
+  if (!agent) return unavailable('not-in-loaded-index');
+  const namespace = entry.identity;
+  if (typeof namespace !== 'string' || !namespace || namespace.length > 8192 || agentIdOwners.get(agentId) !== namespace) return unavailable('namespace-unconfirmed');
+  try {
+    const fields = projectLoadedConnectionEndpointFieldsForDisplay(agentId, agent);
+    if (fields.state !== 'ok') return unavailable('invalid');
+    const receipt = connectionCacheDisplayReceipt(projectPath, agentId, connectionDisplayToken(connectionDisplayCacheTokens, entry), connectionDisplayToken(connectionDisplayAgentTokens, agent), namespace, connectionDisplayFieldsSignature(fields));
+    options.receipts.push(receipt);
+    if (!receipt.current()) return unavailable('changed');
+    return { scope: 'host-session-cache', availability: 'loaded', observedAt, fields };
+  } catch { return unavailable('invalid'); }
 }
 
 /**
