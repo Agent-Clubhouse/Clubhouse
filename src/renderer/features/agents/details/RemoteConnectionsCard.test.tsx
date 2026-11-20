@@ -44,5 +44,8 @@ it('offers the canonical Dispatcher inventory independently of normal durable ma
 });
 it('rejects a successful response for a different page instead of rendering its records', async () => {
   request.mockResolvedValue({ status: 'ok', value: { ...details, cards: [{ ...card, rows: [{ label: 'PRIVATE_WRONG_PAGE', value: 'wrong' }], connectionPage: { source: 'incoming', offset: 0, projectOffset: 0, known: 1, complete: true, next: null } }] } });
-  show(); fireEvent.click(screen.getByRole('button', { name: 'Helper relationships' })); await screen.findByText(/did not return the selected source page/); expect(screen.queryByText('PRIVATE_WRONG_PAGE')).not.toBeInTheDocument();
+  show(); fireEvent.click(screen.getByRole('button', { name: 'Helper relationships' }));
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1)); await act(async () => { await Promise.resolve(); });
+  expect.soft(screen.queryByText('PRIVATE_WRONG_PAGE')).not.toBeInTheDocument();
+  expect.soft(screen.getByTestId('details-card-connections')).toHaveTextContent('did not return the selected source page');
 });
