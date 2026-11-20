@@ -3913,6 +3913,24 @@ describe('annex-client', () => {
         } finally { off(); }
       });
 
+      it('current read surfaces: reverse Settings display uses authorized request availability without a direct socket', async () => {
+        const value = {
+          version: 1, readOnly: true, agentId: 'settings-target', provider: 'Fixture provider', model: 'Default model',
+          runtime: 'chat', access: 'Ask first', executionPolicy: 'Existing level defaults', autoSleep: null, context: null,
+          setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null },
+        };
+        request.mockResolvedValueOnce({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+        expect(annexClient.isMachineDirectConnected(FP)).toBe(false);
+        const result = await annexClient.requestAgentSettings(FP, value.agentId);
+        console.info('P8 reverse Settings adapter', JSON.stringify({ result, requestCount: request.mock.calls.length }));
+        expect(https.request).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'ok', value });
+        expect(request).toHaveBeenCalledExactlyOnceWith(FP, expect.objectContaining({
+          method: 'GET', path: '/api/v1/agents/settings-target/settings-details',
+        }), expect.objectContaining({ maxResponseBytes: 64 * 1024 }));
+      });
+
       it.each(['revoke', 're-pin', 'disable', 'disconnect', 'forget', 'stop'] as const)('retires before late callbacks on %s and never resurrects the old stream', (reason) => {
         handlers[0].onFrame(snapshot(10));
         if (reason === 'revoke' || reason === 're-pin') {

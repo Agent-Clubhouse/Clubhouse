@@ -16,6 +16,12 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'info': return peer.info;
         case 'configure': return peer.configure(params as Parameters<typeof peer.configure>[0]);
         case 'status': return peer.status();
+        case 'prepareControllerReads': return peer.prepareControllerReads();
+        case 'controllerPublication': return peer.controllerPublication(params as Parameters<typeof peer.controllerPublication>[0]);
+        case 'finishControllerReads': return peer.finishControllerReads();
+        case 'controllerPage': return peer.controllerPage(params as Parameters<typeof peer.controllerPage>[0]);
+        case 'controllerSessions': return peer.controllerSessions();
+        case 'agentSettings': return peer.agentSettings(params as string);
         case 'revokeRemote': return peer.revokeRemote();
         case 'holdProviderSend': return peer.holdProviderSend();
         case 'releaseProviderSend': return peer.releaseProviderSend();

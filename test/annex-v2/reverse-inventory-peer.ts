@@ -108,6 +108,9 @@ vi.mock('../../src/main/services/agent-system', async (original) => {
 import * as server from '../../src/main/services/annex-server';
 import * as client from '../../src/main/services/annex-client';
 import * as control from '../../src/main/services/annex-control';
+import * as dispatcher from '../../src/main/services/dispatcher/dispatcher-service';
+import * as federation from '../../src/main/services/dispatcher-federation';
+import { resetControllerChatReads } from '../../src/main/services/annex-controller-chat';
 import * as identity from '../../src/main/services/annex-identity';
 import * as annexTls from '../../src/main/services/annex-tls';
 import * as peers from '../../src/main/services/annex-peers';
@@ -290,6 +293,8 @@ export async function createInventoryPeer(alias: string) {
   let imageFixture: { root: string; agentId: string; driver: FakeChatDriver; runtime: ChatAgentRuntime; config: string } | undefined;
   let cancellableWrite: AbortController | undefined;
   let readAbort: AbortController | undefined;
+  let controllerReadsCleanup: (() => void) | undefined;
+  let controllerPublication: 'ready' | 'off' | 'unknown' = 'ready';
   return {
     info,
     async configure(config: Omit<ConfigurePeer, 'peer'> & { peer: InventoryPeerInfo }) {
@@ -314,6 +319,35 @@ export async function createInventoryPeer(alias: string) {
         snapshot: remote && client.getSatellite(remote.fingerprint)?.snapshot,
         attempts: policy.attempts, accepts: listenerAudit.accepts, events: fixture.events, logs: fixture.logs,
       };
+    },
+    prepareControllerReads() {
+      if (!remote || controllerReadsCleanup) throw new Error('Controller read fixture is not ready');
+      // Model application publication only; pinned membership and the read grant matcher stay real.
+      const selector = vi.spyOn(dispatcher, 'getDispatcherAgentId').mockReturnValue(agent.id);
+      const originalPublication = federation.remoteFederationController;
+      const publication = vi.spyOn(federation, 'remoteFederationController').mockImplementation((machine) => {
+        if (machine.toLowerCase() !== remote!.fingerprint.toLowerCase()) return originalPublication(machine);
+        return controllerPublication === 'unknown' ? undefined : {
+          agentId: remote!.agentId, name: remote!.alias, enabled: controllerPublication === 'ready',
+        };
+      });
+      controllerReadsCleanup = () => { selector.mockRestore(); publication.mockRestore(); resetControllerChatReads(); };
+      resetControllerChatReads();
+      return { targetAgentId: agent.id, callerAgentId: remote.agentId };
+    },
+    controllerPublication(state: 'ready' | 'off' | 'unknown') { controllerPublication = state; },
+    finishControllerReads() { controllerReadsCleanup?.(); controllerReadsCleanup = undefined; },
+    controllerPage(query: Parameters<typeof client.requestControllerChatPage>[1] = {}) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestControllerChatPage(remote.fingerprint, query);
+    },
+    controllerSessions() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestControllerChatSessions(remote.fingerprint);
+    },
+    agentSettings(agentId: string) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestAgentSettings(remote.fingerprint, agentId);
     },
     retryControl() {
       if (!remote) throw new Error('Inventory peer is not configured');
@@ -907,6 +941,7 @@ export async function createInventoryPeer(alias: string) {
       };
     },
     async close() {
+      controllerReadsCleanup?.();
       dropGrantRequestsFor(agent.id);
       dropStartRequestsFor(agent.id);
       await stopHandoffs();
