@@ -1,6 +1,7 @@
 import { CodexChatEventMapper } from '../../orchestrators/adapters/codex-chat-events';
 import { boundChatEvent } from '../annex-chat-bounds';
 import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from '../dispatcher-federation-context';
+import * as localCausalWork from '../dispatcher-federation-local-work';
 import type { FederatedRequest } from '../../../shared/dispatcher-federation-requests';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import type { ChatEvent, ChatCapabilities } from '../../../shared/chat';
@@ -2147,6 +2148,81 @@ describe('ambiguous provider turn attribution', () => {
 
 describe('federation input follows actual runtime dispatch (#3553)', () => {
   const remote = (id: string) => ({ id, cause: { rootId: id, depth: 4 } } as FederatedRequest);
+  it.each(['activation', 'rollback'] as const)('releases a failed %s dispatch token and keeps accepted causal input guarded', async (failure) => {
+    const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', { ...STEERLESS, steer: true });
+    const { runtime } = makeRuntime(driver);
+    const stop = startFederationTurnTracking(runtime.agentId);
+    try {
+      await runtime.start();
+      await withFederationInput(remote('previous'), () => runtime.sendMessage('previous news', { source: 'mcp' }));
+      driver.last.emit({ type: 'turn_started', data: {} });
+      driver.last.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      expect(runtime.getState()).toBe('idle');
+      expect(runtime.hasPendingWork()).toBe(false);
+      expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['previous']);
+
+      if (failure === 'activation') activation.mockRejectedValueOnce(new Error('causal assignment save failed'));
+      else {
+        activation.mockResolvedValueOnce(async () => { throw new Error('causal rollback failed'); });
+        vi.spyOn(driver.last, 'send').mockRejectedValueOnce(new Error('provider send failed'));
+      }
+      await expect(runtime.sendMessage('failed dispatch', { source: 'user' }))
+        .rejects.toThrow(failure === 'activation' ? 'causal assignment save failed' : 'provider send failed');
+      if (failure === 'rollback') expect(appLog).toHaveBeenCalledWith('core:chat', 'error', 'Chat send cleanup failed', expect.objectContaining({
+        meta: expect.objectContaining({ error: 'provider send failed', cleanupError: 'causal rollback failed' }),
+      }));
+      expect(driver.last.sent).toHaveLength(1);
+      expect(runtime.hasPendingWork()).toBe(false);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+
+      // A new dispatch can proceed after the failed one, without clearing provenance.
+      await expect(withFederationInput(remote('accepted'), () => runtime.sendMessage('accepted news', { source: 'mcp' })))
+        .resolves.toMatchObject({ delivery: 'prompt' });
+      expect(driver.last.sent).toHaveLength(2);
+      // Its genuine pending token must still hold a second input until turn_started.
+      await expect(runtime.sendMessage('wait behind accepted news', { source: 'user' }))
+        .resolves.toMatchObject({ delivery: 'queued' });
+      expect(driver.last.sent).toHaveLength(2);
+      driver.last.emit({ type: 'turn_started', data: {} });
+      await flush();
+      expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['accepted']);
+      driver.last.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      expect(driver.last.sent).toHaveLength(3);
+      expect(driver.last.sent[2].content).toEqual([{ type: 'text', text: 'wait behind accepted news' }]);
+    } finally { await runtime.stop(); stop(); activation.mockRestore(); }
+  });
+  it('retains a concurrent accepted dispatch token when another activation fails', async () => {
+    const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+    let release!: () => void;
+    const beforePrompt = new Promise<void>((resolve) => { release = resolve; });
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', { ...STEERLESS, steer: true });
+    const { runtime } = makeRuntime(driver, { beforePrompt: () => beforePrompt });
+    const stop = startFederationTurnTracking(runtime.agentId);
+    try {
+      await runtime.start();
+      activation.mockResolvedValueOnce(async () => {}).mockRejectedValueOnce(new Error('second activation failed'));
+      // Both requests choose prompt before the first clears the pre-prompt barrier.
+      const accepted = withFederationInput(remote('accepted'), () => runtime.sendMessage('accepted news', { source: 'mcp' }));
+      const failed = runtime.sendMessage('failed dispatch', { source: 'user' });
+      const results = Promise.allSettled([accepted, failed]);
+      release();
+      expect(await results).toMatchObject([
+        { status: 'fulfilled', value: { delivery: 'prompt' } },
+        { status: 'rejected', reason: new Error('second activation failed') },
+      ]);
+      expect(driver.last.sent).toHaveLength(1);
+      expect(runtime.hasPendingWork()).toBe(true);
+      await expect(runtime.sendMessage('still waiting for accepted turn', { source: 'user' }))
+        .resolves.toMatchObject({ delivery: 'queued' });
+      expect(driver.last.sent).toHaveLength(1);
+      driver.last.emit({ type: 'turn_started', data: {} });
+      await flush();
+      expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['accepted']);
+    } finally { release(); await runtime.stop(); stop(); activation.mockRestore(); }
+  });
   it('keeps queued remote news out of a preceding human turn and attributes its own dispatched turn', async () => {
     const driver = new FakeChatDriver('claude_stream_json', 'claude-code', STEERLESS);
     const { runtime } = makeRuntime(driver); const stop = startFederationTurnTracking(runtime.agentId);

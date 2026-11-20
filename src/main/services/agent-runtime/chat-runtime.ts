@@ -746,14 +746,30 @@ export class ChatAgentRuntime implements AgentRuntime {
     let delivered: MessageDelivery;
     const pending = wanted === 'prompt' || wanted === 'queued' ? Symbol() : undefined;
     if (pending) this.pendingTurns.add(pending);
-    const rollbackAssignment = wanted === 'queued' ? async () => {} : await activateLocalCausalInput(this.agentId, wanted === 'steer' ? [...federationTurnInputs(this.agentId), ...federationInputs] : federationInputs);
-    const federation = prepareFederationInputs(this.agentId, federationInputs, wanted);
-    try { delivered = await session.send(outgoing, wanted); }
+    let rollbackAssignment: (() => Promise<void>) | undefined;
+    let federation: ReturnType<typeof prepareFederationInputs> = [];
+    try {
+      // A failed provenance save never reaches the provider, so it must not
+      // leave a pending turn that forces all later input into the queue.
+      rollbackAssignment = wanted === 'queued' ? undefined : await activateLocalCausalInput(this.agentId, wanted === 'steer' ? [...federationTurnInputs(this.agentId), ...federationInputs] : federationInputs);
+      federation = prepareFederationInputs(this.agentId, federationInputs, wanted);
+      delivered = await session.send(outgoing, wanted);
+    }
     catch (error) {
-      for (const context of federation) context?.refused();
-      await rollbackAssignment();
-      if (pending) this.pendingTurns.delete(pending);
-      if (this.pendingTrace === traceContext) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
+      try {
+        for (const context of federation) context?.refused();
+        await rollbackAssignment?.();
+      } catch (cleanupError) {
+        // telemetry-exempt: log cleanup separately; the original dispatch error is rethrown below.
+        appLog('core:chat', 'error', 'Chat send cleanup failed', { meta: {
+          agentId: this.agentId,
+          error: error instanceof Error ? error.message : String(error),
+          cleanupError: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        } });
+      } finally {
+        if (pending) this.pendingTurns.delete(pending);
+        if (this.pendingTrace === traceContext) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
+      }
       throw error;
     }
     for (const context of federation) context?.accepted(delivered);
