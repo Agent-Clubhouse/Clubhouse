@@ -92,3 +92,13 @@ it.each(['cold-host', 'warm-local', 'warm-other', 'unknown-helper', 'unknown-dis
   expect(await disk()).toEqual(before); expect(sync.readFileSync).not.toHaveBeenCalled(); expect(sync.writeFileSync).not.toHaveBeenCalled(); expect(sync.copyFileSync).not.toHaveBeenCalled();
   if (mode === 'cold-host') { await warm(); expect(receipts.some((r) => !r.current())).toBe(true); }
 });
+it.each(['other-host-local', 'other-host-network', 'same-host-local'] as const)('keeps host-relative reach separate from saved explicit group membership: %s', async (mode) => {
+  const s = await selected(); await warm(); const host = mode === 'same-host-local' ? fp : other, scope = { level: 'project' as const, projectId: 'a', reach: mode === 'other-host-network' ? 'network' as const : 'local' as const };
+  const g = group('reach', { host: { machine: host }, scope }); await putRegistry([g]); await put('reach', membership({ explicit: [member({ address: 'selected@' + fp })] }));
+  const identity = await import('./annex-identity'); expect(identity.matchLoadedIdentityForDisplay(fp, { receipts: [] })).toMatchObject({ state: 'ok', value: true }); expect(identity.matchLoadedIdentityForDisplay(other, { receipts: [] })).toMatchObject({ state: 'ok', value: false });
+  const { canonicalMemberAddress } = await import('../../shared/group-project-members'), { memberInScope } = await import('../../shared/group-project-scope');
+  const canonical = canonicalMemberAddress('selected@' + fp, host); expect(memberInScope(scope, { address: canonical, projectId: 'a' })).toBe(mode !== 'other-host-local');
+  const before = await disk(), receipts: Array<{ current(): boolean }> = [], result = read(s, { authorized: () => true, receipts }); expect(result.state).toBe('ok'); if (result.state !== 'ok') throw new Error('fixture'); expect(result.value.rows).toHaveLength(1); expect(result.value.knownMatches).toBe(1); expect(receipts.every((r) => r.current())).toBe(true);
+  expect.soft(result.value.rows[0]).toMatchObject({ groupId: 'reach', membership: 'explicit', applicability: mode === 'other-host-local' ? 'out-of-scope' : 'configured' });
+  expect(await disk()).toEqual(before); expect(sync.readFileSync).not.toHaveBeenCalled(); expect(sync.writeFileSync).not.toHaveBeenCalled();
+});
