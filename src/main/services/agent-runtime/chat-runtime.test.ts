@@ -2,6 +2,7 @@ import { CodexChatEventMapper } from '../../orchestrators/adapters/codex-chat-ev
 import { boundChatEvent } from '../annex-chat-bounds';
 import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from '../dispatcher-federation-context';
 import * as localCausalWork from '../dispatcher-federation-local-work';
+import * as federationContext from '../dispatcher-federation-context';
 import type { FederatedRequest } from '../../../shared/dispatcher-federation-requests';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import type { ChatEvent, ChatCapabilities } from '../../../shared/chat';
@@ -1536,7 +1537,11 @@ describe('ChatAgentRuntime', () => {
     const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', { ...STEERLESS, systemPrompt: false });
     const { runtime } = makeRuntime(driver, { systemPrompt: 'You are the release agent.' });
     await runtime.start('Cut 0.43');
-    await runtime.sendMessage('and tag it', { source: 'user' });
+    await expect(runtime.sendMessage('and tag it', { source: 'user' })).resolves.toMatchObject({ delivery: 'queued' });
+    expect(driver.last.sent).toHaveLength(1);
+    driver.last.emit({ type: 'turn_started', data: {} });
+    driver.last.emit({ type: 'turn_ended', data: {} });
+    await flush();
     expect(driver.last.sent[0].content).toEqual([
       { type: 'text', text: 'You are the release agent.' },
       { type: 'text', text: 'Cut 0.43' },
@@ -2116,8 +2121,8 @@ describe('Annex request to asynchronous chat trace', () => {
   });
 });
 
-describe('ambiguous provider turn attribution', () => {
-  it.each(['native-queue', 'overlap'])('does not guess the causal request for %s dispatch', async (mode) => {
+describe('provider turn attribution', () => {
+  it.each(['native-queue', 'overlap'])('keeps attribution at the actual dispatch boundary for %s', async (mode) => {
     const { createLocalRecorder } = await import('../../telemetry/local-recorder');
     const { createScrubber } = await import('../../telemetry/scrubber');
     const { setLocalSink, tel, withRemoteParent } = await import('../../telemetry/facade');
@@ -2140,7 +2145,18 @@ describe('ambiguous provider turn attribution', () => {
       driver.last.emit({ type: 'turn_started', data: { trigger: mode === 'native-queue' ? 'queued' : 'prompt' } });
       driver.last.emit({ type: 'agent_message', data: { messageId: 'm', text: 'result' } });
       await flush();
-      expect(contexts).toEqual([undefined]);
+      if (mode === 'native-queue') expect(contexts).toEqual([undefined]);
+      else {
+        expect(driver.last.sent).toHaveLength(1);
+        expect(contexts[0]?.slice(3, 35)).toBe('0123456789abcdef0123456789abcdef');
+        driver.last.emit({ type: 'turn_ended', data: {} });
+        await flush();
+        driver.last.emit({ type: 'turn_started', data: {} });
+        driver.last.emit({ type: 'agent_message', data: { messageId: 'm2', text: 'second result' } });
+        await flush();
+        expect(driver.last.sent).toHaveLength(2);
+        expect(contexts[1]?.slice(3, 35)).toBe('abcdef0123456789abcdef0123456789');
+      }
     } finally { await runtime.stop(); setLocalSink(null); await rec.stop(); }
   });
 });
@@ -2148,6 +2164,249 @@ describe('ambiguous provider turn attribution', () => {
 
 describe('federation input follows actual runtime dispatch (#3553)', () => {
   const remote = (id: string) => ({ id, cause: { rootId: id, depth: 4 } } as FederatedRequest);
+  it('Q1 does not let an early turn consume the token of a dispatch still activating', async () => {
+    const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+    let rejectActivation!: (error: Error) => void;
+    const held = new Promise<() => Promise<void>>((_resolve, reject) => { rejectActivation = reject; });
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', { ...STEERLESS, steer: true });
+    const { runtime } = makeRuntime(driver);
+    const stop = startFederationTurnTracking(runtime.agentId);
+    try {
+      await runtime.start();
+      activation.mockReturnValueOnce(held);
+      const first = runtime.sendMessage('activation still pending', { source: 'user' });
+      const firstResult = expect(first).rejects.toThrow('first activation failed');
+      await flush();
+      const send = driver.last.send.bind(driver.last);
+      vi.spyOn(driver.last, 'send').mockImplementationOnce(async (content, delivery) => {
+        const result = await send(content, delivery);
+        driver.last.emit({ type: 'turn_started', data: {} });
+        driver.last.emit({ type: 'turn_ended', data: {} });
+        return result;
+      });
+      await expect(withFederationInput(remote('accepted-early'), () => runtime.sendMessage('second accepted', { source: 'mcp' })))
+        .resolves.toMatchObject({ delivery: 'queued' });
+      await flush();
+      expect(runtime.getState()).toBe('idle');
+      expect(driver.last.sent).toHaveLength(0);
+      expect(federationTurnInputs(runtime.agentId)).toEqual([]);
+      rejectActivation(new Error('first activation failed'));
+      await firstResult;
+      await flush();
+      expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['accepted-early']);
+      expect.soft(runtime.hasPendingWork()).toBe(false);
+      await expect(runtime.sendMessage('next independent prompt', { source: 'user' })).resolves.toMatchObject({ delivery: 'prompt' });
+      expect(driver.last.sent).toHaveLength(2);
+    } finally { rejectActivation(new Error('test cleanup')); await runtime.stop(); stop(); activation.mockRestore(); }
+  });
+  it('Q2 settles a queued send when rollback fails and continues with the next item', async () => {
+    const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', { ...STEERLESS, steer: true });
+    const { runtime } = makeRuntime(driver);
+    const stop = startFederationTurnTracking(runtime.agentId);
+    const settled = vi.fn();
+    try {
+      await runtime.start();
+      driver.last.emit({ type: 'turn_started', data: {} });
+      await flush();
+      const failed = await withFederationInput(remote('failed-queued'), () => runtime.sendMessage('queued failure', {
+        source: 'action', delivery: 'queued', actionQueue: { actionId: 'failing-action', onSettled: settled },
+      }));
+      await runtime.sendMessage('next queued item', { source: 'user', delivery: 'queued' });
+      activation.mockResolvedValueOnce(async () => { throw new Error('queued rollback failed'); });
+      vi.spyOn(driver.last, 'send').mockRejectedValueOnce(new Error('queued provider send failed'));
+      driver.last.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      expect.soft(settled).toHaveBeenCalledExactlyOnceWith('dropped');
+      expect.soft(runtime.isRunning()).toBe(true);
+      expect.soft(transcript).toContainEqual(expect.objectContaining({ type: 'queue_state', data: expect.objectContaining({
+        transition: { messageIds: [failed.messageId], status: 'failed' },
+      }) }));
+      expect.soft(transcript).toContainEqual(expect.objectContaining({ type: 'notice', data: expect.objectContaining({
+        code: 'queued_send_failed', message: 'A queued message could not be sent: queued provider send failed',
+      }) }));
+      expect(driver.last.sent).toEqual([{ content: [{ type: 'text', text: 'next queued item' }], delivery: 'prompt' }]);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+      driver.last.emit({ type: 'turn_started', data: {} });
+      driver.last.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      expect(runtime.hasPendingWork()).toBe(false);
+      expect(federationTurnInputs(runtime.agentId)).toEqual([]);
+    } finally { await runtime.stop(); stop(); activation.mockRestore(); }
+  });
+  it('Q1 releases a rejected first provider send after a second send starts and ends early', async () => {
+    const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+    let rejectSend!: (error: Error) => void;
+    const held = new Promise<'prompt'>((_resolve, reject) => { rejectSend = reject; });
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', { ...STEERLESS, steer: true });
+    const { runtime } = makeRuntime(driver);
+    const stop = startFederationTurnTracking(runtime.agentId);
+    try {
+      await runtime.start();
+      const send = driver.last.send.bind(driver.last);
+      vi.spyOn(driver.last, 'send').mockReturnValueOnce(held).mockImplementationOnce(async (content, delivery) => {
+        const result = await send(content, delivery);
+        driver.last.emit({ type: 'turn_started', data: {} });
+        driver.last.emit({ type: 'turn_ended', data: {} });
+        return result;
+      });
+      const first = runtime.sendMessage('first provider pending', { source: 'user' });
+      const firstResult = expect(first).rejects.toThrow('first provider failed');
+      await flush();
+      await expect(withFederationInput(remote('second-early'), () => runtime.sendMessage('second accepted', { source: 'mcp' })))
+        .resolves.toMatchObject({ delivery: 'queued' });
+      await flush();
+      expect(driver.last.sent).toHaveLength(0);
+      rejectSend(new Error('first provider failed'));
+      await firstResult;
+      await flush();
+      expect.soft(runtime.hasPendingWork()).toBe(false);
+      expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['second-early']);
+      await expect(runtime.sendMessage('next independent prompt', { source: 'user' })).resolves.toMatchObject({ delivery: 'prompt' });
+    } finally { rejectSend(new Error('test cleanup')); await runtime.stop(); stop(); activation.mockRestore(); }
+  });
+  it.each(['stop', 'replace'] as const)('Q1 cancels a held activation on session %s without touching a replacement dispatch', async (change) => {
+    const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+    let release!: (rollback: () => Promise<void>) => void;
+    const held = new Promise<() => Promise<void>>((resolve) => { release = resolve; });
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    const settled = vi.fn();
+    try {
+      await runtime.start();
+      const old = driver.last;
+      activation.mockReturnValueOnce(held);
+      const first = runtime.sendMessage('old held input', { source: 'user' });
+      const firstResult = expect(first).rejects.toThrow('Chat session changed');
+      await flush();
+      await runtime.sendMessage('held behind old input', { source: 'action', actionQueue: { actionId: 'held', onSettled: settled } });
+      if (change === 'stop') await runtime.stop();
+      else {
+        await runtime.clearContext();
+        await runtime.sendMessage('new session input', { source: 'user' });
+      }
+      release(async () => {});
+      await firstResult;
+      expect(old.sent).toEqual([]);
+      expect(settled).toHaveBeenCalledExactlyOnceWith('dropped');
+      if (change === 'replace') {
+        expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+        expect(driver.last.sent).toHaveLength(1);
+        expect(runtime.hasPendingWork()).toBe(true);
+        driver.last.emit({ type: 'turn_started', data: {} });
+        driver.last.emit({ type: 'turn_ended', data: {} });
+        await flush();
+        expect(runtime.hasPendingWork()).toBe(false);
+      }
+    } finally { release(async () => {}); await runtime.stop(); activation.mockRestore(); }
+  });
+  it.each(['client', 'native'] as const)('Q1 permits steering a started turn before the first send reply with %s queue', async (queue) => {
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', { ...STEERLESS, steer: true, queue });
+    let release!: (delivery: 'prompt') => void;
+    const reply = new Promise<'prompt'>((resolve) => { release = resolve; });
+    const { runtime } = makeRuntime(driver);
+    try {
+      await runtime.start();
+      const send = driver.last.send.bind(driver.last);
+      vi.spyOn(driver.last, 'send').mockImplementationOnce(async (content, delivery) => {
+        await send(content, delivery);
+        driver.last.emit({ type: 'turn_started', data: {} });
+        return reply;
+      });
+      const first = runtime.sendMessage('first', { source: 'user' });
+      await flush();
+      await expect(runtime.sendMessage('steer after boundary', { source: 'user' })).resolves.toMatchObject({ delivery: 'steer' });
+      expect(driver.last.sent.map((item) => item.delivery)).toEqual(['prompt', 'steer']);
+      release('prompt');
+      await first;
+      driver.last.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      expect(runtime.hasPendingWork()).toBe(false);
+    } finally { release('prompt'); await runtime.stop(); }
+  });
+  it('Q1 settles a queued item stopped during activation without sending to the closed session', async () => {
+    const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+    let release!: (rollback: () => Promise<void>) => void;
+    const held = new Promise<() => Promise<void>>((resolve) => { release = resolve; });
+    const rollback = vi.fn(async () => {});
+    const settled = vi.fn();
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    try {
+      await runtime.start();
+      driver.last.emit({ type: 'turn_started', data: {} });
+      await flush();
+      await runtime.sendMessage('queued before stop', { source: 'action', actionQueue: { actionId: 'stopped', onSettled: settled } });
+      activation.mockReturnValueOnce(held);
+      driver.last.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      await runtime.stop();
+      expect(settled).toHaveBeenCalledExactlyOnceWith('dropped');
+      release(rollback);
+      await flush();
+      expect(rollback).toHaveBeenCalledOnce();
+      expect(driver.last.sent).toEqual([]);
+      expect(runtime.hasPendingWork()).toBe(false);
+    } finally { release(rollback); await runtime.stop(); activation.mockRestore(); }
+  });
+  it('Q1 drains FIFO exactly once when the first queued turn ends before its send reply', async () => {
+    const driver = new FakeChatDriver();
+    let reject!: (error: Error) => void;
+    const held = new Promise<'prompt'>((_resolve, rejectHeld) => { reject = rejectHeld; });
+    const { runtime } = makeRuntime(driver);
+    try {
+      await runtime.start();
+      const send = driver.last.send.bind(driver.last);
+      vi.spyOn(driver.last, 'send').mockReturnValueOnce(held).mockImplementationOnce(async (content, delivery) => {
+        await send(content, delivery);
+        driver.last.emit({ type: 'turn_started', data: {} });
+        driver.last.emit({ type: 'turn_ended', data: {} });
+        await flush();
+        return 'prompt';
+      });
+      const first = runtime.sendMessage('failed first', { source: 'user' });
+      const result = expect(first).rejects.toThrow('first failed');
+      await flush();
+      await runtime.sendMessage('second', { source: 'user' });
+      await runtime.sendMessage('third', { source: 'user' });
+      reject(new Error('first failed'));
+      await result;
+      await flush();
+      expect(driver.last.sent.map((item) => item.content)).toEqual([
+        [{ type: 'text', text: 'second' }], [{ type: 'text', text: 'third' }],
+      ]);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+    } finally { reject(new Error('test cleanup')); await runtime.stop(); }
+  });
+  it.each(['pre-prompt', 'preparation'] as const)('Q1 releases a reservation on %s failure and dispatches held input', async (failure) => {
+    const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
+    let firstHook = true;
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver, { beforePrompt: () => {
+      if (failure === 'pre-prompt' && firstHook) { firstHook = false; throw new Error('pre-prompt failed'); }
+      return Promise.resolve();
+    } });
+    const stop = startFederationTurnTracking(runtime.agentId);
+    let restorePreparation = () => {};
+    try {
+      await runtime.start();
+      if (failure === 'preparation') {
+        const preparation = vi.spyOn(federationContext, 'prepareFederationInputs').mockImplementationOnce(() => { throw new Error('preparation failed'); });
+        restorePreparation = () => preparation.mockRestore();
+      }
+      const first = runtime.sendMessage('failed first', { source: 'user' });
+      const result = expect(first).rejects.toThrow(`${failure} failed`);
+      await expect(withFederationInput(remote('held'), () => runtime.sendMessage('held news', { source: 'mcp' })))
+        .resolves.toMatchObject({ delivery: 'queued' });
+      await result;
+      expect(driver.last.sent).toEqual([{ content: [{ type: 'text', text: 'held news' }], delivery: 'prompt' }]);
+      driver.last.emit({ type: 'turn_started', data: {} });
+      driver.last.emit({ type: 'turn_ended', data: {} });
+      await flush();
+      expect(runtime.hasPendingWork()).toBe(false);
+      expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['held']);
+    } finally { await runtime.stop(); stop(); activation.mockRestore(); restorePreparation(); }
+  });
   it.each(['activation', 'rollback'] as const)('releases a failed %s dispatch token and keeps accepted causal input guarded', async (failure) => {
     const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
     const driver = new FakeChatDriver('codex_app_server', 'codex-cli', { ...STEERLESS, steer: true });
@@ -2194,7 +2453,7 @@ describe('federation input follows actual runtime dispatch (#3553)', () => {
       expect(driver.last.sent[2].content).toEqual([{ type: 'text', text: 'wait behind accepted news' }]);
     } finally { await runtime.stop(); stop(); activation.mockRestore(); }
   });
-  it('retains a concurrent accepted dispatch token when another activation fails', async () => {
+  it('reserves a dispatch before the pre-prompt hook and holds the next input until its turn starts', async () => {
     const activation = vi.spyOn(localCausalWork, 'activateLocalCausalInput').mockResolvedValue(async () => {});
     let release!: () => void;
     const beforePrompt = new Promise<void>((resolve) => { release = resolve; });
@@ -2203,16 +2462,14 @@ describe('federation input follows actual runtime dispatch (#3553)', () => {
     const stop = startFederationTurnTracking(runtime.agentId);
     try {
       await runtime.start();
-      activation.mockResolvedValueOnce(async () => {}).mockRejectedValueOnce(new Error('second activation failed'));
-      // Both requests choose prompt before the first clears the pre-prompt barrier.
+      // The second input must queue even before the first pre-prompt hook resolves.
       const accepted = withFederationInput(remote('accepted'), () => runtime.sendMessage('accepted news', { source: 'mcp' }));
-      const failed = runtime.sendMessage('failed dispatch', { source: 'user' });
-      const results = Promise.allSettled([accepted, failed]);
+      await flush();
+      const queued = await runtime.sendMessage('second input', { source: 'user' });
+      expect(queued.delivery).toBe('queued');
+      expect(driver.last.sent).toHaveLength(0);
       release();
-      expect(await results).toMatchObject([
-        { status: 'fulfilled', value: { delivery: 'prompt' } },
-        { status: 'rejected', reason: new Error('second activation failed') },
-      ]);
+      expect(await accepted).toMatchObject({ delivery: 'prompt' });
       expect(driver.last.sent).toHaveLength(1);
       expect(runtime.hasPendingWork()).toBe(true);
       await expect(runtime.sendMessage('still waiting for accepted turn', { source: 'user' }))

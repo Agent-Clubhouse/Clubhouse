@@ -661,12 +661,15 @@ export class ChatAgentRuntime implements AgentRuntime {
     // Until the first provider turn starts, a second prompt cannot be
     // associated safely. Hold it in our queue if the accepted prompt is causal.
     const causalPending = this.pendingTurns.size > 0 && federationTurnInputs(this.agentId).length > 0;
+    // Drivers do not correlate send() with turn_started. Admit one start at
+    // a time until that boundary, even when the first input has no provenance.
+    const awaitingTurn = (this.draining || this.pendingTurns.size > 0) && this.turnId === undefined;
     // While the queue drains, the state still reads idle; a prompt now would race the drained one.
     const running = this.draining
       || this.state === 'running' || this.state === 'waiting_permission' || this.state === 'waiting_input';
     const caps = this.capabilities ?? session.capabilities;
     // Keep Action messages removable even when the driver normally queues natively.
-    const clientQueue = causalPending || caps.queue !== 'native' || opts.actionQueue !== undefined || federationInputs.length > 0;
+    const clientQueue = awaitingTurn || causalPending || caps.queue !== 'native' || opts.actionQueue !== undefined || federationInputs.length > 0;
 
     let wanted: MessageDelivery;
     const requested = opts.delivery ?? (opts.actionQueue ? 'queued' : 'auto');
@@ -683,7 +686,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     } else {
       wanted = requested;
     }
-    if (causalPending) wanted = 'queued';
+    if (awaitingTurn || causalPending) wanted = 'queued';
 
     const traceContext = captureChatTrace(currentRequestTraceparent());
     const messageId = this.newId();
@@ -733,8 +736,11 @@ export class ChatAgentRuntime implements AgentRuntime {
 
     const outgoing = this.withSystemPrompt(blocks, caps);
 
+    // Reserve before the first await, so another caller cannot also choose
+    // prompt while this dispatch prepares its input.
+    const pending = wanted === 'prompt' || wanted === 'queued' ? Symbol() : undefined;
+    if (pending) this.pendingTurns.add(pending);
     this.clearIdleTimer();
-    if (wanted === 'prompt') await this.runBeforePrompt();
     // A steer belongs to the existing turn; native queued delivery has no reliable
     // dispatch boundary, so do not invent a parent for its later turn.
     if (wanted === 'prompt') {
@@ -744,14 +750,15 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.pendingTraceAssigned = true;
     }
     let delivered: MessageDelivery;
-    const pending = wanted === 'prompt' || wanted === 'queued' ? Symbol() : undefined;
-    if (pending) this.pendingTurns.add(pending);
     let rollbackAssignment: (() => Promise<void>) | undefined;
     let federation: ReturnType<typeof prepareFederationInputs> = [];
     try {
+      if (wanted === 'prompt') await this.runBeforePrompt();
+      if (this.session !== session) throw new Error('Chat session changed before the message could be sent');
       // A failed provenance save never reaches the provider, so it must not
       // leave a pending turn that forces all later input into the queue.
       rollbackAssignment = wanted === 'queued' ? undefined : await activateLocalCausalInput(this.agentId, wanted === 'steer' ? [...federationTurnInputs(this.agentId), ...federationInputs] : federationInputs);
+      if (this.session !== session) throw new Error('Chat session changed before the message could be sent');
       federation = prepareFederationInputs(this.agentId, federationInputs, wanted);
       delivered = await session.send(outgoing, wanted);
     }
@@ -768,7 +775,19 @@ export class ChatAgentRuntime implements AgentRuntime {
         } });
       } finally {
         if (pending) this.pendingTurns.delete(pending);
-        if (this.pendingTrace === traceContext) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
+        if (this.session === session && this.pendingTrace === traceContext) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
+      }
+      // Held input has no future turn end to drain it when this start fails.
+      if (this.session === session && this.turnId === undefined && this.pendingTurns.size === 0) {
+        try { await this.drainQueue(); }
+        catch (drainError) {
+          // telemetry-exempt: retain the original dispatch error while reporting the drain failure locally.
+          appLog('core:chat', 'error', 'Chat queue recovery failed', { meta: {
+            agentId: this.agentId,
+            error: error instanceof Error ? error.message : String(error),
+            drainError: drainError instanceof Error ? drainError.message : String(drainError),
+          } });
+        }
       }
       throw error;
     }
@@ -974,7 +993,7 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   private async deliverQueuedMessage(): Promise<void> {
     const session = this.session;
-    if (!session) return;
+    if (!session || this.draining || (this.turnId === undefined && this.pendingTurns.size > 0)) return;
     const next = this.queued.shift();
     if (!next) return;
     this.pendingDispatch = next;
@@ -996,24 +1015,43 @@ export class ChatAgentRuntime implements AgentRuntime {
         if (this.pendingDispatch === next) await this.dropQueued((item) => item === next, 'expired', true);
         failed = true;
       } else {
-        this.pendingDispatch = undefined;
-        this.armQueueExpiry();
-        this.logQueueChange('dispatched', next);
         this.pendingTrace = this.pendingTraceAssigned ? undefined : next.trace;
         this.pendingTraceAssigned = true;
-        this.pendingTurns.add(pending);
         rollbackAssignment = await activateLocalCausalInput(this.agentId, next.federationInputs ?? []);
-        federation = prepareFederationInputs(this.agentId, next.federationInputs ?? []);
-        const delivered = await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
-        for (const context of federation) context?.accepted(delivered);
-        this.settleQueued(next, 'delivered');
-        if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
+        if (this.session !== session || this.pendingDispatch !== next || (next.expiresAt !== undefined && next.expiresAt <= this.now())) {
+          await rollbackAssignment();
+          rollbackAssignment = undefined;
+          if (this.session !== session) return;
+          if (this.pendingTrace === next.trace) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
+          if (this.pendingDispatch === next) await this.dropQueued((item) => item === next, 'expired', true);
+          failed = true;
+        } else {
+          this.pendingDispatch = undefined;
+          this.armQueueExpiry();
+          this.logQueueChange('dispatched', next);
+          federation = prepareFederationInputs(this.agentId, next.federationInputs ?? []);
+          this.pendingTurns.add(pending);
+          const delivered = await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+          for (const context of federation) context?.accepted(delivered);
+          this.settleQueued(next, 'delivered');
+          if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
+        }
       }
     } catch (err) {
-      for (const context of federation) context?.refused();
-      await rollbackAssignment?.();
-      this.pendingTurns.delete(pending);
-      if (this.pendingTrace === next.trace) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
+      try {
+        for (const context of federation) context?.refused();
+        await rollbackAssignment?.();
+      } catch (cleanupError) {
+        // telemetry-exempt: log cleanup separately; the original send error is shown below.
+        appLog('core:chat', 'error', 'Chat send cleanup failed', { meta: {
+          agentId: this.agentId,
+          error: err instanceof Error ? err.message : String(err),
+          cleanupError: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        } });
+      } finally {
+        this.pendingTurns.delete(pending);
+        if (this.session === session && this.pendingTrace === next.trace) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
+      }
       if (this.session !== session) return;
       // Like a failed plain send, this one message fails and the session stays (#3103).
       // telemetry-exempt: the user sees the notice; logged locally with the reason.
@@ -1029,8 +1067,9 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.draining = false;
       this.armQueueExpiry();
     }
-    // Nothing was sent, so no turn will end to drain the rest: go on with the next one.
-    if (failed) await this.drainQueue();
+    // A failed start has no future turn end. An early turn end may also have
+    // tried to drain while this send still held the drain reservation.
+    if (failed || (this.session === session && this.state === 'idle' && this.turnId === undefined && this.pendingTurns.size === 0)) await this.drainQueue();
   }
 
   async interrupt(): Promise<void> {
