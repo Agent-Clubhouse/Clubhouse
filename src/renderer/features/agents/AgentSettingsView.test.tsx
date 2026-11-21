@@ -269,7 +269,7 @@ describe('AgentSettingsView', () => {
       renderSettings();
       expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
       expect(screen.getByTestId('agent-settings-section-grants')).toContainElement(await screen.findByTestId('agent-grants-settings'));
-      expect(screen.getByRole('heading', { name: 'Quick agents' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Quick agent defaults' })).toBeInTheDocument();
       expect(screen.queryByTestId('agent-settings-nav')).not.toBeInTheDocument();
     });
 

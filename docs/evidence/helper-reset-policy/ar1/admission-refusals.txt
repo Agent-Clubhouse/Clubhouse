@@ -1,0 +1,2 @@
+Scoped project compiler admission after 2026-11-20T05:56:46Z replay, exit75:
+REFUSED: go_compiling_hold_heavy

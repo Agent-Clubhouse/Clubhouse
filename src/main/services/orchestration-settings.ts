@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { createSettingsStore } from './settings-store';
 import { readDisplaySettings, displayInput, type DisplayReceipt, type DisplayValue } from './display-settings';
 import { DEFAULT_GLOBAL_HELPER_CAP, MAX_HELPER_LIMIT } from '../../shared/orchestration-policy';
+import { AUTO_RESERVE_PROVIDERS, isAutoBudgetPolicy, readAutoBudgetSetting, type AutoBudgetPolicy, type AutoBudgetRules, type AutoBudgetSetting } from '../../shared/helper-auto-budget';
 import { AUTO_LEVEL_FOLLOWS, AUTO_LEVELS, BUILTIN_PRESETS, PRESET_PROVIDERS, isAutoBoundLevel, normalizeSavedPresets, type AutoLevel, type PresetCell, type PresetProvider, type SavedPresets } from '../../shared/helper-routing';
 
 type PresetCellGenerations = Partial<Record<PresetProvider, Partial<Record<AutoLevel, string>>>>;
@@ -20,6 +21,8 @@ export interface OrchestrationSettings {
   autoHelpers?: boolean;
   /** Copilot is allowed as Auto's last resort unless explicitly turned off (#3279). */
   copilotAuto?: boolean;
+  /** Absent stays legacy. Explicit opt-in persists its selected reserves; no default migration. */
+  helperAutoBudget?: unknown;
 }
 
 function validRevision(value: unknown): number {
@@ -75,14 +78,15 @@ const store = createSettingsStore<OrchestrationSettings>(
     helperPresetCellGenerations: readCellGenerations(raw.helperPresetCellGenerations),
     autoHelpers: raw.autoHelpers === true,
     copilotAuto: raw.copilotAuto !== false,
+    ...(raw.helperAutoBudget !== undefined && { helperAutoBudget: raw.helperAutoBudget }),
   }),
   // Presets and Auto have rows of their own, with reasons.
-  { atomic: true, rollBackFailedSaves: true, displaySnapshot: true, audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'helperPresetCellGenerations', 'autoHelpers', 'copilotAuto'] } },
+  { atomic: true, rollBackFailedSaves: true, displaySnapshot: true, audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'helperPresetCellGenerations', 'autoHelpers', 'copilotAuto', 'helperAutoBudget'] } },
 );
 
 let pendingWrites = 0;
 let publishedSettings: OrchestrationSettings | undefined;
-type PendingRestriction = { globalHelperCap?: number; autoHelpers?: false; copilotAuto?: false };
+type PendingRestriction = { globalHelperCap?: number; autoHelpers?: false; copilotAuto?: false; autoBudget?: AutoBudgetPolicy };
 const pendingRestrictions = new Set<PendingRestriction>();
 
 export function getSettings(): OrchestrationSettings {
@@ -135,6 +139,43 @@ export function getCopilotAuto(): boolean {
 export async function saveCopilotAuto(on: boolean): Promise<void> {
   await updateSettings((current) => ({ ...current, copilotAuto: on, helperPresetsRevision: (current.helperPresetsRevision ?? 0) + 1 }),
     on ? undefined : { copilotAuto: false });
+}
+
+/** Settings show committed policy only; pending admission restrictions do not activate urgency. */
+export function getAutoBudgetSetting(): AutoBudgetSetting | undefined {
+  return readAutoBudgetSetting(getSettings().helperAutoBudget);
+}
+
+/** Compose conservative admission independently from the committed preference/loosening. */
+export function getAutoBudgetRules(): AutoBudgetRules | undefined {
+  const policy = getAutoBudgetSetting();
+  if (policy === 'invalid') return { mode: 'invalid' };
+  let rules: Exclude<AutoBudgetRules, { mode: 'invalid' }> | undefined = policy?.enabled
+    ? { mode: 'reset_aware', reserves: { ...policy.reserves } } : undefined;
+  for (const restriction of pendingRestrictions) {
+    if (!restriction.autoBudget?.enabled) continue;
+    // Until enabling commits, retain legacy's 5% ceiling as well as the requested stricter gates.
+    rules ??= { mode: 'reserve_only', reserves: { 'claude-code': 5, 'codex-cli': 5 } };
+    for (const provider of AUTO_RESERVE_PROVIDERS) {
+      rules.reserves[provider] = Math.max(rules.reserves[provider], restriction.autoBudget.reserves[provider]);
+    }
+  }
+  return rules;
+}
+
+/** Also used before the routing writer queue, so a restrictive edit cannot wait behind a model read. */
+export function stageAutoBudgetRestriction(policy: AutoBudgetPolicy): () => void {
+  if (!isAutoBudgetPolicy(policy)) throw new Error('Invalid Auto budget policy');
+  const restriction: PendingRestriction = { autoBudget: { ...policy, reserves: { ...policy.reserves } } };
+  pendingRestrictions.add(restriction);
+  return () => { pendingRestrictions.delete(restriction); };
+}
+
+export async function saveAutoBudgetPolicy(policy: AutoBudgetPolicy): Promise<void> {
+  if (!isAutoBudgetPolicy(policy)) throw new Error('Invalid Auto budget policy');
+  const saved: AutoBudgetPolicy = { version: 1, enabled: policy.enabled, reserves: { ...policy.reserves } };
+  await updateSettings((current) => ({ ...current, helperAutoBudget: saved,
+    helperPresetsRevision: (current.helperPresetsRevision ?? 0) + 1 }), { autoBudget: saved });
 }
 
 /** A project's setting changed: an open page should refetch. */

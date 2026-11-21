@@ -9,7 +9,7 @@
 
 import { QUOTA_LOW_PERCENT, QUOTA_NEAR_LIMIT_PERCENT, type QuotaState, type QuotaUnknownReason, type QuotaView } from '../../../shared/helper-routing';
 import type { DecisionQuota } from '../../../shared/telemetry/helper-usage-contract';
-import { AUTO_WEEK_MS, decideAutoProvider, type AutoCandidate, type AutoDecision, type AutoPolicyOptions } from '../helper-auto-policy';
+import { AUTO_WEEK_MS, decideAutoProvider, type AutoCandidate, type AutoDecision, type AutoPolicyInput, type AutoPolicyOptions } from '../helper-auto-policy';
 import { observeHelperBurn, predictHelperBurn, summarizeHelperBurn, type BurnCalibration, type ForecastEntry } from '../helper-auto-forecast';
 
 export const HOUR = 60 * 60_000;
@@ -49,6 +49,8 @@ export interface SimConfig {
   options?: AutoPolicyOptions;
   /** The rotation's saved state, as a restart would find it. */
   cursors?: Record<string, string>;
+  /** Isolated policy comparisons only. The production selector is the default. */
+  select?: (input: AutoPolicyInput) => AutoDecision;
 }
 
 export interface SimResult {
@@ -123,7 +125,7 @@ export function runReplay(config: SimConfig): SimResult {
           weekly: { usedPercent: reading.percent, resetsAtMs: reading.resetsAt },
         };
       });
-      const decision = decideAutoProvider({ now: t, candidates, cursors, ...(config.options && { options: config.options }) });
+      const decision = (config.select ?? decideAutoProvider)({ now: t, candidates, cursors, ...(config.options && { options: config.options }) });
       result.decisions.push(decision);
       if (!decision.ok) { result.refused++; continue; }
       if (decision.tie.cursorKey && decision.tie.cursorAfter) cursors[decision.tie.cursorKey] = decision.tie.cursorAfter;

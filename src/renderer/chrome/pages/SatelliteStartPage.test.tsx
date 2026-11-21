@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { SatelliteStartPage, projectCounts } from './SatelliteStartPage';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
@@ -48,6 +48,19 @@ describe('SatelliteStartPage', () => {
     expect(screen.getByText('Connected · 192.168.1.24 · no projects open')).toBeTruthy();
     fireEvent.click(screen.getByText('Switch to Local'));
     expect(useUIStore.getState().activeHostId).toBeNull();
+  });
+
+  it.each([false, true])('keeps connected state and safe rows without claiming an incomplete catalog is empty (known rows: %s)', (knownRows) => {
+    useAnnexClientStore.setState({ satellites: [{ ...sat, catalogIncomplete: true }] as never });
+    if (!knownRows) useRemoteProjectStore.setState({ satelliteProjects: {}, remoteAgents: {} });
+    render(<SatelliteStartPage activeHostId="s1" />);
+    expect(screen.getByText('Connected · 192.168.1.24')).toBeTruthy();
+    expect(screen.getByText('Project updates are incomplete. Waiting for a fresh project snapshot.')).toBeTruthy();
+    expect(screen.queryByText(/no projects open|Nothing is open|Retrying/)).toBeNull();
+    if (knownRows) expect(screen.getByTestId('satellite-project-r:p1')).toBeTruthy();
+    act(() => { useAnnexClientStore.setState({ satellites: [{ ...sat, catalogIncomplete: false }] as never }); });
+    expect(screen.queryByText(/Project updates are incomplete/)).toBeNull();
+    expect(screen.getByText(knownRows ? 'Connected · 192.168.1.24 · 2 projects, 3 agents' : 'Connected · 192.168.1.24 · no projects open')).toBeTruthy();
   });
 
   it('counts agents in plain text', () => {

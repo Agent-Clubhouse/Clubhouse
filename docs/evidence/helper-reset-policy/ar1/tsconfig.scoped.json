@@ -1,0 +1,13 @@
+{
+  "extends": "../../../../tsconfig.json",
+  "compilerOptions": {
+    "typeRoots": ["/Users/masonallen/source/Clubhouse/node_modules/@types"],
+    "noEmit": true
+  },
+  "files": [
+    "../../../../src/main/services/__fixtures__/helper-auto-replay.ts",
+    "../../../../src/main/services/__fixtures__/helper-reset-replay.ts",
+    "../../../../src/main/services/helper-reset-replay.test.ts"
+  ],
+  "include": []
+}

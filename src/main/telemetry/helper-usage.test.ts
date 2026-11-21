@@ -387,6 +387,25 @@ describe('decisions', () => {
     expect(a.kinds['clubhouse.helper_decision.mapping_fingerprint_hash']).toBe('hash');
   });
 
+  it('keeps configured reserves, unknown forecasts and urgency explanations device-local', () => {
+    recordHelperDecision(decision({ reason: 'reset_urgency', candidates: [candidate('claude-code', { chosen: true,
+      autoBudget: { mode: 'reset_aware', retainedPercent: 10, ceilingBp: 9000, usableBp: 800,
+        resetsAtMs: now + 3600_000, urgency: 'within_24h', forecast: 'unavailable' },
+    }), candidate('codex-cli', { eligible: false, excluded: 'auto_reserve',
+      autoBudget: { mode: 'reset_aware', retainedPercent: 20, ceilingBp: 8000, urgency: 'none',
+        forecast: 'qualified', block: 'predicted_reserve' },
+    })] }));
+    const [chosen, blocked] = events('clubhouse.helper.decision.candidate');
+    expect(chosen.attrs).toMatchObject({ 'clubhouse.helper_candidate.retained_percent': 10,
+      'clubhouse.helper_candidate.admission_ceiling_bp': 9000, 'clubhouse.helper_candidate.reset_urgency': 'within_24h',
+      'clubhouse.helper_candidate.budget_forecast': 'unavailable' });
+    expect(blocked.attrs).toMatchObject({ 'clubhouse.helper_candidate.excluded': 'auto_reserve',
+      'clubhouse.helper_candidate.budget_block': 'predicted_reserve' });
+    expect(chosen.attrs).not.toHaveProperty('clubhouse.helper_candidate.burn_rate');
+    expect(local.every((e) => e.opts?.localOnly)).toBe(true);
+    expect(exported).toEqual([]);
+  });
+
   it('records a refused decision with no helper, and puts nothing in the ledger', () => {
     recordHelperDecision(decision({
       outcome: 'refused', refusalCode: 'no_candidate', helperId: undefined, reason: undefined, fallback: undefined, source: undefined,

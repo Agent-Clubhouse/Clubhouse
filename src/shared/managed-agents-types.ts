@@ -381,7 +381,13 @@ export interface ManagedPreview {
   settings?: ManagedSettingsRow[];
   /** Set while the agent runs and its next start differs from what its session started with. */
   running?: ManagedRunningSnapshot;
-  blocks: Array<{ id: string; name: string; builtin: boolean; usedBy: number; startLine: number; endLine: number }>;
+  blocks: Array<{
+    id: string; name: string; builtin: boolean; usedBy: number;
+    /** Line ranges in the expanded `instructions`. */
+    startLine: number; endLine: number;
+    /** Line ranges in `rawInstructions`; absent in previews from older producers. */
+    rawStartLine?: number; rawEndLine?: number;
+  }>;
   /**
    * `projectOwn`: a built-in skill whose folder git tracks in the agent's
    * folder isn't delivered; the CLI loads the project's copy, and this says

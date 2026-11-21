@@ -59,6 +59,7 @@ import {
   type DiscoveredService,
   type SatelliteConnection,
 } from './annexClientStore';
+import { useRemoteProjectStore } from './remoteProjectStore';
 import { usePendingPermissionStore } from './pendingPermissionStore';
 
 // ---------- helpers ----------
@@ -105,6 +106,7 @@ describe('annexClientStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     usePendingPermissionStore.setState({ byRequestId: {} });
+    useRemoteProjectStore.setState({ satelliteProjects: {}, remoteAgents: {} });
     useAnnexClientStore.setState({
       satellites: [],
       discoveredServices: [],
@@ -131,6 +133,7 @@ describe('annexClientStore', () => {
         changed = listener;
         return vi.fn();
       });
+      mockAnnexClient.getSatellites.mockResolvedValueOnce([SATELLITE]);
       useAnnexClientStore.setState({ satellites: [SATELLITE] });
       off = initAnnexClientListener();
     });
@@ -174,11 +177,14 @@ describe('annexClientStore', () => {
       expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeUndefined();
     });
 
-    it('clears stale prompts on disconnect and restores a still-pending prompt from the next connection snapshot', () => {
+    it('keeps prompts cleared through cached reconnect lists, then restores from the authoritative snapshot', () => {
       snapshot([permission]);
       changed([{ ...SATELLITE, state: 'disconnected' }]);
       expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeUndefined();
       changed([{ ...SATELLITE, snapshot: { pendingPermissions: [permission] } as never }]);
+      // A cached-list difference does not establish that this request is current.
+      expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeUndefined();
+      snapshot([permission]);
       expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeDefined();
     });
 
@@ -587,7 +593,7 @@ describe('annexClientStore', () => {
       // Simulate stale paused state from a previous connection
       useAnnexClientStore.setState({
         satellitePaused: { 'sat-1': true },
-        satellites: [SATELLITE],
+        satellites: [{ ...SATELLITE, id: 'sat-1' }],
       });
 
       let eventCallback: ((event: any) => void) | undefined;
@@ -609,7 +615,7 @@ describe('annexClientStore', () => {
     it('preserves paused state when snapshot arrives with sessionPaused=true', () => {
       useAnnexClientStore.setState({
         satellitePaused: {},
-        satellites: [SATELLITE],
+        satellites: [{ ...SATELLITE, id: 'sat-1' }],
       });
 
       let eventCallback: ((event: any) => void) | undefined;
@@ -666,7 +672,7 @@ describe('annexClientStore', () => {
     it('defaults to unpaused when snapshot has no sessionPaused field', () => {
       useAnnexClientStore.setState({
         satellitePaused: { 'sat-1': true },
-        satellites: [SATELLITE],
+        satellites: [{ ...SATELLITE, id: 'sat-1' }],
       });
 
       let eventCallback: ((event: any) => void) | undefined;

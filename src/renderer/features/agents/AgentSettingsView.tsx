@@ -47,6 +47,7 @@ import { AgentGrantsSettings } from './AgentGrantsSettings';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 import { ManagedBuilder, PreviewPane } from '../managed/ManagedBuilder';
+import { InstructionEditor } from '../managed/InstructionEditor';
 import { ManagedEffortField, ManagedHelperTemplateField, ManagedIdleSleepField } from '../managed/ManagedAgentSettingsFields';
 import { ManagedGeneralSection } from '../managed/ManagedGeneralSection';
 import { legacyUse } from '../managed/legacy';
@@ -1197,15 +1198,12 @@ export function AgentSettingsView({ agent }: Props) {
 
   const instructionsEditor = instructionsLoaded && (
     <>
-      <textarea
+      <InstructionEditor
         id="agent-settings-instructions"
-        aria-label="Instructions"
+        label="Instructions"
         value={instructions}
-        onChange={(e) => { setInstructions(e.target.value); setInstructionsDirty(true); }}
+        onChange={(text) => { setInstructions(text); setInstructionsDirty(true); }}
         disabled={isRunning}
-        placeholder={`Agent instructions written to ${instructionsFileLabel}`}
-        className={`${textareaClass} h-[226px] mt-1.5`}
-        spellCheck={false}
       />
       <div className="flex items-center gap-2 mt-2 text-xs text-ctp-overlay1 min-w-0">
         <span className="flex-shrink-0">Written to the agent worktree at</span>
@@ -1300,6 +1298,7 @@ export function AgentSettingsView({ agent }: Props) {
 
   const quickDefaults = qadLoaded && (
     <>
+      <p className="text-xs text-ctp-overlay1 mb-3">Used for quick runs launched from the desktop with {agent.name} selected as their parent. Helpers use their helper template and orchestration settings instead. Actions have their own launch settings. Remote quick runs may use only some of these defaults.</p>
       <Field label="Model" htmlFor="agent-settings-qad-model">
         {qadDefaultModel === 'custom' && (
           <input
@@ -1350,7 +1349,7 @@ export function AgentSettingsView({ agent }: Props) {
         value={qadSystemPrompt}
         onChange={(e) => { setQadSystemPrompt(e.target.value); setQadDirty(true); }}
         disabled={isRunning}
-        placeholder="Appended to the system prompt of quick agents this agent starts"
+        placeholder="Extra instructions for desktop quick runs with this agent as parent"
         className={`${textareaClass} h-[88px]`}
         spellCheck={false}
       />
@@ -1420,7 +1419,7 @@ export function AgentSettingsView({ agent }: Props) {
       settings: <>Instructions don't grant access. These settings do.{isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when it restarts</span> : null}</>,
       grants: undefined,
       helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestration card beside the chat.`,
-      quick: `Defaults for quick agents ${agent.name} starts`,
+      quick: `Defaults for desktop quick runs with ${agent.name} as parent`,
       actions: `Actions that involve ${agent.name}`,
       preview: `What ${agent.name} gets at its next start`,
     };
@@ -1462,28 +1461,28 @@ export function AgentSettingsView({ agent }: Props) {
     const builderNote = isRunning ? 'Changes apply when the next session starts' : undefined;
     body = (
       <>
-        {general}
-        <div id="agent-settings-section-instructions" data-testid="agent-settings-section-instructions">
-          <SectionHeading title="Instructions" sub={builderNote ?? `In the order ${agent.name} reads them`} />
-          <ManagedBuilder target={builderTarget} tab="instructions" />
+        <div id="agent-settings-section-settings" data-testid="agent-settings-section-settings">
+          {managedSettings}
         </div>
         <div id="agent-settings-section-skills" data-testid="agent-settings-section-skills">
           <SectionHeading title="Skills" sub={builderNote ?? `Copied into ${agent.name}'s folder at its next start`} />
           <ManagedBuilder target={builderTarget} tab="skills" />
         </div>
+        <div id="agent-settings-section-instructions" data-testid="agent-settings-section-instructions">
+          <SectionHeading title="Instructions" sub={builderNote ?? `In the order ${agent.name} reads them`} />
+          <ManagedBuilder target={builderTarget} tab="instructions" />
+        </div>
         <div id="agent-settings-section-mcp" data-testid="agent-settings-section-mcp">
           <SectionHeading title="MCP servers" sub={builderNote ?? 'Sign-in comes from your environment'} />
           <ManagedBuilder target={builderTarget} tab="mcp" />
         </div>
-        <div id="agent-settings-section-settings" data-testid="agent-settings-section-settings">
-          {managedSettings}
-        </div>
+        {general}
         {grantsSection}
         <div id="agent-settings-section-preview" data-testid="agent-settings-section-preview">
           <SectionHeading title="Preview" sub={`What ${agent.name} gets at its next start`} />
           <PreviewPane agent={builderAgent} />
         </div>
-        <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
+        <SectionHeading title="Quick agent defaults" sub={`Defaults for desktop quick runs with ${agent.name} as parent`} />
         {quickDefaults}
         {actionsSection}
       </>
@@ -1492,15 +1491,15 @@ export function AgentSettingsView({ agent }: Props) {
     body = (
       <>
         {general}
+        {skillsSection}
         <SectionHeading title="Instructions" sub={<span className="font-mono">{instructionsFileLabel}</span>} />
         {instructionsEditor}
-        {skillsSection}
         {mcpSections}
         {grantsSection}
         <SectionHeading title="Permissions" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
         {permissionsEditor}
         {helpersSettings}
-        <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
+        <SectionHeading title="Quick agent defaults" sub={`Defaults for desktop quick runs with ${agent.name} as parent`} />
         {quickDefaults}
         {actionsSection}
       </>
@@ -1533,8 +1532,8 @@ export function AgentSettingsView({ agent }: Props) {
         </div>
       )}
 
-      <div className="flex-[2] min-h-0 overflow-y-auto">
-        <div className={`max-w-[720px] ${pageMode ? 'px-10 pt-7 pb-10' : 'px-6 pt-4 pb-10'}`}>
+      <div className="@container flex-[2] min-h-0 overflow-y-auto">
+        <div className={`${(!pageMode || page === 'instructions' || page === 'preview') ? 'max-w-[1200px]' : 'max-w-[720px]'} ${pageMode ? 'px-4 @min-[700px]:px-10 pt-7 pb-10' : 'px-6 pt-4 pb-10'}`}>
           {runningLine}
           {body}
         </div>

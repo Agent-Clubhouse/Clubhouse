@@ -1,0 +1,3 @@
+2026-11-20T05:43:19Z START auto-reset-policy-design idle=71% unused=9883M avail=29927M freepct=76 comp=7583M swap=1892M pid=49897 cmd=node /Users/masonallen/source/Clubhouse/node_modules/typescript/bin/tsc --noEmit --target ES2022 --module commonjs --moduleResolution node --esModuleInterop --skipLibCheck --noImplicitAny src/main/services/__fixtures__/helper-auto-replay.ts src/main/services/__fixtures__/helper-reset-replay.ts src/main/services/helper-reset-replay.test.ts
+src/main/services/helper-reset-replay.test.ts(79,38): error TS7018: Object literal's property 'windows' implicitly has an 'any[]' type.
+2026-11-20T05:43:20Z END auto-reset-policy-design rc=2

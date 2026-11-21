@@ -376,6 +376,26 @@ describe('previewManagedSetup', () => {
     expect(preview.blocks.map((b) => [b.name, b.startLine, b.endLine])).toEqual([['Identity', 1, 2], ['Rules', 4, 5]]);
   });
 
+  it.skipIf(process.platform === 'win32')('keeps separate raw ranges when a valid POSIX path expands across lines', async () => {
+    // The agent folder/name stays valid; an ancestor path component contains a POSIX-valid LF.
+    agent.worktreePath = path.join(root, 'linked\nproject', '.clubhouse', 'agents', agent.name);
+    fs.mkdirSync(agent.worktreePath, { recursive: true });
+    const first = await user(() => service.createPart({ name: 'Path', content: { kind: 'block', content: 'Path @@Path' } }));
+    const second = await user(() => service.createPart({ name: 'Second', content: { kind: 'block', content: 'Second' } }));
+    agent.managed = { version: 1, blocks: [first.id, second.id], skills: [], mcps: [] };
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.instructions).toBe('Path ../linked\nproject/.clubhouse/agents/cool-gazelle/\n\nSecond');
+    expect(preview.instructions).toBe(fs.readFileSync(path.join(agent.worktreePath, 'CLAUDE.md'), 'utf-8'));
+    expect(preview.rawInstructions).toBe('Path @@Path\n\nSecond');
+    // Round-trip the additive fields through the same JSON data shape the renderer receives.
+    const wire = JSON.parse(JSON.stringify(preview));
+    expect(wire.blocks).toMatchObject([
+      { name: 'Path', startLine: 1, endLine: 2, rawStartLine: 1, rawEndLine: 1 },
+      { name: 'Second', startLine: 4, endLine: 4, rawStartLine: 3, rawEndLine: 3 },
+    ]);
+  });
+
   it('says the level an agent starts at when its CLI has no start for the saved one in its runtime (#3004)', async () => {
     agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
     // Copilot in the terminal starts only at Ask first or Full access.

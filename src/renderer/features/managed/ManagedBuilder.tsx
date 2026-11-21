@@ -1,4 +1,5 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { BlockInstructionsPreview } from './BlockInstructionsPreview';
 import {
   CLUBHOUSE_MCP_PART_ID,
   findSkillFolderClash,
@@ -187,7 +188,7 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
       {(error || actionError) && <p role="alert" className="text-xs text-ctp-error">{error ?? actionError}</p>}
       {(tab === 'instructions' || tab === 'skills' || tab === 'mcp') && repoParts(tab === 'instructions' ? 'block' : tab === 'skills' ? 'skill' : 'mcp')}
       {tab === 'instructions' && (
-        <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-5 items-start">
+        <div className="flex flex-col gap-4 min-w-0">
           <BlockList
             blocks={setup.blocks}
             parts={blocks.value}
@@ -200,18 +201,21 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
             onWrite={() => setDialog({ kind: 'block' })}
             notice={notice}
           />
-          <LibraryPanel
-            parts={blocks.value}
-            error={blocks.error}
-            onRetry={blocks.reload}
-            inUse={setup.blocks}
-            onAdd={(id) => {
-              update('block', [...setup.blocks, id]);
-              const name = blocks.value?.find((p) => p.id === id)?.name ?? 'Block';
-              setNotice((n) => ({ text: `${name} added.`, seq: (n?.seq ?? 0) + 1 }));
-            }}
-            onNew={() => setDialog({ kind: 'block' })}
-          />
+          <details className="rounded-md border border-surface-0 p-3">
+            <summary className="cursor-pointer text-[13px] text-ctp-subtext1">Add blocks from the library</summary>
+            <LibraryPanel
+              parts={blocks.value}
+              error={blocks.error}
+              onRetry={blocks.reload}
+              inUse={setup.blocks}
+              onAdd={(id) => {
+                update('block', [...setup.blocks, id]);
+                const name = blocks.value?.find((p) => p.id === id)?.name ?? 'Block';
+                setNotice((n) => ({ text: `${name} added.`, seq: (n?.seq ?? 0) + 1 }));
+              }}
+              onNew={() => setDialog({ kind: 'block' })}
+            />
+          </details>
         </div>
       )}
       {tab === 'skills' && skillWarning && <p role="alert" className="text-xs text-ctp-warning" data-testid="managed-skill-clash">{skillWarning}</p>}
@@ -276,7 +280,6 @@ export function PreviewPane({ agent, setup, draft }: { agent?: BuilderAgent; set
   const [preview, setPreview] = useState<ManagedPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showWildcards, setShowWildcards] = useState(false);
-  const preRef = useRef<HTMLPreElement>(null);
   const key = JSON.stringify(draft ?? setup ?? null);
   useEffect(() => {
     let cancelled = false;
@@ -296,35 +299,36 @@ export function PreviewPane({ agent, setup, draft }: { agent?: BuilderAgent; set
   if (error) return <p role="alert" className="text-xs text-ctp-error">{error}</p>;
   if (!preview) return <p className="text-[13px] text-ctp-overlay1">Loading…</p>;
   const text = showWildcards ? preview.rawInstructions ?? preview.instructions : preview.instructions;
-  const lines = preview.instructions.split('\n');
+  const lines = text.split('\n');
   const running = preview.running;
   const runningText = running ? (showWildcards ? running.rawInstructions : running.instructions) : '';
   return (
     <div className="flex flex-col gap-4" data-testid="managed-preview">
       <section>
         <div className="flex items-center gap-2 mb-1">
-          <h3 className="text-[13px] font-semibold text-ctp-text">Instructions <span className="font-normal text-xs text-ctp-overlay1">{preview.blocks.length} blocks, {preview.instructions ? lines.length : 0} lines</span></h3>
+          <h3 className="text-[13px] font-semibold text-ctp-text">Instructions <span className="font-normal text-xs text-ctp-overlay1">{preview.blocks.length} blocks, {text ? lines.length : 0} lines</span></h3>
           <label className="ml-auto flex items-center gap-2 text-xs text-ctp-subtext1">
             <Toggle checked={showWildcards} onChange={setShowWildcards} aria-label="Show wildcards" data-testid="managed-preview-show-wildcards" />
             Show wildcards
           </label>
         </div>
-        <div className={`grid ${running ? 'grid-cols-[168px_minmax(0,1fr)_minmax(0,1fr)]' : 'grid-cols-[168px_minmax(0,1fr)]'} border border-surface-0 rounded-md overflow-hidden`}>
-          <BlockRail blocks={preview.blocks} text={text} preRef={preRef} headed={!!running} />
-          <div className="min-w-0">
-            {running && <div className="px-3 pt-2 text-xs font-medium text-ctp-subtext1">Next start</div>}
-            <pre ref={preRef} className="px-3 py-2 font-mono text-[11.5px] leading-[1.6] text-ctp-text whitespace-pre-wrap break-words min-w-0" data-testid="managed-preview-text">{text ? <PreviewLines text={text} /> : 'No instructions.'}</pre>
-          </div>
-          {running && (
-            <div className="min-w-0 border-l border-surface-0" data-testid="managed-preview-running">
-              <div className="px-3 pt-2 text-xs font-medium text-ctp-subtext1">Running now</div>
-              <pre className="px-3 py-2 font-mono text-[11.5px] leading-[1.6] text-ctp-subtext0 whitespace-pre-wrap break-words min-w-0" data-testid="managed-preview-running-text">{runningText || 'No instructions.'}</pre>
+        <div className="@container">
+          <div className={`grid grid-cols-1 ${running ? '@min-[800px]:grid-cols-2' : ''} border border-surface-0 rounded-md overflow-hidden`}>
+            <div className="min-w-0">
+              {running && <div className="px-3 pt-2 text-xs font-medium text-ctp-subtext1"><span>Next start</span> · {draft || setup ? 'draft setup' : 'saved setup'}</div>}
+              <BlockInstructionsPreview blocks={preview.blocks} text={text} raw={showWildcards && text !== preview.instructions} />
             </div>
-          )}
+            {running && (
+              <div className="min-w-0 border-t @min-[800px]:border-t-0 @min-[800px]:border-l border-surface-0" data-testid="managed-preview-running">
+                <div className="px-3 pt-2 text-xs font-medium text-ctp-subtext1">Running now</div>
+                <pre className="px-3 py-2 font-mono text-[11.5px] leading-[1.6] text-ctp-subtext0 whitespace-pre-wrap [overflow-wrap:anywhere] min-w-0" data-testid="managed-preview-running-text">{runningText || 'No instructions.'}</pre>
+              </div>
+            )}
+          </div>
         </div>
         {running && (
           <div className="mt-2 text-xs text-ctp-overlay1" data-testid="managed-preview-running-changes">
-            <p>Its session started on the setup on the right. What differs:</p>
+            <p>Running now shows the setup its session started with. What differs:</p>
             <ul className="mt-0.5 list-disc pl-5 text-ctp-text">
               {running.changes.map((c) => <li key={c}>{c}</li>)}
             </ul>
@@ -333,7 +337,7 @@ export function PreviewPane({ agent, setup, draft }: { agent?: BuilderAgent; set
         )}
       </section>
       {preview.settings && preview.settings.length > 0 && <SettingsSummary rows={preview.settings} running={running?.settings} />}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 @min-[600px]:grid-cols-2 gap-6">
         <section>
           <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Skills</h3>
           {preview.skills.length === 0 ? <p className="text-xs text-ctp-overlay1">None.</p> : (
@@ -368,87 +372,6 @@ export function PreviewPane({ agent, setup, draft }: { agent?: BuilderAgent; set
       </div>
       {preview.missing.length > 0 && <p className="text-xs text-ctp-warning">{preview.missing.length} part{preview.missing.length === 1 ? '' : 's'} in this setup no longer exist and are skipped.</p>}
       <OutsideTheSetup preview={preview} />
-    </div>
-  );
-}
-
-/** The preview text, one span per line, so the block rail can find where each line lands after wrapping. */
-function PreviewLines({ text }: { text: string }) {
-  const lines = text.split('\n');
-  return <>{lines.map((line, i) => <span key={i} data-preview-line={i + 1}>{i < lines.length - 1 ? `${line}\n` : line}</span>)}</>;
-}
-
-type BlockSpan = { top: number; height: number } | null;
-
-/**
- * The blocks beside the preview (#3187): each block's name and line range,
- * and a thin line per block drawn against the preview lines it covers.
- * Measured from the rendered lines, so wrapping moves the lines with the
- * text. The rail and the preview share one scroll, so they scroll together.
- * Wildcards fill in single-line values, so the ranges hold with them shown.
- */
-function BlockRail({ blocks, text, preRef, headed }: {
-  blocks: ManagedPreview['blocks'];
-  text: string;
-  preRef: RefObject<HTMLPreElement | null>;
-  /** "Next start" sits above the text, which moves it down without resizing it. */
-  headed: boolean;
-}) {
-  const railRef = useRef<HTMLDivElement>(null);
-  const [spans, setSpans] = useState<BlockSpan[]>([]);
-  const [hovered, setHovered] = useState<number | null>(null);
-  const ranges = blocks.map((b) => `${b.startLine}-${b.endLine}`).join(',');
-  // After commit, not in a layout effect: the preview's ref is set after this rail's layout effects run.
-  useEffect(() => {
-    const rail = railRef.current;
-    const pre = preRef.current;
-    if (!rail || !pre) return;
-    const measure = () => {
-      const base = rail.getBoundingClientRect().top;
-      const rects = (line: number) => pre.querySelector(`[data-preview-line="${line}"]`)?.getClientRects();
-      const next = blocks.map((b): BlockSpan => {
-        const first = rects(b.startLine);
-        const last = rects(b.endLine);
-        if (!first?.length || !last?.length) return null;
-        const top = first[0].top - base;
-        return { top, height: Math.max(last[last.length - 1].bottom - base - top, 1) };
-      });
-      setSpans((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
-    };
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(pre);
-    observer.observe(rail);
-    return () => observer.disconnect();
-  }, [text, ranges, headed]);
-  return (
-    <div ref={railRef} className="relative bg-ctp-mantle border-r border-surface-0" data-testid="managed-preview-rail">
-      <ol className="text-[11.5px] text-ctp-overlay1">
-        {blocks.map((b, i) => (
-          <li
-            key={`${b.id}-${i}`}
-            className="pl-2.5 pr-5 py-2 border-b border-surface-0"
-            onMouseEnter={() => setHovered(i)}
-            onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
-          >
-            <span className="block text-ctp-subtext1 font-medium">{i + 1} {b.name}</span>
-            {b.builtin ? 'Built-in' : 'Custom'} · lines {b.startLine} to {b.endLine}
-          </li>
-        ))}
-      </ol>
-      {spans.map((s, i) => s && (
-        <div
-          key={`${blocks[i]?.id}-${i}`}
-          aria-hidden
-          title={blocks[i] ? `${blocks[i].name}, lines ${blocks[i].startLine} to ${blocks[i].endLine}` : undefined}
-          data-testid="managed-preview-rail-line"
-          data-start-line={blocks[i]?.startLine}
-          data-end-line={blocks[i]?.endLine}
-          className={`absolute right-2 w-0.5 rounded-full ${hovered === i ? 'bg-ctp-subtext0' : 'bg-surface-2'}`}
-          style={{ top: s.top, height: s.height }}
-        />
-      ))}
     </div>
   );
 }

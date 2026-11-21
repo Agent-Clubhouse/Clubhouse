@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readRemoteTranscript, remoteChat, remoteChatTarget } from './remoteChatBackend';
 import { useChatStore, initChatEventListener } from './chatStore';
+import { useAnnexClientStore, type SatelliteConnection } from './annexClientStore';
 
 const SAT = Array.from({ length: 16 }, () => 'ab').join(':');
 const NS = `remote||${SAT}||durable_chat`;
@@ -15,7 +16,13 @@ describe('chat for an agent on another desktop (#2390)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.assign(window.clubhouse.annexClient, { chatPage, chatCommand });
+    const satellites: SatelliteConnection[] = [{
+      id: SAT, fingerprint: SAT, alias: 'Synthetic desktop', state: 'connected',
+      icon: '', color: '', host: 'synthetic.invalid', mainPort: 1, pairingPort: 2,
+      snapshot: null, lastError: null,
+    }];
+    useAnnexClientStore.setState({ satellites });
+    Object.assign(window.clubhouse.annexClient, { chatPage, chatCommand, getSatellites: async () => satellites });
     Object.assign(window.clubhouse.chat, local);
     chatPage.mockResolvedValue({ events: [ev(1, 'session_started', { resumed: false }), ev(2, 'turn_started', { trigger: 'prompt' })], pendingPermissions: [], pendingQuestions: [], state: 'idle' });
     chatCommand.mockResolvedValue({ status: 'completed', result: { delivery: 'prompt', messageId: 'msg_1' } });

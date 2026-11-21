@@ -1,3 +1,4 @@
+import type { AutoBudgetReceipt, AutoBudgetRules } from '../helper-auto-budget';
 import type { PressureDecision } from '../helper-burn-pressure';
 /**
  * The contract between helper routing and helper usage telemetry (#2747,
@@ -126,6 +127,8 @@ export interface DecisionCandidate {
   score?: DecisionScore;
   /** True for the provider this decision picked. */
   chosen?: boolean;
+  /** Device-local configured reserve and calendar urgency; never inferred burn rate. */
+  autoBudget?: AutoBudgetReceipt;
 }
 
 export const DECISION_TIE_REASONS = ['none', 'lower_load', 'rotation', 'registration_order', 'sticky', 'other'] as const;
@@ -179,7 +182,7 @@ export interface HelperDecisionRecord {
   /** The mapping came from the user's own cells, the built-ins, or neither. */
   mappingKind?: (typeof MAPPING_KINDS)[number];
   /** Auto settings in force. Counts and booleans only. */
-  settings?: { autoEnabled: boolean; enabledProviders: number };
+  settings?: { autoEnabled: boolean; enabledProviders: number; autoBudgetMode?: AutoBudgetRules['mode'] };
   candidates: DecisionCandidate[];
   tie?: DecisionTie;
   /** Numeric thresholds in force (basis points, milliseconds), so the policy can be replayed from the record. */

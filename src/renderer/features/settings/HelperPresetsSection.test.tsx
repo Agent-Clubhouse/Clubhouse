@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HELPER_ROUTING_LABELS, type HelperRoutingSettings, type PresetCellView, type QuotaView } from '../../../shared/helper-routing';
 import { HelperPresetsSection, orderedProviders } from './HelperPresetsSection';
+import { defaultAutoBudgetPolicy } from '../../../shared/helper-auto-budget';
 
 const cell = (fields: Partial<PresetCellView> = {}): PresetCellView => ({
   effective: { model: 'opus', effort: 'high' }, source: 'builtin', state: 'valid', custom: null, builtin: { model: 'opus', effort: 'high' }, editable: true, ...fields,
@@ -67,6 +68,57 @@ beforeEach(() => {
 });
 
 describe('HelperPresetsSection (#2671)', () => {
+  it('offers an explicit reset-aware opt-in with stored 10% reserves without enabling Auto or Copilot', async () => {
+    const shown = { ...settings(), copilotAuto: false, autoBudget: { policy: null, invalid: false, editable: true } };
+    app().getHelperRouting.mockResolvedValue(shown);
+    render(<HelperPresetsSection />);
+    await screen.findByTestId('helper-budget-enabled');
+    expect(screen.getByText(/Reserves never relax automatically/)).toBeTruthy();
+    expect(screen.getByText(/Burn pace is not measured/)).toBeTruthy();
+    expect(screen.getByText(/running or outside work can still use more/i)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('helper-budget-enabled'));
+    await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', autoBudgetPolicy: defaultAutoBudgetPolicy() }));
+  });
+
+  it('edits one provider reserve while preserving the other provider and the separate Copilot allowance', async () => {
+    const policy = { ...defaultAutoBudgetPolicy(), reserves: { 'claude-code': 17, 'codex-cli': 23 } };
+    app().getHelperRouting.mockResolvedValue({ ...settings(), copilotAuto: false, autoBudget: { policy, invalid: false, editable: true } });
+    render(<HelperPresetsSection />);
+    fireEvent.change(await screen.findByTestId('helper-budget-claude-code'), { target: { value: '20' } });
+    await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', autoBudgetPolicy: {
+      ...policy, reserves: { 'claude-code': 20, 'codex-cli': 23 },
+    } }));
+    expect(screen.queryByTestId('helper-budget-copilot-cli')).toBeNull();
+  });
+
+  it('turns the preference off with its selected values retained for a later opt-in', async () => {
+    const policy = { ...defaultAutoBudgetPolicy(), reserves: { 'claude-code': 20, 'codex-cli': 25 } };
+    app().getHelperRouting.mockResolvedValue({ ...settings(), autoBudget: { policy, invalid: false, editable: true } });
+    render(<HelperPresetsSection />);
+    fireEvent.click(await screen.findByTestId('helper-budget-enabled'));
+    await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', autoBudgetPolicy: { ...policy, enabled: false } }));
+  });
+
+  it('shows a repair path for an unreadable policy and respects an app-scope editing restriction', async () => {
+    app().getHelperRouting.mockResolvedValue({ ...settings(), autoBudget: { policy: null, invalid: true, editable: true } });
+    render(<HelperPresetsSection />);
+    await screen.findByText('Use legacy selection');
+    expect(screen.getByRole('alert').textContent).toContain('Auto starts are paused');
+    fireEvent.click(screen.getByText('Use legacy selection'));
+    await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', autoBudgetPolicy: { ...defaultAutoBudgetPolicy(), enabled: false } }));
+  });
+
+  it('leaves reset-aware controls absent on an older desktop and disabled at a noneditable scope', async () => {
+    const { unmount } = render(<HelperPresetsSection />);
+    await screen.findByTestId('helper-presets-auto');
+    expect(screen.queryByTestId('helper-budget-policy')).toBeNull();
+    unmount();
+    app().getHelperRouting.mockResolvedValue({ ...settings(), autoBudget: { policy: defaultAutoBudgetPolicy(), invalid: false, editable: false } });
+    render(<HelperPresetsSection />);
+    expect((await screen.findByTestId('helper-budget-enabled')) as HTMLButtonElement).toHaveProperty('disabled', true);
+    expect(screen.getByTestId('helper-budget-claude-code')).toHaveProperty('disabled', true);
+  });
+
   it('turns Auto on app-wide with the revision it was made from', async () => {
     render(<HelperPresetsSection />);
     fireEvent.click(await screen.findByTestId('helper-presets-auto'));

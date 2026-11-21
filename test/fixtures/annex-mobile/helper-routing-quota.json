@@ -171,6 +171,9 @@
     "unknownStale": {
       "asOf": "2027-01-15T07:44:59.999Z",
       "fiveHour": null,
+      "incompleteWindows": [
+        "weekly"
+      ],
       "refreshAfterSeconds": 300,
       "source": "cli_query",
       "state": "unknown",
@@ -193,6 +196,11 @@
             }
           },
           "source": "default"
+        },
+        "autoBudget": {
+          "editable": true,
+          "invalid": false,
+          "policy": null
         },
         "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
@@ -577,7 +585,7 @@
             }
           }
         },
-        "revision": "r6.3",
+        "revision": "r5.3",
         "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       }
@@ -595,6 +603,11 @@
             }
           },
           "source": "default"
+        },
+        "autoBudget": {
+          "editable": true,
+          "invalid": false,
+          "policy": null
         },
         "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
@@ -988,7 +1001,7 @@
             }
           }
         },
-        "revision": "r6.3",
+        "revision": "r5.3",
         "serverTime": "2027-01-15T08:05:00.000Z",
         "version": 1
       }

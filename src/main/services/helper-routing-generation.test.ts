@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const W = vi.hoisted(() => ({ dir: '' }));
+const W = vi.hoisted(() => ({ dir: '', budgetTest: false, quotaSampledAt: 0 }));
 vi.mock('electron', () => ({ app: { getPath: () => W.dir } }));
 vi.mock('./log-service', () => ({ appLog: () => undefined }));
 vi.mock('../orchestrators', () => {
@@ -15,9 +15,12 @@ vi.mock('../orchestrators', () => {
       models: ['gpt-6.1-sol', 'gpt-6.1-terra'].map((id) => ({ id, label: id, efforts: ['high', 'xhigh'] })),
     }),
   };
-  return { getProvider: (id: string) => id === provider.id ? provider : undefined, getAllProviders: () => [provider] };
+  const claude = { ...provider, id: 'claude-code', listModels: async () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(),
+    models: ['opus', 'sonnet', 'haiku'].map((id) => ({ id, label: id, efforts: ['low', 'medium', 'high'] })) }) };
+  const all = () => W.budgetTest ? [claude, provider] : [provider];
+  return { getProvider: (id: string) => all().find((p) => p.id === id), getAllProviders: all };
 });
-vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: ['copilot-cli'] }) }));
+vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: W.budgetTest ? ['claude-code', 'copilot-cli'] : ['copilot-cli'] }) }));
 vi.mock('./agent-settings-service', () => ({ readProjectAgentDefaults: async () => ({}), updateProjectAgentDefaults: async () => ({}) }));
 vi.mock('./settings-audit', () => ({ appendSettingsAudit: async () => true }));
 vi.mock('../telemetry/feature-events', () => ({ helperPresetsChanged: () => undefined }));
@@ -28,17 +31,28 @@ vi.mock('./helper-model-catalog', () => ({
 }));
 vi.mock('./provider-quota', () => {
   const quota = { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null };
+  const sampledQuota = () => ({ state: 'low', source: 'cli_query', asOf: new Date(W.quotaSampledAt).toISOString(),
+    weekly: { usedPercent: 82, resetsAt: new Date(W.quotaSampledAt + 86400_000).toISOString() } });
   return {
     peekQuotaCalibrationPlan: () => undefined,
-    readProviderQuota: async () => quota, peekProviderQuota: () => quota,
+    readProviderQuota: async (provider: string) => {
+      if (provider !== 'claude-code' || !W.budgetTest) return quota;
+      W.quotaSampledAt = Date.now();
+      return sampledQuota();
+    },
+    // Match the production cache: peeking reuses evidence rather than sampling the clock again.
+    peekProviderQuota: (provider: string) => provider === 'claude-code' && W.budgetTest
+      ? sampledQuota() : quota,
     isProviderCoolingDown: async () => false, isProviderCoolingDownNow: () => false,
   };
 });
 
-import { decideAutoPlan, planHelperStart, readHelperAuto, type StartPlanRequest } from './helper-routing';
+import { decideAutoPlan, planHelperStart, readHelperAuto, updateHelperPresets, helperRoutingRevision, type StartPlanRequest } from './helper-routing';
 import { _resetHelperAutoStateForTesting, reservedLoad, settleAutoDecision } from './helper-auto-state';
-import { ensurePresetCellGenerations, getAutoHelpers, getCopilotAuto, getGlobalHelperCap, getPresetCellGeneration, getPresets, getPresetsRevision, saveAutoHelpers, saveCopilotAuto, savePresets, saveSettings } from './orchestration-settings';
+import { ensurePresetCellGenerations, getAutoHelpers, getCopilotAuto, getGlobalHelperCap, getPresetCellGeneration, getPresets, getPresetsRevision, saveAutoHelpers, saveCopilotAuto, savePresets, saveSettings, saveAutoBudgetPolicy, getAutoBudgetRules, getAutoBudgetSetting } from './orchestration-settings';
 import { resetAllSettingsStoresForTests } from './settings-store';
+import { defaultAutoBudgetPolicy } from '../../shared/helper-auto-budget';
+import * as modelCheck from './model-check';
 import { checkHelperLimit } from '../../shared/orchestration-policy';
 
 function barrier(): { promise: Promise<void>; release: () => void } {
@@ -55,6 +69,8 @@ const load = () => reservedLoad({ live: new Set(), notRunning: new Set() });
 let file: string;
 
 beforeEach(() => {
+  W.budgetTest = false;
+  W.quotaSampledAt = 0;
   W.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'helper-generation-race-'));
   resetAllSettingsStoresForTests();
   _resetHelperAutoStateForTesting();
@@ -72,6 +88,104 @@ afterEach(() => {
   _resetHelperAutoStateForTesting();
   resetAllSettingsStoresForTests();
   fs.rmSync(W.dir, { recursive: true, force: true });
+});
+
+describe('reset-aware reserves with real persistence and prepared starts', () => {
+  const policy = (reserve: number) => ({ ...defaultAutoBudgetPolicy(), reserves: { 'claude-code': reserve, 'codex-cli': reserve } });
+  async function prepared(reserve?: number) {
+    W.budgetTest = true;
+    await saveCopilotAuto(false);
+    if (reserve !== undefined) await saveAutoBudgetPolicy(policy(reserve));
+    await ensurePresetCellGenerations();
+    const result = await planHelperStart(request);
+    if (!result.ok || !result.plan) throw new Error('Expected prepared start');
+    return result.plan;
+  }
+  function allowed(plan: NonNullable<Awaited<ReturnType<typeof planHelperStart>>['plan']>, now?: number): boolean {
+    const result = decideAutoPlan(plan, {}, now);
+    if (result.ok && result.plan?.routing?.decisionId) settleAutoDecision(result.plan.routing.decisionId, 'creation_refused');
+    return result.ok;
+  }
+
+  it('keeps cached quota evidence at its sample time when the clock advances before the decision peek', async () => {
+    const sampledAt = 1_800_000_000_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(sampledAt);
+    const plan = await prepared(10);
+    // The decision captures its time before peeking. A peek must not invent a newer sample.
+    clock.mockReturnValue(sampledAt + 1);
+    expect(allowed(plan, sampledAt)).toBe(true);
+    // The same evidence really is future-dated for a decision before the sample.
+    expect(allowed(plan, sampledAt - 1)).toBe(false);
+  });
+
+  it.each(['committed', 'failed'])('applies a queued higher reserve throughout metadata/mapping writes, then settles its own %s result', async (outcome) => {
+    const plan = await prepared(10);
+    const generation = getPresetCellGeneration('claude-code', 'hard');
+    expect(allowed(plan)).toBe(true);
+    const firstEntered = barrier(), releaseFirst = barrier(), budgetEntered = barrier(), releaseBudget = barrier();
+    const rename = fs.promises.rename;
+    let writes = 0;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (to === file && ++writes === 1) { firstEntered.release(); await releaseFirst.promise; }
+      else if (to === file && writes === 2) {
+        budgetEntered.release(); await releaseBudget.promise;
+        if (outcome === 'failed') throw new Error('synthetic reserve rename failure');
+      }
+      return rename(from, to);
+    });
+    const preceding = savePresets(getPresets());
+    await firstEntered.promise;
+    const saving = saveAutoBudgetPolicy(policy(20)).catch((e: unknown) => e);
+    try {
+      expect(getAutoBudgetRules()).toEqual({ mode: 'reset_aware', reserves: policy(20).reserves });
+      expect(getAutoBudgetSetting()).toEqual(policy(10));
+      expect(allowed(plan)).toBe(false);
+      releaseFirst.release(); await preceding; await budgetEntered.promise;
+      expect(allowed(plan)).toBe(false);
+      expect(getAutoBudgetSetting()).toEqual(policy(10));
+    } finally { releaseFirst.release(); releaseBudget.release(); await Promise.allSettled([preceding, saving]); }
+    expect(getAutoBudgetSetting()).toEqual(policy(outcome === 'failed' ? 10 : 20));
+    expect(allowed(plan)).toBe(outcome === 'failed');
+    expect(getPresetCellGeneration('claude-code', 'hard')).toBe(generation);
+  });
+
+  it.each([false, true])('does not loosen admission before a durable commit (disable=%s)', async (disable) => {
+    const plan = await prepared(20);
+    const entered = barrier(), release = barrier();
+    const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (to === file) { entered.release(); await release.promise; }
+      return rename(from, to);
+    });
+    const saving = saveAutoBudgetPolicy({ ...policy(0), enabled: !disable });
+    try {
+      await entered.promise;
+      expect(getAutoBudgetRules()).toEqual({ mode: 'reset_aware', reserves: policy(20).reserves });
+      expect(allowed(plan)).toBe(false);
+    } finally { release.release(); await saving; }
+    expect(allowed(plan)).toBe(true);
+    expect(getAutoBudgetRules()?.mode).toBe(disable ? undefined : 'reset_aware');
+  });
+
+  it('stages restrictive admission before the service writer queue, then releases a stale rejected edit', async () => {
+    const plan = await prepared(10);
+    const entered = barrier(), release = barrier();
+    const check = modelCheck.checkHelperModel;
+    vi.spyOn(modelCheck, 'checkHelperModel').mockImplementationOnce(async (...args) => {
+      entered.release(); await release.promise; return check(...args);
+    });
+    const revision = helperRoutingRevision();
+    const mapping = updateHelperPresets({ revision, cells: [{ provider: 'claude-code', difficulty: 'hard', model: 'opus', effort: 'high' }] }, { surface: 'ui' });
+    await entered.promise;
+    const budget = updateHelperPresets({ revision, autoBudgetPolicy: policy(20) }, { surface: 'ui' }).catch((e: unknown) => e);
+    try {
+      expect(getAutoBudgetRules()).toEqual({ mode: 'reset_aware', reserves: policy(20).reserves });
+      expect(allowed(plan)).toBe(false);
+    } finally { release.release(); await mapping; }
+    expect(await budget).toMatchObject({ code: 'helper_routing_stale' });
+    expect(getAutoBudgetSetting()).toEqual(policy(10));
+    expect(allowed(plan)).toBe(true);
+  });
 });
 
 describe('Auto with real generation persistence', () => {
