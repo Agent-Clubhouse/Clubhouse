@@ -1,3 +1,4 @@
+src/main/index.ts:530:  annexServer.stop();
 src/main/ipc/annex-handlers.ts:39:    if (previous.enableServer) annexServer.stop();
 src/main/ipc/annex-handlers.ts:41:      annexServer.start();
 src/main/ipc/annex-handlers.ts:47:    annexServer.stop();
@@ -18,4 +19,3 @@ src/main/ipc/annex-handlers.ts:262:    annexClient.stopClient();
 src/main/ipc/annex-handlers.ts:297:      annexServer.start();
 src/main/ipc/annex-handlers.ts:313:    annexClient.startClient();
 src/main/ipc/annex-client-handlers.ts:54:    annexClient.scan();
-src/main/index.ts:530:  annexServer.stop();

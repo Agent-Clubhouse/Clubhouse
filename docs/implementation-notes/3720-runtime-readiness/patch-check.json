@@ -1,6 +1,6 @@
 {
-  "observedAt": "2026-11-21T13:36:40.645092+00:00",
-  "headAtCheck": "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+  "observedAt": "2026-11-21T13:41:43.553088+00:00",
+  "headAtCheck": "c4daf8bef235f540ab622626aadceeba0f6a5d90",
   "base": "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
   "argv": [
     "git",
@@ -35,6 +35,6 @@
     "src/main/shutdown-guard.ts": "a5dbfd865ddcb5c136030253c6088ea33739760a3ef85e812d3db3c70225519b",
     "src/main/index.ts": "7ccb06db73a11ad89afc088a4f92017a04d0e934708bd679e8f43bfab4ae19df"
   },
-  "patchSHA256": "8c89f4a554b31bfa62b81efbf4dc49eee9e88572ad48fc9540ac93013c0a5ab8",
+  "patchSHA256": "0ece8c14abc049e5040949c724f5d38e3c3495f719b33a3f2b98b786a016969e",
   "generatorSHA256": "2e7a2f516f08f5ba361cb558fa226e78c073aafc9439c9cd2454fd7e954d4e5e"
 }

@@ -20,10 +20,15 @@ export async function startVerifiedWithReceipt(expectedHost: string): Promise<()
   const generation = serverGeneration;
   const main = tlsServer, pairing = pairingServer;
   await starting; // Existing strict readiness and owned failure cleanup, unchanged.
-  const current = captureSecureListenerReadiness(expectedHost);
   if (generation !== serverGeneration || main !== tlsServer || pairing !== pairingServer) {
     throw new AnnexStartFailure(new Error('Annex listener attempt was superseded before confirmation.'), generation, true);
   }
+  if (boundHost !== expectedHost) {
+    // The current profile may belong to a newer committed writer outside settingsWrites.
+    // Identity/generation alone never authorize stopping it. Do not refresh expectedHost.
+    throw new AnnexStartFailure(new Error('Annex expected listener profile changed before confirmation.'), generation, true);
+  }
+  const current = captureSecureListenerReadiness(expectedHost);
   if (!current()) {
     // No await between identity/generation check and cleanup. Retire only this still-owned attempt.
     stop();
