@@ -1,4 +1,4 @@
-# Desktop reverse-control routes and readiness (#3613 P2/P7)
+# Desktop reverse-control routes and readiness (#3613 P2/P7/P7w)
 
 ## Route and reconnect slice (P2)
 
@@ -103,3 +103,109 @@ P7 results are not evidence for this current-source successor.
 
 The same fixture tsconfig also checks the complete current control, device-list
 and Settings test files for P7, in addition to the P2 route/reconnect fixtures.
+
+## Controller conversation reads (bounded P7w)
+
+Only the read-only controller conversation page/history and sessions adapters
+opt into the existing request selector. A connected direct route keeps its
+existing pinned HTTPS implementation and wins over reverse control. Otherwise,
+an already-authorized accepted control link can carry the existing GET routes.
+There is no dial, transport fallback or operation retry after selection.
+
+Reverse reads require the client to be running and enabled, active pinned
+desktop network membership, current pairing authority and no manual pause or
+pairing/pin/clock halt. Each read owns a cancellation/trust lease. Revocation,
+trust changes, explicit disconnect, stop, forget and host replacement retire
+that lease; a normal main-socket drop does not. Explicit Connect or Retry can
+lift a manual pause. Responses from a retired lease are never published.
+A successful network-enabled to network-disabled settings transition aborts
+only controller-read leases synchronously before notifying device observers.
+SAVE_SETTINGS serializes persistence plus runtime application, so each next
+request reads the prior committed or rolled-back settings, never an earlier
+save's optimistic cache. Every rejected save remains its caller's failure
+without poisoning the queue. Failed and semantic no-op saves do not apply the
+network-transition abort hook; direct requests and unrelated sockets keep
+their existing lifecycle.
+
+The receive limit remains exactly 8 MiB and the request timeout remains 30
+seconds. The local limit is checked against decoded inline bytes and before
+bulk credit/allocation, without new wire fields or changes to existing target
+limits, P5/P6 authority, deadlines or retry policy. Existing controller
+404/405, 401/403 and 429 states remain unavailable, forbidden and rate-limited.
+
+The existing read-only renderer consumes the optional desktop-local
+`reach.acceptedControl` observation and per-peer `acceptedControlRevision` to
+reload after accepted request-readiness loss/recovery or replacement and
+suppress stale results. Revisions capture current trust, accepted-link ownership
+and immediate withdrawal before the debounced device publication, so a burst
+ending with the same ready boolean does not hide a retired request. Heartbeats,
+presentation changes and other peers do not revise a selected peer's read.
+The renderer ignores reverse revisions while a direct main connection is up.
+This is local IPC metadata, not a
+phone/control/network wire field or routing authority. Aggregate direction
+presentation can stay up through an opened control or ordinary main link even
+when the accepted request link changes; it is not a substitute for this
+observation. Missing metadata retains the previous reverse-only hint. It keeps its
+polling, history selection and command-free UI. Global satellite connectivity,
+Settings/Details reads, writes, other adapters and subscriptions are unchanged.
+This is not full P7w/P8, terminal/transfer/federation or phone parity acceptance.
+Current-main integration, deterministic negative controls, complete changed
+fixture typing and independent exact-head review are required before delivery;
+historical P7w results and P7's prior 845-test execution do not transfer.
+The fixture configuration uses ES2022 library declarations for existing test
+APIs supported by the test/Electron runtime, including `Array.at`. Production's
+ES2020 target and `noImplicitAny` remain unchanged; raw wire fixtures and chat
+envelopes are contextually typed rather than excluded or cast through `any`.
+Observed runtime qualification is Node 24.22.1 and Electron 45.2.3. Complete
+fixture typing originally exposed 91 individually mapped diagnostics: 90
+legacy-exposed and one introduced. These were 48 TS2550 library diagnostics,
+39 TS7018 contextual-fixture diagnostics (38 legacy, one new), one legacy
+TS2345 incomplete PeerTrust fixture and three legacy TS2322 chat-envelope
+diagnostics. All originals and their classifications are retained.
+
+Pre-fix source `4a9cdd11e8146e4379efd124f65b46dc99694da8` had 890 actual
+passes on `fd80a1c58e3362b03440f7a315db8918cda15ee4`, but independent review
+found the network-transition and mixed-direction observation gaps above.
+Regression-only fixtures reproduced two actual SAVE_SETTINGS semantic failures
+with three controls passing, and three UI semantic failures with two
+accepted-only controls passing. Earlier IPC fixture setup failures remain
+separate receipts, not semantic negatives. That pre-fix proof is not acceptance
+of the corrected/current-main composition.
+
+The next `5a44c556d40c8892d0f8e1aa86bfb3de69efd035` composition on
+`d991a39e790f02b7da2b9385d2c32aeec0111ba9` ran 939 targeted tests and
+production types successfully, but exposed 84 additional integrated fixture
+diagnostics (83 TS7018, one TS2353) and two further reviewed race conditions.
+Exact source-line blame attributes all 84 to ancestors of that base, not new
+P7w test bodies. Explicit card/Changes contracts and malformed-payload contexts
+resolve them without changing their values or assertions. Incorporating the
+landed Connections paging source exposed one further legacy TS7018 in its
+role-page `next` fixture; a typed card callback replaces the existing cast.
+Regression-only fixtures separately reproduced coalesced ready-state recovery
+and a failed-first/successful-second optimistic save as two genuine failures.
+Those originals remain separate from the earlier red/green runs; neither
+pre-fix execution is acceptance of the final revision/serialized-save source.
+
+### Current controller-read proof and review
+
+Reviewed source `d0b59fbc8e7274ad1679ca15c5ee0c0776421590`, tree
+`90745279c3d077679193875e4c68f54a33ed8a3e`, incorporates actual landed
+`d8c7247a4dccc1ebff01f0f28f8e61279bdf5437`. Fresh gated validation on
+2026-11-21 ran 886 focused tests plus 65 selected refusal tests: 951 passes,
+with 646 deliberate selector skips. Production and complete fixture types
+passed; scoped lint had zero errors/162 warnings against the current base's
+zero/163, with no added diagnostics.
+
+The initial integrity harness retained stale fd80 fixture expectations after
+lint passed; that failure remains an original. Landed d991 had changed eleven
+fixtures by 324 bytes. A separate corrected gated phone-only check proved all
+103 fixtures/1,529,625 bytes identical across current base, source and worktree,
+SHA256 `8b9b4065da56af163f07fb62efa127d4789f2fa8775e6fbb02e77c1805cb620f`.
+Lint was not rerun; an intervening gate refusal remains no execution.
+
+The same independent reviewer inspected this exact twelve-file delta and
+original focused/type/lint/phone evidence, finding no significant issues after
+the lifecycle and save-ordering corrections. No commands were rerun for that
+review. A later documentation-only delivery tip preserves all eleven
+code/config blobs; it is not another test execution or broader P7w, full-duplex,
+security, merge or release acceptance.

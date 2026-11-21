@@ -4,6 +4,7 @@ import type { ControllerChatPage, ControllerChatQuery, ControllerReadResult } fr
 import { compactControllerEvents } from '../../../shared/controller-chat';
 import { DISPATCHER_CONTROLLER_NAME } from '../../../shared/dispatcher-name';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
+import { useAnnexStore, subscribeAnnexDevices } from '../../stores/annexStore';
 import { foldChatEvents } from '../../stores/chatStore';
 import { ChatStream } from '../agents/chat/ChatStream';
 import { RemoteChatContext } from '../agents/chat/remote-chat';
@@ -21,6 +22,12 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
   const satellite = useAnnexClientStore((s) => s.satellites.find((sat) => sat.fingerprint.toLowerCase() === machine.toLowerCase()));
   const machineName = satellite?.alias || 'other computer';
   const connection = satellite?.state;
+  const loadDevices = useAnnexStore((s) => s.loadDevices);
+  const device = useAnnexStore((s) => s.devices.find((candidate) => candidate.fingerprint.toLowerCase() === machine.toLowerCase()));
+  const reverseReady = connection !== 'connected' && device?.role === 'member' && device.kind === 'desktop'
+    && (device.reach?.acceptedControl
+      ?? (device.reach?.outbound.state === 'up' && device.reach.outbound.via === 'reverse'));
+  const reverseRevision = reverseReady ? device?.reach?.acceptedControlRevision ?? 0 : 0;
   const [selected, setSelected] = useState(''); // empty follows the current conversation
   const [sessions, setSessions] = useState<ChatSessionSummary[] | null>(null);
   const [sessionsError, setSessionsError] = useState(false);
@@ -34,6 +41,11 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
   const current = useRef<ControllerChatPage | null>(null);
   const historyRetry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const state = useMemo(() => foldChatEvents(undefined, page?.agentId ?? 'remote-controller', events), [page?.agentId, events]);
+
+  useEffect(() => {
+    void loadDevices();
+    return subscribeAnnexDevices();
+  }, [loadDevices]);
 
   useEffect(() => {
     const token = ++generation.current;
@@ -85,7 +97,7 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
       if (historyRetry.current) clearTimeout(historyRetry.current);
       historyRetry.current = null;
     };
-  }, [machine, selected, retry, connection]);
+  }, [machine, selected, retry, connection, reverseReady, reverseRevision]);
 
   const earlier = async () => {
     const before = current.current;

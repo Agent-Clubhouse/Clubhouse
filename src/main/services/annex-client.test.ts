@@ -1,4 +1,6 @@
-import { REMOTE_DETAILS_CARD_IDS } from '../../shared/remote-agent-details';
+import { REMOTE_DETAILS_CARD_IDS, type RemoteAgentDetails, type RemoteDetailsCard } from '../../shared/remote-agent-details';
+import type { RemoteAgentChanges } from '../../shared/remote-agent-changes';
+import type { SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
 /**
  * Tests for the Annex V2 Client — discovery, pairing, and connection management.
  *
@@ -10,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { networkInterfaces } from 'node:os';
 import * as tls from 'tls';
 import { Socket as NetSocket } from 'net';
-import type { AnnexPeer } from '../../shared/types';
+import type { AnnexPeer, AnnexSettings } from '../../shared/types';
 import { authorize, stillAuthorized } from './annex-authorizer';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,7 @@ vi.mock('node:os', async (original) => {
 // The membership channel has its own tests (annex-network-channel.test.ts).
 vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn(), hasChannel: vi.fn(() => false) }));
 vi.mock('./annex-network-membership', () => ({
+  initNetworkMembership: vi.fn(),
   noteLocalJoin: vi.fn(),
   noteLocalRemoval: vi.fn(),
   // Pairing ids (#3107): fixed, so answers and fixtures don't change from run to run.
@@ -78,6 +81,7 @@ const LOCAL_IDENTITY = {
 vi.mock('./annex-identity', () => ({
   getOrCreateIdentity: vi.fn(),
   getIdentity: vi.fn(),
+  getPublicIdentity: vi.fn(),
   computeFingerprint: vi.fn(),
 }));
 
@@ -123,7 +127,11 @@ vi.mock('./annex-settings', () => ({
     autoReconnect: true,
   }),
   getLastPorts: vi.fn(() => ({ mainPort: 0, pairingPort: 0 })),
+  saveSettings: vi.fn(),
 }));
+
+vi.mock('./clubhouse-mcp/tools/device-tools', () => ({ setDeviceToolHost: vi.fn() }));
+vi.mock('./clubhouse-mcp/tools/annex-network-tools', () => ({ setAnnexNetworkToolHost: vi.fn() }));
 
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
@@ -158,11 +166,14 @@ import * as annexPeers from './annex-peers';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
 import * as annexSettings from './annex-settings';
+import { devicesChanged, onDevicesChanged, resetDeviceSignalForTests } from './annex-device-signal';
+import { CONTROLLER_CHAT_MAX_BYTES } from '../../shared/controller-chat';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import { EventEmitter } from 'events';
 import * as http from 'http';
 import * as https from 'https';
+import { ipcMain } from 'electron';
 
 describe('bracketHost', () => {
   it('passes through IPv4 addresses', () => {
@@ -988,7 +999,7 @@ describe('annex-client', () => {
       await bonjourFindCallback!(makeService());
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      const accepted = {
+      const accepted: Record<string, unknown> = {
         projects: [],
         agents: {},
         quickAgents: {},
@@ -1079,7 +1090,7 @@ describe('annex-client', () => {
   describe('a satellite that cannot build a snapshot', () => {
     const FINGERPRINT = 'SNAP:FAILED';
     const frame = (value: object) => Buffer.from(JSON.stringify(value));
-    const snapshot = { type: 'snapshot', payload: { protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1 } };
+    const snapshot: { type: string; payload: Record<string, unknown> } = { type: 'snapshot', payload: { protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1 } };
 
     async function connected() {
       const { WebSocket: WsMock } = await import('ws');
@@ -1133,7 +1144,8 @@ describe('annex-client', () => {
 
   describe('canvases a satellite left out of its snapshot', () => {
     const FINGERPRINT = 'CANVAS:OMITTED';
-    const STATE = { canvases: [{ id: 'canvas_1', name: 'Main', views: [] }], activeCanvasId: 'canvas_1' };
+    const STATE: { canvases: Array<{ id: string; name: string; views: unknown[] }>; activeCanvasId: string } =
+      { canvases: [{ id: 'canvas_1', name: 'Main', views: [] }], activeCanvasId: 'canvas_1' };
     let send: (frame: object) => void;
     let routes: Record<string, { status: number; body: unknown }>;
 
@@ -1176,7 +1188,7 @@ describe('annex-client', () => {
       await vi.waitFor(() => expect(annexClient.getSatellites()[0]?.state).toBe('connected'));
     }
 
-    const truncated = (lastSeq: number) => ({
+    const truncated = (lastSeq: number): { type: string; payload: { projects: Array<{ id: string }> } & Record<string, unknown> } => ({
       type: 'snapshot',
       payload: {
         protocolVersion: 2, projects: [{ id: 'proj_1' }], agents: {}, quickAgents: {}, theme: {}, orchestrators: {}, pendingPermissions: [], lastSeq,
@@ -1241,7 +1253,7 @@ describe('annex-client', () => {
     });
 
     describe('with a canvas changed after it was known', () => {
-      const edit = (name: string) => ({
+      const edit = (name: string): { type: string; payload: { projectId: string; state: Record<string, unknown> } } => ({
         type: 'canvas:state',
         payload: { projectId: 'proj_1', state: { canvasId: 'canvas_1', name, views: [{ id: 'v' }], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1, zoomedViewId: null, allCanvasTabs: [{ id: 'canvas_1', name }], activeCanvasId: 'canvas_1' } },
       });
@@ -1306,7 +1318,7 @@ describe('annex-client', () => {
 
     describe('with a project that appears after the fetch', () => {
       const NEW_ROUTE = '/api/v1/mobile/canvas/proj_new';
-      const NEW_STATE = { canvases: [{ id: 'new_canvas', name: 'New', views: [] }], activeCanvasId: 'new_canvas' };
+      const NEW_STATE: typeof STATE = { canvases: [{ id: 'new_canvas', name: 'New', views: [] }], activeCanvasId: 'new_canvas' };
       const withNew = (lastSeq: number) => {
         const frame = truncated(lastSeq);
         return { ...frame, payload: { ...frame.payload, projects: [{ id: 'proj_1' }, { id: 'proj_new' }] } };
@@ -1398,9 +1410,9 @@ describe('annex-client', () => {
     });
 
     describe('with a canvas too large for a frame', () => {
-      const full = () => ({ type: 'snapshot', payload: { ...truncated(5).payload, snapshotTruncated: undefined, canvasState: { proj_1: STATE }, appCanvasState: STATE } });
+      const full = (): { type: string; payload: Record<string, unknown> } => ({ type: 'snapshot', payload: { ...truncated(5).payload, snapshotTruncated: undefined, canvasState: { proj_1: STATE }, appCanvasState: STATE } });
       const marker = { type: 'canvas:state', payload: { projectId: 'proj_1', stateOmitted: { version: 1, reason: 'frame_limit', bytes: 9_000_000 } } };
-      const edit = (name: string) => ({ type: 'canvas:state', payload: { projectId: 'proj_1', state: { canvasId: 'canvas_1', name, views: [], viewport: {}, nextZIndex: 0, zoomedViewId: null } } });
+      const edit = (name: string): { type: string; payload: Record<string, unknown> } => ({ type: 'canvas:state', payload: { projectId: 'proj_1', state: { canvasId: 'canvas_1', name, views: [], viewport: {}, nextZIndex: 0, zoomedViewId: null } } });
       const big = (name: string) => ({ canvases: [{ id: 'canvas_1', name }], activeCanvasId: 'canvas_1' });
       const held = () => {
         const release: Array<() => void> = [];
@@ -1516,7 +1528,7 @@ describe('annex-client', () => {
     it('does not put an older fetch over a full snapshot that came meanwhile', async () => {
       await connectedSatellite();
       send(truncated(5));
-      const newer = { canvases: [], activeCanvasId: 'newer' };
+      const newer: typeof STATE = { canvases: [], activeCanvasId: 'newer' };
       send({ type: 'snapshot', payload: { ...truncated(6).payload, snapshotTruncated: undefined, canvasState: { proj_1: newer } } });
       await new Promise((r) => setTimeout(r, 20));
       expect(snapshotEvents().at(-1).canvasState).toEqual({ proj_1: newer });
@@ -2694,7 +2706,7 @@ describe('annex-client', () => {
     it('applies snapshot with higher sequence number', async () => {
       const { messageCb } = await connectSatelliteAN005();
 
-      const snapshot1 = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 5, protocolVersion: 2 };
+      const snapshot1: Record<string, unknown> = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 5, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot1 }));
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(5);
@@ -2708,7 +2720,7 @@ describe('annex-client', () => {
     it('discards snapshot with lower sequence number (stale on reconnect)', async () => {
       const { messageCb } = await connectSatelliteAN005();
 
-      const snapshot_new = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 20, protocolVersion: 2 };
+      const snapshot_new: Record<string, unknown> = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 20, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot_new }));
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(20);
@@ -2726,7 +2738,7 @@ describe('annex-client', () => {
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot).toBeNull();
 
-      const snapshot = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1, protocolVersion: 2 };
+      const snapshot: Record<string, unknown> = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot }));
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(1);
@@ -2737,7 +2749,7 @@ describe('annex-client', () => {
       const { broadcastToAllWindows: bcast } = await import('../util/ipc-broadcast');
       vi.mocked(bcast).mockClear();
 
-      const snapshot_new = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 15, protocolVersion: 2 };
+      const snapshot_new: Record<string, unknown> = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 15, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot_new }));
       const broadcastCountAfterNew = vi.mocked(bcast).mock.calls.length;
 
@@ -2785,15 +2797,15 @@ describe('annex-client', () => {
     }
 
     describe('local positive snapshot receipts', () => {
-      const payload = (lastSeq = 1) => ({ protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq,
+      const payload = (lastSeq = 1): Record<string, unknown> => ({ protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq,
         dispatcher: { enabled: true, agent: null }, dispatcherPresence: { remotes: [] } });
       const send = (index: number, type: string, body: object) => sockets[index].handlers.message(Buffer.from(JSON.stringify({ type, payload: body })));
       const current = () => annexClient.getSatellite(FP)!;
       const publicBroadcast = () => vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).at(-1)![1] as Array<{ snapshotReceipt?: string }>;
 
-      const metadata = () => ({ version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) });
-      const roleResponse = () => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: metadata() });
+      const metadata = (): RemoteAgentDetails => ({ version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) });
+      const roleResponse = (): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: metadata() });
       const broadcasts = () => vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).length;
       function answer(status: number, body: object, hold = false) {
         let finish!: () => void;
@@ -3610,7 +3622,10 @@ describe('annex-client', () => {
         vi.mocked(annexPeers.listPeers).mockReturnValue([]);
         vi.mocked(annexPeers.commitVerifiedRoute).mockReturnValue(true);
         vi.mocked(annexPeers.setTypedHost).mockReturnValue(true);
-        vi.mocked(annexPeers.trustOf).mockImplementation((p: any) => ({ fingerprint: p.fingerprint, tlsCertificateFingerprint: p.tlsCertificateFingerprint, pairingId: p.pairingId }));
+        vi.mocked(annexPeers.trustOf).mockImplementation((p) => ({
+          fingerprint: p.fingerprint, publicKey: p.publicKey, pairedAt: p.pairedAt,
+          tlsCertificateFingerprint: p.tlsCertificateFingerprint, pairingId: p.pairingId,
+        }));
       });
 
       it.each([
@@ -3999,7 +4014,7 @@ describe('annex-client', () => {
   describe('chat across desktops (#2390)', () => {
     const FP = 'dd:04:dd:04';
     let requests: Array<{ url: string; method: string; body?: any }>;
-    let answers: Array<{ status: number; body: object; headers?: Record<string, string> }>;
+    let answers: Array<{ status: number; body: object; headers?: Record<string, string>; hold?: (finish: () => void) => void }>;
 
     beforeEach(() => {
       requests = [];
@@ -4013,9 +4028,12 @@ describe('annex-client', () => {
             requests.push({ url, method: options.method, body });
             const answer = answers.shift() ?? { status: 200, body: {} };
             const res = Object.assign(new EventEmitter(), { statusCode: answer.status, headers: answer.headers });
-            cb(res);
-            res.emit('data', Buffer.from(JSON.stringify(answer.body)));
-            res.emit('end');
+            const finish = () => {
+              cb(res);
+              res.emit('data', Buffer.from(JSON.stringify(answer.body)));
+              res.emit('end');
+            };
+            if (answer.hold) answer.hold(finish); else finish();
           },
         });
         return req;
@@ -4024,8 +4042,8 @@ describe('annex-client', () => {
     });
 
     describe('selected Dispatcher role transport', () => {
-      const response = () => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: { version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null,
-        sessionId: null, nativeSessionId: null, settings: null, cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) } });
+      const response = (): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: { version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null,
+        sessionId: null, nativeSessionId: null, settings: null, cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) } });
       beforeEach(() => { vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as never); });
       it('uses only the selected pinned host and fixed metadata GET, retaining no role response on satellites', async () => {
         const value = response(); answers.push({ status: 200, body: value });
@@ -4055,8 +4073,8 @@ describe('annex-client', () => {
       });
       it('pages role Connections bound to the first page\'s role agent, with older hosts unavailable', async () => {
         const query = { card: 'connections' as const, source: 'incoming' as const, offset: 25, projectOffset: 0 };
-        const page = (agentId = 'role1', source = 'incoming') => { const value = response(); value.agentId = agentId; Object.assign(value.details, { agentId, connectionPageEnvelope: 1, connectionPageOnly: true, connectionPages: 1 });
-          value.details.cards = value.details.cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { source, offset: 25, projectOffset: 0, next: null, known: 0, complete: true } } : { ...c, requested: false }) as never; return value; };
+        const page = (agentId = 'role1', source: NonNullable<RemoteDetailsCard['connectionPage']>['source'] = 'incoming') => { const value = response(); value.agentId = agentId; Object.assign(value.details, { agentId, connectionPageEnvelope: 1, connectionPageOnly: true, connectionPages: 1 });
+          value.details.cards = value.details.cards.map((c): RemoteDetailsCard => c.id === 'connections' ? { ...c, connectionPage: { source, offset: 25, projectOffset: 0, next: null, known: 0, complete: true } } : { ...c, requested: false }); return value; };
         const value = page(); answers.push({ status: 200, body: value });
         expect(await annexClient.requestDispatcherDetails(FP, query, 'role1')).toEqual({ status: 'ok', value });
         expect(requests.at(-1)!.url).toContain('/api/v1/dispatcher/details?card=connections&source=incoming&offset=25&projectOffset=0');
@@ -4099,6 +4117,355 @@ describe('annex-client', () => {
       });
     });
 
+    describe('controller-only request routes', () => {
+      let targetPeer: AnnexPeer | undefined;
+      let accepted = true;
+      const value: { version: number; events: unknown[]; readOnly: boolean } = { version: 1, events: [], readOnly: true };
+
+      beforeEach(() => {
+        annexClient.stopClient();
+        targetPeer = {
+          fingerprint: FP, publicKey: 'target', alias: 'Target', icon: 'computer', color: 'indigo',
+          pairedAt: '', lastSeen: '', role: 'member', kind: 'desktop',
+          tlsCertificateFingerprint: 'target-pin', tlsCertificatePem: 'target-cert',
+        };
+        accepted = true;
+        vi.mocked(annexPeers.getPeer).mockImplementation((fp) => fp.toLowerCase() === FP ? targetPeer : undefined);
+        vi.mocked(annexPeers.listPeers).mockImplementation(() => targetPeer ? [targetPeer] : []);
+        vi.spyOn(annexControl, 'getLinkReadiness').mockImplementation((fp) => ({
+          acceptedHere: fp === FP && accepted, openedHere: false,
+        }));
+        vi.spyOn(annexControl, 'request').mockResolvedValue({
+          status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)),
+        });
+        annexClient.startClient();
+      });
+
+      afterEach(() => {
+        annexClient.stopClient();
+        vi.mocked(annexControl.getLinkReadiness).mockRestore();
+        vi.mocked(annexControl.request).mockRestore();
+      });
+
+      it('preserves read revision across one actual notification burst without revising unrelated presence', async () => {
+        vi.useFakeTimers();
+        annexClient.stopClient();
+        resetDeviceSignalForTests();
+        annexClient.startClient();
+        const before = annexClient.getControllerReadObservation(FP);
+        let finish!: (result: annexControl.ControlResult) => void;
+        let signal: AbortSignal | undefined;
+        vi.mocked(annexControl.request).mockImplementation((_fp, _input, options) => new Promise((resolve) => {
+          finish = resolve; signal = options?.signal;
+        }));
+        const pending = annexClient.requestControllerChatPage(FP);
+        const observed: annexClient.ControllerReadObservation[] = [];
+        const stop = onDevicesChanged(() => { observed.push(annexClient.getControllerReadObservation(FP)); });
+        try {
+          accepted = false; devicesChanged();
+          expect(signal?.aborted).toBe(true);
+          accepted = true; devicesChanged();
+          await vi.advanceTimersByTimeAsync(50);
+          expect(observed).toHaveLength(1);
+          expect(observed[0].ready).toBe(true);
+          expect(observed[0].revision).toBeGreaterThan(before.revision);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          vi.mocked(annexControl.request).mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+          const stable = annexClient.getControllerReadObservation(FP).revision;
+          targetPeer!.alias = 'Renamed';
+          devicesChanged('last-seen');
+          devicesChanged();
+          await vi.advanceTimersByTimeAsync(50);
+          expect(annexClient.getControllerReadObservation(FP).revision).toBe(stable);
+          expect(annexControl.request).toHaveBeenCalledTimes(2);
+        } finally { stop(); vi.useRealTimers(); }
+      });
+
+      it('retires only the old accepted-link epoch while a newly-owned read remains valid', async () => {
+        const epoch = vi.spyOn(annexControl, 'getAcceptedLinkEpoch').mockReturnValue(1);
+        const held: Array<{ finish: (result: annexControl.ControlResult) => void; signal: AbortSignal | undefined }> = [];
+        vi.mocked(annexControl.request).mockImplementation((_fp, _input, options) => new Promise((resolve) => {
+          held.push({ finish: resolve, signal: options?.signal });
+        }));
+        const old = annexClient.requestControllerChatPage(FP);
+        epoch.mockReturnValue(2);
+        const fresh = annexClient.requestControllerChatSessions(FP);
+        devicesChanged();
+        expect(held[0].signal?.aborted).toBe(true);
+        expect(held[1].signal?.aborted).toBe(false);
+        for (const pending of held) pending.finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+        expect(await old).toEqual({ status: 'offline' });
+        expect(await fresh).toEqual({ status: 'ok', value });
+      });
+
+      describe('actual SAVE_SETTINGS controller lease lifecycle', () => {
+        let save: (event: unknown, settings: AnnexSettings) => unknown;
+        let finish: (result: annexControl.ControlResult) => void;
+        let signal: AbortSignal | undefined;
+        let pending: ReturnType<typeof annexClient.requestControllerChatPage>;
+        let enabled: AnnexSettings;
+
+        beforeEach(async () => {
+          const handlers = new Map<string, (...args: unknown[]) => unknown>();
+          vi.spyOn(ipcMain, 'handle').mockImplementation((channel, handler) => { handlers.set(channel, handler); });
+          const { registerAnnexHandlers } = await import('../ipc/annex-handlers');
+          registerAnnexHandlers();
+          save = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
+          enabled = { ...annexSettings.getSettings(), networkEnabled: true };
+          vi.mocked(annexSettings.getSettings).mockReturnValue(enabled);
+          vi.mocked(annexSettings.saveSettings).mockImplementation(async (settings) => {
+            vi.mocked(annexSettings.getSettings).mockReturnValue(settings);
+          });
+          vi.mocked(annexControl.request).mockImplementation((_fp, _input, options) => new Promise((resolve) => {
+            finish = resolve; signal = options?.signal;
+          }));
+          pending = annexClient.requestControllerChatPage(FP);
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        });
+
+        afterEach(() => {
+          vi.mocked(ipcMain.handle).mockRestore();
+          resetDeviceSignalForTests();
+        });
+
+        it.each(['sequential', 'overlapping'] as const)('retires the old lease across %s network disable/re-enable without injecting a device event', async (order) => {
+          const disabling = save({}, { ...enabled, networkEnabled: false });
+          if (order === 'sequential') {
+            await disabling;
+            expect(signal?.aborted).toBe(true);
+          }
+          const enabling = save({}, enabled);
+          await Promise.all([disabling, enabling]);
+          expect(signal?.aborted).toBe(true);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          vi.mocked(annexControl.request).mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+          expect(annexControl.request).toHaveBeenCalledTimes(2);
+        });
+
+        it.each(['failed', 'no-op'] as const)('keeps the current lease through a %s settings save', async (kind) => {
+          if (kind === 'failed') {
+            vi.mocked(annexSettings.saveSettings).mockRejectedValue(new Error('save failed'));
+            await expect(save({}, { ...enabled, networkEnabled: false })).rejects.toThrow('save failed');
+          } else await save({}, enabled);
+          expect(signal?.aborted).toBe(false);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'ok', value });
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        });
+
+        it('retires a committed disable after an overlapping optimistic disable failed', async () => {
+          let rejectFirst!: () => void;
+          let writes = 0;
+          vi.mocked(annexSettings.saveSettings).mockImplementation((settings) => {
+            const previous = annexSettings.getSettings();
+            vi.mocked(annexSettings.getSettings).mockReturnValue(settings);
+            if (writes++ > 0) return Promise.resolve();
+            return new Promise((_resolve, reject) => {
+              rejectFirst = () => {
+                if (annexSettings.getSettings() === settings) vi.mocked(annexSettings.getSettings).mockReturnValue(previous);
+                reject(new Error('first save failed'));
+              };
+            });
+          });
+          const first = save({}, { ...enabled, networkEnabled: false });
+          const failed = expect(first).rejects.toThrow('first save failed');
+          const second = save({}, { ...enabled, networkEnabled: false });
+          await Promise.resolve();
+          rejectFirst();
+          await failed;
+          await second;
+          expect(signal?.aborted).toBe(true);
+          await save({}, enabled);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          vi.mocked(annexControl.request).mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+        });
+
+        it('keeps the successful disable when a queued optimistic re-enable fails, then accepts a fresh successful retry', async () => {
+          let writes = 0;
+          vi.mocked(annexSettings.saveSettings).mockImplementation(async (settings) => {
+            const previous = annexSettings.getSettings();
+            vi.mocked(annexSettings.getSettings).mockReturnValue(settings);
+            if (++writes === 2) {
+              vi.mocked(annexSettings.getSettings).mockReturnValue(previous);
+              throw new Error('second save failed');
+            }
+          });
+          const first = save({}, { ...enabled, networkEnabled: false });
+          const second = expect(save({}, enabled)).rejects.toThrow('second save failed');
+          await first;
+          await second;
+          expect(annexSettings.getSettings().networkEnabled).toBe(false);
+          expect(signal?.aborted).toBe(true);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          await save({}, enabled);
+          vi.mocked(annexControl.request).mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+        });
+
+        it('does not revise already-disabled reads for repeated or unrelated settings saves', async () => {
+          const disabled = { ...enabled, networkEnabled: false };
+          await save({}, disabled);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          const revision = annexClient.getControllerReadObservation(FP).revision;
+          await save({}, disabled);
+          await save({}, { ...disabled, alias: 'Renamed' });
+          expect(annexClient.getControllerReadObservation(FP).revision).toBe(revision);
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not reset a main socket or cancel an already-sent direct controller request while retiring reverse leases', async () => {
+          let finishDirect!: () => void;
+          annexClient._addConnectedSatelliteForTesting(FP);
+          answers.push({ status: 200, body: value, hold: (resolve) => { finishDirect = resolve; } });
+          const direct = annexClient.requestControllerChatPage(FP);
+          expect(requests).toHaveLength(1);
+          await save({}, { ...enabled, networkEnabled: false });
+          expect(signal?.aborted).toBe(true);
+          expect(annexClient.getSatellite(FP)?.state).toBe('connected');
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          finishDirect();
+          expect(await direct).toEqual({ status: 'ok', value });
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        });
+
+        it('retires leases on actual client-off and does not clear a manual pause on network re-enable', async () => {
+          await save({}, { ...enabled, enableClient: false });
+          expect(signal?.aborted).toBe(true);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          await save({}, enabled);
+          annexClient.disconnect(FP);
+          await save({}, { ...enabled, networkEnabled: false });
+          await save({}, enabled);
+          expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'offline' });
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        });
+      });
+
+      it('reads only controller pages and sessions on an authorized reverse route without a main address', async () => {
+        expect(await annexClient.requestControllerChatPage(FP, { sessionId: 'a?/#', beforeSeq: 3 })).toEqual({ status: 'ok', value });
+        expect(await annexClient.requestControllerChatSessions(FP)).toEqual({ status: 'ok', value });
+        expect(annexControl.request).toHaveBeenNthCalledWith(1, FP,
+          { method: 'GET', path: '/api/v1/network/dispatcher/controller/chat?sessionId=a%3F%2F%23&beforeSeq=3' },
+          expect.objectContaining({ maxResponseBytes: CONTROLLER_CHAT_MAX_BYTES, timeoutMs: 30_000 }));
+        expect(annexControl.request).toHaveBeenNthCalledWith(2, FP,
+          { method: 'GET', path: '/api/v1/network/dispatcher/controller/chat/sessions' },
+          expect.objectContaining({ signal: expect.any(AbortSignal) }));
+        expect(requests).toHaveLength(0);
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+        expect(await annexClient.requestAgentSettings(FP, 'a')).toEqual({ status: 'offline' });
+        await expect(annexClient.postToMachine(FP, '/api/v1/anything', {})).rejects.toThrow('Satellite not connected');
+        expect(annexControl.request).toHaveBeenCalledTimes(2);
+      });
+
+      it('keeps direct requests preferred and never retries a failed direct request on control', async () => {
+        annexClient._addConnectedSatelliteForTesting(FP);
+        answers.push({ status: 200, body: value });
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+        vi.mocked(https.request).mockImplementationOnce(() => { throw new Error('reset'); });
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'error' });
+        expect(annexControl.request).not.toHaveBeenCalled();
+        expect(requests).toHaveLength(1);
+      });
+
+      it.each([404, 405, 401, 403, 429, 500])('preserves reverse controller status %s without route retries', async (status) => {
+        vi.mocked(annexControl.request).mockResolvedValue({
+          status, headers: { 'retry-after': '3' }, body: Buffer.from('{}'),
+        });
+        const expected = status === 404 || status === 405 ? { status: 'unavailable' }
+          : status === 401 || status === 403 ? { status: 'forbidden' }
+          : status === 429 ? { status: 'rate_limited', retryAfterMs: 3000 } : { status: 'error' };
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual(expected);
+        expect(annexControl.request).toHaveBeenCalledTimes(1);
+        expect(requests).toHaveLength(0);
+      });
+
+      it.each(['phone', 'pending', 'unpaired', 'one-way', 'opposite'] as const)('never treats %s as reverse read authority', async (kind) => {
+        if (kind === 'phone') targetPeer!.kind = 'phone';
+        if (kind === 'pending') targetPeer!.networkPending = true;
+        if (kind === 'unpaired') vi.mocked(annexPeers.peerNeedsPairing).mockReturnValue(true);
+        if (kind === 'one-way') targetPeer!.role = 'satellite';
+        if (kind === 'opposite') vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: true });
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'offline' });
+        expect(annexControl.request).not.toHaveBeenCalled();
+        expect(requests).toHaveLength(0);
+      });
+
+      it('retains old-peer direct reads and does not retry a failed reverse request', async () => {
+        accepted = false;
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'offline' });
+        annexClient._addConnectedSatelliteForTesting(FP);
+        answers.push({ status: 200, body: value });
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+        annexClient._receiveSatelliteDisconnectForTesting(FP);
+        accepted = true;
+        vi.mocked(annexControl.request).mockRejectedValue(new annexControl.ControlRequestError('transport_unavailable', false, 'once'));
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'error' });
+        expect(annexControl.request).toHaveBeenCalledTimes(1);
+        expect(requests).toHaveLength(1);
+      });
+
+      it.each(['disconnect', 'stop', 'off', 'forget', 'pin', 'pairing', 'revocation', 'host'] as const)(
+        'cancels a reverse controller lease on %s without accepting its late response', async (kind) => {
+          let finish!: (result: annexControl.ControlResult) => void;
+          let signal: AbortSignal | undefined;
+          vi.mocked(annexControl.request).mockImplementation((_fp, _input, options) => new Promise((resolve, reject) => {
+            finish = resolve;
+            signal = options?.signal;
+            signal?.addEventListener('abort', () => reject(new annexControl.ControlRequestError('cancelled', false, 'held')), { once: true });
+          }));
+          const pending = annexClient.requestControllerChatPage(FP);
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+          if (kind === 'disconnect') annexClient.disconnect(FP);
+          if (kind === 'stop') annexClient.stopClient();
+          if (kind === 'off') vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), enableClient: false });
+          if (kind === 'forget') { annexClient.forgetSatellite(FP); targetPeer = undefined; }
+          if (kind === 'pin') targetPeer!.tlsCertificateFingerprint = 'replacement-pin';
+          if (kind === 'pairing') vi.mocked(annexPeers.peerNeedsPairing).mockReturnValue(true);
+          if (kind === 'revocation') targetPeer = undefined;
+          if (kind === 'host') expect(await annexClient.setSatelliteHost(FP, 'replacement.local:9443')).toEqual({ ok: true });
+          devicesChanged();
+          expect(signal?.aborted).toBe(true);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        },
+      );
+
+      it('keeps a reverse lease across an ordinary main connection epoch withdrawal', async () => {
+        let finish!: (result: annexControl.ControlResult) => void;
+        let signal: AbortSignal | undefined;
+        vi.mocked(annexControl.request).mockImplementation((_fp, _input, options) => new Promise((resolve) => {
+          finish = resolve; signal = options?.signal;
+        }));
+        const pending = annexClient.requestControllerChatPage(FP);
+        expect(annexControl.request).toHaveBeenCalledTimes(1);
+        annexClient._addConnectedSatelliteForTesting(FP);
+        annexClient._receiveSatelliteDisconnectForTesting(FP);
+        devicesChanged();
+        expect(signal?.aborted).toBe(false);
+        finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+        expect(await pending).toEqual({ status: 'ok', value });
+      });
+
+      it('requires an explicit connect after a manual pause, without redefining main connectivity', async () => {
+        annexClient.disconnect(FP);
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'offline' });
+        annexClient.connect(FP);
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+      });
+    });
+
     it.each(['requestAgentSettings', 'requestAgentDetails', 'requestAgentChanges'] as const)('discards %s responses across an in-place disconnect/reconnect epoch', async (method) => {
       let finish!: () => void;
       vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
@@ -4110,7 +4477,8 @@ describe('annex-client', () => {
         }, destroy: vi.fn() });
         return req;
       }) as any);
-      const pending = annexClient[method](FP, 'a1', method === 'requestAgentChanges' ? { scope: 'branch' } : undefined);
+      const pending = method === 'requestAgentChanges' ? annexClient.requestAgentChanges(FP, 'a1', { scope: 'branch' })
+        : annexClient[method](FP, 'a1');
       annexClient._receiveSatelliteDisconnectForTesting(FP);
       vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
       annexClient.connect(FP);
@@ -4122,13 +4490,13 @@ describe('annex-client', () => {
     it('binds bounded selected-source Details pages and refuses malformed/old-host page responses', async () => {
       const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
       const query = { card: 'connections' as const, source: 'helpers' as const, offset: 8, projectOffset: 16 };
-      const value = { version: 1, connectionPages: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id === 'connections' && { connectionPage: { source: 'helpers', offset: 8, projectOffset: 16, known: 9, complete: true, next: null } }) })) };
+      const value: RemoteAgentDetails = { version: 1, connectionPages: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id === 'connections' && { connectionPage: { source: 'helpers', offset: 8, projectOffset: 16, known: 9, complete: true, next: null } } satisfies Pick<RemoteDetailsCard, 'connectionPage'>) })) };
       answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0]).toMatchObject({ method: 'GET' }); expect(requests[0].url).toContain('/agents/a1/details?card=connections&source=helpers&offset=8&projectOffset=16');
       const { selectedConnectionPageEnvelope } = await import('./remote-details-presentation');
-      const independent = structuredClone(value) as unknown as import('../../shared/remote-agent-details').RemoteAgentDetails; selectedConnectionPageEnvelope(independent);
+      const independent = structuredClone(value); selectedConnectionPageEnvelope(independent);
       expect(isRemoteAgentDetails(independent, 'a1')).toBe(true); answers.push({ status: 200, body: independent }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value: independent });
       answers.push({ status: 200, body: independent }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
       const ignored = { ...value, connectionPageEnvelope: 1 }; expect(isRemoteAgentDetails(ignored, 'a1')).toBe(true); answers.push({ status: 200, body: ignored }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
@@ -4138,16 +4506,16 @@ describe('annex-client', () => {
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
       answers.push({ status: 400, body: { error: 'invalid_details_query' } });
       expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, source: 'tool-records' })).toEqual({ status: 'unavailable' });
-      answers.push({ status: 200, body: { ...value, connectionPages: undefined, cards: value.cards.map((c) => ({ ...c, connectionPage: undefined })) } });
+      answers.push({ status: 200, body: { ...value, connectionPages: undefined, cards: value.cards.map<RemoteDetailsCard>((c) => ({ ...c, connectionPage: undefined })) } });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
     });
 
     it('binds managed inventory pages to exact source, ordered selection, offset and page-only envelope', async () => {
       const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
       const selection = 'a'.repeat(64), query = { card: 'skills-mcp' as const, source: 'selected-managed-skills' as const, offset: 100, selection };
-      const value = { version: 1, inventoryPages: 1, inventorySources: ['selected-managed-skills'], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+      const value: RemoteAgentDetails = { version: 1, inventoryPages: 1, inventorySources: ['selected-managed-skills'], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
         inventoryPage: { version: 1, source: query.source, offset: 100, observedAt: 1, notes: [], state: 'recorded', selection, total: 101, next: null, rows: [{ key: 'b'.repeat(64), kind: 'skill', state: 'recorded', name: 'Last selected skill', revision: 1, builtin: false }] },
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'skills-mcp' && { requested: false }) })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'skills-mcp' && { requested: false }) })) };
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain(`card=skills-mcp&source=selected-managed-skills&offset=100&selection=${selection}`); expect(requests[0].url).not.toContain('projectOffset');
@@ -4163,9 +4531,9 @@ describe('annex-client', () => {
     it('binds helper-only Details pages to exact selected offsets and rejects mixed/default envelopes', async () => {
       const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
       const query = { card: 'orchestrate' as const, source: 'helpers' as const, offset: 8 };
-      const value = { version: 1, helperPages: 1, helperPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+      const value: RemoteAgentDetails = { version: 1, helperPages: 1, helperPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
         helperPage: { version: 1, source: 'selected-direct-helpers', state: 'ok', offset: 8, next: null, total: 9, liveCount: 9, disposedCount: 0, pendingCount: 0, rows: [{ key: 'last', name: 'Last helper', projectName: null, status: 'unknown', statusSource: 'unknown', branch: null, failure: 'unknown', disposedAt: null, work: { state: 'unavailable', reason: 'identity' } }], pending: [], notes: [] },
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'orchestrate' && { requested: false }) })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'orchestrate' && { requested: false }) })) };
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain('card=orchestrate&source=helpers&offset=8&projectOffset=0');
       answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
@@ -4178,13 +4546,14 @@ describe('annex-client', () => {
     it('binds Actions inventory GETs to selected source/offset/order and connection epochs without default-body reuse', async () => {
       const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
       const selection = 'a'.repeat(64), query = { card: 'actions' as const, source: 'selected-action-relationships' as const, offset: 25, selection };
-      const value = { version: 1, inventoryPages: 1, inventorySources: [query.source], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+      const value: RemoteAgentDetails = { version: 1, inventoryPages: 1, inventorySources: [query.source], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
         inventoryPage: { version: 1, source: query.source, offset: 25, observedAt: 1, notes: [], state: 'recorded', selection, totalRelationships: 26, uniqueActions: 13, next: null, rows: [{ key: 'b'.repeat(64), group: 'triggered-by', enabled: false, description: 'Message Selected', name: 'Last relationship' }] },
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'actions' && { requested: false }) })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'actions' && { requested: false }) })) };
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain(`card=actions&source=selected-action-relationships&offset=25&selection=${selection}`);
-      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }]) {
+      const invalid: Array<{ selection?: string; inventoryPageOnly?: true; settings?: Record<string, boolean> }> = [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }];
+      for (const patch of invalid) {
         const body = 'selection' in patch ? { ...value, inventoryPage: { ...value.inventoryPage, selection: patch.selection } } : { ...value, ...patch };
         answers.push({ status: 200, body }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
       }
@@ -4199,13 +4568,14 @@ describe('annex-client', () => {
     it('binds Canvas inventory GETs to selected source/offset/order and connection epochs without default-body reuse', async () => {
       const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
       const selection = 'a'.repeat(64), query = { card: 'canvases' as const, source: 'selected-canvas-memberships' as const, offset: 25, selection };
-      const value = { version: 1, inventoryPages: 1, inventorySources: [query.source], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+      const value: RemoteAgentDetails = { version: 1, inventoryPages: 1, inventorySources: [query.source], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
         inventoryPage: { version: 1, source: query.source, offset: 25, observedAt: 1, notes: [], agentId: 'a1', projectId: 'p1', state: 'recorded', selection, total: 26, next: null, rows: [{ key: 'b'.repeat(64), scope: 'project', canvasId: 'board', viewId: 'view', name: 'Last membership' }] },
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'canvases' && { requested: false }) })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'canvases' && { requested: false }) })) };
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain(`card=canvases&source=selected-canvas-memberships&offset=25&selection=${selection}`);
-      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }]) {
+      const invalid: Array<{ selection?: string; inventoryPageOnly?: true; settings?: Record<string, boolean> }> = [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }];
+      for (const patch of invalid) {
         const body = 'selection' in patch ? { ...value, inventoryPage: { ...value.inventoryPage, selection: patch.selection } } : { ...value, ...patch };
         answers.push({ status: 200, body }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
       }
@@ -4219,8 +4589,8 @@ describe('annex-client', () => {
 
     it('reads bounded exact-agent Details and treats old/refused/malformed contracts explicitly', async () => {
       const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
-      const value = { version: 1, agentId: 'a?/#', readOnly: true, readAt: 1, providerId: 'codex-cli', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
+      const value: RemoteAgentDetails = { version: 1, agentId: 'a?/#', readOnly: true, readAt: 1, providerId: 'codex-cli', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
       answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a?/#')).toEqual({ status: 'ok', value });
       expect(requests[0]).toMatchObject({ method: 'GET' });
@@ -4236,8 +4606,8 @@ describe('annex-client', () => {
     });
     it('withholds a schema-valid prior Details snapshot after the same record reconnects', async () => {
       const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
-      const value = { version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: 'PRIVATE_PRIOR_EPOCH', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
+      const value: RemoteAgentDetails = { version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: 'PRIVATE_PRIOR_EPOCH', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
       let finish!: () => void;
       vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
@@ -4258,7 +4628,7 @@ describe('annex-client', () => {
       expect.soft(result).toEqual({ status: 'offline' }); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_PRIOR_EPOCH');
     });
     it('reads only an exact selected-agent Changes scope/page/key and rejects old/refused/malformed responses', async () => {
-      const value = { version: 1, readOnly: true, agentId: 'a?/#', observedAt: 1, scope: 'branch', state: 'ok', branch: 'feature', base: 'main', sessionId: null, turnId: null, live: true, shared: false, files: [], totalFiles: 0, offset: 0, nextOffset: null, uncompared: 0, skippedLarge: [], skippedRepos: [], skippedOmitted: 0 };
+      const value: RemoteAgentChanges = { version: 1, readOnly: true, agentId: 'a?/#', observedAt: 1, scope: 'branch', state: 'ok', branch: 'feature', base: 'main', sessionId: null, turnId: null, live: true, shared: false, files: [], totalFiles: 0, offset: 0, nextOffset: null, uncompared: 0, skippedLarge: [], skippedRepos: [], skippedOmitted: 0 };
       answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentChanges(FP, 'a?/#', { scope: 'branch' })).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain('/agents/a%3F%2F%23/changes?scope=branch');
@@ -4267,7 +4637,8 @@ describe('annex-client', () => {
         answers.push({ status, body: { private: 'PRIVATE_ERROR' } });
         expect((await annexClient.requestAgentChanges(FP, 'a1', { scope: 'branch' })).status).toBe(status === 429 ? 'rate_limited' : status === 404 || status === 405 ? 'unavailable' : 'forbidden');
       }
-      for (const patch of [{ agentId: 'other' }, { scope: 'turn' }, { version: 2 }, { files: [null] }, { nextOffset: -1 }]) {
+      const invalid: Array<{ agentId?: string; scope?: string; version?: number; files?: unknown[]; nextOffset?: number }> = [{ agentId: 'other' }, { scope: 'turn' }, { version: 2 }, { files: [null] }, { nextOffset: -1 }];
+      for (const patch of invalid) {
         answers.push({ status: 200, body: { ...value, ...patch } });
         expect(await annexClient.requestAgentChanges(FP, 'a?/#', { scope: 'branch' })).toEqual({ status: 'error' });
       }
@@ -4284,7 +4655,7 @@ describe('annex-client', () => {
       expect(requests[0].url).toMatch(/\/agents\/a1\/settings-details$/);
     });
     it('reads only the fixed Settings route and rejects malformed or wrong-agent data', async () => {
-      const value = { version: 1, readOnly: true, agentId: 'a?/#', provider: 'Host', model: 'Model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'Host defaults', autoSleep: null, context: null,
+      const value: Record<string, unknown> = { version: 1, readOnly: true, agentId: 'a?/#', provider: 'Host', model: 'Model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'Host defaults', autoSleep: null, context: null,
         setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } };
       answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentSettings(FP, 'a?/#')).toEqual({ status: 'ok', value });
