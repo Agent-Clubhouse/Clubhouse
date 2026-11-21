@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { REMOTE_DETAILS_CARD_IDS, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
+import { isRemoteAgentDetails, REMOTE_DETAILS_CARD_IDS, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
+import { isSelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { readSelectedDispatcherDetails } from './selected-dispatcher-details';
 
@@ -197,5 +198,77 @@ describe('staged selected-host Dispatcher Details', () => {
     expect(await readSelectedDispatcherDetails(() => true)).toEqual({ status: 500, body: { error: 'dispatcher_details_invalid' } });
     m.details.mockRejectedValueOnce(new Error('PRIVATE_PATH_AND_ERROR'));
     expect(await readSelectedDispatcherDetails(() => true)).toEqual({ status: 500, body: { error: 'dispatcher_details_failed' } });
+  });
+});
+
+// #14 role Actions paging (contract 0853da899). RED-first fixtures: they fail until the role path accepts the Actions query.
+describe('role Actions relationship pages (#14, RED-first)', () => {
+  const allowed = () => true, selection = 'b'.repeat(64);
+  const query = (offset = 0) => ({ card: 'actions' as const, source: 'selected-action-relationships' as const, offset, ...(offset && { selection }) });
+  // A valid page-only body; `bytes` pads row text (6-byte lone-surrogate escapes, then ASCII) to that exact serialized size.
+  const actionsPage = (agentId: string, offset = 0, bytes?: number): RemoteAgentDetails => {
+    const total = offset + 30, count = Math.min(25, total - offset);
+    const rows = Array.from({ length: count }, (_, i) => ({ key: (i.toString(16).padStart(2, '0')).repeat(32), name: `Made ${offset + i}`, group: 'dispatcher' as const, enabled: false, description: 'Once → Message Dispatcher' }));
+    const body = { ...details(), agentId, inventoryPages: 1 as const, inventorySources: ['selected-action-relationships' as const], inventoryPageOnly: true as const,
+      cards: details().cards.map((c) => ({ ...c, summary: c.id === 'actions' ? 'Selected recorded inventory page' : 'Not included in this selected inventory page', ...(c.id !== 'actions' && { requested: false as const }) })),
+      inventoryPage: { version: 1 as const, source: 'selected-action-relationships' as const, state: 'recorded' as const, offset, selection, next: offset + count < total ? offset + 25 : null, totalRelationships: total, uniqueActions: total, rows, observedAt: 1, notes: [] } } as RemoteAgentDetails;
+    if (bytes === undefined) return body;
+    const size = () => Buffer.byteLength(JSON.stringify(body));
+    for (const row of rows) {
+      const room = 2048 - row.description.length, wide = Math.min(room, Math.floor((bytes - size()) / 6));
+      row.description += '\ud800'.repeat(wide);
+      row.description += 'x'.repeat(Math.min(room - wide, bytes - size()));
+      if (size() >= bytes) break;
+    }
+    if (size() !== bytes) throw new Error(`fixture size ${size()} != ${bytes}`);
+    return body;
+  };
+
+  it('builds valid page-only fixtures, including at the budget (fixture check, passes today)', () => {
+    for (const body of [actionsPage('role1', 0), actionsPage('role1', 25), actionsPage('role1', 0, budgetFor('role1'))]) {
+      expect(isRemoteAgentDetails(body, 'role1')).toBe(true);
+      expect(isSelectedDispatcherDetails({ version: 1, role: 'dispatcher', agentId: 'role1', details: body })).toBe(false);
+    }
+    expect(Buffer.byteLength(JSON.stringify(actionsPage('role1', 0, budgetFor('role1'))))).toBe(budgetFor('role1'));
+  });
+
+  it('pages the host-selected role with the same wrapper budget and binds the page to the role agent', async () => {
+    for (const offset of [0, 25]) {
+      m.details.mockClear(); m.details.mockResolvedValue({ status: 200, body: actionsPage('role1', offset) });
+      const result = await readSelectedDispatcherDetails(allowed, query(offset) as never);
+      expect(result).toMatchObject({ status: 200, body: { version: 1, role: 'dispatcher', agentId: 'role1', details: actionsPage('role1', offset) } });
+      expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', allowed, query(offset), { maxBytes: budgetFor('role1') });
+    }
+  });
+
+  it('rejects a page that does not answer the request: other offset, other selection or a whole read', async () => {
+    const other = actionsPage('role1', 0); (other.inventoryPage as { selection: string }).selection = 'c'.repeat(64);
+    for (const wrong of [actionsPage('role1', 25), other, details()]) {
+      m.details.mockResolvedValue({ status: 200, body: wrong });
+      expect(await readSelectedDispatcherDetails(allowed, query(0) as never)).toEqual({ status: 500, body: { error: 'dispatcher_details_invalid' } });
+    }
+  });
+
+  it.each(['role1', 'rôle "quoted" \\ 名前'])('serves a role Actions page exactly at the wrapper budget and refuses one byte over (M1 boundary now reachable) for %j', async (id) => {
+    m.roleId = id; m.resolve.mockResolvedValue({ agent: { ...agent, id }, project: { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: path.dirname(path.dirname(primary)) } });
+    await fs.writeFile(primary, JSON.stringify([{ ...agent, id }]));
+    m.details.mockResolvedValue({ status: 200, body: actionsPage(id, 0, budgetFor(id)) });
+    const exact = await readSelectedDispatcherDetails(allowed, query(0) as never);
+    expect(exact.status).toBe(200); expect(Buffer.byteLength(JSON.stringify(exact.body))).toBe(REMOTE_DETAILS_MAX_BYTES);
+    m.details.mockResolvedValue({ status: 200, body: actionsPage(id, 0, budgetFor(id) + 1) });
+    expect(await readSelectedDispatcherDetails(allowed, query(0) as never)).toEqual({ status: 500, body: { error: 'dispatcher_details_limit' } });
+  });
+
+  it('passes the producer closed failure for an irreducible page through unchanged', async () => {
+    m.details.mockResolvedValue({ status: 500, body: { error: 'details_read_failed' } });
+    expect(await readSelectedDispatcherDetails(allowed, query(0) as never)).toEqual({ status: 500, body: { error: 'details_read_failed' } });
+  });
+
+  it('refuses mixed, extra or other-source keys before any role lookup', async () => {
+    m.resolve.mockClear();
+    for (const bad of [{ ...query(0), projectOffset: 0 }, { ...query(25), selection: undefined }, { ...query(0), selection: 'XYZ' }, { ...query(0), offset: 30 }, { card: 'canvases', source: 'selected-canvas-memberships' }]) {
+      expect(await readSelectedDispatcherDetails(allowed, bad as never)).toEqual({ status: 400, body: { error: 'invalid_dispatcher_details_query' } });
+    }
+    expect(m.resolve).not.toHaveBeenCalled(); expect(m.details).not.toHaveBeenCalled();
   });
 });

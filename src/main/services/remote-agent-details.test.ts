@@ -1359,4 +1359,23 @@ describe('Details byte budget for wrapping callers (M1)', () => {
     expect(exact.status).toBe(200); expect(bytes(exact.body)).toBe(bytes(page.body));
     expect((await readRemoteAgentDetails('a1', () => true, query, { maxBytes: 64 })).status).toBe(500);
   });
+
+  it('applies the budget to a Dispatcher Actions inventory page: exact size passes, one byte under fails closed (#14 role Actions)', async () => {
+    m.dispatcher.mockReturnValue({ agentId: 'a1' });
+    m.actions.mockReturnValue(Array.from({ length: 30 }, (_, i) => ({ id: `private-action-${i}`, name: `Made ${i} ${'\ud800'.repeat(230)}`, createdAt: i + 1, enabled: false, overlap: 'skip',
+      owner: { kind: 'dispatcher' }, trigger: { kind: 'once', at: 1 }, steps: [{ kind: 'message', agentId: 'a1', text: 'PRIVATE_ACTION_TEXT' }] })));
+    const query = { card: 'actions' as const, source: 'selected-action-relationships' as const };
+    const page = await readRemoteAgentDetails('a1', () => true, query);
+    expect(page.status).toBe(200);
+    const body = page.body as RemoteAgentDetails, inventory = body.inventoryPage;
+    if (inventory?.source !== 'selected-action-relationships' || inventory.state !== 'recorded') throw new Error('Expected selected Dispatcher Actions');
+    expect(body.inventoryPageOnly).toBe(true); expect(body.inventorySources).toEqual(['selected-action-relationships']);
+    expect(inventory.rows).toHaveLength(25); expect(inventory.rows.every((r) => r.group === 'dispatcher')).toBe(true); expect(inventory.next).toBe(25);
+    expect(JSON.stringify(body)).not.toMatch(/PRIVATE_|private-action-/);
+    const size = bytes(body);
+    const exact = await readRemoteAgentDetails('a1', () => true, query, { maxBytes: size });
+    expect(exact.status).toBe(200); expect(bytes(exact.body)).toBe(size);
+    // Pages are never trimmed: a budget the page cannot fit is a closed failure with no partial rows.
+    expect(await readRemoteAgentDetails('a1', () => true, query, { maxBytes: size - 1 })).toEqual({ status: 500, body: { error: 'details_read_failed' } });
+  });
 });
