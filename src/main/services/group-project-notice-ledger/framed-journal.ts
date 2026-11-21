@@ -2,6 +2,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
+import { constants } from 'fs';
 import { NoticeDirectoryFlusher } from './durability';
 
 export const NOTICE_DELTA_BYTES = 64 * 1024;
@@ -13,6 +14,7 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 const integer = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0;
 const isHash = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
+class NoticePhysicalFileAbsent extends Error { readonly code = 'ENOENT'; }
 
 export type NoticeStorageCode = 'notice_ledger_corrupt' | 'notice_ledger_version' | 'notice_ledger_changed'
   | 'notice_ledger_unavailable' | 'notice_ledger_open' | 'notice_ledger_conflict' | 'notice_ledger_reconciliation';
@@ -32,6 +34,7 @@ interface Manifest {
   checkpointRoot?: string;
   firstSegment: number;
   profile?: string;
+  installationId?: string;
   [extra: string]: unknown;
 }
 interface RecordEnvelope<R> { schemaVersion: 1; minWriterVersion: number; revision: number; previousDigest: string; delta: R }
@@ -63,6 +66,8 @@ export interface NoticePhysicalExpectation {
 export interface NoticePhysicalOptions<S, D, R> {
   directory: string;
   recipientKey: string;
+  /** Required for the explicit root profile; legacy fields remain untouched. */
+  installationId?: string;
   codec: NoticePhysicalCodec<S, D, R>;
   testFailure?: (point: NoticePhysicalFailurePoint) => void | Promise<void>;
   /** Internal synchronous anchor update only; no UI/driver callback or await. */
@@ -91,6 +96,8 @@ export class NoticeFramedJournal<S, D, R> {
 
   static async open<S, D, R>(options: NoticePhysicalOptions<S, D, R>): Promise<NoticeFramedJournal<S, D, R>> {
     if (!isHash(options.recipientKey)) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Invalid fixed notice recipient');
+    if (options.codec.minWriterVersion === 2 && (options.codec.profile !== 'sequenced-sparse-v1'
+      || typeof options.installationId !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(options.installationId))) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Root journal requires a fixed installation/profile');
     await fs.mkdir(options.directory, { recursive: true, mode: 0o700 });
     const directory = await fs.realpath(options.directory);
     if (opening.has(directory)) throw new NoticeLedgerStorageError('notice_ledger_open', 'Notice file set already has a process owner');
@@ -131,6 +138,11 @@ export class NoticeFramedJournal<S, D, R> {
     // Only the explicit new writer/profile is allowed to interpret that field.
     if (value.schemaVersion !== 1 || value.minWriterVersion !== this.options.codec.minWriterVersion
       || this.options.codec.profile !== undefined && value.profile !== this.options.codec.profile) throw new NoticeLedgerStorageError('notice_ledger_version', 'Unsupported notice ledger writer version/profile');
+    if (this.options.codec.minWriterVersion === 2) {
+      const keys = ['schemaVersion', 'minWriterVersion', 'recipientKey', 'checkpointRevision', 'checkpointDigest', 'firstSegment', 'profile', 'installationId'];
+      if (value.checkpointRoot !== undefined) keys.push('checkpointRoot');
+      if (value.installationId !== this.options.installationId || Object.keys(value).length !== keys.length || keys.some((key) => !Object.prototype.hasOwnProperty.call(value, key))) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Invalid root manifest fields or installation');
+    }
     if (value.recipientKey !== this.options.recipientKey || !integer(value.checkpointRevision) || !integer(value.firstSegment)
       || !isHash(value.checkpointDigest) || value.checkpointRoot !== undefined && !isHash(value.checkpointRoot)) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Invalid notice manifest identity');
     if ((value.checkpointRevision === 0) !== (value.checkpointRoot === undefined) || value.checkpointRevision === 0 && value.checkpointDigest !== ZERO_HASH) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Invalid notice checkpoint anchor');
@@ -140,6 +152,7 @@ export class NoticeFramedJournal<S, D, R> {
     const value: unknown = JSON.parse(body.toString('utf8'));
     if (!object(value)) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Invalid notice journal record');
     if (value.schemaVersion !== 1 || value.minWriterVersion !== this.options.codec.minWriterVersion) throw new NoticeLedgerStorageError('notice_ledger_version', 'Unsupported notice record writer version');
+    if (this.options.codec.minWriterVersion === 2 && (Object.keys(value).length !== 5 || !['schemaVersion', 'minWriterVersion', 'revision', 'previousDigest', 'delta'].every((key) => Object.prototype.hasOwnProperty.call(value, key)))) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Unsupported root record fields');
     if (value.revision !== this.revision + 1 || value.previousDigest !== this.digest || !object(value.delta)) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Notice journal chain mismatch');
     return value as unknown as RecordEnvelope<unknown>;
   }
@@ -176,13 +189,39 @@ export class NoticeFramedJournal<S, D, R> {
     await this.options.testFailure?.('afterManifest');
     this.manifest = manifest; this.manifestHash = hash(body);
   }
+  private async readBoundedFile(location: string, maximum: number, expectedHash?: string, sync = false): Promise<Buffer> {
+    let initial: import('fs').Stats;
+    try { initial = await fs.lstat(location); }
+    catch (error) { if (missing(error)) throw new NoticePhysicalFileAbsent('Notice physical file missing at lookup'); throw error; } // telemetry-exempt: only initial absence can authorize creation
+    if (!initial.isFile() || initial.size > maximum) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Invalid notice physical file type/size');
+    const flags = (sync && process.platform === 'win32' ? constants.O_RDWR : constants.O_RDONLY) | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0);
+    const handle = await fs.open(location, flags);
+    try {
+      const same = (s: import('fs').Stats) => s.isFile() && s.dev === initial.dev && s.ino === initial.ino && s.size === initial.size && s.mtimeMs === initial.mtimeMs && s.ctimeMs === initial.ctimeMs;
+      if (!same(await handle.stat())) throw new NoticeLedgerStorageError('notice_ledger_changed', 'Notice physical file changed while opening');
+      const buffer = Buffer.alloc(maximum + 1); let used = 0;
+      while (used < buffer.length) {
+        const { bytesRead } = await handle.read(buffer, used, buffer.length - used, used);
+        used += bytesRead; if (!bytesRead) break;
+      }
+      if (used > maximum || used !== initial.size || !same(await handle.stat()) || !same(await fs.lstat(location))) throw new NoticeLedgerStorageError('notice_ledger_changed', 'Notice physical file changed while reading');
+      const body = buffer.subarray(0, used);
+      if (expectedHash && hash(body) !== expectedHash) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Notice page checksum mismatch');
+      if (sync) {
+        await handle.sync();
+        if (!same(await handle.stat()) || !same(await fs.lstat(location))) throw new NoticeLedgerStorageError('notice_ledger_changed', 'Notice physical file changed while syncing');
+      }
+      return body;
+    } finally { await handle.close(); }
+  }
   private readonly pages: NoticePhysicalPages = {
     put: async (value) => {
       const body = Buffer.from(JSON.stringify(value));
       if (body.length > NOTICE_PAGE_BYTES) throw new Error('Notice checkpoint page exceeds its byte bound');
       const digest = hash(body); const destination = path.join(this.directory, `page-${digest}.json`);
       let prior: Buffer | undefined;
-      try { prior = await fs.readFile(destination); } catch (error) { if (!missing(error)) throw error; } // telemetry-exempt: propagated; absence only permits creation
+      try { prior = await this.readBoundedFile(destination, NOTICE_PAGE_BYTES, digest, true); }
+      catch (error) { if (!(error instanceof NoticePhysicalFileAbsent)) throw error; } // telemetry-exempt: later IO/sync failure never authorizes replacement
       if (prior) {
         if (hash(prior) !== digest) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Existing notice page digest mismatch');
       } else await this.replaceMetadata(destination, 'page', body);
@@ -190,7 +229,7 @@ export class NoticeFramedJournal<S, D, R> {
     },
     read: async (root) => {
       if (!isHash(root)) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Invalid notice page reference');
-      const body = await fs.readFile(path.join(this.directory, `page-${root}.json`));
+      const body = await this.readBoundedFile(path.join(this.directory, `page-${root}.json`), NOTICE_PAGE_BYTES, root);
       if (body.length > NOTICE_PAGE_BYTES || hash(body) !== root) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Notice page checksum mismatch');
       return JSON.parse(body.toString('utf8')) as unknown;
     },
@@ -201,13 +240,13 @@ export class NoticeFramedJournal<S, D, R> {
   };
   private async load(): Promise<void> {
     let body: Buffer;
-    try { body = await fs.readFile(path.join(this.directory, 'manifest.json')); }
+    try { body = await this.readBoundedFile(path.join(this.directory, 'manifest.json'), NOTICE_DELTA_BYTES); }
     catch (error) {
-      if (!missing(error)) throw error; // telemetry-exempt: propagated, never silently repaired
+      if (!(error instanceof NoticePhysicalFileAbsent)) throw error; // telemetry-exempt: propagated, never silently repaired
       if ((await fs.readdir(this.directory)).length) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Notice manifest missing beside retained data');
       await this.atomicManifest({ schemaVersion: 1, minWriterVersion: this.options.codec.minWriterVersion, recipientKey: this.options.recipientKey,
-        checkpointRevision: 0, checkpointDigest: ZERO_HASH, firstSegment: 0, ...(this.options.codec.profile && { profile: this.options.codec.profile }) });
-      body = await fs.readFile(path.join(this.directory, 'manifest.json'));
+        checkpointRevision: 0, checkpointDigest: ZERO_HASH, firstSegment: 0, ...(this.options.codec.profile && { profile: this.options.codec.profile, installationId: this.options.installationId }) });
+      body = await this.readBoundedFile(path.join(this.directory, 'manifest.json'), NOTICE_DELTA_BYTES);
     }
     this.manifest = this.decodeManifest(body); this.manifestHash = hash(body);
     this.revision = this.manifest.checkpointRevision; this.digest = this.manifest.checkpointDigest;
@@ -221,7 +260,7 @@ export class NoticeFramedJournal<S, D, R> {
     for (let index = 0; index < segments.length; index++) {
       if (segments[index] !== expected++) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Notice journal segment missing');
       this.segment = segments[index];
-      const segment = await fs.readFile(this.location(this.segment));
+      const segment = await this.readBoundedFile(this.location(this.segment), NOTICE_PAGE_BYTES);
       if (segment.length > NOTICE_PAGE_BYTES) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Oversized notice segment');
       let offset = 0;
       while (offset < segment.length) {
@@ -251,12 +290,12 @@ export class NoticeFramedJournal<S, D, R> {
     const journal = await fs.open(this.location(this.segment), 'r+');
     try { await journal.truncate(offset); await journal.sync(); } finally { await journal.close(); }
   }
-  private async readCurrent(segment = this.segment): Promise<Buffer> {
-    try { return await fs.readFile(this.location(segment)); }
-    catch (error) { if (missing(error)) return Buffer.alloc(0); throw error; } // telemetry-exempt: only a new empty segment is absent
+  private async readCurrent(segment = this.segment, allowMissing = this.segmentBytes === 0 && segment === this.segment): Promise<Buffer> {
+    try { return await this.readBoundedFile(this.location(segment), NOTICE_PAGE_BYTES); }
+    catch (error) { if (allowMissing && error instanceof NoticePhysicalFileAbsent) return Buffer.alloc(0); throw error; } // telemetry-exempt: only a new empty segment is absent
   }
   private async unchanged(): Promise<void> {
-    const manifest = await fs.readFile(path.join(this.directory, 'manifest.json')); const current = await this.readCurrent();
+    const manifest = await this.readBoundedFile(path.join(this.directory, 'manifest.json'), NOTICE_DELTA_BYTES); const current = await this.readCurrent();
     if (hash(manifest) !== this.manifestHash || current.length !== this.segmentBytes || hash(current) !== this.currentFileHash) throw new NoticeLedgerStorageError('notice_ledger_changed', 'Notice storage changed outside its owner');
   }
   /** Validation/preparation refusal has no journal effect and does not poison. */
@@ -298,7 +337,7 @@ export class NoticeFramedJournal<S, D, R> {
         finally { await handle.close(); }
         await this.directoryFlusher.flush(this.directory); await this.options.testFailure?.('afterSync');
         await this.options.testFailure?.('beforeFinalBookkeeping');
-        const current = await this.readCurrent(targetSegment);
+        const current = await this.readCurrent(targetSegment, false);
         if (current.length !== targetBytes + frame.length || hash(current.subarray(0, targetBytes)) !== priorHash
           || !current.subarray(targetBytes).equals(frame)) throw new NoticeLedgerStorageError('notice_ledger_changed', 'Notice append bookkeeping changed');
         const fileHash = hash(current);

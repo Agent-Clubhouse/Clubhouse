@@ -39,10 +39,12 @@ Required remaining work before the promised coherent review candidate:
    not IB1 closure. No arbitrary caller codec is an app configuration path.
 2. All newly authoritative root/header references need proper descriptor/content/
    identity validation, file/prefix/directory barriers and exact provenance.
-   Flat physical checkpoint page IO is still legacy-style (readFile before size
-   check, existing hash reuse without new file sync). Do not give a new root
-   checkpoint credit from that legacy path. Resolve with the root codec/barrier
-   design and platform tests; no whole-memory or native durability claim.
+   Successor source replaces the initial76e1 flat legacy reads with bounded
+   regular-file descriptor reads, initial-absence distinction, digest/identity
+   checks and same-descriptor reused-file sync (write-capable on Windows). It
+   also adds a mandatory fixed installation/profile check and strict manifest
+   fields for the new profile. These changes are UNVALIDATED hardening, not
+   inherited native proof or the missing root codec/full-root publication gate.
 3. Shared journal receipt owner/adapter, typed entry and loss claims, ACK-first
    ownership, actual committed outcomes, active-anchor bounds and release on
    settle/recover/retire, no current-UI references in historical ACK sinks.
@@ -61,3 +63,11 @@ Root obsolete-page GC remains deferred/unbounded and is not product acceptance.
 IB3 #3770/user promise choice, authored literal-system classification and future
 scan-adapter predicates/refusals remain separate gates. No all-history uniqueness,
 exactly-once delivery or provider-processing receipt is asserted.
+
+
+Initial source freeze76e1efbe09460c9fe796d8a72fa12a005a7006e7 remains preserved.
+The immediate bounded-IO successor will receive targeted development barrier
+checks, project typecheck and scoped lint against its own frozen head. Such
+checks do not establish physical-backend behavior: it still has no journal
+consumer/root codec/typed receipt manager or PB1–5 execution package. No whole
+candidate or platform review is requested until that coherent scope is complete.
