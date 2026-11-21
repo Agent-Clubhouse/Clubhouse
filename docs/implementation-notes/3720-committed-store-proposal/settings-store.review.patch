@@ -1,0 +1,95 @@
+--- a/src/main/services/settings-store.ts
++++ b/src/main/services/settings-store.ts
+@@ -1,4 +1,6 @@
+ import { app } from 'electron';
++import type { AnnexSettings } from '../../shared/types';
++import { CommittedAnnexStore, readAnnexDefaults } from './annex-committed-store';
+ import * as fs from 'fs';
+ import * as path from 'path';
+ import { persist } from '../telemetry/persist';
+@@ -345,11 +347,7 @@
+   }
+ }
+ 
+-export function createSettingsStore<T>(
+-  filename: string,
+-  defaults: T,
+-  migrate?: (raw: Record<string, unknown>) => T,
+-  options?: {
++export interface SettingsStoreOptions {
+     mode?: number;
+     /** Retain passive display provenance for this metadata-only store. Never opt credentials into display. */
+     displaySnapshot?: true;
+@@ -376,8 +374,22 @@
+      * one. Always enabled; retained for callers that previously opted in.
+      */
+     atomic?: true;
+-  },
+-): SettingsStore<T> {
++}
++
++export function createSettingsStore(
++  filename: string, defaults: AnnexSettings, migrate: undefined,
++  options: SettingsStoreOptions & { committedAnnex: true },
++): CommittedAnnexStore;
++export function createSettingsStore<T>(
++  filename: string, defaults: T, migrate?: (raw: Record<string, unknown>) => T,
++  options?: SettingsStoreOptions & { committedAnnex?: never },
++): SettingsStore<T>;
++export function createSettingsStore<T>(
++  filename: string,
++  defaults: T,
++  migrate?: (raw: Record<string, unknown>) => T,
++  options?: SettingsStoreOptions & { committedAnnex?: true },
++): SettingsStore<T> | CommittedAnnexStore {
+   // Resolve filePath lazily on each access. `createSettingsStore` runs at
+   // module-load time (e.g. when ipc/app-handlers imports a settings module),
+   // which is *before* main/index.ts gets to call `app.setPath('userData', …)`
+@@ -393,6 +405,39 @@
+   // Serializes concurrent update() calls so each read sees the prior write's result.
+   let updateLock: Promise<unknown> = Promise.resolve();
+ 
++  let annexInitialSource: PeekedSettings = 'unreadable';
++  if (options?.committedAnnex) {
++    if (filename !== 'annex-settings.json' || migrate || options.skipUnchangedUpdates
++      || options.onLoad) throw new Error('Invalid committed Annex options');
++    const annex = new CommittedAnnexStore({
++      path: getFilePath,
++      startup: () => { if (!cacheLoaded) loadSettings(); return annexInitialSource; },
++      enqueue: <R>(turn: () => Promise<R>): Promise<R> => {
++        const result = pendingWrite.catch((): void => undefined).then(() => persist.timed('settings', turn));
++        // The SAME pendingWrite covers the entire commit turn, even after rejection/reset.
++        pendingWrite = result.then((): void => undefined, (): void => undefined);
++        return result;
++      },
++      strictRead: (file) => boundedSettingsPeek('', MAX_SETTINGS_PEEK_BYTES, file),
++      replace: (file, body, precondition) => replaceFile(file, body, options.mode, precondition),
++      audit: (before, after) => {
++        const audit = options.audit;
++        if (!audit || !storeAuditor) return;
++        try {
++          void Promise.resolve(storeAuditor({ key: audit.key, before: { ...before }, after: { ...after },
++            ...(audit.keys && { keys: audit.keys }), ...(audit.ignore && { ignore: audit.ignore })
++          })).catch(() => { console.warn('[settings-store] Annex audit failed'); });
++        } catch { console.warn('[settings-store] Annex audit failed'); }
++      },
++    }, readAnnexDefaults(defaults));
++    settingsStoreResetters.add(() => {
++      annex.reset(); cachedSettings = null; cacheLoaded = false; displaySnapshot = undefined;
++      needsRecoveryCopy = false; annexInitialSource = 'unreadable';
++      // pendingWrite stays held until entered IO settles; opted code never uses updateLock.
++    });
++    return annex; // No get/save/update full-body surface on the specialized return type.
++  }
++
+   function parseSettings(raw: string): T {
+     const merged = {
+       ...cloneSettings(defaults),
+@@ -403,6 +448,7 @@
+   }
+ 
+   function notifyLoad(result: { raw: string } | { error: unknown }): void {
++    if (options?.committedAnnex) annexInitialSource = 'raw' in result ? parsePeeked(result.raw) : readErrorKind(result.error);
+     try { options?.onLoad?.(result); }
+     catch (err) {
+       // An observer must not turn a successful load into a reset to defaults.

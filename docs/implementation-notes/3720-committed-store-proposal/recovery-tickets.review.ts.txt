@@ -1,0 +1,108 @@
+// REVIEW ONLY. Proposed src/main/services/annex-settings-recovery.ts; not applied.
+import { randomUUID } from 'node:crypto';
+import type { Admission } from './annex-committed-store';
+export interface RecoveryTicket { readonly degradationId: string; readonly requestId: string }
+type Outcome = 'recovered' | 'failed' | 'pending' | 'not_retained' | 'not_degraded' | 'refused' | 'invalid_envelope' | 'schema_invalid';
+export interface RecoveryResult { readonly outcome: Outcome; readonly next?: RecoveryTicket }
+type Request = RecoveryTicket & { readonly mode: 'execute' | 'status' };
+type Entry = { readonly key: string; readonly document: symbol; readonly ordinal: number; readonly generation: symbol;
+  result: 'recovered' | 'failed' | 'pending'; promise: Promise<void> };
+const validId = (s: unknown): s is string => typeof s === 'string' && s.length === 36
+  && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(s);
+function request(raw: unknown): Request | 'invalid_envelope' | 'schema_invalid' {
+  try {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)
+      || ![Object.prototype, null].includes(Object.getPrototypeOf(raw))) return 'invalid_envelope';
+    const keys = ['v', 'mode', 'degradationId', 'requestId'];
+    if (Reflect.ownKeys(raw).length !== keys.length) return 'invalid_envelope';
+    const values: Record<string, unknown> = Object.create(null);
+    for (const key of keys) {
+      const d = Object.getOwnPropertyDescriptor(raw, key);
+      if (!d || !Object.prototype.hasOwnProperty.call(d, 'value') || !d.enumerable) return 'invalid_envelope';
+      values[key] = d.value;
+    }
+    if (values.v !== 1 || (values.mode !== 'execute' && values.mode !== 'status')
+      || !validId(values.degradationId) || !validId(values.requestId)) return 'schema_invalid';
+    return { mode: values.mode, degradationId: values.degradationId, requestId: values.requestId };
+  } catch { return 'invalid_envelope'; }
+}
+export class RecoveryTickets {
+  #generation = Symbol();
+  #scope: string | undefined;
+  #ready: RecoveryTicket | undefined;
+  #ordinal = 0;
+  #inflight: Entry | undefined;
+  #completed = new Map<string, Entry>(); // Globally 32, not 32 per degradation/document.
+  #key(t: RecoveryTicket): string { return `${t.degradationId}/${t.requestId}`; }
+  #ticket(): void {
+    if (!this.#scope) return;
+    if (this.#ordinal >= Number.MAX_SAFE_INTEGER - 1) {
+      this.#scope = randomUUID(); this.#ordinal = 0;
+    }
+    this.#ready = Object.freeze({ degradationId: this.#scope, requestId: randomUUID() });
+  }
+  // Called only by explicit fault/reset transitions, never a read/status request.
+  degrade(): void {
+    if (this.#scope) return;
+    this.#scope = randomUUID(); this.#ordinal = 0; this.#ticket();
+  }
+  reset(): void {
+    this.#generation = Symbol();
+    this.#scope = undefined; this.#ready = undefined; this.#ordinal = 0;
+    this.#completed.clear();
+    // Do NOT clear in-flight work or allow a second operation before it settles.
+    // The store's reset scope fences its effects; the same pendingWrite stays held.
+  }
+  status(admission: Admission): RecoveryResult {
+    try { admission.precondition.check(); }
+    catch { return { outcome: 'refused' }; }
+    return { outcome: this.#scope ? (this.#inflight ? 'pending' : 'failed') : 'not_degraded',
+      ...(this.#ready && { next: this.#ready }) };
+  }
+  #result(outcome: Outcome): RecoveryResult {
+    return { outcome, ...(this.#ready && { next: this.#ready }) };
+  }
+  async run(raw: unknown, admission: Admission, reload: () => Promise<'recovered' | 'refused'>): Promise<RecoveryResult> {
+    // Authority BEFORE duplicate lookup and healthy shortcut, including pending duplicates.
+    try { admission.precondition.check(); } catch { return { outcome: 'refused' }; }
+    const parsed = request(raw);
+    if (typeof parsed === 'string') return { outcome: parsed };
+    const key = this.#key(parsed);
+    const known = this.#inflight?.key === key ? this.#inflight : this.#completed.get(key);
+    if (known) {
+      if (known.generation !== this.#generation) return this.#result('not_retained');
+      if (known.document !== admission.document) return { outcome: 'refused' };
+      if (parsed.mode === 'execute') await known.promise; // Join, NEVER reread or reexecute.
+      try { admission.precondition.check(); } catch { return { outcome: 'refused' }; }
+      if (known.generation !== this.#generation || (this.#inflight !== known && this.#completed.get(key) !== known)) return this.#result('not_retained');
+      return this.#result(known.result);
+    }
+    // Missing lookup never becomes execution, even when it happens to name the ready ticket.
+    if (parsed.mode === 'status') return this.#result('not_retained');
+    if (!this.#scope) return { outcome: 'not_degraded' };
+    if (!this.#ready || this.#key(this.#ready) !== key) return this.#result('not_retained');
+    if (this.#inflight) return this.#result('pending');
+    // Synchronous entry allocation/consumption BEFORE first await/queue/IO.
+    // The renderer supplies no ordinal and cannot allocate one by replay.
+    const scope = this.#scope, generation = this.#generation;
+    const entry: Entry = { key, document: admission.document, ordinal: ++this.#ordinal, generation,
+      result: 'pending', promise: Promise.resolve() };
+    this.#ready = undefined; this.#inflight = entry;
+    entry.promise = (async () => {
+      try { entry.result = await reload() === 'recovered' ? 'recovered' : 'failed'; }
+      catch { entry.result = 'failed'; } // N3: always typed, no unhandled rejection.
+      finally {
+        if (this.#inflight === entry) this.#inflight = undefined;
+        if (generation === this.#generation) this.#completed.set(key, entry);
+        while (this.#completed.size > 32) this.#completed.delete(this.#completed.keys().next().value!);
+        if (generation === this.#generation && this.#scope === scope) {
+          if (entry.result === 'recovered') { this.#scope = undefined; this.#ready = undefined; }
+          else this.#ticket(); // N1: failure/status exposes next ticket; never auto-submit.
+        }
+      }
+    })();
+    await entry.promise;
+    try { admission.precondition.check(); } catch { return { outcome: 'refused' }; }
+    return this.#result(entry.result);
+  }
+}

@@ -1,0 +1,399 @@
+// REVIEW ONLY. Proposed src/main/services/annex-committed-store.ts; not applied.
+import { randomUUID } from 'node:crypto';
+import { RecoveryTickets } from './annex-settings-recovery';
+import type { RecoveryResult } from './annex-settings-recovery';
+import type { AnnexSettings } from '../../shared/types';
+import { EDITABLE_KEYS, readLocalSettingsPatch, LocalSettingsInputError } from '../../shared/annex-settings-ipc';
+import type { EditableKey, LocalSettingsPatch, OptionalEditableKey } from '../../shared/annex-settings-ipc';
+import type { LoadedSettingsSnapshot, PeekedSettings, SettingsCommitPrecondition } from './settings-store';
+
+type Fields = Readonly<Record<EditableKey, number>>;
+type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+type Base = Readonly<Record<string, Json>>;
+export interface IntentWitness { readonly id: string; readonly epoch: string }
+export interface CommittedTuple {
+  readonly value: Readonly<AnnexSettings>;
+  readonly epoch: string;
+  readonly revision: number;
+  readonly fields: Fields;
+}
+export type ReadState =
+  | { kind: 'not_loaded' }
+  | { kind: 'healthy'; snapshot: CommittedTuple }
+  | { kind: 'degraded'; lastDisplay?: Readonly<AnnexSettings>; reason: string };
+export interface Admission {
+  // Captured ORIGINAL host/document/grant/emergency/launch authority, not DTO origin.
+  // Non-mutating, bounded, synchronous check; prepare never waits for name activation.
+  readonly document: symbol;
+  readonly precondition: SettingsCommitPrecondition;
+}
+export type Refusal = 'not_loaded' | 'degraded' | 'superseded' | 'conflict'
+  | 'invalid_envelope' | 'schema_invalid' | 'read_failed' | 'not_owned' | 'version_exhausted';
+export type CommitResult =
+  | { kind: 'refused'; reason: Refusal }
+  | { kind: 'committed_unconfirmed'; primary: 'known' | 'unknown' }
+  | { kind: 'committed'; before: Readonly<AnnexSettings>; after: Readonly<AnnexSettings>;
+      snapshot: CommittedTuple; ownership: object };
+
+// These are private IO bindings supplied by settings-store's concrete adapter.
+// No observer/publisher/mutator callback is accepted from a caller or options.
+export interface AnnexStoreIo {
+  path(): string;
+  startup(): PeekedSettings; // Existing normal startup load, once; never GET/recovery.
+  enqueue<R>(turn: () => Promise<R>): Promise<R>; // Existing pendingWrite, NOT another queue.
+  strictRead(path: string): Promise<PeekedSettings>;
+  replace(path: string, body: string, guard: SettingsCommitPrecondition): Promise<void>;
+  audit(before: Readonly<AnnexSettings>, after: Readonly<AnnexSettings>): void;
+}
+type Ownership = { scope: string; loopback: number; witness?: IntentWitness; beforePresent: boolean; beforeValue?: boolean; restoreAllowed: boolean };
+type Command =
+  | { kind: 'local'; patch: LocalSettingsPatch; witness?: IntentWitness }
+  | { kind: 'loopback'; value: boolean; fieldVersion: number }
+  | { kind: 'restore-loopback'; ownership: object }
+  | { kind: 'disable' | 'purge' }
+  | { kind: 'retire-intent'; ownership: object };
+const optional: readonly OptionalEditableKey[] = ['loopbackOnly', 'reachableAs', 'networkEnabled', 'acceptHandoffs'];
+const booleans = new Set<EditableKey>(['enableServer', 'enableClient', 'loopbackOnly', 'autoReconnect', 'networkEnabled', 'acceptHandoffs']);
+const owns = (o: object, k: PropertyKey) => Object.prototype.hasOwnProperty.call(o, k);
+const zeroFields = (): Record<EditableKey, number> => ({
+  enableServer: 0, enableClient: 0, loopbackOnly: 0, deviceName: 0, alias: 0,
+  icon: 0, color: 0, autoReconnect: 0, reachableAs: 0, networkEnabled: 0, acceptHandoffs: 0,
+});
+const refused = (reason: Refusal): CommitResult => ({ kind: 'refused', reason });
+const uuid = (s: string) => s.length === 36 && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(s);
+
+// The raw source here is JSON from trusted fixed-path readers, not an IPC object.
+// JSON round-trip preserves unknown private keys, legacy strings, and absent fields.
+// It invokes no caller getter because no raw IPC input enters this path.
+function jsonObject(raw: Record<string, unknown>): Record<string, Json> {
+  const text = JSON.stringify(raw);
+  if (Buffer.byteLength(text, 'utf8') > 1024 * 1024) throw new Error('shape');
+  const value: unknown = JSON.parse(text);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('shape');
+  return value as Record<string, Json>; // Proven JSON object; not an authority cast.
+}
+function witnessOf(value: Json | undefined): IntentWitness | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).length !== 2 || typeof value.id !== 'string' || typeof value.epoch !== 'string'
+    || value.id.length !== 64 || !/^[0-9a-f]{64}$/.test(value.id) || value.epoch.length > 256) throw new Error('witness');
+  // Proposed witness concretization: exact pending record ID, canonical epoch triplet.
+  // No hash verification/authorship is inferred here. Name-store consumer separately verifies.
+  const epoch: unknown = JSON.parse(value.epoch);
+  if (!Array.isArray(epoch) || epoch.length !== 3 || typeof epoch[0] !== 'string'
+    || !/^(?:[0-9a-f]{2}:){15,31}[0-9a-f]{2}$/.test(epoch[0])
+    || typeof epoch[1] !== 'number' || !Number.isSafeInteger(epoch[1]) || Math.abs(epoch[1]) > 8640000000000000
+    || !(epoch[2] === null || typeof epoch[2] === 'string' && epoch[2].length >= 8
+      && epoch[2].length <= 64 && /^[A-Za-z0-9-]+$/.test(epoch[2]))
+    || JSON.stringify(epoch) !== value.epoch) throw new Error('witness');
+  return Object.freeze({ id: value.id, epoch: value.epoch });
+}
+function decode(raw: PeekedSettings, defaults: AnnexSettings | undefined, startupMerge = false): Base {
+  if (typeof raw !== 'object') throw new Error('source');
+  const input = jsonObject(raw);
+  // Existing legacy enabled migration, in memory only; do not write during reload.
+  if (owns(input, 'enabled')) {
+    if (typeof input.enabled !== 'boolean') throw new Error('shape');
+    input.enableServer = input.enabled; input.enableClient = input.enabled; delete input.enabled;
+  }
+  const merged: Record<string, Json> = startupMerge ? { ...jsonObject({ ...defaults }), ...input } : input;
+  for (const key of EDITABLE_KEYS) {
+    if (!owns(merged, key)) {
+      if (!optional.includes(key as OptionalEditableKey)) throw new Error('shape');
+      continue;
+    }
+    if (typeof merged[key] !== (booleans.has(key) ? 'boolean' : 'string')) throw new Error('shape');
+  }
+  witnessOf(merged.memberNameIntentCommit);
+  // Legacy strings intentionally retain length/UTF-16 contents. NEW changes use strict parser.
+  return Object.freeze(merged);
+}
+function publicValue(base: Base): Readonly<AnnexSettings> {
+  // Types follow decode; construct explicitly so unknown/private keys cannot escape.
+  const required = (k: EditableKey) => base[k];
+  const value: AnnexSettings = {
+    enableServer: required('enableServer') as boolean, enableClient: required('enableClient') as boolean,
+    deviceName: required('deviceName') as string, alias: required('alias') as string,
+    icon: required('icon') as string, color: required('color') as string,
+    autoReconnect: required('autoReconnect') as boolean,
+  };
+  if (owns(base, 'loopbackOnly')) value.loopbackOnly = base.loopbackOnly as boolean;
+  if (owns(base, 'reachableAs')) value.reachableAs = base.reachableAs as string;
+  if (owns(base, 'networkEnabled')) value.networkEnabled = base.networkEnabled as boolean;
+  if (owns(base, 'acceptHandoffs')) value.acceptHandoffs = base.acceptHandoffs as boolean;
+  return Object.freeze(value);
+}
+function displayPrimary(raw: PeekedSettings): PeekedSettings {
+  if (typeof raw !== 'object') return raw;
+  const projected: Record<string, unknown> = {};
+  for (const key of [...EDITABLE_KEYS, 'enabled']) if (owns(raw, key)) projected[key] = raw[key];
+  return projected; // No private witness/unknown future metadata in display provenance.
+}
+function tuple(base: Base, epoch: string, revision: number, fields: Fields): CommittedTuple {
+  return Object.freeze({ value: publicValue(base), epoch, revision, fields: Object.freeze({ ...fields }) });
+}
+function sameWitness(a: IntentWitness | undefined, b: IntentWitness | undefined): boolean {
+  return !!a && !!b && a.id === b.id && a.epoch === b.epoch;
+}
+
+export function readAnnexDefaults(value: unknown): Readonly<AnnexSettings> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('defaults');
+  return publicValue(decode(value as Record<string, unknown>, undefined));
+}
+
+export class CommittedAnnexStore {
+  #tickets = new RecoveryTickets();
+  #initialized = false;
+  #path = '';
+  #scope = randomUUID();
+  #base: Base | undefined; // Actual confirmed primary, NEVER the old public tuple as fallback.
+  #public: CommittedTuple | undefined;
+  #degraded: string | undefined;
+  #display: LoadedSettingsSnapshot<AnnexSettings> | undefined;
+  #ownership = new WeakMap<object, Ownership>();
+  constructor(private readonly io: AnnexStoreIo, private readonly defaults: AnnexSettings) {}
+
+  initialize(): Promise<ReadState> {
+    return this.io.enqueue(async () => {
+    if (this.#initialized) return this.read(); // Never heals a loaded degraded store.
+    this.#initialized = true; this.#path = this.io.path();
+    let primary: PeekedSettings = 'unreadable';
+    try {
+      primary = this.io.startup();
+      // Only NORMAL first startup may establish missing-file defaults. Recovery may not.
+      const base = decode(primary === 'missing' ? { ...this.defaults } : primary, this.defaults, true);
+      const next = tuple(base, this.#scope, 0, zeroFields());
+      this.#base = base; this.#public = next;
+      this.#display = { value: next.value, primary: displayPrimary(primary), origin: 'loaded', observedAt: Date.now() };
+    } catch {
+      this.#degraded = 'startup_source_invalid'; this.#tickets.degrade();
+      this.#display = { value: Object.freeze({ ...this.defaults }), primary: 'unreadable', origin: 'loaded', observedAt: Date.now() };
+    }
+    return this.read();
+    });
+  }
+  read(): ReadState {
+    if (!this.#initialized) return { kind: 'not_loaded' };
+    if (this.#degraded || !this.#public) return {
+      kind: 'degraded', reason: this.#degraded ?? 'publication_missing',
+      ...(this.#display && { lastDisplay: this.#display.value }),
+    };
+    return { kind: 'healthy', snapshot: this.#public };
+  }
+  peekLoaded(): LoadedSettingsSnapshot<AnnexSettings> | undefined {
+    if (!this.#display) return undefined;
+    return Object.freeze({ ...this.#display,
+      primary: this.#degraded ? 'unreadable' : typeof this.#display.primary === 'object'
+        ? Object.freeze(structuredClone(this.#display.primary)) : this.#display.primary,
+      value: Object.freeze({ ...this.#display.value }),
+    });
+  }
+  // Reset invalidates requests immediately, but MUST NOT release pendingWrite/entered OS IO.
+  reset(): void {
+    this.#tickets.reset();
+    this.#scope = randomUUID(); this.#initialized = false; this.#base = undefined;
+    this.#public = undefined; this.#degraded = undefined; this.#display = undefined;
+    this.#ownership = new WeakMap(); this.#path = '';
+  }
+  #fail(reason: string, unknown: boolean): void {
+    if (unknown) this.#base = undefined;
+    this.#degraded = reason; this.#tickets.degrade();
+  }
+  #check(scope: string, path: string, admission: Admission): void {
+    if (!this.#initialized || scope !== this.#scope || path !== this.#path || path !== this.io.path()) throw new Error('superseded');
+    admission.precondition.check();
+  }
+  async #prepare(scope: string, path: string, admission: Admission): Promise<void> {
+    this.#check(scope, path, admission);
+    await admission.precondition.prepare();
+    this.#check(scope, path, admission);
+  }
+
+  // No retained reference to the caller's detached-but-mutable parser output.
+  submit(raw: unknown, admission: Admission, witness?: IntentWitness): Promise<CommitResult> {
+    let patch: LocalSettingsPatch;
+    try { admission.precondition.check(); patch = readLocalSettingsPatch(raw); }
+    catch (e) { return Promise.resolve(refused(e instanceof LocalSettingsInputError ? e.kind : 'superseded')); }
+    let savedWitness: IntentWitness | undefined;
+    try { savedWitness = witness === undefined ? undefined : witnessOf(jsonObject({ ...witness })); }
+    catch { return Promise.resolve(refused('schema_invalid')); }
+    return this.#submit({ kind: 'local', patch, witness: savedWitness }, admission);
+  }
+  setLoopback(value: boolean, expected: { epoch: string; fieldVersion: number }, admission: Admission): Promise<CommitResult> {
+    if (typeof value !== 'boolean' || expected.epoch !== this.#scope || !Number.isSafeInteger(expected.fieldVersion)
+      || expected.fieldVersion < 0) return Promise.resolve(refused('conflict'));
+    return this.#submit({ kind: 'loopback', value, fieldVersion: expected.fieldVersion }, admission);
+  }
+  restoreLoopback(ownership: object, admission: Admission): Promise<CommitResult> {
+    // Exact prior field presence/value is private in the owned receipt, never caller supplied.
+    return this.#submit({ kind: 'restore-loopback', ownership }, admission);
+  }
+  emergency(kind: 'disable' | 'purge', admission: Admission): Promise<CommitResult> {
+    // Caller has ALREADY bumped emergency admission and made live network-off synchronously.
+    // No name preparation/readiness wait is introduced by this store.
+    return this.#submit({ kind }, admission);
+  }
+  retireIntent(ownership: object, admission: Admission): Promise<CommitResult> {
+    return this.#submit({ kind: 'retire-intent', ownership }, admission);
+  }
+
+  #submit(command: Command, admission: Admission): Promise<CommitResult> {
+    const scope = this.#scope, path = this.#path;
+    try { this.#check(scope, path, admission); } catch { return Promise.resolve(refused('superseded')); }
+    let primary: 'none' | 'known' | 'unknown' = 'none';
+    // Every return, including unexpected queue/IO errors, is a typed result (N3).
+    return this.io.enqueue(async (): Promise<CommitResult> => {
+      try { await this.#prepare(scope, path, admission); } catch { return refused('superseded'); }
+      const emergency = command.kind === 'disable' || command.kind === 'purge';
+      if (!emergency && (this.#degraded || !this.#public)) return refused('degraded');
+      let base = this.#base;
+      if (!base && emergency) {
+        // B1: strict read AND mutation occur in this SAME actual pendingWrite turn.
+        // No legacy loader, default fallback, public tuple/epoch healing, or runtime action.
+        try {
+          const raw = await this.io.strictRead(path);
+          this.#check(scope, path, admission);
+          base = decode(raw, this.defaults);
+          this.#base = base; // N2: establishes known actual base only.
+        } catch { return refused('read_failed'); }
+      }
+      if (!base) return refused('degraded');
+      const before = publicValue(base);
+      const candidate: Record<string, Json> = { ...base };
+      const touched = new Set<EditableKey>();
+      const current = this.#public;
+      const record = 'ownership' in command ? this.#ownership.get(command.ownership) : undefined;
+      const set = (key: EditableKey, value: boolean | string) => { candidate[key] = value; touched.add(key); };
+      const unset = (key: OptionalEditableKey) => { delete candidate[key]; touched.add(key); };
+      if (command.kind === 'local') {
+        const { patch } = command;
+        if (!current || patch.base.epoch !== scope) return refused('conflict'); // Epoch FIRST.
+        if (patch.base.revision > current.revision) return refused('conflict');
+        const keys = [...Object.keys(patch.changes) as EditableKey[], ...patch.unset];
+        if (keys.some(k => patch.base.fields[k] !== current.fields[k])) return refused('conflict');
+        for (const k of Object.keys(patch.changes) as EditableKey[]) {
+          const value = patch.changes[k];
+          if (value === undefined) return refused('schema_invalid');
+          set(k, value);
+        }
+        for (const k of patch.unset) unset(k);
+        if (command.witness) candidate.memberNameIntentCommit = { ...command.witness };
+      } else if (command.kind === 'loopback') {
+        if (!current || current.fields.loopbackOnly !== command.fieldVersion) return refused('conflict');
+        set('loopbackOnly', command.value);
+      } else if (command.kind === 'restore-loopback') {
+        if (!record || !record.restoreAllowed || record.scope !== scope || !current || record.loopback !== current.fields.loopbackOnly) return refused('not_owned');
+        if (record.beforePresent) set('loopbackOnly', record.beforeValue!); else unset('loopbackOnly');
+      } else if (emergency) {
+        set('enableServer', false); set('enableClient', false);
+        if (command.kind === 'purge') {
+          set('icon', 'computer'); set('color', 'indigo'); set('autoReconnect', true);
+          for (const k of optional) unset(k);
+        }
+        delete candidate.memberNameIntentCommit;
+      } else {
+        if (!record || record.scope !== scope || !sameWitness(record.witness, witnessOf(base.memberNameIntentCommit))) return refused('not_owned');
+        delete candidate.memberNameIntentCommit; // Only this accepted intent, never a newer witness.
+      }
+      let nextBase: Base, next: CommittedTuple | undefined, serialized: string;
+      let nextDisplay: LoadedSettingsSnapshot<AnnexSettings> | undefined;
+      const healthy = !this.#degraded && !!current;
+      try {
+        nextBase = decode(candidate, this.defaults);
+        serialized = JSON.stringify(nextBase, null, 2); // Stage all allocations before primary IO.
+        if (healthy) {
+          if (current!.revision >= Number.MAX_SAFE_INTEGER - 1) return refused('version_exhausted');
+          const fields = { ...current!.fields };
+          for (const key of touched) {
+            if (fields[key] >= Number.MAX_SAFE_INTEGER - 1) return refused('version_exhausted');
+            fields[key]++;
+          }
+          next = tuple(nextBase, scope, current!.revision + 1, fields);
+          nextDisplay = { value: next.value, primary: jsonObject({ ...next.value }), origin: 'accepted-save', observedAt: Date.now() };
+        }
+      } catch { return refused('schema_invalid'); }
+      const own = Object.freeze({});
+      const ownRecord: Ownership = { scope, loopback: next?.fields.loopbackOnly ?? -1,
+        beforePresent: owns(base, 'loopbackOnly'), beforeValue: before.loopbackOnly,
+        restoreAllowed: command.kind === 'loopback',
+        witness: command.kind === 'local' ? command.witness : undefined };
+      // Mark only errors raised by OUR pre-rename guard as definitely uncommitted.
+      // Generic fs failures are UNKNOWN; never infer successful/failed rename from errno.
+      const guardErrors = new WeakSet<object>();
+      const marked = (): never => {
+        const fixed = new Error('precondition'); guardErrors.add(fixed); throw fixed;
+      };
+      const precondition: SettingsCommitPrecondition = {
+        prepare: async () => { try { await this.#prepare(scope, path, admission); } catch { marked(); } },
+        check: () => { try { this.#check(scope, path, admission); } catch { marked(); } },
+      };
+      try { await this.io.replace(path, serialized, precondition); primary = 'known'; }
+      catch (e) {
+        if (typeof e === 'object' && e !== null && guardErrors.has(e)) return refused('superseded');
+        primary = 'unknown';
+        // Unknown rename outcome/base => emergency MUST strict-reread, not use candidate.
+        if (this.#scope === scope && this.#path === path) this.#fail('primary_outcome_unknown', true);
+        return { kind: 'committed_unconfirmed', primary: 'unknown' };
+      }
+      // Definitive primary signal. NOTHING below can enter filesystem retry/cleanup/rollback.
+      // A stale completion cannot alter a reset/replacement store's state.
+      if (this.#scope !== scope || this.#path !== path) return { kind: 'committed_unconfirmed', primary: 'known' };
+      this.#base = nextBase;
+      try {
+        // One private assignment publishes values+versions+scope. No arbitrary observer.
+        // During the preceding await readers saw the previous COMPLETE tuple.
+        if (next && nextDisplay) { this.#public = next; this.#display = nextDisplay; }
+        this.#ownership.set(own, ownRecord);
+      } catch {
+        this.#fail('publication_failed', false);
+        return { kind: 'committed_unconfirmed', primary: 'known' };
+      }
+      // Postcommit authority loss is committed/unconfirmed, NEVER a settings rollback.
+      try { this.#check(scope, path, admission); }
+      catch { return { kind: 'committed_unconfirmed', primary: 'known' }; }
+      try { this.io.audit(before, publicValue(nextBase)); } catch { /* Audit cannot undo primary. */ }
+      if (!next || this.#degraded) return { kind: 'committed_unconfirmed', primary: 'known' };
+      return { kind: 'committed', before, after: next.value, snapshot: next, ownership: own };
+    }).catch((): CommitResult => {
+      if (primary === 'none') return refused('superseded');
+      if (this.#scope === scope && this.#path === path) this.#fail('postprimary_failure', primary === 'unknown');
+      return { kind: 'committed_unconfirmed', primary };
+    });
+  }
+
+  // Recovery engine invokes this only for a consumed MAIN-issued ticket.
+  // Original document/grant/emergency/launch admission remains separate authority.
+  recoveryStatus(admission: Admission): RecoveryResult { return this.#tickets.status(admission); }
+  recover(raw: unknown, admission: Admission): Promise<RecoveryResult> {
+    return this.#tickets.run(raw, admission, () => this.#reload(admission));
+  }
+  #reload(admission: Admission): Promise<'recovered' | 'refused'> {
+    const scope = this.#scope, path = this.#path;
+    let publicationStarted = false;
+    return this.io.enqueue(async () => {
+      try {
+        await this.#prepare(scope, path, admission);
+        if (!this.#degraded) return 'refused' as const;
+        const raw = await this.io.strictRead(path);
+        this.#check(scope, path, admission);
+        const base = decode(raw, this.defaults); // Missing/unreadable => NO defaults.
+        const epoch = randomUUID();
+        const next = tuple(base, epoch, 0, zeroFields());
+        const display: LoadedSettingsSnapshot<AnnexSettings> = {
+          value: next.value, primary: displayPrimary(raw), origin: 'loaded', observedAt: Date.now(),
+        };
+        const ownership = new WeakMap<object, Ownership>();
+        this.#check(scope, path, admission);
+        publicationStarted = true;
+        this.#base = base; this.#scope = epoch;
+        this.#public = next; this.#display = display; this.#degraded = undefined;
+        this.#ownership = ownership;
+        // NO runtime apply, name intent activation, migration write, or equality adoption.
+        return 'recovered' as const;
+      } catch {
+        if (publicationStarted) this.#fail('recovery_publication_failed', false);
+        return 'refused' as const;
+      }
+    }).catch(() => 'refused');
+  }
+}

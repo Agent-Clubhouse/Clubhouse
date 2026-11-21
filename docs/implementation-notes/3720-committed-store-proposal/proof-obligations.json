@@ -1,0 +1,28 @@
+{
+  "executedByThisArtifact": false,
+  "contract": "38cbdaa9fff26aa28630ad14b5db9c13359d39f1",
+  "controls": [
+    {"id":"field-patch", "cases":["every absent/set x set/unset combination", "explicit equal value and absent unset increment touched versions only after commit", "stale Alias A cannot revert accepted B", "refused pending B cannot enter palette toggle, Color, loopback, disable or purge", "whole-save touched conflict/untouched rebase", "ABA and equal counters with different launch/reset epochs"]},
+    {"id":"normal-commit", "cases":["stalled fsync exposes previous whole tuple only", "Windows EPERM then second-attempt rename success publishes exactly once", "same-value LOCAL commit increments but MCP changed:false is no Ask/write/version", "audit failure/reentrancy only after atomic publication", "invalid witness refused without primary write", "private witness never appears in GET/peekLoaded/audit"]},
+    {"id":"postprimary", "cases":["injected throw including EPERM after primary returns committed_unconfirmed, no retry/cleanup/legacy rollback", "publication failure invalidates DTOs and refuses queued patches", "actual B retained for subsequent emergency off", "async/throwing/reentrant publisher cannot be registered; source fault injection still degrades", "late postcommit admission loss never activates name/runtime or falsely rolls back disk"]},
+    {"id":"unknown-base", "cases":["UNKNOWN primary then valid strict reread and off in same pendingWrite turn preserves actual B", "failed/missing/malformed/unreadable/changing strict reread performs no primary write, live-off remains", "successful emergency establishes known private base but no new epoch/public healing", "second emergency preserves confirmed base; next uncertain replace requires reread again", "no candidate/stale tuple/default/legacy-loader fallback"]},
+    {"id":"races", "cases":["failed Alias and disable both failure orders", "failed first save followed by no-op disable still persists and retires leases", "loopback forward and owned rollback cannot restore newer writer or ABA", "stalled Alias fsync then immediate live-off; later durable disable excludes rejected B", "disable/purge beat old Alias+enable and non-Alias enables/rebinds", "reset during IO holds chain; new initialization reads settled actual primary", "pre-rename navigation, same-URL revisit, Ask revocation, host replacement and real quit refuse stale effects", "postcommit activation failure is committed/partial, never text-equality adoption"]},
+    {"id":"reload", "cases":["authority before known duplicate and healthy shortcut", "fresh healthy no IO/rotation", "ticket consumed and ordinal allocated at entry before queue", "one inflight globally; exact duplicate joins", ">32 failures followed by valid success", "32 completed oldest-first; unknown/evicted never reexecutes", "status cannot allocate ticket or execute", "failed response/status exposes next ticket without autosubmit", "v=2 schema_invalid; own nonenumerable/accessor/prototype extras invalid", "reset/restart/new fault refuse old IDs; no unbounded mapping", "late/evicted renderer reply cannot overwrite newer action", "reload invalid/missing bytes preserved; no migration/runtime/name activation", "concurrent emergency or sender loss prevents recovery publication", "typed submit and lookup failures do not produce unhandled rejection"]},
+    {"id":"defaults", "cases":["existing display store optimistic synchronous accepted-save timing and conditional rollback", "default get/update/skipUnchanged/audit/onLoad and recovery-copy behavior unchanged", "peekLoaded detached/frozen, no initialization/IO/emits", "direct replaceFile modeled Windows EPERM backoff, temp cleanup and repeated preconditions unchanged", "representative agent/group-project direct caller remains compatible"]}
+  ],
+  "requiredMutations": [
+    "publish optimistic Alias before primary",
+    "compose emergency from public old tuple/candidate",
+    "unknown-base emergency uses legacy loader/defaults",
+    "publication exception enters filesystem retry or cache rollback",
+    "publish values with old versions",
+    "reinsert defaults on optional unset",
+    "value equality replaces field version or accepted-intent ownership",
+    "reset releases pendingWrite during entered IO",
+    "recovery missing retained ID silently executes",
+    "recovery permanent 32-failure lockout or unbounded request map",
+    "status allocates ticket/reads disk",
+    "runtime apply/name activation during reload",
+    "unconditional post-await renderer setter"
+  ]
+}
