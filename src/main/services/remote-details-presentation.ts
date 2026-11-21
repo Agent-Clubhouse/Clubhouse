@@ -28,7 +28,9 @@ export async function section(c: RemoteDetailsCard, run: () => Promise<void> | v
  * enclosing reader still retains/checks every selected/run/role/auth receipt.
  * Other cards remain structurally compatible but explicitly not requested;
  * their empty bodies must never be interpreted as verified empty results. */
-export function selectedConnectionPageEnvelope(result: RemoteAgentDetails): void {
+/** `maxBytes` is a wrapping caller's budget (validated by it); the cap stays the default and the ceiling. */
+export function selectedConnectionPageEnvelope(result: RemoteAgentDetails, maxBytes: number = REMOTE_DETAILS_MAX_BYTES): void {
+  const budget = Number.isSafeInteger(maxBytes) && maxBytes > 0 ? Math.min(maxBytes, REMOTE_DETAILS_MAX_BYTES) : REMOTE_DETAILS_MAX_BYTES;
   const requested = result.cards.find((c) => c.id === 'connections');
   if (!requested?.connectionPage) return; // An unsupported/failed page retains its explicit error response.
   result.connectionPageEnvelope = 1; result.connectionPageOnly = true; result.settings = null;
@@ -42,10 +44,10 @@ export function selectedConnectionPageEnvelope(result: RemoteAgentDetails): void
   }
   const sourceNotes = requested.notes.slice(0, 19), omittedNotes = Math.max(0, requested.notes.length - 19);
   const notice = `Source field text was truncated to fit the page envelope. Every selected record and field remains represented.${omittedNotes ? ` ${omittedNotes} additional notice omitted.` : ''}`;
-  for (let limit = 1024; Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES && limit >= 64; limit = Math.floor(limit / 2)) {
+  for (let limit = 1024; Buffer.byteLength(JSON.stringify(result)) > budget && limit >= 64; limit = Math.floor(limit / 2)) {
     requested.rows = requested.rows.map((r) => ({ ...r, label: display(r.label, limit), value: display(r.value, limit) }));
     requested.notes = [...sourceNotes.map((note) => display(note, limit)), display(notice, limit)];
     requested.summary = display(requested.summary, limit);
   }
-  if (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) throw new Error('details_page_limit');
+  if (Buffer.byteLength(JSON.stringify(result)) > budget) throw new Error('details_page_limit');
 }

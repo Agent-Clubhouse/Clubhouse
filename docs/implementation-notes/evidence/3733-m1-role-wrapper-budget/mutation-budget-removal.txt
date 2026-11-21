@@ -1,0 +1,133 @@
+# mutation on 09e4d6522de2da5cf65972eefe654800448b2eca: role read passes no budget
+34c34
+<     const result = await readRemoteAgentDetails(target.agent.id, allowed, query && { ...query }, { maxBytes: REMOTE_DETAILS_MAX_BYTES - overhead });
+---
+>     const result = await readRemoteAgentDetails(target.agent.id, allowed, query && { ...query }, {});
+
+ RUN  v4.1.12 <worktree>
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > refuses an anonymous call or a refused desktop gate before role or ordinary Details reads
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > delegates the exact canonical primary target to ordinary Details under the same gate
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > pages the host-selected role Connections only, validating the page against the query
+ × |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > fits a producer-filled inner body exactly inside the cap for agent id "role1" 25ms
+   → expected 500 to be 200 // Object.is equality
+ × |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > fits a producer-filled inner body exactly inside the cap for agent id "rôle \"quoted\" \\ 名前" 34ms
+   → expected 500 to be 200 // Object.is equality
+ × |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > passes the same budget for a role Connections page 4ms
+   → expected "vi.fn()" to be called once with arguments: [ 'role1', Any<Function>, …(2) ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+    "role1",
+-   Any<Function>,
++   [Function anonymous],
+    {
+      "card": "connections",
+      "offset": 0,
+      "projectOffset": 0,
+      "source": "outgoing",
+    },
+-   {
+-     "maxBytes": 262082,
+-   },
++   {},
+  ]
+
+
+Number of calls: 1
+
+ ✓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > keeps the outer cap: an inner body one byte over the budget is refused, not sent 35ms
+ ✓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > passes a producer refusal through unchanged 2ms
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > keeps an unbound canonical role unavailable without lookup, fallback, enablement or creation
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > keeps failed passive primary admission unavailable: unreadable
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > keeps failed passive primary admission unavailable: backup-only
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > keeps failed passive primary admission unavailable: disposed
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > keeps failed passive primary admission unavailable: wrong-folder
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > rejects role replacement during passive admission before any Details read
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > withholds ordinary Details after an asynchronous final receipt changes: role
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > withholds ordinary Details after an asynchronous final receipt changes: primary-revision
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > withholds ordinary Details after an asynchronous final receipt changes: removed
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > withholds ordinary Details after an asynchronous final receipt changes: revoked
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > preserves an ordinary Details refusal instead of retrying a controller or mobile read
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > rejects a managed inventory-page-only response even before that additive page type is known locally
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > rejects a selected helper-page-only envelope instead of presenting it as full Dispatcher Details
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > rejects a mismatched ordinary response identity and bounds unexpected errors
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > fits a producer-filled inner body exactly inside the cap for agent id "role1"
+ FAIL  |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > fits a producer-filled inner body exactly inside the cap for agent id "rôle \"quoted\" \\ 名前"
+AssertionError: expected 500 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 500
+
+ ❯ src/main/services/selected-dispatcher-details.test.ts:112:29
+    110|       filling(id);
+    111|       const result = await readSelectedDispatcherDetails(() => true);
+    112|       expect(result.status).toBe(200);
+       |                             ^
+    113|       expect(Buffer.byteLength(JSON.stringify(result.body))).toBe(REMO…
+    114|       expect(m.details).toHaveBeenCalledWith(id, expect.any(Function),…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > passes the same budget for a role Connections page
+AssertionError: expected "vi.fn()" to be called once with arguments: [ 'role1', Any<Function>, …(2) ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+    "role1",
+-   Any<Function>,
++   [Function anonymous],
+    {
+      "card": "connections",
+      "offset": 0,
+      "projectOffset": 0,
+      "source": "outgoing",
+    },
+-   {
+-     "maxBytes": 262082,
+-   },
++   {},
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/main/services/selected-dispatcher-details.test.ts:121:25
+    119|       m.details.mockResolvedValue({ status: 200, body: details() });
+    120|       await readSelectedDispatcherDetails(() => true, query);
+    121|       expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', expec…
+       |                         ^
+    122|     });
+    123|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 2 passed | 17 skipped (22)
+   Start at  04:12:24
+   Duration  309ms (transform 77ms, setup 5ms, import 94ms, tests 101ms, environment 0ms)
+
+vitest exit=1
+restored byte-identical
+405150307c5158322d751f238a34419b00ea44fbb19673d94ed61dceed4fd981  src/main/services/selected-dispatcher-details.ts
+405150307c5158322d751f238a34419b00ea44fbb19673d94ed61dceed4fd981  -
+# post-restore git status --short:

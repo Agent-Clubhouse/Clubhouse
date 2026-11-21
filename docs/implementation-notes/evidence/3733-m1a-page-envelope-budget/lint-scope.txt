@@ -1,0 +1,7 @@
+src/main/services/annex-server.test.ts
+src/main/services/remote-agent-details.test.ts
+src/main/services/remote-agent-details.ts
+src/main/services/remote-details-presentation.ts
+src/main/services/selected-connection-page-envelope.test.ts
+src/main/services/selected-dispatcher-details.test.ts
+src/main/services/selected-dispatcher-details.ts
