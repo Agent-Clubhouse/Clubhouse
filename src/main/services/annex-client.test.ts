@@ -158,6 +158,8 @@ import * as annexPeers from './annex-peers';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
 import * as annexSettings from './annex-settings';
+import { devicesChanged } from './annex-device-signal';
+import { CONTROLLER_CHAT_MAX_BYTES } from '../../shared/controller-chat';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import { EventEmitter } from 'events';
@@ -4096,6 +4098,151 @@ describe('annex-client', () => {
         await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
         expect(annexClient.getSatellite(FP)!.connectionGeneration).toBeGreaterThan(epoch!);
         finish(); expect(await pending).toEqual({ status: 'offline' });
+      });
+    });
+
+    describe('controller-only request routes', () => {
+      let targetPeer: AnnexPeer | undefined;
+      let accepted = true;
+      const value = { version: 1, events: [], readOnly: true };
+
+      beforeEach(() => {
+        annexClient.stopClient();
+        targetPeer = {
+          fingerprint: FP, publicKey: 'target', alias: 'Target', icon: 'computer', color: 'indigo',
+          pairedAt: '', lastSeen: '', role: 'member', kind: 'desktop',
+          tlsCertificateFingerprint: 'target-pin', tlsCertificatePem: 'target-cert',
+        };
+        accepted = true;
+        vi.mocked(annexPeers.getPeer).mockImplementation((fp) => fp.toLowerCase() === FP ? targetPeer : undefined);
+        vi.mocked(annexPeers.listPeers).mockImplementation(() => targetPeer ? [targetPeer] : []);
+        vi.spyOn(annexControl, 'getLinkReadiness').mockImplementation((fp) => ({
+          acceptedHere: fp === FP && accepted, openedHere: false,
+        }));
+        vi.spyOn(annexControl, 'request').mockResolvedValue({
+          status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)),
+        });
+        annexClient.startClient();
+      });
+
+      afterEach(() => {
+        annexClient.stopClient();
+        vi.mocked(annexControl.getLinkReadiness).mockRestore();
+        vi.mocked(annexControl.request).mockRestore();
+      });
+
+      it('reads only controller pages and sessions on an authorized reverse route without a main address', async () => {
+        expect(await annexClient.requestControllerChatPage(FP, { sessionId: 'a?/#', beforeSeq: 3 })).toEqual({ status: 'ok', value });
+        expect(await annexClient.requestControllerChatSessions(FP)).toEqual({ status: 'ok', value });
+        expect(annexControl.request).toHaveBeenNthCalledWith(1, FP,
+          { method: 'GET', path: '/api/v1/network/dispatcher/controller/chat?sessionId=a%3F%2F%23&beforeSeq=3' },
+          expect.objectContaining({ maxResponseBytes: CONTROLLER_CHAT_MAX_BYTES, timeoutMs: 30_000 }));
+        expect(annexControl.request).toHaveBeenNthCalledWith(2, FP,
+          { method: 'GET', path: '/api/v1/network/dispatcher/controller/chat/sessions' },
+          expect.objectContaining({ signal: expect.any(AbortSignal) }));
+        expect(requests).toHaveLength(0);
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+        expect(await annexClient.requestAgentSettings(FP, 'a')).toEqual({ status: 'offline' });
+        await expect(annexClient.postToMachine(FP, '/api/v1/anything', {})).rejects.toThrow('Satellite not connected');
+        expect(annexControl.request).toHaveBeenCalledTimes(2);
+      });
+
+      it('keeps direct requests preferred and never retries a failed direct request on control', async () => {
+        annexClient._addConnectedSatelliteForTesting(FP);
+        answers.push({ status: 200, body: value });
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+        vi.mocked(https.request).mockImplementationOnce(() => { throw new Error('reset'); });
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'error' });
+        expect(annexControl.request).not.toHaveBeenCalled();
+        expect(requests).toHaveLength(1);
+      });
+
+      it.each([404, 405, 401, 403, 429, 500])('preserves reverse controller status %s without route retries', async (status) => {
+        vi.mocked(annexControl.request).mockResolvedValue({
+          status, headers: { 'retry-after': '3' }, body: Buffer.from('{}'),
+        });
+        const expected = status === 404 || status === 405 ? { status: 'unavailable' }
+          : status === 401 || status === 403 ? { status: 'forbidden' }
+          : status === 429 ? { status: 'rate_limited', retryAfterMs: 3000 } : { status: 'error' };
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual(expected);
+        expect(annexControl.request).toHaveBeenCalledTimes(1);
+        expect(requests).toHaveLength(0);
+      });
+
+      it.each(['phone', 'pending', 'unpaired', 'one-way', 'opposite'] as const)('never treats %s as reverse read authority', async (kind) => {
+        if (kind === 'phone') targetPeer!.kind = 'phone';
+        if (kind === 'pending') targetPeer!.networkPending = true;
+        if (kind === 'unpaired') vi.mocked(annexPeers.peerNeedsPairing).mockReturnValue(true);
+        if (kind === 'one-way') targetPeer!.role = 'satellite';
+        if (kind === 'opposite') vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: true });
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'offline' });
+        expect(annexControl.request).not.toHaveBeenCalled();
+        expect(requests).toHaveLength(0);
+      });
+
+      it('retains old-peer direct reads and does not retry a failed reverse request', async () => {
+        accepted = false;
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'offline' });
+        annexClient._addConnectedSatelliteForTesting(FP);
+        answers.push({ status: 200, body: value });
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+        annexClient._receiveSatelliteDisconnectForTesting(FP);
+        accepted = true;
+        vi.mocked(annexControl.request).mockRejectedValue(new annexControl.ControlRequestError('transport_unavailable', false, 'once'));
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'error' });
+        expect(annexControl.request).toHaveBeenCalledTimes(1);
+        expect(requests).toHaveLength(1);
+      });
+
+      it.each(['disconnect', 'stop', 'off', 'forget', 'pin', 'pairing', 'revocation', 'host'] as const)(
+        'cancels a reverse controller lease on %s without accepting its late response', async (kind) => {
+          let finish!: (result: annexControl.ControlResult) => void;
+          let signal: AbortSignal | undefined;
+          vi.mocked(annexControl.request).mockImplementation((_fp, _input, options) => new Promise((resolve, reject) => {
+            finish = resolve;
+            signal = options?.signal;
+            signal?.addEventListener('abort', () => reject(new annexControl.ControlRequestError('cancelled', false, 'held')), { once: true });
+          }));
+          const pending = annexClient.requestControllerChatPage(FP);
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+          if (kind === 'disconnect') annexClient.disconnect(FP);
+          if (kind === 'stop') annexClient.stopClient();
+          if (kind === 'off') vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), enableClient: false });
+          if (kind === 'forget') { annexClient.forgetSatellite(FP); targetPeer = undefined; }
+          if (kind === 'pin') targetPeer!.tlsCertificateFingerprint = 'replacement-pin';
+          if (kind === 'pairing') vi.mocked(annexPeers.peerNeedsPairing).mockReturnValue(true);
+          if (kind === 'revocation') targetPeer = undefined;
+          if (kind === 'host') expect(await annexClient.setSatelliteHost(FP, 'replacement.local:9443')).toEqual({ ok: true });
+          devicesChanged();
+          expect(signal?.aborted).toBe(true);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        },
+      );
+
+      it('keeps a reverse lease across an ordinary main connection epoch withdrawal', async () => {
+        let finish!: (result: annexControl.ControlResult) => void;
+        let signal: AbortSignal | undefined;
+        vi.mocked(annexControl.request).mockImplementation((_fp, _input, options) => new Promise((resolve) => {
+          finish = resolve; signal = options?.signal;
+        }));
+        const pending = annexClient.requestControllerChatPage(FP);
+        expect(annexControl.request).toHaveBeenCalledTimes(1);
+        annexClient._addConnectedSatelliteForTesting(FP);
+        annexClient._receiveSatelliteDisconnectForTesting(FP);
+        devicesChanged();
+        expect(signal?.aborted).toBe(false);
+        finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+        expect(await pending).toEqual({ status: 'ok', value });
+      });
+
+      it('requires an explicit connect after a manual pause, without redefining main connectivity', async () => {
+        annexClient.disconnect(FP);
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'offline' });
+        annexClient.connect(FP);
+        expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
       });
     });
 

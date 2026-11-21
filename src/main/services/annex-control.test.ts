@@ -154,6 +154,47 @@ afterEach(() => {
   control.resetControlForTests();
 });
 
+describe('controller caller receive bound', () => {
+  it('accepts the complete exact 8 MiB controller body on negotiated bulk', async () => {
+    const body = Buffer.alloc(CONTROL_FRAME_MAX_BYTES, 0x61);
+    handler = async () => ({ status: 200, headers: {}, body });
+    const { requesterWs } = await connected(['request', 'bulk']);
+    const result = await control.request(TARGET, { method: 'GET', path: '/api/v1/network/dispatcher/controller/chat' },
+      { maxResponseBytes: CONTROL_FRAME_MAX_BYTES });
+    expect(result.body.equals(body)).toBe(true);
+    expect(requesterWs.sent.some((frame) => frame.type === 'bulk' && frame.op === 'credit')).toBe(true);
+  });
+
+  it('rejects bound+1 at bulk start before credit or allocation without retiring the valid link', async () => {
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(CONTROL_FRAME_MAX_BYTES + 1) });
+    const { requesterWs } = await connected(['request', 'bulk']);
+    await expect(control.request(TARGET, { method: 'GET', path: '/api/v1/network/dispatcher/controller/chat' },
+      { maxResponseBytes: CONTROL_FRAME_MAX_BYTES })).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    expect(requesterWs.sent.some((frame) => frame.type === 'bulk' && frame.op === 'credit')).toBe(false);
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(true);
+  });
+
+  it.each(['utf8', 'base64'] as const)('checks decoded %s inline bytes before answering', async (encoding) => {
+    const ws = new FakeSocket();
+    control._attachForTesting(ws as never, TARGET, TARGET_PIN, 'in');
+    ws.deliver({ v: 1, type: 'hello', features: ['request'] });
+    const pending = control.request(TARGET, { method: 'GET', path: '/api/v1/network/dispatcher/controller/chat' },
+      { maxResponseBytes: 1 });
+    const request = sentOfType(ws, 'request')[0];
+    ws.deliver({ v: 1, type: 'response', id: request.id, status: 200, headers: {},
+      body: Buffer.from([0xc3, 0xa9]).toString(encoding), encoding });
+    await expect(pending).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+  });
+
+  it('rejects an invalid local receive limit without dispatching a request', async () => {
+    const { requesterWs } = await connected();
+    await expect(control.request(TARGET, { method: 'GET', path: '/api/v1/status' }, { maxResponseBytes: -1 }))
+      .rejects.toMatchObject({ code: 'invalid_request', indeterminate: false });
+    expect(sentOfType(requesterWs, 'request')).toHaveLength(0);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
 describe('capability hello and mixed versions', () => {
   it('the accepting side sends nothing until the opener says hello, then only what both support', async () => {
     const ws = new FakeSocket();

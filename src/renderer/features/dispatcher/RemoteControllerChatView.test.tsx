@@ -3,6 +3,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { ChatEvent } from '../../../shared/chat';
 import type { ControllerChatPage } from '../../../shared/controller-chat';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
+import { useAnnexStore } from '../../stores/annexStore';
+import type { AnnexDevice } from '../../../shared/types';
 import { mergeControllerEvents, RemoteControllerChatView } from './RemoteControllerChatView';
 
 const message = (seq: number, text: string, sessionId = 's'): ChatEvent => ({ agentId: 'work', sessionId, seq, ts: seq, type: 'agent_message', data: { messageId: `m${seq}`, text } });
@@ -13,12 +15,50 @@ function page(events: ChatEvent[] = [], rest: Partial<ControllerChatPage> = {}) 
 const read = () => vi.mocked(window.clubhouse.annexClient.controllerChatPage);
 beforeEach(() => {
   useAnnexClientStore.setState({ satellites: [] });
+  useAnnexStore.setState({ devices: [] });
+  vi.mocked(window.clubhouse.annex.getDevices).mockResolvedValue([]);
   read().mockResolvedValue(page());
   vi.mocked(window.clubhouse.annexClient.controllerChatSessions).mockResolvedValue({ status: 'ok', value: { sessions: [] } });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('remote controller desktop chat', () => {
+  it('reloads the readonly controller after reverse outbound readiness recovers without a main connection', async () => {
+    const device: AnnexDevice = {
+      fingerprint: 'peer', alias: 'Peer', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop',
+      state: 'connected', pairedAt: '', lastSeen: '', problem: null,
+      reach: { outbound: { state: 'up', via: 'reverse' }, inbound: { state: 'down' } },
+    };
+    read().mockResolvedValueOnce({ status: 'offline' }).mockResolvedValue(page([message(1, 'Reverse recovery')]));
+    render(<RemoteControllerChatView machine="peer" />);
+    expect(await screen.findByText(/That computer is offline/)).toBeInTheDocument();
+    await act(async () => { useAnnexStore.setState({ devices: [device] }); });
+    expect(await screen.findByText('Reverse recovery')).toBeInTheDocument();
+    expect(read()).toHaveBeenCalledTimes(2);
+    expect(useAnnexClientStore.getState().satellites).toEqual([]);
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('suppresses a late controller result when reverse readiness is withdrawn', async () => {
+    const device: AnnexDevice = {
+      fingerprint: 'peer', alias: 'Peer', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop',
+      state: 'connected', pairedAt: '', lastSeen: '', problem: null,
+      reach: { outbound: { state: 'up', via: 'reverse' }, inbound: { state: 'down' } },
+    };
+    let finish!: (result: ReturnType<typeof page>) => void;
+    vi.mocked(window.clubhouse.annex.getDevices).mockResolvedValue([device]);
+    useAnnexStore.setState({ devices: [device] });
+    read().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+      .mockResolvedValue({ status: 'offline' });
+    render(<RemoteControllerChatView machine="peer" />);
+    await waitFor(() => expect(read()).toHaveBeenCalledTimes(1));
+    await act(async () => { useAnnexStore.setState({ devices: [] }); });
+    expect(await screen.findByText(/That computer is offline/)).toBeInTheDocument();
+    await act(async () => { finish(page([message(1, 'Retired private result')])); });
+    expect(screen.queryByText('Retired private result')).toBeNull();
+    expect(read()).toHaveBeenCalledTimes(2);
+  });
+
   it('renders full conversation messages read-only and fetches earlier pages lazily', async () => {
     read().mockResolvedValueOnce(page([message(3, 'Newest controller reply')], { nextBeforeSeq: 3 }))
       .mockResolvedValueOnce(page([message(1, 'Earlier controller reply')], { nextBeforeSeq: null }));
