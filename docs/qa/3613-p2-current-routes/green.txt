@@ -1,0 +1,58 @@
+Current-main integrated P2 proof
+Base: 6130b29669f58c8a7bad112aa745d4ca43775971 (actual #3748 squash)
+Candidate: cf62a25df9457027b8e2be3eefbdc12524542b47
+Tree: 1e421cee8614e01699795f916a8e3f9e53bb8351
+Only the isolated nine P2 commits were replayed onto the actual landed base.
+Preserved pre-integration ref: archive/3613-p2-pre-wake-integration
+at 5ba770ea885d0a4e7e36c4fb995c7bea72db4b8f.
+Old failures, pre-fix passes, correction and temporary composition receipts
+remain in baseline.txt, prior-proof.txt, independent-review.txt and manifest.json.
+No prior test or CI results were transferred to this head.
+
+Fresh exact-head gate: lane-p2 4,
+2026-11-21T06:56:21Z--06:56:58Z, exit 0.
+Observed admission: idle88%, available28562MiB, free82%.
+All test commands unset COPILOT_CONNECTION_TOKEN and use one worker.
+
+1. Current focused route/control/client/settings/reach/peer/authorizer sources
+env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/services/annex-routes.test.ts src/main/services/annex-control-reconnect.test.ts src/main/services/annex-control.test.ts src/main/services/annex-client.test.ts src/main/ipc/annex-handlers.test.ts src/main/services/annex-reach.test.ts src/main/services/annex-peers.test.ts src/main/services/annex-authorizer.test.ts --maxWorkers=1 --reporter=dot
+675 PASS / 8 files / 0 skips.
+Includes all 23 approved wake resume-freshness cases and 15 P2 lifecycle/epoch
+cases, including negotiated route retirement/late-frame refusal and the actual
+old-main-refusal disconnect/Retry case that was red without the wake fence.
+
+2. Current read/write/refusal and canonical attachment regression
+env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/services/annex-server.test.ts src/main/services/annex-mobile-contract.test.ts -t "reverse requests over the control connection|principal and authorizer|Annex mobile contract fixtures attachments$" --maxWorkers=1 --reporter=dot
+65 PASS / 2 files / 562 selector skips.
+Includes existing P3 authorizer/refusal, P4/P5 lifetime, P6 bulk/staging fences
+and one canonical mobile attachment case. This is not the full phone renderer.
+Total on the same exact current head: 740 PASS.
+
+3. Production and complete new route/reconnect fixture typing
+./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/tsc -p docs/annex-reverse-routes.tsconfig.json
+Both PASS.
+
+4. Scoped lint, freshly compared with the actual landed base
+./node_modules/.bin/eslint src/main/services/annex-routes.ts src/main/services/annex-routes.test.ts src/main/services/annex-control.ts src/main/services/annex-control-reconnect.test.ts src/main/services/annex-client.ts src/main/services/annex-client.test.ts src/main/ipc/annex-handlers.ts src/main/ipc/annex-handlers.test.ts --format=json
+0 errors / 162 warnings / 8 files.
+Actual6130 five-existing-file baseline: 0 errors / 162 warnings.
+The relative-file/rule/severity/message multiset is identical; no new warnings.
+Multiset SHA256:
+08ad7500a318fb67ae8e7ad0af3a22632dac9313b7d9d2bd93eba14dece6ccd1
+
+5. Fresh byte/source integrity against actual6130
+103 tracked phone fixture files / 1529301 bytes are worktree and committed
+byte-identical. Aggregate SHA256:
+93027e7e0cd104ec5f9f1664c7965b54e37156c60dffec23ef8ef9f503c4fbbf
+Algorithm: sorted relativePath NUL byteLength NUL originalBytes.
+No full renderer/comparator, full local suite, E2E, calibration, native/process-
+tree execution, install, settings/permission/release change or held-draft merge.
+Server, agent-config, authorizer, control-bulk, shared control protocol, phone
+route contract and dependency manifests are unchanged from actual6130.
+
+Final independent integrated delta QA: no high-confidence findings on exact
+actual6130..cf62; known wake dependency satisfied (independent-review.txt).
+Hosted CI remains a separate, newly requested receipt, not old CI transfer.
+This proves only the bounded P2 product slice, not full-surface duplex, P7/P7w/P8,
+the specifically refused federation production review, frozen233a or release.

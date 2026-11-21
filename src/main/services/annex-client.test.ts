@@ -7,6 +7,10 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { networkInterfaces } from 'node:os';
+import * as tls from 'tls';
+import { Socket as NetSocket } from 'net';
+import type { AnnexPeer } from '../../shared/types';
+import { authorize, stillAuthorized } from './annex-authorizer';
 
 // ---------------------------------------------------------------------------
 // Mocks — set up before importing the module under test
@@ -78,6 +82,8 @@ vi.mock('./annex-identity', () => ({
 
 vi.mock('./annex-tls', () => ({
   PIN_MISMATCH_CODE: 'ERR_ANNEX_PIN_MISMATCH',
+  extractPeerFingerprint: vi.fn(),
+  extractPeerCertificateFingerprint: vi.fn(),
   createPinnedTlsClientOptions: vi.fn().mockReturnValue({ pinned: true }),
   probePeerCertificate: vi.fn(),
   verifyPinnedEndpoint: vi.fn(async () => undefined),
@@ -143,6 +149,7 @@ vi.mock('https', async (importOriginal) => {
 });
 
 import * as annexClient from './annex-client';
+import * as annexControl from './annex-control';
 import { CAPACITY_SAMPLE_TIMEOUT_MS, withCapacityDeadline } from './handoff-capacity';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../telemetry/types';
@@ -275,6 +282,264 @@ describe('annex-client', () => {
     annexClient.stopClient();
     vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  describe('independent control connection lifecycle', () => {
+    it('does not close the independently maintained control connection when /ws drops', () => {
+      const close = vi.spyOn(annexControl, 'closeFor');
+      try {
+        annexClient._addConnectedSatelliteForTesting('control-peer');
+        annexClient._receiveSatelliteDisconnectForTesting('control-peer');
+        expect(close).not.toHaveBeenCalledWith('control-peer', 'out');
+      } finally {
+        close.mockRestore();
+      }
+    });
+
+    it('seeds only eligible pinned desktop members and keeps their saved forward local', () => {
+      const setSource = vi.spyOn(annexControl, 'setConnectionSource');
+      const member = {
+        fingerprint: 'control-peer', publicKey: 'key', alias: 'Studio', icon: 'computer', color: 'indigo',
+        role: 'member' as const, kind: 'desktop' as const, pairedAt: '2026-01-01', lastSeen: '2026-01-01',
+        tlsCertificateFingerprint: 'AB:CD', tlsCertificatePem: 'pem', typedHost: 'localhost:7555', typedHostCert: 'AB:CD',
+      };
+      vi.mocked(annexPeers.listPeers).mockReturnValue([
+        member,
+        { ...member, fingerprint: 'phone', kind: 'phone', typedHost: undefined },
+        { ...member, fingerprint: 'pending', networkPending: true, typedHost: undefined },
+        { ...member, fingerprint: 'one-to-one', role: 'satellite', typedHost: undefined },
+        { ...member, fingerprint: 'old-pairing', tlsCertificateFingerprint: undefined, typedHost: undefined },
+      ]);
+      try {
+        annexClient.startClient();
+        const source = setSource.mock.calls.at(-1)?.[0];
+        expect(source?.plans()).toMatchObject([{
+          fingerprint: 'control-peer', pin: 'AB:CD',
+          routes: [{ host: 'localhost', port: 7555, privateTo: LOCAL_IDENTITY.fingerprint }],
+        }]);
+        expect(source?.plans()).toHaveLength(1);
+        annexClient.stopClient();
+        expect(setSource).toHaveBeenLastCalledWith(null);
+      } finally {
+        setSource.mockRestore();
+      }
+    });
+  });
+
+  describe('separate authenticated control lifetime', () => {
+    class Socket extends EventEmitter {
+      readyState = 0;
+      bufferedAmount = 0;
+      sent: Record<string, unknown>[] = [];
+      constructor(readonly url: string) { super(); }
+      send(text: string, written?: () => void): void { this.sent.push(JSON.parse(text)); written?.(); }
+      ping(): void { this.emit('pong'); }
+      close(code = 1000): void {
+        if (this.readyState === 3) return;
+        this.readyState = 3;
+        this.emit('close', code, Buffer.from(''));
+      }
+      terminate(): void { this.close(1006); }
+    }
+
+    function setup() {
+      vi.useFakeTimers();
+      vi.spyOn(Math, 'random').mockReturnValue(0.5);
+      const fingerprint = 'control-lifetime-peer';
+      const pin = 'AB:CD';
+      const world: { peer?: AnnexPeer } = { peer: {
+        fingerprint, publicKey: 'key', alias: 'Studio', icon: 'computer', color: 'indigo',
+        role: 'member', kind: 'desktop', pairedAt: '2026-01-01', lastSeen: '2026-01-01',
+        tlsCertificateFingerprint: pin, tlsCertificatePem: 'pem', knownHosts: ['studio.local'], mainPort: 9443,
+      } };
+      const sockets: Socket[] = [];
+      WebSocketMock.mockImplementation(function (url: string) {
+        const socket = new Socket(url);
+        sockets.push(socket);
+        return socket;
+      });
+      vi.mocked(annexPeers.listPeers).mockImplementation(() => world.peer ? [world.peer] : []);
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp) => fp === fingerprint ? world.peer : undefined);
+      vi.mocked(annexPeers.removePeer).mockImplementation(() => { world.peer = undefined; return true; });
+      vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(fingerprint);
+      vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValue(pin);
+      const deps = {
+        findPeer: (fp: string) => fp === fingerprint ? world.peer : undefined,
+        isSessionOnly: () => false,
+        networkEnabled: () => annexSettings.networkEnabled(annexSettings.getSettings()),
+      };
+      const dispatch = vi.fn(async () => ({ complete: true, status: 200, headers: {}, body: Buffer.from('ok') }));
+      annexControl.setControlTarget({
+        authorize: (caller) => authorize(caller, deps),
+        stillAuthorized: (principal) => stillAuthorized(principal, deps),
+        dispatch,
+      });
+      annexClient.startClient();
+      const control = sockets.find((socket) => socket.url.endsWith('/control'));
+      const main = sockets.find((socket) => socket.url.includes('/ws?client=desktop'));
+      if (!control || !main) throw new Error('Expected independent control and main dials');
+      const openControl = (socket = control) => {
+        const tlsSocket = new tls.TLSSocket(new NetSocket());
+        socket.emit('upgrade', { socket: tlsSocket });
+        tlsSocket.destroy();
+        if (socket.readyState === 3) return;
+        socket.readyState = 1;
+        socket.emit('open');
+        socket.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })), false);
+      };
+      main.readyState = 1;
+      main.emit('open');
+      return { fingerprint, pin, world, sockets, control, main, openControl, dispatch };
+    }
+
+    afterEach(() => {
+      annexControl.resetControlForTests();
+      vi.mocked(Math.random).mockRestore();
+    });
+
+    it('keeps a negotiated control connection usable after the ordinary main socket drops', async () => {
+      const fixture = setup();
+      fixture.openControl();
+      fixture.main.close(1006);
+      expect(annexClient.getSatellite(fixture.fingerprint)?.state).toBe('disconnected');
+      expect(fixture.control.readyState).toBe(1);
+      fixture.control.emit('message', Buffer.from(JSON.stringify({
+        v: 1, type: 'request', id: 'after-main-drop', method: 'GET', path: '/api/v1/mobile/capabilities',
+      })), false);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.dispatch).toHaveBeenCalledOnce();
+      expect(fixture.control.sent).toContainEqual(expect.objectContaining({ type: 'response', id: 'after-main-drop', status: 200 }));
+    });
+
+    it('closes control exactly once on explicit disconnect and does not reopen it on refresh bursts', async () => {
+      const fixture = setup();
+      fixture.openControl();
+      const close = vi.spyOn(annexControl, 'closeFor');
+      try {
+        annexClient.disconnect(fixture.fingerprint);
+        expect(close).toHaveBeenCalledExactlyOnceWith(fixture.fingerprint, 'out');
+        expect(fixture.control.readyState).toBe(3);
+        for (let i = 0; i < 20; i++) annexControl.refreshConnections();
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(fixture.sockets.filter((socket) => socket.url.endsWith('/control'))).toHaveLength(1);
+      } finally { close.mockRestore(); }
+    });
+
+    it.each(['forget', 'pin-mismatch', 'pairing-loss', 'client-off', 'network-off', 'stop'])(
+      'withdraws independent control authority on %s and ignores stale callbacks',
+      async (reason) => {
+        const fixture = setup();
+        fixture.openControl();
+        if (reason === 'forget') annexClient.forgetSatellite(fixture.fingerprint);
+        if (reason === 'pin-mismatch') fixture.main.emit('error', Object.assign(new Error('pin'), { code: 'ERR_ANNEX_PIN_MISMATCH' }));
+        if (reason === 'pairing-loss') {
+          const response = Object.assign(new EventEmitter(), { statusCode: 401 });
+          fixture.main.emit('unexpected-response', { destroy: vi.fn() }, response);
+          response.emit('data', Buffer.from('{"error":"peer_not_paired"}'));
+          response.emit('end');
+          await vi.advanceTimersByTimeAsync(0);
+        }
+        if (reason === 'client-off') vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), enableClient: false });
+        if (reason === 'network-off') vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), networkEnabled: false });
+        if (reason === 'stop') annexClient.stopClient();
+        annexControl.refreshConnections();
+        expect(fixture.control.readyState).toBe(3);
+        fixture.control.emit('message', Buffer.from(JSON.stringify({
+          v: 1, type: 'request', id: 'stale-control', method: 'POST', path: '/api/v1/mobile/commands',
+        })), false);
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(fixture.dispatch).not.toHaveBeenCalled();
+        expect(fixture.sockets.filter((socket) => socket.url.endsWith('/control'))).toHaveLength(1);
+      },
+    );
+
+    it('fences an old route handshake and its callbacks when the saved host is replaced', async () => {
+      const fixture = setup();
+      const member = fixture.world.peer;
+      if (!member) throw new Error('Expected the paired member');
+      fixture.world.peer = { ...member, knownHosts: ['replacement.local'] };
+      annexControl.refreshConnections();
+      fixture.openControl();
+      expect(fixture.control.sent).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1000);
+      const replacement = fixture.sockets.find((socket) => socket.url === 'wss://replacement.local:9443/control');
+      if (!replacement) throw new Error('Expected a replacement route');
+      fixture.openControl(replacement);
+      fixture.control.emit('error', Object.assign(new Error('stale pin error'), { code: 'ERR_ANNEX_PIN_MISMATCH' }));
+      fixture.control.emit('close', 4403);
+      expect(replacement.readyState).toBe(1);
+      expect(replacement.sent).toHaveLength(1);
+    });
+
+    it('does not let explicit control Retry bypass client-off settings', () => {
+      const fixture = setup();
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), enableClient: false });
+      annexControl.retryConnection(fixture.fingerprint);
+      expect(fixture.control.readyState).toBe(3);
+      expect(fixture.sockets.filter((socket) => socket.url.endsWith('/control'))).toHaveLength(1);
+    });
+
+    it('retires negotiated control on saved-host withdrawal after a main drop and refuses stale writes', async () => {
+      const fixture = setup();
+      fixture.openControl();
+      fixture.main.close(1006);
+      const member = fixture.world.peer;
+      if (!member) throw new Error('Expected the paired member');
+      fixture.world.peer = { ...member, knownHosts: ['replacement.local'] };
+      annexControl.refreshConnections();
+      expect(fixture.control.readyState).toBe(3);
+      fixture.control.emit('message', Buffer.from(JSON.stringify({
+        v: 1, type: 'request', id: 'withdrawn-route-write', method: 'POST', path: '/api/v1/mobile/commands',
+      })), false);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.dispatch).not.toHaveBeenCalled();
+      const replacement = fixture.sockets.find((socket) => socket.url === 'wss://replacement.local:9443/control');
+      if (!replacement) throw new Error('Expected a replacement route');
+      fixture.openControl(replacement);
+      fixture.control.emit('error', Object.assign(new Error('stale pin error'), { code: 'ERR_ANNEX_PIN_MISMATCH' }));
+      fixture.control.emit('close', 4403);
+      replacement.emit('message', Buffer.from(JSON.stringify({
+        v: 1, type: 'request', id: 'replacement-route-read', method: 'GET', path: '/api/v1/mobile/capabilities',
+      })), false);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.dispatch).toHaveBeenCalledOnce();
+      expect(replacement.sent).toContainEqual(expect.objectContaining({ type: 'response', id: 'replacement-route-read', status: 200 }));
+    });
+
+    it('ignores an old main refusal after Retry while independently authenticated control stays usable', async () => {
+      const fixture = setup();
+      fixture.openControl();
+      fixture.main.close(1006);
+      annexClient.retry(fixture.fingerprint);
+      const firstRetry = fixture.sockets.filter((socket) => socket.url.includes('/ws?client=desktop'))[1];
+      if (!firstRetry) throw new Error('Expected the first main retry');
+      const request = { destroy: vi.fn() };
+      const response = Object.assign(new EventEmitter(), { statusCode: 401 });
+      firstRetry.emit('unexpected-response', request, response);
+      annexClient.disconnect(fixture.fingerprint);
+      annexClient.retry(fixture.fingerprint);
+      const replacement = fixture.sockets.filter((socket) => socket.url.includes('/ws?client=desktop'))[2];
+      if (!replacement) throw new Error('Expected a replacement main connection');
+      const replacementControl = fixture.sockets.filter((socket) => socket.url.endsWith('/control'))[1];
+      if (!replacementControl) throw new Error('Expected a replacement control connection');
+      fixture.openControl(replacementControl);
+      replacement.readyState = 1;
+      replacement.emit('open');
+      response.emit('data', Buffer.from('{"error":"peer_not_paired"}'));
+      response.emit('end');
+      await vi.advanceTimersByTimeAsync(0);
+      expect({
+        mainState: annexClient.getSatellite(fixture.fingerprint)?.state,
+        needsPairing: annexClient.getSatellite(fixture.fingerprint)?.needsPairing ?? false,
+        controlState: replacementControl.readyState,
+      }).toEqual({ mainState: 'connected', needsPairing: false, controlState: 1 });
+      replacementControl.emit('message', Buffer.from(JSON.stringify({
+        v: 1, type: 'request', id: 'after-stale-main-refusal', method: 'GET', path: '/api/v1/mobile/capabilities',
+      })), false);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.dispatch).toHaveBeenCalledOnce();
+      expect(replacementControl.sent).toContainEqual(expect.objectContaining({ type: 'response', id: 'after-stale-main-refusal', status: 200 }));
+    });
   });
 
   // ---- startClient / stopClient ----
@@ -3667,6 +3932,24 @@ describe('annex-client', () => {
       await annexClient.sendChatCommand(FP, { type: 'chat.interrupt', agentId: 'durable_chat', sessionId: 's1' });
       expect(requests[1]).toMatchObject({ method: 'POST', body: { type: 'chat.interrupt', agentId: 'durable_chat', sessionId: 's1', version: 1, epoch: 'ep_1' } });
       expect(requests[1].body.commandId).toEqual(expect.any(String));
+    });
+
+    it('withdraws the cached command epoch on a main drop without closing independent control', async () => {
+      answers.push({ status: 200, body: { epoch: 'before-drop', events: [] } });
+      await annexClient.requestChatPage(FP, 'durable_chat');
+      const close = vi.spyOn(annexControl, 'closeFor');
+      try {
+        annexClient._receiveSatelliteDisconnectForTesting(FP);
+        expect(annexClient.getSatellite(FP)?.state).toBe('disconnected');
+        expect(close).not.toHaveBeenCalledWith(FP, 'out');
+        annexClient._addConnectedSatelliteForTesting(FP);
+        answers.push({ status: 200, body: { epoch: 'after-drop' } });
+        answers.push({ status: 200, body: { status: 'completed', result: {} } });
+        await annexClient.sendChatCommand(FP, { type: 'chat.interrupt', agentId: 'durable_chat', sessionId: 's1' });
+        expect(requests.slice(1).map((request) => `${request.method} ${request.url.replace(/^https:\/\/[^/]+/, '')}`))
+          .toEqual(['GET /api/v1/mobile/capabilities', 'POST /api/v1/mobile/commands']);
+        expect(requests[2].body.epoch).toBe('after-drop');
+      } finally { close.mockRestore(); }
     });
 
     it('sends a terminal answer to its original agent over the pinned permission endpoint', async () => {
