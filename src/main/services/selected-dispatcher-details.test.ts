@@ -56,6 +56,30 @@ describe('staged selected-host Dispatcher Details', () => {
     expect(await fs.readFile(primary, 'utf8')).toBe(before);
   });
 
+  it('pages the host-selected role Connections only, validating the page against the query', async () => {
+    const allowed = vi.fn(() => true);
+    const query = { card: 'connections' as const, source: 'outgoing' as const, offset: 0, projectOffset: 0 };
+    const pageBody = (source = 'outgoing', offset = 0): RemoteAgentDetails => ({ ...details(), connectionPageEnvelope: 1, connectionPageOnly: true, connectionPages: 1,
+      cards: details().cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { source, offset, projectOffset: 0, next: null, known: 0, complete: true } } : { ...c, requested: false }) } as RemoteAgentDetails);
+    m.details.mockResolvedValue({ status: 200, body: pageBody() });
+    const result = await readSelectedDispatcherDetails(allowed, query);
+    expect(result.status).toBe(200); expect(result.body).toEqual({ version: 1, role: 'dispatcher', agentId: 'role1', details: pageBody() });
+    expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', allowed, query);
+    for (const wrong of [pageBody('incoming'), pageBody('outgoing', 25), details()]) {
+      m.details.mockResolvedValue({ status: 200, body: wrong });
+      expect(await readSelectedDispatcherDetails(allowed, query)).toEqual({ status: 500, body: { error: 'dispatcher_details_invalid' } });
+    }
+    m.details.mockClear();
+    for (const bad of [{ card: 'orchestrate', source: 'helpers' }, { card: 'actions', source: 'selected-action-relationships' }, { card: 'connections', source: 'nope' }]) {
+      expect(await readSelectedDispatcherDetails(allowed, bad as never)).toEqual({ status: 400, body: { error: 'invalid_dispatcher_details_query' } });
+    }
+    expect(m.details).not.toHaveBeenCalled(); expect(m.resolve).toHaveBeenCalledTimes(4);
+    expect(await readSelectedDispatcherDetails(() => false, { card: 'orchestrate', source: 'helpers' } as never)).toEqual({ status: 403, body: { error: 'details_read_refused' } });
+    // A page body is never accepted as the whole role read.
+    m.details.mockResolvedValue({ status: 200, body: pageBody() });
+    expect(await readSelectedDispatcherDetails(allowed)).toEqual({ status: 500, body: { error: 'dispatcher_details_invalid' } });
+  });
+
   it('keeps an unbound canonical role unavailable without lookup, fallback, enablement or creation', async () => {
     m.roleId = null;
     expect(await readSelectedDispatcherDetails(() => true)).toEqual({ status: 404, body: { error: 'dispatcher_role_unavailable' } });

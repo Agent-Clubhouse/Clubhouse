@@ -737,15 +737,31 @@ describe('annex-server', () => {
       expect(readRemoteAgentDetails).not.toHaveBeenCalled();
     });
 
-    it('has no mutation/mobile alias or caller-selected identity/path/page inputs', async () => {
+    it('has no mutation/mobile alias or caller-selected identity/path inputs, and no page other than a Connections source page', async () => {
       const { port } = await startAndPair();
       for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route, { agentId: 'unrelated' })).status).toBe(404);
       expect((await request(port, 'GET', '/api/v1/mobile/dispatcher/details')).status).toBe(404);
-      for (const query of ['agentId=unrelated', 'machine=other', 'address=role@other', 'path=/private', 'card=connections&source=helpers']) {
+      for (const query of ['agentId=unrelated', 'machine=other', 'address=role@other', 'path=/private', 'card=connections&source=outgoing&agentId=unrelated',
+        'card=orchestrate&source=helpers', 'card=actions&source=selected-action-relationships', 'card=connections&source=outgoing&source=incoming',
+        'card=connections&source=outgoing&offset=01', 'card=connections&source=outgoing&offset=99999', 'card=connections&source=nope', 'card=connections&source=outgoing&selection=' + 'a'.repeat(64)]) {
         expect((await request(port, 'GET', `${route}?${query}`)).status).toBe(400);
       }
       expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
       expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+
+    it('pages the host-selected role Connections under the same desktop gate', async () => {
+      const page = { ...body(), connectionPageEnvelope: 1, connectionPageOnly: true, connectionPages: 1,
+        cards: body().cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { source: 'incoming', offset: 25, projectOffset: 0, next: null, known: 1, complete: true } } : { ...c, requested: false }) } as RemoteAgentDetails;
+      vi.mocked(readRemoteAgentDetails).mockResolvedValue({ status: 200, body: page });
+      const { port } = await startAndPair();
+      const result = await request(port, 'GET', `${route}?card=connections&source=incoming&offset=25&projectOffset=0`);
+      expect(result.status).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ version: 1, role: 'dispatcher', agentId: id, details: page });
+      expect(readRemoteAgentDetails).toHaveBeenCalledExactlyOnceWith(id, expect.any(Function), { card: 'connections', source: 'incoming', offset: 25, projectOffset: 0 });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' });
+      expect((await request(port, 'GET', `${route}?card=connections&source=incoming`)).status).toBe(403);
+      expect(readRemoteAgentDetails).toHaveBeenCalledTimes(1);
     });
 
     it('keeps an unbound role unavailable rather than creating or selecting another role', async () => {

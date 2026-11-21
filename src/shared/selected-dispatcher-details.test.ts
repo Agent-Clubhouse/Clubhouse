@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, REMOTE_DETAILS_CARD_IDS } from './remote-agent-details';
-import { isSelectedDispatcherDetails, type SelectedDispatcherDetails } from './selected-dispatcher-details';
+import { isSelectedDispatcherConnectionPage, isSelectedDispatcherDetails, type SelectedDispatcherDetails } from './selected-dispatcher-details';
 
 const roleFixture = (): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: {
   version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'claude-code', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null,
@@ -36,5 +36,30 @@ describe('selected Dispatcher full wrapper validation', () => {
     const value = roleFixture(); Object.assign(value.details, { settings: { version: 1, agentId: 'other', readOnly: true, provider: 'CLI', model: 'model', runtime: 'chat', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } } });
     expect(isSelectedDispatcherDetails(value)).toBe(false);
     expect(isSelectedDispatcherDetails({ ...roleFixture(), details: null })).toBe(false);
+  });
+});
+
+describe('selected Dispatcher Connections page validation', () => {
+  const query = { card: 'connections' as const, source: 'outgoing' as const, offset: 25, projectOffset: 0 };
+  const page = (patch: Record<string, unknown> = {}, pagePatch: Record<string, unknown> = {}) => {
+    const value = roleFixture();
+    Object.assign(value.details, { connectionPageEnvelope: 1, connectionPageOnly: true, connectionPages: 1 }, patch);
+    value.details.cards = value.details.cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { source: 'outgoing', offset: 25, projectOffset: 0, next: null, known: 1, complete: true, ...pagePatch } } : { ...c, requested: false }) as never;
+    return value;
+  };
+  it('accepts only the requested page of the bound role', () => {
+    expect(isSelectedDispatcherConnectionPage(page(), query)).toBe(true);
+    expect(isSelectedDispatcherDetails(page())).toBe(false);
+  });
+  it.each([
+    ['another source', {}, { source: 'incoming' }], ['another offset', {}, { offset: 0 }], ['another project offset', {}, { projectOffset: 25 }],
+    ['a whole read', { connectionPageOnly: undefined, connectionPageEnvelope: undefined }, {}], ['a helper page', { helperPageOnly: true }, {}],
+  ] as const)('rejects %s', (_label, patch, pagePatch) => {
+    expect(isSelectedDispatcherConnectionPage(page(patch, pagePatch), query)).toBe(false);
+  });
+  it('rejects extra wrapper fields, other cards and malformed queries', () => {
+    expect(isSelectedDispatcherConnectionPage({ ...page(), receipt: {} }, query)).toBe(false);
+    expect(isSelectedDispatcherConnectionPage(page(), { ...query, card: 'orchestrate' } as never)).toBe(false);
+    expect(isSelectedDispatcherConnectionPage(page(), { card: 'actions', source: 'selected-action-relationships' } as never)).toBe(false);
   });
 });
