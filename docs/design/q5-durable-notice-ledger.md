@@ -453,6 +453,41 @@ Unreadable/corrupt legacy data needs explicit recovery rather than new silent
 baseline. Existing ledger always wins over an old cursor; never import it again
 after migration or allow a newer old-writer scalar to erase unresolved holes.
 Normal legacy budget writes neither edit nor delete the separate ledger.
+
+### R1: baseline pages before one small activation record
+
+An initial or adoption post-ID baseline may exceed64 KiB. Build its immutable
+hash-partitioned index pages first (maximum256 KiB each); for a large page list,
+build bounded immutable index nodes too. File-sync every page/node and sync the
+directory before activation. Until activation they are **inert orphans**, not
+current coverage and not proof of a consumed nonce. The complete baseline is
+identified by a bounded root reference with its digest and aggregate count,
+not by embedding thousands of IDs or an unbounded page list in the delta.
+
+Then append and sync exactly one small activation transaction (at most64 KiB)
+containing that root reference/digest, expected old revision/generation,
+fresh-generation creation and nonce consumption (when adoption requires it).
+Only its verified committed revision exposes the new generation. A failed or
+crashed build/before-record boundary leaves the prior generation and prepared
+nonce unchanged; no partial baseline is visible and orphan pages cause no send.
+A crash after committed activation recovers the entire referenced baseline and
+consumed nonce once, with no historical replay or second adoption. A missing or
+corrupt referenced page after activation refuses that shard rather than
+falling back to an empty baseline. Orphan cleanup is separate bounded maintenance
+after proving non-reference, never an activation or implicit reset operation.
+
+Required control: an actual baseline encoded larger than64 KiB, with process
+crash/failure cuts during page writes, after all page syncs/before activation,
+and after the record sync. Assert no partial generation, no early nonce
+consumption, inert orphans, complete after-record recovery, no replay and
+double-submit returning the same consumed result. Sequence-only initialization
+has a scalar baseline and is unaffected; post-ID/adoption implementation waits
+for narrow independent R1 confirmation.
+
+Local post IDs such as `msg_<timestamp>_<random>` can reveal posting time even
+without message content. Keep them in local userData only; never export them
+to logs/telemetry/Go fixtures. Status should show local retained-byte size and
+the explicit unbounded-OIDs storage consideration for long-lived older boards.
 For sequenced generations only, optionally advance legacy `notified` through
 the contiguous accepted-or-excluded floor, never past the earliest unresolved
 or ready gap, and only after that ledger commit. Exclusions retain the old
