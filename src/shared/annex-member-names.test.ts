@@ -1,10 +1,17 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import vectors from './fixtures/annex-member-names-v1.json';
+import vectorText from './fixtures/annex-member-names-v1.json?raw';
+import type { MemberNamePayload } from './annex-member-names';
 import {
   normalizeLocalMemberName, isMemberName, readMemberNamePayload, encodeMemberNamePayload,
   compareMemberNameOrder, sameMemberNameEpoch, nextMemberNameStamp, remoteMemberNameStampAllowed,
 } from './annex-member-names';
+
+// Preserve lone-surrogate test data through JSON.parse, rather than Vite's stricter JSON transform.
+const vectors: {
+  hashVectors: { record: MemberNamePayload & { id: string }; canonicalBytesHex: string; sha256: string }[];
+  stringCases: { id: string; input: string; writerResult?: string; modernReceiverAcceptsInput: boolean }[];
+} = JSON.parse(vectorText);
 
 const FP = Array(16).fill('aa').join(':');
 const BY = Array(16).fill('bb').join(':');
