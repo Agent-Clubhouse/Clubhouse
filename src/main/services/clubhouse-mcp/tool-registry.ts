@@ -732,7 +732,7 @@ export { sanitizeId, shortHash, buildToolKey } from './binding-tool-key';
 
 /**
  * Build the full tool name from a binding and action suffix.
- * Agent targets: `clubhouse__<project>_<name>_<hash>_b<generation>__<suffix>`
+ * Agent targets: `clubhouse__<project>_<name>_b<generation>__<suffix>`
  * Other targets: `<targetKind>__<sanitizedId>__<suffix>`
  */
 export function buildToolName(binding: McpBinding, suffix: string): string {

@@ -9,7 +9,7 @@ let generation = 0n;
 export function initializeBindingToolKey(binding: McpBinding): void {
   if (binding.targetKind !== 'agent' && binding.targetKind !== 'group-project') return;
   if (bindingToolKeys.has(binding)) return;
-  bindingToolKeys.set(binding, `${displayToolKey(binding)}_b${(++generation).toString(36)}`);
+  bindingToolKeys.set(binding, displayToolKey(binding, `b${(++generation).toString(36)}`));
 }
 
 /** An actual wire keeps its key; an unbound descriptor only formats a display key. */
@@ -37,16 +37,16 @@ export function shortHash(input: string): string {
  * For agent targets: `<project>_<targetName>_<hash>`
  * For other targets: sanitized targetId.
  */
-function displayToolKey(binding: McpBinding): string {
+function displayToolKey(binding: McpBinding, identity?: string): string {
   if (binding.targetKind === 'agent') {
     const project = sanitizeId(binding.projectName || 'project');
     const name = sanitizeId(binding.targetName || binding.label || binding.targetId);
-    const hash = shortHash(binding.targetId);
+    const hash = identity ?? shortHash(binding.targetId);
     return `${project}_${name}_${hash}`;
   }
   if (binding.targetKind === 'group-project') {
     const name = sanitizeId(binding.targetName || binding.label || binding.targetId);
-    const hash = shortHash(binding.targetId);
+    const hash = identity ?? shortHash(binding.targetId);
     return `${name}_${hash}`;
   }
   return sanitizeId(binding.targetId);
