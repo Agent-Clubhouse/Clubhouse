@@ -175,7 +175,7 @@ describe('private registered handoff and transport capabilities', () => {
   it('does not admit a ticket whose weak original record is unavailable even after entry', () => {
     const { lease } = live();
     const { handoff } = dispatch(lease);
-    vi.stubGlobal('WeakRef', class { deref() { return undefined; } });
+    vi.stubGlobal('WeakRef', class { deref(): undefined { return undefined; } });
     const ticket = notice.transportAdmission(handoff, lease.resource);
     handoff.tryEnter();
     expect(notice.isRegisteredAdmission(ticket)).toBe(true);

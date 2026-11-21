@@ -1,0 +1,3 @@
+2026-11-21T19:29:53Z START lane-p2 idle=91% unused=10G avail=33590M freepct=87 comp=1097M swap=3929M pid=11580 cmd=npm exec -- tsc --noEmit --project docs/evidence/q5-runtime-p1/fixture-tsconfig.json
+src/main/services/agent-runtime/runtime-coordinator.test.ts(178,38): error TS7010: 'deref', which lacks return-type annotation, implicitly has an 'any' return type.
+2026-11-21T19:29:54Z END lane-p2 rc=2

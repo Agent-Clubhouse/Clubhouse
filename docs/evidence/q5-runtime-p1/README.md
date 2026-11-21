@@ -2,8 +2,9 @@
 
 **NOT ACCEPTED.** Normal admission subsequently executed the frozen `c616`
 candidate: 39 targeted tests and scoped lint passed, but production TypeScript
-failed. This successor contextually types the ten frozen brand constructors;
-its execution proof is still pending. The original refusal and compiler failure
+failed. This successor contextually types the ten frozen brand constructors and
+annotates the absent-target fixture after its distinct type failure; its exact
+execution proof is still pending. The original refusal and compiler failures
 are preserved, not converted into passes. No PR, runtime binding, phone
 acceptance or journal acceptance is claimed.
 
@@ -55,7 +56,7 @@ the exact candidate source in this evidence commit; they are not execution proof
 | --- | --- |
 | `src/shared/chat/runtime.ts` | `3d30b01c5a256a3f7d7b2735e1506ea18922c8c2bb0e55ab60a446aa4104bb32` |
 | `src/main/services/agent-runtime/runtime-coordinator.ts` | `695423ea0ba6ecb91961b9420b0c64f316e3e26229271b0a12afd3e1360ee9c0` |
-| `src/main/services/agent-runtime/runtime-coordinator.test.ts` | `d58f04aaea8beb6acc9ce7bccd155dcb260b32407cf2f626b7222d8d9eec8c09` |
+| `src/main/services/agent-runtime/runtime-coordinator.test.ts` | `b74712c6a5373dc24ff913588ce714fd09bacda084b09d10f60d3bf17300de55` |
 
 P1 adds unused main-issued brands/types and one unwired singleton with private
 registries, original generation/start/resource identity, queue/publication
@@ -179,6 +180,16 @@ test file; production TypeScript excludes tests. Its distinct gated check is
 `npm exec -- tsc --noEmit --project docs/evidence/q5-runtime-p1/fixture-tsconfig.json`.
 Successor tests, production/fixture types, lint, mutants and exact-source
 re-review remain pending. Earlier `c616` passes are not successor proof.
+
+The brand-typing successor `a5781b18461e8450f88d3997fe506018a5f779a6`
+then passed normally gated production TypeScript (END `19:29:46Z`, rc 0).
+Its separate fixture check failed TS7010 on the fake WeakRef `deref` method's
+inferred `any` return (END `19:29:54Z`, rc 2).
+`fixture-tsc-attempt-01-original.txt` preserves that byte-identical failure,
+SHA256 `0016e92960427dcac8aa87a5c7ab918e7099cdbe191bbb91433e9d83819f6787`.
+The one-line `: undefined` fixture annotation preserves behavior and satisfies
+the inherited `noImplicitAny`; no compiler option is relaxed. This new head must
+receive its own complete proof and re-review, not inherit earlier passes.
 
 ## Deliberately deferred
 
