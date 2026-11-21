@@ -73,6 +73,7 @@ describe('REST route templates', () => {
     expect(templates.filter((t) => !allowed.includes(t))).toEqual([]);
     expect(allowed.filter((v) => v !== 'other' && !templates.includes(v as never))).toEqual([]);
     expect(routeTemplate('GET', /^\/api\/v1\/agents\/([^/]+)\/sessions\/([^/]+)\/transcript(\?.*)?$/)).toBe('GET /api/v1/agents/:id/sessions/:id/transcript');
+    expect(routeTemplate('GET', /^\/api\/v1\/agents\/([^/?]+)\/(details)(\?.*)?$/)).toBe('GET /api/v1/agents/:id/details');
   }, 30_000); // importing the satellite module is slow on a loaded machine
 });
 
