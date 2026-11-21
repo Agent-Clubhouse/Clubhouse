@@ -1,0 +1,1930 @@
+# RED: source files restored to main d8c7247a4dccc1ebff01f0f28f8e61279bdf5437, new tests kept
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > refuses an anonymous call or a refused desktop gate before role or ordinary Details reads
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > delegates the exact canonical primary target to ordinary Details under the same gate
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > pages the host-selected role Connections only, validating the page against the query
+ × |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > fits a producer-filled inner body exactly inside the cap for agent id "role1" 26ms
+   → expected 500 to be 200 // Object.is equality
+ × |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > fits a producer-filled inner body exactly inside the cap for agent id "rôle \"quoted\" \\ 名前" 38ms
+   → expected 500 to be 200 // Object.is equality
+ × |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > passes the same budget for a role Connections page 4ms
+   → expected "vi.fn()" to be called once with arguments: [ 'role1', Any<Function>, …(2) ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+    "role1",
+-   Any<Function>,
++   [Function anonymous],
+    {
+      "card": "connections",
+      "offset": 0,
+      "projectOffset": 0,
+      "source": "outgoing",
+-   },
+-   {
+-     "maxBytes": 262082,
+    },
+  ]
+
+
+Number of calls: 1
+
+ ✓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > keeps the outer cap: an inner body one byte over the budget is refused, not sent 39ms
+ ✓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > passes a producer refusal through unchanged 2ms
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > keeps an unbound canonical role unavailable without lookup, fallback, enablement or creation
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > keeps failed passive primary admission unavailable: unreadable
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > keeps failed passive primary admission unavailable: backup-only
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > keeps failed passive primary admission unavailable: disposed
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > keeps failed passive primary admission unavailable: wrong-folder
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > rejects role replacement during passive admission before any Details read
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > withholds ordinary Details after an asynchronous final receipt changes: role
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > withholds ordinary Details after an asynchronous final receipt changes: primary-revision
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > withholds ordinary Details after an asynchronous final receipt changes: removed
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > withholds ordinary Details after an asynchronous final receipt changes: revoked
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > preserves an ordinary Details refusal instead of retrying a controller or mobile read
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > rejects a managed inventory-page-only response even before that additive page type is known locally
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > rejects a selected helper-page-only envelope instead of presenting it as full Dispatcher Details
+ ↓ |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > rejects a mismatched ordinary response identity and bounds unexpected errors
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: missing-source
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: legacy-source
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: broken-index
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: missing-index
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: withheld
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: truncated
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: missing-controller
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: wrong-role
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: name-collision
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: controller-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: grants-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: description-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: source-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: switch-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: switch-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: switch-unknown
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: connected-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: both
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: both-level-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: both-controller-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: both-revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: on
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: missing-controller
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: mismatched-id
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: wrong-folder
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: unreadable-primary
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: removed-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: role-cleared-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: missing-record
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: stopped
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: late-level
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: late-nonce
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: late-replacement
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: late-untrack
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: disposed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: removed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: same-bytes-replaced
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: cache-cleared
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: cache-moved
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > separates current registered provider from inherited next-start choice and fences late evidence: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > separates current registered provider from inherited next-start choice and fences late evidence: provider-changed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > separates current registered provider from inherited next-start choice and fences late evidence: folder-changed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects current provider facts only after the complete Details assembly fence: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects current provider facts only after the complete Details assembly fence: replacement
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects current provider facts only after the complete Details assembly fence: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not describe a connected peer without a snapshot as cached name evidence
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > folds only the selected local agent’s network directions and projects cached peer fields without raw trust records or unrelated agents
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > never substitutes a different cached agent’s name when the saved network target is absent
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds complete Details when real primary membership changes after helper work: parent-removal
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds complete Details when real primary membership changes after helper work: earlier-helper-release
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds complete Details when real primary membership changes after helper work: cross-project-reparent
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds complete Details when real primary membership changes after helper work: disposed-reparent
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects only the selected agent’s verified bounded canvas membership navigation identities
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects policy and the selected host folder/branch without invented usage or local defaults
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > returns only touching connections and related actions, never private definitions or unrelated records
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects selected agent Actions relationship groups and safe last-run fields only
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects selected dispatcher Actions relationship groups and safe last-run fields only
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > counts bounded action relationship rows and makes omissions explicit without truncating a last-run record
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds last-session usage to the selected saved session and provider, not a broad session list
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: complete
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: truncated
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: unknown-completeness
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: sleep-record
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: undefined
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: invalid
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: 2026-11-19T01:00:00
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: 0
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: -1
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: NaN
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: Infinity
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: 8640000000000001
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with missing association
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with unrelated association
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with unset association
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with conflicting association
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with partly-unset association
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > preserves historical reported values and completeness: zero
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > preserves historical reported values and completeness: missing
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > preserves historical reported values and completeness: truncated
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: uninstalled
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: no-transcript
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: no-results
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: unknown-completeness
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: invalid-totals
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: unsafe-id
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not initialize shell environment for historical display: cold
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not initialize shell environment for historical display: warm
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps a limited historical native lookup unknown rather than verified missing or empty
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > reads historical native provider file with real byte bound and unchanged storage: small
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > reads historical native provider file with real byte bound and unchanged storage: truncated
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds historical evidence after awaited inventory change with real primary witness
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds historical evidence after awaited revocation change with real primary witness
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > distinguishes verified empty, per-section error and explicit bounded omissions
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > rejects aliases/disposed agents and rechecks authority after awaited work
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > rejects late results after revocation and never returns partial private host data
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not claim an earlier run’s retained MCP handshake or tool count is current
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps unqualified helper runtime/work facts unknown while preserving independent counters
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps disposed and live handed-off helpers distinct with their real timestamps
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps nested Settings valid for a 1024-character MCP name
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps nested Settings valid for a 1025-character MCP name
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps nested Settings valid for a 2048-character MCP name
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps unreadable global MCP config unknown, preserving other independent cards
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > accepts a stable registered PTY using the real resolver despite new facade objects per lookup
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > refuses a pty registration replacement across an awaited section
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > refuses a headless registration replacement across an awaited section
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > refuses stopped headless/PTY evidence across an awaited section
+ ↓ |main| src/main/services/remote-agent-details.test.ts > holds a real selected instruction receipt across later Details card work: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > holds a real selected instruction receipt across later Details card work: changed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > holds a real selected instruction receipt across later Details card work: created
+ ↓ |main| src/main/services/remote-agent-details.test.ts > holds a real selected instruction receipt across later Details card work: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > keeps independently known Settings rows when the unchanged v1 contract cannot express unknown runtime
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: binding-before-connections
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: unrelated-binding
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: binding
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: source
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: primary
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: revoked-and-changed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold manual Dispatcher link evidence at final Details assembly > keeps independent saved and process-known final receipts: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold manual Dispatcher link evidence at final Details assembly > keeps independent saved and process-known final receipts: primary-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold manual Dispatcher link evidence at final Details assembly > keeps independent saved and process-known final receipts: owner-only-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold manual Dispatcher link evidence at final Details assembly > keeps independent saved and process-known final receipts: revoked-and-primary
+ ↓ |main| src/main/services/remote-agent-details.test.ts > admitted endpoint target fields at complete normal Details assembly > delivers qualified primary fields and preserves final refusal: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > admitted endpoint target fields at complete normal Details assembly > delivers qualified primary fields and preserves final refusal: related-primary-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > admitted endpoint target fields at complete normal Details assembly > delivers qualified primary fields and preserves final refusal: revoked-and-related-primary
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: on
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: unknown-controller
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: wrong-role
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: unreadable-controller
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: switch-late-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: controller-late-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: role-late-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: selected-late-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: revoked-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: cross-project
+ ↓ |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: convergent
+ ↓ |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: convergent-controller-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: cross-project-primary-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: cross-project-revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected registered Connections pages at final Details assembly > keeps source continuation and final selected evidence fences: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected registered Connections pages at final Details assembly > keeps source continuation and final selected evidence fences: related-primary-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected registered Connections pages at final Details assembly > keeps source continuation and final selected evidence fences: selected-removed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected registered Connections pages at final Details assembly > keeps source continuation and final selected evidence fences: run-change
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected registered Connections pages at final Details assembly > keeps source continuation and final selected evidence fences: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: source-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: endpoint-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: display-reopen
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: display-stable
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: display-reopen-early
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: display-reopen-revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'canvas-records'/'unchanged'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'canvas-records'/'source-late'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'canvas-records'/'endpoint-late'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'canvas-records'/'revoked'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'zone-records'/'unchanged'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'zone-records'/'source-late'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'zone-records'/'endpoint-late'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'zone-records'/'revoked'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > qualified Dispatcher native-ID policy ambiguity at final Details > retains independent project fields and final source refusal: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > qualified Dispatcher native-ID policy ambiguity at final Details > retains independent project fields and final source refusal: normal-primary-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > qualified Dispatcher native-ID policy ambiguity at final Details > retains independent project fields and final source refusal: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected helper parent connection in full Details > retains exact parent evidence until final assembly: stable
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected helper parent connection in full Details > retains exact parent evidence until final assembly: parent-removed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected helper parent connection in full Details > retains exact parent evidence until final assembly: reparented
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected helper parent connection in full Details > retains exact parent evidence until final assembly: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected saved group membership in full Details > retains selected group and loaded identity evidence through final assembly: stable
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected saved group membership in full Details > retains selected group and loaded identity evidence through final assembly: membership-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected saved group membership in full Details > retains selected group and loaded identity evidence through final assembly: tombstone-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected saved group membership in full Details > retains selected group and loaded identity evidence through final assembly: identity-reloaded
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected saved group membership in full Details > retains selected group and loaded identity evidence through final assembly: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected Connections envelope admission > preserves every requested source field under unrelated full-card pressure
+ ↓ |main| src/main/services/remote-agent-details.test.ts > keeps typed outgoing Wires absent from denied and source-only Details responses
+ ↓ |main| src/main/services/remote-agent-details.test.ts > structured selected helper pages at the complete Details boundary > returns the 101st helper in an independent helper-only envelope and refuses unsupported arithmetic
+ ↓ |main| src/main/services/remote-agent-details.test.ts > structured selected helper pages at the complete Details boundary > keeps unavailable helper inventory counts independent of readable pending starts
+ ↓ |main| src/main/services/remote-agent-details.test.ts > preserves valid saved disposed dates and handoff words in legacy summaries outside the selected helper page
+ ↓ |main| src/main/services/remote-agent-details.test.ts > refuses a helper offset that fell beyond the current selected inventory without returning partial private cards
+ ↓ |main| src/main/services/remote-agent-details.test.ts > returns an independent selected managed page beyond100 without full setup, history, board content or unrelated card reads
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates selected Actions through the actual Details assembler and real started engine, preserving final relationship rows without mutation
+ ↓ |main| src/main/services/remote-agent-details.test.ts > fences the actual Actions Details page after late target changes with real selected primary metadata
+ ↓ |main| src/main/services/remote-agent-details.test.ts > fences the actual Actions Details page after late ordering changes with real selected primary metadata
+ ↓ |main| src/main/services/remote-agent-details.test.ts > fences the actual Actions Details page after late reference-name changes with real selected primary metadata
+ ↓ |main| src/main/services/remote-agent-details.test.ts > fences the actual Actions Details page after late revoked changes with real selected primary metadata
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: all-pages
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: home-source
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: project-source
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: target
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: registration
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: home-namespace
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: revoked
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > keeps the ordinary omitted-budget path at the 256 KiB cap 6ms
+ × |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > passes a body exactly at the budget untouched and trims one byte under it, staying valid 5ms
+   → expected 114117 to be less than or equal to 114116
+ × |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > fails closed when no trimming can fit the budget 3ms
+   → expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+ × |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget 0 after authorization 1ms
+   → expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+ × |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget -1 after authorization 1ms
+   → expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+ × |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget 1.5 after authorization 1ms
+   → expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+ × |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget NaN after authorization 1ms
+   → expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+ × |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget Infinity after authorization 1ms
+   → expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+ × |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > applies the budget to a Connections page: exact size passes, an irreducible budget fails closed 1ms
+   → expected 200 to be 500 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > passes a body exactly at the budget untouched and trims one byte under it, staying valid
+AssertionError: expected 114117 to be less than or equal to 114116
+ ❯ src/main/services/remote-agent-details.test.ts:1323:31
+    1321|     const under = await pressured(() => readRemoteAgentDetails('a1', (…
+    1322|     expect(under.status).toBe(200); expect(isRemoteAgentDetails(under.…
+    1323|     expect(bytes(under.body)).toBeLessThanOrEqual(size - 1);
+       |                               ^
+    1324|     expect(rows(under.body as RemoteAgentDetails)).toBe(rows(base) - 1…
+    1325|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > fails closed when no trimming can fit the budget
+AssertionError: expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": {
+-     "error": "details_read_failed",
++     "agentId": "a1",
++     "cards": [
++       {
++         "id": "settings",
++         "notes": [],
++         "observedAt": 1795252323540,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "MCP servers",
++             "value": "0 configured",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Settings",
++       },
++       {
++         "id": "dispatcher",
++         "notes": [],
++         "observedAt": 1795252323540,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "",
++         "title": "Dispatcher",
++       },
++       {
++         "id": "orchestrate",
++         "notes": [
++           "Configured helper policy. Tool availability and the actual helper provider are established when a run starts.",
++           "Structured helper rows and bounded work continuation are shared separately; each selected page checks at most eight helpers.",
++         ],
++         "observedAt": 1795252323540,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Orchestration",
++             "value": "Off",
++           },
++           {
++             "label": "Helpers get",
++             "value": "Same as Selected",
++           },
++           {
++             "label": "Control",
++             "value": "Hands-off",
++           },
++           {
++             "label": "At once",
++             "value": "5",
++           },
++           {
++             "label": "App-wide limit",
++             "value": "20",
++           },
++           {
++             "label": "Cross-project helpers",
++             "value": "Off",
++           },
++           {
++             "label": "Auto provider",
++             "value": "Off · Following the app setting",
++           },
++           {
++             "label": "Helpers",
++             "value": "none",
++           },
++         ],
++         "state": "ok",
++         "summary": "off",
++         "title": "Orchestration",
++       },
++       {
++         "id": "connections",
++         "notes": [
++           "Saved manual Dispatcher link metadata is unavailable; no empty list or current link eligibility is inferred.",
++           "The selected saved policy configures no automatic Dispatcher direction. Other connection sources remain independent.",
++           "Names, bindings and source ownership use saved or retained host records. Additional configured connections may be missing from this retained view. Other agents’ current availability and effective tool authority are not confirmed here.",
++         ],
++         "observedAt": 1795252323540,
++         "omitted": 0,
++         "rows": [],
++         "state": "error",
++         "summary": "Connection information incomplete",
++         "title": "Connections",
++       },
++       {
++         "id": "actions",
++         "notes": [
++           "No actions are owned by, target or are set off by this agent.",
++         ],
++         "observedAt": 1795252323540,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "0 related",
++         "title": "Actions",
++       },
++       {
++         "id": "skills-mcp",
++         "notes": [
++           "Last session evidence only. No live MCP connection is claimed while the agent is stopped.",
++           "Configured names and revisions are recorded library metadata; revision payloads are not verified. Recorded installation does not confirm provider loading or use. Provider reports are shown separately.",
++         ],
++         "observedAt": 1795252323540,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "",
++         "title": "Skills and MCP",
+        },
+-   "status": 500,
++       {
++         "id": "session",
++         "notes": [
++           "No earlier session recorded.",
++         ],
++         "observedAt": 1795252323540,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Status",
++             "value": "sleeping",
++           },
++           {
++             "label": "Folder",
++             "value": "/host/selected",
++           },
++           {
++             "label": "Branch",
++             "value": "feature",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Last session",
++       },
++       {
++         "id": "canvases",
++         "notes": [],
++         "observedAt": 1795252323540,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "on 0 boards",
++         "title": "Canvases",
++       },
++       {
++         "id": "changes",
++         "notes": [
++           "File comparisons are read through the host’s bounded read-only Changes service.",
++         ],
++         "observedAt": 1795252323540,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "Branch, session and last turn",
++         "title": "Changes",
++       },
++     ],
++     "connectionPageEnvelope": 1,
++     "connectionPageSources": [
++       "outgoing",
++       "incoming",
++       "directions",
++       "sources",
++       "manual-dispatcher",
++       "helpers",
++       "tool-records",
++       "canvas-records",
++       "zone-records",
++       "group-records",
++     ],
++     "connectionPages": 1,
++     "helperPage": {
++       "disposedCount": 0,
++       "liveCount": 0,
++       "next": null,
++       "notes": [
++         "Work is checked for up to eight direct helpers in each page. Some checks may be deferred when the host is busy; refresh to retry. Pages are separate host observations in inventory order.",
++         "Current helper status is shown only when the host can associate it with this helper. Otherwise its runtime outcome remains unavailable.",
++       ],
++       "offset": 0,
++       "pending": [],
++       "pendingCount": 0,
++       "rows": [],
++       "source": "selected-direct-helpers",
++       "state": "ok",
++       "total": 0,
++       "version": 1,
++     },
++     "helperPages": 1,
++     "inventoryPages": 1,
++     "inventorySources": [
++       "selected-action-relationships",
++       "selected-canvas-memberships",
++     ],
++     "nativeSessionId": null,
++     "outgoingWires": {
++       "omitted": 0,
++       "rows": [],
++       "source": "selected-outgoing-binding-records",
++       "state": "recorded",
++       "total": 0,
++     },
++     "providerEvidenceState": "unsupported",
++     "providerId": "codex-cli",
++     "providerLabel": "codex-cli",
++     "readAt": 1795252323540,
++     "readOnly": true,
++     "running": false,
++     "sessionId": null,
++     "settings": {
++       "access": "Ask first",
++       "agentId": "a1",
++       "autoSleep": null,
++       "context": null,
++       "executionPolicy": "defaults",
++       "model": "model",
++       "provider": "Host CLI",
++       "readOnly": true,
++       "runtime": "terminal",
++       "setup": {
++         "instructions": "None",
++         "managed": false,
++         "mcps": [],
++         "skills": null,
++         "state": "ok",
++         "template": null,
++       },
++       "version": 1,
++     },
++     "spawnedAt": null,
++     "status": "sleeping",
++     "version": 1,
++   },
++   "status": 200,
+  }
+
+ ❯ src/main/services/remote-agent-details.test.ts:1328:89
+    1326|
+    1327|   it('fails closed when no trimming can fit the budget', async () => {
+    1328|     expect(await readRemoteAgentDetails('a1', () => true, undefined, {…
+       |                                                                                         ^
+    1329|   });
+    1330|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget 0 after authorization
+AssertionError: expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": {
+-     "error": "details_budget_invalid",
++     "agentId": "a1",
++     "cards": [
++       {
++         "id": "settings",
++         "notes": [],
++         "observedAt": 1795252323544,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "MCP servers",
++             "value": "0 configured",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Settings",
++       },
++       {
++         "id": "dispatcher",
++         "notes": [],
++         "observedAt": 1795252323544,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "",
++         "title": "Dispatcher",
++       },
++       {
++         "id": "orchestrate",
++         "notes": [
++           "Configured helper policy. Tool availability and the actual helper provider are established when a run starts.",
++           "Structured helper rows and bounded work continuation are shared separately; each selected page checks at most eight helpers.",
++         ],
++         "observedAt": 1795252323544,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Orchestration",
++             "value": "Off",
++           },
++           {
++             "label": "Helpers get",
++             "value": "Same as Selected",
++           },
++           {
++             "label": "Control",
++             "value": "Hands-off",
++           },
++           {
++             "label": "At once",
++             "value": "5",
++           },
++           {
++             "label": "App-wide limit",
++             "value": "20",
++           },
++           {
++             "label": "Cross-project helpers",
++             "value": "Off",
++           },
++           {
++             "label": "Auto provider",
++             "value": "Off · Following the app setting",
++           },
++           {
++             "label": "Helpers",
++             "value": "none",
++           },
++         ],
++         "state": "ok",
++         "summary": "off",
++         "title": "Orchestration",
++       },
++       {
++         "id": "connections",
++         "notes": [
++           "Saved manual Dispatcher link metadata is unavailable; no empty list or current link eligibility is inferred.",
++           "The selected saved policy configures no automatic Dispatcher direction. Other connection sources remain independent.",
++           "Names, bindings and source ownership use saved or retained host records. Additional configured connections may be missing from this retained view. Other agents’ current availability and effective tool authority are not confirmed here.",
++         ],
++         "observedAt": 1795252323544,
++         "omitted": 0,
++         "rows": [],
++         "state": "error",
++         "summary": "Connection information incomplete",
++         "title": "Connections",
++       },
++       {
++         "id": "actions",
++         "notes": [
++           "No actions are owned by, target or are set off by this agent.",
++         ],
++         "observedAt": 1795252323544,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "0 related",
++         "title": "Actions",
++       },
++       {
++         "id": "skills-mcp",
++         "notes": [
++           "Last session evidence only. No live MCP connection is claimed while the agent is stopped.",
++           "Configured names and revisions are recorded library metadata; revision payloads are not verified. Recorded installation does not confirm provider loading or use. Provider reports are shown separately.",
++         ],
++         "observedAt": 1795252323544,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "",
++         "title": "Skills and MCP",
+        },
+-   "status": 500,
++       {
++         "id": "session",
++         "notes": [
++           "No earlier session recorded.",
++         ],
++         "observedAt": 1795252323544,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Status",
++             "value": "sleeping",
++           },
++           {
++             "label": "Folder",
++             "value": "/host/selected",
++           },
++           {
++             "label": "Branch",
++             "value": "feature",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Last session",
++       },
++       {
++         "id": "canvases",
++         "notes": [],
++         "observedAt": 1795252323544,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "on 0 boards",
++         "title": "Canvases",
++       },
++       {
++         "id": "changes",
++         "notes": [
++           "File comparisons are read through the host’s bounded read-only Changes service.",
++         ],
++         "observedAt": 1795252323544,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "Branch, session and last turn",
++         "title": "Changes",
++       },
++     ],
++     "connectionPageEnvelope": 1,
++     "connectionPageSources": [
++       "outgoing",
++       "incoming",
++       "directions",
++       "sources",
++       "manual-dispatcher",
++       "helpers",
++       "tool-records",
++       "canvas-records",
++       "zone-records",
++       "group-records",
++     ],
++     "connectionPages": 1,
++     "helperPage": {
++       "disposedCount": 0,
++       "liveCount": 0,
++       "next": null,
++       "notes": [
++         "Work is checked for up to eight direct helpers in each page. Some checks may be deferred when the host is busy; refresh to retry. Pages are separate host observations in inventory order.",
++         "Current helper status is shown only when the host can associate it with this helper. Otherwise its runtime outcome remains unavailable.",
++       ],
++       "offset": 0,
++       "pending": [],
++       "pendingCount": 0,
++       "rows": [],
++       "source": "selected-direct-helpers",
++       "state": "ok",
++       "total": 0,
++       "version": 1,
++     },
++     "helperPages": 1,
++     "inventoryPages": 1,
++     "inventorySources": [
++       "selected-action-relationships",
++       "selected-canvas-memberships",
++     ],
++     "nativeSessionId": null,
++     "outgoingWires": {
++       "omitted": 0,
++       "rows": [],
++       "source": "selected-outgoing-binding-records",
++       "state": "recorded",
++       "total": 0,
++     },
++     "providerEvidenceState": "unsupported",
++     "providerId": "codex-cli",
++     "providerLabel": "codex-cli",
++     "readAt": 1795252323544,
++     "readOnly": true,
++     "running": false,
++     "sessionId": null,
++     "settings": {
++       "access": "Ask first",
++       "agentId": "a1",
++       "autoSleep": null,
++       "context": null,
++       "executionPolicy": "defaults",
++       "model": "model",
++       "provider": "Host CLI",
++       "readOnly": true,
++       "runtime": "terminal",
++       "setup": {
++         "instructions": "None",
++         "managed": false,
++         "mcps": [],
++         "skills": null,
++         "state": "ok",
++         "template": null,
++       },
++       "version": 1,
++     },
++     "spawnedAt": null,
++     "status": "sleeping",
++     "version": 1,
++   },
++   "status": 200,
+  }
+
+ ❯ src/main/services/remote-agent-details.test.ts:1332:85
+    1330|
+    1331|   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('refuses…
+    1332|     expect(await readRemoteAgentDetails('a1', () => true, undefined, {…
+       |                                                                                     ^
+    1333|     expect(await readRemoteAgentDetails('a1', () => false, undefined, …
+    1334|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget -1 after authorization
+AssertionError: expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": {
+-     "error": "details_budget_invalid",
++     "agentId": "a1",
++     "cards": [
++       {
++         "id": "settings",
++         "notes": [],
++         "observedAt": 1795252323545,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "MCP servers",
++             "value": "0 configured",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Settings",
++       },
++       {
++         "id": "dispatcher",
++         "notes": [],
++         "observedAt": 1795252323545,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "",
++         "title": "Dispatcher",
++       },
++       {
++         "id": "orchestrate",
++         "notes": [
++           "Configured helper policy. Tool availability and the actual helper provider are established when a run starts.",
++           "Structured helper rows and bounded work continuation are shared separately; each selected page checks at most eight helpers.",
++         ],
++         "observedAt": 1795252323545,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Orchestration",
++             "value": "Off",
++           },
++           {
++             "label": "Helpers get",
++             "value": "Same as Selected",
++           },
++           {
++             "label": "Control",
++             "value": "Hands-off",
++           },
++           {
++             "label": "At once",
++             "value": "5",
++           },
++           {
++             "label": "App-wide limit",
++             "value": "20",
++           },
++           {
++             "label": "Cross-project helpers",
++             "value": "Off",
++           },
++           {
++             "label": "Auto provider",
++             "value": "Off · Following the app setting",
++           },
++           {
++             "label": "Helpers",
++             "value": "none",
++           },
++         ],
++         "state": "ok",
++         "summary": "off",
++         "title": "Orchestration",
++       },
++       {
++         "id": "connections",
++         "notes": [
++           "Saved manual Dispatcher link metadata is unavailable; no empty list or current link eligibility is inferred.",
++           "The selected saved policy configures no automatic Dispatcher direction. Other connection sources remain independent.",
++           "Names, bindings and source ownership use saved or retained host records. Additional configured connections may be missing from this retained view. Other agents’ current availability and effective tool authority are not confirmed here.",
++         ],
++         "observedAt": 1795252323545,
++         "omitted": 0,
++         "rows": [],
++         "state": "error",
++         "summary": "Connection information incomplete",
++         "title": "Connections",
++       },
++       {
++         "id": "actions",
++         "notes": [
++           "No actions are owned by, target or are set off by this agent.",
++         ],
++         "observedAt": 1795252323545,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "0 related",
++         "title": "Actions",
++       },
++       {
++         "id": "skills-mcp",
++         "notes": [
++           "Last session evidence only. No live MCP connection is claimed while the agent is stopped.",
++           "Configured names and revisions are recorded library metadata; revision payloads are not verified. Recorded installation does not confirm provider loading or use. Provider reports are shown separately.",
++         ],
++         "observedAt": 1795252323545,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "",
++         "title": "Skills and MCP",
+        },
+-   "status": 500,
++       {
++         "id": "session",
++         "notes": [
++           "No earlier session recorded.",
++         ],
++         "observedAt": 1795252323545,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Status",
++             "value": "sleeping",
++           },
++           {
++             "label": "Folder",
++             "value": "/host/selected",
++           },
++           {
++             "label": "Branch",
++             "value": "feature",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Last session",
++       },
++       {
++         "id": "canvases",
++         "notes": [],
++         "observedAt": 1795252323545,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "on 0 boards",
++         "title": "Canvases",
++       },
++       {
++         "id": "changes",
++         "notes": [
++           "File comparisons are read through the host’s bounded read-only Changes service.",
++         ],
++         "observedAt": 1795252323545,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "Branch, session and last turn",
++         "title": "Changes",
++       },
++     ],
++     "connectionPageEnvelope": 1,
++     "connectionPageSources": [
++       "outgoing",
++       "incoming",
++       "directions",
++       "sources",
++       "manual-dispatcher",
++       "helpers",
++       "tool-records",
++       "canvas-records",
++       "zone-records",
++       "group-records",
++     ],
++     "connectionPages": 1,
++     "helperPage": {
++       "disposedCount": 0,
++       "liveCount": 0,
++       "next": null,
++       "notes": [
++         "Work is checked for up to eight direct helpers in each page. Some checks may be deferred when the host is busy; refresh to retry. Pages are separate host observations in inventory order.",
++         "Current helper status is shown only when the host can associate it with this helper. Otherwise its runtime outcome remains unavailable.",
++       ],
++       "offset": 0,
++       "pending": [],
++       "pendingCount": 0,
++       "rows": [],
++       "source": "selected-direct-helpers",
++       "state": "ok",
++       "total": 0,
++       "version": 1,
++     },
++     "helperPages": 1,
++     "inventoryPages": 1,
++     "inventorySources": [
++       "selected-action-relationships",
++       "selected-canvas-memberships",
++     ],
++     "nativeSessionId": null,
++     "outgoingWires": {
++       "omitted": 0,
++       "rows": [],
++       "source": "selected-outgoing-binding-records",
++       "state": "recorded",
++       "total": 0,
++     },
++     "providerEvidenceState": "unsupported",
++     "providerId": "codex-cli",
++     "providerLabel": "codex-cli",
++     "readAt": 1795252323545,
++     "readOnly": true,
++     "running": false,
++     "sessionId": null,
++     "settings": {
++       "access": "Ask first",
++       "agentId": "a1",
++       "autoSleep": null,
++       "context": null,
++       "executionPolicy": "defaults",
++       "model": "model",
++       "provider": "Host CLI",
++       "readOnly": true,
++       "runtime": "terminal",
++       "setup": {
++         "instructions": "None",
++         "managed": false,
++         "mcps": [],
++         "skills": null,
++         "state": "ok",
++         "template": null,
++       },
++       "version": 1,
++     },
++     "spawnedAt": null,
++     "status": "sleeping",
++     "version": 1,
++   },
++   "status": 200,
+  }
+
+ ❯ src/main/services/remote-agent-details.test.ts:1332:85
+    1330|
+    1331|   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('refuses…
+    1332|     expect(await readRemoteAgentDetails('a1', () => true, undefined, {…
+       |                                                                                     ^
+    1333|     expect(await readRemoteAgentDetails('a1', () => false, undefined, …
+    1334|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/11]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget 1.5 after authorization
+AssertionError: expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": {
+-     "error": "details_budget_invalid",
++     "agentId": "a1",
++     "cards": [
++       {
++         "id": "settings",
++         "notes": [],
++         "observedAt": 1795252323546,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "MCP servers",
++             "value": "0 configured",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Settings",
++       },
++       {
++         "id": "dispatcher",
++         "notes": [],
++         "observedAt": 1795252323546,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "",
++         "title": "Dispatcher",
++       },
++       {
++         "id": "orchestrate",
++         "notes": [
++           "Configured helper policy. Tool availability and the actual helper provider are established when a run starts.",
++           "Structured helper rows and bounded work continuation are shared separately; each selected page checks at most eight helpers.",
++         ],
++         "observedAt": 1795252323546,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Orchestration",
++             "value": "Off",
++           },
++           {
++             "label": "Helpers get",
++             "value": "Same as Selected",
++           },
++           {
++             "label": "Control",
++             "value": "Hands-off",
++           },
++           {
++             "label": "At once",
++             "value": "5",
++           },
++           {
++             "label": "App-wide limit",
++             "value": "20",
++           },
++           {
++             "label": "Cross-project helpers",
++             "value": "Off",
++           },
++           {
++             "label": "Auto provider",
++             "value": "Off · Following the app setting",
++           },
++           {
++             "label": "Helpers",
++             "value": "none",
++           },
++         ],
++         "state": "ok",
++         "summary": "off",
++         "title": "Orchestration",
++       },
++       {
++         "id": "connections",
++         "notes": [
++           "Saved manual Dispatcher link metadata is unavailable; no empty list or current link eligibility is inferred.",
++           "The selected saved policy configures no automatic Dispatcher direction. Other connection sources remain independent.",
++           "Names, bindings and source ownership use saved or retained host records. Additional configured connections may be missing from this retained view. Other agents’ current availability and effective tool authority are not confirmed here.",
++         ],
++         "observedAt": 1795252323546,
++         "omitted": 0,
++         "rows": [],
++         "state": "error",
++         "summary": "Connection information incomplete",
++         "title": "Connections",
++       },
++       {
++         "id": "actions",
++         "notes": [
++           "No actions are owned by, target or are set off by this agent.",
++         ],
++         "observedAt": 1795252323546,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "0 related",
++         "title": "Actions",
++       },
++       {
++         "id": "skills-mcp",
++         "notes": [
++           "Last session evidence only. No live MCP connection is claimed while the agent is stopped.",
++           "Configured names and revisions are recorded library metadata; revision payloads are not verified. Recorded installation does not confirm provider loading or use. Provider reports are shown separately.",
++         ],
++         "observedAt": 1795252323546,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "",
++         "title": "Skills and MCP",
+        },
+-   "status": 500,
++       {
++         "id": "session",
++         "notes": [
++           "No earlier session recorded.",
++         ],
++         "observedAt": 1795252323546,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Status",
++             "value": "sleeping",
++           },
++           {
++             "label": "Folder",
++             "value": "/host/selected",
++           },
++           {
++             "label": "Branch",
++             "value": "feature",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Last session",
++       },
++       {
++         "id": "canvases",
++         "notes": [],
++         "observedAt": 1795252323546,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "on 0 boards",
++         "title": "Canvases",
++       },
++       {
++         "id": "changes",
++         "notes": [
++           "File comparisons are read through the host’s bounded read-only Changes service.",
++         ],
++         "observedAt": 1795252323546,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "Branch, session and last turn",
++         "title": "Changes",
++       },
++     ],
++     "connectionPageEnvelope": 1,
++     "connectionPageSources": [
++       "outgoing",
++       "incoming",
++       "directions",
++       "sources",
++       "manual-dispatcher",
++       "helpers",
++       "tool-records",
++       "canvas-records",
++       "zone-records",
++       "group-records",
++     ],
++     "connectionPages": 1,
++     "helperPage": {
++       "disposedCount": 0,
++       "liveCount": 0,
++       "next": null,
++       "notes": [
++         "Work is checked for up to eight direct helpers in each page. Some checks may be deferred when the host is busy; refresh to retry. Pages are separate host observations in inventory order.",
++         "Current helper status is shown only when the host can associate it with this helper. Otherwise its runtime outcome remains unavailable.",
++       ],
++       "offset": 0,
++       "pending": [],
++       "pendingCount": 0,
++       "rows": [],
++       "source": "selected-direct-helpers",
++       "state": "ok",
++       "total": 0,
++       "version": 1,
++     },
++     "helperPages": 1,
++     "inventoryPages": 1,
++     "inventorySources": [
++       "selected-action-relationships",
++       "selected-canvas-memberships",
++     ],
++     "nativeSessionId": null,
++     "outgoingWires": {
++       "omitted": 0,
++       "rows": [],
++       "source": "selected-outgoing-binding-records",
++       "state": "recorded",
++       "total": 0,
++     },
++     "providerEvidenceState": "unsupported",
++     "providerId": "codex-cli",
++     "providerLabel": "codex-cli",
++     "readAt": 1795252323546,
++     "readOnly": true,
++     "running": false,
++     "sessionId": null,
++     "settings": {
++       "access": "Ask first",
++       "agentId": "a1",
++       "autoSleep": null,
++       "context": null,
++       "executionPolicy": "defaults",
++       "model": "model",
++       "provider": "Host CLI",
++       "readOnly": true,
++       "runtime": "terminal",
++       "setup": {
++         "instructions": "None",
++         "managed": false,
++         "mcps": [],
++         "skills": null,
++         "state": "ok",
++         "template": null,
++       },
++       "version": 1,
++     },
++     "spawnedAt": null,
++     "status": "sleeping",
++     "version": 1,
++   },
++   "status": 200,
+  }
+
+ ❯ src/main/services/remote-agent-details.test.ts:1332:85
+    1330|
+    1331|   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('refuses…
+    1332|     expect(await readRemoteAgentDetails('a1', () => true, undefined, {…
+       |                                                                                     ^
+    1333|     expect(await readRemoteAgentDetails('a1', () => false, undefined, …
+    1334|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/11]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget NaN after authorization
+AssertionError: expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": {
+-     "error": "details_budget_invalid",
++     "agentId": "a1",
++     "cards": [
++       {
++         "id": "settings",
++         "notes": [],
++         "observedAt": 1795252323547,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "MCP servers",
++             "value": "0 configured",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Settings",
++       },
++       {
++         "id": "dispatcher",
++         "notes": [],
++         "observedAt": 1795252323547,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "",
++         "title": "Dispatcher",
++       },
++       {
++         "id": "orchestrate",
++         "notes": [
++           "Configured helper policy. Tool availability and the actual helper provider are established when a run starts.",
++           "Structured helper rows and bounded work continuation are shared separately; each selected page checks at most eight helpers.",
++         ],
++         "observedAt": 1795252323547,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Orchestration",
++             "value": "Off",
++           },
++           {
++             "label": "Helpers get",
++             "value": "Same as Selected",
++           },
++           {
++             "label": "Control",
++             "value": "Hands-off",
++           },
++           {
++             "label": "At once",
++             "value": "5",
++           },
++           {
++             "label": "App-wide limit",
++             "value": "20",
++           },
++           {
++             "label": "Cross-project helpers",
++             "value": "Off",
++           },
++           {
++             "label": "Auto provider",
++             "value": "Off · Following the app setting",
++           },
++           {
++             "label": "Helpers",
++             "value": "none",
++           },
++         ],
++         "state": "ok",
++         "summary": "off",
++         "title": "Orchestration",
++       },
++       {
++         "id": "connections",
++         "notes": [
++           "Saved manual Dispatcher link metadata is unavailable; no empty list or current link eligibility is inferred.",
++           "The selected saved policy configures no automatic Dispatcher direction. Other connection sources remain independent.",
++           "Names, bindings and source ownership use saved or retained host records. Additional configured connections may be missing from this retained view. Other agents’ current availability and effective tool authority are not confirmed here.",
++         ],
++         "observedAt": 1795252323547,
++         "omitted": 0,
++         "rows": [],
++         "state": "error",
++         "summary": "Connection information incomplete",
++         "title": "Connections",
++       },
++       {
++         "id": "actions",
++         "notes": [
++           "No actions are owned by, target or are set off by this agent.",
++         ],
++         "observedAt": 1795252323547,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "0 related",
++         "title": "Actions",
++       },
++       {
++         "id": "skills-mcp",
++         "notes": [
++           "Last session evidence only. No live MCP connection is claimed while the agent is stopped.",
++           "Configured names and revisions are recorded library metadata; revision payloads are not verified. Recorded installation does not confirm provider loading or use. Provider reports are shown separately.",
++         ],
++         "observedAt": 1795252323547,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "",
++         "title": "Skills and MCP",
+        },
+-   "status": 500,
++       {
++         "id": "session",
++         "notes": [
++           "No earlier session recorded.",
++         ],
++         "observedAt": 1795252323547,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Status",
++             "value": "sleeping",
++           },
++           {
++             "label": "Folder",
++             "value": "/host/selected",
++           },
++           {
++             "label": "Branch",
++             "value": "feature",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Last session",
++       },
++       {
++         "id": "canvases",
++         "notes": [],
++         "observedAt": 1795252323547,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "on 0 boards",
++         "title": "Canvases",
++       },
++       {
++         "id": "changes",
++         "notes": [
++           "File comparisons are read through the host’s bounded read-only Changes service.",
++         ],
++         "observedAt": 1795252323547,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "Branch, session and last turn",
++         "title": "Changes",
++       },
++     ],
++     "connectionPageEnvelope": 1,
++     "connectionPageSources": [
++       "outgoing",
++       "incoming",
++       "directions",
++       "sources",
++       "manual-dispatcher",
++       "helpers",
++       "tool-records",
++       "canvas-records",
++       "zone-records",
++       "group-records",
++     ],
++     "connectionPages": 1,
++     "helperPage": {
++       "disposedCount": 0,
++       "liveCount": 0,
++       "next": null,
++       "notes": [
++         "Work is checked for up to eight direct helpers in each page. Some checks may be deferred when the host is busy; refresh to retry. Pages are separate host observations in inventory order.",
++         "Current helper status is shown only when the host can associate it with this helper. Otherwise its runtime outcome remains unavailable.",
++       ],
++       "offset": 0,
++       "pending": [],
++       "pendingCount": 0,
++       "rows": [],
++       "source": "selected-direct-helpers",
++       "state": "ok",
++       "total": 0,
++       "version": 1,
++     },
++     "helperPages": 1,
++     "inventoryPages": 1,
++     "inventorySources": [
++       "selected-action-relationships",
++       "selected-canvas-memberships",
++     ],
++     "nativeSessionId": null,
++     "outgoingWires": {
++       "omitted": 0,
++       "rows": [],
++       "source": "selected-outgoing-binding-records",
++       "state": "recorded",
++       "total": 0,
++     },
++     "providerEvidenceState": "unsupported",
++     "providerId": "codex-cli",
++     "providerLabel": "codex-cli",
++     "readAt": 1795252323547,
++     "readOnly": true,
++     "running": false,
++     "sessionId": null,
++     "settings": {
++       "access": "Ask first",
++       "agentId": "a1",
++       "autoSleep": null,
++       "context": null,
++       "executionPolicy": "defaults",
++       "model": "model",
++       "provider": "Host CLI",
++       "readOnly": true,
++       "runtime": "terminal",
++       "setup": {
++         "instructions": "None",
++         "managed": false,
++         "mcps": [],
++         "skills": null,
++         "state": "ok",
++         "template": null,
++       },
++       "version": 1,
++     },
++     "spawnedAt": null,
++     "status": "sleeping",
++     "version": 1,
++   },
++   "status": 200,
+  }
+
+ ❯ src/main/services/remote-agent-details.test.ts:1332:85
+    1330|
+    1331|   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('refuses…
+    1332|     expect(await readRemoteAgentDetails('a1', () => true, undefined, {…
+       |                                                                                     ^
+    1333|     expect(await readRemoteAgentDetails('a1', () => false, undefined, …
+    1334|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/11]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget Infinity after authorization
+AssertionError: expected { status: 200, body: { …(22) } } to deeply equal { status: 500, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": {
+-     "error": "details_budget_invalid",
++     "agentId": "a1",
++     "cards": [
++       {
++         "id": "settings",
++         "notes": [],
++         "observedAt": 1795252323548,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "MCP servers",
++             "value": "0 configured",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Settings",
++       },
++       {
++         "id": "dispatcher",
++         "notes": [],
++         "observedAt": 1795252323548,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "",
++         "title": "Dispatcher",
++       },
++       {
++         "id": "orchestrate",
++         "notes": [
++           "Configured helper policy. Tool availability and the actual helper provider are established when a run starts.",
++           "Structured helper rows and bounded work continuation are shared separately; each selected page checks at most eight helpers.",
++         ],
++         "observedAt": 1795252323548,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Orchestration",
++             "value": "Off",
++           },
++           {
++             "label": "Helpers get",
++             "value": "Same as Selected",
++           },
++           {
++             "label": "Control",
++             "value": "Hands-off",
++           },
++           {
++             "label": "At once",
++             "value": "5",
++           },
++           {
++             "label": "App-wide limit",
++             "value": "20",
++           },
++           {
++             "label": "Cross-project helpers",
++             "value": "Off",
++           },
++           {
++             "label": "Auto provider",
++             "value": "Off · Following the app setting",
++           },
++           {
++             "label": "Helpers",
++             "value": "none",
++           },
++         ],
++         "state": "ok",
++         "summary": "off",
++         "title": "Orchestration",
++       },
++       {
++         "id": "connections",
++         "notes": [
++           "Saved manual Dispatcher link metadata is unavailable; no empty list or current link eligibility is inferred.",
++           "The selected saved policy configures no automatic Dispatcher direction. Other connection sources remain independent.",
++           "Names, bindings and source ownership use saved or retained host records. Additional configured connections may be missing from this retained view. Other agents’ current availability and effective tool authority are not confirmed here.",
++         ],
++         "observedAt": 1795252323548,
++         "omitted": 0,
++         "rows": [],
++         "state": "error",
++         "summary": "Connection information incomplete",
++         "title": "Connections",
++       },
++       {
++         "id": "actions",
++         "notes": [
++           "No actions are owned by, target or are set off by this agent.",
++         ],
++         "observedAt": 1795252323548,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "0 related",
++         "title": "Actions",
++       },
++       {
++         "id": "skills-mcp",
++         "notes": [
++           "Last session evidence only. No live MCP connection is claimed while the agent is stopped.",
++           "Configured names and revisions are recorded library metadata; revision payloads are not verified. Recorded installation does not confirm provider loading or use. Provider reports are shown separately.",
++         ],
++         "observedAt": 1795252323548,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "",
++         "title": "Skills and MCP",
+        },
+-   "status": 500,
++       {
++         "id": "session",
++         "notes": [
++           "No earlier session recorded.",
++         ],
++         "observedAt": 1795252323548,
++         "omitted": 0,
++         "rows": [
++           {
++             "label": "Status",
++             "value": "sleeping",
++           },
++           {
++             "label": "Folder",
++             "value": "/host/selected",
++           },
++           {
++             "label": "Branch",
++             "value": "feature",
++           },
++         ],
++         "state": "ok",
++         "summary": "",
++         "title": "Last session",
++       },
++       {
++         "id": "canvases",
++         "notes": [],
++         "observedAt": 1795252323548,
++         "omitted": 0,
++         "rows": [],
++         "state": "not-applicable",
++         "summary": "on 0 boards",
++         "title": "Canvases",
++       },
++       {
++         "id": "changes",
++         "notes": [
++           "File comparisons are read through the host’s bounded read-only Changes service.",
++         ],
++         "observedAt": 1795252323548,
++         "omitted": 0,
++         "rows": [],
++         "state": "ok",
++         "summary": "Branch, session and last turn",
++         "title": "Changes",
++       },
++     ],
++     "connectionPageEnvelope": 1,
++     "connectionPageSources": [
++       "outgoing",
++       "incoming",
++       "directions",
++       "sources",
++       "manual-dispatcher",
++       "helpers",
++       "tool-records",
++       "canvas-records",
++       "zone-records",
++       "group-records",
++     ],
++     "connectionPages": 1,
++     "helperPage": {
++       "disposedCount": 0,
++       "liveCount": 0,
++       "next": null,
++       "notes": [
++         "Work is checked for up to eight direct helpers in each page. Some checks may be deferred when the host is busy; refresh to retry. Pages are separate host observations in inventory order.",
++         "Current helper status is shown only when the host can associate it with this helper. Otherwise its runtime outcome remains unavailable.",
++       ],
++       "offset": 0,
++       "pending": [],
++       "pendingCount": 0,
++       "rows": [],
++       "source": "selected-direct-helpers",
++       "state": "ok",
++       "total": 0,
++       "version": 1,
++     },
++     "helperPages": 1,
++     "inventoryPages": 1,
++     "inventorySources": [
++       "selected-action-relationships",
++       "selected-canvas-memberships",
++     ],
++     "nativeSessionId": null,
++     "outgoingWires": {
++       "omitted": 0,
++       "rows": [],
++       "source": "selected-outgoing-binding-records",
++       "state": "recorded",
++       "total": 0,
++     },
++     "providerEvidenceState": "unsupported",
++     "providerId": "codex-cli",
++     "providerLabel": "codex-cli",
++     "readAt": 1795252323548,
++     "readOnly": true,
++     "running": false,
++     "sessionId": null,
++     "settings": {
++       "access": "Ask first",
++       "agentId": "a1",
++       "autoSleep": null,
++       "context": null,
++       "executionPolicy": "defaults",
++       "model": "model",
++       "provider": "Host CLI",
++       "readOnly": true,
++       "runtime": "terminal",
++       "setup": {
++         "instructions": "None",
++         "managed": false,
++         "mcps": [],
++         "skills": null,
++         "state": "ok",
++         "template": null,
++       },
++       "version": 1,
++     },
++     "spawnedAt": null,
++     "status": "sleeping",
++     "version": 1,
++   },
++   "status": 200,
+  }
+
+ ❯ src/main/services/remote-agent-details.test.ts:1332:85
+    1330|
+    1331|   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('refuses…
+    1332|     expect(await readRemoteAgentDetails('a1', () => true, undefined, {…
+       |                                                                                     ^
+    1333|     expect(await readRemoteAgentDetails('a1', () => false, undefined, …
+    1334|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/11]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > applies the budget to a Connections page: exact size passes, an irreducible budget fails closed
+AssertionError: expected 200 to be 500 // Object.is equality
+
+- Expected
++ Received
+
+- 500
++ 200
+
+ ❯ src/main/services/remote-agent-details.test.ts:1342:94
+    1340|     const exact = await readRemoteAgentDetails('a1', () => true, query…
+    1341|     expect(exact.status).toBe(200); expect(bytes(exact.body)).toBe(byt…
+    1342|     expect((await readRemoteAgentDetails('a1', () => true, query, { ma…
+       |                                                                                              ^
+    1343|   });
+    1344| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/11]⎯
+
+ FAIL  |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > fits a producer-filled inner body exactly inside the cap for agent id "role1"
+ FAIL  |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > fits a producer-filled inner body exactly inside the cap for agent id "rôle \"quoted\" \\ 名前"
+AssertionError: expected 500 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 500
+
+ ❯ src/main/services/selected-dispatcher-details.test.ts:112:29
+    110|       filling(id);
+    111|       const result = await readSelectedDispatcherDetails(() => true);
+    112|       expect(result.status).toBe(200);
+       |                             ^
+    113|       expect(Buffer.byteLength(JSON.stringify(result.body))).toBe(REMO…
+    114|       expect(m.details).toHaveBeenCalledWith(id, expect.any(Function),…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/11]⎯
+
+ FAIL  |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > role wrapper byte budget (M1) > passes the same budget for a role Connections page
+AssertionError: expected "vi.fn()" to be called once with arguments: [ 'role1', Any<Function>, …(2) ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+    "role1",
+-   Any<Function>,
++   [Function anonymous],
+    {
+      "card": "connections",
+      "offset": 0,
+      "projectOffset": 0,
+      "source": "outgoing",
+-   },
+-   {
+-     "maxBytes": 262082,
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/main/services/selected-dispatcher-details.test.ts:121:25
+    119|       m.details.mockResolvedValue({ status: 200, body: details() });
+    120|       await readSelectedDispatcherDetails(() => true, query);
+    121|       expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', expec…
+       |                         ^
+    122|     });
+    123|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  11 failed | 3 passed | 217 skipped (231)
+   Start at  04:12:02
+   Duration  844ms (transform 714ms, setup 11ms, import 887ms, tests 130ms, environment 0ms)
+
+vitest exit=1
+restored src/main/services/remote-agent-details.ts byte-identical
+restored src/main/services/selected-dispatcher-details.ts byte-identical
+# post-restore git status --short:
+ M src/main/services/annex-server.test.ts
+ M src/main/services/remote-agent-details.test.ts
+ M src/main/services/remote-agent-details.ts
+ M src/main/services/selected-dispatcher-details.test.ts
+ M src/main/services/selected-dispatcher-details.ts
