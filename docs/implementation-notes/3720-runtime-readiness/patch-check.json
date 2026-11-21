@@ -1,0 +1,40 @@
+{
+  "observedAt": "2026-11-21T13:36:40.645092+00:00",
+  "headAtCheck": "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+  "base": "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+  "argv": [
+    "git",
+    "apply",
+    "--check",
+    ".cache/3720-runtime/secure-listener.review.patch"
+  ],
+  "actualExit": 0,
+  "stdout": "",
+  "stderr": "",
+  "sourceSHA256Before": {
+    "src/main/services/annex-server.ts": "22d5e74f9e0ed7875ed6bbc822dad72908ccd3a5be1b84aca8076130ca3d2296",
+    "src/main/ipc/annex-handlers.ts": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b",
+    "src/main/services/annex-client.ts": "f19f6d5308c851f325e3f2feb1f3aceb5feaec4c9105a3a060e0b9c835e43a60",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/main/services/clubhouse-mcp/tools/annex-network-tools.ts": "cf22eed5c03266c9226656148ea7c8a4f6d9f8fa3080fb701d7f2c31517498fe",
+    "src/main/services/launch-gate.ts": "64d09e8e3074d27702014117575f62eda55fa62c11790b18e039eb07eda28290",
+    "src/main/services/app-shutdown.ts": "965ab9849ec08fa82163e9b29e816cf0ad6b792aec372393e032a2b90014148c",
+    "src/main/shutdown-guard.ts": "a5dbfd865ddcb5c136030253c6088ea33739760a3ef85e812d3db3c70225519b",
+    "src/main/index.ts": "7ccb06db73a11ad89afc088a4f92017a04d0e934708bd679e8f43bfab4ae19df"
+  },
+  "sourceSHA256After": {
+    "src/main/services/annex-server.ts": "22d5e74f9e0ed7875ed6bbc822dad72908ccd3a5be1b84aca8076130ca3d2296",
+    "src/main/ipc/annex-handlers.ts": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b",
+    "src/main/services/annex-client.ts": "f19f6d5308c851f325e3f2feb1f3aceb5feaec4c9105a3a060e0b9c835e43a60",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/main/services/clubhouse-mcp/tools/annex-network-tools.ts": "cf22eed5c03266c9226656148ea7c8a4f6d9f8fa3080fb701d7f2c31517498fe",
+    "src/main/services/launch-gate.ts": "64d09e8e3074d27702014117575f62eda55fa62c11790b18e039eb07eda28290",
+    "src/main/services/app-shutdown.ts": "965ab9849ec08fa82163e9b29e816cf0ad6b792aec372393e032a2b90014148c",
+    "src/main/shutdown-guard.ts": "a5dbfd865ddcb5c136030253c6088ea33739760a3ef85e812d3db3c70225519b",
+    "src/main/index.ts": "7ccb06db73a11ad89afc088a4f92017a04d0e934708bd679e8f43bfab4ae19df"
+  },
+  "patchSHA256": "8c89f4a554b31bfa62b81efbf4dc49eee9e88572ad48fc9540ac93013c0a5ab8",
+  "generatorSHA256": "2e7a2f516f08f5ba361cb558fa226e78c073aafc9439c9cd2454fd7e954d4e5e"
+}

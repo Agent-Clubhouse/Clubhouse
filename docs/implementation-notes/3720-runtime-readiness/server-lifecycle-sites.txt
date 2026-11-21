@@ -1,0 +1,18 @@
+254:let boundHost = ''; // networkProfile.host while running
+257:let serverGeneration = 0;
+3997:  return withReachableAs(pairingHosts(os.networkInterfaces(), boundHost), boundHost, annexSettings.getSettings().reachableAs);
+5773:  const generation = serverGeneration;
+5776:    const current = generation === serverGeneration && isCurrentServer(server);
+5791:export function start(): void {
+5802:    return this.interrupted || serverGeneration !== this.generation;
+5807:export async function startVerified(): Promise<void> {
+5808:  const generation = serverGeneration + 1;
+5811:    const interrupted = serverGeneration !== generation;
+5823:  serverGeneration++;
+5828:  boundHost = networkProfile.host;
+6361:      || !serverPort || !pairingPort || boundHost !== currentProfile.host || currentProfile.advertise !== networkProfile.advertise) {
+6416:      server.close(() => reject(err));
+6464:export function stop(): void {
+6466:  serverGeneration++;
+6549:  // server.close() leaves active and incomplete requests alive, including TLS handshakes.
+6555:  boundHost = '';
