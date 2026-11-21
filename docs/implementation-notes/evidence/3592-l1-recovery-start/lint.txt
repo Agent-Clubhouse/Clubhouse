@@ -1,0 +1,7 @@
+
+<worktree>/src/main/services/group-project-remote-create.ts
+  228:5  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+
+✖ 1 problem (0 errors, 1 warning)
+
+eslint exit=0

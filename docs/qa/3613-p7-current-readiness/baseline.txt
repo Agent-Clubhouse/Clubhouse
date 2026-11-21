@@ -1,0 +1,31 @@
+Current P7 behavior baseline
+
+Executed test-only head: c8402a5bb411ad0a7c5fe2b9f0833cc75771838a
+Production/configuration was identical to P2 head31d3d8ad0bce73026ec4d5fca0c5080b31033f81.
+Actual P2 squash/main53524110b90d053053d6ed49fd480816b8fcaee6 has that same
+complete tree d56e9d47c3d66c4a9a8cea67907cedad23c0b7f0.
+Rebased test-only head8e698550c3070ffd57cf5e87ccd2a7c534578f33 and executed
+c840 have identical complete trees6998ba12ae704ebb69baecd89d8445196f68bc05.
+This is an independently checked source identity, not a claim that8e698 executed.
+
+Gated lane-p2 4,2026-11-21T07:10:26Z--07:10:28Z, exit1:
+env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main --project renderer --maxWorkers=1 src/main/services/annex-control.test.ts src/main/services/annex-devices.test.ts src/renderer/features/settings/AnnexDeviceList.test.tsx src/renderer/features/settings/AnnexNetworkSettingsView.test.tsx -t "notifies once on negotiated readiness|uses a negotiated .* control link|describes .* outbound and .* inbound reach separately|updates forward help through the existing device subscription"
+Observed6 FAIL /1 PASS /225 selector skips /4 files.
+The unchanged direct/direct wording case passed.
+
+Selected original failure excerpts:
+- Notification: expected vi.fn() to be called1 time, got0.
+- Both negotiated control directions: expected state connected/problem null;
+  received state offline and the existing refused problem.
+- Reverse outbound: expected "This computer can reach it through its connection
+  to this computer. It can reach this computer."; received the direct-only text.
+- Reverse inbound: expected "This computer can reach it. It can reach this
+  computer through this computer's connection to it."; received direct-only text.
+- Forward-help lookup could not find the reverse-specific advice; the rendered
+  help still said other computers and the phone require a forward.
+
+Original14931-byte log is retained unchanged:
+p7-c840-baseline-attempt-01-original.log
+SHA256 f80f477845682b3eba5ba77632e4a3836ea316243b135178646df6a645d6ae4a
+It precedes the production patch and contains the complete failures/DOM output.
+No historical727-pass proof or approval was transferred.

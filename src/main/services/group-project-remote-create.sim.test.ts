@@ -342,6 +342,73 @@ describe('creating a group project on another computer (#3547)', () => {
     expect(startedOn.get('Studio')).toEqual([made.id]);
   });
 
+  describe('a failed lookup during the recovery start (#3592 L1)', () => {
+    async function crashWindow(name: string) {
+      const asked = await ask(A, B, name);
+      const [request] = await waitingOn(B);
+      const waitingFile = await fsp.readFile(answersFile(B), 'utf-8');
+      await answer(B, request.requestId, true);
+      await fsp.writeFile(answersFile(B), waitingFile);
+      startedOn.clear();
+      await unload(B);
+      await load(B);
+      const [made] = await hosted(B);
+      return { asked, made };
+    }
+    // Fails every lookup of the group until healed, so both the request's start and startPending see the error.
+    const lookupFails = (id: string, mode: 'until-healed' | 'absent') => {
+      const host = B.host!.groupProjectHost, get = host.get.bind(host); let calls = 0, failing = true;
+      vi.spyOn(host, 'get').mockImplementation(async (wanted: string) => {
+        if (wanted !== id) return get(wanted);
+        calls++;
+        if (mode === 'absent') return null;
+        if (failing) throw new Error('transient reconcile failure');
+        return get(wanted);
+      });
+      return { calls: () => calls, heal: () => { failing = false; } };
+    };
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+    it('stays pending after a thrown lookup, then the next request starts it exactly once', async () => {
+      const { asked, made } = await crashWindow('Lookup fails once');
+      const lookup = lookupFails(made.id, 'until-healed');
+      expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created', groupProjectId: made.id });
+      await settle();
+      expect(lookup.calls()).toBeGreaterThanOrEqual(1);
+      expect(startedOn.get('Studio')).toBeUndefined();
+      lookup.heal();
+      expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created', groupProjectId: made.id });
+      await vi.waitFor(() => expect(startedOn.get('Studio')).toEqual([made.id]));
+      await retry(A, B, asked.requestId); await settle();
+      await unload(B); await load(B); await retry(A, B, asked.requestId); await settle();
+      expect(startedOn.get('Studio')).toEqual([made.id]);
+    });
+
+    it('stays pending after a thrown lookup, then a restart recovers it exactly once', async () => {
+      const { asked, made } = await crashWindow('Lookup fails before restart');
+      lookupFails(made.id, 'until-healed');
+      await retry(A, B, asked.requestId); await settle();
+      expect(startedOn.get('Studio')).toBeUndefined();
+      await unload(B); await load(B); // the reload drops the failing spy: the restart's lookups succeed
+      await retry(A, B, asked.requestId);
+      await vi.waitFor(() => expect(startedOn.get('Studio')).toEqual([made.id]));
+      await unload(B); await load(B); await retry(A, B, asked.requestId); await settle();
+      expect(startedOn.get('Studio')).toEqual([made.id]);
+    });
+
+    it('settles a group that is gone without starting it, and never asks again', async () => {
+      const { asked, made } = await crashWindow('Group gone');
+      const lookup = lookupFails(made.id, 'absent');
+      expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created', groupProjectId: made.id });
+      await settle();
+      const settled = lookup.calls();
+      expect(settled).toBeGreaterThanOrEqual(1);
+      await retry(A, B, asked.requestId); await settle();
+      expect(lookup.calls()).toBe(settled);
+      expect(startedOn.get('Studio')).toBeUndefined();
+    });
+  });
+
   it('a stale answer is never given over the group its request made', async () => {
     const asked = await ask(A, B, 'Stale');
     const [request] = await waitingOn(B);

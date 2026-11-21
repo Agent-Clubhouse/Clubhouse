@@ -1,0 +1,33 @@
+Retained earlier attempts; not final acceptance
+
+1. Actual pre-production behavioral negatives are in baseline.txt:6FAIL/1PASS.
+
+2. Initial4file behavior:256PASS before complete fixture typing.
+No final current-head acceptance was inferred from that partial run.
+
+3. Initial production tsc passed, but expanded fixture tsc failed with2TS2688
+type-library resolution errors (Vitest globals/DOM matchers were installed).
+Root cause: inherited typeRoots searched only @types. Fixed fixture type roots;
+no dependency install or manifest change.
+
+4. Next complete fixture tsc exposed6legacy helper-context errors:
+empty arrays/undefined-return helper, overly broad mocked settle callback type,
+and an untyped nullable device fixture. Fixed with precise contextual types and
+a () => void callback; no casts, exclusions or compiler relaxations.
+Both original FAIL logs are retained unchanged and hashed in manifest.json.
+
+5. Exact66953daad090076c65750bcc7109e9c33fb7202b:
+780+65=845PASS; production/full fixture typing PASS;9file lint0errors/1warning
+equal to fresh31d baseline;103phone files byte-identical. That PASS receipt
+included6React act warnings from our new synchronous UI fixture cases.
+It is retained, but not final accepted proof.
+
+6. ac766178687fb10d48a9a464f4f50eea8846169a changed only2test lines:
+make those6cases async and await act around render. Independent QA verified
+all other bytes unchanged. The original source remains reachable at
+archive/3613-p7-pre-p2-integration.
+
+7. Actual P2 landed as53524110b90d053053d6ed49fd480816b8fcaee6. Only3P7
+commits replayed; resulting71bad has the same complete tree as ac766.
+Fresh exact71bad/current535241 proof is in green.txt. It does not borrow66953
+execution/counts. Historical P7c9f, P7w, P8 or federation ancestry is not imported.

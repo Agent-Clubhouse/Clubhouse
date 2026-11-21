@@ -1,0 +1,43 @@
+$ TMPDIR=<fresh default-depth> vitest run --no-cache --maxWorkers=3 src/main/chat/fake-model-smoke.test.ts src/main/services/actions/index.test.ts src/main/services/annex-mobile-contract.test.ts src/main/services/annex-server.test.ts src/main/services/canvas-startup-bindings.test.ts src/main/services/clubhouse-mcp/arg-targets.test.ts src/main/services/clubhouse-mcp/binding-incarnation.test.ts src/main/services/clubhouse-mcp/binding-manager-display.test.ts src/main/services/clubhouse-mcp/binding-manager.test.ts src/main/services/clubhouse-mcp/bridge-server.test.ts src/main/services/clubhouse-mcp/dispatcher-bootstrap.test.ts src/main/services/clubhouse-mcp/grant-check.test.ts src/main/services/clubhouse-mcp/local-wake.test.ts src/main/services/clubhouse-mcp/mcp-adapter.test.ts src/main/services/clubhouse-mcp/plugin-tool-registry.test.ts src/main/services/clubhouse-mcp/tool-grants.test.ts src/main/services/clubhouse-mcp/tool-registry.test.ts src/main/services/clubhouse-mcp/tools/action-tools.test.ts src/main/services/clubhouse-mcp/tools/agent-config-tools.test.ts src/main/services/clubhouse-mcp/tools/agent-lifecycle.test.ts src/main/services/clubhouse-mcp/tools/agent-tools.test.ts src/main/services/clubhouse-mcp/tools/browser-tools.test.ts src/main/services/clubhouse-mcp/tools/connection-tools.test.ts src/main/services/clubhouse-mcp/tools/dispatcher-delivery.test.ts src/main/services/clubhouse-mcp/tools/dispatcher-routing.test.ts src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts src/main/services/clubhouse-mcp/tools/group-project-tools.test.ts src/main/services/clubhouse-mcp/tools/project-import-tools.test.ts src/main/services/clubhouse-mcp/tools/remote-dispatcher-tools.test.ts src/main/services/clubhouse-mcp/tools/settings-read-tools.test.ts src/main/services/connection-card.test.ts src/main/services/connection-grants-store.test.ts src/main/services/connection-grants.test.ts src/main/services/connection-guidance.test.ts src/main/services/connection-sources.test.ts src/main/services/dispatcher-controls.test.ts src/main/services/dispatcher-link-memory-display.test.ts src/main/services/dispatcher-provider-control.test.ts src/main/services/dispatcher-wire-source.test.ts src/main/services/dispatcher/dispatcher-agent-cards-watch.test.ts src/main/services/dispatcher/dispatcher-background.test.ts src/main/services/dispatcher/dispatcher-forget.test.ts src/main/services/dispatcher/dispatcher-news.test.ts src/main/services/group-project-bind.test.ts src/main/services/group-project-delete-stores.test.ts src/main/services/group-project-delivery.test.ts src/main/services/group-project-host.test.ts src/main/services/group-project-lifecycle.test.ts src/main/services/group-project-membership.test.ts src/main/services/group-project-network.sim.test.ts src/main/services/group-project-outcomes.sim.test.ts src/main/services/group-project-remote-create.sim.test.ts src/main/services/group-project-roster.sim.test.ts src/main/services/group-project-scope-migration.test.ts src/main/services/group-project-tool-members.test.ts src/main/services/handoff-host-transfer.test.ts src/main/services/handoff-host.test.ts src/main/services/helper-wire-source.test.ts src/main/services/managed-agents/group-project-guidance-catalog.test.ts src/main/services/persisted-bindings-display.test.ts src/main/services/persisted-bindings.test.ts src/main/services/prepare-handoff-skill.test.ts src/main/services/remote-agent-details.test.ts src/main/services/remote-connection-card.test.ts src/main/services/remote-connection-endpoint-fields.test.ts src/main/services/remote-quick-details.test.ts src/main/services/selected-outgoing-wires-display.test.ts test/annex-v2/annex-harness.test.ts test/annex-v2/annex-session-satellite.test.ts test/mcp-target-tools.test.ts 
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+{"admissionCount":250,"elapsedMs":52,"boardCommits":1,"sequenceChanges":1,"joinPosts":1}
+{"admissionCount":2005,"elapsedMs":410,"boardCommits":1,"sequenceChanges":1,"joinPosts":1}
+ ❯ |main| src/main/services/group-project-remote-create.sim.test.ts (23 tests | 1 failed) 4599ms
+     × a crash after the create but before its answer was saved still answers created after a restart (QA #3569) 1209ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a crash after the create but before its answer was saved still answers created after a restart (QA #3569)
+AssertionError: expected undefined to deeply equal [ 'gp_1795246580939_927a130e89a1' ]
+
+- Expected:
+[
+  "gp_1795246580939_927a130e89a1",
+]
+
++ Received:
+undefined
+
+ ❯ src/main/services/group-project-remote-create.sim.test.ts:338:60
+    336|     expect(await hosted(B)).toHaveLength(1);
+    337|     // Recovered, it is started once, then never again.
+    338|     await vi.waitFor(() => expect(startedOn.get('Studio')).toEqual([ma…
+       |                                                            ^
+    339|     await unload(B);
+    340|     await load(B);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 67 passed | 2 skipped (70)
+      Tests  1 failed | 3056 passed | 6 skipped (3063)
+   Start at  02:35:20
+   Duration  143.75s (transform 7.58s, setup 116ms, import 16.25s, tests 293.95s, environment 3ms)
+
+vitest exit=1
+# post status:

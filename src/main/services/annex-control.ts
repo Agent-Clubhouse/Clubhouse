@@ -61,6 +61,7 @@ import { HANDOFF_TRANSFER_BODY_BYTES } from '../../shared/handoff-transfer';
 import { ICON_SERVED_MAX_BYTES } from '../../shared/icon-limits';
 import { routeAllowed, type AnnexRoute } from './annex-routes';
 import { classifyConnectionError } from '../../shared/annex-problems';
+import { devicesChanged } from './annex-device-signal';
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -271,6 +272,7 @@ interface Link {
   remoteAddress: string | undefined;
   /** Agreed features; null until the hellos are exchanged. */
   features: Set<ControlFeature> | null;
+  announcedReady: boolean;
   /** What the opener offered in its hello (`out` only). */
   offered: Set<string> | null;
   closed: boolean;
@@ -596,6 +598,10 @@ function closeLink(link: Link, code: number, reason: string, failWith: ControlEr
   link.closed = true;
   link.bulk.close();
   links.delete(link);
+  if (link.announcedReady) {
+    link.announcedReady = false;
+    devicesChanged();
+  }
   if (link.helloTimer) clearTimeout(link.helloTimer);
   if (link.heartbeat) clearInterval(link.heartbeat);
   link.helloTimer = null;
@@ -635,7 +641,7 @@ function inboundStillAllowed(link: Link): boolean {
 
 function attach(ws: WebSocket, fingerprint: string, pin: string, direction: 'in' | 'out', remoteAddress: string | undefined): Link {
   const link = {
-    ws, fingerprint, pin, direction, remoteAddress, features: null, offered: null, closed: false,
+    ws, fingerprint, pin, direction, remoteAddress, features: null, announcedReady: false, offered: null, closed: false,
     helloTimer: null, heartbeat: null, alive: true, pending: new Map(), replying: new Map(), subscriptions: new Map(), subscription: null,
   } as Link;
   link.bulk = makeBulkLane(link);
@@ -739,6 +745,10 @@ function onHello(link: Link, message: ControlMessage): void {
     meta: { fingerprint: link.fingerprint, direction: link.direction, features: [...link.features] },
   });
   link.onReady?.();
+  if (requestReady(link) && !link.announcedReady) {
+    link.announcedReady = true;
+    devicesChanged();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1120,6 +1130,25 @@ function linkFor(fingerprint: string, direction: 'in' | 'out'): Link | undefined
   let found: Link | undefined;
   for (const link of links) if (link.fingerprint === fingerprint && link.direction === direction && !link.closed) found = link;
   return found;
+}
+
+function requestReady(link: Link | undefined): boolean {
+  if (!link || link.closed || link.ws.readyState !== WebSocket.OPEN || !link.features?.has('request')) return false;
+  if (link.direction === 'in') return !!inboundAuthority?.stillAllowed(link.fingerprint, link.pin);
+  return !!target?.authorize({ fingerprint: link.fingerprint, pin: link.pin, via: 'reverse' }).ok;
+}
+
+export interface ControlLinkReadiness {
+  acceptedHere: boolean;
+  openedHere: boolean;
+}
+
+/** Desktop Settings observation only: never dials, sends a frame or closes a link. */
+export function getLinkReadiness(fingerprint: string): ControlLinkReadiness {
+  return {
+    acceptedHere: requestReady(linkFor(fingerprint, 'in')),
+    openedHere: requestReady(linkFor(fingerprint, 'out')),
+  };
 }
 
 /** Whether `request()` can reach that computer now: it opened a control connection here that agreed to `feature`. */
