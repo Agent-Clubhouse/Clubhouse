@@ -10,13 +10,12 @@ import {
   ACCESS_LEVELS,
   ORCHESTRATION_CONTROLS,
   type HelperAccessResolution,
-  type HelperAutoOffReason,
   type ResolvedOrchestrationPolicy,
   type OrchestrationAccess,
   type OrchestrationControl,
 } from '../../../../shared/orchestration-policy';
+import { AUTO_LOCKED_NOTES } from '../../../../shared/helper-policy-display';
 import { Toggle } from '../../../components/Toggle';
-import { PERMISSION_LEVEL_LABELS } from '../../../../shared/chat/capabilities';
 import { ACCESS_LEVEL_LABELS, CONTROL_LABELS, aboveCeiling, accessLabel } from './helper-model';
 import { parseHelperCount } from './orchestration-hooks';
 
@@ -31,14 +30,7 @@ export const DISPATCHER_HELP = 'Let the Dispatcher message this agent and get it
 export const CROSS_PROJECT_HELP = 'Let this agent start helpers in other projects.';
 export const AUTO_HELPERS_HELP = 'Let Clubhouse pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit. This balances plan use, not cost.';
 
-/** The note under the access control: the live ceiling, or the rule when it isn't running. */
-export function accessNote(access: HelperAccessResolution | null, running: boolean, name: string): string {
-  if (!running || !access) return `Never more than ${name}’s level when a helper starts.`;
-  // The five-level levels where known (#3000), so Plan reads as Plan.
-  const ceiling = access.ceilingAccess ? PERMISSION_LEVEL_LABELS[access.ceilingAccess] : ACCESS_LEVEL_LABELS[access.ceiling];
-  if (access.clamped) return `${name} runs at ${ceiling} now, so helpers get ${ACCESS_LEVEL_LABELS[access.level]}.`;
-  return `At most ${ceiling}, ${name}’s level now.`;
-}
+export { accessNote } from '../../../../shared/helper-policy-display';
 
 export function AccessSelect({ id, value, access, running, name, disabled, className, onChange, testId }: {
   id: string;
@@ -130,9 +122,7 @@ export function HelperCountInput({ id, value, ceiling, disabled, className, onCo
 
 /** "Cross-project helpers" (#2512): may this agent start helpers in other registered projects. */
 /** Why Auto is off where this agent's own switch can't change that. */
-const AUTO_LOCKED_NOTES: Partial<Record<HelperAutoOffReason, string>> = {
-  project_off: 'This project turned it off.',
-};
+
 
 /**
  * Whether Auto works for this agent, not only its own switch: the app and the

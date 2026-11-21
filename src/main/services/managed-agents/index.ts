@@ -3,6 +3,9 @@
  * running agents need: which setup each session started with, whether it has
  * changed since, and restarting so it picks the change up.
  */
+import { readSelectedDeliveryForDisplay } from './delivery-display-evidence';
+import { agentDisplayInput, type DisplayReceipt, type DisplayValue } from '../display-settings';
+import { isDisposedAgent } from '../../../shared/agent-helpers';
 import { assetCatalogDir, createAssetCatalogStore } from '../asset-catalog/store';
 import * as agentConfig from '../agent-config';
 import * as projectStore from '../project-store';
@@ -12,7 +15,7 @@ import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef, QuickTemplateChoice } from '../../../shared/types';
 import { PREPARE_HANDOFF_SKILL_ID } from '../../../shared/managed-agents-types';
-import { agentHoldsAction } from '../agent-grants-service';
+import { readAgentHoldsActionForDisplay, agentHoldsAction } from '../agent-grants-service';
 import { onOrchestrationGateChange } from '../clubhouse-mcp/orchestration-gate';
 import type { ManagedAgentSetup, ManagedAgentStatus, ManagedMcpProblem, ManagedPlainChoice, ManagedPlainPreview, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
@@ -39,9 +42,11 @@ import {
   quickManagedLaunch,
   removeManagedClaudeExcludes,
   resolveManagedSetup,
+  resolveManagedSetupForDisplay,
   setGrantedSkills,
   setupFingerprint,
   type DeliveryRecord,
+  type ResolvedSetupMetadata,
   type QuickManagedLaunch,
 } from './delivery';
 
@@ -212,18 +217,26 @@ export async function managedMcpServersFor(agent: DurableAgentConfig): Promise<R
 
 export async function statusFor(projectPath: string, agentId: string): Promise<ManagedAgentStatus> {
   const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-  const running = (await import('../agent-system')).isAgentRunning(agentId);
+  return statusForSnapshot(agent, agentId, (selected) => resolveManagedSetup(managedAgents(), selected.managed!, selected));
+}
+
+async function statusForSnapshot(agent: DurableAgentConfig | null, agentId: string, resolve: (selected: DurableAgentConfig) => Promise<ResolvedSetupMetadata>, receipts?: DisplayReceipt[]): Promise<ManagedAgentStatus> {
+  const system = await import('../agent-system');
+  const running = system.isAgentRunning(agentId);
   if (!agent?.managed) {
+    receipts?.push({ current: () => system.isAgentRunning(agentId) === running });
     // The switch offer says why an automatic switch didn't happen (D59).
     const migrationFailed = agent?.managedMigrationFailure?.message;
     return { managed: false, running, waiting: false, changes: [], cliChanged: false, ...(migrationFailed && { migrationFailed }) };
   }
-  const resolved = await resolveManagedSetup(managedAgents(), agent.managed, agent);
+  const resolved = await resolve(agent);
   const now = setupFingerprint(agent, resolved);
-  const record = delivered.get(agentId);
-  const failed = failedDeliveries.get(agentId);
+  const evidence = receipts ? readSelectedDeliveryForDisplay(agentId, running, () => system.isAgentRunning(agentId)) : undefined;
+  if (evidence) receipts!.push(evidence.receipt);
+  const record = evidence ? evidence.record : delivered.get(agentId);
+  const failed = evidence ? evidence.failed : failedDeliveries.get(agentId);
   const currentDelivery = running && !failed && record?.fingerprint === now.fingerprint ? record : undefined;
-  const problems = running ? mcpProblems.get(agentId) : undefined;
+  const problems = evidence ? evidence.problems : running ? mcpProblems.get(agentId) : undefined;
   const notice = {
     builtinSkills: builtinSkillStatus(resolved, currentDelivery),
     deliveredSkillIds: currentDelivery?.deliveredSkillIds ?? [],
@@ -259,6 +272,41 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
   }
   if (changes.length === 0) changes.push('Its settings changed');
   return { managed: true, running, waiting: true, changes, deliveredAt: record.deliveredAt, cliChanged, ...notice };
+}
+
+/** Consumers must preserve this limitation when presenting recorded managed-library status. */
+export type ManagedDisplayStatus = DisplayValue<ManagedAgentStatus> & {
+  libraryEvidence?: { source: 'committed-index'; revisionPayloadsVerified: false };
+  /** Internal selected metadata for sibling display fields; never a wholesale DTO. */
+  setupMetadata?: ResolvedSetupMetadata;
+};
+
+/** Reuse the strictly admitted agent snapshot; no config lookup or ordinary grant callback. */
+export async function readManagedStatusForDisplay(agent: DurableAgentConfig, options: { receipts?: DisplayReceipt[] } = {}): Promise<ManagedDisplayStatus> {
+  const inputs = [agentDisplayInput('Managed agent setup')];
+  if (!agent.id || isDisposedAgent(agent)) return { state: 'unavailable', reason: 'invalid', inputs };
+  let grantedIds: readonly string[] = [];
+  const evidenceReceipts: DisplayReceipt[] = [];
+  if (agent.managed) {
+    const grant = readAgentHoldsActionForDisplay(agent.id, agent, 'handoff.offer', { receipts: evidenceReceipts }); inputs.push(...grant.inputs);
+    if (grant.state !== 'ok') return { state: 'unavailable', reason: grant.reason, inputs };
+    grantedIds = grant.value ? [PREPARE_HANDOFF_SKILL_ID] : [];
+  }
+  try {
+    let setupMetadata: ResolvedSetupMetadata | undefined;
+    const status = await statusForSnapshot(agent, agent.id, async (selected) => {
+      setupMetadata = await resolveManagedSetupForDisplay(managedAgents(), selected, grantedIds, { receipts: evidenceReceipts, inputs });
+      return setupMetadata;
+    }, evidenceReceipts);
+    if (evidenceReceipts.some((receipt) => !receipt.current())) return { state: 'unavailable', reason: 'changed', inputs };
+    options.receipts?.push(...evidenceReceipts);
+    inputs.push({ field: agent.managed ? 'Clubhouse delivery record' : 'Host run status', source: 'host-cache', observedAt: Date.now() });
+    return { state: 'ok', value: structuredClone(status), inputs,
+      ...(setupMetadata && { setupMetadata: structuredClone(setupMetadata) }),
+      ...(agent.managed && { libraryEvidence: { source: 'committed-index' as const, revisionPayloadsVerified: false as const } }) };
+  } catch (error) {
+    return { state: 'unavailable', reason: error instanceof Error && error.message === 'Managed display library metadata changed while reading.' ? 'changed' : error instanceof Error && [ 'Managed display setup exceeds the part limit.', 'Managed display delivery metadata exceeds the read limit.' ].includes(error.message) ? 'limit' : 'unreadable', inputs };
+  }
 }
 
 export async function activationFor(projectPath: string, agentId: string) {

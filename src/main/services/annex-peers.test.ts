@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import * as fs from 'fs';
+import fs from 'fs';
+import { syncBuiltinESMExports } from 'module';
 import * as path from 'path';
 import * as os from 'os';
 import type { AnnexPeer } from '../../shared/types';
@@ -22,7 +23,7 @@ vi.mock('./log-service', () => ({
 }));
 
 import {
-  listPeers, getPeer, isPairedPeer, addPeer, removePeer, removeAllPeers,
+  listPeers, getPeer, peekPeerAlias, isPairedPeer, addPeer, removePeer, removeAllPeers,
   updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt, forgiveFailedAttempt,
   unlockPairing, isPairingLocked, resetForTests, peerNeedsPairing, listPeersForDisplay,
   noteReached, setTypedHost, recordLastSeen, controlsThisMachine,
@@ -56,6 +57,21 @@ describe('annex-peers', () => {
     (app as any).__setUserDataPath(tmpDir);
     resetForTests();
   });
+  it('peeks aliases without loading credentials and retains only unambiguous cached metadata', () => {
+    const file = path.join(tmpDir, 'annex-peers.json'); fs.writeFileSync(file, JSON.stringify([makePeer('aa:bb', 'Retained alias')]));
+    const original = fs.readFileSync; const reads = vi.fn(original);
+    fs.readFileSync = reads as typeof fs.readFileSync; syncBuiltinESMExports();
+    try {
+      expect.soft(peekPeerAlias('aa:bb')).toBeUndefined(); expect.soft(reads).not.toHaveBeenCalled();
+      expect(getPeer('aa:bb')?.alias).toBe('Retained alias'); expect(reads).toHaveBeenCalledTimes(1); reads.mockClear();
+      fs.writeFileSync(file, 'broken current credentials');
+      expect(peekPeerAlias('AA:BB')).toBe('Retained alias'); expect.soft(reads).not.toHaveBeenCalled(); expect(fs.readFileSync(file, 'utf8')).toBe('broken current credentials');
+      resetForTests(); reads.mockClear(); expect.soft(peekPeerAlias('aa:bb')).toBeUndefined(); expect.soft(reads).not.toHaveBeenCalled();
+      fs.writeFileSync(file, JSON.stringify([makePeer('aa:bb', 'First'), makePeer('AA:BB', 'Other')])); getPeer('aa:bb');
+      expect(peekPeerAlias('aa:bb')).toBeUndefined();
+    } finally { fs.readFileSync = original; syncBuiltinESMExports(); }
+  });
+
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });

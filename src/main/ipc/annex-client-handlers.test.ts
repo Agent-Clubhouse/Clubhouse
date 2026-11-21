@@ -18,6 +18,7 @@ vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 vi.mock('../services/annex-client', () => ({
   requestAgentSettings: vi.fn(async () => ({ status: 'offline' })),
+  requestDispatcherDetails: vi.fn(async () => ({ status: 'offline' })),
   requestControllerChatPage: vi.fn(async () => ({ status: 'offline' })),
   requestControllerChatSessions: vi.fn(async () => ({ status: 'offline' })),
   setOwnListenerPortsProvider: vi.fn(),
@@ -166,6 +167,13 @@ describe('annex-client-handlers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.FORGET_SATELLITE)!;
     handler({}, 'fp:aa:bb');
     expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:aa:bb');
+  });
+
+  it('delegates only the fixed selected-host Dispatcher read, without caller role/id/query arguments', async () => {
+    await handlers.get(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS)!({}, 'FP:HOST');
+    expect(annexClient.requestDispatcherDetails).toHaveBeenCalledExactlyOnceWith('FP:HOST');
+    expect(() => handlers.get(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS)!({}, '')).toThrow();
+    expect(() => handlers.get(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS)!({}, 'x'.repeat(241))).toThrow();
   });
 
   it('delegates only a fixed remote Settings read, with bounded ids', async () => {

@@ -47,6 +47,13 @@ export function getShellEnvironment(): Record<string, string> {
   return getShellEnv();
 }
 
+/** Passive readiness only. Never initializes the environment or starts a shell.
+ * Windows' existing getter only copies process.env; POSIX needs a committed cache.
+ */
+export function isShellEnvironmentCached(): boolean {
+  return process.platform === 'win32' || cachedShellEnv !== null;
+}
+
 /** Pre-warm the shell environment cache asynchronously.
  *  Call this early in app startup so the cache is populated before the first
  *  agent wake. Uses execFile (non-blocking) instead of execSync so it doesn't

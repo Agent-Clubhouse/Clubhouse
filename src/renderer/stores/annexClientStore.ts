@@ -7,7 +7,7 @@
 import { create } from 'zustand';
 import { ALL_CACHED_DOMAINS, CachedDomain, onRemoteProjectionMutation, reconcileCachedValue, sameSnapshotValue } from './snapshot-delta';
 import { namespacedAgentId, namespacedProjectId, satellitePrefix, useRemoteProjectStore } from './remoteProjectStore';
-import type { HelperDeleteChoice, SatelliteSnapshot } from '../../shared/types';
+import type { AgentStatus, HelperDeleteChoice, SatelliteSnapshot } from '../../shared/types';
 import type { ChatEvent } from '../../shared/chat';
 import type { PendingPermissionInfo } from '../../shared/permission-types';
 import { usePendingPermissionStore } from './pendingPermissionStore';
@@ -45,6 +45,10 @@ export interface SatelliteConnection {
   mainPort: number;
   pairingPort: number;
   snapshot: SatelliteSnapshot | null;
+  /** Main-only positive receipt for a snapshot from the current pinned socket; absent for retained/unattested snapshots. */
+  snapshotReceipt?: string;
+  /** Existing main-process connection epoch; no role data is retained here. */
+  connectionGeneration?: number;
   lastError: string | null;
   /** This connection's satellite can't build a snapshot yet, and is retrying. */
   snapshotUnavailable?: boolean;
@@ -865,8 +869,8 @@ export function initAnnexClientListener(): () => void {
         throttledHookUpdate(satelliteId, agentId, p.detailedStatus);
       }
       // Its run state too, so a durable chat agent that slept there shows asleep here (a lead's Dispatcher, #3352).
-      if (agentId && (p.status === 'running' || p.status === 'sleeping')) {
-        useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, p.status);
+      if (agentId && p.status && ['running', 'sleeping', 'waking', 'error', 'creating', 'spawning'].includes(p.status)) {
+        useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, p.status as AgentStatus);
       }
     } else if (type === 'structured:event') {
       // Sent only by satellites on versions before structured mode was removed.
@@ -1075,6 +1079,8 @@ export function initAnnexClientListener(): () => void {
       }
     } else if (type === 'session:paused') {
       useAnnexClientStore.setState((state) => ({
+        // The main process drops admission on this same socket event; keep cached snapshot data unchanged.
+        satellites: state.satellites.map((sat) => sat.id === satelliteId ? { ...sat, snapshotReceipt: undefined } : sat),
         satellitePaused: { ...state.satellitePaused, [satelliteId]: true },
       }));
     } else if (type === 'session:resumed') {

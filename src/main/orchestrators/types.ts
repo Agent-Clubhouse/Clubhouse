@@ -255,6 +255,8 @@ export interface HeadlessCapable {
 
 /** How a transcript is read: in full, or capped for a summary. */
 export interface TranscriptReadOptions {
+  /** Details-only bounded native lookup; ordinary session/launch behavior is unchanged. */
+  passiveLookup?: true;
   /** Read at most this many bytes; a larger file is read as its head and tail. */
   maxBytes?: number;
   /** Filled in by the provider for local timing logs. Counts and sizes only, never content or paths. */
@@ -262,6 +264,12 @@ export interface TranscriptReadOptions {
 }
 
 export interface TranscriptReadStats {
+  /** Passive lookup hit an admission bound or unreadable directory; not verified absent. */
+  lookupIncomplete?: boolean;
+  lookupEntries?: number;
+  lookupDirectories?: number;
+  /** Admitted filesystem probes, including fixed candidate reservations. */
+  lookupProbes?: number;
   /** Time spent finding the transcript file. */
   lookupMs?: number;
   /** Time spent reading and parsing it. */
@@ -295,7 +303,7 @@ export interface SessionCapable {
    * The file `readSessionTranscript` reads for `sessionId`, or null when there
    * is none. Lets a search link a hit to the file and line it came from (#3039).
    */
-  transcriptPath?(sessionId: string, cwd: string): Promise<string | null>;
+  transcriptPath?(sessionId: string, cwd: string, opts?: TranscriptReadOptions): Promise<string | null>;
 
   /** Extract session ID from PTY buffer output, if recognizable */
   extractSessionId(ptyBuffer: string): string | null;

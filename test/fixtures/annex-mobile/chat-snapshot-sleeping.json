@@ -15,6 +15,7 @@
         "/work/app"
       ],
       "currentSessionId": null,
+      "displayRunId": null,
       "epoch": "00000000-0000-4000-8000-000000000001",
       "events": [
         {

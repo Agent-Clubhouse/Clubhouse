@@ -1,0 +1,44 @@
+#3733 §6 aggregate diffstat — bounded display slice, not whole-Details acceptance
+
+Base: 4fcae1c956719300b5e052540a37bb9a391bb405
+Branch: Nov20RootDiagnostics/3733-changes-diffstat
+
+Local ChangesSummary shows file totals and added/removed lines. Remote Changes
+now shows the host's known added/removed totals from the existing bounded file
+comparison before its 50-row slice. No additional filesystem/Git read is added.
+The optional diffstat contains additions/deletions/knownFiles. Unknown counts
+and uncompared paths keep the summary partial; no known counts stays unavailable.
+Old hosts remain valid: complete single-page evidence can be summed, while paged
+responses label only this page's known counts and never accumulate independent
+observations. File-patch responses do not claim whole-comparison totals.
+
+The shared validator rejects unsafe integers/overflow, negative/fractional counts,
+knownFiles beyond the inventory or contradicting this page, and aggregate line
+counts below or inconsistent with the known page contribution. Original selected
+agent/host/scope/page/snapshot/run/native/authorization witnesses are unchanged.
+
+Validation in the supplied existing dependency cache, no installs, one worker:
+node node_modules/vitest/vitest.mjs run --project main --project shared --project renderer
+  src/main/services/read-only-repository-changes.test.ts
+  src/main/services/remote-agent-changes.test.ts
+  src/main/services/remote-agent-changes-target-fence.test.ts
+  src/shared/remote-agent-changes.test.ts
+  src/renderer/features/agents/details/RemoteChangesCard.test.tsx
+  src/renderer/features/agents/details/ChangesCard.test.tsx
+  --maxWorkers=1 --no-file-parallelism
+Result: 109 passed, six suites, no failures/skips. Covers real bounded producer
+pagination with withheld/unknown paths and repository-byte preservation, safe
+schema arithmetic, known zero/unavailable/partial, page transitions and old-host
+fallback, late-scope rejection, denied/offline withholding and target fences.
+node node_modules/typescript/bin/tsc --noEmit: passed, unchanged repository config.
+Scoped ESLint on the six changed source/test files: two errors and one warning,
+all inherited in read-only-repository-changes.ts (two no-control-regex findings
+at existing sanitization regexes; one catch-must-report warning). Exact-base
+source checked through ESLint stdin yields byte-identical diagnostic messages.
+The other five files are clean. No new lint findings; full lint is not green.
+
+Limits: independent review, hosted validation and live UI/E2E are not claimed.
+No admission, permission, timeout, rename/link handling or write behavior changes.
+No PR, merge, restart or full #3733/§6 acceptance. Other §6 rename/link gaps remain
+outside this aggregate-only assignment. Earlier root220 diagnostic branch remains
+separately preserved; it is not incorporated into this branch.

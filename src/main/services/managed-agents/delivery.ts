@@ -786,7 +786,7 @@ interface LaunchSettings {
  * revisions, order, the CLI and the launch settings. Orchestration is left
  * out: the gate and the helper tools read it live (#3197).
  */
-export function setupFingerprint(agent: DurableAgentConfig, resolved: Resolved): DeliveryRecord {
+export function setupFingerprint(agent: DurableAgentConfig, resolved: ResolvedSetupMetadata): DeliveryRecord {
   const parts: DeliveryRecord['parts'] = {};
   for (const p of [...resolved.blocks, ...resolved.skills, ...resolved.mcps]) parts[p.id] = { name: p.name, revision: p.revision };
   const order = [...resolved.blocks.map((b) => b.id), '|', ...resolved.skills.map((s) => s.id), '|', ...resolved.mcps.map((m) => m.id)];
@@ -803,7 +803,7 @@ export function setupFingerprint(agent: DurableAgentConfig, resolved: Resolved):
 }
 
 /** Current grant-gated skills, with evidence only for a current successful delivery. */
-export function builtinSkillStatus(resolved: Resolved, record?: DeliveryRecord) {
+export function builtinSkillStatus(resolved: ResolvedSetupMetadata, record?: DeliveryRecord) {
   return resolved.skills.filter((skill) => GRANT_GATED_SKILL_IDS.includes(skill.id)).map((skill) => ({
     id: skill.id,
     name: skill.name,
@@ -1091,3 +1091,39 @@ async function outsideTheSetup(projectPath: string, agent: DurableAgentConfig, p
 
 export type { Resolved as ResolvedManagedSetup };
 export { resolveSetup as resolveManagedSetup };
+
+/** Metadata shape deliberately has no instruction/config/skill-file content. Never pass to delivery. */
+export interface ResolvedSetupMetadata {
+  blocks: Array<{ id: string; name: string; revision: number; builtin: boolean }>;
+  skills: Array<{ id: string; name: string; revision: number; builtin: boolean }>;
+  mcps: Array<{ id: string; name: string; revision: number; builtin: boolean }>;
+  missing: string[];
+  grantedSkipped?: Array<{ name: string; folder: string; keptName: string }>;
+}
+
+/** Recorded index metadata only; payload integrity and provider loading are not verified. */
+export async function resolveManagedSetupForDisplay(service: ManagedAgentsService, agent: DurableAgentConfig, grantedIds: readonly string[], options: { receipts?: import('../display-settings').DisplayReceipt[]; inputs?: import('../display-settings').DisplayInput[] } = {}): Promise<ResolvedSetupMetadata> {
+  const setup = agent.managed;
+  if (!setup || setup.version !== 1 || !Array.isArray(grantedIds) || grantedIds.length > GRANT_GATED_SKILL_IDS.length
+    || !grantedIds.every((id) => GRANT_GATED_SKILL_IDS.includes(id))) throw new Error('Managed display evidence is unavailable.');
+  if (![setup.blocks, setup.skills, setup.mcps].every((list) => Array.isArray(list) && list.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 2048))) throw new Error('Managed display setup is unreadable.');
+  const base = withClubhouseSetup(setup), desiredSkills = base.skills.filter((id) => !GRANT_GATED_SKILL_IDS.includes(id)), granted = [...new Set(grantedIds)];
+  if (base.blocks.length + desiredSkills.length + base.mcps.length + granted.length > 100) throw new Error('Managed display setup exceeds the part limit.');
+  const reader = await service.openSetupMetadataForDisplay();
+  const out: ResolvedSetupMetadata = { blocks: [], skills: [], mcps: [], missing: [] };
+  const folders = new Map<string, string>();
+  for (const id of base.blocks) { const head = await reader.head(id); if (!head || head.kind !== 'block') out.missing.push(id); else out.blocks.push(head); }
+  for (const id of desiredSkills) { const head = await reader.head(id); if (!head || head.kind !== 'skill') out.missing.push(id); else { out.skills.push(head); folders.set(id, head.skillName!); } }
+  for (const id of granted) {
+    const head = await reader.head(id);
+    if (!head || head.kind !== 'skill') { out.missing.push(id); continue; }
+    const folder = head.skillName!, kept = out.skills.find((skill) => folders.get(skill.id)?.toLowerCase() === folder.toLowerCase());
+    if (kept) (out.grantedSkipped ??= []).push({ name: head.name, folder, keptName: kept.name });
+    else { out.skills.push({ ...head, builtin: true }); folders.set(id, folder); }
+  }
+  for (const id of base.mcps) { const head = await reader.head(id); if (!head || head.kind !== 'mcp') out.missing.push(id); else out.mcps.push(head); }
+  if (!reader.receipt.current()) throw new Error('Managed display library metadata changed while reading.');
+  options.receipts?.push(reader.receipt);
+  options.inputs?.push({ field: 'Recorded library heads; revision payloads not verified', source: reader.source, observedAt: reader.observedAt });
+  return out;
+}

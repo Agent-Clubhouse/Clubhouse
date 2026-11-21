@@ -1,3 +1,4 @@
+import { REMOTE_DETAILS_CARD_IDS } from '../../shared/remote-agent-details';
 /**
  * Tests for the Annex V2 Client — discovery, pairing, and connection management.
  *
@@ -2783,6 +2784,181 @@ describe('annex-client', () => {
       res.emit('end');
     }
 
+    describe('local positive snapshot receipts', () => {
+      const payload = (lastSeq = 1) => ({ protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq,
+        dispatcher: { enabled: true, agent: null }, dispatcherPresence: { remotes: [] } });
+      const send = (index: number, type: string, body: object) => sockets[index].handlers.message(Buffer.from(JSON.stringify({ type, payload: body })));
+      const current = () => annexClient.getSatellite(FP)!;
+      const publicBroadcast = () => vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).at(-1)![1] as Array<{ snapshotReceipt?: string }>;
+
+      const metadata = () => ({ version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) });
+      const roleResponse = () => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: metadata() });
+      const broadcasts = () => vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).length;
+      function answer(status: number, body: object, hold = false) {
+        let finish!: () => void;
+        vi.mocked(https.request).mockImplementation(((_url: string, _options: unknown, callback: (response: unknown) => void) => {
+          const req = Object.assign(new EventEmitter(), { setTimeout: vi.fn(), destroy: vi.fn(), end: () => {
+            finish = () => { const res = Object.assign(new EventEmitter(), { statusCode: status, headers: {} }); callback(res); res.emit('data', Buffer.from(JSON.stringify(body))); res.emit('end'); };
+            if (!hold) finish();
+          } }); return req;
+        }) as never);
+        return () => finish();
+      }
+
+      it.each(['agent', 'role'] as const)('invalidates only positive snapshot admission on %s denial, not retained cache or repeated-denial loops', async (kind) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const cached = current().snapshot, oldReceipt = current().snapshotReceipt;
+        expect(oldReceipt).toEqual(expect.any(String));
+        const invoke = () => kind === 'role' ? annexClient.requestDispatcherDetails(FP) : annexClient.requestAgentDetails(FP, 'role1');
+        answer(403, {}); const before = broadcasts();
+        expect(await invoke()).toEqual({ status: 'forbidden' });
+        expect(current().snapshot).toBe(cached); expect(current().snapshotReceipt).toBeUndefined();
+        expect(broadcasts()).toBe(before + 1);
+        expect(await invoke()).toEqual({ status: 'forbidden' }); expect(broadcasts()).toBe(before + 1);
+        answer(200, kind === 'role' ? roleResponse() : metadata());
+        expect((await invoke()).status).toBe('ok'); expect(current().snapshotReceipt).toBeUndefined();
+        expect(JSON.stringify(annexClient.getSatellites())).not.toContain('PRIVATE_ROLE_RESPONSE');
+        send(0, 'snapshot', payload(2));
+        expect(current().snapshotReceipt).toEqual(expect.any(String)); expect(current().snapshotReceipt).not.toBe(oldReceipt);
+      });
+
+      it.each([401, 403])('invalidates positive admission once on a Canvas page %s across selections, keeping the cached snapshot', async (status) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const cached = current().snapshot, oldReceipt = current().snapshotReceipt;
+        const query = { card: 'canvases' as const, source: 'selected-canvas-memberships' as const, offset: 0 };
+        answer(status, {}); const before = broadcasts();
+        expect(await annexClient.requestAgentDetails(FP, 'role1', query)).toEqual({ status: 'forbidden' });
+        expect(current().snapshot).toBe(cached); expect(current().snapshotReceipt).toBeUndefined();
+        expect(publicBroadcast()[0].snapshotReceipt).toBeUndefined(); expect(broadcasts()).toBe(before + 1);
+        expect(await annexClient.requestAgentDetails(FP, 'role1', { ...query, selection: 'a'.repeat(64) })).toEqual({ status: 'forbidden' });
+        expect(broadcasts()).toBe(before + 1);
+        send(0, 'snapshot', payload(2));
+        expect(current().snapshotReceipt).toEqual(expect.any(String)); expect(current().snapshotReceipt).not.toBe(oldReceipt);
+      });
+
+      it.each(['agent', 'canvas'] as const)('a late same-epoch %s denial read under an older receipt keeps the newer receipt', async (kind) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const oldReceipt = current().snapshotReceipt, generation = current().connectionGeneration;
+        const finish = answer(403, {}, true);
+        const pending = annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
+        send(0, 'snapshot', payload(2));
+        const newReceipt = current().snapshotReceipt;
+        expect(newReceipt).toEqual(expect.any(String)); expect(newReceipt).not.toBe(oldReceipt); expect(current().connectionGeneration).toBe(generation);
+        const count = broadcasts(); finish();
+        expect(await pending).toEqual({ status: 'forbidden' });
+        expect(current().snapshotReceipt).toBe(newReceipt); expect(broadcasts()).toBe(count);
+      });
+
+      it.each(['agent', 'canvas'] as const)('a late %s denial still revokes the receipt it was read under', async (kind) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const finish = answer(401, {}, true);
+        const pending = annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
+        const count = broadcasts(); finish();
+        expect(await pending).toEqual({ status: 'forbidden' });
+        expect(current().snapshotReceipt).toBeUndefined(); expect(broadcasts()).toBe(count + 1);
+      });
+
+      it.each(['agent', 'role', 'canvas'] as const)('ignores a stale prior-epoch %s denial rather than clearing a fresh connection receipt', async (kind) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const finish = answer(403, {}, true);
+        const pending = kind === 'role' ? annexClient.requestDispatcherDetails(FP)
+          : annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
+        const generation = current().connectionGeneration;
+        annexClient.disconnect(FP); annexClient.connect(FP); sockets[1].handlers.open(); send(1, 'snapshot', payload(2));
+        const freshReceipt = current().snapshotReceipt;
+        expect(current().connectionGeneration).toBeGreaterThan(generation!);
+        const count = broadcasts(); finish();
+        expect(await pending).toEqual({ status: 'offline' });
+        expect(current().snapshotReceipt).toBe(freshReceipt); expect(broadcasts()).toBe(count);
+      });
+
+      it.each(['agent', 'canvas', 'role'] as const)('power-resume revalidation withdraws the receipt and fences an in-flight %s read until the new socket attests', async (kind) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const oldReceipt = current().snapshotReceipt, generation = current().connectionGeneration!;
+        expect(oldReceipt).toEqual(expect.any(String));
+        const finish = answer(200, kind === 'role' ? roleResponse() : metadata(), true);
+        const pending = kind === 'role' ? annexClient.requestDispatcherDetails(FP)
+          : annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
+        annexClient.resumeAllConnections();
+        expect(current().snapshotReceipt).toBeUndefined(); expect(publicBroadcast()[0].snapshotReceipt).toBeUndefined();
+        // The pre-sleep socket's late frame cannot re-attest the retired connection.
+        send(0, 'snapshot', payload(5)); expect(current().snapshotReceipt).toBeUndefined();
+        finish(); expect(await pending).toEqual({ status: 'offline' });
+        sockets.at(-1)!.handlers.open(); send(sockets.length - 1, 'snapshot', payload(6));
+        expect(current().snapshotReceipt).toEqual(expect.any(String)); expect(current().snapshotReceipt).not.toBe(oldReceipt);
+        expect(current().connectionGeneration!).toBeGreaterThan(generation);
+      });
+
+      it('mints only on accepted current-socket snapshots, not cached serialization or ignored older frames', async () => {
+        await discover(); sockets[0].handlers.open();
+        expect(current().snapshotReceipt).toBeUndefined();
+        send(0, 'snapshot', { ...payload(10), snapshotReceipt: 'HOST_FORGED' });
+        const receipt = current().snapshotReceipt;
+        expect(receipt).toEqual(expect.any(String));
+        expect(receipt).not.toBe('HOST_FORGED');
+        expect(JSON.parse(JSON.stringify(annexClient.getSatellites()))[0].snapshotReceipt).toBe(receipt);
+        send(0, 'snapshot', payload(1));
+        expect(current().snapshotReceipt).toBe(receipt);
+        expect(publicBroadcast()[0].snapshotReceipt).toBe(receipt);
+        send(0, 'snapshot', payload(11));
+        expect(current().snapshotReceipt).not.toBe(receipt);
+      });
+
+      it('keeps offline caches but cannot reattest them on pairing return, transport open, old-socket messages or state broadcasts', async () => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload(10));
+        const receipt = current().snapshotReceipt;
+        sockets[0].handlers.close(1008, Buffer.from('peer_not_paired'));
+        expect(current()).toMatchObject({ needsPairing: true, state: 'disconnected', snapshot: { lastSeq: 10 } });
+        expect(current().snapshotReceipt).toBeUndefined();
+        expect(publicBroadcast()[0].snapshotReceipt).toBeUndefined();
+        annexClient.connect(FP); sockets[1].handlers.open();
+        expect(current()).toMatchObject({ state: 'connected', snapshot: { lastSeq: 10 } });
+        expect(current().needsPairing).toBeUndefined();
+        expect(current().snapshotReceipt).toBeUndefined();
+        expect(JSON.parse(JSON.stringify(publicBroadcast()))[0].snapshotReceipt).toBeUndefined();
+        send(0, 'snapshot', payload(99));
+        expect(current().snapshotReceipt).toBeUndefined();
+        send(1, 'snapshot', payload(1)); // A new socket's valid first snapshot can restart its sequence.
+        expect(current().snapshot).toMatchObject({ lastSeq: 1 });
+        expect(current().snapshotReceipt).toEqual(expect.any(String));
+        expect(current().snapshotReceipt).not.toBe(receipt);
+      });
+
+      it('does not expose a receipt on a closing socket even before its close callback', async () => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        expect(current().snapshotReceipt).toEqual(expect.any(String));
+        Object.assign(sockets[0], { readyState: 2 });
+        expect(current().snapshotReceipt).toBeUndefined();
+        expect(current().snapshot).toMatchObject({ lastSeq: 1 });
+      });
+
+      it('drops admission on snapshot failure while preserving its cache, then requires a real new snapshot', async () => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const receipt = current().snapshotReceipt;
+        send(0, 'error', { message: 'snapshot_failed' });
+        expect(current()).toMatchObject({ state: 'connected', snapshotUnavailable: true, snapshot: { lastSeq: 1 } });
+        expect(current().snapshotReceipt).toBeUndefined();
+        expect(publicBroadcast()[0].snapshotReceipt).toBeUndefined();
+        send(0, 'snapshot', payload());
+        expect(current().snapshotReceipt).toEqual(expect.any(String));
+        expect(current().snapshotReceipt).not.toBe(receipt);
+      });
+
+      it('does not restore admission on resume or a paused snapshot', async () => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        send(0, 'session:paused', {});
+        expect(current().snapshotReceipt).toBeUndefined();
+        expect(current().snapshot).toMatchObject({ lastSeq: 1 });
+        send(0, 'session:resumed', {});
+        expect(current().snapshotReceipt).toBeUndefined();
+        send(0, 'snapshot', { ...payload(2), sessionPaused: true });
+        expect(current().snapshotReceipt).toBeUndefined();
+        send(0, 'snapshot', payload(3));
+        expect(current().snapshotReceipt).toEqual(expect.any(String));
+      });
+    });
+
     describe('resume freshness', () => {
       beforeEach(() => {
         vi.useFakeTimers();
@@ -3844,7 +4020,62 @@ describe('annex-client', () => {
       annexClient._addConnectedSatelliteForTesting(FP);
     });
 
-    it('discards Settings responses across an in-place disconnect/reconnect epoch', async () => {
+    describe('selected Dispatcher role transport', () => {
+      const response = () => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: { version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null,
+        sessionId: null, nativeSessionId: null, settings: null, cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) } });
+      beforeEach(() => { vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as never); });
+      it('uses only the selected pinned host and fixed metadata GET, retaining no role response on satellites', async () => {
+        const value = response(); answers.push({ status: 200, body: value });
+        expect(await annexClient.requestDispatcherDetails(FP)).toEqual({ status: 'ok', value });
+        expect(requests).toHaveLength(1); expect(requests[0]).toMatchObject({ method: 'GET' });
+        expect(requests[0].url).toContain('/api/v1/dispatcher/details'); expect(requests[0].url).not.toContain('?');
+        expect(await annexClient.requestDispatcherDetails('role@other-machine')).toEqual({ status: 'offline' }); expect(requests).toHaveLength(1);
+        expect(JSON.stringify(annexClient.getSatellites())).not.toContain('PRIVATE_ROLE_RESPONSE');
+      });
+      it('keeps legacy/unbound/changed, denied and busy responses distinct without fallback URLs or error text', async () => {
+        for (const status of [404, 405, 409, 401, 403, 429, 500]) {
+          answers.push({ status, body: { private: 'PRIVATE_HOST_ERROR' } });
+          const result = await annexClient.requestDispatcherDetails(FP);
+          expect(result.status).toBe([404, 405, 409].includes(status) ? 'unavailable' : status === 401 || status === 403 ? 'forbidden' : status === 429 ? 'rate_limited' : 'error');
+          expect(JSON.stringify(result)).not.toContain('PRIVATE_HOST_ERROR');
+        }
+        expect(requests.every((r) => r.url.endsWith('/api/v1/dispatcher/details'))).toBe(true);
+      });
+      it('rejects wrong role/id, private wrapper fields and every partial page kind', async () => {
+        for (const patch of [{ role: 'controller' }, { agentId: 'other' }, { receipt: {} }]) {
+          answers.push({ status: 200, body: { ...response(), ...patch } }); expect(await annexClient.requestDispatcherDetails(FP)).toEqual({ status: 'error' });
+        }
+        for (const field of ['helperPageOnly', 'connectionPageOnly', 'inventoryPageOnly']) {
+          const value = response(); Object.assign(value.details, { [field]: true }); answers.push({ status: 200, body: value });
+          expect(await annexClient.requestDispatcherDetails(FP)).toEqual({ status: 'error' });
+        }
+      });
+      it.each(['pin', 'kind', 'role', 'pending', 'removed'] as const)('fences an in-flight response after peer %s changes, including in-place peer mutation', async (mode) => {
+        let peer: Record<string, unknown> | undefined = { fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' };
+        vi.mocked(annexPeers.getPeer).mockImplementation(() => peer as never);
+        let finish!: () => void;
+        vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => Object.assign(new EventEmitter(), { destroy: vi.fn(), setTimeout: vi.fn(), end: () => {
+          finish = () => { const res = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(res); res.emit('data', Buffer.from(JSON.stringify(response()))); res.emit('end'); };
+        } })) as never);
+        const pending = annexClient.requestDispatcherDetails(FP);
+        if (mode === 'removed') peer = undefined;
+        else peer[mode === 'pin' ? 'tlsCertificateFingerprint' : mode === 'pending' ? 'networkPending' : mode] = mode === 'pin' ? 'new-pin' : mode === 'pending' ? true : mode === 'kind' ? 'phone' : 'controller';
+        finish(); expect(await pending).toEqual({ status: 'offline' });
+      });
+      it('fences a role response across an in-place reconnect generation', async () => {
+        let finish!: () => void;
+        vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => Object.assign(new EventEmitter(), { destroy: vi.fn(), setTimeout: vi.fn(), end: () => {
+          finish = () => { const res = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(res); res.emit('data', Buffer.from(JSON.stringify(response()))); res.emit('end'); };
+        } })) as never);
+        const pending = annexClient.requestDispatcherDetails(FP), epoch = annexClient.getSatellite(FP)!.connectionGeneration;
+        annexClient._receiveSatelliteDisconnectForTesting(FP); annexClient.connect(FP);
+        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
+        expect(annexClient.getSatellite(FP)!.connectionGeneration).toBeGreaterThan(epoch!);
+        finish(); expect(await pending).toEqual({ status: 'offline' });
+      });
+    });
+
+    it.each(['requestAgentSettings', 'requestAgentDetails', 'requestAgentChanges'] as const)('discards %s responses across an in-place disconnect/reconnect epoch', async (method) => {
       let finish!: () => void;
       vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
         const req = Object.assign(new EventEmitter(), { end: () => {
@@ -3855,13 +4086,170 @@ describe('annex-client', () => {
         }, destroy: vi.fn() });
         return req;
       }) as any);
-      const pending = annexClient.requestAgentSettings(FP, 'a1');
+      const pending = annexClient[method](FP, 'a1', method === 'requestAgentChanges' ? { scope: 'branch' } : undefined);
       annexClient._receiveSatelliteDisconnectForTesting(FP);
       vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
       annexClient.connect(FP);
       await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
       finish();
       expect(await pending).toEqual({ status: 'offline' });
+    });
+
+    it('binds bounded selected-source Details pages and refuses malformed/old-host page responses', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const query = { card: 'connections' as const, source: 'helpers' as const, offset: 8, projectOffset: 16 };
+      const value = { version: 1, connectionPages: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id === 'connections' && { connectionPage: { source: 'helpers', offset: 8, projectOffset: 16, known: 9, complete: true, next: null } }) })) };
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
+      expect(requests[0]).toMatchObject({ method: 'GET' }); expect(requests[0].url).toContain('/agents/a1/details?card=connections&source=helpers&offset=8&projectOffset=16');
+      const { selectedConnectionPageEnvelope } = await import('./remote-details-presentation');
+      const independent = structuredClone(value) as unknown as import('../../shared/remote-agent-details').RemoteAgentDetails; selectedConnectionPageEnvelope(independent);
+      expect(isRemoteAgentDetails(independent, 'a1')).toBe(true); answers.push({ status: 200, body: independent }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value: independent });
+      answers.push({ status: 200, body: independent }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
+      const ignored = { ...value, connectionPageEnvelope: 1 }; expect(isRemoteAgentDetails(ignored, 'a1')).toBe(true); answers.push({ status: 200, body: ignored }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      const before = requests.length;
+      expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, offset: 4097 })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
+      answers.push({ status: 200, body: { ...value, cards: value.cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { ...c.connectionPage, offset: 0 } } : c) } });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      answers.push({ status: 400, body: { error: 'invalid_details_query' } });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, source: 'tool-records' })).toEqual({ status: 'unavailable' });
+      answers.push({ status: 200, body: { ...value, connectionPages: undefined, cards: value.cards.map((c) => ({ ...c, connectionPage: undefined })) } });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
+    });
+
+    it('binds managed inventory pages to exact source, ordered selection, offset and page-only envelope', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const selection = 'a'.repeat(64), query = { card: 'skills-mcp' as const, source: 'selected-managed-skills' as const, offset: 100, selection };
+      const value = { version: 1, inventoryPages: 1, inventorySources: ['selected-managed-skills'], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        inventoryPage: { version: 1, source: query.source, offset: 100, observedAt: 1, notes: [], state: 'recorded', selection, total: 101, next: null, rows: [{ key: 'b'.repeat(64), kind: 'skill', state: 'recorded', name: 'Last selected skill', revision: 1, builtin: false }] },
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'skills-mcp' && { requested: false }) })) };
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain(`card=skills-mcp&source=selected-managed-skills&offset=100&selection=${selection}`); expect(requests[0].url).not.toContain('projectOffset');
+      for (const patch of [{ selection: 'c'.repeat(64) }, { offset: 0 }]) {
+        answers.push({ status: 200, body: { ...value, inventoryPage: { ...value.inventoryPage, ...patch } } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      }
+      answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: { ...value, PRIVATE_UNRELATED: 'PRIVATE' } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      answers.push({ status: 403, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'forbidden' });
+      const before = requests.length; expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, selection: undefined })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
+    });
+
+    it('binds helper-only Details pages to exact selected offsets and rejects mixed/default envelopes', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const query = { card: 'orchestrate' as const, source: 'helpers' as const, offset: 8 };
+      const value = { version: 1, helperPages: 1, helperPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        helperPage: { version: 1, source: 'selected-direct-helpers', state: 'ok', offset: 8, next: null, total: 9, liveCount: 9, disposedCount: 0, pendingCount: 0, rows: [{ key: 'last', name: 'Last helper', projectName: null, status: 'unknown', statusSource: 'unknown', branch: null, failure: 'unknown', disposedAt: null, work: { state: 'unavailable', reason: 'identity' } }], pending: [], notes: [] },
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'orchestrate' && { requested: false }) })) };
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain('card=orchestrate&source=helpers&offset=8&projectOffset=0');
+      answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: { ...value, helperPage: { ...value.helperPage, state: 'unavailable', offset: 0, total: null, liveCount: null, disposedCount: null, next: null, rows: [] } } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      answers.push({ status: 400, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
+      answers.push({ status: 403, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'forbidden' });
+      const before = requests.length; expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, projectOffset: 1 })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
+    });
+
+    it('binds Actions inventory GETs to selected source/offset/order and connection epochs without default-body reuse', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const selection = 'a'.repeat(64), query = { card: 'actions' as const, source: 'selected-action-relationships' as const, offset: 25, selection };
+      const value = { version: 1, inventoryPages: 1, inventorySources: [query.source], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        inventoryPage: { version: 1, source: query.source, offset: 25, observedAt: 1, notes: [], state: 'recorded', selection, totalRelationships: 26, uniqueActions: 13, next: null, rows: [{ key: 'b'.repeat(64), group: 'triggered-by', enabled: false, description: 'Message Selected', name: 'Last relationship' }] },
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'actions' && { requested: false }) })) };
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain(`card=actions&source=selected-action-relationships&offset=25&selection=${selection}`);
+      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }]) {
+        const body = 'selection' in patch ? { ...value, inventoryPage: { ...value.inventoryPage, selection: patch.selection } } : { ...value, ...patch };
+        answers.push({ status: 200, body }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      }
+      answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
+      answers.push({ status: 403, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'forbidden' });
+      let finish!: () => void;
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => Object.assign(new EventEmitter(), { end: () => { finish = () => { const res = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(res); res.emit('data', Buffer.from(JSON.stringify(value))); res.emit('end'); }; }, destroy: vi.fn() })) as any);
+      const pending = annexClient.requestAgentDetails(FP, 'a1', query); await vi.waitFor(() => expect(finish).toBeTypeOf('function')); annexClient._receiveSatelliteDisconnectForTesting(FP); finish();
+      expect(await pending).toEqual({ status: 'offline' });
+    });
+
+    it('binds Canvas inventory GETs to selected source/offset/order and connection epochs without default-body reuse', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const selection = 'a'.repeat(64), query = { card: 'canvases' as const, source: 'selected-canvas-memberships' as const, offset: 25, selection };
+      const value = { version: 1, inventoryPages: 1, inventorySources: [query.source], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        inventoryPage: { version: 1, source: query.source, offset: 25, observedAt: 1, notes: [], agentId: 'a1', projectId: 'p1', state: 'recorded', selection, total: 26, next: null, rows: [{ key: 'b'.repeat(64), scope: 'project', canvasId: 'board', viewId: 'view', name: 'Last membership' }] },
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'canvases' && { requested: false }) })) };
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain(`card=canvases&source=selected-canvas-memberships&offset=25&selection=${selection}`);
+      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }]) {
+        const body = 'selection' in patch ? { ...value, inventoryPage: { ...value.inventoryPage, selection: patch.selection } } : { ...value, ...patch };
+        answers.push({ status: 200, body }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      }
+      answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
+      answers.push({ status: 403, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'forbidden' });
+      let finish!: () => void;
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => Object.assign(new EventEmitter(), { end: () => { finish = () => { const res = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(res); res.emit('data', Buffer.from(JSON.stringify(value))); res.emit('end'); }; }, destroy: vi.fn() })) as any);
+      const pending = annexClient.requestAgentDetails(FP, 'a1', query); await vi.waitFor(() => expect(finish).toBeTypeOf('function')); annexClient._receiveSatelliteDisconnectForTesting(FP); finish();
+      expect(await pending).toEqual({ status: 'offline' });
+    });
+
+    it('reads bounded exact-agent Details and treats old/refused/malformed contracts explicitly', async () => {
+      const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
+      const value = { version: 1, agentId: 'a?/#', readOnly: true, readAt: 1, providerId: 'codex-cli', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a?/#')).toEqual({ status: 'ok', value });
+      expect(requests[0]).toMatchObject({ method: 'GET' });
+      expect(requests[0].url).toContain('/agents/a%3F%2F%23/details');
+      for (const status of [404, 405, 401, 403, 429]) {
+        answers.push({ status, body: { private: 'PRIVATE_ERROR' } });
+        expect((await annexClient.requestAgentDetails(FP, 'a1')).status).toBe(status === 429 ? 'rate_limited' : status === 404 || status === 405 ? 'unavailable' : 'forbidden');
+      }
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'other')).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: { ...value, version: 2 } });
+      expect(await annexClient.requestAgentDetails(FP, 'a?/#')).toEqual({ status: 'error' });
+    });
+    it('withholds a schema-valid prior Details snapshot after the same record reconnects', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const value = { version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: 'PRIVATE_PRIOR_EPOCH', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
+      let finish!: () => void;
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
+        const req = Object.assign(new EventEmitter(), { end: () => { finish = () => {
+          const res = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(res); res.emit('data', Buffer.from(JSON.stringify(value))); res.emit('end');
+        }; }, destroy: vi.fn() });
+        return req;
+      }) as any);
+      const admitted = annexClient.getSatellite(FP), pending = annexClient.requestAgentDetails(FP, 'a1');
+      annexClient._receiveSatelliteDisconnectForTesting(FP);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
+      annexClient.connect(FP); await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
+      // This accessor returns a fresh public projection. The production guard
+      // retains internal object identity; the epoch negative control keeps
+      // that identity check intact while proving this reconnect boundary.
+      expect(annexClient.getSatellite(FP)).toMatchObject({ id: admitted!.id, fingerprint: admitted!.fingerprint });
+      finish(); const result = await pending;
+      expect.soft(result).toEqual({ status: 'offline' }); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_PRIOR_EPOCH');
+    });
+    it('reads only an exact selected-agent Changes scope/page/key and rejects old/refused/malformed responses', async () => {
+      const value = { version: 1, readOnly: true, agentId: 'a?/#', observedAt: 1, scope: 'branch', state: 'ok', branch: 'feature', base: 'main', sessionId: null, turnId: null, live: true, shared: false, files: [], totalFiles: 0, offset: 0, nextOffset: null, uncompared: 0, skippedLarge: [], skippedRepos: [], skippedOmitted: 0 };
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentChanges(FP, 'a?/#', { scope: 'branch' })).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain('/agents/a%3F%2F%23/changes?scope=branch');
+      expect(requests[0].method).toBe('GET');
+      for (const status of [404, 405, 401, 403, 429]) {
+        answers.push({ status, body: { private: 'PRIVATE_ERROR' } });
+        expect((await annexClient.requestAgentChanges(FP, 'a1', { scope: 'branch' })).status).toBe(status === 429 ? 'rate_limited' : status === 404 || status === 405 ? 'unavailable' : 'forbidden');
+      }
+      for (const patch of [{ agentId: 'other' }, { scope: 'turn' }, { version: 2 }, { files: [null] }, { nextOffset: -1 }]) {
+        answers.push({ status: 200, body: { ...value, ...patch } });
+        expect(await annexClient.requestAgentChanges(FP, 'a?/#', { scope: 'branch' })).toEqual({ status: 'error' });
+      }
+      const count = requests.length;
+      expect(await annexClient.requestAgentChanges(FP, 'a1', { scope: 'branch', path: '/private' })).toEqual({ status: 'error' });
+      expect(requests).toHaveLength(count);
     });
 
     it.each([404, 405])('represents an older Settings host (%s) without retries or local fallback', async (status) => {

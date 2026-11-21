@@ -1,0 +1,64 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ ❯ |renderer| src/renderer/stores/annexClientStore.test.ts (49 tests | 1 failed) 18ms
+       × drops only new-card admission on pause, never reattests on resume or synthetic snapshot events 2ms
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ ❯ |shared| src/shared/selected-dispatcher-details.test.ts (14 tests | 1 failed) 5ms
+     × explicitly rejects a malformed managed inventory partial injection accepted as an unknown additive field by the old Details validator 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |shared| src/shared/selected-dispatcher-details.test.ts > selected Dispatcher full wrapper validation > explicitly rejects a malformed managed inventory partial injection accepted as an unknown additive field by the old Details validator
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/shared/selected-dispatcher-details.test.ts:24:64
+     22|   it('explicitly rejects a malformed managed inventory partial injecti…
+     23|     const value = roleFixture(); Object.assign(value.details, { invent…
+     24|     expect(isRemoteAgentDetails(value.details, value.agentId)).toBe(tr…
+       |                                                                ^
+     25|     expect(isSelectedDispatcherDetails(value)).toBe(false);
+     26|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |renderer| src/renderer/stores/annexClientStore.test.ts > annexClientStore > session pause/resume events > drops only new-card admission on pause, never reattests on resume or synthetic snapshot events
+AssertionError: expected { projects: [], agents: {}, …(5) } to be { projects: [], agents: {}, …(5) } // Object.is equality
+
+If it should pass with deep equality, replace "toBe" with "toStrictEqual"
+
+Expected: { projects: [], agents: {}, …(5) }
+Received: serializes to the same string
+
+
+Compared values have no visual difference.
+
+ ❯ src/renderer/stores/annexClientStore.test.ts:559:49
+    557|       eventCallback({ satelliteId: SATELLITE.id, type: 'session:resume…
+    558|       eventCallback({ satelliteId: SATELLITE.id, type: 'snapshot', pay…
+    559|       expect(getState().satellites[0].snapshot).toBe(cached);
+       |                                                 ^
+    560|       expect(getState().satellites[0].snapshotReceipt).toBeUndefined();
+    561|       cleanup();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 24 passed (26)
+      Tests  2 failed | 1716 passed (1718)
+   Start at  21:09:04
+   Duration  84.02s (transform 5.62s, setup 491ms, import 7.98s, tests 127.40s, environment 2.66s)
+

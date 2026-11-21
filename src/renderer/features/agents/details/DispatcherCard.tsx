@@ -23,7 +23,7 @@ import { createPortal } from 'react-dom';
 import type { Agent } from '../../../../shared/types';
 import type { AgentGrantsView, GrantChangeMode } from '../../../../shared/agent-grant-changes';
 import { AGENT_CARD_FIELD_MAX, type AgentCardView } from '../../../../shared/dispatcher-agent-card';
-import { DEFAULT_DISPATCHER_NAME, type DispatcherState } from '../../../../shared/dispatcher-types';
+import type { DispatcherState } from '../../../../shared/dispatcher-types';
 import { Button } from '../../../components/Button';
 import { Modal } from '../../../components/Modal';
 import { Toggle } from '../../../components/Toggle';
@@ -37,43 +37,10 @@ import type { OrchestrationState } from '../helpers/orchestration-hooks';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 import { CONNECTED_TARGET, reachRows, reachSummary, type ReachRow } from './dispatcher-card-model';
 
-/** The Dispatcher's name as the user set it, or its working name. */
-export function dispatcherName(state: Pick<DispatcherState, 'config'> | null | undefined): string {
-  return state?.config?.name?.trim() || DEFAULT_DISPATCHER_NAME;
-}
-
-/**
- * The header's line once connected (#3249): the Dispatcher's name, never the
- * agent's own card text. The role word comes from the one shared name.
- */
-export function connectedSummary(name: string): string {
-  return name.toLowerCase() === DEFAULT_DISPATCHER_NAME.toLowerCase() ? 'connected' : `${name}, your ${DEFAULT_DISPATCHER_NAME.toLowerCase()}`;
-}
-
-export const ASKING_TEXT = 'Asking what it does…';
-export const NO_DESCRIPTION_TEXT = 'No description yet';
-/** How long "Asking what it does…" shows after turning on when nothing comes back, before "No description yet". */
+import { dispatcherName, ASKING_TEXT, NO_DESCRIPTION_TEXT, cardStatus, cardSummary } from '../../../../shared/dispatcher-card-presentation';
+export { dispatcherName, connectedSummary, ASKING_TEXT, NO_DESCRIPTION_TEXT, cardStatus, cardSummary, type DispatcherCardStatus } from '../../../../shared/dispatcher-card-presentation';
+/** Local optimistic switch feedback; remote display uses only recorded request state. */
 export const TURNING_ON_MS = 15_000;
-
-export type DispatcherCardStatus = 'off' | 'asking' | 'ready' | 'none';
-
-/** Which state the card is in, from the switch and the agent's card. */
-export function cardStatus(on: boolean, view: AgentCardView | null, turningOn: boolean): DispatcherCardStatus {
-  if (!on) return 'off';
-  if (view?.state === 'ready') return 'ready';
-  if (view?.state === 'asking' || turningOn) return 'asking';
-  return 'none';
-}
-
-/** The header's one line for each state. */
-export function cardSummary(status: DispatcherCardStatus, name: string): string {
-  switch (status) {
-    case 'off': return 'not connected';
-    case 'asking': return ASKING_TEXT;
-    case 'none': return NO_DESCRIPTION_TEXT;
-    case 'ready': return connectedSummary(name);
-  }
-}
 
 const TEXTAREA_CLASS = 'w-full min-h-[44px] px-2 py-1 rounded-md border border-surface-1 bg-ctp-crust text-xs text-ctp-text leading-normal resize-y focus-ring';
 const LINK_CLASS = 'text-ctp-link hover:underline cursor-pointer focus-ring rounded-sm';

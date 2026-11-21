@@ -138,11 +138,11 @@ describe('AgentDetails in the terminal', () => {
     await act(async () => {});
   });
 
-  it.each(['helpers', 'subagents', 'dispatcher', 'connections'] as const)('falls back from unavailable %s for a remote agent', async (card) => {
+  it.each(['helpers', 'subagents', 'dispatcher', 'connections'] as const)('opens applicable host cards or falls back for %s on a remote agent', async (card) => {
     const remote = { ...agent, projectId: 'remote||sat||p1' };
     render(<AgentDetails agent={remote} />);
     await act(async () => useAgentDetailsStore.getState().reveal({ agentId: agent.id, card }));
-    expect(screen.getByTestId('details-card-session')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId(`details-card-${card === 'subagents' ? 'session' : card === 'helpers' ? 'orchestrate' : card}`)).toHaveAttribute('data-open', 'true');
   });
 
   it('offers an empty Connections card for a local durable agent before it has wires', () => {
@@ -265,6 +265,15 @@ describe('AgentDetails for a remote Dispatcher', () => {
 
   beforeEach(() => {
     useAnnexClientStore.setState({ satellites: [satellite] });
+    Object.assign(window.clubhouse.annexClient, {
+      agentDetails: vi.fn(async () => ({ status: 'unavailable' })),
+      agentSettings: vi.fn(async () => ({ status: 'unavailable' })),
+    });
+    vi.spyOn(window.clubhouse.agent, 'getDurableConfig');
+    vi.spyOn(window.clubhouse.agent, 'updateDurable');
+    vi.spyOn(window.clubhouse.annexClient, 'agentSpawn');
+    vi.spyOn(window.clubhouse.annexClient, 'agentWake');
+    vi.spyOn(window.clubhouse.annexClient, 'agentKill');
     window.clubhouse.actions.list = vi.fn(async () => []);
     window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
     window.clubhouse.dispatcher.getPresence = vi.fn(async () => ({ remotes: [
@@ -281,6 +290,9 @@ describe('AgentDetails for a remote Dispatcher', () => {
       ...createChatViewState(remote.id), sessionId: 's1', provider: 'claude-code', driver: 'claude_agent_sdk' as const,
       capabilities: { usage: 'session', subagents: 'native', limits: false } as never,
     };
+    let finish!: (result: { status: 'unavailable' }) => void;
+    const hostRead = vi.fn(() => new Promise<{ status: 'unavailable' }>((resolve) => { finish = resolve; }));
+    Object.assign(window.clubhouse.annexClient, { agentDetails: hostRead });
     render(<AgentDetails agent={{ ...remote, projectId: namespacedProjectId('sat', projectId) }} chat={chat} />);
     for (const card of ['settings', 'connections', 'other-machines', 'actions']) {
       expect(screen.getByTestId(`details-card-${card}`)).toBeInTheDocument();
@@ -289,19 +301,41 @@ describe('AgentDetails for a remote Dispatcher', () => {
     for (const card of ['changes', 'subagents', 'canvases', 'context', 'skills-mcp', 'session']) {
       expect(screen.queryByTestId(`details-card-${card}`)).not.toBeInTheDocument();
     }
-    expect(screen.getByTestId('other-machine-remote-peer')).toHaveTextContent('Studio on Desk');
-    await act(async () => {});
+    expect(screen.queryByTestId('other-machine-remote-peer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld');
+    // Keep the host response pending explicitly: Connections has its own loading copy.
+    await waitFor(() => expect(hostRead).toHaveBeenCalledTimes(1));
+    expect(hostRead).toHaveBeenCalledWith('sat', hostAgent.id);
+    expect(window.clubhouse.annexClient.agentSettings).not.toHaveBeenCalled();
+    expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('Loading connections from the host…');
+    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('Loading connections from the host…');
+    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Loading details from the host…');
+    expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Loading details from the host…');
+    await act(async () => { finish({ status: 'unavailable' }); });
+    await waitFor(() => expect(window.clubhouse.annexClient.agentSettings).toHaveBeenCalledWith('sat', hostAgent.id));
+    for (const card of ['connections', 'actions']) {
+      expect(screen.getByTestId(`details-card-${card}-summary`)).toHaveTextContent('This host does not share these details');
+      expect(screen.getByTestId(`details-card-${card}`)).toHaveTextContent('host may need an update.');
+      expect(screen.getByTestId(`details-card-${card}`)).not.toHaveTextContent('Loading');
+    }
+    expect(screen.getByTestId('details-card-settings')).toHaveTextContent('This host doesn’t share these settings.');
+    expect(screen.queryByTestId('other-machine-remote-peer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld');
     expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
-    expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('Change on Mini');
-    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('They aren’t shared in this computer’s view.');
-    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Change on Mini');
-    expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Actions made by this Dispatcher are managed on Mini.');
     expect(screen.getByTestId('details-settings-remote')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add connection' })).not.toBeInTheDocument();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
     expect(window.clubhouse.mcpBinding.getConnectionGrants).not.toHaveBeenCalled();
     expect(window.clubhouse.git.branchChanges).not.toHaveBeenCalled();
+    expect(window.clubhouse.dispatcher.getPresence).not.toHaveBeenCalled();
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+    expect(window.clubhouse.agent.updateDurable).not.toHaveBeenCalled();
+    expect(window.clubhouse.annexClient.agentSpawn).not.toHaveBeenCalled();
+    expect(window.clubhouse.annexClient.agentWake).not.toHaveBeenCalled();
+    expect(window.clubhouse.annexClient.agentKill).not.toHaveBeenCalled();
+    expect(hostRead).toHaveBeenCalledTimes(1);
+    expect(window.clubhouse.annexClient.agentSettings).toHaveBeenCalledTimes(1);
   });
 
   it('recognizes the namespaced Dispatcher project while its host is offline without a snapshot', () => {
@@ -309,9 +343,9 @@ describe('AgentDetails for a remote Dispatcher', () => {
     render(<AgentDetails agent={remote} />);
     expect(screen.queryByTestId('details-card-session')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('details-card-other-machines-toggle'));
-    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Mini hasn’t shared its other machines here.');
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld.');
     expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
-    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Change on Mini');
+    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Host offline');
   });
 
   it('keeps ordinary remote agents named Dispatcher on their normal cards', async () => {
@@ -319,9 +353,10 @@ describe('AgentDetails for a remote Dispatcher', () => {
     for (const card of ['settings', 'changes', 'skills-mcp', 'session', 'actions']) {
       expect(screen.getByTestId(`details-card-${card}`)).toBeInTheDocument();
     }
-    expect(screen.queryByTestId('details-card-connections')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-connections')).toBeInTheDocument();
     expect(screen.queryByTestId('details-card-other-machines')).not.toBeInTheDocument();
-    await waitFor(() => expect(window.clubhouse.actions.list).toHaveBeenCalled());
+    await act(async () => {});
+    expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
   });
 });
 

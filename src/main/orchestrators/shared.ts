@@ -409,15 +409,18 @@ export async function parseJsonlFile(
   const { maxBytes, stats } = opts;
   try {
     const events: StreamJsonEvent[] = [];
+    if (opts.passiveLookup && (!maxBytes || maxBytes < 1)) return null;
     if (!maxBytes) {
       const content = await fsp.readFile(filePath, 'utf-8');
       if (stats) stats.bytesRead = Buffer.byteLength(content);
       parseJsonlText(content, events);
       return events.length > 0 ? events : null;
     }
-    const fh = await fsp.open(filePath, 'r');
+    const fh = await fsp.open(filePath, opts.passiveLookup ? fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK : 'r');
     try {
-      const size = (await fh.stat()).size;
+      const stat = await fh.stat();
+      if (opts.passiveLookup && !stat.isFile()) return null;
+      const size = stat.size;
       if (stats) stats.fileBytes = size;
       if (size <= maxBytes) {
         const buf = Buffer.alloc(size);

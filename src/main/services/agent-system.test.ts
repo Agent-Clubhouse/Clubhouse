@@ -1,8 +1,10 @@
 import { managedProviderPlatformCapability } from './managed-provider-platform';
 import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from './dispatcher-federation-context';
 import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
+import { mkdirSync } from 'fs';
+import { app } from 'electron';
 import type { OrchestratorConventions } from '../orchestrators';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { IPC } from '../../shared/ipc-channels';
@@ -30,11 +32,13 @@ const mockPtySpawn = vi.fn();
 const mockPtyGracefulKill = vi.fn();
 const mockStopCreatedProcess = vi.fn(() => false);
 const mockPtyIsRunning = vi.fn(() => false);
+const mockPtyProcessIdentity = vi.fn((): string | undefined => undefined);
 vi.mock('./pty-manager', () => ({
   spawn: (...args: unknown[]) => mockPtySpawn(...args),
   gracefulKill: (...args: unknown[]) => mockPtyGracefulKill(...args),
   stopCreatedProcessIfCurrent: (...args: unknown[]) => mockStopCreatedProcess(...args),
   isRunning: (...args: unknown[]) => mockPtyIsRunning(...args),
+  processIdentity: (...args: unknown[]) => mockPtyProcessIdentity(...args),
 }));
 
 // Mock headless-manager
@@ -383,7 +387,7 @@ import { broadcastAgentExit } from './agent-exit-broadcast';
 import { agentRegistry } from './agent-registry';
 import { resolveProjectMcpServers } from './agent-mcp-servers';
 import { onAppEvent, publishAppEvent, resetAppEventBus, type AppEvent } from './app-event-bus';
-import { clearQuickAgentRuns, knownQuickAgents } from './quick-agent-events';
+import { beginQuickAgentRun, clearQuickAgentRuns, knownQuickAgents, quickRuntimeDisplay, quickRuntimeIsCurrent, type QuickAgentRun } from './quick-agent-events';
 
 /** Give a mock provider the SessionCapable surface, with the real CLIs' "resume <uuid>" pattern. */
 function sessionCapable(provider: Record<string, unknown>): void {
@@ -403,6 +407,9 @@ function notSessionCapable(provider: Record<string, unknown>): void {
 }
 
 describe('agent-system', () => {
+  // Spawns persist local work under userData, which the app always has. The electron mock's folder
+  // is never created, so a run on a fresh temp dir (CI) would fail every later save in this file.
+  beforeAll(() => { mkdirSync(app.getPath('userData'), { recursive: true }); });
   beforeEach(() => {
     vi.clearAllMocks();
     mockManagedProviderStartGuard.mockReset().mockResolvedValue(() => {});
@@ -459,6 +466,37 @@ describe('agent-system', () => {
   });
 
   describe('spawnAgent', () => {
+    it.each(['started', 'registration-replaced', 'untracked', 'run-replaced', 'runtime-replaced', 'failed'] as const)('binds quick display only to the specific created runtime during an awaited spawn: %s', async (condition) => {
+      const id = 'display-quick';
+      let run: QuickAgentRun | undefined;
+      mockPtyIsRunning.mockReturnValue(false); mockPtyProcessIdentity.mockReturnValue(undefined); mockGetSpawnMode.mockReturnValue('interactive');
+      mockTryStartChatAgent.mockResolvedValueOnce('terminal');
+      mockPtySpawn.mockImplementationOnce(async (...args: Parameters<typeof import('./pty-manager').spawn>) => {
+        run = knownQuickAgents().get(id);
+        const expected = agentRegistry.get(id)!;
+        expect(args[7]).toBeUndefined(); // Display observation does not enable managed beforeCreate/exit behavior.
+        expect(typeof args[8]).toBe('function');
+        await Promise.resolve();
+        if (condition === 'failed') throw new Error('creation failed');
+        if (condition === 'registration-replaced') agentRegistry.register(id, { ...expected, orchestrator: 'codex-cli' });
+        if (condition === 'untracked') untrackAgent(id);
+        if (condition === 'run-replaced') beginQuickAgentRun({ agentId: id, projectPath: '/project', name: 'Replacement' });
+        mockPtyProcessIdentity.mockReturnValue(condition === 'runtime-replaced' ? 'other-runtime' : 'created-runtime');
+        mockPtyIsRunning.mockReturnValue(true);
+        args[8]?.('created-runtime');
+      });
+      try {
+        const pending = spawnAgent({ agentId: id, projectPath: '/project', cwd: '/project', kind: 'quick' });
+        if (condition === 'failed') await expect(pending).rejects.toThrow('creation failed'); else await pending;
+        expect(run).toBeDefined();
+        if (condition === 'started') {
+          expect(quickRuntimeDisplay(run!)).toEqual({ provider: 'claude-code', runtime: 'pty', cwd: '/project' });
+          expect(quickRuntimeIsCurrent(run!, agentRegistry.get(id))).toBe(true);
+        } else expect(quickRuntimeDisplay(run!)).toBeUndefined();
+      } finally {
+        mockPtyIsRunning.mockReturnValue(false); mockPtyProcessIdentity.mockReturnValue(undefined); untrackAgent(id);
+      }
+    });
     it('registers a terminal mission after old-session teardown and chat fallback', async () => {
       const stop = startFederationTurnTracking('agent-1');
       const input = { id: 'remote-mission', cause: { rootId: 'root', depth: 4 } } as FederatedRequest;
@@ -3019,6 +3057,7 @@ describe('agent-system', () => {
         undefined, // commandPrefix
         undefined, // createEventNormalizer
         undefined, // beforeSpawn: no fence given
+        expect.any(Function), // display observation of the created headless session
       );
       expect(mockPtySpawn).not.toHaveBeenCalled();
     });
@@ -3173,6 +3212,7 @@ describe('agent-system', () => {
         '. ./init.sh',
         undefined, // createEventNormalizer
         undefined, // beforeSpawn: no fence given
+        expect.any(Function), // display observation of the created headless session
       );
     });
 

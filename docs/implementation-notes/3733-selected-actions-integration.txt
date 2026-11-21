@@ -1,0 +1,21 @@
+Selected Actions integration checkpoint
+
+Base: approved managed inventory 3116ab759f16459857fb5de6e06abea962773271.
+Dependency: independently reviewed Actions source 37d642a869ed8631a7c94d114b51b39659b9c3f1 (complete three-commit slice composed).
+
+The existing selected Details GET admits only card=actions/source=selected-action-relationships, fixed25 offset with the source selection token. The common inventory-only envelope strips unrelated cards and page bodies. The actual Details assembler calls the existing-engine reader with selected root/project/dispatcher identity, current authorization and target receipts, fresh passive display-name resolvers and final ordering/name/source receipts. No engine initialization, workflows, arguments, local renderer fallback or management operations are added.
+
+The Actions card uses explicit browsing and the shared selected-page transport/context hook. Old-host summaries remain available. Selected rows are withheld on source mismatch, selection mismatch, changed frame, stale host snapshot, disconnect or read refusal. Recorded outcome/description fields do not establish execution, delivery or authority. Source caps remain4096 Actions/relationships; repeated relationship groups are intentionally distinct. Canvas membership integration and omitted-board content navigation are deferred.
+
+Current-connection 401/403 handling belongs to the role/Details owner and is preserved verbatim here. Combined transport proof is deferred until that reviewed dependency is composed. No source-module tests alone count as host/client/view integration proof.
+
+Validation: pending exact frozen checkpoint; evidence will be appended after the serialized lane runs. No live application, installs, restarts or writes to production services.
+
+Frozen integration proof: 24909be31759801503344c2778954e7ccc897ef9
+- Shared inventory validator + actual Details assembler using real started ActionsEngine + Actions card + managed consumer:206/206 pass (4 files,3.53s). Host reaches183 relationship rows from61 distinct Actions, preserving repeated groups through last row. No setup/catalog/canvas reads or engine/history/execution/storage mutation. Real primary target metadata and fresh name factory with late target/order/reference-name/grant changes return409/403 without page data.
+- Central annex-client and frozen annex-server Details/inventory checks:21/21 pass,820 unrelated tests skipped (2.88s). Actual query/parser/client path checks source/card/offset/selection, malformed/mixed/default-body refusal, epoch discard, desktop GET/device gate and final peer revocation. HTTP service boundary uses existing mock seam; no live app/network service.
+- Full RemoteAgentDetailsView/RemoteHelpersCard/RemoteConnectionsCard regression:84/84 pass (20.55s). New Actions card reaches final grouped row; disconnect/refusal/frame replacement withhold late rows; old-host summary parity retained. Existing jsdom canvas getContext notice only.
+- Root tsc --noEmit:PASS at3GiB. Scoped changed .ts/.tsx ESLint:exit0,0 errors/409 warnings, including existing test-any/catch conventions; no rule overrides. git diff --check:PASS.
+- Existing compatible modules only, NODE_OPTIONS --no-experimental-webstorage; tests one worker/no file parallelism with512MiB, root typecheck3GiB. No installs/restarts/live tests. Logs /tmp/nov20-actions-integration-{first,transport,view,tsc,lint}.log.
+
+This evidence-only successor changes no tested source or fixtures. Independent exact-head review remains the parent's gate. Current-connection denial/role composition and its combined transport checks remain outstanding; Canvas is still pending its reviewed source SHA. This is bounded selected Actions continuation, not full local/remote parity acceptance.

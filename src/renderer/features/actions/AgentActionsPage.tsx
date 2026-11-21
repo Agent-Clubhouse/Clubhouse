@@ -3,62 +3,34 @@
  * Agent details: the actions that involve one agent, in three groups.
  */
 
+import { agentActionGroups } from '../../../shared/agent-action-groups';
+import { ActionGroupFrame, ActionLineContent } from './ActionListPresentation';
 import { useState } from 'react';
 import { describeAction, type ActionInput, type ActionView } from '../../../shared/actions';
 import { Button } from '../../components/Button';
 import { settingsHelp } from '../settings/SettingsLayout';
 import { CardNote, DetailsCard } from '../agents/details/DetailsCard';
-import { ActionCard, OutcomeDot } from './ActionCard';
+import { ActionCard } from './ActionCard';
 import { ActionForm } from './ActionForm';
 import { openActionsSettings, useActionNames, useActionsList } from './useActions';
 
-export interface AgentActionGroups {
-  /** Actions with a step that wakes, messages or otherwise acts on this agent. */
-  targeting: ActionView[];
-  /** Actions this agent's events set off (itself, or any agent in its project). */
-  triggeredBy: ActionView[];
-  /** Actions this agent made; usage counts toward it. */
-  owned: ActionView[];
-}
-
-export function agentActionGroups(list: ActionView[], agentId: string, projectId: string | undefined): AgentActionGroups {
-  const targets = (a: ActionView) => a.steps.some((s) => (s.kind === 'quick' ? s.worktreeAgentId === agentId : 'agentId' in s && s.agentId === agentId));
-  const triggers = (a: ActionView) => a.trigger.kind === 'event'
-    && ((a.trigger.source.kind === 'agent' && a.trigger.source.agentId === agentId)
-      || (a.trigger.source.kind === 'project' && !!projectId && a.trigger.source.projectId === projectId));
-  return {
-    targeting: list.filter(targets),
-    triggeredBy: list.filter(triggers),
-    owned: list.filter((a) => a.owner.kind === 'agent' && a.owner.agentId === agentId),
-  };
-}
+export { agentActionGroups, type AgentActionGroups } from '../../../shared/agent-action-groups';
 
 function ActionLine({ action, onOpen }: { action: ActionView; onOpen?: (id: string) => void }) {
   const { names } = useActionNames();
   return (
     <li className="py-2 border-t border-surface-0">
       <button type="button" className="w-full text-left cursor-pointer group" onClick={() => onOpen ? onOpen(action.id) : openActionsSettings({ cardId: action.id })} data-testid="agent-action-row">
-        <div className="flex items-center gap-2">
-          {action.lastRun && <OutcomeDot outcome={action.lastRun.outcome} />}
-          <span className="text-[13px] text-ctp-text truncate group-hover:underline">{action.name}</span>
-          {!action.enabled && <span className="text-xs text-ctp-overlay1">Off</span>}
-        </div>
-        <div className="text-xs text-ctp-overlay1 truncate">{describeAction(action, names)}</div>
+        <ActionLineContent name={action.name} enabled={action.enabled} description={describeAction(action, names)} lastRun={action.lastRun} />
       </button>
     </li>
   );
 }
 
 function Group({ title, empty, list, note, onOpen }: { title: string; empty: string; list: ActionView[]; note?: string; onOpen?: (id: string) => void }) {
-  return (
-    <section className="mt-5">
-      <h3 className="text-[13px] font-semibold text-ctp-text">{title}</h3>
-      {note && list.length > 0 && <div className={`${settingsHelp} pl-4`}>{note}</div>}
-      {list.length === 0
-        ? <div className={`${settingsHelp} mt-1 pl-4`}>{empty}</div>
-        : <ul className="mt-1 pl-4">{list.map((a) => <ActionLine key={a.id} action={a} onOpen={onOpen} />)}</ul>}
-    </section>
-  );
+  return <ActionGroupFrame title={title} empty={empty} hasItems={list.length > 0} note={note}>
+    {list.map((a) => <ActionLine key={a.id} action={a} onOpen={onOpen} />)}
+  </ActionGroupFrame>;
 }
 
 /** A new action pre-filled for this agent: every weekday, wake it. */

@@ -1,0 +1,115 @@
+#3733 §4 bounded selected-runtime archive continuation — not full parity
+
+Base: f901f452edfcfdda3422c39bb986241b69d5c863
+Branch: Nov20RootDiagnostics/3733-session-history
+Behavioral implementation proof: f2a667a8a70d2f0d91090e790bef8b4dccc59b01
+Display-copy successor: f285fa86027e26751e3ce7b92cee4ff5b1874ecb
+The latter changes only two report visibility strings and a none-capability test
+assertion. The final evidence-only successor changes no source/test blob from it.
+
+Scope and gate
+
+Optional chatPage.historyBinding is emitted only for an existing ordinary durable
+live chat on the already-authorized desktop path. Direct and tracked Quick IDs,
+Dispatcher/controller identities, phones and unconfirmed/older runtimes receive
+no positive history receipt. Existing query inputs/grants/role routes are unchanged;
+no Details or Details-query schema file was edited. The isolated additive schema
+is shared/remote-session-history.ts; old clients ignore the response field.
+
+The receipt contains projectId/agentId/sessionId/providerId/driver/nativeSessionId/
+displayRunId/startSeq/subagent capability, never paths, raw configuration or launch
+nonces. It requires the admitted project's registered primary inventory and exact
+selected agent record, a current chat registration with matching project/provider,
+and valid existing runtime display evidence. Its private primary witness and
+runtime/registration/nonce/provider/native/open-generation/start sequence are
+checked after awaited page work. Revocation remains403; changed target/runtime409.
+Missing/unsafe/backup-only/ambiguous evidence withholds the optional receipt rather
+than inventing an empty archive or widening admission. Existing endpoint behavior
+for callers without the receipt remains available under its original authority.
+
+Client and display
+
+The existing transcript read retains its actual nextBeforeSeq and validated receipt
+internally. Inconsistent/missing cursors remain unknown. Older history reads happen
+only on an explicit button press through annexClient.chatPage, one requested200-event
+page at a time. A maximum2000-event transport envelope and conservative8MiB string
+estimate are checked; oversized/malformed pages are refused, never silently cut.
+Only one archived event page plus at most32 cursor breadcrumbs are retained. Newer
+navigation rereads a page; there is no full-history fetch/accumulation loop.
+
+Every accepted page must echo the same selected host transport/project/agent/session/
+provider/driver/native/open generation/start sequence/capability and a descending
+cursor. Events must belong to that exact agent/session, be ordered below the cursor,
+and agree with any reported root provider/native identity. Events before startSeq
+are excluded; reaching that floor or cursor end is not complete resumed history.
+Selection/snapshot/transport/receipt revision changes discard late responses. A
+denied/error page immediately withholds earlier archived evidence; no local-chat,
+Quick, controller or stale-private fallback exists.
+
+Archive summaries never overwrite the live chat store or current recorder facts.
+Full/ids_only/none remain distinct: ids_only hides names/status, none does not infer
+zero children. Report and name lists have explicit50-row navigation, including the
+65th child/skill when recorded. No cap64 recorder completeness is asserted. Provider
+report identity/source is checked; absent versus explicit-empty versus malformed
+lists remain distinct. Shortened/omitted events stay partial. Tool activity/duration
+is attributed only where this page records the child relationship; missing starts,
+tokens, cost, scope or totals are not fabricated or added across pages. Known0 stays0.
+
+Exact behavioral implementation proof at f2a667 (existing dependencies, no installs,
+serial one worker)
+
+128PASS / five suites / zero fail or skipped:
+node node_modules/vitest/vitest.mjs run --project main --project renderer
+  src/main/services/remote-session-history-binding.test.ts
+  src/renderer/features/agents/details/RemoteSessionHistory.test.tsx
+  src/renderer/features/agents/details/remote-session-history-page.test.ts
+  src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx
+  src/renderer/stores/remoteChatBackend.test.ts
+  --maxWorkers=1 --no-file-parallelism
+
+Separate real HTTP route run:22PASS /585 deselected (not credited):
+node node_modules/vitest/vitest.mjs run --project main
+  src/main/services/annex-server.test.ts
+  -t 'binds ordinary durable older pages|same-object runtime generation replacement|attested direct desktop quick current session'
+  --maxWorkers=1 --no-file-parallelism
+
+The actual HTTP route, serializer, cursor construction, real temporary primary
+files and final metadata witnesses execute. Runtime transcript/provider methods,
+peer/TLS identity and lifecycle timing are fixture callbacks, not a live host or
+provider. Controls cover2205 recorded events, earlier child activity/timing,65th
+child/name, page end, malformed/foreign/shortened reports, known0/unknown usage,
+late host/project/session/provider/native switches, same-native reopen, denial,
+revocation and primary target removal/disposal. The actual View→backend→store→
+history component path is exercised with modeled host replies, not just hand-built
+receipts. Existing direct Quick beforeSeq404 and role distinctions remain covered.
+
+Unchanged-config source tsc --noEmit:PASS.
+Scoped ESLint on14 source/test files:exit0,0errors318warnings. All318 warnings
+are inherited: annex-server.ts71 and annex-server.test.ts247, independently
+reproduced against the exact base with identical diagnostic/offending source lines.
+Other12 files clean. One final lint comparison wrapper hit Node stdout buffering;
+it was excluded and rerun successfully with file-backed output. Earlier122/126
+development passes are not substituted for this final128-case source proof.
+
+Final copy correction at exact f285fa8: a none-capability page counts events SHOWN,
+not an assertion that hidden child reports were absent. No read/data/control logic
+changed. Three capability cases PASS /18 deselected on that exact successor:
+node node_modules/vitest/vitest.mjs run --project renderer
+  src/renderer/features/agents/details/RemoteSessionHistory.test.tsx
+  -t 'preserves the .* child capability' --maxWorkers=1 --no-file-parallelism
+Scoped lint on the two changed renderer/test files:0errors/0warnings. These three
+overlap the128-case suite; do not add the counts or credit128 as rerun on f285fa8.
+
+Limits and remaining work
+
+This supplies older reports only inside the positively bound live durable runtime
+open. Sleeping/offline historical sessions, earlier opens/resumed conversation
+history and hosts without the binding remain explicitly partial/unavailable.
+Archived pages cannot recover events/facts never recorded or fields lost to host
+projection/provider/recorder limits. Names are reports, not proof of use/execution.
+Existing host transcript/admission readers retain their physical I/O behavior;
+this introduces no automatic archive scan but claims no new full-route I/O bound,
+hard deadline, atomic cross-page snapshot or continuous identity lock.
+Independent review, hosted/Windows/live-host/Electron/provider/E2E proof and full
+§4/#3733 acceptance remain separate. No new grants, installation, app launch,
+restart, PR, merge, release or prior-task branch edit was performed.

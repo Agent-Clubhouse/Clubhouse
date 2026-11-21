@@ -1,0 +1,2 @@
+node_modules/.bin/tsc --noEmit -p . > /tmp/dlc-tsc.log 2>&1  15.72s user 0.46s system 161% cpu 10.001 total
+tsc exit=0

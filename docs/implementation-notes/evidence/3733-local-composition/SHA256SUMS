@@ -1,0 +1,21 @@
+# raw sha256 (local /tmp/dlc-*, host-local, not portable)
+6a785877ad09ad5c8bc66003c49d410eb2f1e2b07773b82ac0804866fc64c10d  /tmp/dlc-focused-1.log
+704795099afb99ff73e45de4b37798b8b8a69800312118642f717af4da7c35ff  /tmp/dlc-focused-2.log
+3c833a07466f3d98d39c907f4448da012d2c94a7c0ce7410955c5bdd35881a2c  /tmp/dlc-tsc.log
+e2ec643ed0987ca9edabd5e9bc1a03264a1e6f6d959932f54851ace02e9d59b3  /tmp/dlc-lint.log
+51ef60119cafbd800528fa26271e9fb84d8f78ce73bfda8f180afa006e0e113e  /tmp/dlc-tests.txt
+1154d1a2b3debf4857e10080bf15a9192c215439d92380830d7ed694fbe74d6f  /tmp/dlc-tsc-files.txt
+bde40e19918ac7e653156f6c928fe01134e557117dd2cb8ff4b2a84c668f3a5f  /tmp/dlc-errfiles.txt
+2b5ae5208fe3df38c9a53d9a3066477acee4e576efd1b0b8a18f14c8cc6eb540  /tmp/dlc-errfiles-raw.txt
+296ecab0d3527c03dbe331750f9ee017753c9ddc87a03dbdbc5f20d2e84062e9  /tmp/dlc-validated-head
+# committed copies (path prefixes replaced only; errfiles-vs-main.txt derived)
+496a00b8718511ef82cdeac45462a5a56a39309d4a6690ec171f3505d957660a  focused-1.log
+b5713939083aa4b24dacf28f88c949cc5d7aa87ecee9cc8a601ac5618c322deb  focused-2.log
+3c833a07466f3d98d39c907f4448da012d2c94a7c0ce7410955c5bdd35881a2c  tsc.log
+fcde161b905ffc5ad77c27b5e12289acdb25f57c42c3c9257ff483ca34d63809  lint.log
+51ef60119cafbd800528fa26271e9fb84d8f78ce73bfda8f180afa006e0e113e  tests.txt
+4f889692c52ffca24a856af7adf5140fbfb5928ca046b7f7406fc0b3cd284d46  tsc-files.txt
+bde40e19918ac7e653156f6c928fe01134e557117dd2cb8ff4b2a84c668f3a5f  errfiles.txt
+2b5ae5208fe3df38c9a53d9a3066477acee4e576efd1b0b8a18f14c8cc6eb540  errfiles-raw.txt
+5b8ce3c899353c4c3db16e06184ecd9e9348e5b57541952e9987448e4315510a  errfiles-vs-main.txt
+296ecab0d3527c03dbe331750f9ee017753c9ddc87a03dbdbc5f20d2e84062e9  validated-head

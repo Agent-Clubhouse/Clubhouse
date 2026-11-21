@@ -7,6 +7,7 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { peekMetadataFileForDisplay, peekMetadataFileForDisplaySync, type PeekedSettings } from '../settings-store';
 import { getBaseDirPath } from '../base-dir';
 import type { ManagedTemplate } from '../../../shared/managed-agents-types';
 import { readRestartReceipt, type ManagedRestartReceipt } from './activation-receipts';
@@ -54,7 +55,18 @@ export function managedStateDir(): string {
 
 export interface ManagedStateStore {
   read(): Promise<ManagedState>;
+  /** Strict bounded template metadata source; no normalization of damaged templates to empty. */
+  readForDisplay?(): Promise<Pick<ManagedState, 'templates'>>;
+  peekForDisplay?(): Pick<ManagedState, 'templates'>;
   update<T>(fn: (state: ManagedState) => T | Promise<T>): Promise<T>;
+}
+
+function displayTemplates(parsed: PeekedSettings): Pick<ManagedState, 'templates'> {
+  if (parsed === 'missing') return { templates: {} };
+  if (parsed === 'unreadable' || parsed.version !== 1 || parsed.templates !== undefined && !isRecord(parsed.templates)) {
+    throw new Error('Managed template metadata is unavailable.');
+  }
+  return { templates: (parsed.templates ?? {}) as Record<string, ManagedTemplate> };
 }
 
 export function createManagedStateStore(dir: string = managedStateDir()): ManagedStateStore {
@@ -110,6 +122,8 @@ export function createManagedStateStore(dir: string = managedStateDir()): Manage
 
   return {
     read: () => serial(load),
+    readForDisplay: () => serial(async () => displayTemplates(await peekMetadataFileForDisplay(file, 512 * 1024))),
+    peekForDisplay: () => displayTemplates(peekMetadataFileForDisplaySync(file, 512 * 1024)),
     update: <T>(fn: (state: ManagedState) => T | Promise<T>) => serial(async () => {
       const state = await load();
       const result = await fn(state);

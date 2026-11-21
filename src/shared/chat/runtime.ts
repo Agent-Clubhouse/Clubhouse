@@ -124,6 +124,10 @@ export interface AgentRuntime {
   getTurnStartedAt?(): number | null;
   /** What the provider reported the current session offers the model (#2855). Chat runtimes only. */
   getProviderReport?(): ProviderSessionReport;
+  /** Passive bounded display facts; no transcript read or provider probe. */
+  getDetailsEvidence?(): import('./details-evidence').ChatDetailsEvidence | undefined;
+  /** Opaque display-only driver-open identity, independent of grants/nonces. */
+  getDisplayRunId?(): string | undefined;
 
   /** Deliver user, mission, MCP, shoulder-tap, group-project or Annex text. */
   sendMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult>;
@@ -167,7 +171,7 @@ export interface AgentRuntime {
   getQueueState?(): { queuedMessageIds: string[]; queueStateSeq: number; queueRemovalSupported: boolean };
 
   /** Read the transcript; `afterSeq` returns only newer chat events of the current session. */
-  readTranscript(opts?: { tail?: number; afterSeq?: number }): Promise<RuntimeTranscriptSlice>;
+  readTranscript(opts?: { tail?: number; afterSeq?: number; passive?: boolean }): Promise<RuntimeTranscriptSlice>;
 
   /** The CLI's own session id, for resume (PTY runtimes read it from the terminal when the provider prints one). */
   getNativeSessionId(): string | undefined;

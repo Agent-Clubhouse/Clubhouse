@@ -14,6 +14,8 @@ const mockPtyGracefulKill = vi.fn();
 vi.mock('./pty-manager', () => ({
   spawn: (...args: unknown[]) => mockPtySpawn(...args),
   gracefulKill: (...args: unknown[]) => mockPtyGracefulKill(...args),
+  // spawnAgent checks for a live session before noting a start; none exists in these tests.
+  isRunning: () => false,
 }));
 
 // Mock hook-server

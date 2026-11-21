@@ -1,7 +1,8 @@
 import { createSettingsStore } from './settings-store';
+import { readDisplaySettings, ownDisplayValue, displayInput, agentDisplayInput, type DisplayValue } from './display-settings';
 import type { FreeAgentPermissionMode } from '../../shared/types';
 import {
-  DEFAULT_ACCESS, accessForLegacyToggle, isAccessLevel, legacyLaunchFor, savedAccess, withAccess, type AccessLevel,
+  DEFAULT_ACCESS, accessForLegacyToggle, isAccessLevel, legacyLaunchFor, savedAccess, withAccess, isLegacyFreeAgent, type AccessLevel,
 } from '../../shared/agent-access';
 
 export type { FreeAgentPermissionMode };
@@ -20,7 +21,7 @@ export interface FreeAgentSettings {
 
 const store = createSettingsStore<FreeAgentSettings>('free-agent-settings.json', {
   defaultMode: 'skip-all',
-}, undefined, { audit: { key: 'free_agent', keys: ['defaultMode', 'defaultAccess'] } });
+}, undefined, { displaySnapshot: true, audit: { key: 'free_agent', keys: ['defaultMode', 'defaultAccess'] } });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;
@@ -90,4 +91,24 @@ export function withSavedAccess<T extends { access?: AccessLevel; freeAgentMode?
     // Quick agent defaults that set a level (or a legacy on/off) show it too.
     ...(q && (q.access !== undefined || q.freeAgentMode !== undefined) && { quickAgentDefaults: { ...q, access: quickAgentAccess(record, projectPath) } }),
   };
+}
+
+/** Selected agent Access, without loading global settings when the result does not depend on them. */
+export function readAgentAccessForDisplay(record: { access?: unknown; freeAgentMode?: unknown }, projectPath: string): DisplayValue<AccessLevel> {
+  const inputs = [agentDisplayInput('Agent Access')];
+  if (record.access !== undefined && !isAccessLevel(record.access)
+    || record.freeAgentMode !== undefined && typeof record.freeAgentMode !== 'boolean') return { state: 'unavailable', inputs };
+  const selected = record as { access?: unknown; freeAgentMode?: boolean };
+  if (record.freeAgentMode !== true || isAccessLevel(record.access) && isLegacyFreeAgent(record.access)) {
+    return { state: 'ok', value: savedAccess(selected, undefined), inputs };
+  }
+  const evidence = readDisplaySettings(store, 'free-agent-settings.json'); inputs.push(displayInput('Host legacy access default', evidence));
+  if (evidence.state !== 'ok') return { state: 'unavailable', inputs };
+  const overrides = ownDisplayValue(evidence.raw, 'projectOverrides');
+  if (overrides !== undefined && (!overrides || typeof overrides !== 'object' || Array.isArray(overrides))) return { state: 'unavailable', inputs };
+  const override = overrides ? ownDisplayValue(overrides as Record<string, unknown>, projectPath) : undefined;
+  const configured = ownDisplayValue(evidence.raw, 'defaultMode');
+  const mode = override !== undefined ? override : configured !== undefined ? configured : 'skip-all';
+  if (mode !== 'auto' && mode !== 'skip-all') return { state: 'unavailable', inputs };
+  return { state: 'ok', value: savedAccess(selected, mode), inputs };
 }

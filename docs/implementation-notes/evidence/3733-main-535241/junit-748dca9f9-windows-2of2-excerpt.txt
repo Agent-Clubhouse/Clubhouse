@@ -1,0 +1,85 @@
+# Excerpts from artifact test-results-windows-latest-2 (run 44878841675), test-results.xml 15843887 bytes sha256 06f28265e980544aae56c6815e01be8cdf30bf496b5d8e0877a117914027c7fc
+# 1) failing testcases (helper-work, card display), whole <testcase> elements:
+<testcase classname="src/main/services/read-only-helper-work.test.ts" name="passive direct helper work &gt; matches clean/dirty/unpushed counts without writing repository/index/config/object bytes" time="1.8999024">
+            <failure message="expected { dirty: +0, unpushed: +0, …(2) } to deeply equal { dirty: 1, unpushed: 1, …(1) }" type="AssertionError">
+AssertionError: expected { dirty: +0, unpushed: +0, …(2) } to deeply equal { dirty: 1, unpushed: 1, …(1) }
+
+- Expected
++ Received
+
+  {
+-   &quot;dirty&quot;: 1,
++   &quot;dirty&quot;: 0,
++   &quot;error&quot;: &quot;Couldn’t read helper work.&quot;,
+    &quot;unmerged&quot;: null,
+-   &quot;unpushed&quot;: 1,
++   &quot;unpushed&quot;: 0,
+  }
+
+ ❯ src/main/services/read-only-helper-work.test.ts:52:20
+            </failure>
+        </testcase>
+
+<testcase classname="src/main/services/read-only-helper-work.test.ts" name="passive direct helper work &gt; shares the local classification of generated bridge configuration and real user changes" time="1.8159584">
+            <failure message="expected { dirty: +0, unpushed: +0, …(2) } to match object { dirty: 1 }
+(3 matching properties omitted from actual)" type="AssertionError">
+AssertionError: expected { dirty: +0, unpushed: +0, …(2) } to match object { dirty: 1 }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   &quot;dirty&quot;: 1,
++   &quot;dirty&quot;: 0,
+  }
+
+ ❯ src/main/services/read-only-helper-work.test.ts:61:65
+            </failure>
+        </testcase>
+
+<testcase classname="src/main/services/read-only-helper-work.test.ts" name="passive direct helper work &gt; retains staged user MCP work when the worktree was restored to HEAD, without changing either side" time="1.3876909">
+            <failure message="expected { dirty: +0, unpushed: +0, …(2) } to match object { dirty: 1 }
+(3 matching properties omitted from actual)" type="AssertionError">
+AssertionError: expected { dirty: +0, unpushed: +0, …(2) } to match object { dirty: 1 }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   &quot;dirty&quot;: 1,
++   &quot;dirty&quot;: 0,
+  }
+
+ ❯ src/main/services/read-only-helper-work.test.ts:70:65
+            </failure>
+        </testcase>
+
+<testcase classname="src/main/services/read-only-helper-work.test.ts" name="passive direct helper work &gt; counts staged work even when the worktree matches HEAD and preserves staged rename grouping" time="1.1927156">
+            <failure message="expected { dirty: +0, unpushed: +0, …(2) } to match object { dirty: 1 }
+(3 matching properties omitted from actual)" type="AssertionError">
+AssertionError: expected { dirty: +0, unpushed: +0, …(2) } to match object { dirty: 1 }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   &quot;dirty&quot;: 1,
++   &quot;dirty&quot;: 0,
+  }
+
+ ❯ src/main/services/read-only-helper-work.test.ts:143:65
+            </failure>
+        </testcase>
+
+<testcase classname="src/main/services/dispatcher/dispatcher-agent-card-display.test.ts" name="keeps a complete small card available above large Notes, with bounded descriptor bytes and no Notes transport" time="0.0345708">
+            <failure message="expected 0 to be greater than 0" type="AssertionError">
+AssertionError: expected 0 to be greater than 0
+ ❯ src/main/services/dispatcher/dispatcher-agent-card-display.test.ts:66:22
+            </failure>
+        </testcase>
+
+# 2) the only RUNNER~1 occurrence(s), from an unrelated marketplace test name that interpolates os.tmpdir():
+<testcase classname="src/main/services/marketplace-service.install.test.ts" name="installPlugin (real filesystem) &gt; unsafe plugin ids &gt; rejects &quot;C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\abs-target&quot; without fetching or touching the filesystem" time="0.00265">

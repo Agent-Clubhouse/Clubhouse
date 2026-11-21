@@ -5,6 +5,8 @@
 
 import { createSettingsStore } from './settings-store';
 import * as experimentalSettings from './experimental-settings';
+import { readDisplaySettings, ownDisplayValue, displayInput, agentDisplayInput, type DisplayValue } from './display-settings';
+import { CHAT_DRIVER_IDS } from '../../shared/chat';
 import type { AgentRuntimeMode, ChatDriverId, ChatRuntimeSettings } from '../../shared/chat';
 
 /** The flag's id in experimental settings (Settings › Agents & providers › Chat view). */
@@ -22,6 +24,7 @@ function validRuntimeSettings(value: unknown): boolean {
 }
 const store = createSettingsStore<ChatRuntimeSettings>('chat-runtime-settings.json', {}, undefined, {
   audit: { key: 'chat_runtime' },
+  displaySnapshot: true,
   onLoad: (result) => {
     if ('error' in result) {
       chatTipRuntimeReadUncertain = (result.error as NodeJS.ErrnoException)?.code !== 'ENOENT';
@@ -60,4 +63,31 @@ export function resolveRuntimeMode(provider: string, agentOverride?: AgentRuntim
     mode: agentOverride ?? setting?.mode ?? DEFAULT_CHAT_PROVIDER_MODE,
     ...(driver ? { driver } : {}),
   };
+}
+
+/** Passive next-start preference evidence; current runtime receipts are separate. */
+export function readRuntimeModeForDisplay(provider: string, agentOverride?: unknown): DisplayValue<ResolvedRuntimeMode> {
+  const own = agentOverride === undefined ? [] : [agentDisplayInput('Runtime override')];
+  if (agentOverride !== undefined && agentOverride !== 'chat' && agentOverride !== 'terminal') return { state: 'unavailable', inputs: own };
+  // Terminal is independent of both the flag and provider Chat driver.
+  if (agentOverride === 'terminal') return { state: 'ok', value: { mode: 'terminal' }, inputs: own };
+  const flag = experimentalSettings.readGraduatedFlagForDisplay(CHAT_EXPERIMENTAL_FLAG);
+  const flagInputs = [...own, ...flag.inputs];
+  if (flag.state !== 'ok') return { state: 'unavailable', inputs: flagInputs };
+  if (!flag.value) return { state: 'ok', value: { mode: 'terminal' }, inputs: flagInputs };
+  const evidence = readDisplaySettings(store, 'chat-runtime-settings.json');
+  const inputs = [...flagInputs, displayInput('Provider runtime preference', evidence)];
+  if (evidence.state !== 'ok') return { state: 'unavailable', inputs };
+  const raw = ownDisplayValue(evidence.raw, provider);
+  if (raw !== undefined && (!raw || typeof raw !== 'object' || Array.isArray(raw))) return { state: 'unavailable', inputs };
+  const setting = (raw ?? {}) as Record<string, unknown>;
+  const configuredMode = ownDisplayValue(setting, 'mode');
+  const mode = agentOverride !== undefined ? agentOverride : configuredMode !== undefined ? configuredMode : DEFAULT_CHAT_PROVIDER_MODE;
+  if (mode !== 'chat' && mode !== 'terminal') return { state: 'unavailable', inputs };
+  if (mode === 'terminal') return { state: 'ok', value: { mode }, inputs };
+  const configuredDriver = ownDisplayValue(setting, 'driver');
+  // Retired Copilot driver keys remain ignored exactly as in the launch resolver.
+  const driver = provider === 'copilot-cli' ? 'copilot_sdk' : configuredDriver;
+  if (driver !== undefined && (typeof driver !== 'string' || !CHAT_DRIVER_IDS.includes(driver as ChatDriverId))) return { state: 'unavailable', inputs };
+  return { state: 'ok', value: { mode, ...(driver ? { driver: driver as ChatDriverId } : {}) }, inputs };
 }

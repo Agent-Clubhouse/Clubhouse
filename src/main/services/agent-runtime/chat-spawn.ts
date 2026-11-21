@@ -82,6 +82,8 @@ export interface ChatSpawnParams extends ExecutionPolicy {
   interactive?: boolean;
   /** Main-only; a refusal fails this launch, never another driver or CLI fallback. */
   beforeCreate?: (runtime?: AgentRuntime) => void;
+  /** New runtime only, after start; no reuse, new launch guard or driver authority. */
+  observeStarted?: (runtime: AgentRuntime) => void;
 }
 
 /** Free Agent Mode maps onto the permission ladder; otherwise ask first. */
@@ -744,6 +746,8 @@ async function runChatStart(
     stopIdleWatch = onAgentIdleSleepChange(params.agentId, () => runtime.idleTimeoutChanged());
     try {
       await runtime.start(params.mission, params.missionRouted);
+      try { params.observeStarted?.(runtime); }
+      catch { /* telemetry-exempt: read-only display observations never affect runtime lifecycle. */ }
       if (resumeResult) recordResumeOutcome(provider.id, params.agentId, resumeResult, 'chat');
       return { ok: true };
     } catch (err) {

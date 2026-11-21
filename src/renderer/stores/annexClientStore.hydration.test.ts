@@ -96,6 +96,22 @@ describe('satellite catalog reconciliation (#3695)', () => {
     expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(false);
   });
 
+  it('reuses an equal snapshot object but always takes the fresh receipt and connection generation', () => {
+    start();
+    const admitted = (receipt: string | undefined, generation: number) => structuredClone(list(snapshot()))
+      .map((sat) => ({ ...sat, connectionGeneration: generation, ...(receipt && { snapshotReceipt: receipt }) }));
+    changed(admitted('receipt-a', 1));
+    const stored = () => useAnnexClientStore.getState().satellites[0];
+    const kept = stored().snapshot;
+    expect(stored().snapshotReceipt).toBe('receipt-a');
+    changed(admitted(undefined, 1));
+    expect(stored().snapshot).toBe(kept); expect(stored().snapshotReceipt).toBeUndefined();
+    changed(admitted('receipt-b', 1));
+    expect(stored().snapshot).toBe(kept); expect(stored().snapshotReceipt).toBe('receipt-b');
+    changed(admitted('receipt-b', 2));
+    expect(stored().snapshot).toBe(kept); expect(stored().connectionGeneration).toBe(2);
+  });
+
   it('applies changed same-seq canvas/icons and detects in-place mutation without mutating the input', () => {
     start();
     const cached = snapshot();

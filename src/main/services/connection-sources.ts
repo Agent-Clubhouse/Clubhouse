@@ -18,7 +18,7 @@ import { federationStatus } from './dispatcher-federation-policy';
  */
 
 import {
-  removalRoute, type AgentConnectionSources, type ConnectionPairSources, type ConnectionSource, type ConnectionSourceKind,
+  connectionSourceKind, removalRoute, type AgentConnectionSources, type ConnectionPairSources, type ConnectionSource, type ConnectionSourceKind,
   type RemoveConnectionSourceResult,
 } from '../../shared/connection-sources';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -36,20 +36,6 @@ import { collectSourcesByPair, inspectPersistedBindingSource, isBindingRemovedBy
 // The persisted sources' ids (persisted-bindings registrations), stable across releases.
 const ORCHESTRATOR_CONNECTION_SOURCE_ID = 'orchestrator-connections';
 const DISPATCHER_CONNECTION_SOURCE_ID = 'dispatcher-connections';
-const KIND_BY_SOURCE: Readonly<Record<string, ConnectionSourceKind>> = {
-  'canvas-wires': 'canvas',
-  'helper-wires': 'helper',
-  'dispatcher-wires': 'dispatcher_auto',
-  [ORCHESTRATOR_CONNECTION_SOURCE_ID]: 'tool_link',
-  [DISPATCHER_CONNECTION_SOURCE_ID]: 'dispatcher_link',
-  'user-connections': 'user_link',
-  'network-connections': 'user_link',
-  'network-agent-connections': 'tool_link',
-  'dispatcher-federation': 'dispatcher_federation',
-  'group-project-membership': 'group_member',
-  [CARD_CONNECTION_SOURCE_ID]: 'card_link',
-};
-
 const SUSPENDED_WHY: Readonly<Record<string, string>> = {
   dispatcher_off: 'The Dispatcher is off.',
   store_unwritable: 'Clubhouse can’t save to its connections file.',
@@ -115,7 +101,7 @@ export async function listConnectionSources(agentId: string): Promise<AgentConne
     const sources: ConnectionSource[] = [];
     for (const [sourceId, keys] of bySource) {
       if (!keys.has(key)) continue;
-      const kind = KIND_BY_SOURCE[sourceId] ?? 'other';
+      const kind = connectionSourceKind(sourceId);
       const link = kind === 'dispatcher_link' ? linkStatus.get(key) : undefined;
       const savedOnly = kind === 'dispatcher_auto' && automatic?.has(key) && !boundPairs.has(key);
       const makers = sourceId === 'network-agent-connections' ? activeAgentLinks(getConnectionDirection(connectionEnd(pair.agentId), connectionEnd(pair.targetId))) : undefined;

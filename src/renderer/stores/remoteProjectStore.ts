@@ -12,6 +12,7 @@ import { usePluginStore } from '../plugins/plugin-store';
 import type {
   Project,
   Agent,
+  AgentStatus,
   AgentDetailedStatus,
   SatelliteSnapshot,
   SnapshotPluginSummary,
@@ -131,7 +132,7 @@ interface RemoteProjectStoreState {
   updateRemoteAgentStatus: (satelliteId: string, agentId: string, status: AgentDetailedStatus) => void;
 
   /** Update a remote agent's run state (running/sleeping). */
-  updateRemoteAgentRunState: (satelliteId: string, agentId: string, status: 'running' | 'sleeping') => void;
+  updateRemoteAgentRunState: (satelliteId: string, agentId: string, status: AgentStatus) => void;
 
   /** Upsert a remote agent (add if new, update run state if exists). */
   upsertRemoteAgent: (satelliteId: string, agent: Partial<Agent> & { id: string }) => void;

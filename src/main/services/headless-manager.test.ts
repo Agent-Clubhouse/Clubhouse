@@ -156,6 +156,26 @@ describe('headless-manager', () => {
     stopStaleSweep();
     vi.useRealTimers();
   });
+  it('observes exact created headless session/process identity, not a later session under the same ID', async () => {
+    const observed = vi.fn();
+    await spawnHeadless('test-agent', '/project', 'fake-cli', [], undefined, 'stream-json', undefined, undefined, undefined, undefined, observed);
+    const firstCurrent = observed.mock.calls[0][0] as () => boolean;
+    expect(firstCurrent()).toBe(true);
+    const previous = mockProcess; mockProcess = createMockProcess();
+    await spawnHeadless('test-agent', '/project', 'fake-cli', [], undefined, 'stream-json', undefined, undefined, undefined, undefined, observed);
+    expect(firstCurrent()).toBe(false);
+    expect((observed.mock.calls[1][0] as () => boolean)()).toBe(true);
+    previous.emit('close', 0);
+    expect((observed.mock.calls[1][0] as () => boolean)()).toBe(true);
+  });
+  it('withholds a headless creation observation when process creation fails, and ignores observer failures', async () => {
+    const observed = vi.fn();
+    mockCpSpawn.mockImplementationOnce(() => { throw new Error('cannot create'); });
+    await expect(spawnHeadless('test-agent', '/project', 'fake-cli', [], undefined, 'stream-json', undefined, undefined, undefined, undefined, observed)).rejects.toThrow('cannot create');
+    expect(observed).not.toHaveBeenCalled();
+    await expect(spawnHeadless('test-agent', '/project', 'fake-cli', [], undefined, 'stream-json', undefined, undefined, undefined, undefined, () => { throw new Error('display failure'); })).resolves.toBeUndefined();
+    expect(isHeadless('test-agent')).toBe(true);
+  });
 
   it('scrubs stderr split over chunks before per-chunk and exit logging (#1919 QA)', async () => {
     const prompt = 'HEADLESS-SPLIT-PRIVATE-MISSION-1919';

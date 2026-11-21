@@ -1,4 +1,8 @@
+import { isSelectedDispatcherDetails, type SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
+import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
 import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
+import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
+import { isRemoteAgentChanges, isRemoteChangesQuery, REMOTE_CHANGES_MAX_BYTES, type RemoteAgentChanges } from '../../shared/remote-agent-changes';
 /**
  * Annex V2 Client — Service Discovery & Connection (#862)
  *
@@ -107,6 +111,10 @@ export interface SatelliteConnection {
   mainPort: number;
   pairingPort: number;
   snapshot: SatelliteSnapshot | null;
+  /** Minted only by an accepted snapshot on the current pinned socket; never restored from cache. */
+  snapshotReceipt?: string;
+  /** Existing main-process connection epoch; no role data is retained here. */
+  connectionGeneration?: number;
   lastError: string | null;
   /** This connection's satellite said it can't build a snapshot yet, and is retrying. `snapshot` is from before, if there is one. */
   snapshotUnavailable?: boolean;
@@ -117,6 +125,7 @@ export interface SatelliteConnection {
 }
 
 export interface SatelliteSnapshot {
+  sessionPaused?: boolean;
   grantRequests?: import('../../shared/mobile-control').MobileGrantRequest[];
   pendingGrantRequests?: import('../../shared/grant-requests').DesktopPendingGrantRequest[];
   /** The machine this snapshot is from (#3063). */
@@ -177,6 +186,8 @@ interface SatelliteConnectionInternal {
   mainPort: number;
   pairingPort: number;
   snapshot: SatelliteSnapshot | null;
+  /** Minted only by an accepted snapshot on the current pinned socket; never restored from cache. */
+  snapshotReceipt?: string;
   lastError: string | null;
   /** The classified reason behind `lastError`. */
   problem?: { code: AnnexProblemCode; status?: number; port?: number } | null;
@@ -576,6 +587,8 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
     mainPort: s.mainPort,
     pairingPort: s.pairingPort,
     snapshot: s.snapshot,
+    connectionGeneration: connectionEpochs.get(s.id) ?? 0,
+    ...(s.snapshotReceipt && s.state === 'connected' && s.ws?.readyState === WebSocket.OPEN && !s.needsPairing && !s.snapshotUnavailable && !s.snapshot?.sessionPaused && { snapshotReceipt: s.snapshotReceipt }),
     lastError: s.lastError,
     ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
     ...(s.needsPairing && { needsPairing: true }),
@@ -596,6 +609,8 @@ function setState(
 ): void {
   const prev = sat.state;
   sat.state = state;
+  // Preserve cached/offline snapshots for existing readers, but never their new-card admission.
+  if (state !== 'connected' || prev !== 'connected') sat.snapshotReceipt = undefined;
   // Output sent while disconnected is in neither cache, and a restarted
   // satellite's seqs start over, so caches are seeded again on reconnect.
   if (prev === 'connected' && state !== 'connected') {
@@ -1108,6 +1123,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
           meta: { machine: sat.fingerprint, requestId, source: 'snapshot' },
         });
         sat.snapshot = incoming;
+        sat.snapshotReceipt = sat.ws?.readyState === WebSocket.OPEN && sat.state === 'connected' && !sat.needsPairing && !incoming.sessionPaused ? randomUUID() : undefined;
         void import('./connection-card').then((m) => m.rememberConnectionSnapshot(sat.fingerprint, incoming)).catch((error) => {
           appLog('core:annex', 'warn', 'Could not save the network connection directory', { meta: { error: error instanceof Error ? error.message : String(error) } });
         });
@@ -1119,6 +1135,12 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         if (omitted) void fetchOmittedCanvases(sat);
         fetchSatelliteLeftOutIcons(sat);
       }
+      break;
+    }
+
+    case 'session:paused': {
+      sat.snapshotReceipt = undefined;
+      broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
     }
 
@@ -1136,6 +1158,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
     case 'error': {
       if ((msg.payload as { message?: unknown } | undefined)?.message === 'snapshot_failed') {
         sat.snapshotUnavailable = true;
+        sat.snapshotReceipt = undefined;
         connectFailed(sat.fingerprint, 'unknown');
         broadcastSatellitesChanged();
       }
@@ -2488,6 +2511,104 @@ export async function requestAgentSettings(machine: string, agentId: string): Pr
     return { status: 'ok', value: res.body };
   } catch {
     // telemetry-exempt: the Settings card shows a safe state without host error content.
+    return { status: current() ? 'error' : 'offline' };
+  }
+}
+
+/** Metadata denial revokes only the positive admission it was read under; legacy retained snapshot data stays untouched. */
+function invalidateSnapshotAdmission(sat: SatelliteConnectionInternal, admitted: string | undefined): void {
+  if (!sat.snapshotReceipt || sat.snapshotReceipt !== admitted) return;
+  sat.snapshotReceipt = undefined;
+  broadcastSatellitesChanged();
+}
+
+/** Explicit selected-host role GET. Never resolves an address, caches a role or falls back to another surface. */
+export async function requestDispatcherDetails(machine: string): Promise<ControllerReadResult<SelectedDispatcherDetails>> {
+  const sat = satelliteFor(machine);
+  if (!sat || sat.state !== 'connected' || sat.needsPairing) return { status: 'offline' };
+  const peer = annexPeers.getPeer(sat.fingerprint), pin = peer?.tlsCertificateFingerprint;
+  if (!peer || !pin || peer.networkPending || !annexPeers.controlledFromHere(peer)) return { status: 'forbidden' };
+  const epoch = connectionEpochs.get(sat.id) ?? 0, receipt = sat.snapshotReceipt, role = peer.role, kind = peer.kind;
+  const current = () => {
+    const now = annexPeers.getPeer(sat.fingerprint);
+    return satelliteFor(machine) === sat && sat.state === 'connected' && !sat.needsPairing
+      && (connectionEpochs.get(sat.id) ?? 0) === epoch && sat.snapshotReceipt === receipt
+      && !!now && now.tlsCertificateFingerprint === pin && now.role === role && now.kind === kind && !now.networkPending;
+  };
+  try {
+    const res = await satelliteJson(sat.fingerprint, 'GET', '/api/v1/dispatcher/details', undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
+    if (!current()) return { status: 'offline' };
+    if (res.status === 404 || res.status === 405 || res.status === 409) return { status: 'unavailable' };
+    if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat, receipt); return { status: 'forbidden' }; }
+    if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
+    if (res.status !== 200 || !isSelectedDispatcherDetails(res.body)) return { status: 'error' };
+    return { status: 'ok', value: res.body };
+  } catch {
+    // telemetry-exempt: bounded status only; never a local/controller/mobile fallback.
+    return { status: current() ? 'error' : 'offline' };
+  }
+}
+
+/** Same pinned paired-desktop read, with a bounded allowlisted Details response. */
+export async function requestAgentDetails(machine: string, agentId: string, query?: RemoteDetailsQuery): Promise<ControllerReadResult<RemoteAgentDetails>> {
+  if (query !== undefined && !isRemoteDetailsQuery(query)) return { status: 'error' };
+  // Capture the page identity before transport awaits; no caller object can retarget the response.
+  const page = query && { ...query };
+  const params = page ? new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset ?? 0), ...((page.card === 'skills-mcp' || page.card === 'actions' || page.card === 'canvases') ? page.selection ? { selection: page.selection } : {} : { projectOffset: String(page.projectOffset ?? 0) }) }) : undefined;
+  const sat = satelliteFor(machine);
+  if (!sat || sat.state !== 'connected') return { status: 'offline' };
+  // A late denial may revoke only the receipt it was read under, never one minted by a newer snapshot.
+  const epoch = connectionEpochs.get(sat.id) ?? 0, receipt = sat.snapshotReceipt;
+  const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
+  try {
+    const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/details${params ? `?${params}` : ''}`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
+    if (!current()) return { status: 'offline' };
+    if (res.status === 404 || res.status === 405 || page && res.status === 400) return { status: 'unavailable' };
+    if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat, receipt); return { status: 'forbidden' }; }
+    if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
+    if (res.status !== 200 || !isRemoteAgentDetails(res.body, agentId)) return { status: 'error' };
+    if (!page && (res.body.connectionPageOnly === true || res.body.helperPageOnly === true || res.body.inventoryPageOnly === true)) return { status: 'error' };
+    if (page?.card === 'skills-mcp' || page?.card === 'actions' || page?.card === 'canvases') {
+      if (res.body.inventoryPages !== 1) return { status: 'unavailable' };
+      if (!res.body.inventoryPage) return { status: 'error' };
+      const response = res.body.inventoryPage;
+      if (res.body.inventoryPageOnly !== true || response.source !== page.source || response.offset !== (page.offset ?? 0)
+        || response.state === 'recorded' && page.selection !== undefined && response.selection !== page.selection) return { status: 'error' };
+    } else if (page?.card === 'orchestrate') {
+      if (res.body.helperPages !== 1 || !res.body.helperPage) return { status: 'unavailable' };
+      if (res.body.helperPageOnly !== true || res.body.helperPage.offset !== (page.offset ?? 0)) return { status: 'error' };
+    } else if (page) {
+      if (res.body.connectionPageEnvelope === 1 && res.body.cards.find((card) => card.id === 'connections')?.connectionPage && res.body.connectionPageOnly !== true) return { status: 'error' };
+      const response = res.body.cards.find((card) => card.id === 'connections')?.connectionPage;
+      if (!response) return { status: res.body.connectionPages === 1 ? 'error' : 'unavailable' }; // Older host ignored the additive page query.
+      if (response.source !== page.source || response.offset !== (page.offset ?? 0) || response.projectOffset !== (page.projectOffset ?? 0)) return { status: 'error' };
+    }
+    return { status: 'ok', value: res.body };
+  } catch {
+    // telemetry-exempt: a bounded display status; remote errors are never shown verbatim.
+    return { status: current() ? 'error' : 'offline' };
+  }
+}
+
+export async function requestAgentChanges(machine: string, agentId: string, query: unknown): Promise<ControllerReadResult<RemoteAgentChanges>> {
+  if (!isRemoteChangesQuery(query)) return { status: 'error' };
+  const sat = satelliteFor(machine);
+  if (!sat || sat.state !== 'connected') return { status: 'offline' };
+  const epoch = connectionEpochs.get(sat.id) ?? 0;
+  const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
+  const params = new URLSearchParams({ scope: query.scope });
+  if (query.offset !== undefined) params.set('offset', String(query.offset));
+  if (query.fileKey) params.set('fileKey', query.fileKey);
+  try {
+    const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/changes?${params}`, undefined, { maxResponseBytes: REMOTE_CHANGES_MAX_BYTES });
+    if (!current()) return { status: 'offline' };
+    if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
+    if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+    if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
+    if (res.status !== 200 || !isRemoteAgentChanges(res.body, agentId, query)) return { status: 'error' };
+    return { status: 'ok', value: res.body };
+  } catch {
+    // telemetry-exempt: a bounded read status, never raw host errors or a local git fallback.
     return { status: current() ? 'error' : 'offline' };
   }
 }

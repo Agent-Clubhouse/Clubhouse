@@ -180,6 +180,18 @@ export function registerAnnexClientHandlers(): void {
     [stringArg(), stringArg({ maxLength: 240 })],
     (_event, machine, agentId) => annexClient.requestAgentSettings(machine, agentId),
   ));
+  ipcMain.handle(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS, withValidatedArgs(
+    [stringArg({ maxLength: 240 })],
+    (_event, machine) => annexClient.requestDispatcherDetails(machine),
+  ));
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_DETAILS, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 240 }), objectArg({ optional: true })],
+    (_event, machine, agentId, query) => annexClient.requestAgentDetails(machine, agentId, query as import('../../shared/remote-details-query').RemoteDetailsQuery | undefined),
+  ));
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_CHANGES, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 240 }), objectArg()],
+    (_event, machine, agentId, query) => annexClient.requestAgentChanges(machine, agentId, query),
+  ));
   ipcMain.handle(IPC.ANNEX_CLIENT.CONTROLLER_CHAT_PAGE, withValidatedArgs(
     [stringArg(), objectArg({ optional: true })],
     (_event, machine, opts) => annexClient.requestControllerChatPage(machine, opts as import('../../shared/controller-chat').ControllerChatQuery),

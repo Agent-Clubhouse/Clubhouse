@@ -1,9 +1,11 @@
+import { readDisplaySettings, ownDisplayValue, displayInput, agentDisplayInput, type DisplayValue } from './display-settings';
+import type { ResolvedIdleSleep } from '../../shared/idle-sleep';
 import { createManagedSettings } from './managed-settings';
 import { CHAT_IDLE_SETTINGS } from '../../shared/settings-definitions';
 import { normalizeIdleSleep, resolveIdleSleep, type AgentIdleSleep } from '../../shared/idle-sleep';
 
 /** The chat idle timeout setting (#2104). Registered with the other managed settings. */
-export const chatIdleSettings = createManagedSettings(CHAT_IDLE_SETTINGS);
+export const chatIdleSettings = createManagedSettings(CHAT_IDLE_SETTINGS, { displaySnapshot: true });
 
 /**
  * Each durable agent's own auto-sleep (#2143), kept here so the idle timer can
@@ -48,4 +50,18 @@ export function chatIdleTimeoutMs(agentId?: string): number {
 export function clearAgentIdleSleep(): void {
   agentIdleSleep.clear();
   listeners.clear();
+}
+
+/** Preserve agent/host provenance and known Never=0 without loading the ordinary store. */
+export function readIdleSleepForDisplay(value: unknown): DisplayValue<ResolvedIdleSleep> {
+  if (value === 'never' || typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return { state: 'ok', value: resolveIdleSleep(value, 0), inputs: [agentDisplayInput('Auto-sleep override')] };
+  }
+  if (value !== undefined && value !== 'inherit') return { state: 'unavailable', inputs: [agentDisplayInput('Auto-sleep override')] };
+  const evidence = readDisplaySettings(chatIdleSettings.store, CHAT_IDLE_SETTINGS.filename), inputs = [displayInput('Host auto-sleep default', evidence)];
+  if (evidence.state !== 'ok') return { state: 'unavailable', inputs };
+  const configured = ownDisplayValue(evidence.raw, 'idleTimeoutMinutes');
+  const minutes = configured === undefined ? CHAT_IDLE_SETTINGS.defaults.idleTimeoutMinutes : configured;
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes < 0) return { state: 'unavailable', inputs };
+  return { state: 'ok', value: resolveIdleSleep('inherit', minutes), inputs };
 }

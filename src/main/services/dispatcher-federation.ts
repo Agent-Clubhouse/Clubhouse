@@ -5,7 +5,9 @@ import { DEFAULT_DISPATCHER_NAME, DISPATCHER_CONTROLLER_NAME } from '../../share
 import { cleanDispatcherName } from '../../shared/dispatcher-personality';
 import { formatAgentAddress } from '../../shared/agent-address';
 import type { AgentAddress, ConnectionDirection } from '../../shared/connection-grants';
-import { createSettingsStore } from './settings-store';
+import { createSettingsStore, peekStoredSettingsSync } from './settings-store';
+import { createHash } from 'crypto';
+import type { DisplayInput, DisplayReceipt, DisplayValue } from './display-settings';
 import { ownPairing } from './annex-network-membership';
 import { listPeers } from './annex-peers';
 import { onDevicesChanged } from './annex-device-signal';
@@ -60,6 +62,75 @@ export function remoteFederationController(machine: string): FederationControlle
   return { ...saved, displayName: typeof saved.displayName === 'string' ? cleanDispatcherName(saved.displayName) || DEFAULT_DISPATCHER_NAME : undefined };
 
 }
+/** Recorded selected publication fields, not proof of current transport or authority. */
+export interface FederationControllerDisplay {
+  agentId: DisplayValue<string | null>;
+  name: DisplayValue<string>;
+  enabled: DisplayValue<boolean>;
+  presence: DisplayValue<PublishedDispatcherState>;
+  association: 'matched-retained' | 'mismatch' | 'unavailable';
+}
+interface ControllerDisplayFrame {
+  value: DisplayValue<Omit<FederationControllerDisplay, 'association'>>;
+  own?: string;
+  peer?: string;
+  key: string;
+}
+const controllerRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+function controllerDisplayFrame(machine: string): ControllerDisplayFrame {
+  // No yield/callback between guard/get. Every receipt read repeats this guard;
+  // cold metadata uses the bounded fixed primary peek without recovery/defaults.
+  const loaded = controllers.hasLoaded?.() === true;
+  const raw: unknown = loaded ? controllers.get() : peekStoredSettingsSync('dispatcher-federation.json', { maxBytes: 256 * 1024 });
+  const inputs: DisplayInput[] = [{ field: 'Recorded selected Dispatcher publication', source: loaded ? 'host-cache' : 'primary', observedAt: Date.now() }];
+  const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs });
+  const unknown = <T>(): DisplayValue<T> => ({ state: 'unavailable', inputs });
+  const unavailable = (): ControllerDisplayFrame => ({ value: unknown(), key: 'unavailable' });
+  if (!controllerRecord(raw) || !controllerRecord(raw.controllers)) return unavailable();
+  const key = machine.toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(raw.controllers, key)) return unavailable();
+  const saved = raw.controllers[key]; if (!controllerRecord(saved)) return unavailable();
+  const text = (v: unknown): v is string => typeof v === 'string' && v.length <= 200;
+  const identifier = (v: unknown): v is string => text(v) && !!v && !v.includes('@');
+  const pairing = (v: unknown): v is string => typeof v === 'string' && v.length <= 64 && /^[A-Za-z0-9-]{8,64}$/.test(v);
+  const name = text(saved.displayName) ? known(cleanDispatcherName(saved.displayName) || DEFAULT_DISPATCHER_NAME)
+    : saved.displayName !== undefined || !text(saved.name) ? unknown<string>()
+    : known(cleanDispatcherName(saved.name === DISPATCHER_CONTROLLER_NAME ? DEFAULT_DISPATCHER_NAME : saved.name) || DEFAULT_DISPATCHER_NAME);
+  const value = known({
+    agentId: saved.agentId === null || identifier(saved.agentId) ? known(saved.agentId as string | null) : unknown<string | null>(),
+    name,
+    enabled: typeof saved.enabled === 'boolean' ? known(saved.enabled) : unknown<boolean>(),
+    presence: isPublishedDispatcherState(saved.state) ? known(saved.state) : unknown<PublishedDispatcherState>(),
+  });
+  const own = pairing(saved.ownPairingId) ? saved.ownPairingId : undefined, peer = pairing(saved.pairingId) ? saved.pairingId : undefined;
+  // Selected bounded safe fields plus bounded association scalars only. Do not
+  // retain raw roots/records/unrelated publications, or infer legacy epochs.
+  const signature = JSON.stringify({ value, own, peer }, (k, v) => k === 'inputs' ? undefined : v);
+  return { value, own, peer, key: createHash('sha256').update(signature).digest('hex') };
+}
+function controllerDisplayReceipt(machine: string, key: string): DisplayReceipt {
+  return { current: () => { try { return controllerDisplayFrame(machine).key === key; } catch { return false; } } };
+}
+/** Both matchers are private display observations captured with their OWN
+ * receipts by the consumer. They never replace the independent eligible pinned
+ * transport, role, revocation, selected-target or request-router checks. */
+export function readFederationControllerForDisplay(machine: string, options: {
+  own: { matches(reference: unknown): boolean | undefined };
+  peer: { matches(reference: unknown): boolean | undefined };
+  receipts: DisplayReceipt[];
+}): DisplayValue<FederationControllerDisplay> {
+  if (typeof machine !== 'string' || !machine || machine.length > 256) return { state: 'unavailable', reason: 'invalid', inputs: [{ field: 'Selected Dispatcher publication', source: 'primary', observedAt: Date.now() }] };
+  const frame = controllerDisplayFrame(machine), receipt = controllerDisplayReceipt(machine, frame.key); options.receipts.push(receipt);
+  if (frame.value.state !== 'ok') return frame.value;
+  let association: FederationControllerDisplay['association'] = 'unavailable';
+  if (frame.own !== undefined && frame.peer !== undefined) {
+    const own = options.own.matches(frame.own), peer = options.peer.matches(frame.peer);
+    association = own === false || peer === false ? 'mismatch' : own === true && peer === true ? 'matched-retained' : 'unavailable';
+  }
+  if (!receipt.current()) return { state: 'unavailable', reason: 'changed', inputs: frame.value.inputs };
+  return { ...frame.value, value: { ...frame.value.value, association } };
+}
+
 export async function learnFederationController(machine: string, raw: unknown, publication?: FederationPublicationGuard): Promise<void> {
   const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase() && p.role === 'member' && p.kind !== 'phone');
   if (!peer) return;

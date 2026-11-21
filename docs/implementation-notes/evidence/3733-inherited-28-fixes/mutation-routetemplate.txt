@@ -1,0 +1,56 @@
+# mutation routetemplate on src/main/telemetry/annex-telemetry.ts (working tree based on 782e08cde + uncommitted fixes)
+# applied diff vs fixed copy:
+54,55d53
+<     // A single-literal group only names the handler's branch: `(details)` is the path segment `details`.
+<     .replace(/\(([a-z-]+)\)/g, '$1')
+$ vitest run --no-cache --maxWorkers=2 src/main/telemetry/annex-telemetry.test.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ❯ |main| src/main/telemetry/annex-telemetry.test.ts (15 tests | 1 failed) 1724ms
+     × covers every satellite route with a registered template and never a concrete path 1717ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/telemetry/annex-telemetry.test.ts > REST route templates > covers every satellite route with a registered template and never a concrete path
+AssertionError: expected [ …(2) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "GET /api/v1/agents/:id/(details)",
++   "GET /api/v1/agents/:id/(changes)",
++ ]
+
+ ❯ src/main/telemetry/annex-telemetry.test.ts:73:59
+     71|     const templates = annexHttpRoutes().map((r) => routeTemplate(r.met…
+     72|     expect(templates.length).toBeGreaterThan(30);
+     73|     expect(templates.filter((t) => !allowed.includes(t))).toEqual([]);
+       |                                                           ^
+     74|     expect(allowed.filter((v) => v !== 'other' && !templates.includes(…
+     75|     expect(routeTemplate('GET', /^\/api\/v1\/agents\/([^/]+)\/sessions…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 14 passed (15)
+   Start at  23:42:53
+   Duration  1.86s (transform 1.43s, setup 5ms, import 67ms, tests 1.72s, environment 0ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+# post-restore git status --short:
+ M src/main/services/annex-identity.ts
+ M src/main/services/headless-fallback.test.ts
+ M src/main/services/headless-integration.test.ts
+ M src/main/telemetry/annex-telemetry.test.ts
+ M src/main/telemetry/annex-telemetry.ts
+ M src/renderer/features/agents/details/SettingsCard.test.tsx
+ M src/shared/telemetry/attributes.ts

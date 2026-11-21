@@ -24,6 +24,7 @@
  * assets, and agent assignment arrives with grants (#2738).
  */
 
+import { openCatalogMetadataForDisplay } from './display-metadata';
 import { randomUUID } from 'crypto';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -924,6 +925,8 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
   }
 
   const api = {
+    /** Bounded selected metadata source only; never a launch/payload reader. */
+    openMetadataForDisplay: () => openCatalogMetadataForDisplay(dir),
     /** The whole index, as stored. Holds no payload content: for planning and listing. */
     read(): Promise<CatalogIndex> {
       return loadIndex();

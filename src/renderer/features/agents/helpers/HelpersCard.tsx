@@ -30,6 +30,8 @@ import { HELPER_STATE_LABEL, checkFailureReason, helperDot, helperState, plainFa
 import { openAgent } from './orchestration-hooks';
 import { DisposeHelperDialog, type DisposeHelperTarget } from './DisposeHelperDialog';
 import { projectLabel } from './cross-project';
+import { helpersSummary } from '../../../../shared/helper-work-summary';
+export { helpersSummary } from '../../../../shared/helper-work-summary';
 
 export interface HelperApprovals {
   /** Helper starts waiting on the user, oldest first. */
@@ -39,13 +41,6 @@ export interface HelperApprovals {
 }
 
 /** The card's one-line answer: live helpers against the limit, what's starting and what waits for approval. */
-export function helpersSummary(live: number, maxHelpers: number | undefined, starting: number, waiting = 0): string {
-  const parts: string[] = [];
-  if (live > 0) parts.push(maxHelpers ? `${live} of ${maxHelpers}` : String(live));
-  if (live > 0 && starting > 0) parts.push(`${starting} starting`);
-  if (waiting > 0) parts.push(`${waiting} waiting`);
-  return parts.length > 0 ? parts.join(' · ') : 'none';
-}
 
 function formatWhen(iso: string | undefined): string {
   if (!iso) return '';

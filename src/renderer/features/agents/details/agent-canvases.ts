@@ -11,7 +11,8 @@ import type { CanvasMembership } from '../../../../shared/canvas-index-types';
 import { findAgentCanvasHits } from '../../../../shared/canvas-persistence';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
-import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
+import { isRemoteProjectId, parseNamespacedId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
 import type { CanvasInstance } from '../../../plugins/builtin/canvas/canvas-types';
 
@@ -102,6 +103,7 @@ function focusWhenLoaded(store: CanvasStoreHook, hit: CanvasHit): void {
 }
 
 export function jumpToCanvas(agent: Agent, hit: CanvasHit): void {
+  if (parseNamespacedId(agent.id)) { jumpToRemoteCanvas(agent, hit); return; }
   const ui = useUIStore.getState();
   if (hit.scope === 'project' && agent.projectId) {
     useProjectStore.getState().setActiveProject(agent.projectId);
@@ -112,4 +114,77 @@ export function jumpToCanvas(agent: Agent, hit: CanvasHit): void {
     ui.setExplorerTab(CANVAS_TAB);
     focusWhenLoaded(useAppCanvasStore, hit);
   }
+}
+
+/** A membership is useful even when a bounded/old snapshot cannot supply its board for navigation. */
+export function remoteCanvasJumpUnavailable(agent: Agent, hit: CanvasHit): string | null {
+  const address = parseNamespacedId(agent.id);
+  const project = agent.projectId ? parseNamespacedId(agent.projectId) : null;
+  if (!address || project?.satelliteId !== address.satelliteId) return 'The host project identity is unavailable.';
+  const host = useAnnexClientStore.getState().satellites.find((s) => s.id === address.satelliteId);
+  if (host?.state !== 'connected' || host.snapshotUnavailable) return 'Reconnect to the host to open this board.';
+  if (host.snapshot?.snapshotTruncated?.omitted?.some((section) => section === 'canvasState' || hit.scope === 'app' && section === 'appCanvasState')) {
+    return 'The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.';
+  }
+  // Check the CURRENT snapshot, not remoteProjectStore's retained omitted canvas state.
+  const state = hit.scope === 'app' ? host.snapshot?.appCanvasState : host.snapshot?.canvasState?.[project.agentId];
+  if (!state || !containsCanvasHit(state.canvases, address.agentId, hit)) {
+    return 'This board is not in the host’s current shared snapshot. Open it on the host.';
+  }
+  return null;
+}
+
+function containsCanvasHit(canvases: unknown, agentId: string, hit: CanvasHit): boolean {
+  return Array.isArray(canvases) && canvases.some((entry: unknown) => {
+    if (!entry || typeof entry !== 'object') return false;
+    const c = entry as { id?: unknown; views?: unknown };
+    return c.id === hit.canvasId && Array.isArray(c.views) && c.views.some((view: unknown) => !!view && typeof view === 'object'
+      && (view as { id?: unknown }).id === hit.viewId && (view as { type?: unknown }).type === 'agent' && (view as { agentId?: unknown }).agentId === agentId);
+  });
+}
+
+function jumpToRemoteCanvas(agent: Agent, hit: CanvasHit): void {
+  if (remoteCanvasJumpUnavailable(agent, hit)) return;
+  const address = parseNamespacedId(agent.id)!;
+  const ui = useUIStore.getState();
+  pendingJump?.();
+  pendingJump = null;
+  ui.setActiveHost(address.satelliteId);
+  const projectId = hit.scope === 'project' ? agent.projectId! : null;
+  useProjectStore.getState().setActiveProject(projectId);
+  ui.setExplorerTab(CANVAS_TAB, projectId ?? undefined);
+  const store = projectId ? getProjectCanvasStore(projectId) : useAppCanvasStore;
+  const apply = (beforeFocus?: () => void): boolean => {
+    const current = useUIStore.getState();
+    if (current.activeHostId !== address.satelliteId || useProjectStore.getState().activeProjectId !== projectId
+      || remoteCanvasJumpUnavailable(agent, hit)) return false;
+    const s = store.getState();
+    const remote = useRemoteProjectStore.getState();
+    const expectedSnapshot = projectId ? remote.remoteCanvasState[projectId] : remote.remoteAppCanvasState[address.satelliteId];
+    // Home's store is shared between hosts and local Home. Never focus a colliding raw id there.
+    if (!s.loaded || s.dataOrigin !== 'remote' || !expectedSnapshot || s.remoteSource?.hostId !== address.satelliteId
+      || s.remoteSource.snapshot !== expectedSnapshot || !containsCanvasHit(s.canvases, agent.id, hit)) return false;
+    beforeFocus?.();
+    s.setActiveCanvas(hit.canvasId);
+    s.focusView(hit.viewId);
+    s.selectView(hit.viewId);
+    return true;
+  };
+  if (apply()) return;
+  // CanvasView owns save flushing/failed-edit preservation and remote hydration. Wait for that boundary.
+  const offStore = store.subscribe(() => {
+    apply(cleanup);
+  });
+  const offUI = useUIStore.subscribe(() => {
+    if (useUIStore.getState().activeHostId !== address.satelliteId) cleanup();
+  });
+  const offProject = useProjectStore.subscribe(() => {
+    if (useProjectStore.getState().activeProjectId !== projectId) cleanup();
+  });
+  const offHost = useAnnexClientStore.subscribe(() => {
+    if (remoteCanvasJumpUnavailable(agent, hit)) cleanup();
+  });
+  const timeout = setTimeout(() => cleanup(), 30_000);
+  const cleanup = () => { offStore(); offUI(); offProject(); offHost(); clearTimeout(timeout); if (pendingJump === cleanup) pendingJump = null; };
+  pendingJump = cleanup;
 }

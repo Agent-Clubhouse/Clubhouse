@@ -452,7 +452,8 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     const { stats } = opts;
     const lookupStart = performance.now();
     const counter = { probes: 0 };
-    const filePath = await findCopilotTranscript(this.sessionStateDir(), sessionId, cwd, counter);
+    const stateDir = this.sessionStateDir();
+    const filePath = await (opts.passiveLookup ? findCopilotTranscript(stateDir, sessionId, cwd, counter, opts) : findCopilotTranscript(stateDir, sessionId, cwd, counter));
     if (stats) {
       stats.lookupMs = performance.now() - lookupStart;
       stats.probes = counter.probes;

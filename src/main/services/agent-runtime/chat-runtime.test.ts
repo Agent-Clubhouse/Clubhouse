@@ -24,6 +24,7 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 const broadcasts = vi.hoisted(() => ({ calls: [] as unknown[][] }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: unknown[]) => { broadcasts.calls.push(args); } }));
 
+import { readChatTranscript } from './chat-transcript';
 import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
 import { appendChatEvent } from './chat-transcript';
 import { FakeChatDriver } from './fake-chat-driver';
@@ -1341,6 +1342,57 @@ describe('ChatAgentRuntime', () => {
     driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
     await flush();
     expect((await runtime.sendMessage('steer me', { source: 'user' })).delivery).toBe('steer');
+  });
+
+  it('rotates display identity on native replacement and withholds facts immediately during awaited stop', async () => {
+    const driver = new FakeChatDriver(); const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'session_info', data: { cliVersion: 'OLD_VERSION', model: 'OLD_MODEL' } });
+    await flush(); const previous = runtime.getDetailsEvidence()!;
+    driver.last.emit({ type: 'session_info', data: { nativeSessionId: 'replacement-native', model: null } });
+    await flush(); const replacement = runtime.getDetailsEvidence()!;
+    expect(replacement.runId).not.toBe(previous.runId);
+    expect(replacement).toMatchObject({ nativeSessionId: 'replacement-native', completeFromStart: false, values: { model: null } });
+    expect(JSON.stringify(replacement)).not.toContain('OLD_');
+    const close = driver.last.close.bind(driver.last); let release!: () => void;
+    driver.last.close = async () => { await new Promise<void>((resolve) => { release = resolve; }); await close(); };
+    const stopped = runtime.stop();
+    expect(runtime.getDetailsEvidence()).toBeUndefined();
+    expect(runtime.getDisplayRunId()).toBeUndefined();
+    release(); await stopped;
+  });
+
+  it('retains initial display facts beyond transcript tails and invalidates stop/error and reused session IDs', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'session_info', data: { cliVersion: 'INITIAL_VERSION', model: 'INITIAL_MODEL', mcpServers: [{ name: 'INITIAL_MCP', status: 'connected' }] } });
+    for (let i = 0; i < 2005; i++) driver.last.emit({ type: 'agent_message', data: { messageId: `m${i}`, text: 'PRIVATE_RUNTIME_TEXT' } });
+    await flush(60);
+    const first = runtime.getDetailsEvidence()!;
+    expect(first.values).toMatchObject({ cliVersion: 'INITIAL_VERSION', model: 'INITIAL_MODEL', mcpServers: [{ name: 'INITIAL_MCP' }] });
+    expect(JSON.stringify(first)).not.toContain('PRIVATE_RUNTIME_TEXT');
+    const read = vi.mocked(readChatTranscript); read.mockClear();
+    expect(runtime.getDetailsEvidence()?.runId).toBe(first.runId);
+    expect(read).not.toHaveBeenCalled();
+    await runtime.stop();
+    expect(runtime.getDetailsEvidence()).toBeUndefined();
+    expect(runtime.getDisplayRunId()).toBeUndefined();
+    const replacement = makeRuntime(new FakeChatDriver(), { sessionId: first.sessionId, resumeNativeSessionId: first.nativeSessionId ?? undefined }).runtime;
+    try {
+      await replacement.start(); await flush();
+      expect(replacement.getSessionId()).toBe(first.sessionId);
+      expect(replacement.getDisplayRunId()).not.toBe(first.runId);
+      expect(replacement.getDetailsEvidence()?.values.cliVersion).toBeUndefined();
+    } finally { await replacement.stop(); }
+    const failedDriver = new FakeChatDriver(); const failed = makeRuntime(failedDriver).runtime;
+    try {
+      await failed.start();
+      failedDriver.last.emit({ type: 'session_info', data: { cliVersion: 'BEFORE_ERROR' } });
+      await flush(); expect(failed.getDetailsEvidence()?.values.cliVersion).toBe('BEFORE_ERROR');
+      failedDriver.last.emit({ type: 'error', data: { code: 'fatal', message: 'PRIVATE_ERROR', fatal: true } });
+      await flush(); expect(failed.getDetailsEvidence()).toBeUndefined();
+    } finally { await failed.stop(); }
   });
 
   it('keeps the provider report for the current native session only, merging a partial report (#2855)', async () => {

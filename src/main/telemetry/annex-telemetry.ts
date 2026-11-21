@@ -51,6 +51,8 @@ export function routeTemplate(method: string, pattern: RegExp): Parameters<typeo
     .replace(/\(\\\?\.\*\)\?/g, '')
     .replace(/\(\[\^\/\]\+\?\)|\(\[\^\/\]\+\)|\(\[\^\/\?\]\+\)/g, ':id')
     .replace(/\(stage\|[^)]*\)/g, ':op')
+    // A single-literal group only names the handler's branch: `(details)` is the path segment `details`.
+    .replace(/\(([a-z-]+)\)/g, '$1')
     .replace(/\\\//g, '/');
   return `${method} ${path}` as Parameters<typeof ATTR.annexRoute>[0];
 }

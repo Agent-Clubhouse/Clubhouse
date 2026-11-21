@@ -1,0 +1,31 @@
+$ TMPDIR=<fresh> vitest run --no-cache --maxWorkers=2 src/main/services/read-only-helper-work.test.ts (with fix, tree a2bb86472 + new test)
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > matches clean/dirty/unpushed counts without writing repository/index/config/object bytes 454ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > shares the local classification of generated bridge configuration and real user changes 417ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > retains staged user MCP work when the worktree was restored to HEAD, without changing either side 301ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > retains config mode-only work (staged=false) without changing index or worktree 296ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > retains config mode-only work (staged=true) without changing index or worktree 291ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > still excludes a staged generated-only MCP addition after classifying all stored sides 254ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > reports unknown when a remote has not been fetched; never contacts it 214ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > does not execute a configured clean filter or change disk bytes for dirty counts 212ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > does not execute a configured process filter or change disk bytes for dirty counts 222ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > cannot run a clean filter introduced after attributes were read 269ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > cannot run a process filter introduced after attributes were read 276ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > counts staged work even when the worktree matches HEAD and preserves staged rename grouping 414ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > compares CRLF content using the host’s normalization without executing filters 240ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > admits a root whose JS and native realpaths differ in form, and still refuses a different native root 380ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > refuses an unrelated helper before Git or file-content reads 79ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > withholds work after the actual helper inventory is released during an actual Git await 217ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > withholds evidence when authority is revoked during an actual Git await 89ms
+
+ Test Files  1 passed (1)
+      Tests  17 passed (17)
+   Start at  02:31:47
+   Duration  4.83s (transform 102ms, setup 4ms, import 128ms, tests 4.63s, environment 0ms)
+
+vitest exit=0

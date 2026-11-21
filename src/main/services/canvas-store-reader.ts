@@ -321,10 +321,13 @@ function toMemberships(snapshot: CanvasStoreSnapshot, agentId: string): CanvasMe
  * (Home) store and, when given, the agent's own project store. This is the
  * lightweight index the agent details card uses before a canvas is opened.
  */
-export async function getAgentCanvasMemberships(agentId: string, projectId?: string | null): Promise<CanvasMembership[]> {
-  const locations = await listCanvasStoreLocations();
+export async function getAgentCanvasMemberships(agentId: string, projectId?: string | null, options: CanvasStoreReadOptions = {}): Promise<CanvasMembership[]> {
+  const locations = await listCanvasStoreLocations(options);
   const wanted = locations.filter((l) => l.scope === 'app' || (!!projectId && l.projectId === projectId));
-  const snapshots = await Promise.all(wanted.map((location) => readCanvasStore(location)));
+  const snapshots = await Promise.all(wanted.map((location) => readCanvasStore(location, options)));
+  if (options.strict && (snapshots.some((s) => s.canvases === null) || projectId && !wanted.some((l) => l.scope === 'project' && l.projectId === projectId))) {
+    throw new Error('Agent canvas membership is incomplete.');
+  }
   return snapshots.flatMap((s) => toMemberships(s, agentId));
 }
 

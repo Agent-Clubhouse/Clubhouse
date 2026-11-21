@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ChangedFile, ChangesResult, CheckpointTurn, RevertResult } from '../../../../shared/chat-checkpoints';
 import type { BranchChanges } from '../../../../shared/git-branch';
+import type { RemoteChangedFile } from '../../../../shared/remote-agent-changes';
 import { Button } from '../../../components/Button';
 import { DiffCard } from '../chat/ToolBlocks';
 import { CardNote, DetailsCard, PlusMinus } from './DetailsCard';
@@ -48,9 +49,9 @@ type Diff = Parameters<typeof DiffCard>[0]['diff'];
 
 /** Files as rows; clicking one opens its diff under it. */
 /** A diff, or why there's none: too large to read, or nothing to show. */
-type DiffResult = Diff | 'tooLarge' | { link: string } | null;
+export type DiffResult = (Diff & { notice?: string }) | 'tooLarge' | { link: string } | { unavailable: string } | null;
 
-function FileList({ files, loadDiff, max }: { files: ChangedFile[]; loadDiff: (path: string) => Promise<DiffResult>; max?: number }) {
+export function FileList({ files, loadDiff, max }: { files: (ChangedFile | RemoteChangedFile)[]; loadDiff: (pathOrKey: string) => Promise<DiffResult>; max?: number }) {
   const [open, setOpen] = useState<string | null>(null);
   const [diff, setDiff] = useState<DiffResult | 'loading' | 'failed'>(null);
   const [showAll, setShowAll] = useState(false);
@@ -73,23 +74,24 @@ function FileList({ files, loadDiff, max }: { files: ChangedFile[]; loadDiff: (p
         const slash = f.path.lastIndexOf('/');
         const name = f.path.slice(slash + 1);
         const dir = slash > 0 ? f.path.slice(0, slash) : '';
-        const isOpen = open === f.path;
+        const identity = 'fileKey' in f ? f.fileKey : f.path;
+        const isOpen = open === identity;
         return (
-          <li key={f.path} className="flex flex-col">
+          <li key={identity} className="flex flex-col">
             <button
               type="button"
-              onClick={() => setOpen(isOpen ? null : f.path)}
+              onClick={() => setOpen(isOpen ? null : identity)}
               aria-expanded={isOpen}
               title={f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}
               data-testid="changes-file-row"
               data-path={f.path}
               className={`h-7 flex items-center gap-[7px] pl-3 pr-2.5 ml-[22px] mr-1.5 rounded-md text-left ${isOpen ? 'bg-surface-0' : 'hover:bg-surface-0'}`}
             >
-              <span className={`flex-shrink-0 w-2.5 font-mono text-[11px] font-semibold ${STATUS_TONE[f.status]}`}>{STATUS_LETTER[f.status]}</span>
+              <span className={`flex-shrink-0 w-2.5 font-mono text-[11px] font-semibold ${f.status === 'unknown' ? 'text-ctp-overlay1' : STATUS_TONE[f.status]}`}>{f.status === 'unknown' ? '?' : STATUS_LETTER[f.status]}</span>
               <span className="flex-shrink-0 text-[12.5px] text-ctp-text whitespace-nowrap">{name}</span>
               <span className="min-w-0 truncate text-xs text-ctp-overlay1">{dir}</span>
               <span className="ml-auto flex-shrink-0 flex items-center gap-2">
-                {f.binary ? <span className="text-xs text-ctp-overlay0">binary</span> : <><PlusMinus added={f.additions} removed={f.deletions} /><DiffBar added={f.additions} removed={f.deletions} /></>}
+                {'countsKnown' in f && !f.countsKnown ? <span className="text-xs text-ctp-overlay0">{f.evidence === 'binary' ? 'binary' : 'not compared'}</span> : f.binary ? <span className="text-xs text-ctp-overlay0">binary</span> : <><PlusMinus added={f.additions} removed={f.deletions} /><DiffBar added={f.additions} removed={f.deletions} /></>}
               </span>
             </button>
             {isOpen && (
@@ -100,7 +102,8 @@ function FileList({ files, loadDiff, max }: { files: ChangedFile[]; loadDiff: (p
                 {diff && typeof diff === 'object' && 'link' in diff && (
                   <p className="text-xs text-ctp-overlay1 py-1">Symbolic link to <span className="font-mono text-[11.5px] text-ctp-text break-all">{diff.link || 'an unreadable target'}</span></p>
                 )}
-                {diff && typeof diff === 'object' && 'type' in diff && <DiffCard diff={diff} />}
+                {diff && typeof diff === 'object' && 'unavailable' in diff && <p className="text-xs text-ctp-overlay1 py-1">{diff.unavailable}</p>}
+                {diff && typeof diff === 'object' && 'type' in diff && <>{diff.notice && <p className="text-xs text-ctp-overlay1 py-1">{diff.notice}</p>}<DiffCard diff={diff} /></>}
               </div>
             )}
           </li>

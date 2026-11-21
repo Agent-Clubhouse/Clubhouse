@@ -33,6 +33,17 @@ describe('chat for an agent on another desktop (#2390)', () => {
     expect(remoteChatTarget(NS)).toEqual({ satelliteId: SAT, agentId: 'durable_chat' });
     expect(remoteChatTarget('durable_chat')).toBeNull();
   });
+  it('retains only positive selected history receipts and consistent host cursors without extra reads', async () => {
+    const binding = { version: 1, projectId: 'p1', agentId: 'durable_chat', sessionId: 'sess_live', providerId: 'claude-code', driver: 'claude_agent_sdk', nativeSessionId: 'native', displayRunId: 'run', startSeq: 1, subagents: 'full' };
+    chatPage.mockResolvedValue({ agentId: 'durable_chat', sessionId: 'sess_live', displayRunId: 'run', historyBinding: binding, events: [], readOnly: false, truncated: true, nextBeforeSeq: 50 });
+    expect(await readRemoteTranscript(NS)).toMatchObject({ historyBinding: binding, nextBeforeSeq: 50 });
+    chatPage.mockResolvedValue({ sessionId: 'sess_live', displayRunId: 'run', historyBinding: binding, events: [], truncated: true, nextBeforeSeq: null });
+    expect((await readRemoteTranscript(NS)).nextBeforeSeq).toBeUndefined();
+    chatPage.mockResolvedValue({ sessionId: 'sess_live', displayRunId: 'replacement', historyBinding: binding, events: [], truncated: false, nextBeforeSeq: null });
+    expect(await readRemoteTranscript(NS)).toMatchObject({ nextBeforeSeq: null });
+    expect((await readRemoteTranscript(NS)).historyBinding).toBeUndefined();
+    expect(chatPage.mock.calls.every((call) => !('beforeSeq' in call[2]))).toBe(true);
+  });
 
   it('reads the transcript from that desktop, keyed by the namespaced id, pending prompts folded in once', async () => {
     const pending = ev(3, 'permission_request', { requestId: 'p1' });

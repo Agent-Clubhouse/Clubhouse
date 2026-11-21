@@ -1,3 +1,4 @@
+import { PassiveSessionLookup } from './passive-session-lookup';
 import { assertExecutionPolicy, hasExecutionPolicy } from '../../shared/execution-policy';
 import type { PlanQuotaReading } from '../../shared/helper-routing';
 import { probeCodexQuota } from './quota-probes';
@@ -815,8 +816,9 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
    * The rollout file for `sessionId`, found by the id in its filename. Rollouts
    * aren't kept by cwd, so `cwd` isn't needed. null when there is none.
    */
-  async transcriptPath(sessionId: string, _cwd: string): Promise<string | null> {
+  async transcriptPath(sessionId: string, _cwd: string, opts?: TranscriptReadOptions): Promise<string | null> {
     const sessionsDir = path.join(this.resolveCodexHome(), 'sessions');
+    if (opts?.passiveLookup) return new PassiveSessionLookup(opts.stats).find(sessionsDir, (name) => ROLLOUT_FILE_PATTERN.exec(name)?.[2] === sessionId, true);
     let files: string[];
     try {
       files = await this.collectRolloutFiles(sessionsDir);
@@ -836,7 +838,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
     cwd: string,
     opts?: TranscriptReadOptions,
   ): Promise<StreamJsonEvent[] | null> {
-    const filePath = await this.transcriptPath(sessionId, cwd);
+    const filePath = await (opts?.passiveLookup ? this.transcriptPath(sessionId, cwd, opts) : this.transcriptPath(sessionId, cwd));
     if (!filePath) return null;
 
     const events = await parseJsonlFile(filePath, opts);

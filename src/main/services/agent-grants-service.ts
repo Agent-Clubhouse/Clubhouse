@@ -17,8 +17,11 @@ import type { DurableAgentConfig } from '../../shared/types';
 import { getDurableConfig } from './agent-config';
 import { setOrchestrationPolicy } from './orchestration-policy';
 import { dropCallApprovalsFor } from './grant-requests';
-import { getAgentGrantChanges, updateAgentGrantChanges } from './agent-grants-store';
+import { readAgentGrantChangesForDisplay, getAgentGrantChanges, updateAgentGrantChanges } from './agent-grants-store';
 import { isDispatcherAgentId, resolveDispatcherIdentity } from './dispatcher/dispatcher-service';
+import { reachRows, type ReachRow } from '../../shared/dispatcher-card-model';
+import { agentDisplayInput, type DisplayReceipt, type DisplayValue } from './display-settings';
+import { isDisposedAgent } from '../../shared/agent-helpers';
 import { recordGrantChange } from './grant-telemetry';
 
 function factsOf(agentId: string, config: DurableAgentConfig) {
@@ -76,7 +79,7 @@ async function configOf(projectPath: string, agentId: string): Promise<DurableAg
   return config;
 }
 
-function viewOf(agentId: string, config: DurableAgentConfig): AgentGrantsView {
+export function viewOf(agentId: string, config: DurableAgentConfig): AgentGrantsView {
   const facts = factsOf(agentId, config);
   const saved = getAgentGrantChanges(agentId);
   return {
@@ -181,4 +184,25 @@ export function templateLayerGrants(agentId: string): GrantChange[] {
 /** What an agent carries over its defaults, for Save as template. */
 export function carriedAgentGrants(agentId: string): GrantChange[] {
   return carriedGrants(getAgentGrantChanges(agentId));
+}
+
+/** Display evidence only; never used to grant/start/deliver or open a tool gate. */
+export function readAgentHoldsActionForDisplay(agentId: string, config: DurableAgentConfig, action: GrantAction, options: { receipts?: DisplayReceipt[] } = {}): DisplayValue<boolean> {
+  if (config.id !== agentId || isDisposedAgent(config)) return { state: 'unavailable', reason: 'invalid', inputs: [agentDisplayInput('Selected agent permission facts')] };
+  const saved = readAgentGrantChangesForDisplay(agentId);
+  if (saved.state !== 'ok') return saved;
+  const value = applyGrantChanges(defaultsFor(agentId, config), saved.value).some((grant) => grant.action === action);
+  options.receipts?.push({ current: () => { try { const now = readAgentHoldsActionForDisplay(agentId, config, action); return now.state === 'ok' && now.value === value; } catch { return false; } } });
+  return { state: 'ok', value, inputs: saved.inputs };
+}
+
+/** Only the corresponding card's fixed authority summaries, never raw records/revisions/targets. */
+export function readAgentReachForDisplay(agentId: string, config: DurableAgentConfig, options: { receipts?: DisplayReceipt[] } = {}): DisplayValue<ReachRow[]> {
+  if (config.id !== agentId || isDisposedAgent(config)) return { state: 'unavailable', reason: 'invalid', inputs: [agentDisplayInput('Selected agent permission facts')] };
+  const saved = readAgentGrantChangesForDisplay(agentId);
+  if (saved.state !== 'ok') return saved;
+  const value = reachRows({ rows: grantRows(defaultsFor(agentId, config), saved.value) });
+  const signature = JSON.stringify(value);
+  options.receipts?.push({ current: () => { try { const now = readAgentReachForDisplay(agentId, config); return now.state === 'ok' && JSON.stringify(now.value) === signature; } catch { return false; } } });
+  return { state: 'ok', value, inputs: saved.inputs };
 }

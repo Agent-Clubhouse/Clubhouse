@@ -1,5 +1,12 @@
+import { readSelectedDispatcherDetails } from './selected-dispatcher-details';
+import { isRemoteDetailsQuery } from '../../shared/remote-details-query';
 import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
 import { readRemoteAgentSettings } from './remote-agent-settings';
+import { resolveReadOnlyQuickChatTarget } from './read-only-quick-target';
+import { readRemoteAgentDetails } from './remote-agent-details';
+import { readRemoteAgentChanges } from './remote-agent-changes';
+import { isRemoteChangesQuery } from '../../shared/remote-agent-changes';
+import { agentDisplayState, onAgentDisplayState } from './agent-display-state';
 import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
 import { hydrateProjectLinks, projectLinksStore } from './project-links-store';
@@ -12,6 +19,7 @@ import { legacyDefaultsNotCopied } from './legacy-defaults';
 import { accessFromLegacy, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
 import { agentAccess, getPermissionMode, quickAgentAccess } from './free-agent-settings';
 import { waitForAgentStopped } from './agent-system';
+import { captureRemoteSessionHistoryBinding } from './remote-session-history-binding';
 import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture, providerNextWake, verifyProviderStartPreview } from './agent-provider-control';
 import { providerStartReceipt } from './provider-start-receipt';
 import { withAgentTransition } from './agent-transition';
@@ -228,6 +236,10 @@ let httpServer: http.Server | null = null;
 /** Includes sockets still waiting for a TLS handshake, HTTP headers, or a WebSocket upgrade. */
 const incomingSockets = new Set<import('net').Socket>();
 let wss: WebSocketServer | null = null;
+// Existing lifecycle observations, forwarded on the existing status transport. No starts or writes.
+onAgentDisplayState((agentId, status) => {
+  if (wss) broadcastAndBuffer('agent:status', { agentId, status });
+});
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let bonjourService: Service | null = null;
 /** Publishes the advertisement again (after a dead mDNS socket, or on wake); set while the server runs. */
@@ -1051,7 +1063,7 @@ function dispatcherAgentView(config: DurableConfigs[number]) {
 function mapDurableAgent(d: DurableConfigs[number], projectId: string, policies?: Awaited<ReturnType<typeof catalogOrchestration>>, projectPath?: string) {
   const agentId = d.id;
   const isRunning = isAgentRunning(agentId);
-  const status = isRunning ? 'running' : 'sleeping';
+  const status = agentDisplayState(d, isRunning).status;
 
   return {
     id: d.id,
@@ -4061,23 +4073,61 @@ async function handleMobileAgentStateRoute(ctx: AnnexRouteContext): Promise<void
   }
 }
 
+const desktopDetailsAuthorized = (ctx: AnnexRouteContext) => {
+  const peer = annexPeers.getPeer(ctx.principal.fingerprint);
+  return !isRefusal(ctx.reauthorize()) && !!peer && peer.kind === 'desktop'
+    && !peer.networkPending && !mobileSessionPeers.has(ctx.principal.fingerprint);
+};
+
 /** Desktop display metadata only, under the existing paired-controller read authority. */
 async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
   // Same paired-controller read authority as existing agent settings; recheck after disk reads.
-  const authorized = () => {
-    const peer = annexPeers.getPeer(ctx.principal.fingerprint);
-    return !isRefusal(ctx.reauthorize()) && !!peer && peer.kind === 'desktop'
-      && !peer.networkPending && !mobileSessionPeers.has(ctx.principal.fingerprint);
-  };
+  const authorized = () => desktopDetailsAuthorized(ctx);
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'desktop_controller_required' }); return; }
   let agentId: string;
   try { agentId = decodeURIComponent(match[1]); }
   catch { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
   if (!agentId || agentId.length > 240) { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
-  const result = await readRemoteAgentSettings(agentId, authorized);
+  const params = new URL(ctx.url, 'http://localhost').searchParams;
+  const detailsQuery = params.size ? { card: params.get('card'), source: params.get('source'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('projectOffset') && { projectOffset: Number(params.get('projectOffset')) }), ...(params.has('selection') && { selection: params.get('selection') }) } : undefined;
+  if (match[2] === 'details' && detailsQuery !== undefined && ([...params.keys()].some((key) => !['card', 'source', 'offset', 'projectOffset', 'selection'].includes(key))
+    || [...params.keys()].some((key) => params.getAll(key).length !== 1) || ['offset', 'projectOffset'].some((key) => params.has(key) && !/^(0|[1-9]\d{0,3})$/.test(params.get(key)!)) || !isRemoteDetailsQuery(detailsQuery))) {
+    sendJson(ctx.res, 400, { error: 'invalid_details_query' }); return;
+  }
+  const changesQuery = { scope: params.get('scope'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('fileKey') && { fileKey: params.get('fileKey') }) };
+  if (match[2] === 'changes' && ([...params.keys()].some((key) => !['scope', 'offset', 'fileKey'].includes(key))
+    || [...params.keys()].some((key) => params.getAll(key).length !== 1) || params.has('offset') && !/^(0|[1-9]\d{0,4})$/.test(params.get('offset')!) || !isRemoteChangesQuery(changesQuery))) {
+    sendJson(ctx.res, 400, { error: 'invalid_changes_query' }); return;
+  }
+  const result = match[2] === 'changes' && isRemoteChangesQuery(changesQuery) ? await readRemoteAgentChanges(agentId, changesQuery, authorized) : match[2] === 'details'
+    ? await readRemoteAgentDetails(agentId, authorized, detailsQuery && isRemoteDetailsQuery(detailsQuery) ? detailsQuery : undefined)
+    : await readRemoteAgentSettings(agentId, authorized);
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'settings_read_refused' }); return; }
   ctx.res.setHeader('Cache-Control', 'no-store');
+  if (result.status === 429) ctx.res.setHeader('Retry-After', '1');
+  sendJson(ctx.res, result.status, result.body);
+}
+
+/** Selected role metadata only: the exact ordinary Details desktop gate, not controller-history authority. */
+async function handleSelectedDispatcherDetailsRoute(ctx: AnnexRouteContext): Promise<void> {
+  ctx.res.setHeader('Cache-Control', 'no-store');
+  if (ctx.requireMtls()) return;
+  const authorized = () => desktopDetailsAuthorized(ctx);
+  if (!authorized()) { sendJson(ctx.res, 403, { error: 'desktop_controller_required' }); return; }
+  // Selection belongs to this pinned host. No caller id, address, role, path or page query is accepted.
+  if (new URL(ctx.url, 'http://localhost').searchParams.size) {
+    sendJson(ctx.res, 400, { error: 'invalid_dispatcher_details_query' }); return;
+  }
+  const result = await readSelectedDispatcherDetails(authorized);
+  if (!authorized()) { sendJson(ctx.res, 403, { error: 'details_read_refused' }); return; }
+  if (result.status === 200) {
+    let current = false;
+    try { current = result.receipt?.current() === true; }
+    catch { /* telemetry-exempt: a final admission failure withholds all private evidence. */ }
+    if (!current) { sendJson(ctx.res, 409, { error: 'dispatcher_role_changed' }); return; }
+  }
+  if (result.status === 429) ctx.res.setHeader('Retry-After', '1');
   sendJson(ctx.res, result.status, result.body);
 }
 
@@ -4099,8 +4149,11 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
   const epoch = mobileCommands.epoch;
   try {
     const agentId = decodeURIComponent(match[1]);
-    const durable = await findMobileAgent(agentId);
-    if ((!durable || isDisposedAgent(durable.config)) && !trackedQuickAgents.has(agentId)) {
+    // Direct desktop quick launches are not Annex's phone-tracked quick list.
+    // Admit only their exact attested current runtime under desktop read rights.
+    const quickRead = desktopDetailsAuthorized(ctx) ? await resolveReadOnlyQuickChatTarget(agentId, () => desktopDetailsAuthorized(ctx)) : null;
+    const durable = quickRead ? null : await findMobileAgent(agentId);
+    if (!quickRead && (!durable || isDisposedAgent(durable.config)) && !trackedQuickAgents.has(agentId)) {
       sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
     }
     const query = new URL(ctx.url, 'http://localhost').searchParams;
@@ -4112,10 +4165,28 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       || (requestedSession !== undefined && (requestedSession.length === 0 || requestedSession.length > 256))) {
       sendJson(ctx.res, 400, { error: 'invalid_query' }); return;
     }
-    const runtime = getAgentRuntime(agentId);
+    if (quickRead && (beforeSeq !== undefined || requestedSession !== undefined && requestedSession !== quickRead.sessionId)) { sendJson(ctx.res, 404, { error: 'quick_session_unavailable' }); return; }
+    const runtime = quickRead?.runtime ?? getAgentRuntime(agentId);
     const liveSessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() : undefined;
+    const admittedNativeId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() : undefined;
+    const admittedDisplayId = runtime?.getDisplayRunId?.();
+    const admittedRegistration = agentRegistry.get(agentId), admittedNonce = admittedRegistration?.nonce;
+    const sameLiveRead = () => getAgentRuntime(agentId) === runtime && runtime?.kind === 'chat' && runtime.isRunning()
+      && !['sleeping', 'error'].includes(runtime.getState()) && runtime.getSessionId?.() === liveSessionId
+      && runtime.getNativeSessionId?.() === admittedNativeId && runtime.getDisplayRunId?.() === admittedDisplayId
+      && agentRegistry.get(agentId) === admittedRegistration && agentRegistry.get(agentId)?.nonce === admittedNonce;
     let live = runtime?.kind === 'chat' && runtime.isRunning() && (requestedSession === undefined || liveSessionId === requestedSession);
-    const events = live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId: requestedSession });
+    const admittedLive = live;
+    const admittedDesktopRead = desktopDetailsAuthorized(ctx);
+    const readAuthorized = () => mobileCommands.epoch === epoch && stillAuthorized(ctx.principal, authorizerDeps)
+      && (!(quickRead || admittedDesktopRead) || desktopDetailsAuthorized(ctx));
+    const historyBinding = !quickRead && !trackedQuickAgents.has(agentId) && durable && admittedDesktopRead && admittedLive
+      ? captureRemoteSessionHistoryBinding({ agent: durable.config, project: durable.project }, runtime!, readAuthorized) : undefined;
+    const events = quickRead ? (await runtime!.readTranscript({ passive: true, tail: 2001 })).events ?? []
+      : live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId: requestedSession });
+    if (!readAuthorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
+    // Refuse before any downstream reader can fall back to global discovery.
+    if (admittedLive && !sameLiveRead() || quickRead && !quickRead.current()) { sendJson(ctx.res, 409, { error: 'chat_read_changed' }); return; }
     const sessionId = requestedSession ?? (live ? liveSessionId : events[events.length - 1]?.sessionId);
     live = live && getAgentRuntime(agentId) === runtime && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
     const current = events.filter((e) => e.sessionId === sessionId);
@@ -4125,10 +4196,13 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     // The agent's folders (#2457): relative paths resolve against the first. Older phones
     // link only absolute paths under them; `contentAnyPath` says any readable path is served (#2478).
     const richContent = isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG);
-    const contentRoots = richContent ? await agentFolders(agentId).catch((): string[] => []) : [];
-    if (mobileCommands.epoch !== epoch || !stillAuthorized(ctx.principal, authorizerDeps)) {
+    // The new quick Details admission needs no file/link roots. Generic
+    // agentFolders can recover stores or reuse roots from a prior ID owner.
+    const contentRoots = richContent && !quickRead ? await agentFolders(agentId).catch((): string[] => []) : [];
+    if (!readAuthorized()) {
       sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return;
     }
+    if (admittedLive && !sameLiveRead() || quickRead && !quickRead.current()) { sendJson(ctx.res, 409, { error: 'chat_read_changed' }); return; }
     const pending = live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] };
     const page = buildChatPage({
       eligible,
@@ -4139,10 +4213,14 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
         version: 1, epoch: mobileCommands.epoch, agentId, sessionId: sessionId ?? null,
         canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId) && !(isDispatcherOffForStart(agentId)),
         currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
+        // Display-only identity, never the launch nonce; only the runtime that
+        // supplied this page may attest it after the preceding awaits.
+        displayRunId: live && admittedDesktopRead ? admittedDisplayId ?? null : null,
+        ...(historyBinding && { historyBinding: historyBinding.value }),
         state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
         lastSeq: current[current.length - 1]?.seq ?? 0,
         contentRoots,
-        contentAnyPath: richContent,
+        contentAnyPath: richContent && !quickRead,
         ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
           : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
         // The composer's level, model and effort pills, for chat.setLevel / chat.setModel (#2462).
@@ -4155,6 +4233,11 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     if (page.ok === false) {
       sendJson(ctx.res, 503, page.failure);
       return;
+    }
+    if (!readAuthorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
+    if (historyBinding && !historyBinding.current()) {
+      const allowed = readAuthorized();
+      sendJson(ctx.res, allowed ? 409 : 403, { error: allowed ? 'chat_read_changed' : 'authorization_revoked' }); return;
     }
     ctx.res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(page.body) });
     ctx.res.end(page.body);
@@ -4766,7 +4849,10 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents$/, handler: handleProjectAgentsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/buffer$/, handler: handleAgentBufferRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/dispatcher\/details(\?.*)?$/, handler: handleSelectedDispatcherDetailsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/settings-details$/, handler: handleAgentSettingsDetailsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/?]+)\/(details)(\?.*)?$/, handler: handleAgentSettingsDetailsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/?]+)\/(changes)(\?.*)?$/, handler: handleAgentSettingsDetailsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/tree(\?.*)?$/, handler: handleProjectFilesTreeRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/read(\?.*)?$/, handler: handleProjectFilesReadRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/info$/, handler: handleGitInfoRoute },

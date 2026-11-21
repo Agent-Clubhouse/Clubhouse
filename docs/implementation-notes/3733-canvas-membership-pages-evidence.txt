@@ -1,0 +1,99 @@
+#3733 §3 saved Canvas membership continuation — disjoint integration slice
+
+Base: 0056aae0d574adb2c6bd050abcf4787e80a7763f
+Branch: Nov20RootDiagnostics/3733-canvas-membership-pages
+Tested implementation: 20c94def6dbca65beac64c5334de9052e01b35bc
+The final note-only successor changes no source/test blob from this implementation.
+
+Exports for central/common owner
+
+- shared/remote-canvas-membership-page.ts: fixed source selected-canvas-memberships,
+  RemoteCanvasMembershipQuery/Page/Row,25-row page size and strict validators.
+  Query is card=canvases/source/offset/opaque selection only; no caller roots,
+  board IDs, scopes or content options. Page echoes admitted agentId/projectId.
+  Recorded pages carry selection64hex/rows/total/next. Unavailable pages carry
+  only common metadata and closed invalid|unreadable|limit|changed|unsupported;
+  no rows or zero totals are inferred. Real row IDs remain scope/canvasId/viewId.
+- main/services/selected-canvas-membership-page.ts:
+  readSelectedCanvasMembershipPage(target,query,{authorized,target,receipts}).
+  Caller supplies the already-admitted exact durable project/agent witness.
+  Retain ALL appended source/home/combined receipts through final publication.
+- renderer/features/agents/details/SelectedCanvasMembershipPage.tsx:
+  SelectedCanvasMembershipPage and ReadCanvasMembershipPage guarded adapter port.
+  Props: agent/supported/readable/freshnessKey/open/readPage/onRefused. Adapter
+  must validate enclosing Details status/agent identity before extracting the
+  typed page; preserve common source/page-only/role/run checks. freshnessKey and
+  readable must track the enclosing authorized selection/read generation.
+
+The component is appended separately from existing known membership rows. It
+does not replace them or reinterpret an unavailable page as no memberships.
+Common query/envelope/Details files and actual endpoint wiring are NOT edited
+or claimed verified here; the common owner coordinates that composition.
+
+Source access and currentness
+
+Only the existing bounded passive primary-file reader is used for:
+  Home root: .clubhouse/plugin-data/canvas/kv/canvas-instances.json
+  Admitted project: .clubhouse/plugin-data-local/canvas/kv/canvas-instances.json
+No listCanvasStoreLocations, global project/root discovery, wires, active board,
+owner loaders, recovery, collection, cache warmup or writes. Existing reader
+limits remain4MiB/file and8MiB aggregate; structural visits across both stores
+are capped4096. JSON is parsed transiently; only membership identity/name fields
+are projected. Other board payloads are never retained, exported or hashed.
+
+Missing primary requires absence of its .bak plus the separate backup key and
+that key's .bak. Recovery-key checks use lstat only, including empty recovery
+files; backup contents are never opened. Symlink/unreadable/invalid/oversized/
+ambiguous source fails the combined page closed. Home matching raw agent IDs
+without project association are unknown; explicit foreign project associations
+are excluded without reading those projects. Selected-project store association
+may be implicit; any explicit association must match. Duplicate identities and
+secret/control-bearing IDs are refused instead of truncated into new identities.
+
+Rows are ordered by the scoped identity tuple. Continuation binds the projected
+membership selection and selected project/home namespace. Each page rereads its
+two primary sources, retains their currentness receipts, checks authorization
+and target, and rejects stale selection. Names are redacted before truncation.
+Pages are independent observations, not an atomic cross-page snapshot or a lock.
+
+Navigation remains restricted
+
+The view reuses CanvasMembershipList plus unchanged remoteCanvasJumpUnavailable
+and jumpToCanvas. Metadata membership never supplies board contents, hydrates a
+board store or bypasses current snapshot/hydration checks. An omitted board stays
+disabled even when its membership is known. No new navigation/read authority.
+
+Exact implementation proof (existing dependencies; serial one worker)
+
+49PASS / five suites /0fail/0skip on20c94def:
+node node_modules/vitest/vitest.mjs run --project main --project shared --project renderer
+  src/main/services/selected-canvas-membership-page.test.ts
+  src/shared/remote-canvas-membership-page.test.ts
+  src/renderer/features/agents/details/SelectedCanvasMembershipPage.test.tsx
+  src/renderer/features/agents/details/CanvasMembershipList.test.tsx
+  src/renderer/features/agents/details/agent-canvases.test.ts
+  --maxWorkers=1 --no-file-parallelism
+Full unchanged-config source tsc --noEmit:PASS on20c94def.
+ESLint on the six new source/test files:0errors/0warnings on20c94def.
+
+Real temporary primary files/actual source receipts cover105 selected records,
+last-row retrieval, stable projection ordering, zero backup opens for all three
+recovery filenames, missing versus unknown source, late source/target/project/
+Home/auth invalidation, malformed/duplicate/limit/symlink refusal and no writes.
+Renderer uses modeled page replies through the explicit adapter port; current
+omitted-board guards execute and remain disabled. Wrong echoes/selection, late
+host/project/snapshot/offline/read-denied/closed responses withhold page rows.
+Earlier b517b57f3 separately passed49/typecheck;20c changes only telemetry
+comments/formatting and resolves its two lint warnings. The20c test worker had
+already finished when the resource stop request arrived; no process was killed.
+
+Deferred acceptance
+
+Central source advertisement/query/envelope integration, final publication after
+later host awaits, full role/run/auth refusal matrix and independent exact-head
+review remain required. The real receipt predicates are tested after mutations,
+but no composed HTTP endpoint or live host/app proof is claimed by this branch.
+Legacy known membership presentation remains separate; unsaved live membership,
+unresolved Home associations, unsupported IDs/sources and omitted board contents
+remain limited. No full §3/#3733 acceptance, added grants, installs, live E2E,
+restart, PR, merge, release or edits to earlier pushed task branches.

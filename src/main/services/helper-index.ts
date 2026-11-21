@@ -17,6 +17,7 @@ import * as agentConfig from './agent-config';
 import * as projectStore from './project-store';
 import { pathExists } from './fs-utils';
 import { appLog } from './log-service';
+import { captureReadOnlyAgentInventoryWitness } from './read-only-agent-target-witness';
 
 /** An agent and the project whose agents.json holds it. */
 export interface HelperEntry {
@@ -25,6 +26,10 @@ export interface HelperEntry {
 }
 
 export interface ListHelpersEverywhereOptions {
+  /** Display-only inventory: no recovering project list and no silently skipped projects. */
+  readOnly?: boolean;
+  /** Private display assembly fences. Never send these capabilities over IPC/network. */
+  receipts?: Array<{ current(): boolean }>;
   /** Include disposed helpers (direct helpers only, like listHelpers). */
   includeDisposed?: boolean;
   /** Every live helper below the orchestrator, helpers of helpers too, nearest first. */
@@ -53,7 +58,12 @@ export function clearHelperIndexCache(): void {
   snapshot = null;
 }
 
-async function projectPaths(homePath: string): Promise<string[]> {
+async function projectPaths(homePath: string, readOnly = false): Promise<string[]> {
+  if (readOnly) {
+    const inventory = await projectStore.peekProjectsChecked({ strict: true });
+    if (!inventory.readable) throw new Error('Registered helper projects are unreadable without recovery.');
+    return [homePath, ...inventory.projects.map((p) => p.path)];
+  }
   let registered: string[] = [];
   try {
     registered = (await projectStore.list()).map((p) => p.path);
@@ -66,7 +76,7 @@ async function projectPaths(homePath: string): Promise<string[]> {
   return [homePath, ...registered];
 }
 
-async function buildIndex(projectPathsInOrder: string[]): Promise<IndexedAgent[]> {
+async function buildIndex(projectPathsInOrder: string[], readOnly = false, receipts?: Array<{ current(): boolean }>): Promise<IndexedAgent[]> {
   const homePath = projectPathsInOrder[0];
   const seen = new Set<string>();
   const keyCache = new Map<string, Promise<string>>();
@@ -84,11 +94,20 @@ async function buildIndex(projectPathsInOrder: string[]): Promise<IndexedAgent[]
     if (seen.has(key)) continue;
     seen.add(key);
     // A registered project whose folder is gone holds no agents; don't load it.
-    if (projectPath !== homePath && !await pathExists(projectPath)) continue;
+    if (projectPath !== homePath && !await pathExists(projectPath)) {
+      if (readOnly) throw new Error('A registered helper project is unavailable.');
+      continue;
+    }
     let agents: readonly DurableAgentConfig[];
     try {
-      agents = await agentConfig.peekDurableConfigs(projectPath);
+      if (readOnly) {
+        const inventory = await agentConfig.peekDurableConfigsChecked(projectPath, { strict: true });
+        if (!inventory.readable) throw new Error('Helper inventory is unreadable without recovery.');
+        agents = inventory.agents;
+        receipts?.push(captureReadOnlyAgentInventoryWitness(projectPath, agents));
+      } else agents = await agentConfig.peekDurableConfigs(projectPath);
     } catch (err) {
+      if (readOnly) throw err;
       // telemetry-exempt: logged; one unreadable project doesn't hide the others' helpers.
       appLog('core:agent-config', 'warn', 'Helper index could not read a project', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
@@ -109,12 +128,12 @@ async function buildIndex(projectPathsInOrder: string[]): Promise<IndexedAgent[]
  * Every agent in every local project, home project first. Reused while no
  * agents.json changed and the projects to read are the same.
  */
-async function indexFor(homePath: string): Promise<IndexedAgent[]> {
-  const paths = await projectPaths(homePath);
-  const signature = paths.join('\0');
+async function indexFor(homePath: string, readOnly = false, receipts?: Array<{ current(): boolean }>): Promise<IndexedAgent[]> {
+  const paths = await projectPaths(homePath, readOnly);
+  const signature = `${readOnly ? 'strict:' : ''}${paths.join('\0')}`;
   const generation = agentConfig.agentConfigGeneration();
-  if (snapshot && snapshot.generation === generation && snapshot.paths === signature) return snapshot.rows;
-  const rows = await buildIndex(paths);
+  if (!readOnly && snapshot && snapshot.generation === generation && snapshot.paths === signature) return snapshot.rows;
+  const rows = await buildIndex(paths, readOnly, receipts);
   // A change while the build ran leaves it unsaved, so the next call reads again.
   if (agentConfig.agentConfigGeneration() === generation) snapshot = { generation, paths: signature, rows };
   return rows;
@@ -132,7 +151,7 @@ export async function listHelpersEverywhere(
   options: ListHelpersEverywhereOptions = {},
 ): Promise<HelperEntry[]> {
   const homeKey = await agentConfig.projectKey(homePath);
-  const index = await indexFor(homePath);
+  const index = await indexFor(homePath, options.readOnly, options.readOnly ? options.receipts : undefined);
   const isChildOf = (row: IndexedAgent, parentKey: string, parentId: string) =>
     row.config.parentAgentId === parentId && row.parentKey === parentKey;
   const entry = ({ projectPath, config }: IndexedAgent): HelperEntry => ({ projectPath, config });

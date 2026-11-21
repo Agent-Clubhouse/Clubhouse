@@ -4,6 +4,7 @@ import type { AnnexCallContext, AnnexDeliveryEpoch, AuthenticatedAnnexOrigin, An
 import type { FederatedRequest, FederationOutcome, FederationRequestEnvelope, FederationTriage } from '../../shared/dispatcher-federation-requests';
 import { deliveryHash } from './annex-delivery-store';
 import { createSettingsStore } from './settings-store';
+import { createRequestPauseDisplayReader, projectRequestPauseForDisplay, type RequestPauseDisplayReader } from './federation-pause-display';
 import { federationStatusChanged } from './dispatcher-federation-policy';
 import { appLog } from './log-service';
 
@@ -59,6 +60,8 @@ export interface FederationRequestFile {
 }
 export interface FederationRequestStore {
   get(): FederationRequestFile;
+  /** Existing committed service view only; never get/ready/repair/clone raw requests for display. */
+  readPauseForDisplay?: RequestPauseDisplayReader;
   /** Persist any retired automatic pause before reconciliation sends saved work. */
   ready?(): Promise<void>;
   update(change: (file: FederationRequestFile) => void, current?: () => boolean): Promise<void>;
@@ -100,7 +103,17 @@ export function createFederationRequestStore(filename = 'dispatcher-federation-r
     }
     return structuredClone(committed);
   };
-  return { get, async ready() { get(); if (migrationPending || depthRepairPending) await this.update(() => {}); }, update(change, current = () => true) {
+  const readPauseForDisplay = createRequestPauseDisplayReader((machine) => {
+    if (!committed || unreadable || !committed.paused || typeof committed.paused !== 'object' || Array.isArray(committed.paused)) return undefined;
+    const own = (v: object, key: string) => Object.prototype.hasOwnProperty.call(v, key);
+    if (!own(committed.paused, machine) && machine in committed.paused) return undefined;
+    const reason = own(committed.paused, machine) ? committed.paused[machine] : undefined;
+    const epochs = committed.pauseEpochs;
+    const epochUnavailable = epochs !== undefined && (!epochs || typeof epochs !== 'object' || Array.isArray(epochs)
+      || !own(epochs, machine) && machine in epochs);
+    return projectRequestPauseForDisplay(reason, epochs && own(epochs, machine) ? epochs[machine] : undefined, epochUnavailable);
+  });
+  return { get, readPauseForDisplay, async ready() { get(); if (migrationPending || depthRepairPending) await this.update(() => {}); }, update(change, current = () => true) {
     const run = serial.catch(() => {}).then(async () => {
       const value = get();
       change(value);
@@ -162,6 +175,13 @@ export function parseFederationEnvelope(raw: unknown): FederationRequestEnvelope
 }
 
 export function createFederatedRequests(d: FederationRequestDependencies) {
+  // Capture only an own data-property adapter, without executing accessors or
+  // adopting a later replacement. The ordinary request service already owns d.
+  let displayPause: RequestPauseDisplayReader | undefined;
+  try {
+    const pauseDescriptor = Object.getOwnPropertyDescriptor(d.store, 'readPauseForDisplay');
+    if (pauseDescriptor && 'value' in pauseDescriptor && typeof pauseDescriptor.value === 'function') displayPause = pauseDescriptor.value;
+  } catch { /* telemetry-exempt: optional display support cannot break ordinary service construction. */ }
   const current = (r: FederatedRequest) => !r.localRequestId && d.authorizedNews ? d.authorizedNews(r.machineId, r.epoch)
     : d.authorized(r.machineId, r.direction === 'incoming' ? r.origin.agentId : r.targetId, r.epoch);
   const read = (id: string) => d.store.get().requests.find((r) => r.id === id);
@@ -320,6 +340,9 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
     }
   }
   return {
+    readPauseForDisplay: ((machine, options) => displayPause ? displayPause(machine, options) : {
+      state: 'unavailable', inputs: [{ field: 'Established request-service pause metadata', source: 'host-cache', observedAt: Date.now() }],
+    }) as RequestPauseDisplayReader,
     pauseReason(machine: string): string | undefined {
       return this.allowed(machine, {}) ? undefined : d.store.get().paused[machine];
     },

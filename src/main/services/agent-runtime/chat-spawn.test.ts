@@ -117,6 +117,23 @@ beforeEach(() => {
 });
 
 describe('chat spawn', () => {
+  it('observes the specific newly started chat runtime while keeping observation failures out of launch behavior', async () => {
+    const driver = new FakeChatDriver(); registerChatDriver(driver);
+    const observed = vi.fn(() => { throw new Error('display failure'); });
+    try {
+      expect(await tryStartChatAgent({ ...params, kind: 'quick', interactive: true, observeStarted: observed }, provider, undefined, null)).toBe('chat');
+      expect(observed).toHaveBeenCalledExactlyOnceWith(getAgentRuntime(params.agentId));
+      expect(getAgentRuntime(params.agentId)?.isRunning()).toBe(true);
+    } finally { await getAgentRuntime(params.agentId)?.stop(); }
+  });
+  it('does not observe a chat runtime whose driver failed before start', async () => {
+    const driver = new FakeChatDriver(); registerChatDriver(driver);
+    vi.spyOn(driver, 'start').mockRejectedValue(new Error('cannot start'));
+    const observed = vi.fn();
+    await tryStartChatAgent({ ...params, kind: 'quick', interactive: true, observeStarted: observed }, provider, undefined, null);
+    expect(observed).not.toHaveBeenCalled();
+    expect(getAgentRuntime(params.agentId)).toBeUndefined();
+  });
   it.each(['probe', 'mcp', 'transcript', 'bridge'] as const)('refuses driver and CLI fallback when strict authority changes during %s preparation', async (stage) => {
     const driver = new FakeChatDriver();
     const fallback = new FakeChatDriver('claude_agent_sdk');

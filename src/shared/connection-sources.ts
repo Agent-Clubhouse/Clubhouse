@@ -79,6 +79,15 @@ export function removalRoute(kind: ConnectionSourceKind): 'here' | 'canvas' | 'h
   }
 }
 
+/** Stable source identity classification shared by local and read-only host views. */
+const CONNECTION_KIND_BY_SOURCE: Readonly<Record<string, ConnectionSourceKind>> = {
+  'canvas-wires': 'canvas', 'helper-wires': 'helper', 'dispatcher-wires': 'dispatcher_auto',
+  'orchestrator-connections': 'tool_link', 'dispatcher-connections': 'dispatcher_link',
+  'user-connections': 'user_link', 'network-connections': 'user_link', 'network-agent-connections': 'tool_link',
+  'dispatcher-federation': 'dispatcher_federation', 'group-project-membership': 'group_member', 'connections-card': 'card_link',
+};
+export const connectionSourceKind = (id: string): ConnectionSourceKind => Object.prototype.hasOwnProperty.call(CONNECTION_KIND_BY_SOURCE, id) ? CONNECTION_KIND_BY_SOURCE[id] : 'other';
+
 export const CONNECTION_SOURCE_LABELS: Readonly<Record<ConnectionSourceKind, string>> = {
   canvas: 'Canvas wire',
   helper: 'Helper',

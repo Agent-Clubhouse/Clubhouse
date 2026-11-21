@@ -1,0 +1,67 @@
+# mutation identity on src/main/services/annex-identity.ts (working tree based on 782e08cde + uncommitted fixes)
+# applied diff vs fixed copy:
+280,282c280
+<   // The memory-only session has no identity file and must never look up the profile path.
+<   if (process.env.CLUBHOUSE_ANNEX_EPHEMERAL === '1') return boundedIdentityOrigin('ephemeral', 'memory');
+<   try { return boundedIdentityOrigin('disk', getIdentityPath()); }
+---
+>   try { return boundedIdentityOrigin(process.env.CLUBHOUSE_ANNEX_EPHEMERAL === '1' ? 'ephemeral' : 'disk', getIdentityPath()); }
+$ vitest run --no-cache --maxWorkers=2 src/main/services/annex-ephemeral-session.test.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ❯ |main| src/main/services/annex-ephemeral-session.test.ts (2 tests | 1 failed) 51ms
+     × generates, caches, revokes and resets identities, TLS keys and peers without any filesystem access 49ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-ephemeral-session.test.ts > memory-only Annex credentials > generates, caches, revokes and resets identities, TLS keys and peers without any filesystem access
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 2 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "userData",
+    ]
+
+  2nd vi.fn() call:
+
+    Array [
+      "userData",
+    ]
+
+
+Number of calls: 2
+
+ ❯ src/main/services/annex-ephemeral-session.test.ts:58:29
+     56|     expect(identity.getOrCreateIdentity().publicKey).not.toBe(first.pu…
+     57|     for (const operation of [fs.readFileSync, fs.writeFileSync, fs.chm…
+     58|       expect(operation).not.toHaveBeenCalled();
+       |                             ^
+     59|     }
+     60|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  23:42:53
+   Duration  170ms (transform 29ms, setup 5ms, import 46ms, tests 51ms, environment 0ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+# post-restore git status --short:
+ M src/main/services/annex-identity.ts
+ M src/main/services/headless-fallback.test.ts
+ M src/main/services/headless-integration.test.ts
+ M src/main/telemetry/annex-telemetry.test.ts
+ M src/main/telemetry/annex-telemetry.ts
+ M src/renderer/features/agents/details/SettingsCard.test.tsx
+ M src/shared/telemetry/attributes.ts

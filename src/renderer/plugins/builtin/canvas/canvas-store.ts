@@ -54,6 +54,8 @@ export interface CanvasState {
   loaded: boolean;
   /** In-memory provenance: Home can project a satellite's data into this store. */
   dataOrigin: 'local' | 'remote' | null;
+  /** The exact host snapshot applied after CanvasView's protected save/hydration boundary. */
+  remoteSource: { hostId: string; snapshot: unknown } | null;
   /** True once wireDefinitions have been restored from storage.  The auto-save
    *  effect must not fire until this is set, otherwise a debounced save can
    *  overwrite persisted wires with the initial empty array. */
@@ -80,7 +82,7 @@ export interface CanvasState {
   /** Restore this store's failed local edits after viewing a satellite. */
   markSaveTimedOut: (token?: CanvasSaveToken) => void;
   restoreFailedLocalState: (storage: ScopedStorage) => Promise<boolean>;
-  hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string, wireDefinitions?: unknown[], zoneWireDefinitions?: unknown[]) => void;
+  hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string, wireDefinitions?: unknown[], zoneWireDefinitions?: unknown[], source?: { hostId: string; snapshot: unknown }) => void;
 
   // Wire persistence — wireDefinitions is the canvas-owned source of truth for
   // wires, independent of the MCP binding runtime.  Wires survive agent sleep
@@ -573,6 +575,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     layoutCenterId: null,
     loaded: false,
     dataOrigin: null,
+    remoteSource: null,
     wiresLoaded: false,
     loadError: null,
     autosaveFailed: false,
@@ -1080,7 +1083,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       return true;
     },
 
-    hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?, remoteZoneWireDefinitions?) => {
+    hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?, remoteZoneWireDefinitions?, source?) => {
       if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
       const local = get();
       if (local.dataOrigin === 'local' && local.autosaveFailed) {
@@ -1133,7 +1136,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         ? { zoneWireDefinitions: remoteZoneWireDefinitions as ZoneWireDefinition[] }
         : {};
 
-      set((state) => ({ canvases, activeCanvasId: resolvedActive, loaded: true, dataOrigin: 'remote', wiresLoaded: true, hydrationSeq: state.hydrationSeq + 1, ...wireUpdate, ...zoneWireUpdate, ...syncDerivedState(canvases, resolvedActive) }));
+      set((state) => ({ canvases, activeCanvasId: resolvedActive, loaded: true, dataOrigin: 'remote', remoteSource: source ?? null, wiresLoaded: true, hydrationSeq: state.hydrationSeq + 1, ...wireUpdate, ...zoneWireUpdate, ...syncDerivedState(canvases, resolvedActive) }));
     },
 
     // ── Canvas tab management ────────────────────────────────────

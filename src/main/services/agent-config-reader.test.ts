@@ -11,24 +11,69 @@ vi.mock('fs/promises', async (original) => {
   return { ...real, open: vi.fn(real.open) };
 });
 
-const state = vi.hoisted(() => ({ provider: 'claude-code', agents: [] as DurableAgentConfig[], parts: new Map<string, { entry: { name: string; owner?: AssetOwner; source: { kind: string; projectId?: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({}) }));
-vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => state.agents }));
-vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'p', path: '/project', name: 'Project' }] }));
+const state = vi.hoisted(() => ({ provider: 'claude-code', agents: [] as DurableAgentConfig[], dispatcher: {} as { enabled?: boolean; config?: DurableAgentConfig; path?: string; chatAgentId?: string; chatPath?: string }, roles: {} as Record<string, DurableAgentConfig[]>, rolesReadable: true, afterInventory: undefined as (() => void) | undefined, parts: new Map<string, { entry: { name: string; owner?: AssetOwner; source: { kind: string; projectId?: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: vi.fn(() => state.dispatcher), getDispatcherAgentId: () => state.dispatcher.config?.id ?? null, getDispatcherChatAgentId: () => state.dispatcher.chatAgentId ?? null }));
+vi.mock('./dispatcher/dispatcher-paths', () => ({ getDispatcherPath: () => state.dispatcher.path, getDispatcherChatPath: () => state.dispatcher.chatPath }));
+vi.mock('./agent-config', () => ({ peekDurableConfigs: async (p: string) => state.roles[p] ?? state.agents,
+  peekDurableConfigsChecked: async (p: string) => { const result = { agents: state.roles[p] ?? state.agents, readable: state.rolesReadable }; state.afterInventory?.(); return result; } }));
+vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'p', path: '/project', name: 'Project' }], peekProjectsChecked: async () => ({ projects: [{ id: 'p', path: '/project', name: 'Project' }], readable: true }) }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: async () => ({ id: state.provider, conventions: { configDir: '.github', legacyInstructionsFile: state.provider === 'copilot-cli' ? 'copilot-instructions.md' : 'CLAUDE.md' } }) }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ headContent: async (id: string) => state.parts.get(id) ?? null }) }));
-import { CONFIG_MAX_BYTES, CONFIG_TEXT_BYTES, readAgentConfig } from './agent-config-reader';
+import { getDispatcherState } from './dispatcher/dispatcher-service';
+import { CONFIG_MAX_BYTES, CONFIG_TEXT_BYTES, readAgentConfig, readResolvedAgentConfig, resolveAgentConfigTarget } from './agent-config-reader';
 
 let root: string;
 beforeEach(async () => {
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'config-read-')));
+  vi.mocked(getDispatcherState).mockReset().mockImplementation(() => state.dispatcher as ReturnType<typeof getDispatcherState>);
   state.parts.clear(); state.provider = 'claude-code';
+  state.dispatcher = {}; state.roles = {}; state.rolesReadable = true; state.afterInventory = undefined;
   state.agents = [{ id: 'target', name: 'Reader', color: '', createdAt: '', worktreePath: root }];
 });
 afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
 const part = (id: string, content: ManagedPartContent, kind = 'user') => state.parts.set(id, { entry: { name: id, source: { kind }, headRevision: 2 }, content, droppedEnvValues: [] });
 
 describe('bounded agent config evidence', () => {
+  it('strict identity resolution avoids full Dispatcher state even when that reader fails', async () => {
+    vi.mocked(getDispatcherState).mockImplementationOnce(() => { throw new Error('recovering full state'); });
+    expect(await resolveAgentConfigTarget('target', undefined, { strict: true })).toMatchObject({ agent: { id: 'target' } });
+    expect(getDispatcherState).not.toHaveBeenCalled();
+  });
+  it.each([true, false])('resolves exact Dispatcher controller and chat in separate host folders while enabled=%s', async (enabled) => {
+    const config = (id: string) => ({ id, name: 'Dispatcher', color: '', createdAt: '' });
+    state.dispatcher = { enabled, config: config('controller'), path: '/work', chatAgentId: 'chat', chatPath: '/chat' };
+    state.roles = { '/work': [config('controller')], '/chat': [config('chat')] };
+    expect(await resolveAgentConfigTarget('chat', undefined, { strict: true })).toMatchObject({ agent: { id: 'chat' }, project: { path: '/chat' } });
+    expect(await resolveAgentConfigTarget('controller', undefined, { strict: true })).toMatchObject({ agent: { id: 'controller' }, project: { path: '/work' } });
+  });
+  it('never resolves a removed or disposed canonical Dispatcher id to an unrelated project record', async () => {
+    state.dispatcher = { chatAgentId: 'chat', chatPath: '/chat' };
+    state.roles = { '/chat': [] };
+    state.agents.push({ id: 'chat', name: 'Unrelated collision', color: '', createdAt: '' });
+    await expect(resolveAgentConfigTarget('chat', undefined, { strict: true })).rejects.toThrow('No registered agent');
+    state.roles['/chat'] = [{ id: 'chat', name: 'Removed chat', color: '', createdAt: '', disposedAt: '2026-11-19' }];
+    await expect(resolveAgentConfigTarget('chat', undefined, { strict: true })).rejects.toThrow('No registered agent');
+    state.rolesReadable = false;
+    await expect(resolveAgentConfigTarget('chat', undefined, { strict: true })).rejects.toThrow('unreadable');
+  });
+  it.each(['replacement', undefined])('refuses a role cache changed to %s while its strict inventory is awaited', async (replacement) => {
+    state.dispatcher = { chatAgentId: 'chat', chatPath: '/chat' };
+    state.roles = { '/chat': [{ id: 'chat', name: 'Chat', color: '', createdAt: '' }] };
+    state.afterInventory = () => { state.dispatcher.chatAgentId = replacement; };
+    await expect(resolveAgentConfigTarget('chat', undefined, { strict: true })).rejects.toThrow('No registered agent');
+  });
+  it('does not resolve role ids in a caller-supplied project or promote a project collision after an await', async () => {
+    state.dispatcher = { chatAgentId: 'target', chatPath: '/chat' };
+    await expect(resolveAgentConfigTarget('target', 'Project', { strict: true })).rejects.toThrow('No registered agent');
+    state.dispatcher = {};
+    state.afterInventory = () => { state.dispatcher = { chatAgentId: 'target', chatPath: '/chat' }; };
+    await expect(resolveAgentConfigTarget('target', undefined, { strict: true })).rejects.toThrow('role identity changed');
+  });
+  it('does not invent a Dispatcher identity when its cached id is absent', async () => {
+    state.roles = { '/chat': [{ id: 'unknown-role', name: 'Chat', color: '', createdAt: '' }] };
+    await expect(resolveAgentConfigTarget('unknown-role', undefined, { strict: true })).rejects.toThrow('No registered agent');
+    expect(getDispatcherState).not.toHaveBeenCalled();
+  });
   it('reads custom instructions without changing files', async () => {
     await fs.writeFile(path.join(root, 'CLAUDE.md'), 'Own instructions');
     expect(await readAgentConfig('target')).toMatchObject({ instructions: { text: 'Own instructions', provenance: 'custom' }, parts: [], evidence: 'instruction_file', providerLoaded: 'not_confirmed' });
@@ -129,5 +174,34 @@ describe('bounded agent config evidence', () => {
     await expect(readAgentConfig('target')).rejects.toThrow('ordinary file');
     state.agents[0].managed = { version: 1, blocks: Array(101).fill('x'), skills: [], mcps: [] };
     await expect(readAgentConfig('target')).rejects.toThrow('read limit');
+  });
+});
+
+
+describe('selected instruction display receipts', () => {
+  const selected = () => ({ agent: state.agents[0], project: { id: 'p', name: 'Project', path: root } });
+  it('uses the admitted provider path and carries actual file evidence through later writes', async () => {
+    const file = path.join(root, 'SELECTED.md'); await fs.writeFile(file, 'Selected instructions\n'); await fs.writeFile(path.join(root, 'CLAUDE.md'), 'PRIVATE_WRONG_PROVIDER');
+    const provider = { id: 'codex-cli', conventions: { legacyInstructionsFile: 'SELECTED.md' } } as import('../orchestrators').OrchestratorProvider;
+    const receipts: Array<{ current(): boolean }> = []; const result = await readResolvedAgentConfig(selected(), { provider, receipts });
+    expect(result.instructions.text).toBe('Selected instructions\n'); expect(receipts).toHaveLength(1); expect(receipts[0].current()).toBe(true);
+    await fs.writeFile(file, 'Changed selected instructions\n'); expect.soft(receipts[0].current()).toBe(false);
+    expect.soft(await fs.readFile(path.join(root, 'CLAUDE.md'), 'utf8')).toBe('PRIVATE_WRONG_PROVIDER');
+  });
+  it('keeps a verified missing instruction file distinct from a missing root, and invalidates late creation', async () => {
+    const provider = { id: 'claude-code', conventions: { legacyInstructionsFile: 'CLAUDE.md' } } as import('../orchestrators').OrchestratorProvider;
+    const receipts: Array<{ current(): boolean }> = []; expect((await readResolvedAgentConfig(selected(), { provider, receipts })).instructions.text).toBe('');
+    expect(receipts).toHaveLength(1); expect(receipts[0].current()).toBe(true);
+    await fs.writeFile(path.join(root, 'CLAUDE.md'), 'Created later'); expect.soft(receipts[0].current()).toBe(false);
+    const missing = selected(); missing.agent = { ...missing.agent, worktreePath: path.join(root, 'missing-root') };
+    await expect(readResolvedAgentConfig(missing, { provider, receipts: [] })).rejects.toThrow();
+  });
+  it('invalidates actual selected-file replacement and refuses a linked instruction path', async () => {
+    const file = path.join(root, 'CLAUDE.md'); await fs.writeFile(file, 'Selected');
+    const provider = { id: 'claude-code', conventions: { legacyInstructionsFile: 'CLAUDE.md' } } as import('../orchestrators').OrchestratorProvider;
+    const receipts: Array<{ current(): boolean }> = []; await readResolvedAgentConfig(selected(), { provider, receipts }); expect(receipts[0].current()).toBe(true);
+    await fs.rename(file, file + '.saved'); await fs.writeFile(file, 'Selected'); expect.soft(receipts[0].current()).toBe(false);
+    await fs.rm(file); await fs.symlink(file + '.saved', file);
+    await expect(readResolvedAgentConfig(selected(), { provider, receipts: [] })).rejects.toThrow('instruction_link');
   });
 });

@@ -1,0 +1,207 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
+import { app } from 'electron';
+import type { DurableAgentConfig } from '../../../shared/types';
+import { PREPARE_HANDOFF_SKILL_ID } from '../../../shared/managed-agents-types';
+const m = vi.hoisted(() => ({ config: vi.fn(), target: vi.fn(), provider: vi.fn(), running: false }));
+vi.mock('../agent-config', async (original) => ({ ...await original<typeof import('../agent-config')>(), getDurableConfig: m.config }));
+vi.mock('../agent-config-reader', () => ({ resolveAgentConfigTarget: m.target, readResolvedAgentConfig: vi.fn() }));
+vi.mock('../read-only-config-target', () => ({ captureReadOnlyConfigTargetWitness: () => ({ current: () => true }) }));
+vi.mock('../display-provider', () => ({ captureDisplayProvider: () => { const provider = m.provider(); return { provider, selection: { state: 'ok', value: provider.id, inputs: [] }, receipt: { current: () => true } }; } }));
+vi.mock('../agent-system', () => ({ isAgentRunning: () => m.running, resolveOrchestrator: m.provider, spawnAgent: vi.fn(), killAgent: vi.fn() }));
+vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+vi.mock('../../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed: async (_kind: string, work: () => Promise<void>) => work() } }));
+import { createAssetCatalogStore } from '../asset-catalog/store';
+import { resetAllSettingsStoresForTests } from '../settings-store';
+import { agentHoldsAction } from '../agent-grants-service';
+import { delivered, failedDeliveries, mcpProblems, forgetDelivery } from './delivery-records';
+import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
+import { createManagedAgentsService, type ManagedAgentsService } from './service';
+import { createManagedStateStore } from './state-store';
+import { readManagedStatusForDisplay, statusFor, _setManagedAgentsForTesting } from './index';
+import { readRemoteAgentSettings } from '../remote-agent-settings';
+import { DEFAULT_HELPER_TEMPLATE_ID } from './builtins';
+import { resolveManagedSetupForDisplay, setupFingerprint, setGrantedSkills } from './delivery';
+let root: string, service: ManagedAgentsService, agent: DurableAgentConfig;
+async function disk(folder = root): Promise<Record<string, unknown>> {
+  const result: Record<string, unknown> = {};
+  for (const name of (await fs.readdir(folder)).sort()) {
+    const file = path.join(folder, name), stat = await fs.lstat(file);
+    result[name] = stat.isDirectory() ? { ino: stat.ino, files: await disk(file) } : { bytes: (await fs.readFile(file)).toString('base64'), ino: stat.ino, mtimeMs: stat.mtimeMs };
+  }
+  return result;
+}
+async function temp(name: string) { const file = path.join(root, `.${name}.tmp-${process.pid + 100000}-1`); await fs.writeFile(file, 'do not sweep'); const old = new Date(Date.now() - 3 * 86400000); await fs.utimes(file, old, old); }
+beforeEach(async () => {
+  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-managed-display-'))); vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); _resetSettingsAuditForTesting(false); m.running = false;
+  agent = { id: 'selected', name: 'Admitted Selected', color: '', createdAt: '', worktreePath: path.join(root, 'worktree'), orchestration: { orchestrate: false, connectToDispatcher: false }, managed: { version: 1, blocks: [], skills: [], mcps: [] } };
+  service = createManagedAgentsService({ catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }), state: createManagedStateStore(path.join(root, 'managed')), listProjects: async () => [], listAgents: async () => [], getAgent: m.config, setManagedSetup: vi.fn(), isRunning: () => m.running });
+  // Ordinary library creation is fixture setup, before the passive capture.
+  await service.ensureBuiltins(); _setManagedAgentsForTesting(service); resetAllSettingsStoresForTests();
+  setGrantedSkills((selected) => agentHoldsAction(selected.id, selected, 'handoff.offer') ? [PREPARE_HANDOFF_SKILL_ID] : []);
+  m.target.mockReset().mockImplementation(async () => ({ agent: structuredClone(agent), project: { id: 'p', name: 'Selected project', path: root } }));
+  m.provider.mockReset().mockReturnValue({ id: 'claude-code', displayName: 'Host Claude', getCapabilities: () => ({ permissions: true }) });
+  m.config.mockReset().mockImplementation(async () => { throw new Error('unadmitted replacement config lookup'); });
+});
+afterEach(async () => { _setManagedAgentsForTesting(null); forgetDelivery('selected'); resetAllSettingsStoresForTests(); vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
+it.each([false, true])('reuses the admitted setup and local status model with selected grant-derived skill=%s, without ordinary callback effects', async (held) => {
+  await fs.writeFile(path.join(root, 'agent-grants.json'), JSON.stringify({ agents: { selected: { changes: held ? [{ action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'ask' }] : [] } } }));
+  m.config.mockResolvedValue(agent); const ordinary = await statusFor('/fixture', 'selected'); m.config.mockClear(); m.config.mockImplementation(async () => { throw new Error('unadmitted replacement config lookup'); }); resetAllSettingsStoresForTests();
+  await temp('agent-grants.json'); const before = await disk(); const result = await readManagedStatusForDisplay(agent);
+  expect.soft(result.state).toBe('ok'); if (result.state === 'ok') { expect.soft(result.value).toEqual(ordinary); expect.soft(result.value.builtinSkills?.length).toBe(held ? 1 : 0); }
+  expect.soft(result.libraryEvidence).toEqual({ source: 'committed-index', revisionPayloadsVerified: false });
+  expect.soft(m.config).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
+});
+it('keeps unreadable grant applicability unknown without resolving parts, mutating storage or relooking up agent config', async () => {
+  await fs.writeFile(path.join(root, 'agent-grants.json'), '{broken'); await temp('agent-grants.json'); const before = await disk(); const head = vi.spyOn(service, 'headContent');
+  expect(await readManagedStatusForDisplay(agent)).toMatchObject({ state: 'unavailable', reason: 'unreadable' }); expect(head).not.toHaveBeenCalled(); expect(m.config).not.toHaveBeenCalled(); expect(await disk()).toEqual(before);
+});
+it('takes explicit empty granted skills without invoking the registered ordinary delivery callback', async () => {
+  const callback = vi.fn(() => { throw new Error('ordinary grant callback is not passive'); }); const remove = setGrantedSkills(callback);
+  try { const result = await resolveManagedSetupForDisplay(service, agent, []); expect(result.skills).toEqual([]); expect(callback).not.toHaveBeenCalled(); } finally { remove(); }
+});
+it('counts the implicit Clubhouse MCP and granted skill reads in the part budget', async () => {
+  agent.managed!.blocks = Array.from({ length: 100 }, (_, index) => `missing-${index}`); const head = vi.spyOn(service, 'headContent'); const open = vi.spyOn(service, 'openSetupMetadataForDisplay');
+  expect.soft(await readManagedStatusForDisplay(agent)).toMatchObject({ state: 'unavailable', reason: 'limit' }); expect.soft(head).not.toHaveBeenCalled(); expect.soft(open).not.toHaveBeenCalled();
+});
+it('reads selected template metadata without global Access normalization, unrelated templates, setup content or recovery', async () => {
+  const state = path.join(root, 'managed', 'state.json'); await fs.mkdir(path.dirname(state), { recursive: true });
+  await fs.writeFile(state, JSON.stringify({ version: 1, templates: { chosen: { id: 'chosen', name: 'Chosen template', description: 'PRIVATE_DESCRIPTION', builtin: false, setup: { blocks: [], skills: [], mcps: [] }, settings: { privateCredential: 'PRIVATE_CREDENTIAL' }, updatedBy: 'Host user', updatedAt: '2026-11-19' }, PRIVATE_OTHER: { id: 'PRIVATE_OTHER', name: 'PRIVATE_OTHER_NAME', description: 'PRIVATE_OTHER_DESCRIPTION', builtin: false, setup: { blocks: [], skills: [], mcps: [] }, settings: {} } } }));
+  await fs.writeFile(path.join(root, 'free-agent-settings.json'), '{broken'); await temp('free-agent-settings.json'); const before = await disk();
+  const result = await service.getTemplateForDisplay('chosen'); expect.soft(result).toMatchObject({ name: 'Chosen template', updatedBy: 'Host user', updatedAt: '2026-11-19', source: 'primary' });
+  expect.soft(JSON.stringify(result)).not.toMatch(/PRIVATE_|settings|setup|description/); expect.soft(await disk()).toEqual(before);
+});
+it.each(['array', 'null', 'large', 'mismatched-id'])('does not flatten %s template metadata into verified absence or adopt an unrelated identity', async (kind) => {
+  const state = path.join(root, 'managed', 'state.json'); await fs.mkdir(path.dirname(state), { recursive: true });
+  await fs.writeFile(state, JSON.stringify({ version: 1, templates: kind === 'array' ? [] : kind === 'null' ? null : kind === 'large' ? { chosen: { id: 'chosen', name: 'Large selected template', settings: { content: 'x'.repeat(512 * 1024) } } } : { chosen: { id: 'unrelated', name: 'PRIVATE_WRONG_TEMPLATE' } } }));
+  const before = await disk(); let error: unknown, value: unknown; try { value = await service.getTemplateForDisplay('chosen'); } catch (caught) { error = caught; }
+  expect.soft(error).toBeDefined(); if (error) expect.soft(error).not.toMatchObject({ code: 'not_found' });
+  expect.soft(JSON.stringify(value ?? {})).not.toContain('PRIVATE_WRONG_TEMPLATE'); expect.soft(await disk()).toEqual(before);
+});
+
+it('keeps a missing custom-template inventory verified absent without creating its folder', async () => {
+  const before = await disk(); await expect(service.getTemplateForDisplay('missing-template')).rejects.toMatchObject({ code: 'not_found' }); expect(await disk()).toEqual(before);
+  await expect(fs.access(path.join(root, 'managed'))).rejects.toThrow();
+});
+
+it('withholds grant-derived status changed during an actual awaited part read', async () => {
+  const grants = path.join(root, 'agent-grants.json'); await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [{ action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'ask' }] } } }));
+  let changed = false;
+  await observeSelectedHeadReads(async () => { if (!changed) { changed = true; await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [] } } })); } });
+  const result = await readManagedStatusForDisplay(agent); expect(changed).toBe(true); expect.soft(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect.soft(JSON.stringify(result)).not.toMatch(/builtinSkills|Prepare handoff|deliveryFailed/);
+});
+it('keeps real selected permission receipts private for the eventual final endpoint boundary after status returns', async () => {
+  const grants = path.join(root, 'agent-grants.json'); await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [{ action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'ask' }] } } }));
+  const receipts: Array<{ current(): boolean }> = []; const result = await readManagedStatusForDisplay(agent, { receipts });
+  expect(result.state).toBe('ok'); expect.soft(receipts.length).toBeGreaterThan(0); expect.soft(receipts.every((receipt) => receipt.current())).toBe(true); expect(JSON.stringify(result)).not.toMatch(/current|receipts|changes.*handoff.offer/);
+  await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [] } } })); const before = await disk(); expect.soft(receipts.some((receipt) => !receipt.current())).toBe(true); expect.soft(await disk()).toEqual(before);
+});
+
+it('carries selected template metadata receipts privately through later real state-file changes', async () => {
+  const file = path.join(root, 'managed', 'state.json'); await fs.mkdir(path.dirname(file), { recursive: true });
+  const chosen = { id: 'chosen', name: 'Chosen template', builtin: false, setup: { blocks: [], skills: [], mcps: [] }, settings: { privateCredential: 'PRIVATE_CREDENTIAL' } };
+  await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen, other: { name: 'PRIVATE_UNRELATED' } } }));
+  const receipts: Array<{ current(): boolean }> = []; const result = await service.getTemplateForDisplay('chosen', { receipts });
+  expect(receipts).toHaveLength(1); expect(receipts[0].current()).toBe(true); expect(JSON.stringify(result)).not.toMatch(/PRIVATE_|receipts|current|settings|setup/);
+  await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen, other: { name: 'PRIVATE_UNRELATED_CHANGED' } } })); expect(receipts[0].current()).toBe(true);
+  await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen: { ...chosen, name: 'Changed template' } } })); const before = await disk(); expect.soft(receipts.some((receipt) => !receipt.current())).toBe(true); expect.soft(await disk()).toEqual(before);
+});
+
+it('keeps unmanaged selected status available independently of unreadable grant settings', async () => {
+  await fs.writeFile(path.join(root, 'agent-grants.json'), '{broken'); await temp('agent-grants.json'); const before = await disk();
+  expect(await readManagedStatusForDisplay({ ...agent, managed: undefined })).toMatchObject({ state: 'ok', value: { managed: false, running: false, waiting: false } });
+  expect(m.config).not.toHaveBeenCalled(); expect(await disk()).toEqual(before);
+});
+it('does not let an unrelated malformed template hide the selected valid metadata', async () => {
+  const file = path.join(root, 'managed', 'state.json'); await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen: { id: 'chosen', name: 'Chosen template' }, unrelated: null } }));
+  const before = await disk(); expect(await service.getTemplateForDisplay('chosen')).toMatchObject({ name: 'Chosen template' }); expect(await disk()).toEqual(before);
+});
+
+async function observeSelectedHeadReads(effect: (id: string) => Promise<void>) {
+  const metadata = service.openSetupMetadataForDisplay;
+  if (metadata) {
+    const open = metadata.bind(service);
+    vi.spyOn(service, 'openSetupMetadataForDisplay').mockImplementation(async () => {
+      const reader = await open(), head = reader.head;
+      return { ...reader, head: async (id: string) => { const result = await head(id); await effect(id); return result; } };
+    });
+  } else {
+    const head = service.headContent.bind(service);
+    vi.spyOn(service, 'headContent').mockImplementation(async (id) => { const result = await head(id); await effect(id); return result; });
+  }
+}
+async function runningSelectedHeads() {
+  const first = await withSettingsSurface('ui', undefined, () => service.createPart({ name: 'First selected block', content: { kind: 'block', content: 'SYNTHETIC_FIRST_CONTENT' } }));
+  const later = await withSettingsSurface('ui', undefined, () => service.createPart({ name: 'Later selected block', content: { kind: 'block', content: 'SYNTHETIC_LATER_CONTENT' } }));
+  agent.managed!.blocks = [first.id, later.id];
+  const resolved = await resolveManagedSetupForDisplay(service, agent, []);
+  delivered.set(agent.id, { ...setupFingerprint(agent, resolved), deliveredAt: '2026-11-19T00:00:00Z', deliveredSkillIds: [] }); m.running = true;
+  resetAllSettingsStoresForTests();
+  return { first, later };
+}
+async function mutateHead(id: string, change: 'revise' | 'delete') {
+  await withSettingsSurface('ui', undefined, async () => {
+    if (change === 'revise') await service.updatePart({ id, expectedRevision: 1, content: { kind: 'block', content: 'SYNTHETIC_CHANGED_CONTENT' } });
+    else await service.deletePart({ id, expectedRevision: 1, mode: 'remove' });
+  });
+}
+it.each(['revise', 'delete'] as const)('withholds stale selected library status when an earlier head %s occurs during a later actual head await', async (change) => {
+  const { first, later } = await runningSelectedHeads(); let changed = false;
+  await observeSelectedHeadReads(async (id) => {
+    if (id === later.id && !changed) { changed = true; await mutateHead(first.id, change); }
+  });
+  const result = await readManagedStatusForDisplay(agent); expect(changed).toBe(true);
+  expect.soft(result.state).toBe('unavailable'); expect.soft(JSON.stringify(result)).not.toContain('"waiting":false');
+});
+it.each(['revise', 'delete'] as const)('invalidates private evidence after a selected library head %s following helper return', async (change) => {
+  const { first } = await runningSelectedHeads(); const receipts: Array<{ current(): boolean }> = [];
+  const initial = await readManagedStatusForDisplay(agent, { receipts }); expect(initial).toMatchObject({ state: 'ok', value: { waiting: false } }); expect(receipts.length).toBeGreaterThan(0); expect(receipts.every((receipt) => receipt.current())).toBe(true);
+  await mutateHead(first.id, change);
+  const fresh = await readManagedStatusForDisplay(agent); expect(fresh).toMatchObject({ state: 'ok', value: { waiting: true } });
+  expect.soft(receipts.every((receipt) => receipt.current())).toBe(false);
+});
+it.each(['delivered', 'failed', 'mcp'] as const)('invalidates private evidence after late selected %s cache mutation', async (change) => {
+  await runningSelectedHeads(); const receipts: Array<{ current(): boolean }> = [];
+  const initial = await readManagedStatusForDisplay(agent, { receipts }); expect(initial).toMatchObject({ state: 'ok', value: { waiting: false } }); expect(receipts.length).toBeGreaterThan(0); expect(receipts.every((receipt) => receipt.current())).toBe(true);
+  if (change === 'delivered') delivered.set(agent.id, { ...delivered.get(agent.id)!, fingerprint: 'SYNTHETIC_DIFFERENT_DELIVERY' });
+  if (change === 'failed') failedDeliveries.set(agent.id, 'SYNTHETIC_DELIVERY_FAILED');
+  if (change === 'mcp') mcpProblems.set(agent.id, [{ server: 'SYNTHETIC_MCP', missingEnv: ['TEST_KEY'] }]);
+  const fresh = await readManagedStatusForDisplay(agent); expect(fresh.state).toBe('ok');
+  if (fresh.state === 'ok') expect(fresh.value).toMatchObject(change === 'mcp' ? { mcpProblems: [{ server: 'SYNTHETIC_MCP', missingEnv: ['TEST_KEY'] }] } : { waiting: true });
+  expect.soft(receipts.every((receipt) => receipt.current())).toBe(false);
+});
+it('detaches selected MCP status arrays from the retained live delivery cache', async () => {
+  await runningSelectedHeads(); mcpProblems.set(agent.id, [{ server: 'SYNTHETIC_MCP', missingEnv: ['TEST_KEY'] }]);
+  const result = await readManagedStatusForDisplay(agent); expect(result.state).toBe('ok');
+  if (result.state === 'ok') result.value.mcpProblems![0].missingEnv.push('SYNTHETIC_CALLER_MUTATION');
+  expect.soft(mcpProblems.get(agent.id)).toEqual([{ server: 'SYNTHETIC_MCP', missingEnv: ['TEST_KEY'] }]);
+});
+
+it('projects the admitted managed setup through Settings without ordinary config, template Access, or global recovery', async () => {
+  await runningSelectedHeads(); agent.managed!.templateId = DEFAULT_HELPER_TEMPLATE_ID;
+  await fs.writeFile(path.join(root, 'free-agent-settings.json'), '{broken'); await temp('free-agent-settings.json');
+  const ordinary = vi.spyOn(service, 'getTemplate').mockRejectedValue(new Error('ordinary template normalization forbidden'));
+  const all = vi.spyOn(service, 'liveEntries').mockRejectedValue(new Error('global library listing forbidden'));
+  const before = await disk(), result = await readRemoteAgentSettings(agent.id, () => true);
+  expect.soft(result.status).toBe(200); expect.soft(result.body).toMatchObject({ setup: { state: 'ok', instructions: '2 blocks', waiting: false } });
+  expect.soft(result.display?.notes.join(' ')).toMatch(/recorded library metadata.*not verified/);
+  expect.soft(JSON.stringify(result.body)).not.toMatch(/SYNTHETIC_|PRIVATE_|receipts|snapshot|contentHash/);
+  expect.soft(m.config).not.toHaveBeenCalled(); expect.soft(ordinary).not.toHaveBeenCalled(); expect.soft(all).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
+});
+it.each(['revise', 'delete'] as const)('withholds Settings after an earlier selected library head %s during a later template await', async (change) => {
+  const { first } = await runningSelectedHeads(); agent.managed!.templateId = DEFAULT_HELPER_TEMPLATE_ID;
+  const template = service.getTemplateForDisplay.bind(service); let changed = false;
+  vi.spyOn(service, 'getTemplateForDisplay').mockImplementation(async (...args) => { const result = await template(...args); await mutateHead(first.id, change); changed = true; return result; });
+  const result = await readRemoteAgentSettings(agent.id, () => true); expect(changed).toBe(true);
+  expect.soft(result).toEqual({ status: 409, body: { error: 'settings_evidence_changed' } }); expect.soft(JSON.stringify(result)).not.toMatch(/First selected|waiting|setupMetadata|SYNTHETIC/);
+});
+it('exports real managed evidence receipts for later Details awaits without serializing internal snapshots', async () => {
+  const { first } = await runningSelectedHeads(); const receipts: Array<{ current(): boolean }> = [];
+  const result = await readRemoteAgentSettings(agent.id, () => true, { receipts }); expect(result.status).toBe(200); expect(receipts.length).toBeGreaterThan(0); expect(receipts.every((receipt) => receipt.current())).toBe(true);
+  await mutateHead(first.id, 'revise'); expect.soft(receipts.some((receipt) => !receipt.current())).toBe(true);
+  expect.soft(JSON.stringify(result.body)).not.toMatch(/setupMetadata|libraryEvidence|receipts|SYNTHETIC/);
+});

@@ -9,6 +9,7 @@
  */
 import type { ChatEvent, MessageDelivery, PermissionLevel, RuntimeSendResult } from '../../shared/chat';
 import { parseNamespacedId, namespacedAgentId } from './remoteProjectStore';
+import { isRemoteSessionHistoryBinding, type RemoteSessionHistoryBinding } from '../../shared/remote-session-history';
 
 export interface RemoteChatTarget {
   satelliteId: string;
@@ -21,16 +22,20 @@ export function remoteChatTarget(agentId: string): RemoteChatTarget | null {
 }
 
 interface ChatPage {
+  agentId?: string;
   events?: ChatEvent[];
   pendingPermissions?: ChatEvent[];
   pendingQuestions?: ChatEvent[];
   queuedMessageIds?: string[];
   state?: string | null;
   sessionId?: string | null;
+  displayRunId?: string | null;
   /** True when no chat session runs the agent now (the satellite still answers a state, `sleeping`). */
   readOnly?: boolean;
   /** Earlier events were left out (count or size); `nextBeforeSeq` reads them. */
   truncated?: boolean;
+  nextBeforeSeq?: number | null;
+  historyBinding?: RemoteSessionHistoryBinding;
   capabilities?: Record<string, unknown>;
   chatControls?: Record<string, unknown>;
   slashCommands?: unknown[];
@@ -38,6 +43,7 @@ interface ChatPage {
 
 /** What a cut page says about the session that its events may no longer carry. */
 export interface RemoteChatMeta {
+  sessionId?: string | null;
   capabilities?: Record<string, unknown>;
   chatControls?: Record<string, unknown>;
   slashCommands?: unknown[];
@@ -52,9 +58,9 @@ export function localizeRemoteEvent(satelliteId: string, event: ChatEvent): Chat
  * The agent's transcript as the satellite has it (newest `tail`, at most 2000),
  * pending prompts included, and whether a chat session is running it now.
  */
-export async function readRemoteTranscript(nsId: string, tail?: number): Promise<{ events: ChatEvent[]; live: boolean | undefined; truncated: boolean; meta: RemoteChatMeta }> {
+export async function readRemoteTranscript(nsId: string, tail?: number): Promise<{ events: ChatEvent[]; live: boolean | undefined; state: string | null; truncated: boolean; displayRunId: string | null; nextBeforeSeq?: number | null; historyBinding?: RemoteSessionHistoryBinding; meta: RemoteChatMeta }> {
   const target = remoteChatTarget(nsId);
-  if (!target) return { events: [], live: undefined, truncated: false, meta: {} };
+  if (!target) return { events: [], live: undefined, state: null, truncated: false, displayRunId: null, meta: {} };
   const page = (await window.clubhouse.annexClient.chatPage(target.satelliteId, target.agentId, { limit: Math.min(tail ?? 2000, 2000) })) as ChatPage;
   // A cut page lists what's pending separately; folding them in by seq keeps nothing twice.
   const bySeq = new Map<string, ChatEvent>();
@@ -66,8 +72,14 @@ export async function readRemoteTranscript(nsId: string, tail?: number): Promise
   return {
     events,
     live: page.readOnly === undefined ? undefined : !page.readOnly,
+    state: typeof page.state === 'string' ? page.state : null,
     truncated: page.truncated === true,
-    meta: { capabilities: page.capabilities, chatControls: page.chatControls, slashCommands: page.slashCommands },
+    displayRunId: typeof page.displayRunId === 'string' && page.displayRunId.length <= 512 ? page.displayRunId : null,
+    nextBeforeSeq: page.truncated === false && page.nextBeforeSeq === null ? null
+      : page.truncated === true && Number.isSafeInteger(page.nextBeforeSeq) && page.nextBeforeSeq! >= 1 ? page.nextBeforeSeq : undefined,
+    ...(isRemoteSessionHistoryBinding(page.historyBinding) && page.agentId === target.agentId && page.historyBinding.agentId === target.agentId
+      && page.historyBinding.sessionId === page.sessionId && page.historyBinding.displayRunId === page.displayRunId ? { historyBinding: page.historyBinding } : {}),
+    meta: { sessionId: typeof page.sessionId === 'string' && page.sessionId.length <= 512 ? page.sessionId : null, capabilities: page.capabilities, chatControls: page.chatControls, slashCommands: page.slashCommands },
   };
 }
 

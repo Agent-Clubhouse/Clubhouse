@@ -64,7 +64,7 @@ function lowerAccess(a: AccessLevel, b: AccessLevel): AccessLevel {
 }
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { publishAppEvent } from './app-event-bus';
-import { beginQuickAgentRun, finishQuickAgentRun, noteQuickAgentStop } from './quick-agent-events';
+import { beginQuickAgentRun, finishQuickAgentRun, noteQuickAgentStop, noteQuickAgentRuntime, type QuickAgentRun } from './quick-agent-events';
 import type { QuickAgentOwner } from '../../shared/types';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
@@ -74,6 +74,7 @@ import { clearStaleResume, isSessionNotFound, noteNextStartNotice, takeChatStart
 import { removedProfileStateDirs } from './provider-profiles-removed';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
+import { noteAgentStarting, noteAgentAwake, noteAgentWakeFailed } from './agent-display-state';
 import { sessionCaptureFor, trackSessionCapture, noteSessionCaptureFailure } from './session-capture-barrier';
 import { assertLaunchesOpen } from './launch-gate';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -313,6 +314,7 @@ export function spawnAccess(
 
 /** The agent is up: tell windows, and the app event bus (#2950). */
 function announceAwake(agentId: string): void {
+  noteAgentAwake(agentId);
   broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, agentId);
   publishAppEvent({ type: 'agent.awake', agentId });
 }
@@ -339,10 +341,11 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     }
     // Shutdown may have closed launches while the platform read was pending.
     assertLaunchesOpen();
+    if (!isAgentRunning(params.agentId)) noteAgentStarting(params.agentId, params.kind === 'quick');
     quickRun = params.kind === 'quick' ? beginQuickAgentRun(params) : undefined;
     return withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
       assertProviderSelection(params.agentId, params.orchestrator);
-      return withLocalCausalInput(params.agentId, params.causalTaskId, params.mission, () => spawnAgentTracked(params, managed), !params.mission);
+      return withLocalCausalInput(params.agentId, params.causalTaskId, params.mission, () => spawnAgentTracked(params, managed, quickRun), !params.mission);
     });
   };
   // Invoke synchronously to preserve existing entry timing on supported hosts.
@@ -350,6 +353,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   try {
     await spawn;
   } catch (error) {
+    if (!isAgentRunning(params.agentId)) noteAgentWakeFailed(params.agentId, error);
     if (quickRun && !(error instanceof ProcessStartedReceiptError)) finishQuickAgentRun(quickRun, 'failed');
     throw error;
   } finally {
@@ -357,7 +361,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   }
 }
 
-async function spawnAgentTracked(params: SpawnAgentParams, managed: ManagedLaunchLease | null): Promise<void> {
+async function spawnAgentTracked(params: SpawnAgentParams, managed: ManagedLaunchLease | null, quickRun?: QuickAgentRun): Promise<void> {
   const facts: SpawnFacts = { model: params.model };
   const startMs = Date.now();
   await tel.flow(
@@ -365,7 +369,7 @@ async function spawnAgentTracked(params: SpawnAgentParams, managed: ManagedLaunc
     { attrs: [ATTR.agentKind(params.kind), ATTR.agentResume(params.resume === true)] },
     async (span) => {
       try {
-        await spawnAgentInner(params, facts, managed);
+        await spawnAgentInner(params, facts, managed, quickRun);
       } catch (err) {
         try {
           if (!(err instanceof ProcessStartedReceiptError)) clearSpawnKind(params.agentId);
@@ -412,7 +416,7 @@ function assertDispatcherCanStart({ kind, projectPath }: SpawnAgentParams): void
   throw tagError(new Error('The Dispatcher is turned off.'), 'preflight_failed');
 }
 
-async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, managed: ManagedLaunchLease | null): Promise<void> {
+async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, managed: ManagedLaunchLease | null, quickRun?: QuickAgentRun): Promise<void> {
   let params = inParams;
   assertDispatcherCanStart(params);
   // An agent still being created has no worktree yet, and a failed one never
@@ -531,6 +535,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     runtime: 'pty',
   });
   const spawnRegistration = agentRegistry.get(params.agentId);
+  const observeQuickRuntime = (isCurrent: () => boolean) => {
+    if (quickRun) noteQuickAgentRuntime(quickRun, spawnRegistration, () => agentRegistry.get(params.agentId) === spawnRegistration && isCurrent());
+  };
 
   try {
     // Clean up stale JSON in TOML config files (e.g. Codex .codex/config.toml)
@@ -818,6 +825,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           ...(preapprovedClubhouseTools && { preapprovedClubhouseTools }),
           ...(loadAllTools && { loadAllTools }),
           beforeCreate: p.beforeCreate,
+          ...(quickRun && { observeStarted: (runtime: NonNullable<ReturnType<typeof getAgentRuntime>>) => observeQuickRuntime(() => getAgentRuntime(p.agentId) === runtime) }),
         }, provider, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
         recordChatStart(chatStartMs, result, chatFacts, chatContext);
         return result;
@@ -960,6 +968,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           headlessResult.createEventNormalizer,
           // The caller's fence, after the spawn's own awaits and just before the process starts (#3613).
           params.beforeCreate,
+          quickRun ? observeQuickRuntime : undefined,
         ));
         facts.noPid = !headlessManager.hasPid(params.agentId);
         announceAwake(params.agentId);
@@ -992,7 +1001,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         agentRegistry.reportLaunchAccess(params.agentId, { ...lowered, access: startable });
       }
     }
-    await spawnPtyAgent(params, provider, allowedTools, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);
+    await spawnPtyAgent(params, provider, allowedTools, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged,
+      quickRun ? (identity) => observeQuickRuntime(() => !!identity && ptyManager.processIdentity(params.agentId) === identity) : undefined);
     if (!managed || ptyManager.isRunning(params.agentId)) announceAwake(params.agentId);
   } catch (err) {
     if (!(err instanceof ProcessStartedReceiptError)
@@ -1035,6 +1045,7 @@ async function spawnPtyAgent(
   facts: SpawnFacts = {},
   managed: ManagedLaunchLease | null = null,
   quickManaged: QuickManagedLaunch | null = null,
+  observeCreated?: (identity: string) => void,
 ): Promise<void> {
   const nonce = randomUUID();
   agentRegistry.setNonce(params.agentId, nonce);
@@ -1261,6 +1272,12 @@ async function spawnPtyAgent(
     onCreated: (identity: string) => { createdIdentity = identity; params.onRuntimeCreated?.(identity); },
     onObservedExit: () => { managedExitConfirmed = true; },
   });
+  if (observeCreated) {
+    // Keep the managed lifecycle option absent for a plain quick run: an
+    // observation must not opt it into managed exit/creation behavior.
+    if (spawnArgs.length === 7) spawnArgs.push(undefined);
+    spawnArgs.push(observeCreated);
+  }
   let federation: ReturnType<typeof prepareFederationInputs> = [];
   let rollbackAssignment: (() => Promise<void>) | undefined;
   try {

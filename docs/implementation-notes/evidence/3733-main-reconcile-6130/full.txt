@@ -1,0 +1,112 @@
+$ TMPDIR=<fresh default-depth empty dir> vitest run --no-cache --maxWorkers=4
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+{"admissionCount":250,"elapsedMs":53,"boardCommits":1,"sequenceChanges":1,"joinPosts":1}
+{"admissionCount":2005,"elapsedMs":387,"boardCommits":1,"sequenceChanges":1,"joinPosts":1}
+Warning: A vi.mock("fs/promises") call in "<worktree>/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "<worktree>/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "<worktree>/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "<worktree>/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "<worktree>/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+QUARANTINE_ROOT_SWAP {"platform":"darwin","node":"v24.22.1","mkdirCalls":2,"swapped":true,"before":{"dev":16777230,"ino":2493799466,"safeDev":true,"safeIno":true,"exactDev":"16777230","exactIno":"2493799466"},"moved":{"dev":16777230,"ino":2493799466,"safeDev":true,"safeIno":true,"exactDev":"16777230","exactIno":"2493799466"},"after":{"dev":16777230,"ino":2493799467,"safeDev":true,"safeIno":true,"exactDev":"16777230","exactIno":"2493799467"},"afterChild":{"dev":16777230,"ino":2493799467,"safeDev":true,"safeIno":true,"exactDev":"16777230","exactIno":"2493799467"},"verifyCalls":1,"outcome":"rejected"}
+AR1_DISCRIMINATOR={"chosen":"A","evaluations":[{"key":"A","provider":"A","verified":true,"load":0,"score":{"basis":"weekly_used","weeklyUsedBp":8200,"pressureBp":8300},"tier":"low","rank":0},{"key":"B","provider":"B","verified":true,"load":0,"score":{"basis":"weekly_used","weeklyUsedBp":2000,"pressureBp":8800},"tier":"headroom","rank":1}]}
+RESET_REPLAY_REPORT=[{"demand":"high","policy":"weekly_used","assumedRateBpPerHour":null,"requested":24,"accepted":24,"refused":0,"picks":{"A":12,"B":12},"unusedA":30,"minHeadroom":30},{"demand":"high","policy":"reset_schedule","assumedRateBpPerHour":null,"requested":24,"accepted":24,"refused":0,"picks":{"A":16,"B":8},"unusedA":20,"minHeadroom":20},{"demand":"high","policy":"cycle_legacy_tiers","assumedRateBpPerHour":25,"requested":24,"accepted":24,"refused":0,"picks":{"A":16,"B":8},"unusedA":20,"minHeadroom":20},{"demand":"high","policy":"pace_deficit","assumedRateBpPerHour":25,"requested":24,"accepted":24,"refused":0,"picks":{"A":20,"B":4},"unusedA":10,"minHeadroom":10},{"demand":"high","policy":"bounded_urgency","assumedRateBpPerHour":25,"requested":24,"accepted":24,"refused":0,"picks":{"A":20,"B":4},"unusedA":10,"minHeadroom":10},{"demand":"high","policy":"bounded_relax_24h","assumedRateBpPerHour":null,"requested":24,"accepted":24,"refused":0,"picks":{"A":22,"B":2},"unusedA":5,"minHeadroom":5},{"demand":"high","policy":"bounded_relax_24h_rate25","assumedRateBpPerHour":25,"requested":24,"accepted":24,"refused":0,"picks":{"A":22,"B":2},"unusedA":5,"minHeadroom":5},{"demand":"high","policy":"bounded_urgency_unknown_rate","assumedRateBpPerHour":null,"requested":24,"accepted":24,"refused":0,"picks":{"A":20,"B":4},"unusedA":10,"minHeadroom":10},{"demand":"low","policy":"weekly_used","assumedRateBpPerHour":null,"requested":4,"accepted":4,"refused":0,"picks":{"A":2,"B":2},"unusedA":55,"minHeadroom":55},{"demand":"low","policy":"reset_schedule","assumedRateBpPerHour":null,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"cycle_legacy_tiers","assumedRateBpPerHour":25,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"pace_deficit","assumedRateBpPerHour":25,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"bounded_urgency","assumedRateBpPerHour":25,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"bounded_relax_24h","assumedRateBpPerHour":null,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"bounded_relax_24h_rate25","assumedRateBpPerHour":25,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"bounded_urgency_unknown_rate","assumedRateBpPerHour":null,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"absent","policy":"weekly_used","assumedRateBpPerHour":null,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"reset_schedule","assumedRateBpPerHour":null,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"cycle_legacy_tiers","assumedRateBpPerHour":25,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"pace_deficit","assumedRateBpPerHour":25,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"bounded_urgency","assumedRateBpPerHour":25,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"bounded_relax_24h","assumedRateBpPerHour":null,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"bounded_relax_24h_rate25","assumedRateBpPerHour":25,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"bounded_urgency_unknown_rate","assumedRateBpPerHour":null,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60}]
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ Test Files  1464 passed | 13 skipped (1477)
+      Tests  35591 passed | 114 skipped (35705)
+   Start at  01:58:54
+   Duration  391.23s (transform 21.30s, setup 20.59s, import 97.67s, tests 1238.69s, environment 114.16s)
+
+env TMPDIR=$T/ node_modules/.bin/vitest run --no-cache --maxWorkers=4  745.15s user 272.88s system 259% cpu 6:31.91 total
+vitest exit=0

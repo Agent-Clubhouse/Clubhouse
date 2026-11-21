@@ -523,6 +523,50 @@ describe('BridgeServer', () => {
     expect(bridgeServer.getAgentConnection('agent-1')).toEqual({ connectedAt: expect.any(Number), toolCount: 0 });
     expect(mockBroadcast).toHaveBeenCalledWith(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, 'agent-1');
   });
+  it('binds current handshake evidence to the registered run nonce, including handshakes before awake', async () => {
+    await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', method: 'notifications/initialized' }, 'test-nonce');
+    const historical = bridgeServer.getAgentConnection('agent-1');
+    expect(bridgeServer.getCurrentAgentConnection('agent-1')).toEqual(historical);
+    mockGetAgentNonce.mockReturnValue('new-run-nonce'); emitAuthChange('agent-1');
+    expect(bridgeServer.getAgentConnection('agent-1')).toEqual(historical);
+    expect(bridgeServer.getCurrentAgentConnection('agent-1')).toBeNull();
+    // No awake announcement is needed: an authenticated handshake itself proves this registered run.
+    await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 2, method: 'tools/list' }, 'new-run-nonce');
+    expect(bridgeServer.getCurrentAgentConnection('agent-1')).toMatchObject({ toolCount: 0 });
+    mockGetAgentNonce.mockReturnValue(undefined); emitAuthChange('agent-1');
+    expect(bridgeServer.getCurrentAgentConnection('agent-1')).toBeNull();
+  });
+  it.each(['notifications/initialized', 'tools/list', 'initialize'].flatMap((method) => ['restart', 'untrack', 'session-removed'].map((change) => ({ method, change }))))('refuses admitted $method after $change while its HTTP body is delayed', async ({ method, change }) => {
+    const headers: Record<string, string> = { 'X-Clubhouse-Nonce': 'test-nonce' };
+    if (change === 'session-removed') {
+      const init = await rawRequest(port, 'POST', '/mcp/agent-1', headers, { jsonrpc: '2.0', id: 1, method: 'initialize' });
+      headers['Mcp-Session-Id'] = init.headers['mcp-session-id'] as string;
+    }
+    await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', method: 'notifications/initialized' }, 'test-nonce');
+    const previous = bridgeServer.getAgentConnection('agent-1');
+    let currentNonce: string | undefined = 'test-nonce';
+    let admitted = false;
+    mockGetAgentNonce.mockImplementation(() => { admitted = true; return currentNonce; });
+    const body = JSON.stringify({ jsonrpc: '2.0', ...(method === 'notifications/initialized' ? {} : { id: 2 }), method });
+    let req!: http.ClientRequest;
+    const response = new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) => {
+      req = http.request({ hostname: '127.0.0.1', port, path: '/mcp/agent-1', method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }, (res) => {
+        const chunks: Buffer[] = []; res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+        res.on('end', () => resolve({ status: res.statusCode!, headers: res.headers, body: Buffer.concat(chunks).toString() }));
+      });
+      req.on('error', reject); req.write(body.slice(0, 1));
+    });
+    await vi.waitFor(() => expect(admitted).toBe(true));
+    if (change === 'session-removed') expect((await rawRequest(port, 'DELETE', '/mcp/agent-1', headers)).statusCode).toBe(200);
+    else { currentNonce = change === 'restart' ? 'run-b' : undefined; emitAuthChange('agent-1'); }
+    mockBroadcast.mockClear();
+    req.end(body.slice(1));
+    const result = await response;
+    expect(result.status).toBe(403); expect(result.headers['mcp-session-id']).toBeUndefined();
+    expect(bridgeServer.getAgentConnection('agent-1')).toEqual(previous);
+    if (change !== 'session-removed') expect(bridgeServer.getCurrentAgentConnection('agent-1')).toBeNull();
+    expect(mockBroadcast).not.toHaveBeenCalledWith(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, 'agent-1');
+  });
 
   it('returns missing tool name error for tools/call without name', async () => {
     const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', {

@@ -37,6 +37,8 @@ import type { DurableAgentConfig } from '../../../shared/types';
 import type { RoutedMessagePart } from '../../../shared/chat';
 import type { AgentCardView } from '../../../shared/dispatcher-agent-card';
 import { isDisposedAgent } from '../../../shared/agent-helpers';
+import type { DisplayReceipt, DisplayValue } from '../display-settings';
+import type { DisplayAgentCard } from './dispatcher-agent-card-display';
 import {
   agentPageExists,
   agentPagePath,
@@ -58,7 +60,6 @@ export const NO_ANSWER_MS = 10 * 60 * 1000;
 
 /** The most each field may hold, in characters: a card is a sentence or two, not a document. */
 export const MAX_CARD_FIELD = 600;
-
 /** The MCP tool the agent answers with. */
 export const UPDATE_CARD_TOOL = 'update_my_card';
 
@@ -485,6 +486,12 @@ export class AgentCards {
       card: status.card,
       ...(status.state === 'none' && status.asking && { waitingToAsk: true }),
     };
+  }
+
+  /** Lazy display-only reader; ordinary scheduling remains independent of application services. */
+  async viewForDisplay(agentId: string, projectPath: string, options: { receipts?: DisplayReceipt[]; authorized?: () => boolean } = {}): Promise<DisplayValue<DisplayAgentCard | null>> {
+    const { readAgentCardForDisplay } = await import('./dispatcher-agent-card-display');
+    return readAgentCardForDisplay(this.deps, agentId, projectPath, options);
   }
 
   /** The agent's card as its Details card and list_agents show it, or null when it has no record. */

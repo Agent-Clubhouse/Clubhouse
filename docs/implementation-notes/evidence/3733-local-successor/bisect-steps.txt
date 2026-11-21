@@ -1,0 +1,18 @@
+# bad: [b458b4c89fb478d0f605553d85c0e821c389bf23] Integrate reviewed Canvas membership page modules
+# good: [3b739fe5f981a808831ecb25db5eb76018dbc15a] Cover real owner and admitted endpoint fields at the Connections card boundary
+git bisect start 'b458b4c89' '3b739fe5f'
+# good: [00be836ee9ea5fcf47d6f7ff05ce88c04edce5d1] Combine remote session display and passive host evidence
+git bisect good 00be836ee9ea5fcf47d6f7ff05ce88c04edce5d1
+# bad: [37d642a869ed8631a7c94d114b51b39659b9c3f1] Record bounded Actions source validation and stable display controls
+git bisect bad 37d642a869ed8631a7c94d114b51b39659b9c3f1
+# bad: [c6096bfa26e76b8a86abd07c2433f7c6f99a217f] Add bounded read-only rename display to Changes
+git bisect bad c6096bfa26e76b8a86abd07c2433f7c6f99a217f
+# good: [bc7eff9710a6e43a976665f4fa05e1f449e066e0] Group read-only Skills and MCP evidence by source
+git bisect good bc7eff9710a6e43a976665f4fa05e1f449e066e0
+# bad: [cf60564f16444420fe924b7c11e69214eb0c2446] Combine selected outgoing Wires evidence with remote Details cards
+git bisect bad cf60564f16444420fe924b7c11e69214eb0c2446
+# bad: [57ca9a504d8b656858c1b22b49099e0488577274] Document safe reader fallback and existing lint limitation
+git bisect bad 57ca9a504d8b656858c1b22b49099e0488577274
+# bad: [9f2354d0dd873ea27e0c69d4880c4bc8224f9f96] Expose scoped outgoing wire records and manual restriction evidence
+git bisect bad 9f2354d0dd873ea27e0c69d4880c4bc8224f9f96
+# first bad commit: [9f2354d0dd873ea27e0c69d4880c4bc8224f9f96] Expose scoped outgoing wire records and manual restriction evidence

@@ -1,3 +1,5 @@
+import { PassiveSessionLookup } from './passive-session-lookup';
+import type { TranscriptReadOptions } from './types';
 /**
  * Copilot CLI's own session store (#2156). Each session is a directory
  * `<config>/session-state/<id>/` with a `workspace.yaml` that records `id`,
@@ -326,8 +328,11 @@ export async function findCopilotTranscript(
   sessionId: string,
   cwd: string,
   counter: { probes: number } = { probes: 0 },
+  options?: TranscriptReadOptions,
 ): Promise<string | null> {
   if (!sessionId || sessionId !== path.basename(sessionId) || sessionId.startsWith('.')) return null;
+  const lookup = options?.passiveLookup ? new PassiveSessionLookup(options.stats) : null;
+  if (lookup && !lookup.reserveProbes(8)) return null;
   for (const p of transcriptCandidates(stateDir, sessionId, cwd)) {
     counter.probes++;
     if (await isFile(p)) return p;
@@ -335,6 +340,7 @@ export async function findCopilotTranscript(
   // A session directory whose transcript has another name
   const dir = path.join(stateDir, sessionId);
   counter.probes++;
+  if (lookup) return lookup.find(dir, (name) => name.endsWith('.jsonl'));
   try {
     const jsonl = (await fsp.readdir(dir)).find((e) => e.endsWith('.jsonl'));
     return jsonl ? path.join(dir, jsonl) : null;

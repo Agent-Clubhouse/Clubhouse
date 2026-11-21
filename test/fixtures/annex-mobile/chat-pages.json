@@ -11,6 +11,7 @@
         "/work/app"
       ],
       "currentSessionId": "sess_live",
+      "displayRunId": null,
       "epoch": "<epoch>",
       "events": "<15 events>",
       "lastSeq": 229,
@@ -43,6 +44,7 @@
         "/work/app"
       ],
       "currentSessionId": "sess_live",
+      "displayRunId": null,
       "epoch": "<epoch>",
       "events": "<300 events>",
       "lastSeq": 399,

@@ -333,7 +333,9 @@ describe('Settings card edge cases', () => {
     expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
     expect(card.queryByTestId('details-setting-auto-sleep')).not.toBeInTheDocument();
     expect(card.queryByTestId('details-setting-clubhouse-mode')).not.toBeInTheDocument();
-    expect(card.getByTestId('details-setting-access')).toHaveTextContent('Full access');
+    // Access for another machine's agent comes only from an admitted host read (RemoteSettingsCard tests), never this local chat state.
+    expect(card.queryByTestId('details-setting-access')).not.toBeInTheDocument();
+    expect(card.queryByText('Full access')).not.toBeInTheDocument();
   });
 
   it('shows the CLI\'s own access for a chat driver without levels', async () => {

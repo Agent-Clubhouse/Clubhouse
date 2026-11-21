@@ -285,6 +285,11 @@ async function onlyClubhouseChanges(cwd: string, rel: string): Promise<boolean> 
     return false;
   }
   const base = await committedText(cwd, rel);
+  return onlyClubhouseChangesFromTexts(rel, current, base);
+}
+
+/** Pure comparison shared with passive readers; callers establish bounded, safe file evidence. */
+export function onlyClubhouseChangesFromTexts(rel: string, current: string, base: string | null): boolean {
   if (rel.endsWith('.toml')) return userToml(current) === userToml(base ?? '');
   const now = userJson(current, base !== null);
   if (now === null) return false;

@@ -1,3 +1,4 @@
+import { PassiveSessionLookup } from './passive-session-lookup';
 import type { ListModelsOptions } from './types';
 import type { SDKAssistantMessageError } from '@anthropic-ai/claude-agent-sdk';
 import type { PlanQuotaReading } from '../../shared/helper-routing';
@@ -455,7 +456,9 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
    * The transcript file for `sessionId` in Claude Code's JSONL storage for
    * `cwd`, or null when there is none.
    */
-  async transcriptPath(sessionId: string, cwd: string): Promise<string | null> {
+  async transcriptPath(sessionId: string, cwd: string, opts?: TranscriptReadOptions): Promise<string | null> {
+    const lookup = opts?.passiveLookup ? new PassiveSessionLookup(opts.stats) : null;
+    if (lookup && !lookup.reserveProbes(12)) return null;
     const projectDir = this.resolveProjectDir(cwd);
 
     if (!projectDir) return null;
@@ -480,6 +483,7 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     // Also check for directory-style sessions
     if (!jsonlPath) {
       const dirPath = path.join(projectDir, sessionId);
+      if (lookup) return lookup.find(dirPath, (name) => name.endsWith('.jsonl'));
       if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
         try {
           const entries = await fsp.readdir(dirPath);
@@ -507,7 +511,7 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     cwd: string,
     opts?: TranscriptReadOptions,
   ): Promise<import('../services/jsonl-parser').StreamJsonEvent[] | null> {
-    const jsonlPath = await this.transcriptPath(sessionId, cwd);
+    const jsonlPath = await (opts?.passiveLookup ? this.transcriptPath(sessionId, cwd, opts) : this.transcriptPath(sessionId, cwd));
     if (!jsonlPath) return null;
 
     const events = await parseJsonlFile(jsonlPath, opts);

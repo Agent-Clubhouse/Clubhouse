@@ -1,3 +1,5 @@
+import { readSelectedActionRelationshipPage, unavailableActionRelationshipPage, type SelectedActionPageOptions } from './selected-details-page';
+import { projectActionDetails } from './details-read';
 import { LogRedactor } from '../../../shared/log-redaction';
 /**
  * Actions service (#2918): the engine wired to the app. Runs in the main
@@ -489,6 +491,22 @@ export function listActions(): ActionView[] {
   return e.list().filter((a) => a.owner.kind !== 'app').map((a) => view(e, a));
 }
 
+/** Details never initializes the engine or refreshes/persists delivery receipts. */
+export function readActionDetailsForAgent(agentId: string, projectId: string | undefined, dispatcher: boolean, names: ActionNames) {
+  return projectActionDetails(requireEngine(), agentId, projectId, dispatcher, names);
+}
+
+/** A selected relationship page from the already-running engine; never initializes it. */
+export function readSelectedActionDetailsPageForAgent(agentId: string, projectId: string | undefined, dispatcher: boolean, options: Omit<SelectedActionPageOptions, 'sourceCurrent'>) {
+  try { if (!options.authorized() || !options.target.current()) return unavailableActionRelationshipPage(options.offset, 'changed'); }
+  catch { // telemetry-exempt: an unavailable selected receipt never grants display access.
+    return unavailableActionRelationshipPage(options.offset, 'changed');
+  }
+  const admittedEngine = engine;
+  if (!admittedEngine) return unavailableActionRelationshipPage(options.offset, 'unreadable');
+  return readSelectedActionRelationshipPage(admittedEngine, { agentId, projectId, dispatcher }, { ...options, sourceCurrent: () => engine === admittedEngine });
+}
+
 /** One visible action, or undefined (also for Clubhouse's own). */
 export function getAction(id: string): ActionView | undefined {
   const e = requireEngine();
@@ -580,6 +598,11 @@ export function canReadDevices(reader: ActionOwner): boolean {
 }
 
 // ── Lookups for the Clubhouse MCP tools ─────────────────────────────────────
+
+/** Display-only project label from already initialized cache; never refreshes it. */
+export function peekActionProjectName(id: string): string | undefined {
+  const project = projectById(id); return project ? projectLabel(project) : undefined;
+}
 
 /** Agent and project names, for describing actions in plain words. */
 export function actionNames(): ActionNames {

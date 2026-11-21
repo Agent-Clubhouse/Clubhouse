@@ -1,0 +1,64 @@
+# mutation chatleak on src/renderer/features/agents/details/RemoteAgentDetailsView.tsx (working tree based on 782e08cde + uncommitted fixes)
+# applied diff vs fixed copy:
+117c117
+<   const session = details && connected && !asleep && details.running ? hydrated.chat : undefined;
+---
+>   const session = chat;
+$ vitest run --no-cache --maxWorkers=2 src/renderer/features/agents/details/SettingsCard.test.tsx
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ ❯ |renderer| src/renderer/features/agents/details/SettingsCard.test.tsx (36 tests | 1 failed) 401ms
+     × reads no config for an agent on another machine and leaves out local-only rows 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/SettingsCard.test.tsx > Settings card edge cases > reads no config for an agent on another machine and leaves out local-only rows
+Error: [2mexpect([22m[31melement[39m[2m).not.toBeInTheDocument()[22m
+
+[31mexpected document not to contain element, found <div
+  class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+  data-testid="details-setting-access"
+>
+  <span
+    class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+  >
+    Access
+  </span>
+  <span
+    class="min-w-0 text-ctp-text break-words"
+  >
+    Full access
+  </span>
+</div> instead[39m
+ ❯ src/renderer/features/agents/details/SettingsCard.test.tsx:337:62
+    335|     expect(card.queryByTestId('details-setting-clubhouse-mode')).not.t…
+    336|     // Access for another machine's agent comes only from an admitted …
+    337|     expect(card.queryByTestId('details-setting-access')).not.toBeInThe…
+       |                                                              ^
+    338|     expect(card.queryByText('Full access')).not.toBeInTheDocument();
+    339|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 35 passed (36)
+   Start at  23:42:58
+   Duration  1.95s (transform 1.01s, setup 55ms, import 1.24s, tests 401ms, environment 177ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+# post-restore git status --short:
+ M src/main/services/annex-identity.ts
+ M src/main/services/headless-fallback.test.ts
+ M src/main/services/headless-integration.test.ts
+ M src/main/telemetry/annex-telemetry.test.ts
+ M src/main/telemetry/annex-telemetry.ts
+ M src/renderer/features/agents/details/SettingsCard.test.tsx
+ M src/shared/telemetry/attributes.ts

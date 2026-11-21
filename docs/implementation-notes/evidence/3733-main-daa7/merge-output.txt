@@ -1,0 +1,4 @@
+Auto-merging src/main/services/clubhouse-mcp/binding-manager.ts
+CONFLICT (content): Merge conflict in src/main/services/clubhouse-mcp/binding-manager.ts
+Auto-merging src/main/services/clubhouse-mcp/bridge-server.test.ts
+Automatic merge failed; fix conflicts and then commit the result.

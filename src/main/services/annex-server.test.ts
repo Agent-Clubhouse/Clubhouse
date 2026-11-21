@@ -1,4 +1,13 @@
+import * as selectedDispatcherDetails from './selected-dispatcher-details';
+import * as agentConfigReader from './agent-config-reader';
+import * as dispatcherMetadataService from './dispatcher/dispatcher-service';
+import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
+import { REMOTE_DETAILS_CARD_IDS, type RemoteAgentDetails } from '../../shared/remote-agent-details';
 import { readRemoteAgentSettings } from './remote-agent-settings';
+import { readRemoteAgentDetails } from './remote-agent-details';
+import { readRemoteAgentChanges } from './remote-agent-changes';
+vi.mock('./remote-agent-changes', () => ({ readRemoteAgentChanges: vi.fn() }));
+vi.mock('./remote-agent-details', () => ({ readRemoteAgentDetails: vi.fn() }));
 vi.mock('./remote-agent-settings', () => ({ readRemoteAgentSettings: vi.fn() }));
 const snapshotLinks = vi.hoisted(() => ({ groups: vi.fn(() => []), onChange: () => () => {} }));
 vi.mock('./project-links-store', () => ({ hydrateProjectLinks: vi.fn(async () => ({})), projectLinksStore: () => snapshotLinks }));
@@ -159,7 +168,8 @@ vi.mock('./log-service', () => ({
 }));
 
 // Mock project-store
-vi.mock('./project-store', () => ({
+vi.mock('./project-store', async (original) => ({
+  peekProjectsChecked: (await original<typeof import('./project-store')>()).peekProjectsChecked,
   projectRegistryMutationState: vi.fn(() => ({ generation: 0, pending: false })),
   list: vi.fn().mockReturnValue([]),
   readIconData: vi.fn().mockReturnValue(null),
@@ -172,6 +182,7 @@ vi.mock('./agent-config', () => {
   const listDurable = vi.fn().mockReturnValue([]);
   return {
   listDurable,
+  getDurableConfig: vi.fn(),
   peekDurableConfigs: async (projectPath: string) => listDurable(projectPath),
   peekCachedDurableConfig: (_projectPath: string, id: string) => listDurable(_projectPath).find((config: { id: string }) => config.id === id) ?? null,
   readDurableRegistrationLease: async (projectPath: string, id: string, createdAt: string) => ({
@@ -402,6 +413,8 @@ function positiveSerial(): string {
 import * as annexPeers from './annex-peers';
 import * as annexEventBus from './annex-event-bus';
 import * as projectStore from './project-store';
+import * as baseDir from './base-dir';
+import { beginQuickAgentRun, clearQuickAgentRuns, noteQuickAgentRuntime } from './quick-agent-events';
 import { _resetRepoKeysForTesting, repoKeysFor } from './project-repo-keys';
 import * as agentConfigModule from './agent-config';
 import { deleteAgent } from './agent-delete';
@@ -419,7 +432,7 @@ import { appLog } from './log-service';
 import { nativeImage } from 'electron';
 import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
 import Bonjour from 'bonjour-service';
-import { registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
+import { getAgentRuntime, registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
 
 /** Throwaway TLS credentials for the suite's server and clients (loopback only). */
 let testCredentials: { cert: string; key: string } | null = null;
@@ -632,6 +645,220 @@ describe('annex-server', () => {
     });
   });
 
+  describe('selected-role desktop Details HTTP authority (#3733)', () => {
+    const route = '/api/v1/dispatcher/details';
+    const id = 'http-dispatcher';
+    let root: string, primary: string, roleId: string | null;
+    const body = (): RemoteAgentDetails => ({ version: 1, agentId: id, readOnly: true, readAt: 1, providerId: 'HOST_METADATA_PROVIDER', running: false, status: 'sleeping', spawnedAt: null,
+      sessionId: null, nativeSessionId: null, settings: null, cards: REMOTE_DETAILS_CARD_IDS.map((cardId) => ({ id: cardId, title: cardId, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) });
+    beforeEach(async () => {
+      root = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-selected-role-http-')));
+      const folder = path.join(root, 'dispatcher');
+      await fsp.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+      const config = { id, name: 'Host Dispatcher', color: 'indigo', createdAt: '2026-11-20', orchestrator: 'claude-code' };
+      primary = path.join(folder, '.clubhouse', 'agents.json');
+      await fsp.writeFile(primary, JSON.stringify([config]));
+      roleId = id;
+      vi.spyOn(baseDir, 'getBaseDirPath').mockReturnValue(root);
+      vi.spyOn(dispatcherMetadataService, 'getDispatcherAgentId').mockImplementation(() => roleId);
+      vi.spyOn(dispatcherMetadataService, 'getDispatcherChatAgentId').mockReturnValue(null);
+      vi.spyOn(dispatcherMetadataService, 'getDispatcherState').mockReturnValue({ ...DISPATCHER_OFF, config, agentId: id, path: folder });
+      vi.spyOn(agentConfigReader, 'resolveAgentConfigTarget').mockResolvedValue({ agent: config, project: { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: folder } });
+      vi.spyOn(dispatcherMetadataService, 'initDispatcher').mockResolvedValue();
+      vi.spyOn(dispatcherMetadataService, 'wakeDispatcherController').mockResolvedValue();
+      vi.spyOn(dispatcherMetadataService, 'setDispatcherEnabled').mockResolvedValue(DISPATCHER_OFF);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+      vi.mocked(readRemoteAgentDetails).mockResolvedValue({ status: 200, body: body() });
+    });
+    afterEach(async () => {
+      expect(dispatcherMetadataService.initDispatcher).not.toHaveBeenCalled();
+      expect(dispatcherMetadataService.wakeDispatcherController).not.toHaveBeenCalled();
+      expect(dispatcherMetadataService.setDispatcherEnabled).not.toHaveBeenCalled();
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+      expect(ptyManagerModule.write).not.toHaveBeenCalled();
+      annexServer.stop();
+      await fsp.rm(root, { recursive: true, force: true });
+    });
+
+    let requestNumber = 0;
+    function reverseMetadataRequest() {
+      const frames: Array<Record<string, unknown>> = [];
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, bufferedAmount: 0,
+        send(data: string, cb?: () => void) { frames.push(JSON.parse(data)); if (cb) queueMicrotask(cb); },
+        ping: vi.fn(), terminate: vi.fn(), close: vi.fn(),
+      });
+      annexControl._attachForTesting(ws as never, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint, 'out');
+      annexControl._sendHelloForTesting(TEST_CONTROLLER.fingerprint);
+      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })), false);
+      const requestId = `selected-role-${++requestNumber}`;
+      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'request', id: requestId, method: 'GET', path: route })), false);
+      return { ws, frames, requestId };
+    }
+
+    it.each(['controller', 'member'] as const)('serves only the ordinary role metadata to a pinned desktop %s, including while off', async (role) => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop', role });
+      const headers = vi.spyOn(http.ServerResponse.prototype, 'setHeader');
+      const { port } = await startAndPair();
+      const before = await fsp.readFile(primary, 'utf8');
+      const result = await request(port, 'GET', route);
+      expect(result.status).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ version: 1, role: 'dispatcher', agentId: id, details: body() });
+      expect(headers).toHaveBeenCalledWith('Cache-Control', 'no-store');
+      expect(agentConfigReader.resolveAgentConfigTarget).toHaveBeenCalledExactlyOnceWith(id, undefined, { strict: true });
+      expect(readRemoteAgentDetails).toHaveBeenCalledExactlyOnceWith(id, expect.any(Function));
+      expect(await fsp.readFile(primary, 'utf8')).toBe(before);
+    });
+
+    it.each([
+      ['anonymous', {}, 401], ['removed', {}, 401], ['wrong-pin', {}, 401], ['unpaired-pin', { tlsCertificateFingerprint: undefined }, 401],
+      ['opposite-direction', { role: 'satellite' }, 403], ['phone', { kind: 'phone' }, 403], ['unclassified', { kind: undefined }, 403],
+      ['unknown-kind', { kind: 'unknown' }, 403], ['pending', { role: 'member', networkPending: true }, 403],
+    ] as const)('refuses %s before any role/configuration/Details lookup', async (mode, extra, status) => {
+      const { port } = await startAndPair();
+      if (mode === 'anonymous') asUnpaired();
+      else if (mode === 'removed') vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+      else if (mode === 'wrong-pin') vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValueOnce('wrong-pin');
+      else vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop', ...extra } as never);
+      expect((await request(port, 'GET', route)).status).toBe(status);
+      expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+
+    it('refuses a session-only principal even if the persistent peer is classified desktop', async () => {
+      const { port } = await startAndPair();
+      const publicKey = nodeCrypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+      vi.mocked(annexIdentity.computeFingerprint).mockReturnValue(TEST_CONTROLLER.fingerprint);
+      vi.mocked(annexTls.extractPeerCertificateDer).mockReturnValue(Buffer.from('isolated-session-certificate'));
+      const paired = await request(port, 'POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, pairingMode: 'session' });
+      expect(paired.status).toBe(200);
+      expect(annexServer.sessionOnlyPeers()).toHaveLength(1);
+      expect((await request(port, 'GET', route)).status).toBe(403);
+      expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+
+    it('has no mutation/mobile alias or caller-selected identity/path/page inputs', async () => {
+      const { port } = await startAndPair();
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route, { agentId: 'unrelated' })).status).toBe(404);
+      expect((await request(port, 'GET', '/api/v1/mobile/dispatcher/details')).status).toBe(404);
+      for (const query of ['agentId=unrelated', 'machine=other', 'address=role@other', 'path=/private', 'card=connections&source=helpers']) {
+        expect((await request(port, 'GET', `${route}?${query}`)).status).toBe(400);
+      }
+      expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+
+    it('keeps an unbound role unavailable rather than creating or selecting another role', async () => {
+      roleId = null;
+      const { port } = await startAndPair();
+      const result = await request(port, 'GET', route);
+      expect(result.status).toBe(404);
+      expect(JSON.parse(result.body)).toEqual({ error: 'dispatcher_role_unavailable' });
+      expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+
+    it.each(['role', 'primary'] as const)('rejects a changed role/target generation during ordinary Details: %s', async (change) => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async () => {
+        await Promise.resolve();
+        if (change === 'role') roleId = 'replacement';
+        else await fsp.writeFile(primary, '[]');
+        return { status: 200, body: body() };
+      });
+      const { port } = await startAndPair(), result = await request(port, 'GET', route);
+      expect(result.status).toBe(409);
+      expect(result.body).not.toContain('HOST_METADATA_PROVIDER');
+    });
+
+    it.each(['removed', 'pin', 'kind', 'pending', 'direction'] as const)('discards late metadata after principal %s changes', async (change) => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (_id, authorized) => {
+        expect(authorized()).toBe(true);
+        await Promise.resolve();
+        vi.mocked(annexPeers.getPeer).mockReturnValue(change === 'removed' ? undefined : { ...TEST_CONTROLLER, kind: change === 'kind' ? 'phone' : 'desktop',
+          role: change === 'direction' ? 'satellite' : 'controller', networkPending: change === 'pending', tlsCertificateFingerprint: change === 'pin' ? 'replaced' : TEST_CONTROLLER.tlsCertificateFingerprint });
+        expect(authorized()).toBe(false);
+        return { status: 200, body: body() };
+      });
+      const { port } = await startAndPair(), result = await request(port, 'GET', route);
+      expect(result.status).toBe(403);
+      expect(result.body).not.toContain('HOST_METADATA_PROVIDER');
+    });
+
+    it.each(['role', 'primary'] as const)('rechecks the SAME receipt after the selector completed: %s', async (change) => {
+      const reader = selectedDispatcherDetails.readSelectedDispatcherDetails;
+      vi.spyOn(selectedDispatcherDetails, 'readSelectedDispatcherDetails').mockImplementation(async (authorized) => {
+        const result = await reader(authorized);
+        expect(result.status).toBe(200);
+        if (change === 'role') roleId = 'replacement-after-selector';
+        else await fsp.writeFile(primary, '[]');
+        return result;
+      });
+      const { port } = await startAndPair(), result = await request(port, 'GET', route);
+      expect(result.status).toBe(409);
+      expect(result.body).not.toContain('HOST_METADATA_PROVIDER');
+    });
+
+    it.each(['missing', 'unreadable'] as const)('withholds metadata without a usable final admission receipt: %s', async (mode) => {
+      vi.spyOn(selectedDispatcherDetails, 'readSelectedDispatcherDetails').mockResolvedValue({ status: 200, body: { private: 'PRIVATE_UNATTESTED_RESULT' },
+        ...(mode === 'unreadable' && { receipt: { current: () => { throw new Error('PRIVATE_RECEIPT_ERROR'); } } }),
+      });
+      const { port } = await startAndPair(), result = await request(port, 'GET', route);
+      expect(result.status).toBe(409);
+      expect(result.body).not.toContain('PRIVATE_');
+    });
+
+    it('rechecks in the HTTP adapter even if a selected-role reader returns after revocation', async () => {
+      vi.spyOn(selectedDispatcherDetails, 'readSelectedDispatcherDetails').mockImplementation(async () => {
+        await Promise.resolve();
+        vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+        return { status: 200, body: { version: 1, role: 'dispatcher', agentId: id, details: body() }, receipt: { current: () => true } };
+      });
+      const { port } = await startAndPair(), result = await request(port, 'GET', route);
+      expect(result.status).toBe(403);
+      expect(result.body).not.toContain('HOST_METADATA_PROVIDER');
+    });
+
+    it.each(['member', 'controller', 'phone-member', 'pending-member'] as const)('preserves reverse-link principal scope: %s', async (mode) => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, role: mode === 'controller' ? 'controller' : 'member', kind: mode === 'phone-member' ? 'phone' : 'desktop', networkPending: mode === 'pending-member' });
+      await startAndPair();
+      const { frames, requestId } = reverseMetadataRequest();
+      await vi.waitFor(() => expect(frames.some((frame) => frame.id === requestId)).toBe(true));
+      const response = frames.find((frame) => frame.id === requestId)!;
+      expect(response.status).toBe(mode === 'member' ? 200 : 403);
+      if (mode !== 'member') expect(agentConfigReader.resolveAgentConfigTarget).not.toHaveBeenCalled();
+    });
+
+    it('does not deliver private role metadata after its reverse link closes during the read', async () => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, role: 'member', kind: 'desktop' });
+      let release!: () => void, finished = false;
+      const pending = new Promise<void>((resolve) => { release = resolve; });
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async () => { await pending; finished = true; return { status: 200, body: body() }; });
+      await startAndPair();
+      const { ws, frames, requestId } = reverseMetadataRequest();
+      await vi.waitFor(() => expect(readRemoteAgentDetails).toHaveBeenCalledTimes(1));
+      ws.readyState = 3; ws.emit('close', 1000, Buffer.from('isolated-link-close'));
+      release();
+      await vi.waitFor(() => expect(finished).toBe(true));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(frames.some((frame) => frame.id === requestId && frame.type === 'response')).toBe(false);
+    });
+
+    it('keeps mobile-off and controller-conversation scopes separate and publishes no role Details on snapshots', async () => {
+      const { port } = await startAndPair();
+      expect((await request(port, 'GET', route)).status).toBe(200);
+      expect((await request(port, 'GET', '/api/v1/mobile/dispatcher/settings')).status).toBe(404);
+      expect((await request(port, 'GET', '/api/v1/network/dispatcher/controller/chat')).status).toBe(403);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as never);
+      const snapshot = await annexServer._testing.buildSnapshot();
+      expect(JSON.stringify(snapshot)).not.toContain('HOST_METADATA_PROVIDER');
+      expect(snapshot).not.toHaveProperty('selectedDispatcherDetails');
+    });
+  });
+
   describe('remote Settings details (#3733)', () => {
     const route = '/api/v1/agents/a1/settings-details';
     beforeEach(() => {
@@ -649,6 +876,16 @@ describe('annex-server', () => {
       for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route)).status).toBe(404);
       expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
       expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it.each([200, 503])('serializes only the Settings wire body, excluding internal evidence and display rows, status=%s', async (status) => {
+      const body = status === 200 ? { version: 1, readOnly: true, agentId: 'a1' } : { error: 'settings_evidence_unavailable' };
+      vi.mocked(readRemoteAgentSettings).mockResolvedValue({ status, body,
+        display: { id: 'settings', title: 'Settings', state: 'error', summary: 'PRIVATE_INTERNAL', rows: [{ label: 'Private', value: 'PRIVATE_ROW' }], notes: [], omitted: 0, observedAt: Date.now() },
+        managedEvidence: { setup: {}, status: { private: 'PRIVATE_STATUS' }, names: new Map([['private', 'PRIVATE_NAME']]), receipt: { current: () => true } },
+      } as unknown as Awaited<ReturnType<typeof readRemoteAgentSettings>>);
+      const { port } = await startAndPair(), response = await request(port, 'GET', route);
+      expect.soft(response.status).toBe(status); expect.soft(JSON.parse(response.body)).toEqual(body);
+      expect.soft(response.body).not.toMatch(/PRIVATE_|managedEvidence|display|receipts|current/);
     });
     it('rejects an unpaired/wrong-pin caller before summary reads', async () => {
       const { port } = await startAndPair();
@@ -694,6 +931,149 @@ describe('annex-server', () => {
       });
       const { port } = await startAndPair();
       expect((await request(port, 'GET', route)).status).toBe(403);
+    });
+  });
+
+  describe('remote full Details authority (#3733)', () => {
+    const route = '/api/v1/agents/a1/details';
+    beforeEach(() => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+    });
+    it('allows only GET from an eligible pinned desktop and rechecks the selected target read', async () => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (id, authorized) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true);
+        return { status: 200, body: { readOnly: true, agentId: id } };
+      });
+      const { port } = await startAndPair();
+      expect((await request(port, 'GET', route)).status).toBe(200);
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route)).status).toBe(404);
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+      expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it('allows bounded source continuation only under the same GET desktop authority and rejects extra/duplicate fields before work', async () => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (id, authorized, query) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true); expect(query).toEqual({ card: 'connections', source: 'helpers', offset: 8, projectOffset: 16 });
+        return { status: 200, body: { readOnly: true } };
+      });
+      const { port } = await startAndPair();
+      const paged = route + '?card=connections&source=helpers&offset=8&projectOffset=16';
+      expect((await request(port, 'GET', paged)).status).toBe(200);
+      vi.mocked(readRemoteAgentDetails).mockClear();
+      for (const query of ['card=connections&source=helpers&offset=4097', 'card=connections&source=helpers&offset=', 'card=connections&source=helpers&offset=01', 'card=connections&source=helpers&source=incoming', 'card=connections&source=helpers&projectPath=/private', 'card=connections&source=collect', 'card=settings&source=helpers', 'card=connections&source=outgoing&projectOffset=16']) expect((await request(port, 'GET', route + '?' + query)).status).toBe(400);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, paged)).status).toBe(404);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' }); expect((await request(port, 'GET', paged)).status).toBe(403);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled(); expect(agentSystem.spawnAgent).not.toHaveBeenCalled(); expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it('admits only bounded selected helper page queries under the same pinned desktop GET gates', async () => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (id, authorized, query) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true); expect(query).toEqual({ card: 'orchestrate', source: 'helpers', offset: 8 });
+        return { status: 200, body: { readOnly: true } };
+      });
+      const { port } = await startAndPair(); const paged = route + '?card=orchestrate&source=helpers&offset=8';
+      expect((await request(port, 'GET', paged)).status).toBe(200); vi.mocked(readRemoteAgentDetails).mockClear();
+      for (const query of ['card=orchestrate&source=helpers&offset=1', 'card=orchestrate&source=helpers&offset=4097', 'card=orchestrate&source=helpers&projectOffset=16', 'card=orchestrate&source=helpers&projectPath=/private', 'card=orchestrate&source=helpers&offset=8&offset=0', 'card=orchestrate&source=outgoing']) expect((await request(port, 'GET', route + '?' + query)).status).toBe(400);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled(); for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, paged)).status).toBe(404);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' }); expect((await request(port, 'GET', paged)).status).toBe(403); expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled(); expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it('binds selected inventory source/card/order queries under the frozen desktop GET and final revocation gate', async () => {
+      const selection = 'a'.repeat(64), paged = route + `?card=actions&source=selected-action-relationships&offset=25&selection=${selection}`;
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (id, authorized, query) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true); expect(query).toEqual({ card: 'actions', source: 'selected-action-relationships', offset: 25, selection });
+        return { status: 200, body: { readOnly: true } };
+      });
+      const { port } = await startAndPair(); expect((await request(port, 'GET', paged)).status).toBe(200); vi.mocked(readRemoteAgentDetails).mockClear();
+      for (const query of [`card=skills-mcp&source=selected-action-relationships&selection=${selection}`, `card=actions&source=selected-managed-skills&selection=${selection}`, 'card=actions&source=selected-action-relationships&offset=25', `card=actions&source=selected-action-relationships&offset=25&selection=${selection}&selection=${selection}`, `card=actions&source=selected-action-relationships&offset=25&selection=${selection}&projectOffset=0`]) expect((await request(port, 'GET', route + '?' + query)).status).toBe(400);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, paged)).status).toBe(404);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' }); expect((await request(port, 'GET', paged)).status).toBe(403); expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async () => { await Promise.resolve(); vi.mocked(annexPeers.getPeer).mockReturnValue(undefined); return { status: 200, body: { PRIVATE_LATE_ACTIONS: true } }; });
+      const refused = await request(port, 'GET', paged); expect(refused.status).toBe(403); expect(JSON.stringify(refused.body)).not.toContain('PRIVATE_LATE_ACTIONS');
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled(); expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it('binds Canvas inventory source/card/order queries under the frozen desktop GET and final revocation gate', async () => {
+      const selection = 'a'.repeat(64), paged = route + `?card=canvases&source=selected-canvas-memberships&offset=25&selection=${selection}`;
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (id, authorized, query) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true); expect(query).toEqual({ card: 'canvases', source: 'selected-canvas-memberships', offset: 25, selection });
+        return { status: 200, body: { readOnly: true } };
+      });
+      const { port } = await startAndPair(); expect((await request(port, 'GET', paged)).status).toBe(200); vi.mocked(readRemoteAgentDetails).mockClear();
+      for (const query of [`card=actions&source=selected-canvas-memberships&selection=${selection}`, `card=canvases&source=selected-managed-skills&selection=${selection}`, 'card=canvases&source=selected-canvas-memberships&offset=25', `card=canvases&source=selected-canvas-memberships&offset=25&selection=${selection}&selection=${selection}`, `card=canvases&source=selected-canvas-memberships&offset=25&selection=${selection}&projectOffset=0`]) expect((await request(port, 'GET', route + '?' + query)).status).toBe(400);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, paged)).status).toBe(404);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' }); expect((await request(port, 'GET', paged)).status).toBe(403); expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async () => { await Promise.resolve(); vi.mocked(annexPeers.getPeer).mockReturnValue(undefined); return { status: 200, body: { PRIVATE_LATE_CANVAS: true } }; });
+      const refused = await request(port, 'GET', paged); expect(refused.status).toBe(403); expect(JSON.stringify(refused.body)).not.toContain('PRIVATE_LATE_CANVAS');
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled(); expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it.each([undefined, 'phone', 'unknown'])('rejects ineligible device kind %s before any Details work', async (kind) => {
+      const { port } = await startAndPair();
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind } as never);
+      expect((await request(port, 'GET', route)).status).toBe(403);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+    it('rejects a wrong certificate pin or pending pairing before any read', async () => {
+      const { port } = await startAndPair();
+      vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValueOnce('wrong-pin');
+      expect((await request(port, 'GET', route)).status).toBe(401);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop', networkPending: true });
+      expect((await request(port, 'GET', route)).status).toBe(403);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+    it.each(['removed', 'pin', 'kind', 'pending'] as const)('discards late host evidence after %s changes during the await', async (change) => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (_id, authorized) => {
+        expect(authorized()).toBe(true);
+        await Promise.resolve();
+        vi.mocked(annexPeers.getPeer).mockReturnValue(change === 'removed' ? undefined : { ...TEST_CONTROLLER, kind: change === 'kind' ? 'phone' : 'desktop', tlsCertificateFingerprint: change === 'pin' ? 'changed-pin' : TEST_CONTROLLER.tlsCertificateFingerprint, networkPending: change === 'pending' } as never);
+        expect(authorized()).toBe(false);
+        return { status: 200, body: { private: 'PRIVATE_LATE_RESULT' } };
+      });
+      const { port } = await startAndPair();
+      const response = await request(port, 'GET', route);
+      expect.soft(response.status).toBe(403); expect.soft(response.body).not.toContain('PRIVATE_LATE_RESULT');
+    });
+  });
+
+  describe('selected-agent passive Changes authority (#3733)', () => {
+    const route = '/api/v1/agents/a1/changes?scope=turn&offset=50';
+    beforeEach(() => vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' }));
+    it('uses the same pinned desktop read boundary with a strictly allowlisted bounded query and GET only', async () => {
+      vi.mocked(readRemoteAgentChanges).mockImplementation(async (id, query, authorized) => {
+        expect(id).toBe('a1'); expect(query).toEqual({ scope: 'turn', offset: 50 }); expect(authorized()).toBe(true);
+        return { status: 200, body: { readOnly: true, agentId: id } };
+      });
+      const { port } = await startAndPair();
+      expect((await request(port, 'GET', route)).status).toBe(200);
+      for (const method of ['POST', 'PATCH', 'DELETE']) expect((await request(port, method, route)).status).toBe(404);
+      vi.mocked(readRemoteAgentChanges).mockClear();
+      for (const query of ['scope=branch&path=/private', 'scope=branch&sessionId=unrelated', 'scope=other', 'scope=branch&offset=-1', 'scope=branch&offset=', 'scope=branch&scope=turn', 'scope=branch&fileKey=../config']) {
+        expect((await request(port, 'GET', `/api/v1/agents/a1/changes?${query}`)).status).toBe(400);
+      }
+      expect(readRemoteAgentChanges).not.toHaveBeenCalled();
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+      expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it.each(['phone', 'pending', 'pin', 'removed'] as const)('rejects %s before Changes disk work', async (condition) => {
+      const { port } = await startAndPair();
+      if (condition === 'pin') vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValueOnce('wrong-pin');
+      else vi.mocked(annexPeers.getPeer).mockReturnValue(condition === 'removed' ? undefined : { ...TEST_CONTROLLER, kind: condition === 'phone' ? 'phone' : 'desktop', networkPending: condition === 'pending' } as never);
+      expect((await request(port, 'GET', route)).status).toBe(condition === 'pin' || condition === 'removed' ? 401 : 403);
+      expect(readRemoteAgentChanges).not.toHaveBeenCalled();
+    });
+    it('discards a completed Changes response after pin revocation during an await', async () => {
+      vi.mocked(readRemoteAgentChanges).mockImplementation(async (_id, _query, authorized) => {
+        expect(authorized()).toBe(true);
+        await Promise.resolve();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop', tlsCertificateFingerprint: 'revoked-pin' });
+        expect(authorized()).toBe(false);
+        return { status: 200, body: { patch: 'PRIVATE_LATE_PATCH' } };
+      });
+      const { port } = await startAndPair();
+      const response = await request(port, 'GET', route);
+      expect(response.status).toBe(403); expect(response.body).not.toContain('PRIVATE_LATE_PATCH');
     });
   });
 
@@ -2445,6 +2825,222 @@ describe('annex-server', () => {
   });
 
   describe('mobile transport contract', () => {
+    it.each(['stable', 'phone', 'tracked Quick collision', 'project removed', 'agent disposed', 'provider changed', 'same-native reopen', 'revoked'] as const)('binds ordinary durable older pages to the exact project/runtime after awaited reads: %s', async (mode) => {
+      const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-history-receipt-'));
+      const profile = path.join(root, 'profile'), projectPath = path.join(root, 'project');
+      await fsp.mkdir(profile); await fsp.mkdir(path.join(projectPath, '.clubhouse'), { recursive: true });
+      const project = { id: 'history-project', name: 'History project', path: projectPath };
+      const config = { id: 'history-agent', name: 'History agent', color: 'blue', createdAt: '2026-01-01' };
+      const projectsFile = path.join(profile, 'projects.json'), agentsFile = path.join(projectPath, '.clubhouse', 'agents.json');
+      await fsp.writeFile(projectsFile, JSON.stringify({ version: 1, projects: [project] }));
+      await fsp.writeFile(agentsFile, JSON.stringify([config]));
+      const base = vi.spyOn(baseDir, 'getBaseDirPath').mockReturnValue(profile);
+      vi.mocked(projectStore.list).mockReturnValue([project] as never);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([config] as never);
+      let generation = 'history-open-a';
+      const events = Array.from({ length: 2205 }, (_, i) => ({ v: 2, agentId: config.id, sessionId: 'history-session', seq: i + 1, ts: i + 1, type: 'notice', data: { level: 'info', message: 'ARCHIVED_SELECTED_EVENT' } }));
+      const evidence = () => ({ version: 1, runId: generation, agentId: config.id, sessionId: 'history-session', nativeSessionId: 'same-native', providerId: 'claude-code', driver: 'claude_agent_sdk',
+        startSeq: 1, startedAt: 1, lastSeq: 2205, readAt: 3000, completeFromStart: true, values: { capabilities: { subagents: 'full', usage: 'tokens', limits: false } }, observedAt: { capabilities: 1 }, omitted: {} });
+      agentRegistry.register(config.id, { projectPath, orchestrator: 'claude-code', runtime: 'chat', nonce: 'unexported-nonce' });
+      registerChatRuntime({ kind: 'chat', agentId: config.id, isRunning: () => true, getState: () => 'idle', getSessionId: () => 'history-session', getNativeSessionId: () => 'same-native',
+        getDisplayRunId: () => generation, getDetailsEvidence: evidence, getCapabilities: () => ({ subagents: 'full' }), readTranscript: async () => {
+          if (mode === 'project removed') await fsp.writeFile(projectsFile, JSON.stringify({ version: 1, projects: [] }));
+          if (mode === 'agent disposed') await fsp.writeFile(agentsFile, JSON.stringify([{ ...config, disposedAt: '2026-11-20' }]));
+          if (mode === 'provider changed') agentRegistry.get(config.id)!.orchestrator = 'copilot';
+          if (mode === 'same-native reopen') generation = 'history-open-b';
+          if (mode === 'revoked') vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop', networkPending: true });
+          return { events };
+        } } as never);
+      try {
+        const { port, token } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: mode === 'phone' ? 'phone' : 'desktop' });
+        if (mode === 'tracked Quick collision') annexServer._testing.trackedQuickAgents.set(config.id, { projectPath } as never);
+        const response = await request(port, 'GET', `/api/v1/mobile/agents/${config.id}/chat?beforeSeq=206&limit=200`, undefined, authHeaders(token));
+        expect(response.status).toBe(['stable', 'phone', 'tracked Quick collision'].includes(mode) ? 200 : mode === 'revoked' ? 403 : 409);
+        if (response.status === 200) {
+          const body = JSON.parse(response.body);
+          expect(body.events).toHaveLength(200);
+          expect(body).toMatchObject({ nextBeforeSeq: 6, truncated: true });
+          if (mode === 'stable') expect(body.historyBinding).toMatchObject({ projectId: project.id, agentId: config.id, sessionId: 'history-session', nativeSessionId: 'same-native', displayRunId: generation, startSeq: 1 });
+          else expect(body.historyBinding).toBeUndefined();
+          expect(response.body).not.toContain('unexported-nonce');
+          expect(JSON.stringify(body.historyBinding ?? null)).not.toContain(projectPath);
+        } else expect(response.body).not.toContain('ARCHIVED_SELECTED_EVENT');
+      } finally { base.mockRestore(); clearChatRuntimes(); agentRegistry.untrack(config.id); annexServer._testing.trackedQuickAgents.delete(config.id); await fsp.rm(root, { recursive: true, force: true }); }
+    });
+
+    it.each(['transcript-native', 'transcript-same-native', 'folders-native', 'folders-same-native', 'stable'] as const)('refuses same-object runtime generation replacement across awaited page work: %s', async (mode) => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'A', color: 'blue', createdAt: '2026-01-01' }] as never);
+      let native = 'native-a', generation = 'generation-a';
+      const rotate = () => { generation = 'generation-b'; if (mode.endsWith('-native') && !mode.includes('same-native')) native = 'native-b'; };
+      const events = [{ v: 2, agentId: 'a', sessionId: 'same-app', seq: 2, ts: 2, type: 'agent_message', data: { messageId: 'm', text: 'OLD_GENERATION_BODY' } }];
+      let entered!: () => void, release!: () => void;
+      const admission = new Promise<void>((resolve) => { entered = resolve; });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const runtime = { kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'idle', getSessionId: () => 'same-app', getNativeSessionId: () => native, getDisplayRunId: () => generation,
+        readTranscript: async () => { if (mode.startsWith('transcript-')) { entered(); await gate; } return { events }; } };
+      registerChatRuntime(runtime as never);
+      const roots = vi.mocked(agentFolders); const previous = roots.getMockImplementation();
+      roots.mockImplementation(async () => { if (mode.startsWith('folders-')) { entered(); await gate; } return ['/test/project']; });
+      try {
+        const { port, token } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+        const pending = request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token));
+        if (mode !== 'stable') { await admission; rotate(); release(); }
+        const response = await pending;
+        expect.soft(response.status).toBe(mode === 'stable' ? 200 : 409);
+        if (mode === 'stable') expect(JSON.parse(response.body).displayRunId).toBe('generation-a');
+        else { expect.soft(response.body).not.toContain('OLD_GENERATION_BODY'); expect.soft(response.body).not.toContain('generation-b'); }
+      } finally { release(); roots.mockImplementation(previous!); clearChatRuntimes(); }
+    });
+
+    it.each(['corrupt-projects', 'backup-only-projects', 'cached-prior-roots'] as const)('never uses recovering or cached generic roots for an attested desktop quick read: %s', async (mode) => {
+      const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-quick-passive-roots-'));
+      const profile = path.join(root, 'profile'), project = path.join(root, 'project'), prior = path.join(root, 'PRIOR_PRIVATE_PROJECT');
+      await fsp.mkdir(profile); await fsp.mkdir(project); await fsp.mkdir(prior); await fsp.mkdir(path.join(project, '.clubhouse'));
+      const inventory = path.join(profile, 'projects.json');
+      const payload = JSON.stringify({ version: 1, projects: [{ id: 'p', name: 'P', path: project }] });
+      await fsp.writeFile(inventory, payload);
+      await fsp.writeFile(path.join(profile, 'projects.json.bak'), payload);
+      await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json.bak'), JSON.stringify([{ id: 'root-race-quick', name: 'Legacy', color: 'blue', createdAt: '2026-01-01' }]));
+      const base = vi.spyOn(baseDir, 'getBaseDirPath').mockReturnValue(profile);
+      const actualFiles = await vi.importActual<typeof import('./agent-runtime/chat-files')>('./agent-runtime/chat-files');
+      const actualProjects = await vi.importActual<typeof import('./project-store')>('./project-store');
+      const actualConfig = await vi.importActual<typeof import('./agent-config')>('./agent-config');
+      actualFiles.clearAgentFoldersCache(); clearQuickAgentRuns();
+      const disk = async (folder: string, prefix = ''): Promise<Record<string, unknown>> => {
+        const out: Record<string, unknown> = {};
+        for (const item of await fsp.readdir(folder, { withFileTypes: true })) {
+          const file = path.join(folder, item.name), rel = prefix + item.name;
+          if (item.isDirectory()) Object.assign(out, await disk(file, rel + '/'));
+          else { const stat = await fsp.lstat(file, { bigint: true }); out[rel] = { bytes: (await fsp.readFile(file)).toString('base64'), ino: String(stat.ino), mode: String(stat.mode), mtime: String(stat.mtimeNs), ctime: String(stat.ctimeNs) }; }
+        }
+        return out;
+      };
+      let expectedDisk: Record<string, unknown> = {};
+      if (mode === 'cached-prior-roots') {
+        agentRegistry.register('root-race-quick', { projectPath: prior, cwd: prior, orchestrator: 'claude-code', runtime: 'chat' });
+        expect(await actualFiles.agentFolders('root-race-quick')).toContain(prior);
+      }
+      const run = beginQuickAgentRun({ agentId: 'root-race-quick', name: 'Quick', projectPath: project, cwd: project });
+      agentRegistry.register('root-race-quick', { projectPath: project, cwd: project, orchestrator: 'claude-code', runtime: 'chat' });
+      const runtime = { kind: 'chat', agentId: 'root-race-quick', isRunning: () => true, getState: () => 'idle', getSessionId: () => 's', getNativeSessionId: () => 'n', getDisplayRunId: () => 'run-a', readTranscript: async () => {
+        if (mode !== 'cached-prior-roots') {
+          agentRegistry.untrack('root-race-quick');
+          if (mode === 'corrupt-projects') { await fsp.writeFile(inventory, '{broken'); await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), '{broken'); }
+          else await fsp.unlink(inventory);
+        }
+        expectedDisk = await disk(root);
+        return { events: [{ v: 2, agentId: 'root-race-quick', sessionId: 's', seq: 1, ts: 1, type: 'session_state', data: { state: 'idle' } }] };
+      } };
+      registerChatRuntime(runtime as never); noteQuickAgentRuntime(run, agentRegistry.get('root-race-quick'), () => getAgentRuntime('root-race-quick') === runtime);
+      const roots = vi.mocked(agentFolders), rootsPrevious = roots.getMockImplementation();
+      roots.mockImplementation(async (id) => {
+        const list = vi.mocked(projectStore.list), config = vi.mocked(agentConfigModule.getDurableConfig);
+        const listPrevious = list.getMockImplementation(), configPrevious = config.getMockImplementation();
+        list.mockImplementation(actualProjects.list); config.mockImplementation(actualConfig.getDurableConfig);
+        try { return await actualFiles.agentFolders(id); }
+        finally { list.mockImplementation(listPrevious!); config.mockImplementation(configPrevious!); }
+      });
+      try {
+        const { port } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+        const response = await request(port, 'GET', '/api/v1/mobile/agents/root-race-quick/chat');
+        expect.soft(await disk(root)).toEqual(expectedDisk);
+        expect.soft(roots).not.toHaveBeenCalled();
+        expect(response.status).toBe(mode === 'cached-prior-roots' ? 200 : 409);
+        if (mode === 'cached-prior-roots') { const body = JSON.parse(response.body); expect.soft(body.contentRoots).toEqual([]); expect.soft(body.contentAnyPath).toBe(false); expect.soft(response.body).not.toContain('PRIOR_PRIVATE_PROJECT'); }
+      } finally { roots.mockImplementation(rootsPrevious!); actualFiles.clearAgentFoldersCache(); actualConfig.clearAgentConfigCache(project); base.mockRestore(); clearQuickAgentRuns(); clearChatRuntimes(); agentRegistry.untrack('root-race-quick'); await fsp.rm(root, { recursive: true, force: true }); }
+    });
+
+    it.each(['phone', 'downgraded-desktop'] as const)('does not confirm desktop Details generation through a %s authority', async (mode) => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'A', color: 'blue', createdAt: '2026-01-01' }] as never);
+      registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'idle', getSessionId: () => 's', getNativeSessionId: () => 'n', getDisplayRunId: () => 'desktop-generation', readTranscript: async () => {
+        if (mode === 'downgraded-desktop') vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' });
+        return { events: [] };
+      } } as never);
+      try {
+        const { port, token } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: mode === 'phone' ? 'phone' : 'desktop' });
+        const response = await request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token));
+        expect(response.status).toBe(mode === 'phone' ? 200 : 403);
+        expect(response.body).not.toContain('desktop-generation');
+        if (mode === 'phone') expect(JSON.parse(response.body).displayRunId).toBeNull();
+      } finally { clearChatRuntimes(); }
+    });
+
+    it.each(['same', 'phone', 'unbound', 'reused-registration', 'replaced-during-read', 'removed-during-read', 'unreadable-project', 'revoked-during-read', 'historical-session'] as const)('reads only an attested direct desktop quick current session: %s', async (mode) => {
+      const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-direct-quick-'));
+      const profile = path.join(root, 'profile'), project = path.join(root, 'project');
+      await fsp.mkdir(profile); await fsp.mkdir(project);
+      const inventory = path.join(profile, 'projects.json');
+      await fsp.writeFile(inventory, JSON.stringify({ version: 1, projects: [{ id: 'p', name: 'Project', path: project }] }));
+      const base = vi.spyOn(baseDir, 'getBaseDirPath').mockReturnValue(profile);
+      clearQuickAgentRuns();
+      const run = beginQuickAgentRun({ agentId: 'direct-quick', name: 'Direct desktop', projectPath: project, cwd: project });
+      agentRegistry.register('direct-quick', { projectPath: project, cwd: project, orchestrator: 'claude-code', runtime: 'chat' });
+      const runtime = { kind: 'chat' as const, agentId: 'direct-quick', isRunning: () => true, getState: () => 'idle' as const, getSessionId: () => 's', getNativeSessionId: () => 'n', getDisplayRunId: () => 'direct-display', sendMessage: vi.fn(),
+        readTranscript: vi.fn(async (opts: unknown) => {
+          expect(opts).toEqual({ passive: true, tail: 2001 });
+          if (mode === 'replaced-during-read') registerChatRuntime({ ...runtime, getDisplayRunId: () => 'replacement-display' } as never);
+          if (mode === 'removed-during-read') await fsp.writeFile(inventory, JSON.stringify({ version: 1, projects: [] }));
+          if (mode === 'revoked-during-read') vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+          return { events: [{ v: 2, type: 'session_state', agentId: 'direct-quick', sessionId: 's', seq: 1, ts: 1, data: { state: 'idle' } }] };
+        }) };
+      registerChatRuntime(runtime as never);
+      if (mode !== 'unbound') noteQuickAgentRuntime(run, agentRegistry.get('direct-quick'), () => getAgentRuntime('direct-quick') === runtime);
+      if (mode === 'reused-registration') agentRegistry.register('direct-quick', { projectPath: project, cwd: project, orchestrator: 'claude-code', runtime: 'chat' });
+      if (mode === 'unreadable-project') await fsp.writeFile(inventory, '[]broken');
+      try {
+        const { port } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: mode === 'phone' ? 'phone' : 'desktop' });
+        const before = await fsp.readFile(inventory);
+        const route = '/api/v1/mobile/agents/direct-quick/chat' + (mode === 'historical-session' ? '?sessionId=unrelated-session' : '');
+        const response = await request(port, 'GET', route);
+        expect(response.status).toBe(mode === 'same' ? 200 : mode === 'phone' || mode === 'historical-session' ? 404 : mode === 'revoked-during-read' ? 403 : mode === 'replaced-during-read' || mode === 'removed-during-read' ? 409 : 500);
+        if (mode === 'same') {
+          expect(JSON.parse(response.body)).toMatchObject({ sessionId: 's', displayRunId: 'direct-display', readOnly: false });
+          expect(JSON.parse(response.body).historyBinding).toBeUndefined();
+          const older = await request(port, 'GET', route + '?beforeSeq=2');
+          expect(older.status).toBe(404);
+          expect(older.body).toContain('quick_session_unavailable');
+          expect(annexServer._testing.trackedQuickAgents.has('direct-quick')).toBe(false);
+          const caps = await request(port, 'GET', '/api/v1/mobile/capabilities');
+          const command = await request(port, 'POST', '/api/v1/mobile/commands', { version: 1, epoch: JSON.parse(caps.body).epoch, commandId: 'direct-read-is-not-write', type: 'chat.send', agentId: 'direct-quick', sessionId: 's', text: 'must not send' });
+          expect(command.body).toContain('agent_not_found');
+          for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route)).status).toBe(404);
+        } else expect(response.body).not.toContain('direct-display');
+        if (['phone', 'unbound', 'reused-registration', 'unreadable-project', 'historical-session'].includes(mode)) expect(runtime.readTranscript).not.toHaveBeenCalled();
+        expect(runtime.sendMessage).not.toHaveBeenCalled();
+        expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+        if (mode !== 'removed-during-read') expect(await fsp.readFile(inventory)).toEqual(before);
+      } finally { base.mockRestore(); clearQuickAgentRuns(); clearChatRuntimes(); agentRegistry.untrack('direct-quick'); await fsp.rm(root, { recursive: true, force: true }); }
+    });
+
+    it.each(['same', 'replacement', 'stopped'] as const)('binds chat-page display generation to the admitted runtime after awaited read: %s', async (mode) => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      let running = true;
+      const original = { kind: 'chat', agentId: 'a', isRunning: () => running, getState: () => running ? 'idle' : 'sleeping', getSessionId: () => 's', getDisplayRunId: () => running ? 'display-A' : undefined,
+        readTranscript: async () => {
+          if (mode === 'replacement') registerChatRuntime({ ...original, getDisplayRunId: () => 'display-B' } as never);
+          if (mode === 'stopped') running = false;
+          return { events: [{ type: 'agent_message', agentId: 'a', sessionId: 's', seq: 3000, ts: 3000, data: { messageId: 'tail', text: 'tail' } }] };
+        } };
+      registerChatRuntime(original as never);
+      try {
+        const { port, token } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+        const response = await request(port, 'GET', '/api/v1/mobile/agents/a/chat?limit=1', undefined, authHeaders(token));
+        expect(response.status).toBe(mode === 'same' ? 200 : 409);
+        if (mode === 'same') expect(JSON.parse(response.body).displayRunId).toBe('display-A');
+        else expect(response.body).not.toContain('"events"');
+        expect(response.body).not.toContain('display-B');
+      } finally { clearChatRuntimes(); }
+    });
+
     it('paginates rich chat while preserving pending interactions outside the visible page', async () => {
       vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
       vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
@@ -8505,8 +9101,9 @@ describe('annex-server', () => {
         path.join(__dirname, '../../renderer/plugins/builtin/canvas/canvas-store.ts'), 'utf-8',
       ));
       // hydrateFromRemote accepts wireDefinitions as third parameter
-      // (and zone wire definitions as a fourth)
-      expect(source).toContain('hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?, remoteZoneWireDefinitions?)');
+      // and zone wire definitions as fourth, followed by optional host/snapshot provenance.
+      expect(source).toContain('hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?, remoteZoneWireDefinitions?, source?)');
+      expect(source).toContain('remoteSource: source ?? null');
     });
   });
 

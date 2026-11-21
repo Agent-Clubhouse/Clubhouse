@@ -1,3 +1,4 @@
+import { useNow } from './useNow';
 /**
  * Agent details (#2032, "Design decided 2026-10-17"): a 340px column of cards
  * beside the transcript or terminal, behind one toolbar button (⌥⌘D). It
@@ -27,6 +28,7 @@ import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
 import { dispatcherWiresAgentId, isDispatcherAgent, useLocalProject } from '../../dispatcher/dispatcherStore';
 import { Tooltip } from '../../../components/Tooltip';
 import { jumpToCanvas, useAgentCanvases } from './agent-canvases';
+import { CanvasMembershipList } from './CanvasMembershipList';
 import { getOrchestratorLabel } from '../orchestrator-colors';
 import { DRIVER_LABELS, limitLabel, limitName } from '../chat/ChatHeader';
 import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
@@ -50,6 +52,7 @@ import { OtherMachinesList, otherMachinesSummary } from '../../dispatcher/OtherM
 import { useDispatcherPresence } from '../../dispatcher/useDispatcherPresence';
 import { openAgentSettingsOn } from '../agentSettingsPages';
 import { Button } from '../../../components/Button';
+import { RemoteAgentDetailsView } from './RemoteAgentDetailsView';
 
 export type { CardId } from './detailsStore';
 
@@ -144,17 +147,6 @@ export function useBranchChanges(cwd: string | undefined, refreshKey: unknown): 
   return changes;
 }
 
-function useNow(active: boolean, everyMs = 30_000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), everyMs);
-    return () => clearInterval(id);
-  }, [active, everyMs]);
-  return now;
-}
-
 function tokensOf(t: { total?: number; input?: number; output?: number } | undefined): number | undefined {
   if (!t) return undefined;
   return t.total ?? ((t.input ?? 0) + (t.output ?? 0) || undefined);
@@ -184,7 +176,11 @@ export interface AgentDetailsProps {
   lastSession?: LastSessionInfo | null;
 }
 
-export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, onReviewAll, branch: givenBranch, lastSession }: AgentDetailsProps) {
+export function AgentDetails(props: AgentDetailsProps) {
+  return isRemoteProjectId(props.agent.projectId) ? <RemoteAgentDetailsView {...props} /> : <LocalAgentDetails {...props} />;
+}
+
+function LocalAgentDetails({ agent, chat, onShowInStream, missedSubagentId, onReviewAll, branch: givenBranch, lastSession }: AgentDetailsProps) {
   const setOpen = useAgentDetailsStore((s) => s.setOpen);
   const focus = useAgentDetailsStore((s) => s.focus);
   const [scope, setScope] = useState<ChangesScope>('branch');
@@ -492,22 +488,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         open={open('canvases')}
         onToggle={() => toggleCard('canvases')}
       >
-        <ul className="flex flex-col">
-          {canvases.map((c) => (
-            <li key={`${c.scope}:${c.canvasId}`}>
-              <button
-                type="button"
-                onClick={() => jumpToCanvas(agent, c)}
-                className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0"
-                data-testid="details-canvas-row"
-              >
-                <span className="text-[12.5px] text-ctp-text truncate">{c.name}</span>
-                <span className="text-xs text-ctp-overlay1 whitespace-nowrap">{c.scope === 'app' ? 'Home' : 'card'}</span>
-                <span className="ml-auto text-xs text-ctp-accent">Jump</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <CanvasMembershipList hits={canvases} onJump={(hit) => jumpToCanvas(agent, hit)} />
       </DetailsCard>}
     </aside>
   );

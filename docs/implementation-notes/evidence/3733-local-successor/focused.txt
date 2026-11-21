@@ -1,0 +1,60 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+{"admissionCount":250,"elapsedMs":49,"boardCommits":1,"sequenceChanges":1,"joinPosts":1}
+{"admissionCount":2005,"elapsedMs":401,"boardCommits":1,"sequenceChanges":1,"joinPosts":1}
+ ❯ |main| src/main/services/remote-connection-endpoint-fields.test.ts (17 tests | 2 failed) 255ms
+   × integrates real selected source, primary and owner cache fields into a read-only Connections card: bounded-page 15ms
+   × keeps configured controller and saved manual endpoint identities independent: bounded-identity-page 23ms
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: bounded-page
+AssertionError: expected 142 to be 112 // Object.is equality
+
+- Expected
++ Received
+
+- 112
++ 142
+
+ ❯ src/main/services/remote-connection-endpoint-fields.test.ts:88:67
+     86|   if (kind === 'bounded-page') {
+     87|     expect(cacheRead).toHaveBeenCalledTimes(30); expect(receipts.every…
+     88|     expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe…
+       |                                                                   ^
+     89|     expect.soft(c.rows.some((r) => r.label.endsWith(' saved target')))…
+     90|     expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|rootNamespace…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: bounded-identity-page
+AssertionError: expected 21 to be 20 // Object.is equality
+
+- Expected
++ Received
+
+- 20
++ 21
+
+ ❯ src/main/services/remote-connection-endpoint-fields.test.ts:137:105
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 129 passed (130)
+      Tests  2 failed | 5472 passed | 1 skipped (5475)
+   Start at  22:33:37
+   Duration  115.70s (transform 9.41s, setup 910ms, import 22.89s, tests 287.31s, environment 3.61s)
+

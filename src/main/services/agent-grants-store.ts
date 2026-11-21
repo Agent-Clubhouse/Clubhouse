@@ -11,6 +11,7 @@
  */
 
 import { createSettingsStore, type SettingsCommitPrecondition } from './settings-store';
+import { readDisplaySettings, ownDisplayValue, displayInput, agentDisplayInput, type DisplayValue } from './display-settings';
 import { normalizeGrantChanges, type AgentGrantChanges } from '../../shared/agent-grant-changes';
 import { notifyToolGateChange } from './clubhouse-mcp/orchestration-gate';
 import { randomUUID } from 'crypto';
@@ -22,7 +23,7 @@ interface AgentGrantsFile {
 }
 
 // Audited like other settings a person changes (#2973): which agents' permissions changed, not the targets (they can name project paths).
-const store = createSettingsStore<AgentGrantsFile>('agent-grants.json', { agents: {} }, undefined, { audit: { key: 'agent_grants' } });
+const store = createSettingsStore<AgentGrantsFile>('agent-grants.json', { agents: {} }, undefined, { displaySnapshot: true, audit: { key: 'agent_grants' } });
 
 /** An agent's saved changes, checked: anything malformed is dropped, never widened. */
 export function getAgentGrantChanges(agentId: string): AgentGrantChanges | undefined {
@@ -56,4 +57,38 @@ export async function updateAgentGrantChanges(
   // The next call is checked against it; the CLI lists its tools again.
   notifyToolGateChange(agentId);
   return next;
+}
+
+const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+export const DISPLAY_GRANT_LAYER_LIMIT = 100;
+
+/** Internal selected-record evidence. Never serialize this store or its raw change records. */
+export function readAgentGrantChangesForDisplay(agentId: string): DisplayValue<AgentGrantChanges | undefined> {
+  if (!agentId || agentId.length > 2048) return { state: 'unavailable', reason: 'invalid', inputs: [agentDisplayInput('Selected agent permissions')] };
+  const evidence = readDisplaySettings(store, 'agent-grants.json'), inputs = [displayInput('Saved agent permissions', evidence)];
+  const unknown = (reason: 'unreadable' | 'invalid' | 'limit' = 'invalid'): DisplayValue<AgentGrantChanges | undefined> => ({ state: 'unavailable', inputs, reason });
+  if (evidence.state !== 'ok') return unknown('unreadable');
+  const agents = ownDisplayValue(evidence.raw, 'agents');
+  if (agents !== undefined && !record(agents)) return unknown();
+  const selected = agents === undefined ? undefined : ownDisplayValue(agents as Record<string, unknown>, agentId);
+  if (selected === undefined) return { state: 'ok', value: undefined, inputs };
+  if (!record(selected) || !['changes', 'template'].some((key) => ownDisplayValue(selected, key) !== undefined)) return unknown();
+  for (const layer of ['changes', 'template'] as const) {
+    const list = ownDisplayValue(selected, layer);
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) return unknown();
+    if (list.length > DISPLAY_GRANT_LAYER_LIMIT) return unknown('limit');
+    for (const entry of list) {
+      if (!record(entry) || !record(entry.target)) return unknown();
+      const target = entry.target;
+      if (target.kind === 'connected' && (['onlyDispatcher', 'excludeDispatcher', 'wakeOn'].some((key) => target[key] !== undefined && typeof target[key] !== 'boolean')
+        || ['onlyDispatcher', 'excludeDispatcher', 'wakeOn'].filter((key) => target[key] === true).length > 1)) return unknown();
+      // Reuse the execution parser for action/target/mode classification, but do
+      // not silently discard malformed entries into verified empty/defaults.
+      const rebuilt = normalizeGrantChanges({ [layer]: [entry] })?.[layer];
+      if (rebuilt?.length !== 1) return unknown();
+      if (Buffer.byteLength(JSON.stringify(rebuilt[0])) > 4096) return unknown('limit');
+    }
+  }
+  return { state: 'ok', value: normalizeGrantChanges(selected), inputs };
 }

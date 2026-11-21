@@ -4,6 +4,8 @@
  */
 
 import type { McpBinding, BindingTargetKind } from './types';
+import { createHash } from 'crypto';
+import type { DisplayInput, DisplayReceipt, DisplayValue } from '../display-settings';
 import { initializeBindingToolKey } from './binding-tool-key';
 
 export type BindingChangeListener = (agentId: string) => void;
@@ -16,6 +18,70 @@ export interface RestoreOptions {
 
 /** The same tools, in any order (no list: none). */
 const sameList = (a: readonly string[] | undefined, b: readonly string[]) => (a ?? []).length === b.length && b.every((t) => a!.includes(t));
+
+export const BINDING_DISPLAY_SCAN = 4096;
+export const BINDING_DISPLAY_OWNERS = 512;
+export const BINDING_DISPLAY_PAGE = 50;
+export type BindingDisplayDirection = 'outgoing' | 'incoming';
+export interface BindingDisplayRow {
+  agentId: string;
+  targetId: string;
+  targetKind: BindingTargetKind;
+  label: DisplayValue<string>;
+  agentName: DisplayValue<string | null>;
+  targetName: DisplayValue<string | null>;
+  projectName: DisplayValue<string | null>;
+  disabledTools: DisplayValue<string[]>;
+  enabledTools: DisplayValue<string[]>;
+}
+export interface BindingDisplayPage { rows: BindingDisplayRow[]; total: number; offset: number; omitted: number; nextOffset: number | null }
+const bindingSelectedId = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 200;
+const bindingOffset = (v: unknown): v is number => Number.isInteger(v) && Number(v) >= 0 && Number(v) <= BINDING_DISPLAY_SCAN;
+export const isBindingDisplayKind = (v: unknown): v is BindingTargetKind => v === 'agent' || v === 'browser' || v === 'terminal' || v === 'group-project' || v === 'plugin';
+/** Safe allowlist only. The owner must first validate selected scope and row identity. */
+export function projectBindingRowForDisplay(binding: McpBinding, inputs: DisplayInput[]): BindingDisplayRow {
+  const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs });
+  const unknown = <T>(reason: 'invalid' | 'limit' = 'invalid'): DisplayValue<T> => ({ state: 'unavailable', reason, inputs });
+  const text = (v: unknown): DisplayValue<string> => typeof v !== 'string' ? unknown() : v.length > 1024 ? unknown('limit') : known(v);
+  const optional = (v: unknown): DisplayValue<string | null> => v === undefined || v === '' ? known(null) : text(v);
+  const tools = (v: unknown): DisplayValue<string[]> => v === undefined ? known([]) : !Array.isArray(v) ? unknown()
+    : v.length > 100 ? unknown('limit') : v.every((tool) => typeof tool === 'string' && !!tool && tool.length <= 100) ? known([...new Set(v as string[])]) : unknown();
+  return { agentId: binding.agentId, targetId: binding.targetId, targetKind: binding.targetKind,
+    label: text(binding.label), agentName: optional(binding.agentName), targetName: optional(binding.targetName), projectName: optional(binding.projectName),
+    disabledTools: tools(binding.disabledTools), enabledTools: tools(binding.enabledTools) };
+}
+function projectBindingDisplay(bindings: ReadonlyMap<string, McpBinding[]>, agentId: string, direction: BindingDisplayDirection, offset: number): DisplayValue<BindingDisplayPage> {
+  const inputs: DisplayInput[] = [{ field: `Existing ${direction === 'incoming' ? 'incoming' : 'outgoing'} binding metadata`, source: 'host-cache', observedAt: Date.now() }];
+  const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs });
+  const unknown = <T>(reason: 'invalid' | 'limit' = 'invalid'): DisplayValue<T> => ({ state: 'unavailable', reason, inputs });
+  if (!bindingSelectedId(agentId) || !bindingOffset(offset) || direction !== 'incoming' && direction !== 'outgoing') return unknown();
+  // Outgoing is a direct selected bucket. An incomplete incoming scan cannot
+  // erase independently available outgoing fields. Count owners (even empty)
+  // and ALL rows (even nonmatches), before inspecting selected page content.
+  if (direction === 'incoming' && bindings.size > BINDING_DISPLAY_OWNERS) return unknown('limit');
+  const buckets: Iterable<[string, McpBinding[]]> = direction === 'outgoing' ? [[agentId, bindings.get(agentId) ?? []]] : bindings;
+  const rows: BindingDisplayRow[] = [], keys = new Set<string>(); let scanned = 0, total = 0;
+  for (const [owner, list] of buckets) {
+    if (!Array.isArray(list)) return unknown();
+    if (list.length > BINDING_DISPLAY_SCAN - scanned) return unknown('limit'); scanned += list.length;
+    if (direction === 'incoming' && owner === agentId) continue;
+    for (const binding of list) {
+      if (!binding || typeof binding !== 'object' || Array.isArray(binding)) return unknown();
+      if (direction === 'incoming' && (binding.targetId !== agentId || isBindingDisplayKind(binding.targetKind) && binding.targetKind !== 'agent')) continue;
+      if (typeof binding.agentId !== 'string' || !binding.agentId || binding.agentId.length > 512 || binding.agentId !== owner || typeof binding.targetId !== 'string' || !binding.targetId || binding.targetId.length > 512 || !isBindingDisplayKind(binding.targetKind)) return unknown();
+      const key = `${binding.agentId}\0${binding.targetId}`; if (keys.has(key)) return unknown(); keys.add(key);
+      const index = total++; if (index < offset || index >= offset + BINDING_DISPLAY_PAGE) continue;
+      rows.push(projectBindingRowForDisplay(binding, inputs));
+    }
+  }
+  return known({ rows, total, offset, omitted: total - rows.length, nextOffset: offset + rows.length < total ? offset + rows.length : null });
+}
+const bindingDisplaySignature = (value: DisplayValue<BindingDisplayPage>): string => createHash('sha256').update(JSON.stringify(value, (key, v) => key === 'inputs' ? undefined : v)).digest('hex');
+/** Selected key/page/hash only; never retain the bindings map, record,
+ * instructions, resolver, caller options or unrelated cache data. */
+function bindingDisplayReceipt(agentId: string, direction: BindingDisplayDirection, offset: number, key: string): DisplayReceipt {
+  return { current: () => { try { return bindingDisplaySignature(bindingManager.readBindingsForDisplay(agentId, { direction, offset })) === key; } catch { return false; } } };
+}
 
 class BindingManager {
   /** agentId → array of bindings */
@@ -207,6 +273,15 @@ class BindingManager {
       all.push(...agentBindings);
     }
     return all;
+  }
+
+  /** Passive selected page only. No resolver, source inspection, instructions,
+   * ordinary global list or notification. This is binding metadata, not an
+   * authenticated handshake, effective tool permission or run attestation. */
+  readBindingsForDisplay(agentId: string, options: { direction: BindingDisplayDirection; offset?: number; receipts?: DisplayReceipt[] }): DisplayValue<BindingDisplayPage> {
+    const offset = options.offset ?? 0, value = projectBindingDisplay(this.bindings, agentId, options.direction, offset);
+    if (bindingSelectedId(agentId) && bindingOffset(offset) && (options.direction === 'outgoing' || options.direction === 'incoming')) options.receipts?.push(bindingDisplayReceipt(agentId, options.direction, offset, bindingDisplaySignature(value)));
+    return value;
   }
 
   /** Monotonically increasing version counter, bumped on every change. */

@@ -1,3 +1,5 @@
+import type { DisplayReceipt } from './display-settings';
+import type { RequestPauseDisplayReader } from './federation-pause-display';
 import type { AnnexDeliveryEpoch } from '../../shared/annex-delivery';
 import type { AgentAddress, ConnectionDirection } from '../../shared/connection-grants';
 
@@ -62,6 +64,8 @@ export interface FederationPublicationGuard {
 
 /** Installed by the request service; kept below transport to avoid an import cycle. */
 export interface FederationRequestRouter {
+  /** Selected passive metadata only; never the legacy permission/pause read. */
+  readPauseForDisplay?: RequestPauseDisplayReader;
   offer(callerId: string, targetId: string, args: Record<string, unknown>): Promise<import('./clubhouse-mcp/types').McpToolResult>;
   allowed(machine: string, args: Record<string, unknown>, tool?: string): boolean;
   /** The limit that tripped this link, while it is paused. */
@@ -70,10 +74,37 @@ export interface FederationRequestRouter {
   cause(callerId: string, args?: Record<string, unknown>): import('../../shared/annex-delivery').AnnexCallContext | undefined;
 }
 let requests: FederationRequestRouter | undefined;
+// Holds only the currently installed source, for no longer than the ordinary
+// router itself. Returned receipts capture the empty identity token only.
+let requestDisplayIdentity: object = {};
+let registeredPauseReader: RequestPauseDisplayReader | undefined;
+function installedPauseReader(): RequestPauseDisplayReader | undefined {
+  try {
+    const descriptor = requests && Object.getOwnPropertyDescriptor(requests, 'readPauseForDisplay');
+    return descriptor && 'value' in descriptor && typeof descriptor.value === 'function' ? descriptor.value : undefined;
+  } catch { return undefined; } // telemetry-exempt: optional metadata cannot initialize or break the router.
+}
+function requestDisplayReceipt(identity: object): DisplayReceipt {
+  return { current: () => { try { return identity === requestDisplayIdentity && installedPauseReader() === registeredPauseReader; } catch { return false; } } };
+}
+/** Metadata association, not permission or current transport evidence. The
+ * consumer separately retains pairing/role/pin/target/auth/run/source receipts. */
+export const readRegisteredFederationPauseForDisplay: RequestPauseDisplayReader = (machine, options) => {
+  const unavailable = (reason?: 'invalid' | 'changed' | 'unreadable') => ({ state: 'unavailable' as const, ...(reason && { reason }), inputs: [{ field: 'Installed request-service pause metadata', source: 'host-cache' as const, observedAt: Date.now() }] });
+  if (typeof machine !== 'string' || !machine || machine.length > 200) return unavailable('invalid');
+  const receipt = requestDisplayReceipt(requestDisplayIdentity); options.receipts.push(receipt);
+  if (!receipt.current()) return unavailable('changed');
+  if (!registeredPauseReader) return unavailable();
+  try {
+    const value = registeredPauseReader(machine, options);
+    return receipt.current() ? value : unavailable('changed');
+  } catch { return unavailable(receipt.current() ? 'unreadable' : 'changed'); } // telemetry-exempt: unavailable metadata, no raw error returned.
+};
 export function federationRequestRouter(): FederationRequestRouter | undefined { return requests; }
 export function setFederationRequestRouter(router: FederationRequestRouter): () => void {
   requests = router;
-  return () => { if (requests === router) requests = undefined; };
+  registeredPauseReader = installedPauseReader(); requestDisplayIdentity = {};
+  return () => { if (requests === router) { requests = undefined; registeredPauseReader = undefined; requestDisplayIdentity = {}; } };
 }
 
 /** Agreement visibility does not grant the local controller Handoff participant rights. */
