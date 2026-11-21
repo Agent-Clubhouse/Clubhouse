@@ -1,0 +1,7 @@
+HEAD: dc99b2f1d192d4c5e10c276d7112a132595abc6c
+Command argv: ["git", "diff", "--check", "379ebdca083d28634e497279ad9e4e0fd08bd3e1", "dc99b2f1d192d4c5e10c276d7112a132595abc6c"]
+Working directory: repository root
+Exit code: 0
+STDOUT:
+
+STDERR:

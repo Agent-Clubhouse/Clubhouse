@@ -1,0 +1,29 @@
+HEAD: dc99b2f1d192d4c5e10c276d7112a132595abc6c
+Command argv: ["git", "diff", "--name-only", "379ebdca083d28634e497279ad9e4e0fd08bd3e1", "dc99b2f1d192d4c5e10c276d7112a132595abc6c"]
+Working directory: repository root
+Exit code: 0
+STDOUT:
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/README.md
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/SHA256SUMS.txt
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/algorithm-source-binding.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/all-local-save-callers.txt
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/boundaries.review.patch
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/caller-inventory.txt
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/capture-source-inventory.py
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/check-documentation.py
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/contract.md
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/equivalent-launch-generation-search.txt
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/fixtures.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/generator-failure.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/inventory-manifest.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/launch-callers.txt
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/launch-gate.review.patch
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/make-boundary-patch.py
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/manual-disabled-paths.txt
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/retained-r1-readback.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/server-lifecycle-callers.txt
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/source-binding.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/store-and-recovery-algorithm.md
+docs/implementation-notes/3720-negotiated-member-names/successor-r2/store-compatibility-importers.txt
+
+STDERR:

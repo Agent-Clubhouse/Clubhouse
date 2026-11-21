@@ -1,0 +1,9 @@
+HEAD: dc99b2f1d192d4c5e10c276d7112a132595abc6c
+Command argv: ["python3", "docs/implementation-notes/3720-negotiated-member-names/successor-r2/check-documentation.py"]
+Working directory: repository root
+Exit code: 0
+STDOUT:
+PASS docs only: 8 source hashes, git apply --check on disposable copies, 34 unique expected-case inventory, epoch/transition arithmetic, retained r1/frozen docs byte equality.
+No patch applied; no DTO parser, store, renderer, teardown, race, type/lint, old/new endpoint or product test executed. Missing helpers remain unimplemented.
+
+STDERR:

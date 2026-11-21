@@ -1,0 +1,81 @@
+{
+  "headAtExecution": "dc99b2f1d192d4c5e10c276d7112a132595abc6c",
+  "executedAtUTC": "2026-11-21T11:26:19.663937+00:00",
+  "status": "Documentation/context/arithmetic/hash checks ONLY. No product code or tests executed.",
+  "sourceReference": "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+  "retainedR1": "379ebdca083d28634e497279ad9e4e0fd08bd3e1",
+  "checks": [
+    {
+      "label": "documentation-context",
+      "argv": [
+        "python3",
+        "docs/implementation-notes/3720-negotiated-member-names/successor-r2/check-documentation.py"
+      ],
+      "cwd": "repository root",
+      "exitCode": 0,
+      "rawOutput": "documentation-context.txt",
+      "sha256": "81badd7bfc438b213f7fd60d463c7b7507c566ded7c9ec184142469fbf895a0f"
+    },
+    {
+      "label": "frozen-diff-whitespace",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "379ebdca083d28634e497279ad9e4e0fd08bd3e1",
+        "dc99b2f1d192d4c5e10c276d7112a132595abc6c"
+      ],
+      "cwd": "repository root",
+      "exitCode": 0,
+      "rawOutput": "frozen-diff-whitespace.txt",
+      "sha256": "5ac15ab06ec1709607529d709b0562b13907fdb7c30ce07d125e31211efadc1d"
+    },
+    {
+      "label": "docs-input-hashes",
+      "argv": [
+        "shasum",
+        "-a",
+        "256",
+        "-c",
+        "SHA256SUMS.txt"
+      ],
+      "cwd": "docs/implementation-notes/3720-negotiated-member-names/successor-r2",
+      "exitCode": 0,
+      "rawOutput": "docs-input-hashes.txt",
+      "sha256": "539504076f43b1968c1651eace6535cf6880022f9304ce5aa2c0d807d269dc15"
+    },
+    {
+      "label": "docs-only-paths",
+      "argv": [
+        "git",
+        "diff",
+        "--name-only",
+        "379ebdca083d28634e497279ad9e4e0fd08bd3e1",
+        "dc99b2f1d192d4c5e10c276d7112a132595abc6c"
+      ],
+      "cwd": "repository root",
+      "exitCode": 0,
+      "rawOutput": "docs-only-paths.txt",
+      "sha256": "007bafc29e44413fcc6f191700312d3f598c25a30270f4be3d63c824803be43e"
+    }
+  ],
+  "algorithmSourceHashesVerified": {
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/app-shutdown.ts": "965ab9849ec08fa82163e9b29e816cf0ad6b792aec372393e032a2b90014148c",
+    "src/main/shutdown-guard.ts": "a5dbfd865ddcb5c136030253c6088ea33739760a3ef85e812d3db3c70225519b",
+    "src/main/services/update-restart-service.ts": "005f71d29005136a741a45dbc580ebba57199e785a2eacf9e421e16f32a6438f"
+  },
+  "inputManifestHash": "cca2809719907356b40dbc9e7a282bc65b368dbe65844b9f232fa4beb873eae1",
+  "requiredUnexecuted": [
+    "full committed-store/session/transaction/authority implementations",
+    "frontend actual red/green inheritance/ABA",
+    "schema/runtime type and lint",
+    "publication/EPERM/retry/fault/default/direct compatibility",
+    "emergency/Ask/rollback/quit/update-cancel races",
+    "recovery source/identity/idempotence controls",
+    "negotiated old/new endpoint tests",
+    "independent exact implementation source review",
+    "hosted CI"
+  ]
+}
