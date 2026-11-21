@@ -1,0 +1,17 @@
+{
+  "scope": "Exact selected native CI evidence; full raw ZIP/XML/log originals remain at canonical Actions artifacts plus private owner preservation",
+  "files": {
+    "hosted/collect-hosted.py": "9cc55bb188a88ff531c9bb43f92e018fad1da7ddb6d6f7b2a3b2b93296f0f324",
+    "hosted/hosted-summary.json": "d6794bb1682bbd61c975d6bbbaa78cb3d93faf31a0ad0a4313d5a85e84634d06",
+    "hosted/job-actual-checkout.log": "73a86186ae589691e5a491f7a397c219f233a8655cc347a81ec9b49989b7a39e",
+    "hosted/job-node-environment.log": "61f5fa06522a6d50696024aa9df3ea5e17365e7ec9398db189b5da93df4e1eea",
+    "hosted/job-operating-system.log": "9febb8d9259e11b9ddb25ad15bb347d486bab0ddad51a8260b5b7ae5fcb7c099",
+    "hosted/job-runner-image.log": "fb9c1ac5f96056588f11826c9aaf6f4f17580833aa929e1fa095d579ef09d51b",
+    "hosted/windows-shard2-durability.test.ts.testsuite.xml": "34680c26f2004a79e035020673b4b09d594b0500ffe0bac2a9ca854295ff9fbe",
+    "hosted/windows-shard2-pages.test.ts.testsuite.xml": "d366cb6d0cf4e13e29901289615a531223ba77a7ae2c86128ee13092af868e76",
+    "final-run.json": "a57517822a703b1a25dc47d403763a6edcb3d0ac76e6411884162477980d8528",
+    "windows-artifacts.json": "ad4928c1a2b85848b48a499d5e47ee98fb9cbe1040311f28ad377950d28ac8f3",
+    "windows-job2.json": "a74414cadd3677d049aa9a0360ac53ade5de10b3e10c980938e47751b47ff630",
+    "post-ci-pr-readback.json": "0008896d3c9eef133e685b5819ce460df5b64384130da5502754c2785811d13a"
+  }
+}

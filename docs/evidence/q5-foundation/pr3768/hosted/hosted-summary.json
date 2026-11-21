@@ -1,0 +1,1106 @@
+{
+  "scope": "Observed native regular-file index tests only; independent hosted assessment pending",
+  "run": {
+    "conclusion": "success",
+    "databaseId": 44926471482,
+    "event": "pull_request",
+    "headSha": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+    "jobs": [
+      {
+        "completedAt": "2026-11-21T16:47:33Z",
+        "conclusion": "success",
+        "databaseId": 136913546329,
+        "name": "Plan the run",
+        "startedAt": "2026-11-21T16:47:21Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913546329"
+      },
+      {
+        "completedAt": "2026-11-21T16:47:19Z",
+        "conclusion": "skipped",
+        "databaseId": 136913547515,
+        "name": "Dependency resolution preflight",
+        "startedAt": "2026-11-21T16:47:20Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913547515"
+      },
+      {
+        "completedAt": "2026-11-21T16:47:53Z",
+        "conclusion": "success",
+        "databaseId": 136913610105,
+        "name": "Codex app-server schema drift",
+        "startedAt": "2026-11-21T16:47:35Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610105"
+      },
+      {
+        "completedAt": "2026-11-21T16:54:40Z",
+        "conclusion": "success",
+        "databaseId": 136913610153,
+        "name": "Build app (windows-2022)",
+        "startedAt": "2026-11-21T16:47:35Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610153"
+      },
+      {
+        "completedAt": "2026-11-21T16:49:53Z",
+        "conclusion": "success",
+        "databaseId": 136913610160,
+        "name": "Copilot SDK chunk (ubuntu-latest)",
+        "startedAt": "2026-11-21T16:47:35Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610160"
+      },
+      {
+        "completedAt": "2026-11-21T16:50:00Z",
+        "conclusion": "success",
+        "databaseId": 136913610162,
+        "name": "ESLint (errors only)",
+        "startedAt": "2026-11-21T16:47:35Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610162"
+      },
+      {
+        "completedAt": "2026-11-21T16:49:31Z",
+        "conclusion": "success",
+        "databaseId": 136913610176,
+        "name": "Typecheck + API surface",
+        "startedAt": "2026-11-21T16:47:35Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610176"
+      },
+      {
+        "completedAt": "2026-11-21T16:53:48Z",
+        "conclusion": "success",
+        "databaseId": 136913610191,
+        "name": "Build app (ubuntu-latest)",
+        "startedAt": "2026-11-21T16:47:35Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610191"
+      },
+      {
+        "completedAt": "2026-11-21T17:09:26Z",
+        "conclusion": "success",
+        "databaseId": 136913610220,
+        "name": "Unit + Component Tests (windows-latest, 2/2)",
+        "startedAt": "2026-11-21T16:47:35Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610220"
+      },
+      {
+        "completedAt": "2026-11-21T16:56:57Z",
+        "conclusion": "success",
+        "databaseId": 136913610225,
+        "name": "Unit + Component Tests (ubuntu-latest, 1/2)",
+        "startedAt": "2026-11-21T16:47:36Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610225"
+      },
+      {
+        "completedAt": "2026-11-21T16:50:31Z",
+        "conclusion": "success",
+        "databaseId": 136913610234,
+        "name": "Copilot SDK chunk (windows-2022)",
+        "startedAt": "2026-11-21T16:47:35Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610234"
+      },
+      {
+        "completedAt": "2026-11-21T16:47:43Z",
+        "conclusion": "success",
+        "databaseId": 136913610235,
+        "name": "Workflow lint (actionlint)",
+        "startedAt": "2026-11-21T16:47:35Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610235"
+      },
+      {
+        "completedAt": "2026-11-21T16:57:40Z",
+        "conclusion": "success",
+        "databaseId": 136913610243,
+        "name": "Unit + Component Tests (windows-latest, 1/2)",
+        "startedAt": "2026-11-21T16:47:35Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610243"
+      },
+      {
+        "completedAt": "2026-11-21T16:54:15Z",
+        "conclusion": "success",
+        "databaseId": 136913610255,
+        "name": "Unit + Component Tests (ubuntu-latest, 2/2)",
+        "startedAt": "2026-11-21T16:47:36Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610255"
+      },
+      {
+        "completedAt": "2026-11-21T16:47:33Z",
+        "conclusion": "skipped",
+        "databaseId": 136913611497,
+        "name": "macOS unit",
+        "startedAt": "2026-11-21T16:47:34Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913611497"
+      },
+      {
+        "completedAt": "2026-11-21T16:47:33Z",
+        "conclusion": "skipped",
+        "databaseId": 136913611734,
+        "name": "Linux Package Smoke Test",
+        "startedAt": "2026-11-21T16:47:34Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913611734"
+      },
+      {
+        "completedAt": "2026-11-21T16:47:33Z",
+        "conclusion": "skipped",
+        "databaseId": 136913611768,
+        "name": "macOS build + E2E smoke",
+        "startedAt": "2026-11-21T16:47:34Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913611768"
+      },
+      {
+        "completedAt": "2026-11-21T16:57:45Z",
+        "conclusion": "success",
+        "databaseId": 136915566137,
+        "name": "Classic layout E2E Tests (windows-2022, 1/1)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566137"
+      },
+      {
+        "completedAt": "2026-11-21T16:57:24Z",
+        "conclusion": "success",
+        "databaseId": 136915566146,
+        "name": "Classic layout E2E Tests (ubuntu-latest, 1/1)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566146"
+      },
+      {
+        "completedAt": "2026-11-21T16:59:04Z",
+        "conclusion": "success",
+        "databaseId": 136915566149,
+        "name": "Annex E2E Tests (ubuntu-latest, 1/2)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566149"
+      },
+      {
+        "completedAt": "2026-11-21T16:57:34Z",
+        "conclusion": "success",
+        "databaseId": 136915566158,
+        "name": "Stable-mode E2E Tests (ubuntu-latest)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566158"
+      },
+      {
+        "completedAt": "2026-11-21T16:58:38Z",
+        "conclusion": "success",
+        "databaseId": 136915566171,
+        "name": "Stable-mode E2E Tests (windows-2022)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566171"
+      },
+      {
+        "completedAt": "2026-11-21T16:58:02Z",
+        "conclusion": "success",
+        "databaseId": 136915566174,
+        "name": "Chat E2E Tests (windows-2022, 3/3)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566174"
+      },
+      {
+        "completedAt": "2026-11-21T17:01:22Z",
+        "conclusion": "success",
+        "databaseId": 136915566176,
+        "name": "Annex E2E Tests (windows-2022, 1/2)",
+        "startedAt": "2026-11-21T16:54:43Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566176"
+      },
+      {
+        "completedAt": "2026-11-21T16:59:02Z",
+        "conclusion": "success",
+        "databaseId": 136915566181,
+        "name": "Chat E2E Tests (windows-2022, 2/3)",
+        "startedAt": "2026-11-21T16:54:43Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566181"
+      },
+      {
+        "completedAt": "2026-11-21T17:01:47Z",
+        "conclusion": "success",
+        "databaseId": 136915566194,
+        "name": "Annex E2E Tests (windows-2022, 2/2)",
+        "startedAt": "2026-11-21T16:54:43Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566194"
+      },
+      {
+        "completedAt": "2026-11-21T16:58:42Z",
+        "conclusion": "success",
+        "databaseId": 136915566195,
+        "name": "E2E Tests (ubuntu-latest, 1/3)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566195"
+      },
+      {
+        "completedAt": "2026-11-21T16:57:12Z",
+        "conclusion": "success",
+        "databaseId": 136915566196,
+        "name": "Chat E2E Tests (ubuntu-latest, 1/3)",
+        "startedAt": "2026-11-21T16:54:43Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566196"
+      },
+      {
+        "completedAt": "2026-11-21T16:58:56Z",
+        "conclusion": "success",
+        "databaseId": 136915566198,
+        "name": "E2E Tests (windows-2022, 1/3)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566198"
+      },
+      {
+        "completedAt": "2026-11-21T16:59:00Z",
+        "conclusion": "success",
+        "databaseId": 136915566199,
+        "name": "Annex E2E Tests (ubuntu-latest, 2/2)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566199"
+      },
+      {
+        "completedAt": "2026-11-21T16:58:48Z",
+        "conclusion": "success",
+        "databaseId": 136915566216,
+        "name": "Chat E2E Tests (windows-2022, 1/3)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566216"
+      },
+      {
+        "completedAt": "2026-11-21T16:57:28Z",
+        "conclusion": "success",
+        "databaseId": 136915566220,
+        "name": "Chat E2E Tests (ubuntu-latest, 3/3)",
+        "startedAt": "2026-11-21T16:54:43Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566220"
+      },
+      {
+        "completedAt": "2026-11-21T16:58:13Z",
+        "conclusion": "success",
+        "databaseId": 136915566221,
+        "name": "E2E Tests (ubuntu-latest, 2/3)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566221"
+      },
+      {
+        "completedAt": "2026-11-21T16:57:11Z",
+        "conclusion": "success",
+        "databaseId": 136915566235,
+        "name": "Chat E2E Tests (ubuntu-latest, 2/3)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566235"
+      },
+      {
+        "completedAt": "2026-11-21T16:58:52Z",
+        "conclusion": "success",
+        "databaseId": 136915566236,
+        "name": "E2E Tests (ubuntu-latest, 3/3)",
+        "startedAt": "2026-11-21T16:54:43Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566236"
+      },
+      {
+        "completedAt": "2026-11-21T16:58:52Z",
+        "conclusion": "success",
+        "databaseId": 136915566249,
+        "name": "E2E Tests (windows-2022, 2/3)",
+        "startedAt": "2026-11-21T16:54:43Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566249"
+      },
+      {
+        "completedAt": "2026-11-21T16:58:44Z",
+        "conclusion": "success",
+        "databaseId": 136915566263,
+        "name": "E2E Tests (windows-2022, 3/3)",
+        "startedAt": "2026-11-21T16:54:42Z",
+        "status": "completed",
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136915566263"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482"
+  },
+  "windowsJob": {
+    "completed_at": "2026-11-21T17:09:26Z",
+    "conclusion": "success",
+    "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482/job/136913610220",
+    "id": 136913610220,
+    "labels": [
+      "windows-latest"
+    ],
+    "run_id": 44926471482,
+    "runner_group_name": "GitHub Actions",
+    "runner_name": "GitHub Actions 1000335552",
+    "started_at": "2026-11-21T16:47:35Z",
+    "status": "completed",
+    "steps": [
+      {
+        "completed_at": "2026-11-21T16:47:37Z",
+        "conclusion": "success",
+        "name": "Set up job",
+        "number": 1,
+        "started_at": "2026-11-21T16:47:36Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-11-21T16:47:47Z",
+        "conclusion": "success",
+        "name": "Run actions/checkout@v7",
+        "number": 2,
+        "started_at": "2026-11-21T16:47:37Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-11-21T16:48:08Z",
+        "conclusion": "success",
+        "name": "Run actions/setup-node@v7",
+        "number": 3,
+        "started_at": "2026-11-21T16:47:47Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-11-21T16:49:31Z",
+        "conclusion": "success",
+        "name": "Run npm ci",
+        "number": 4,
+        "started_at": "2026-11-21T16:48:08Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-11-21T17:09:22Z",
+        "conclusion": "success",
+        "name": "Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml",
+        "number": 5,
+        "started_at": "2026-11-21T16:49:31Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-11-21T17:09:23Z",
+        "conclusion": "success",
+        "name": "Run actions/upload-artifact@v7",
+        "number": 6,
+        "started_at": "2026-11-21T17:09:22Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-11-21T17:09:23Z",
+        "conclusion": "success",
+        "name": "Post Run actions/setup-node@v7",
+        "number": 11,
+        "started_at": "2026-11-21T17:09:23Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-11-21T17:09:25Z",
+        "conclusion": "success",
+        "name": "Post Run actions/checkout@v7",
+        "number": 12,
+        "started_at": "2026-11-21T17:09:23Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-11-21T17:09:25Z",
+        "conclusion": "success",
+        "name": "Complete job",
+        "number": 13,
+        "started_at": "2026-11-21T17:09:25Z",
+        "status": "completed"
+      }
+    ]
+  },
+  "actualCheckout": "a2b621bbd6790059d22abaae2ef519b747bb202e",
+  "fiveFileGitBlobBridge": [
+    {
+      "path": "src/main/services/group-project-notice-ledger/pages.ts",
+      "sourceSha256": "53973c5468babb7830d2a198f1d17d011f44f8201558569bb5dd95b2135d8513",
+      "mergeSha256": "53973c5468babb7830d2a198f1d17d011f44f8201558569bb5dd95b2135d8513",
+      "sourceBlob": "f058508d00c11bf48001d0ef188cf9881bf78d47",
+      "mergeBlob": "f058508d00c11bf48001d0ef188cf9881bf78d47"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/pages.test.ts",
+      "sourceSha256": "f3531a965b9a43478ca29c8862c3398907f7c1fe76c6c0bb18c73138687dd010",
+      "mergeSha256": "f3531a965b9a43478ca29c8862c3398907f7c1fe76c6c0bb18c73138687dd010",
+      "sourceBlob": "b1d20a24859e330c363a710aac95f4b9bcbf28e5",
+      "mergeBlob": "b1d20a24859e330c363a710aac95f4b9bcbf28e5"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/durability.ts",
+      "sourceSha256": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9",
+      "mergeSha256": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9",
+      "sourceBlob": "8bfd5a55ce0095c133f70d15b53f9c6ea0c3e142",
+      "mergeBlob": "8bfd5a55ce0095c133f70d15b53f9c6ea0c3e142"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/durability.test.ts",
+      "sourceSha256": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903",
+      "mergeSha256": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903",
+      "sourceBlob": "66aaec835714e5ee183c1e91e9637f39a11459c5",
+      "mergeBlob": "66aaec835714e5ee183c1e91e9637f39a11459c5"
+    },
+    {
+      "path": "test/research/q5-index-process.cjs",
+      "sourceSha256": "f5f22a04236fd812a99be1257bca10fa7ea843dc56baa4c473a2ced2466bac8c",
+      "mergeSha256": "f5f22a04236fd812a99be1257bca10fa7ea843dc56baa4c473a2ced2466bac8c",
+      "sourceBlob": "e6b46981ecc5854f8c50e6c4ad9c99d9dd1d8195",
+      "mergeBlob": "e6b46981ecc5854f8c50e6c4ad9c99d9dd1d8195"
+    }
+  ],
+  "G2": {
+    "nativeCaseCount": 1,
+    "status": "passed",
+    "nativeCase": {
+      "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+      "name": "lazy immutable notice index > native Windows reuse sync succeeds without platform or descriptor overrides",
+      "time": "0.0244646",
+      "status": "passed",
+      "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+      "shard": 2,
+      "skippedXml": null
+    }
+  },
+  "G4": {
+    "passedCases": 48,
+    "failedCases": 0,
+    "skippedCases": [
+      {
+        "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+        "name": "lazy immutable notice index > preserves native POSIX read-only reuse and actual sync",
+        "time": "0",
+        "status": "skipped",
+        "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+        "shard": 2,
+        "skippedXml": "<skipped />\n        "
+      },
+      {
+        "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+        "name": "lazy immutable notice index > refuses an actual regular-file to FIFO swap without a blocking open",
+        "time": "0",
+        "status": "skipped",
+        "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+        "shard": 2,
+        "skippedXml": "<skipped />\n        "
+      }
+    ],
+    "unexpectedSkips": [],
+    "symlinkCreationSkips": [],
+    "notes": "All process-exit, symlink, prefix-rename and cleanup cases passed; only explicit POSIX/FIFO platform cases skipped."
+  },
+  "artifacts": [
+    {
+      "created_at": "2026-11-21T16:57:36Z",
+      "digest": "sha256:9acd8a6237d95afdee2d96cb795b303ea823bc4b9bd5e2bcef308e940485bc35",
+      "expired": false,
+      "expires_at": "2027-02-19T16:47:19Z",
+      "id": 14716785413,
+      "name": "test-results-windows-latest-1",
+      "size_in_bytes": 609475,
+      "workflow_run": {
+        "head_branch": "auto-reset-policy-design/q5-isolated-index",
+        "head_repository_id": 1158026389,
+        "head_sha": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+        "id": 44926471482,
+        "repository_id": 1158026389
+      },
+      "zipSha256": "9acd8a6237d95afdee2d96cb795b303ea823bc4b9bd5e2bcef308e940485bc35",
+      "xmlSha256": "c459f7c948351358a1e9c84191c310ca9c2c8c56320d8dd4982ab4d29d99aa4f",
+      "xmlBytes": 6788607,
+      "reportAttributes": {
+        "name": "vitest tests",
+        "tests": "19456",
+        "failures": "0",
+        "errors": "0",
+        "time": "804.7048232"
+      },
+      "q5Suites": []
+    },
+    {
+      "created_at": "2026-11-21T17:09:22Z",
+      "digest": "sha256:7d06f09b788c7d55beb39baab2c9c24f5cc70edcd23b8463e952dd72bb0af87c",
+      "expired": false,
+      "expires_at": "2027-02-19T16:47:19Z",
+      "id": 14716349143,
+      "name": "test-results-windows-latest-2",
+      "size_in_bytes": 560040,
+      "workflow_run": {
+        "head_branch": "auto-reset-policy-design/q5-isolated-index",
+        "head_repository_id": 1158026389,
+        "head_sha": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+        "id": 44926471482,
+        "repository_id": 1158026389
+      },
+      "zipSha256": "7d06f09b788c7d55beb39baab2c9c24f5cc70edcd23b8463e952dd72bb0af87c",
+      "xmlSha256": "fdbac6df972d3f0191c779afdc35ceac5fdc56165fb4714d89e7e34c0b4e6315",
+      "xmlBytes": 15892391,
+      "reportAttributes": {
+        "name": "vitest tests",
+        "tests": "16836",
+        "failures": "0",
+        "errors": "0",
+        "time": "2626.0088118"
+      },
+      "q5Suites": [
+        {
+          "name": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "rawFile": "windows-shard2-durability.test.ts.testsuite.xml",
+          "rawSha256": "34680c26f2004a79e035020673b4b09d594b0500ffe0bac2a9ca854295ff9fbe"
+        },
+        {
+          "name": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "rawFile": "windows-shard2-pages.test.ts.testsuite.xml",
+          "rawSha256": "d366cb6d0cf4e13e29901289615a531223ba77a7ae2c86128ee13092af868e76"
+        }
+      ]
+    }
+  ],
+  "suites": [
+    {
+      "attributes": {
+        "name": "src/main/services/group-project-notice-ledger/durability.test.ts",
+        "timestamp": "2026-11-21T17:09:20.983Z",
+        "hostname": "runnervmbpeip",
+        "tests": "11",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "0.0162741"
+      },
+      "rawFile": "windows-shard2-durability.test.ts.testsuite.xml",
+      "rawSha256": "34680c26f2004a79e035020673b4b09d594b0500ffe0bac2a9ca854295ff9fbe",
+      "byteStart": 15651776,
+      "byteEnd": 15654774,
+      "cases": [
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > records only an actually observed directory sync and closes the handle",
+          "time": "0.0052876",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > reports file-sync-only for known Windows directory result EINVAL",
+          "time": "0.00088",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > reports file-sync-only for known Windows directory result ENOTSUP",
+          "time": "0.000324",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > reports file-sync-only for known Windows directory result EISDIR",
+          "time": "0.0004483",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > reports file-sync-only for known Windows directory result EPERM",
+          "time": "0.0005682",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > propagates actual IO/space/access errors EIO on Windows",
+          "time": "0.0016249",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > propagates actual IO/space/access errors ENOSPC on Windows",
+          "time": "0.0004843",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > propagates actual IO/space/access errors EACCES on Windows",
+          "time": "0.00048",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > propagates actual IO/space/access errors ENOENT on Windows",
+          "time": "0.0010227",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > does not retroactively promote a weaker earlier observation after later successful flushes",
+          "time": "0.0006298",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "name": "notice directory durability observation > propagates sync and close failures rather than manufacturing a successful store commit",
+          "time": "0.0011012",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/durability.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        }
+      ]
+    },
+    {
+      "attributes": {
+        "name": "src/main/services/group-project-notice-ledger/pages.test.ts",
+        "timestamp": "2026-11-21T17:09:20.986Z",
+        "hostname": "runnervmbpeip",
+        "tests": "39",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "2",
+        "time": "33.4273261"
+      },
+      "rawFile": "windows-shard2-pages.test.ts.testsuite.xml",
+      "rawSha256": "d366cb6d0cf4e13e29901289615a531223ba77a7ae2c86128ee13092af868e76",
+      "byteStart": 15654779,
+      "byteEnd": 15666616,
+      "cases": [
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > keeps >64KiB of exact ID data paged and bounds detail cache to256 rows on write and cold reads",
+          "time": "23.1115714",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > preserves old roots through update/delete and returns no mutable cached details",
+          "time": "3.416812",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > splits by bytes for adjacent large values rather than rejecting valid later work",
+          "time": "0.3770758",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses damaged referenced bytes and invalid reference metadata without replacement",
+          "time": "0.0186901",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses oversized immutable files before reading contents on cold load and page reuse",
+          "time": "1.1802023",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses directory or symlink page replacements without following or replacing them",
+          "time": "0.0176739",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > earns reused file/prefix barriers across an actual unflushed-process exit and kills the skip-dirty mutant",
+          "time": "2.8824208",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses failed reused-file sync and retains a failed prefix flush for retry",
+          "time": "0.0280757",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > uses one non-truncating write-capable descriptor for simulated Windows reuse, but ordinary reads stay read-only",
+          "time": "0.0269861",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > preserves native POSIX read-only reuse and actual sync",
+          "time": "0",
+          "status": "skipped",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": "<skipped />\n        "
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses simulated Windows descriptor sync EACCES without durability downgrade or replacement",
+          "time": "0.0189318",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses simulated Windows descriptor sync EPERM without durability downgrade or replacement",
+          "time": "0.0178575",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses simulated Windows descriptor sync EIO without durability downgrade or replacement",
+          "time": "0.0259048",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses simulated Windows descriptor sync ENOENT without durability downgrade or replacement",
+          "time": "0.0195125",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses a same-content different-inode replacement at beforePageOpen in simulated Windows reuse",
+          "time": "0.0308269",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses a same-content different-inode replacement at beforeReusedSync in simulated Windows reuse",
+          "time": "0.0487235",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses a symlink swap to the original validated inode in simulated Windows reuse",
+          "time": "0.039669",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > follows a swapped final symlink without O_NOFOLLOW and refuses after actual content read",
+          "time": "0.0353088",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > native Windows reuse sync succeeds without platform or descriptor overrides",
+          "time": "0.0244646",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > retains a concurrent reuse barrier rather than deleting a newer dirty mark",
+          "time": "0.0348828",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > cleans only current-own temp after beforePageWrite failure and then prepares successfully",
+          "time": "0.0162795",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > cleans only current-own temp after beforePageSync failure and then prepares successfully",
+          "time": "0.0180416",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > cleans only current-own temp after beforePageRename failure and then prepares successfully",
+          "time": "0.0233556",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > preserves primary failure when cleanup fails and never deletes that earlier residue on reopen",
+          "time": "0.0187507",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > preserves an ambiguous replacement of its own temp and the original error",
+          "time": "0.0284919",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > cleans its current temp after actual rename refusal while preserving the conflicting directory",
+          "time": "0.0152939",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > retains prior-process temp after an actual temp-opened exit without granting it root authority",
+          "time": "0.7260139",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > refuses an actual regular-file to FIFO swap without a blocking open",
+          "time": "0",
+          "status": "skipped",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": "<skipped />\n        "
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > rejects a future page writer version even with a correct content hash",
+          "time": "0.0058699",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > D1 schema: refuses unknown leaf fields without propagation or new writes",
+          "time": "0.0096667",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > D1 schema: refuses unknown index fields without propagation or new writes",
+          "time": "0.0111154",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > D1 schema: refuses unknown entry fields without propagation or new writes",
+          "time": "0.0087781",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > D1 schema: refuses unknown child-reference fields without propagation or new writes",
+          "time": "0.0119571",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > D1 schema: refuses unknown root-reference fields without propagation or new writes",
+          "time": "0.0070351",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > D1 schema: preserves arbitrary JSON payload fields inside an exact structural envelope",
+          "time": "0.0248962",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > pages lexically without treating keys as board ordering and refuses malformed limits/keys/JSON",
+          "time": "0.032185",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > streams a >64KiB baseline into bounded pages and verifies without collecting all details",
+          "time": "1.0087422",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > keeps prepared orphan pages inert on producer failure or duplicate baseline IDs",
+          "time": "0.0433184",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        },
+        {
+          "classname": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "name": "lazy immutable notice index > finds predecessor intervals across leaves without loading the whole index",
+          "time": "0.0581697",
+          "status": "passed",
+          "suite": "src/main/services/group-project-notice-ledger/pages.test.ts",
+          "shard": 2,
+          "skippedXml": null
+        }
+      ]
+    }
+  ],
+  "rawJobLog": {
+    "sha256": "0b30d22f63efa5e824e44e97aca2e26b6c8da3acfce72587391d48752ea59f4a",
+    "bytes": 1578584,
+    "excerpts": [
+      {
+        "file": "job-operating-system.log",
+        "sha256": "9febb8d9259e11b9ddb25ad15bb347d486bab0ddad51a8260b5b7ae5fcb7c099",
+        "byteStart": 587,
+        "byteEnd": 828
+      },
+      {
+        "file": "job-runner-image.log",
+        "sha256": "fb9c1ac5f96056588f11826c9aaf6f4f17580833aa929e1fa095d579ef09d51b",
+        "byteStart": 828,
+        "byteEnd": 1326
+      },
+      {
+        "file": "job-node-environment.log",
+        "sha256": "61f5fa06522a6d50696024aa9df3ea5e17365e7ec9398db189b5da93df4e1eea",
+        "byteStart": 12736,
+        "byteEnd": 12969
+      },
+      {
+        "file": "job-actual-checkout.log",
+        "sha256": "73a86186ae589691e5a491f7a397c219f233a8655cc347a81ec9b49989b7a39e",
+        "byteStart": 8331,
+        "byteEnd": 11913
+      }
+    ]
+  },
+  "collectorSha256": "9cc55bb188a88ff531c9bb43f92e018fad1da7ddb6d6f7b2a3b2b93296f0f324",
+  "limits": [
+    "Canonical Git blob hashes plus actual checkout log, not an atomic hosted working-tree seal.",
+    "Windows Server2025 image windows-2025-vs2026, Node22.23.4; filesystem type not recorded.",
+    "Directory durability mode is not emitted by the native testcase; no stronger sync/power-loss claim.",
+    "FAT/network/ino=0 and native read-only attributes/deny-write sharing are unproved; access failures must refuse.",
+    "Synthetic descriptor failure controls and directory policy mocks are not OS-injected disk failures.",
+    "No catalog/activation/R1/migration/runtime/UI/whole-heap acceptance or merge/release authority."
+  ]
+}

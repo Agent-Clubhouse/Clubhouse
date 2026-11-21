@@ -1,0 +1,88 @@
+<testsuite name="src/main/services/group-project-notice-ledger/pages.test.ts" timestamp="2026-11-21T17:09:20.986Z" hostname="runnervmbpeip" tests="39" failures="0" errors="0" skipped="2" time="33.4273261">
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; keeps &gt;64KiB of exact ID data paged and bounds detail cache to256 rows on write and cold reads" time="23.1115714">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; preserves old roots through update/delete and returns no mutable cached details" time="3.416812">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; splits by bytes for adjacent large values rather than rejecting valid later work" time="0.3770758">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses damaged referenced bytes and invalid reference metadata without replacement" time="0.0186901">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses oversized immutable files before reading contents on cold load and page reuse" time="1.1802023">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses directory or symlink page replacements without following or replacing them" time="0.0176739">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; earns reused file/prefix barriers across an actual unflushed-process exit and kills the skip-dirty mutant" time="2.8824208">
+            <system-out>
+Q5 reused-page guarded control {&quot;code&quot;:0,&quot;stdout&quot;:&quot;{\&quot;preparationExit\&quot;:77,\&quot;preparationSignal\&quot;:null,\&quot;stdout\&quot;:\&quot;{\\\&quot;root\\\&quot;:{\\\&quot;digest\\\&quot;:\\\&quot;6411f2ac6b934b5ee579b473dc865a7f8f3fe7b60139b829bccf7ec5b637e2e0\\\&quot;,\\\&quot;first\\\&quot;:\\\&quot;stable-id\\\&quot;,\\\&quot;last\\\&quot;:\\\&quot;stable-id\\\&quot;,\\\&quot;count\\\&quot;:1,\\\&quot;depth\\\&quot;:0},\\\&quot;skippedFlush\\\&quot;:true}\\n\&quot;,\&quot;stderr\&quot;:\&quot;\&quot;}\n{\&quot;mode\&quot;:\&quot;reuse-guarded\&quot;,\&quot;pendingBeforeFlush\&quot;:3,\&quot;syncPosition\&quot;:2,\&quot;prefixPosition\&quot;:3,\&quot;pendingAfterFlush\&quot;:0}\nPASS: reused orphan earned file and prefix barriers\n&quot;,&quot;stderr&quot;:&quot;&quot;}
+
+Q5 skipped-reuse-dirty mutant {&quot;code&quot;:2,&quot;stdout&quot;:&quot;{\&quot;preparationExit\&quot;:77,\&quot;preparationSignal\&quot;:null,\&quot;stdout\&quot;:\&quot;{\\\&quot;root\\\&quot;:{\\\&quot;digest\\\&quot;:\\\&quot;6411f2ac6b934b5ee579b473dc865a7f8f3fe7b60139b829bccf7ec5b637e2e0\\\&quot;,\\\&quot;first\\\&quot;:\\\&quot;stable-id\\\&quot;,\\\&quot;last\\\&quot;:\\\&quot;stable-id\\\&quot;,\\\&quot;count\\\&quot;:1,\\\&quot;depth\\\&quot;:0},\\\&quot;skippedFlush\\\&quot;:true}\\n\&quot;,\&quot;stderr\&quot;:\&quot;\&quot;}\n{\&quot;mode\&quot;:\&quot;skip-reuse-dirty\&quot;,\&quot;pendingBeforeFlush\&quot;:2,\&quot;syncPosition\&quot;:2,\&quot;prefixPosition\&quot;:-1,\&quot;pendingAfterFlush\&quot;:0}\nSAFETY ASSERTION FAILED: reused orphan prefix barrier missing\n&quot;,&quot;stderr&quot;:&quot;&quot;}
+
+            </system-out>
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses failed reused-file sync and retains a failed prefix flush for retry" time="0.0280757">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; uses one non-truncating write-capable descriptor for simulated Windows reuse, but ordinary reads stay read-only" time="0.0269861">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; preserves native POSIX read-only reuse and actual sync" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses simulated Windows descriptor sync EACCES without durability downgrade or replacement" time="0.0189318">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses simulated Windows descriptor sync EPERM without durability downgrade or replacement" time="0.0178575">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses simulated Windows descriptor sync EIO without durability downgrade or replacement" time="0.0259048">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses simulated Windows descriptor sync ENOENT without durability downgrade or replacement" time="0.0195125">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses a same-content different-inode replacement at beforePageOpen in simulated Windows reuse" time="0.0308269">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses a same-content different-inode replacement at beforeReusedSync in simulated Windows reuse" time="0.0487235">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses a symlink swap to the original validated inode in simulated Windows reuse" time="0.039669">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; follows a swapped final symlink without O_NOFOLLOW and refuses after actual content read" time="0.0353088">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; native Windows reuse sync succeeds without platform or descriptor overrides" time="0.0244646">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; retains a concurrent reuse barrier rather than deleting a newer dirty mark" time="0.0348828">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; cleans only current-own temp after beforePageWrite failure and then prepares successfully" time="0.0162795">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; cleans only current-own temp after beforePageSync failure and then prepares successfully" time="0.0180416">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; cleans only current-own temp after beforePageRename failure and then prepares successfully" time="0.0233556">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; preserves primary failure when cleanup fails and never deletes that earlier residue on reopen" time="0.0187507">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; preserves an ambiguous replacement of its own temp and the original error" time="0.0284919">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; cleans its current temp after actual rename refusal while preserving the conflicting directory" time="0.0152939">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; retains prior-process temp after an actual temp-opened exit without granting it root authority" time="0.7260139">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; refuses an actual regular-file to FIFO swap without a blocking open" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; rejects a future page writer version even with a correct content hash" time="0.0058699">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; D1 schema: refuses unknown leaf fields without propagation or new writes" time="0.0096667">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; D1 schema: refuses unknown index fields without propagation or new writes" time="0.0111154">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; D1 schema: refuses unknown entry fields without propagation or new writes" time="0.0087781">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; D1 schema: refuses unknown child-reference fields without propagation or new writes" time="0.0119571">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; D1 schema: refuses unknown root-reference fields without propagation or new writes" time="0.0070351">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; D1 schema: preserves arbitrary JSON payload fields inside an exact structural envelope" time="0.0248962">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; pages lexically without treating keys as board ordering and refuses malformed limits/keys/JSON" time="0.032185">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; streams a &gt;64KiB baseline into bounded pages and verifies without collecting all details" time="1.0087422">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; keeps prepared orphan pages inert on producer failure or duplicate baseline IDs" time="0.0433184">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/pages.test.ts" name="lazy immutable notice index &gt; finds predecessor intervals across leaves without loading the whole index" time="0.0581697">
+        </testcase>
+    </testsuite>

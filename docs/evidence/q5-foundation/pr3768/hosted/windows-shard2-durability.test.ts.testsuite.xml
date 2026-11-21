@@ -1,0 +1,24 @@
+<testsuite name="src/main/services/group-project-notice-ledger/durability.test.ts" timestamp="2026-11-21T17:09:20.983Z" hostname="runnervmbpeip" tests="11" failures="0" errors="0" skipped="0" time="0.0162741">
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; records only an actually observed directory sync and closes the handle" time="0.0052876">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; reports file-sync-only for known Windows directory result EINVAL" time="0.00088">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; reports file-sync-only for known Windows directory result ENOTSUP" time="0.000324">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; reports file-sync-only for known Windows directory result EISDIR" time="0.0004483">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; reports file-sync-only for known Windows directory result EPERM" time="0.0005682">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; propagates actual IO/space/access errors EIO on Windows" time="0.0016249">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; propagates actual IO/space/access errors ENOSPC on Windows" time="0.0004843">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; propagates actual IO/space/access errors EACCES on Windows" time="0.00048">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; propagates actual IO/space/access errors ENOENT on Windows" time="0.0010227">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; does not retroactively promote a weaker earlier observation after later successful flushes" time="0.0006298">
+        </testcase>
+        <testcase classname="src/main/services/group-project-notice-ledger/durability.test.ts" name="notice directory durability observation &gt; propagates sync and close failures rather than manufacturing a successful store commit" time="0.0011012">
+        </testcase>
+    </testsuite>
