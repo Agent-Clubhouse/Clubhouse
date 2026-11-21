@@ -1,0 +1,19 @@
+# raw sha256 (host-local)
+b534591c6b116085ab2eb2a788c0b441142a3623b78cdd407fdeb580740b29ad  /tmp/dlc12/rename-diagnostic.log
+1f66355dddff1870d3122e96a4be5be042b0c3d4804ee30e37143b4286723056  /tmp/dlc12/ci-e2e-win1.log
+1d2ecb71a2c38e6b0ae06fb73a9a3601499413031bf38b72dc83713ed53d9065  /tmp/dlc12/orig-e2e-win1.log
+067dbb9747d0b41d72ed58aee75ac85956718c8c6771222516a262dcb0462456  /tmp/dlc12/annex-traces/annex-v2-settings-page-two-0a6e8-names-and-removes-the-other-retry1/trace.zip
+5c5985f3a69a4a8635b98d1bc27b2c0c06fc9fe283c09b704d19cbc4bf7ca42c  /tmp/dlc12/annex-traces/annex-v2-settings-page-two-0a6e8-names-and-removes-the-other/trace.zip
+d3559482101f65f4dae24041f15c53d6343164098513db74dbbfeaf88e04cc5a  /tmp/dlc12/annex-traces/junit.xml
+76055884fdb1f0690265e03a285b02c0349b44945431c648acd02a26d7d7446c  /tmp/dlc12/orig-traces/annex-v2-settings-page-two-0a6e8-names-and-removes-the-other-retry1/trace.zip
+7bbd627077e0b607901e0a57f396f577c8ecf271d53790bfb50573c7bab68c35  /tmp/dlc12/orig-traces/annex-v2-settings-page-two-0a6e8-names-and-removes-the-other/trace.zip
+48e19cec58776e1347f28de29cf7f2d8d57c9f83cac909539e7a794a548ba1b6  /tmp/dlc12/orig-traces/junit.xml
+# committed copies
+3845c88153023ac906ce9624ff82564fe15b1eec0f1214c3c0d92942920007fe  diagnostic-unit-test-run.txt
+4bfeebc2cbc7da66ba18d1859d28fef9fb50ad6f5f52ea0b6f28ed261d96f3fb  hosted-3746-run44715575990-summary.txt
+6cb59b2f88b6cb9f7dd1a942cafad90fc3de1267b31d283ea6b1e932e22f6ba8  hosted-3749-run44880807605-summary.txt
+ea43aa9b7c5e273dc43ce460b9c1a68a47ac86192af2f516959286b3bdf91ef0  run44715575990-attempt1-error-context.md
+39e3a7a2a80bf7f6166cc6e9e5bd3b567f48279c25f8a61a73bd7a3acf075bf8  run44715575990-attempt2-error-context.md
+816d3025a99841687aefacec322eb5d69174a82e1d6a4a717e62e7acf5a3958d  run44880807605-attempt1-error-context.md
+eaf25d367553a37bbb8ceacf0456f7702f401f8f76cc1fe3c3406f929c77fe02  run44880807605-attempt2-error-context.md
+1d3d00f42c0a3c238fb16035355bd275c08caab3189a86ddeaa3652748ea9958  comment-draft-3720.md

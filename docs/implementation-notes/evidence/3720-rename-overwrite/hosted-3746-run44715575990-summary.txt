@@ -1,0 +1,8 @@
+  1) e2e\annex-v2\settings-page.spec.ts:39:5 › two desktops join from the page, and one renames and removes the other 
+    Expected substring: "Studio in the network"
+    Received string:    "Rrunnervm9zap3Connectedat 10.1.0.133:61577In this networkThis computer can reach it. It can reach this computer.RenameAddressRemove"
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+    Expected substring: "Studio in the network"
+    Received string:    "Rrunnervm9zap3Connectedat 10.1.0.133:61649In this networkThis computer can reach it. It can reach this computer.RenameAddressRemove"
+  1 failed
+  19 passed (5.0m)

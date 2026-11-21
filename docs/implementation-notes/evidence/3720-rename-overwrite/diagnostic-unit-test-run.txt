@@ -1,0 +1,54 @@
+# DIAGNOSTIC (uncommitted) on 33cfd9cf02896ea7757b951279a2baa635261ee1
+605a606,617
+>   });
+> 
+>   it('DIAGNOSTIC: a member announcing its own unchanged name after a local rename', () => {
+>     open = [A];
+>     listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio') });
+>     expect(membership.renameMember(A, 'Studio in the network')).toBe(true);
+>     console.log('DIAG alias after rename:', peers.get(A.toLowerCase())?.alias);
+>     listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio') });
+>     console.log('DIAG alias after its own hello:', peers.get(A.toLowerCase())?.alias);
+>     listener!(A, view([member(A, '0a', 'Studio')]));
+>     console.log('DIAG alias after its own members view:', peers.get(A.toLowerCase())?.alias);
+>     expect(peers.get(A.toLowerCase())?.alias).toBe('Studio in the network');
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+stdout | src/main/services/annex-network-membership.test.ts > Annex Network membership (#3061) > DIAGNOSTIC: a member announcing its own unchanged name after a local rename
+DIAG alias after rename: Studio in the network
+DIAG alias after its own hello: Studio
+DIAG alias after its own members view: Studio
+
+ ❯ |main| src/main/services/annex-network-membership.test.ts (91 tests | 1 failed | 90 skipped) 6ms
+     × DIAGNOSTIC: a member announcing its own unchanged name after a local rename 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-network-membership.test.ts > Annex Network membership (#3061) > DIAGNOSTIC: a member announcing its own unchanged name after a local rename
+AssertionError: expected 'Studio' to be 'Studio in the network' // Object.is equality
+
+Expected: "Studio in the network"
+Received: "Studio"
+
+ ❯ src/main/services/annex-network-membership.test.ts:617:47
+    615|     listener!(A, view([member(A, '0a', 'Studio')]));
+    616|     console.log('DIAG alias after its own members view:', peers.get(A.…
+    617|     expect(peers.get(A.toLowerCase())?.alias).toBe('Studio in the netw…
+       |                                               ^
+    618|   });
+    619|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 90 skipped (91)
+   Start at  03:02:13
+   Duration  157ms (transform 52ms, setup 5ms, import 64ms, tests 6ms, environment 0ms)
+
+vitest exit=1
+restored byte-identical
