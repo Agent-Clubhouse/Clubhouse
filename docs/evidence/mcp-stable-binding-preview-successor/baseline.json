@@ -1,0 +1,28 @@
+{
+  "head_before": "807360c543a28848e9359564b7917d0bac425e91",
+  "head_after": "807360c543a28848e9359564b7917d0bac425e91",
+  "command": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "src/main/services/connection-guidance.test.ts",
+    "src/main/services/dispatcher-wire-source.test.ts",
+    "--maxWorkers=1"
+  ],
+  "exit": 1,
+  "sha256_before": {
+    "src/main/services/connection-guidance.test.ts": "3d92839f578a346e0c2327fc7c6757edc23f98082a93da0fc69deefa38c6bb39",
+    "src/main/services/dispatcher-wire-source.test.ts": "62c05748367946a9983d6a833e5f9cdbf8332b2c197838f8f6d6b4eabf5fcc13"
+  },
+  "sha256_after": {
+    "src/main/services/connection-guidance.test.ts": "3d92839f578a346e0c2327fc7c6757edc23f98082a93da0fc69deefa38c6bb39",
+    "src/main/services/dispatcher-wire-source.test.ts": "62c05748367946a9983d6a833e5f9cdbf8332b2c197838f8f6d6b4eabf5fcc13"
+  },
+  "baseline_source": "807360c543a28848e9359564b7917d0bac425e91",
+  "restore_from_baseline": [
+    "src/main/services/clubhouse-mcp/tool-registry.ts",
+    "src/main/services/connection-guidance.ts",
+    "src/main/services/connection-guidance.test.ts",
+    "src/main/services/dispatcher-wire-source.test.ts"
+  ]
+}

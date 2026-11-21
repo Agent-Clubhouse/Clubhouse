@@ -1,0 +1,22 @@
+{
+  "head_before": "0723c341045212306c3966f6b8951b626d95e10f",
+  "head_after": "0723c341045212306c3966f6b8951b626d95e10f",
+  "mutation_source": "src/main/services/connection-guidance.ts",
+  "source_before_sha256": "c59ed8e874a59595822090ec6e3fefd2d677712f657a93600346e7c7db44ee23",
+  "source_after_sha256": "c59ed8e874a59595822090ec6e3fefd2d677712f657a93600346e7c7db44ee23",
+  "mutated_sha256": "72a120ac8cfaf0b6e426665e23bbcb39d0902ac88d850f71fb1f150278aaf936",
+  "replace": {
+    "old": "buildBindingToolDescription(binding, tool.suffix, tool.description, instructions)",
+    "new": "buildBindingToolDescription(binding, tool.suffix, tool.description, instructions).replace(/\\n\\nTarget: [^\\n]*/, '')"
+  },
+  "command": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "src/main/services/connection-guidance.test.ts",
+    "--maxWorkers=1",
+    "-t",
+    "previews the actual sanitized|previews the same current"
+  ],
+  "exit": 1
+}

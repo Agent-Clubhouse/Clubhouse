@@ -1,0 +1,95 @@
+{
+  "source_head": "0723c341045212306c3966f6b8951b626d95e10f",
+  "source_branch": "fix/3738-preview-consistency",
+  "approved_parent": "807360c543a28848e9359564b7917d0bac425e91",
+  "original_evidence": "7e362e2cc1f0ea153a5569dad86ec5cfedc00a0d",
+  "original_QA": "017eca2e14022abf023682d1915198b7a88b5a7a",
+  "delta_files": [
+    "src/main/services/clubhouse-mcp/tool-registry.ts",
+    "src/main/services/connection-guidance.test.ts",
+    "src/main/services/connection-guidance.ts",
+    "src/main/services/dispatcher-wire-source.test.ts"
+  ],
+  "source_sha256": {
+    "src/main/services/clubhouse-mcp/binding-incarnation.test.ts": "00b3885c18d0b1646a4b9d9c361eb201e1aba1cad94aa3abfb25f3426a12c56d",
+    "src/main/services/clubhouse-mcp/binding-manager.ts": "d14ddb0717a660063b5ae8b4e8598e2c8eb8aee859713e8115c19c9ae0157bcb",
+    "src/main/services/clubhouse-mcp/binding-tool-key.ts": "c7b6eab2de9d9b4f47fc7883570d274fc9b715f88030cc6b1aab760b6afae2e1",
+    "src/main/services/clubhouse-mcp/bridge-server.test.ts": "20bb217bc9321825b3f90fcac29aadf37d648872f059542575a480a946e696aa",
+    "src/main/services/clubhouse-mcp/local-wake.test.ts": "493cf0bc66221be70bbb2034602405bf2d318b1ae816c6c7038eb4e8702a9ed2",
+    "src/main/services/clubhouse-mcp/tool-grants.test.ts": "bb87c02d8e6126767226d3c2b250d3b6b7f80dd790eb3e76c66f312d193c3a1d",
+    "src/main/services/clubhouse-mcp/tool-registry.test.ts": "2cc05767dd555538050c5b160737f429636311f9f34848e1b0ad2f767f99daa3",
+    "src/main/services/clubhouse-mcp/tool-registry.ts": "21fc05c002a6744176dce8bdb911ad2f3008aa3835a8bc269b7c62f0909f2ed2",
+    "src/main/services/clubhouse-mcp/tools/agent-tools.test.ts": "89ce799f1df55c080672afacc88b324a31d18d6d241eecd57a3d3cd8e92adc78",
+    "src/main/services/clubhouse-mcp/tools/group-project-tools.test.ts": "49970fe5002776e2fa31c48350654e0dc904acb5fc2d4f0db67cd053314d01c5",
+    "src/main/services/connection-guidance.test.ts": "ef0bee7c6dcbacbc33b424876f058c7b5092b5ad2d078465941fa720d170fdd9",
+    "src/main/services/connection-guidance.ts": "c59ed8e874a59595822090ec6e3fefd2d677712f657a93600346e7c7db44ee23",
+    "src/main/services/dispatcher-wire-source.test.ts": "c2aa3dd19373ebcf418cf1dcd492d6a69e3b811a3ab9062d2e5c8619b735685c",
+    "src/main/services/persisted-bindings.test.ts": "1d9c9a8e759bfec301610f12a07f945a9d69e972d3a4e5c60821762466fd520d"
+  },
+  "identity_source_unchanged_sha256": {
+    "src/main/services/clubhouse-mcp/binding-tool-key.ts": "c7b6eab2de9d9b4f47fc7883570d274fc9b715f88030cc6b1aab760b6afae2e1",
+    "src/main/services/clubhouse-mcp/binding-manager.ts": "d14ddb0717a660063b5ae8b4e8598e2c8eb8aee859713e8115c19c9ae0157bcb"
+  },
+  "package_lock_sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+  "original_hosted_run": 44876043424,
+  "original_hosted_source": "807360c543a28848e9359564b7917d0bac425e91",
+  "original_hosted_merge": "4ca724d90afa9ba95c18345add6336ed55a809fd",
+  "original_hosted_base": "c0cf2f1974b98a9418f1682284c6535d1a1e396b",
+  "raw_hosted_logs": [
+    {
+      "label": "ubuntu-2",
+      "raw_bytes": 1438049,
+      "raw_sha256": "ccbcf71c724ae0b595eab9b8ecf568ab764c4554c5285b038338d0ae12211095",
+      "gzip": "hosted-44876043424-ubuntu-2.log.gz",
+      "gzip_sha256": "b4bfb3d8c636b32432b27967c45ce885b1a33e62998259842d7a1d030b9f9329"
+    },
+    {
+      "label": "windows-1",
+      "raw_bytes": 4128226,
+      "raw_sha256": "ea92dba77c31ba3448c65ed2d07c886a8e498016d92169872f796737c156a9ae",
+      "gzip": "hosted-44876043424-windows-1.log.gz",
+      "gzip_sha256": "fc42bd8ac42100d924130e8070112f8de5c5b404cced3c8caa6873eecea32aac"
+    },
+    {
+      "label": "ubuntu-1",
+      "raw_bytes": 4072577,
+      "raw_sha256": "0ebb4337b9d33a32855bb9bfb1e5b7703ccdc364eb8f44d5f08a484db36a9a26",
+      "gzip": "hosted-44876043424-ubuntu-1.log.gz",
+      "gzip_sha256": "3aedb9030cf137caf74748e46642360ada899dc974c06c6b1e40e7082ceb0bf3"
+    },
+    {
+      "label": "annex-ubuntu-1",
+      "raw_bytes": 325818,
+      "raw_sha256": "00e97dddf0f4fc7ef899c7ddff89e058ce6eb56fe7e87ee319e576b60ccdb39c",
+      "gzip": "hosted-44876043424-annex-ubuntu-1.log.gz",
+      "gzip_sha256": "e9c2466bdd52143712e244a56b112296dac4e488c05c33ac10b79920d7a4b64b"
+    },
+    {
+      "label": "chat-ubuntu-3",
+      "raw_bytes": 214366,
+      "raw_sha256": "3e94074973228a2675671018e5723716acd35643e4fa0c1d4fa5e3b68d9e393e",
+      "gzip": "hosted-44876043424-chat-ubuntu-3.log.gz",
+      "gzip_sha256": "69572f672ddf93de157456ba611e20ea7983e2d83d8b1864f6c7d121431dd903"
+    },
+    {
+      "label": "chat-windows-3",
+      "raw_bytes": 66830,
+      "raw_sha256": "e425cc885f7a649304b4fbdf469ef05a0dd02f7e3a793db6e3dbe57d06f3a83c",
+      "gzip": "hosted-44876043424-chat-windows-3.log.gz",
+      "gzip_sha256": "366cfab7fdb8a1ddaaa71151e33a7a2f4d9c960f9a45662f744ce112511c418a"
+    }
+  ],
+  "expected_exits": {
+    "baseline": 1,
+    "development": 0,
+    "importers-exact": 0,
+    "typecheck-exact": 0,
+    "lint-exact": 0,
+    "mutation-preview-divergence": 1
+  },
+  "remaining_boundaries": [
+    "Independent delta QA required before PR3751 update",
+    "Hosted successor validation required; no local E2E",
+    "Original807 E2E consumer failures retained separately; preview correction does not resolve those selectors/restart assumptions"
+  ]
+}

@@ -1,0 +1,19 @@
+2026-11-21T06:47:27Z START mcp-stable-binding-name idle=87% unused=2082M avail=28076M freepct=82 comp=4015M swap=1820M pid=63658 cmd=node node_modules/eslint/bin/eslint.js src/main/services/clubhouse-mcp/binding-incarnation.test.ts src/main/services/clubhouse-mcp/binding-manager.ts src/main/services/clubhouse-mcp/binding-tool-key.ts src/main/services/clubhouse-mcp/bridge-server.test.ts src/main/services/clubhouse-mcp/local-wake.test.ts src/main/services/clubhouse-mcp/tool-grants.test.ts src/main/services/clubhouse-mcp/tool-registry.test.ts src/main/services/clubhouse-mcp/tool-registry.ts src/main/services/clubhouse-mcp/tools/agent-tools.test.ts src/main/services/clubhouse-mcp/tools/group-project-tools.test.ts src/main/services/connection-guidance.test.ts src/main/services/connection-guidance.ts src/main/services/dispatcher-wire-source.test.ts src/main/services/persisted-bindings.test.ts
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/src/main/services/clubhouse-mcp/binding-manager.ts
+  228:9  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/src/main/services/clubhouse-mcp/bridge-server.test.ts
+   96:153  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  125:135  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/src/main/services/clubhouse-mcp/tools/group-project-tools.test.ts
+   279:28  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   544:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   545:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1118:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1124:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 8 problems (0 errors, 8 warnings)
+
+2026-11-21T06:47:28Z END mcp-stable-binding-name rc=0

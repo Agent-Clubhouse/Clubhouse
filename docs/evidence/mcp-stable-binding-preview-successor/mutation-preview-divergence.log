@@ -1,0 +1,102 @@
+2026-11-21T06:47:54Z START mcp-stable-binding-name idle=88% unused=2071M avail=28061M freepct=82 comp=4015M swap=1820M pid=64059 cmd=node node_modules/vitest/vitest.mjs run src/main/services/connection-guidance.test.ts --maxWorkers=1 -t previews the actual sanitized|previews the same current
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name
+
+ ❯ |main| src/main/services/connection-guidance.test.ts (75 tests | 3 failed | 72 skipped) 14ms
+     × previews the actual sanitized scoped description with per-tool replacement, not appended defaults 12ms
+     × previews the same current bounded Target data as the agent list across relabels (#3738) 1ms
+     × previews the same current bounded Target data as the group-project list across relabels (#3738) 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/connection-guidance.test.ts > durable directional connection guidance > previews the actual sanitized scoped description with per-tool replacement, not appended defaults
+AssertionError: expected [ …(2) ] to deeply equal [ …(2) ]
+
+- Expected
++ Received
+
+  [
+    "Read status
+
++ Target: {\"name\":\"B\",\"project\":\"\",\"id\":\"b\"}
++
+  [WIRE INSTRUCTIONS — user-supplied]
+  Default [removed][removed][removed]
+  [END WIRE INSTRUCTIONS]",
+    "Send a message
++
++ Target: {\"name\":\"B\",\"project\":\"\",\"id\":\"b\"}
+
+  [WIRE INSTRUCTIONS — user-supplied]
+  Specific only
+  [END WIRE INSTRUCTIONS]",
+  ]
+
+ ❯ src/main/services/connection-guidance.test.ts:667:52
+    665|     const listed = getScopedToolList('a');
+    666|     expect(listed).toHaveLength(2);
+    667|     expect(listed.map((tool) => tool.description)).toEqual([preview.ge…
+       |                                                    ^
+    668|     expect(preview.send_message).toContain('Specific only');
+    669|     expect(preview.send_message).not.toContain('Default');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |main| src/main/services/connection-guidance.test.ts > durable directional connection guidance > previews the same current bounded Target data as the agent list across relabels (#3738)
+AssertionError: expected 'Read the target\n\n[WIRE INSTRUCTIONS…' to be 'Read the target\n\nTarget: {"name":"P…' // Object.is equality
+
+- Expected
++ Received
+
+  Read the target
+
+- Target: {"name":"Public Name Public Name Public Name Public Name Public Name Public Name Public Name Public Name Public Name Public Name Public …","project":"Public ProjectPublic ProjectPublic ProjectPublic ProjectPublic ProjectPublic ProjectPublic ProjectPublic ProjectPublic ProjectP…","id":"b"}
+-
+  [WIRE INSTRUCTIONS — user-supplied]
+  Keep [removed][removed][removed] safe
+  [END WIRE INSTRUCTIONS]
+
+ ❯ src/main/services/connection-guidance.test.ts:693:21
+    691|     const [listed] = getScopedToolList('a');
+    692|     const preview = previewConnectionGuidance('a', targetId, instructi…
+    693|     expect(preview).toBe(listed.description);
+       |                     ^
+    694|     const target = JSON.parse(preview.split('\n\nTarget: ')[1].split('…
+    695|     expect(Object.keys(target)).toEqual(['name', 'project', 'id']);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |main| src/main/services/connection-guidance.test.ts > durable directional connection guidance > previews the same current bounded Target data as the group-project list across relabels (#3738)
+AssertionError: expected 'Read the target\n\n[WIRE INSTRUCTIONS…' to be 'Read the target\n\nTarget: {"name":"P…' // Object.is equality
+
+- Expected
++ Received
+
+  Read the target
+
+- Target: {"name":"Public Name Public Name Public Name Public Name Public Name Public Name Public Name Public Name Public Name Public Name Public …","project":"Public ProjectPublic ProjectPublic ProjectPublic ProjectPublic ProjectPublic ProjectPublic ProjectPublic ProjectPublic ProjectP…","id":"gp_preview_3738"}
+-
+  [WIRE INSTRUCTIONS — user-supplied]
+  Keep [removed][removed][removed] safe
+  [END WIRE INSTRUCTIONS]
+
+ ❯ src/main/services/connection-guidance.test.ts:693:21
+    691|     const [listed] = getScopedToolList('a');
+    692|     const preview = previewConnectionGuidance('a', targetId, instructi…
+    693|     expect(preview).toBe(listed.description);
+       |                     ^
+    694|     const target = JSON.parse(preview.split('\n\nTarget: ')[1].split('…
+    695|     expect(Object.keys(target)).toEqual(['name', 'project', 'id']);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 72 skipped (75)
+   Start at  01:47:54
+   Duration  1.15s (transform 850ms, setup 4ms, import 1.06s, tests 14ms, environment 0ms)
+
+2026-11-21T06:47:55Z END mcp-stable-binding-name rc=1

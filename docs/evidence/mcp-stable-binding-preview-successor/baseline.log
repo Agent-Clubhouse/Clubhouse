@@ -1,0 +1,83 @@
+2026-11-21T06:42:18Z START mcp-stable-binding-name idle=90% unused=2027M avail=27988M freepct=82 comp=4016M swap=1820M pid=58869 cmd=node node_modules/vitest/vitest.mjs run src/main/services/connection-guidance.test.ts src/main/services/dispatcher-wire-source.test.ts --maxWorkers=1
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name
+
+ ❯ |main| src/main/services/connection-guidance.test.ts (73 tests | 1 failed) 399ms
+     × previews the actual sanitized scoped description with per-tool replacement, not appended defaults 7ms
+ ❯ |main| src/main/services/dispatcher-wire-source.test.ts (35 tests | 2 failed) 69ms
+     × carries the name the user gave the Dispatcher, and relabels the live wires when it is renamed (#3053) 3ms
+     × end to end: renaming a project relabels its live Dispatcher wires in place (#2561) 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/connection-guidance.test.ts > durable directional connection guidance > previews the actual sanitized scoped description with per-tool replacement, not appended defaults
+AssertionError: expected [ …(2) ] to deeply equal [ …(2) ]
+
+- Expected
++ Received
+
+  [
+    "Read status
+
++ Target: {\"name\":\"B\",\"project\":\"\",\"id\":\"b\"}
++
+  [WIRE INSTRUCTIONS — user-supplied]
+  Default [removed][removed][removed]
+  [END WIRE INSTRUCTIONS]",
+    "Send a message
++
++ Target: {\"name\":\"B\",\"project\":\"\",\"id\":\"b\"}
+
+  [WIRE INSTRUCTIONS — user-supplied]
+  Specific only
+  [END WIRE INSTRUCTIONS]",
+  ]
+
+ ❯ src/main/services/connection-guidance.test.ts:667:52
+    665|     const listed = getScopedToolList('a');
+    666|     expect(listed).toHaveLength(2);
+    667|     expect(listed.map((tool) => tool.description)).toEqual([preview.ge…
+       |                                                    ^
+    668|     expect(preview.send_message).toContain('Specific only');
+    669|     expect(preview.send_message).not.toContain('Default');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |main| src/main/services/dispatcher-wire-source.test.ts > Dispatcher wire rebuild > carries the name the user gave the Dispatcher, and relabels the live wires when it is renamed (#3053)
+AssertionError: expected 'clubhouse__War_D_54v45zcdikxwkeqqhxsa…' to be 'clubhouse__Wardfall_Rosie_6tjo__send_…' // Object.is equality
+
+Expected: "clubhouse__Wardfall_Rosie_6tjo__send_message"
+Received: "clubhouse__War_D_54v45zcdikxwkeqqhxsaeilw4_6__send_message"
+
+ ❯ src/main/services/dispatcher-wire-source.test.ts:275:55
+    273|     expect(toLead()).toMatchObject({ agentName: 'Rosie' });
+    274|     expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `dura…
+    275|     expect(buildToolName(fromLead(), 'send_message')).toBe(buildToolNa…
+       |                                                       ^
+    276|     expect(buildToolName(fromLead(), 'send_message')).toMatch(/^clubho…
+    277|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |main| src/main/services/dispatcher-wire-source.test.ts > watchDispatcherWires > end to end: renaming a project relabels its live Dispatcher wires in place (#2561)
+AssertionError: expected 'War__54v45zcdikxwkeqqhxsaeilw4_1t' not to be 'War__54v45zcdikxwkeqqhxsaeilw4_1t' // Object.is equality
+ ❯ src/main/services/dispatcher-wire-source.test.ts:552:40
+    550|     expect(toLead().projectName).toBe('Renamed');
+    551|     expect(fromLead().projectName).toBe('Renamed');
+    552|     expect(buildToolKey(toLead())).not.toBe(toolKey);
+       |                                        ^
+    553|     expect(buildToolKey(toLead())).toMatch(/^Renamed_lead_/);
+    554|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  3 failed | 105 passed (108)
+   Start at  01:42:18
+   Duration  1.81s (transform 890ms, setup 5ms, import 1.20s, tests 468ms, environment 0ms)
+
+2026-11-21T06:42:20Z END mcp-stable-binding-name rc=1

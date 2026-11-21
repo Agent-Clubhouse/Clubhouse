@@ -1,0 +1,38 @@
+[
+  {
+    "label": "ubuntu-2",
+    "run": 44876043424,
+    "artifact_id": 14696395869,
+    "api_digest": "sha256:717698352b2f5af4422444d5b62fbeda1e5001b9a30eb4eb717cb72f564b9750",
+    "download_sha256": "717698352b2f5af4422444d5b62fbeda1e5001b9a30eb4eb717cb72f564b9750",
+    "digest_matches": true,
+    "xml_sha256": "117d3f04627846ae392fa104bbdb81866d0bea89c19fb921ace683d4dd9f243f",
+    "xml_bytes": 15657702,
+    "failures": [
+      {
+        "suite": "src/main/services/connection-guidance.test.ts",
+        "case": "durable directional connection guidance > previews the actual sanitized scoped description with per-tool replacement, not appended defaults"
+      }
+    ]
+  },
+  {
+    "label": "windows-1",
+    "run": 44876043424,
+    "artifact_id": 14696038077,
+    "api_digest": "sha256:3c95424fbf7ead183b1019198899027d8cdeb1087270af29ce08e5d0ca1fe25f",
+    "download_sha256": "3c95424fbf7ead183b1019198899027d8cdeb1087270af29ce08e5d0ca1fe25f",
+    "digest_matches": true,
+    "xml_sha256": "0bdb47a87213d1b93030d75feb16bce34b9386bf314652b440c27c9317acadcd",
+    "xml_bytes": 6412786,
+    "failures": [
+      {
+        "suite": "src/main/services/dispatcher-wire-source.test.ts",
+        "case": "Dispatcher wire rebuild > carries the name the user gave the Dispatcher, and relabels the live wires when it is renamed (#3053)"
+      },
+      {
+        "suite": "src/main/services/dispatcher-wire-source.test.ts",
+        "case": "watchDispatcherWires > end to end: renaming a project relabels its live Dispatcher wires in place (#2561)"
+      }
+    ]
+  }
+]

@@ -1,0 +1,14 @@
+2026-11-21T06:47:08Z START mcp-stable-binding-name idle=90% unused=1935M avail=27968M freepct=82 comp=4016M swap=1820M pid=63396 cmd=node node_modules/vitest/vitest.mjs run src/main/services/connection-guidance.test.ts src/main/services/dispatcher-wire-source.test.ts src/main/services/clubhouse-mcp/binding-incarnation.test.ts src/main/services/clubhouse-mcp/tool-registry.test.ts src/main/services/clubhouse-mcp/binding-manager.test.ts src/main/services/clubhouse-mcp/bridge-server.test.ts src/main/services/clubhouse-mcp/local-wake.test.ts src/main/services/clubhouse-mcp/plugin-tool-registry.test.ts src/main/services/clubhouse-mcp/tool-grants.test.ts src/main/services/clubhouse-mcp/tools/dispatcher-routing.test.ts src/main/services/persisted-bindings.test.ts src/main/services/clubhouse-mcp/tools/agent-tools.test.ts src/main/services/clubhouse-mcp/tools/group-project-tools.test.ts src/main/services/group-project-delivery.test.ts --maxWorkers=1
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name
+
+
+ Test Files  14 passed (14)
+      Tests  633 passed (633)
+   Start at  01:47:08
+   Duration  8.60s (transform 1.76s, setup 24ms, import 3.06s, tests 4.63s, environment 1ms)
+
+2026-11-21T06:47:17Z END mcp-stable-binding-name rc=0
