@@ -1,0 +1,46 @@
+{
+  "headBefore": "8a3aeecf755a0757e409ba9bb5bf2ba4f0c29a34",
+  "inputsBefore": {
+    "src/main/services/annex-network-membership.ts": "fbb98a508af951e7bfe7b3ef5ce3f62745e0db7f99237d723fdb3d447d1b7e38",
+    "src/main/services/annex-network-membership.test.ts": "07fe2d48e075acd481f19849d8a5bcaf3e47d5eff08efcf36bf859484466a58d",
+    "src/main/services/annex-network-channel.ts": "a57bf637c67c04654c494431259c9a7715d4fc4cfec6ad20a7fae91396e1f684",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/shared/annex-network-protocol.ts": "b89ed3f087488c9de03fea6ec764eff0d1ba55e0655caf88c78f1dcb524c523e",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+  },
+  "trackedDiffBefore": "",
+  "argv": [
+    "node_modules/.bin/tsc",
+    "--noEmit"
+  ],
+  "admission": {
+    "cpus": 16,
+    "load": [
+      1.62158203125,
+      2.0556640625,
+      2.150390625
+    ],
+    "matchedVersions": 1176,
+    "cache": "/Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules"
+  },
+  "startedUTC": "2026-11-21T22:40:20.007460+00:00",
+  "runnerSHA256": "2126058f6570811bb509f312ccf70981301ff19a8053c22471ee0f63d4b841e9",
+  "headAfter": "8a3aeecf755a0757e409ba9bb5bf2ba4f0c29a34",
+  "inputsAfter": {
+    "src/main/services/annex-network-membership.ts": "fbb98a508af951e7bfe7b3ef5ce3f62745e0db7f99237d723fdb3d447d1b7e38",
+    "src/main/services/annex-network-membership.test.ts": "07fe2d48e075acd481f19849d8a5bcaf3e47d5eff08efcf36bf859484466a58d",
+    "src/main/services/annex-network-channel.ts": "a57bf637c67c04654c494431259c9a7715d4fc4cfec6ad20a7fae91396e1f684",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/shared/annex-network-protocol.ts": "b89ed3f087488c9de03fea6ec764eff0d1ba55e0655caf88c78f1dcb524c523e",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+  },
+  "trackedDiffAfter": "",
+  "finishedUTC": "2026-11-21T22:40:28.883240+00:00",
+  "exitCode": 0,
+  "stdout": "",
+  "stderr": ""
+}

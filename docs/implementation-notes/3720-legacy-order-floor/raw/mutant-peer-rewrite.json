@@ -1,0 +1,52 @@
+{
+  "headBefore": "8a3aeecf755a0757e409ba9bb5bf2ba4f0c29a34",
+  "inputsBefore": {
+    "src/main/services/annex-network-membership.ts": "0069e53db85f67b0c4c28b608cc7515c128f84b9e3986b50be60d082c86c171f",
+    "src/main/services/annex-network-membership.test.ts": "07fe2d48e075acd481f19849d8a5bcaf3e47d5eff08efcf36bf859484466a58d",
+    "src/main/services/annex-network-channel.ts": "a57bf637c67c04654c494431259c9a7715d4fc4cfec6ad20a7fae91396e1f684",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/shared/annex-network-protocol.ts": "b89ed3f087488c9de03fea6ec764eff0d1ba55e0655caf88c78f1dcb524c523e",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+  },
+  "trackedDiffBefore": "diff --git a/src/main/services/annex-network-membership.ts b/src/main/services/annex-network-membership.ts\nindex 5d9c7d2f5..e001b72c3 100644\n--- a/src/main/services/annex-network-membership.ts\n+++ b/src/main/services/annex-network-membership.ts\n@@ -681,7 +681,7 @@ function onMessage(from: string, message: NetworkMessage): void {\n       const last = s.renamedAt[lower(message.fingerprint)];\n       if (peer?.role === 'member' && (!last || Date.parse(message.at) > Date.parse(last))) {\n         // A newer event still advances ordering when its label is unchanged.\n-        if (peer.alias !== message.name) annexPeers.addPeer({ ...peer, alias: message.name });\n+        annexPeers.addPeer({ ...peer, alias: message.name });\n         s.renamedAt[lower(message.fingerprint)] = message.at;\n         changed = true;\n       }\n",
+  "argv": [
+    "node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/annex-network-membership.test.ts",
+    "--maxWorkers=1",
+    "--no-file-parallelism",
+    "--cache=false"
+  ],
+  "admission": {
+    "cpus": 16,
+    "load": [
+      2.34521484375,
+      2.2197265625,
+      2.20703125
+    ],
+    "matchedVersions": 1176,
+    "cache": "/Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules"
+  },
+  "startedUTC": "2026-11-21T22:41:07.453706+00:00",
+  "runnerSHA256": "2126058f6570811bb509f312ccf70981301ff19a8053c22471ee0f63d4b841e9",
+  "headAfter": "8a3aeecf755a0757e409ba9bb5bf2ba4f0c29a34",
+  "inputsAfter": {
+    "src/main/services/annex-network-membership.ts": "0069e53db85f67b0c4c28b608cc7515c128f84b9e3986b50be60d082c86c171f",
+    "src/main/services/annex-network-membership.test.ts": "07fe2d48e075acd481f19849d8a5bcaf3e47d5eff08efcf36bf859484466a58d",
+    "src/main/services/annex-network-channel.ts": "a57bf637c67c04654c494431259c9a7715d4fc4cfec6ad20a7fae91396e1f684",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/shared/annex-network-protocol.ts": "b89ed3f087488c9de03fea6ec764eff0d1ba55e0655caf88c78f1dcb524c523e",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+  },
+  "trackedDiffAfter": "diff --git a/src/main/services/annex-network-membership.ts b/src/main/services/annex-network-membership.ts\nindex 5d9c7d2f5..e001b72c3 100644\n--- a/src/main/services/annex-network-membership.ts\n+++ b/src/main/services/annex-network-membership.ts\n@@ -681,7 +681,7 @@ function onMessage(from: string, message: NetworkMessage): void {\n       const last = s.renamedAt[lower(message.fingerprint)];\n       if (peer?.role === 'member' && (!last || Date.parse(message.at) > Date.parse(last))) {\n         // A newer event still advances ordering when its label is unchanged.\n-        if (peer.alias !== message.name) annexPeers.addPeer({ ...peer, alias: message.name });\n+        annexPeers.addPeer({ ...peer, alias: message.name });\n         s.renamedAt[lower(message.fingerprint)] = message.at;\n         changed = true;\n       }\n",
+  "finishedUTC": "2026-11-21T22:41:07.863375+00:00",
+  "exitCode": 1,
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |main| src/main/services/annex-network-membership.test.ts (96 tests | 1 failed) 26ms\n       \u00d7 records a fresh same-label floor without rewriting peer trust or labels 3ms\n\n Test Files  1 failed (1)\n      Tests  1 failed | 95 passed (96)\n   Start at  17:41:07\n   Duration  171ms (transform 56ms, setup 4ms, import 68ms, tests 26ms, environment 0ms)\n\n",
+  "stderr": "(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |main| src/main/services/annex-network-membership.test.ts > Annex Network membership (#3061) > legacy same-label rename ordering (#3720) > records a fresh same-label floor without rewriting peer trust or labels\nAssertionError: expected { \u2026(13) } to be { \u2026(13) } // Object.is equality\n\nIf it should pass with deep equality, replace \"toBe\" with \"toStrictEqual\"\n\nExpected: { \u2026(13) }\nReceived: serializes to the same string\n\n\nCompared values have no visual difference.\n\n \u276f src/main/services/annex-network-membership.test.ts:621:42\n    619|       vi.mocked(annexPeers.addPeer).mockClear();\n    620|       listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, nam\u2026\n    621|       expect(peers.get(B.toLowerCase())).toBe(peer);\n       |                                          ^\n    622|       expect(annexPeers.addPeer).not.toHaveBeenCalled();\n    623|       expect(stored.renamedAt).toMatchObject({ [B.toLowerCase()]: at }\u2026\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\n\n"
+}

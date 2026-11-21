@@ -1,0 +1,10 @@
+{
+  "source": "8a3aeecf755a0757e409ba9bb5bf2ba4f0c29a34",
+  "base": "c43ffb37d20650c542e449a8a04a9fd84e65b655",
+  "inputs": {
+    "src/main/services/annex-network-membership.ts": "fbb98a508af951e7bfe7b3ef5ce3f62745e0db7f99237d723fdb3d447d1b7e38",
+    "src/main/services/annex-network-membership.test.ts": "07fe2d48e075acd481f19849d8a5bcaf3e47d5eff08efcf36bf859484466a58d",
+    "docs/implementation-notes/3720-legacy-order-floor/run-proof.py": "2126058f6570811bb509f312ccf70981301ff19a8053c22471ee0f63d4b841e9"
+  },
+  "scope": "legacy event floor only; negotiated overwrite fix remains open"
+}

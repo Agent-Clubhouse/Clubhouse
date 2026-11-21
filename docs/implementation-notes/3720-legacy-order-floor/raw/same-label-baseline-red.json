@@ -1,0 +1,52 @@
+{
+  "headBefore": "44b6702751dac4a1734fda7245bd6cb4787e3f11",
+  "inputsBefore": {
+    "src/main/services/annex-network-membership.ts": "313b1aa6ae0cd889112bfbfc67de51d378918e05324a651577db2beafbbc5c55",
+    "src/main/services/annex-network-membership.test.ts": "07fe2d48e075acd481f19849d8a5bcaf3e47d5eff08efcf36bf859484466a58d",
+    "src/main/services/annex-network-channel.ts": "a57bf637c67c04654c494431259c9a7715d4fc4cfec6ad20a7fae91396e1f684",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/shared/annex-network-protocol.ts": "b89ed3f087488c9de03fea6ec764eff0d1ba55e0655caf88c78f1dcb524c523e",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+  },
+  "trackedDiffBefore": "",
+  "argv": [
+    "node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/annex-network-membership.test.ts",
+    "--maxWorkers=1",
+    "--no-file-parallelism",
+    "--cache=false"
+  ],
+  "admission": {
+    "cpus": 16,
+    "load": [
+      1.55322265625,
+      2.0576171875,
+      2.15234375
+    ],
+    "matchedVersions": 1176,
+    "cache": "/Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules"
+  },
+  "startedUTC": "2026-11-21T22:40:07.355327+00:00",
+  "runnerSHA256": "2126058f6570811bb509f312ccf70981301ff19a8053c22471ee0f63d4b841e9",
+  "headAfter": "44b6702751dac4a1734fda7245bd6cb4787e3f11",
+  "inputsAfter": {
+    "src/main/services/annex-network-membership.ts": "313b1aa6ae0cd889112bfbfc67de51d378918e05324a651577db2beafbbc5c55",
+    "src/main/services/annex-network-membership.test.ts": "07fe2d48e075acd481f19849d8a5bcaf3e47d5eff08efcf36bf859484466a58d",
+    "src/main/services/annex-network-channel.ts": "a57bf637c67c04654c494431259c9a7715d4fc4cfec6ad20a7fae91396e1f684",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/shared/annex-network-protocol.ts": "b89ed3f087488c9de03fea6ec764eff0d1ba55e0655caf88c78f1dcb524c523e",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+  },
+  "trackedDiffAfter": "",
+  "finishedUTC": "2026-11-21T22:40:07.778826+00:00",
+  "exitCode": 1,
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |main| src/main/services/annex-network-membership.test.ts (96 tests | 3 failed) 27ms\n       \u00d7 keeps a newer same-label event ahead of an older different name 3ms\n       \u00d7 records a fresh same-label floor without rewriting peer trust or labels 1ms\n       \u00d7 retains the first accepted label when a different name has exactly the same stamp 0ms\n\n Test Files  1 failed (1)\n      Tests  3 failed | 93 passed (96)\n   Start at  17:40:07\n   Duration  174ms (transform 57ms, setup 4ms, import 68ms, tests 27ms, environment 0ms)\n\n",
+  "stderr": "(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 3 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |main| src/main/services/annex-network-membership.test.ts > Annex Network membership (#3061) > legacy same-label rename ordering (#3720) > keeps a newer same-label event ahead of an older different name\nAssertionError: expected 'Older laptop' to be 'Laptop' // Object.is equality\n\nExpected: \"Laptop\"\nReceived: \"Older laptop\"\n\n \u276f src/main/services/annex-network-membership.test.ts:613:49\n    611|       listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, nam\u2026\n    612|       listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, nam\u2026\n    613|       expect(peers.get(B.toLowerCase())?.alias).toBe('Laptop');\n       |                                                 ^\n    614|     });\n    615|\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/3]\u23af\n\n FAIL  |main| src/main/services/annex-network-membership.test.ts > Annex Network membership (#3061) > legacy same-label rename ordering (#3720) > records a fresh same-label floor without rewriting peer trust or labels\nAssertionError: expected {} to match object { \u2026(1) }\n\n- Expected\n+ Received\n\n- {\n-   \"0b:0b:0b:0b:0b:0b:0b:0b:0b:0b:0b:0b:0b:0b:0b:0b\": \"2030-03-01T00:00:00.000Z\",\n- }\n+ {}\n\n \u276f src/main/services/annex-network-membership.test.ts:623:32\n    621|       expect(peers.get(B.toLowerCase())).toBe(peer);\n    622|       expect(annexPeers.addPeer).not.toHaveBeenCalled();\n    623|       expect(stored.renamedAt).toMatchObject({ [B.toLowerCase()]: at }\u2026\n       |                                ^\n    624|     });\n    625|\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/3]\u23af\n\n FAIL  |main| src/main/services/annex-network-membership.test.ts > Annex Network membership (#3061) > legacy same-label rename ordering (#3720) > retains the first accepted label when a different name has exactly the same stamp\nAssertionError: expected 'Equal stamp replacement' to be 'Laptop' // Object.is equality\n\nExpected: \"Laptop\"\nReceived: \"Equal stamp replacement\"\n\n \u276f src/main/services/annex-network-membership.test.ts:630:49\n    628|       listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, nam\u2026\n    629|       listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, nam\u2026\n    630|       expect(peers.get(B.toLowerCase())?.alias).toBe('Laptop');\n       |                                                 ^\n    631|     });\n    632|\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[3/3]\u23af\n\n"
+}
