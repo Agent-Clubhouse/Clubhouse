@@ -1,0 +1,86 @@
+Bounded P2 successor: genuine failures, not broader full-duplex acceptance.
+Original logs are retained unchanged; manifest.json records their byte hashes.
+
+1. Exact current-main settings baseline
+Base: c0cf2f1974b98a9418f1682284c6535d1a1e396b
+Persisted test-only commit: 61b4662a9e875601d82567c5ad5550b21f485192
+Gate: lane-p2 4, 2026-11-21T06:29:10Z--06:29:12Z, exit 1.
+Command:
+env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/ipc/annex-handlers.test.ts -t 'SAVE_SETTINGS reconciles control retries|SAVE_SETTINGS does not start/stop when neither toggle' --maxWorkers=1 --reporter=verbose
+
+Both SAVE_SETTINGS autoReconnect true/false cases failed:
+AssertionError: expected "vi.fn()" to be called once with arguments: []
+Number of calls: 0
+The unchanged-settings control passed.
+Result: 2 FAIL / 1 PASS / 35 selector skips.
+
+2. Pre-client-wiring integration negative
+Client production blob was exactly c0cf; the unshared P2 control port was present.
+This is NOT represented as a complete exact-base test.
+Gate: lane-p2 4, 2026-11-21T06:32:30Z--06:32:31Z, exit 1.
+Command:
+env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/services/annex-client.test.ts -t 'independent control connection lifecycle' --maxWorkers=1 --reporter=verbose
+
+An ordinary main drop called closeFor('control-peer', 'out') once.
+Client startup did not install a control connection source.
+Result: 2 FAIL / 226 selector skips.
+
+3. Deliberately missing route privacy enforcement
+Isolated NEGATIVE-ONLY head: 5d4e0a7736222bf16cf1d6ecc113aa0a688fe2f9
+Parent: product candidate 5d59ba0c0191f08ea4a85ca3f5700e4d51962bfd
+Mutation: routeAllowed returns true instead of checking peer and observer.
+This mutation is NOT on the delivery branch.
+Gate: lane-p2 4, 2026-11-21T06:41:00Z--06:41:01Z, exit 1.
+Command:
+env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/services/annex-control-reconnect.test.ts -t 'never dials held, wrong-peer or wrong-observer' --maxWorkers=1 --reporter=verbose
+
+Expected:
+  wss://studio.local:9443/control
+  wss://studio.local:9443/control
+Received:
+  wss://localhost:7666/control
+  wss://localhost:7777/control
+Result: 1 FAIL / 60 selector skips.
+The unmutated product candidate passes this same fixture.
+
+4. First complete new-fixture typecheck
+The original failure is retained, not hidden behind a production-only check:
+TS2550: Socket[].at is outside the repository's configured library.
+TS2554: TLSSocket requires its socket argument.
+Fixed with indexed access and an unconnected, immediately destroyed NetSocket/
+TLSSocket fixture. No TCP dial occurs in this fixture.
+Both production and complete route/reconnect fixture typing subsequently pass.
+
+5. Independent-QA negotiated endpoint finding, before its correction
+Test-only head: 5c37997ca8531c7db9189ba512af1a3156d2875c
+Gate: lane-p2 4, 2026-11-21T06:47:58Z--06:47:59Z, exit 1.
+env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/services/annex-control-reconnect.test.ts src/main/services/annex-client.test.ts -t 'retires.*negotiated|preserves a negotiated control socket' --maxWorkers=1 --reporter=verbose
+Both core and real-control/client fixtures observed negotiated control still
+OPEN (1) instead of CLOSED (3) after its active endpoint was withdrawn.
+The unrelated-route-addition preservation control passed.
+Result: 2 FAIL / 1 PASS / 300 selector skips.
+
+6. Concrete dependency on the separately owned approved-wake fence
+Complete-state test head: 9bc74ee2088a36998caa297fc53e5d7a01bce9d8
+Gate: lane-p2 4, 2026-11-21T06:52:32Z--06:52:33Z, exit 1.
+env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/services/annex-client.test.ts -t 'ignores an old main refusal after Retry' --maxWorkers=1 --reporter=verbose
+An old upgrade refusal body was pending; permitted disconnect and Retry opened
+fresh pinned main and independent control. After that old body arrived:
+Expected: { controlState: 1, mainState: connected, needsPairing: false }
+Received: { controlState: 3, mainState: disconnected, needsPairing: true }
+Result: 1 FAIL / 240 selector skips.
+This c0cf-based dependent test is intentionally not an accepted delivery head.
+The same complete-state fixture passes with approved wake's attempt-token fence.
+The first attempt's fixture-construction failure (no replacement connection)
+and second attempt's first-field-only failure are both retained separately.
+
+7. Fresh baseline on actual landed wake main, no old baseline transfer
+Actual base: 6130b29669f58c8a7bad112aa745d4ca43775971
+Replayed test-only head: cb8b689decb2ebdeb5320c28a965d0e01f551596
+Client, control and IPC production blobs are exactly the actual base.
+Gate: lane-p2 4, 2026-11-21T06:55:57Z--06:55:58Z.
+Same settings command from (1) observed exit1:
+2 FAIL / 1 PASS / 35 selector skips, refreshConnections called zero times.
+Fresh five-existing-file ESLint on this base passed with 0 errors / 162 warnings.
+The enclosing receipt records expected red exit1 and lint exit0 separately;
+it does not relabel the genuine failing test as green.

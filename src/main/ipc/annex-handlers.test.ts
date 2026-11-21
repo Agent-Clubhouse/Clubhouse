@@ -36,6 +36,8 @@ vi.mock('../services/annex-client', () => ({
   forgetSatellite: vi.fn(),
 }));
 
+vi.mock('../services/annex-control', () => ({ refreshConnections: vi.fn() }));
+
 vi.mock('../services/annex-peers', () => ({
   listPeers: vi.fn(() => []),
   listPeersForDisplay: vi.fn(() => []),
@@ -78,6 +80,7 @@ import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from '.
 import * as annexSettings from '../services/annex-settings';
 import * as annexServer from '../services/annex-server';
 import * as annexClient from '../services/annex-client';
+import * as annexControl from '../services/annex-control';
 import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
@@ -157,6 +160,21 @@ describe('annex-handlers', () => {
     expect(annexServer.stop).not.toHaveBeenCalled();
     expect(annexClient.startClient).not.toHaveBeenCalled();
     expect(annexClient.stopClient).not.toHaveBeenCalled();
+    expect(annexControl.refreshConnections).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('SAVE_SETTINGS reconciles control retries when autoReconnect becomes %s', async (autoReconnect) => {
+    const previous = { enableServer: true, enableClient: true, deviceName: 'Mac', autoReconnect: !autoReconnect };
+    vi.mocked(annexSettings.getSettings).mockReturnValue(previous);
+    await handlers.get(IPC.ANNEX.SAVE_SETTINGS)!({}, { ...previous, autoReconnect });
+    expect(annexControl.refreshConnections).toHaveBeenCalledExactlyOnceWith();
+    expect(vi.mocked(annexSettings.saveSettings).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(annexControl.refreshConnections).mock.invocationCallOrder[0]);
+    expect(annexServer.start).not.toHaveBeenCalled();
+    expect(annexServer.stop).not.toHaveBeenCalled();
+    expect(annexClient.startClient).not.toHaveBeenCalled();
+    expect(annexClient.stopClient).not.toHaveBeenCalled();
+    expect(annexClient.scan).not.toHaveBeenCalled();
   });
 
   it('SAVE_SETTINGS can enable server without client', async () => {

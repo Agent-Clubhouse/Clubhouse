@@ -1,0 +1,67 @@
+Independent bounded P2 delta QA
+Reviewer: qa-p2-current-routes, code-review
+Agent: 70b42127-751b-45f1-a4bd-4c9678e315d0
+Execution: static only; no tests, builds, changes or delegates.
+Base: c0cf2f1974b98a9418f1682284c6535d1a1e396b
+Initial source: 5d59ba0c0191f08ea4a85ca3f5700e4d51962bfd
+Tree: 0fca30e28f06129a27cd6a278f8ddeb089b3f13e
+Scope: new P2 delta and narrowly named approved-wake composition only.
+Not historical federation/full-duplex/frozen233a review or acceptance.
+
+INITIAL VERDICT: one medium P2-local finding.
+Source: annex-control.ts:1377-1388 in the initial source.
+A negotiated control socket stayed on its saved endpoint after /ws dropped
+and that endpoint was withdrawn/replaced. Route-key changes reset bookkeeping
+without retiring the live socket. Peer-authority checks did not enforce endpoint
+withdrawal after hello. The unfinished-handshake replacement test did not cover
+this negotiated state. Approved wake does not fix this P2-local reconciliation.
+
+Same-review follow-up found a separate concrete integration dependency:
+Source: initial annex-client.ts:954-962,763.
+An old main upgrade refusal can finish after explicit Retry reused the satellite
+record and established a fresh pinned main connection. Its delayed peer_not_paired
+body can markNeedsPairing/haltSatellite and close valid independent control.
+The main refusal ownership defect predates P2; its new integration consequence
+is old main work terminating separately-lived control. Approved wake9e467's
+attempt-token fence blocks it. Parent accepted wake-first/current-main ordering.
+This is not a dependency on, or replay of, refused966a production review.
+
+No permanent-stranding finding: connectTo clears the maintained stopped block
+after a permitted fresh pinned main connection; explicit Retry clears blocking/
+backoff while socketless, and current plans/settings/authority remain checked.
+
+The initial source's passing counts are pre-fix receipts, not acceptance.
+Negotiated replacement/late-write and unrelated-route positive controls were
+added before implementation correction; original red evidence is retained.
+CORRECTION FOLLOW-UP: original finding RESOLVED.
+Reviewed correction: 5d59ba0c0191f08ea4a85ca3f5700e4d51962bfd ->
+664be8bbb62bda29d624670b0736edd6f188407c
+Tree: 43fac7c418471dd91c6d1bcad3226a73f868f392
+Fresh allowed routes now determine whether the tracked active endpoint can
+remain live. Cancellation detaches socket ownership and closes the link before
+replacement dialing. Late frames/callbacks cannot own its replacement. Unrelated
+additions/reordering preserve it; foreign-observer withdrawal leaves no Retry
+route. Added fixtures cover these negotiated-state effects.
+Verdict: no new high-confidence issues in this correction.
+Still correction-only static QA, not standalone/current-main acceptance.
+
+The wake dependency was then reproduced, not merely inferred: after an old
+upgrade refusal is pending, permitted disconnect + Retry establishes replacement
+main/control; the old body changes main to disconnected, needsPairing to true
+and replacement control to CLOSED on the c0cf-based candidate. The same fixture
+passes with the exact approved two-client-file wake composition.
+Final current-main integration and exact-head review/CI remain required.
+
+FINAL ACTUAL-MAIN INTEGRATED DELTA VERDICT:
+Base: 6130b29669f58c8a7bad112aa745d4ca43775971
+Head: cf62a25df9457027b8e2be3eefbdc12524542b47
+Tree: 1e421cee8614e01699795f916a8e3f9e53bb8351
+No high-confidence findings in the bounded integrated P2 delta.
+Negotiated active-endpoint withdrawal remains resolved, including stale-frame/
+callback ownership and foreign-observer exclusion. Known wake dependency is
+satisfied by the actual base, whose client/test blobs match approved source.
+Integration preserves attempt-token, heartbeat and null-before-close fences.
+Product source/fixtures match corrected composition0928358, and the actual
+disconnect/Retry stale-refusal fixture exercises the shared-lifecycle dependency.
+Same independent reviewer, static only; no tests/builds executed.
+Not broader duplex/security/federation/release acceptance.

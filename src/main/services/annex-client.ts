@@ -24,6 +24,7 @@ import { createBonjour } from './annex-mdns';
 import { annexNetworkProfile } from './annex-network-profile';
 import * as networkChannel from './annex-network-channel';
 import * as annexControl from './annex-control';
+import { peerRoutes } from './annex-routes';
 import * as membership from './annex-network-membership';
 import {
   formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, routeCollision, savedLoopbackRoutes,
@@ -42,7 +43,7 @@ import { CONTROLLER_CHAT_PATH, CONTROLLER_CHAT_MAX_BYTES, type ControllerChatQue
 import type { DigestSince } from '../../shared/group-project-types';
 import { encodeDigestSince } from '../../shared/digest-since';
 import { normalizeCertFingerprint, parsePairingUrl } from './annex-pairing-url';
-import { devicesChanged } from './annex-device-signal';
+import { devicesChanged, onDevicesChanged } from './annex-device-signal';
 import {
   annexProblemText,
   classifyConnectionError,
@@ -618,9 +619,8 @@ function setState(
     if (confirmed !== undefined) annexPeers.recordLastSeen(sat.fingerprint, new Date(confirmed));
     disposeRemoteBuffers(sat.id);
     satelliteEpochs.delete(sat.fingerprint);
-    // The membership channel goes with the main connection, and reopens with it. So does the control connection.
+    // Membership follows /ws; the separately authenticated control route owns its lifetime.
     networkChannel.closeFor(sat.fingerprint, 'out');
-    annexControl.closeFor(sat.fingerprint, 'out');
   }
   if (state === 'disconnected') {
     // The reason text stays local; it only picks the registry enum.
@@ -1567,6 +1567,7 @@ function disconnectSatellite(sat: SatelliteConnectionInternal): void {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias, previousState: sat.state },
   });
   stopHeartbeat(sat);
+  annexControl.closeFor(sat.fingerprint, 'out');
   if (sat.reconnectTimer) {
     clearTimeout(sat.reconnectTimer);
     sat.reconnectTimer = null;
@@ -1647,6 +1648,7 @@ function startDiscovery(): void {
           if (host && mainPort && (sat.discovered?.host !== host || sat.discovered?.port !== mainPort)) {
             sat.discovered = { host, port: mainPort };
             sat.discoveredTried = false;
+            annexControl.refreshConnections();
           }
           if (hostChanged && !live) {
             sat.host = host;
@@ -1680,6 +1682,7 @@ function startDiscovery(): void {
         }
 
         satellites.set(fingerprint, sat);
+        annexControl.refreshConnections();
         broadcastSatellitesChanged();
 
         appLog('core:annex-client', 'info', 'Discovered paired satellite', {
@@ -1913,6 +1916,7 @@ export function satelliteAddress(fingerprint: string): string | undefined {
 export function disconnect(fingerprint: string): void {
   const sat = satellites.get(fingerprint);
   if (sat) disconnectSatellite(sat);
+  else annexControl.closeFor(fingerprint, 'out');
 }
 
 /**
@@ -1937,6 +1941,7 @@ export function forgetSatellite(fingerprint: string): void {
 
 export function retry(fingerprint: string): void {
   const sat = satellites.get(fingerprint);
+  annexControl.retryConnection(fingerprint);
   // A paired satellite not seen since startup has no connection yet: start one.
   if (!sat) { connect(fingerprint); return; }
   if (sat.state === 'disconnected') {
@@ -3180,12 +3185,51 @@ export function resumeAllConnections(): void {
   scan();
 }
 
+let stopControlRouteWatch: (() => void) | null = null;
+
+function startControlConnections(): void {
+  if (stopControlRouteWatch) { annexControl.refreshConnections(); return; }
+  annexControl.setConnectionSource({
+    plans: () => {
+      const settings = annexSettings.getSettings();
+      const identity = annexIdentity.getIdentity();
+      if (!settings.enableClient || !annexSettings.networkEnabled(settings) || !identity) return [];
+      const peers = annexPeers.listPeers();
+      return peers.filter((peer) => peer.role === 'member' && peer.kind === 'desktop' && !peer.networkPending
+        && !annexPeers.peerNeedsPairing(peer) && !satellites.get(peer.fingerprint)?.halt
+        && !satellites.get(peer.fingerprint)?.needsPairing).flatMap((peer) => {
+        if (!peer.tlsCertificateFingerprint) return [];
+        const discovered = satellites.get(peer.fingerprint)?.discovered;
+        const others = peers.filter((other) => other.fingerprint !== peer.fingerprint)
+          .map((other) => ({ alias: other.alias, routes: savedLoopbackRoutes(other) }));
+        return [{
+          fingerprint: peer.fingerprint,
+          pin: peer.tlsCertificateFingerprint,
+          trust: JSON.stringify(annexPeers.trustOf(peer)),
+          localFingerprint: identity.fingerprint,
+          routes: peerRoutes(peer, {
+            localFingerprint: identity.fingerprint,
+            discovered: discovered ? { ...discovered, fingerprint: peer.fingerprint } : undefined,
+          }).filter((route) => !routeCollision(route, ownListenerPorts(), others)),
+          tlsOptions: () => pinnedTlsOptionsFor(peer.fingerprint),
+        }];
+      });
+    },
+    autoReconnect: () => annexSettings.getSettings().autoReconnect,
+  });
+  stopControlRouteWatch = onDevicesChanged(() => annexControl.refreshConnections());
+}
+
 export function startClient(): void {
+  startControlConnections();
   startDiscovery();
   restorePairedSatellites();
 }
 
 export function stopClient(): void {
+  stopControlRouteWatch?.();
+  stopControlRouteWatch = null;
+  annexControl.setConnectionSource(null);
   // Disconnect all satellites
   for (const sat of satellites.values()) {
     disconnectSatellite(sat);
