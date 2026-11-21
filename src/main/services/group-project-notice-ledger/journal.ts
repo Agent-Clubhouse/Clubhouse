@@ -95,6 +95,7 @@ export class NoticeJournalOwner<S, D, R, V> {
   /** Active anchors plus pending producers; weak historical capabilities are caller-lived. */
   get retention() { return { activeAnchors: this.anchors.size, pendingClaims: this.claims.size }; }
   snapshot(): V | undefined { return this.backend.current ? this.strategy.view(this.backend.current) : undefined; }
+  checkpoint(): Promise<void> { return this.backend.checkpoint(); }
   private admission(): void {
     if (!this.ready || this.retired || this.recovering || !this.backend.healthy) invalid('Notice journal admission is unavailable');
   }

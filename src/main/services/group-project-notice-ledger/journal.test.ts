@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { NoticeJournalOwner, type NoticeJournalOptions, type NoticeOwnerDelta } from './journal';
 import { NoticeFramedJournal } from './framed-journal';
 import { sparseRootCodec, noticeHeaderDigest } from './root-codec';
@@ -140,6 +142,15 @@ async function priorActive(directory: string, count: number) {
   } finally { await store.close(); }
 }
 describe('root owner complete recovery', () => {
+  it('bridges frozen legacy source and new canonical record bytes in both directions', async () => {
+    const directory = await home();
+    const result = await promisify(execFile)(process.execPath, ['test/research/q5-legacy-byte-bridge.cjs', directory], { cwd: process.cwd() });
+    const evidence = JSON.parse(result.stdout);
+    expect(evidence).toMatchObject({ records: 3, oldToNew: true, newToOld: true, openBytesUnchanged: true,
+      payloadBytesExact: true, optionalFieldsRetained: true, acceptedCount: 2, uncertainCount: 1 });
+    console.info('Q5 frozen legacy byte bridge', JSON.stringify(evidence));
+  }, 30000);
+
   it('walks51 active attempts as two committed batches, preserves holes and later useful work', async () => {
     const directory = await home(); const before = await priorActive(directory, 51);
     const owner = await open('sparse', directory);

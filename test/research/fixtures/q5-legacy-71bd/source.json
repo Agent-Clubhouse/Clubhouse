@@ -1,0 +1,10 @@
+{
+  "source": "71bd4d632e58161400d086fa2305ce45580cad60",
+  "path": "src/main/services/group-project-notice-ledger/journal.ts",
+  "sha256": "e0be83586d17de93b1a4274c428bf19072ed618d4b48df84cccdf59ebfc26ec7",
+  "dependencies": {
+    "src/main/services/group-project-notice-ledger/state.ts": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8",
+    "src/main/services/group-project-notice-ledger/intervals.ts": "6dad2906b7b8db5671047d75dd98b3817bd06eb2882f206469b75180ef61650a",
+    "src/main/services/group-project-notice-ledger/durability.ts": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9"
+  }
+}
