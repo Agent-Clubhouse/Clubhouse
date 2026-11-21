@@ -66,3 +66,46 @@ files never replace source. No real resource/production repair proof is inferred
 
 Status at initial source freeze: tests NOT RUN; independent exact review pending.
 No activation or live rebase authorized by this candidate.
+
+## R1 successor: memory units and diagnostic-only unused
+
+QAad85eff98dca1d60f8164c924159456592b56f39 approves4be logic with
+required memory-unit correction. This successor leaves4be/5a6 refs/evidence
+unchanged and does not activate or admit anything.
+
+Compressor conversion accepts exactly ONE nonnegative decimal token ending
+B/K/M/G/T, with binary scaling to MiB: B/1048576, K/1024, M, G*1024,
+T*1048576. For the pressure guard it rounds UP to whole MiB, never truncates
+over-limit pressure onto equality:0B→0,1B→1,512K→1,1G→1024,
+12G→12288 (allowed),12GiB+1B→12289 (refused). Rounding up below1MiB
+is harmless at12GiB and avoids losing an over-limit fractional amount. This
+conservative guard conversion deliberately differs from diagnostic floor
+rounding. Reported numeric precision is all that can be observed; no claim
+to recover precision top did not print. Unparseable/multiple/nonfinite/absurd
+compressor tokens refuse, not zero. No pressure threshold is relaxed.
+
+Top's unused token is not an admission predicate: available comes from vm_stat.
+It is removed from mandatory fields, and START logs the valid raw B/K/M/G/T
+token or unknown for missing/unparseable diagnostics. K/B unused never causes
+a persistent refusal. Counter/window/128MiB/holds/dryrun rules are unchanged.
+
+New controls cover0B/512K in an entire repair window, unusedK/B/unknown/missing,
+unparseable compressor at all four stages including post-update rollback, all
+unit equalities and just-over12GiB boundaries in B/K/M/G/T. A dedicated
+--unit-mutant floors fractional pressure and must be killed by one-byte/
+fraction-overlimit controls. Old19tests/three mutants remain exact4be proof;
+the successor's narrower selected checks have their OWN receipt/counts.
+
+### Corrupt saved baseline
+
+An existing SWAPBASE that is not an unsigned integer refuses unreadable_sample.
+It is NOT eligible for automatic stale-baseline repair and is never deleted,
+reset to current, or treated as absent. The project owner inspects without
+mutation, records original bytes/hash/mtime, script identity and observed state,
+and preserves the file before deciding a repair under normal explicit controls.
+Record any later authorized action/readback; no manual baseline reset is
+authorized by this proposal or its tests. Young/future-age refusal is also
+preserved, not a reason to rewrite the timestamp.
+
+Status at R1 source freeze: selected new proof NOT RUN; no live activation until
+independent successor review and the parent's explicit activation confirmation.

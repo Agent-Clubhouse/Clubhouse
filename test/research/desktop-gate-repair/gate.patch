@@ -1,6 +1,6 @@
 --- desktop-test-gate.original.sh
 +++ desktop-test-gate.candidate.sh
-@@ -1,51 +1,155 @@
+@@ -1,51 +1,172 @@
  #!/bin/zsh
 -# Usage: desktop-test-gate.sh <owner-label> <min-unused-GB> -- <command...>
 -# Atomic single-slot desktop test admission (mkdir lock). Refuses (exit 75) if the slot is taken or the
@@ -21,7 +21,22 @@
 +  echo 'Usage: desktop-test-gate.sh [--dry-run] <owner> <min-GB> -- <command...>'; exit 75
 +fi
 +
-+tomb() { print -r -- "$1" | awk '/G$/ {sub("G","");print int($1*1024); next} /M$/ {sub("M","");print int($1)}'; }
++# Binary units as reported by top. Guard pressure rounds UP to whole MiB:
++# 0B ->0, 512K ->1, 1G ->1024, 1T ->1048576. Never floor an over-limit
++# fractional value (e.g. 12GiB+1B) back onto the allowed 12288MiB boundary.
++tomb() {
++  print -r -- "$1" | awk '
++    NR==1 && /^[0-9]+([.][0-9]+)?[BKMGT]$/ {
++      unit=substr($0,length($0)); amount=substr($0,1,length($0)-1)
++      scale=(unit=="B" ? 1/1048576 : unit=="K" ? 1/1024 : unit=="M" ? 1 : unit=="G" ? 1024 : 1048576)
++      mib=amount*scale
++      if (mib < 0 || mib > 9007199254740991) exit 1
++      whole=int(mib); if (mib > whole) whole++
++      valid=1; next
++    }
++    {invalid=1}
++    END {if (!valid || invalid) exit 1; printf "%.0f\n",whole}'
++}
 +unsigned() { [[ "$1" == <-> ]]; }
 +decimal() { [[ "$1" =~ '^[0-9]+([.][0-9]+)?$' ]]; }
 +
@@ -33,8 +48,10 @@
 +  top_line=$(top -l 1 -n 0) || reads_ok=0
 +  idle=$(print -r -- "$top_line" | awk '/CPU usage/ {for(i=1;i<=NF;i++) if($i ~ /idle/) {gsub("%","",$(i-1)); print int($(i-1))}}')
 +  unused=$(print -r -- "$top_line" | awk '/PhysMem/ {for(i=1;i<=NF;i++) if($i ~ /unused/) print $(i-1)}')
++  # Diagnostic only: available memory comes from vm_stat, not this top token.
++  [[ "$unused" =~ '^[0-9]+([.][0-9]+)?[BKMGT]$' ]] || unused=unknown
 +  comp=$(print -r -- "$top_line" | awk '/PhysMem/ {for(i=1;i<=NF;i++) if($i ~ /compressor/) {gsub("\\(","",$(i-1)); print $(i-1)}}')
-+  mb=$(tomb "$unused"); compmb=$(tomb "$comp")
++  compmb=$(tomb "$comp") || reads_ok=0
 +  swap_line=$(sysctl -n vm.swapusage) || reads_ok=0
 +  swapmb=$(print -r -- "$swap_line" | awk '{for(i=1;i<=NF;i++) if($i=="used") {v=$(i+2); sub("M","",v); print int(v)}}')
 +  swap_used=$(print -r -- "$swap_line" | awk '{for(i=1;i<=NF;i++) if($i=="used" && $(i+2) ~ /^[0-9]+([.][0-9]+)?M$/) {v=$(i+2); sub("M$","",v); print v}}')
@@ -51,7 +68,7 @@
 +  process_line=$(ps -axo pid=,comm=,args=) || reads_ok=0
 +  reason=""
 +  normal_readable=$reads_ok
-+  for value in "$idle" "$mb" "$compmb" "$swapmb" "$availmb" "$freepct" "$base"; do
++  for value in "$idle" "$compmb" "$swapmb" "$availmb" "$freepct" "$base"; do
 +    unsigned "$value" || normal_readable=0
 +  done
 +  decimal "$swap_used" || normal_readable=0

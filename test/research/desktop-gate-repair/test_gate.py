@@ -37,7 +37,9 @@ if name in s.get('fail_commands',[]):sys.exit(1)
 if name=='top':
  if s.get('malformed_top'):print('Unreadable top');sys.exit(0)
  print('CPU usage: 10% user, 10% sys, '+str(s.get('idle',80))+'% idle')
- print('PhysMem: 40G used (2000M wired, %sM compressor), 9000M unused.'%s.get('compressor',1000))
+ comp=s.get('compressor_text',str(s.get('compressor',1000))+'M')
+ suffix='' if s.get('omit_unused') else ', '+str(s.get('unused_text','9000M'))+' unused.'
+ print('PhysMem: 40G used (2000M wired, '+str(comp)+' compressor)'+suffix)
 elif name=='sysctl':
  if s.get('malformed_swap'):print('Unreadable swap');sys.exit(0)
  print('total = 8192.00M  used = %sM  free = %sM  (encrypted)'%(s.get('used',3945),s.get('swap_free',2048)))
@@ -242,6 +244,43 @@ class GateTests(unittest.TestCase):
         r=self.run_gate(child_exit=7)
         self.assertEqual(r['rc'],7,r['output']);self.assertTrue(r['child']);self.assertEqual(r['after'][0],b'3945\n');self.assertFalse(r['slot'])
 
+    def test_memory_units_and_overlimit_fraction_are_conservative(self):
+        allowed=['0B','1B','512K','1024K','1025K','0.5M','1M','1024M','1G','12G',
+                 '12288M','12582912K','12884901888B','0T','0.01171875T']
+        refused=['12.000001G','12288.000001M','12582912.001K','12884901889B','0.011718750001T','1T']
+        for comp in allowed+refused:
+            with self.subTest(comp=comp):
+                r=self.run_gate([{'used':1812,'compressor_text':comp}],age=0)
+                if comp in allowed:
+                    self.assertEqual(r['rc'],0,r['output']);self.assertTrue(r['child']);self.assertIn('comp='+comp,r['log'])
+                else:
+                    self.refused(r);self.assertIn('compressor=',r['output']);self.assertNotIn('unreadable_sample',r['output'])
+
+    def test_zero_and_kib_compressor_and_unused_work_through_full_repair(self):
+        samples=[{'compressor_text':'0B','unused_text':'512K'},
+                 {'compressor_text':'512K','unused_text':'0B'},
+                 {'compressor_text':'1G','unused_text':'2048K'},
+                 {'compressor_text':'0B','unused_text':'512K'}]
+        r=self.run_gate(samples);self.assertEqual(r['rc'],0,r['output']);self.assertTrue(r['child'])
+        self.assertIn('compressor=0)',r['log']);self.assertIn('compressor=1)',r['log']);self.assertIn('compressor=1024)',r['log'])
+        self.assertIn('unused=512K',r['log'])
+
+    def test_unused_is_diagnostic_with_unknown_fallback(self):
+        for sample,shown in [({'unused_text':'512K'},'512K'),({'unused_text':'0B'},'0B'),
+                             ({'unused_text':'not-a-unit'},'unknown'),({'omit_unused':True},'unknown')]:
+            with self.subTest(sample=sample):
+                r=self.run_gate([{'used':1812,**sample}],age=0)
+                self.assertEqual(r['rc'],0,r['output']);self.assertTrue(r['child']);self.assertIn('unused='+shown,r['log'])
+
+    def test_unparseable_compressor_fails_closed_at_every_stage(self):
+        for n in range(4):
+            samples=[{}, {}, {}, {}];samples[n]={'compressor_text':'not-a-unit'}
+            with self.subTest(sample=n):
+                r=self.run_gate(samples);self.refused(r);self.assertIn('unreadable',r['output'])
+                self.assertEqual(r['model']['next'],n+1)
+        for comp in ['512','-1M','NaN','1P','12GB']:
+            with self.subTest(comp=comp):self.refused(self.run_gate([{'used':1812,'compressor_text':comp}],age=0))
+
 
 def mutants():
     changes=[('remove-nonincreasing','current <= previous && first-current <= 32','first-current <= 32','test_nonincreasing_raw_swap_not_truncated_integer'),
@@ -259,8 +298,22 @@ def mutants():
     return 0 if all_killed else 1
 
 
+def unit_mutant():
+    with tempfile.TemporaryDirectory(prefix='gate-unit-mutant-only-') as tmp:
+        body=CANDIDATE.read_text();old='whole=int(mib); if (mib > whole) whole++'
+        assert body.count(old)==1
+        p=Path(tmp)/'floor-mutant.zsh';p.write_text(body.replace(old,'whole=int(mib)'))
+        argv=[sys.executable,str(Path(__file__).resolve()),'--candidate',str(p),'GateTests.test_memory_units_and_overlimit_fraction_are_conservative','-v']
+        result=subprocess.run(argv,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+        print(json.dumps({'mutant':'floor-pressure-MiB','sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'command':argv,'exitCode':result.returncode,'killed':result.returncode==1}),flush=True)
+        sys.stdout.buffer.write(result.stdout);sys.stdout.flush()
+        return 0 if result.returncode==1 else 1
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(add_help=False);parser.add_argument('--candidate',type=Path,default=CANDIDATE);parser.add_argument('--mutants',action='store_true')
+    parser.add_argument('--unit-mutant',action='store_true')
     args,remaining=parser.parse_known_args();CANDIDATE=args.candidate
+    if args.unit_mutant:raise SystemExit(unit_mutant())
     if args.mutants:raise SystemExit(mutants())
     unittest.main(argv=[sys.argv[0],*remaining])
