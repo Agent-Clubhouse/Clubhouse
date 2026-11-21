@@ -1,0 +1,2 @@
+{"mode":"guarded","status":0,"signal":null,"stdout":"Entered coverage remained uncertain; no resubmission permitted\n","stderr":"","retainedDirectory":"/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-mutation-receipt-LR45lH"}
+{"mode":"remove-entered-guard","status":2,"signal":null,"stdout":"SAFETY ASSERTION FAILED: entered coverage became ready\n","stderr":"","retainedDirectory":"/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-mutation-receipt-7mKyMs"}
