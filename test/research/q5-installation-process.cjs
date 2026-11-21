@@ -7,6 +7,6 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { openNoticeInstallation } = require(path.resolve('src/main/services/group-project-notice-ledger/installation.ts'));
 const point = process.argv[3];
-if (!['markerSynced', 'directoryCreated', 'envelopeSynced'].includes(point)) throw new Error('Invalid synthetic exit point');
+if (!['markerSynced', 'directoryCreated', 'envelopeSynced', 'beforeMarkerActive', 'markerActive'].includes(point)) throw new Error('Invalid synthetic exit point');
 openNoticeInstallation(process.argv[2], { testFailure: (stage) => { if (stage === point) process.exit(77); } })
   .catch((error) => { console.error(error); process.exitCode = 1; });

@@ -18,10 +18,15 @@ describe('local notice installation marker', () => {
     await fs.writeFile(path.join(directory, 'unrelated-settings.json'), 'synthetic-preserve');
     const first = await openNoticeInstallation(directory);
     expect(first.created).toBe(true);
+    expect(first.resumedBootstrap).toBe(false);
     expect(first.directoryDurability).not.toBe('not-observed');
     const marker = await fs.readFile(path.join(directory, NOTICE_INSTALLATION_MARKER));
     const envelope = await fs.readFile(path.join(first.directory, 'installation.json'));
-    expect(marker).toEqual(envelope);
+    const markerJson = JSON.parse(marker.toString('utf8'));
+    const envelopeJson = JSON.parse(envelope.toString('utf8'));
+    expect(markerJson.installationId).toBe(envelopeJson.installationId);
+    expect(markerJson).toMatchObject({ minWriterVersion: 2, phase: 'active' });
+    expect(envelopeJson).toMatchObject({ minWriterVersion: 2, phase: 'prepared' });
     const second = await openNoticeInstallation(directory);
     expect(second.installationId).toBe(first.installationId);
     expect(second.created).toBe(false);
@@ -51,7 +56,7 @@ describe('local notice installation marker', () => {
     else expect(await fs.readFile(markerPath)).toEqual(marker);
     if (missing === 'directory') await expect(fs.lstat(created.directory)).rejects.toMatchObject({ code: 'ENOENT' });
   });
-  it.each(['{broken', JSON.stringify({ schemaVersion: 1, minWriterVersion: 2, installationId: randomUUID(), future: true }), JSON.stringify({ schemaVersion: 1, minWriterVersion: 1, installationId: 'invalid' })])('preserves corrupt/future marker bytes %s', async (raw) => {
+  it.each(['{broken', JSON.stringify({ schemaVersion: 1, minWriterVersion: 3, installationId: randomUUID(), future: true }), JSON.stringify({ schemaVersion: 1, minWriterVersion: 1, installationId: 'invalid' })])('preserves corrupt/future marker bytes %s', async (raw) => {
     const directory = await home();
     const markerPath = path.join(directory, NOTICE_INSTALLATION_MARKER);
     await fs.writeFile(markerPath, raw);
@@ -86,12 +91,62 @@ describe('local notice installation marker', () => {
     const directoryFlusher = new NoticeDirectoryFlusher('win32', async () => { throw Object.assign(new Error('synthetic'), { code: 'EINVAL' }); });
     expect((await openNoticeInstallation(directory, { directoryFlusher })).directoryDurability).toBe('file-sync-only');
   });
-  it.each(['markerSynced', 'directoryCreated', 'envelopeSynced'])('recovers or refuses an actual synthetic process exit at %s', async (stage) => {
+  it.each(['markerSynced', 'directoryCreated', 'envelopeSynced', 'beforeMarkerActive', 'markerActive'])('resumes only pristine bootstrap after actual synthetic process exit at %s', async (stage) => {
     const directory = await home();
     await expect(promisify(execFile)(process.execPath, ['test/research/q5-installation-process.cjs', directory, stage], { cwd: process.cwd() })).rejects.toMatchObject({ code: 77 });
     const original = await fs.readFile(path.join(directory, NOTICE_INSTALLATION_MARKER));
-    if (stage === 'envelopeSynced') expect((await openNoticeInstallation(directory)).created).toBe(false);
-    else await expect(openNoticeInstallation(directory)).rejects.toMatchObject({ code: 'notice_installation_incomplete' });
-    expect(await fs.readFile(path.join(directory, NOTICE_INSTALLATION_MARKER))).toEqual(original);
+    const old = JSON.parse(original.toString('utf8'));
+    const recovered = await openNoticeInstallation(directory);
+    expect(recovered.created).toBe(false);
+    expect(recovered.resumedBootstrap).toBe(stage !== 'markerActive');
+    expect(recovered.installationId).toBe(old.installationId);
+    const active = await fs.readFile(path.join(directory, NOTICE_INSTALLATION_MARKER));
+    expect(JSON.parse(active.toString('utf8'))).toMatchObject({ installationId: old.installationId, phase: 'active' });
+    expect((await openNoticeInstallation(directory)).resumedBootstrap).toBe(false);
+    expect(await fs.readFile(path.join(directory, NOTICE_INSTALLATION_MARKER))).toEqual(active);
   }, 15000);
+
+  it('retries the envelope-to-marker cut idempotently with the same UUID and no record/baseline', async () => {
+    const directory = await home();
+    for (let retry = 0; retry < 2; retry++) await expect(promisify(execFile)(process.execPath, ['test/research/q5-installation-process.cjs', directory, 'beforeMarkerActive'], { cwd: process.cwd() })).rejects.toMatchObject({ code: 77 });
+    const boot = JSON.parse(await fs.readFile(path.join(directory, NOTICE_INSTALLATION_MARKER), 'utf8'));
+    expect(boot.phase).toBe('bootstrapping');
+    await fs.writeFile(path.join(directory, NOTICE_INSTALLATION_MARKER), JSON.stringify({ ...boot, futureOptional: { keep: true } }));
+    const result = await openNoticeInstallation(directory);
+    expect(result).toMatchObject({ installationId: boot.installationId, created: false, resumedBootstrap: true });
+    expect(await fs.readdir(result.directory)).toEqual(['installation.json']);
+    expect((await openNoticeInstallation(directory)).resumedBootstrap).toBe(false);
+    expect(JSON.parse(await fs.readFile(path.join(directory, NOTICE_INSTALLATION_MARKER), 'utf8')).futureOptional).toEqual({ keep: true });
+  }, 15000);
+
+  it.each(['journal-0000000000.log', 'unrecognized-user-data', 'installation.json.partial.tmp'])('refuses ambiguous bootstrap with retained %s', async (extra) => {
+    const directory = await home();
+    await expect(promisify(execFile)(process.execPath, ['test/research/q5-installation-process.cjs', directory, 'beforeMarkerActive'], { cwd: process.cwd() })).rejects.toMatchObject({ code: 77 });
+    const markerPath = path.join(directory, NOTICE_INSTALLATION_MARKER);
+    const before = await fs.readFile(markerPath);
+    const stray = path.join(directory, NOTICE_INSTALLATION_DIRECTORY, extra);
+    await fs.writeFile(stray, 'synthetic-retain-exactly');
+    await expect(openNoticeInstallation(directory)).rejects.toMatchObject({ code: 'notice_installation_incomplete' });
+    expect(await fs.readFile(markerPath)).toEqual(before);
+    expect(await fs.readFile(stray, 'utf8')).toBe('synthetic-retain-exactly');
+  }, 15000);
+
+  it('treats min-writer1 as active legacy, preserves fields and never reinterprets it as bootstrapping', async () => {
+    const directory = await home();
+    const legacy = { schemaVersion: 1, minWriterVersion: 1, installationId: randomUUID(), futureOptional: 'preserve' };
+    const markerPath = path.join(directory, NOTICE_INSTALLATION_MARKER);
+    const owned = path.join(directory, NOTICE_INSTALLATION_DIRECTORY);
+    const raw = JSON.stringify(legacy);
+    await fs.writeFile(markerPath, raw);
+    await expect(openNoticeInstallation(directory)).rejects.toMatchObject({ code: 'notice_installation_incomplete' });
+    expect((await fs.readdir(directory)).includes(NOTICE_INSTALLATION_DIRECTORY)).toBe(false);
+    await fs.mkdir(owned);
+    await fs.writeFile(path.join(owned, 'installation.json'), raw);
+    const result = await openNoticeInstallation(directory);
+    expect(result).toMatchObject({ installationId: legacy.installationId, created: false, resumedBootstrap: false });
+    expect(await fs.readFile(markerPath, 'utf8')).toBe(raw);
+    expect(await fs.readFile(path.join(owned, 'installation.json'), 'utf8')).toBe(raw);
+    await fs.writeFile(markerPath, JSON.stringify({ ...legacy, phase: 'bootstrapping' }));
+    await expect(openNoticeInstallation(directory)).rejects.toMatchObject({ code: 'notice_installation_version' });
+  });
 });

@@ -2,7 +2,7 @@
 import { constants } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { NoticeDirectoryFlusher, type NoticeDirectoryDurability } from './durability';
 
 export const NOTICE_INSTALLATION_MARKER = 'group-project-notice-ledger.required';
@@ -10,8 +10,9 @@ export const NOTICE_INSTALLATION_DIRECTORY = 'group-project-notice-ledger.v1';
 const MAX_MARKER_BYTES = 8192;
 interface InstallationMetadata {
   schemaVersion: 1;
-  minWriterVersion: 1;
+  minWriterVersion: 1 | 2;
   installationId: string;
+  phase?: 'bootstrapping' | 'prepared' | 'active';
   [extra: string]: unknown;
 }
 export class NoticeInstallationError extends Error {
@@ -21,10 +22,11 @@ export interface NoticeInstallation {
   installationId: string;
   directory: string;
   created: boolean;
+  resumedBootstrap: boolean;
   /** Only this open/create's observed flushes; not a claim about historical durability. */
   directoryDurability: NoticeDirectoryDurability;
 }
-export type NoticeInstallationStage = 'markerSynced' | 'directoryCreated' | 'envelopeSynced';
+export type NoticeInstallationStage = 'markerSynced' | 'directoryCreated' | 'envelopeSynced' | 'beforeMarkerActive' | 'markerActive';
 export interface NoticeInstallationOptions {
   testFailure?: (stage: NoticeInstallationStage) => void | Promise<void>;
   directoryFlusher?: NoticeDirectoryFlusher;
@@ -33,7 +35,7 @@ const opening = new Map<string, Promise<NoticeInstallation>>();
 const uuid = (id: unknown): id is string => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);
 const same = (a: import('fs').BigIntStats, b: import('fs').BigIntStats) => a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 
-async function readMetadata(location: string): Promise<InstallationMetadata | undefined> {
+async function readMetadata(location: string, role: 'marker' | 'envelope', fingerprint?: { digest?: string }): Promise<InstallationMetadata | undefined> {
   let named: import('fs').BigIntStats;
   try { named = await fs.lstat(location, { bigint: true }); }
   catch (error) {
@@ -60,9 +62,34 @@ async function readMetadata(location: string): Promise<InstallationMetadata | un
   catch { throw new NoticeInstallationError('notice_installation_corrupt', 'Unreadable notice installation metadata'); } // telemetry-exempt: original bytes preserved; stable failure is returned to the owning UI
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new NoticeInstallationError('notice_installation_corrupt', 'Invalid notice installation metadata');
   const value = parsed as Record<string, unknown>;
-  if (value.schemaVersion !== 1 || value.minWriterVersion !== 1) throw new NoticeInstallationError('notice_installation_version', 'Unsupported notice installation writer version');
+  if (value.schemaVersion !== 1 || ![1, 2].includes(value.minWriterVersion as number)) throw new NoticeInstallationError('notice_installation_version', 'Unsupported notice installation writer version');
   if (!uuid(value.installationId)) throw new NoticeInstallationError('notice_installation_corrupt', 'Invalid notice installation identity');
-  return { ...value, schemaVersion: 1, minWriterVersion: 1, installationId: value.installationId };
+  if (value.minWriterVersion === 1 && value.phase !== undefined) throw new NoticeInstallationError('notice_installation_version', 'Legacy notice metadata cannot declare a bootstrap phase');
+  if (value.minWriterVersion === 2 && (role === 'marker' ? !['bootstrapping', 'active'].includes(value.phase as string) : value.phase !== 'prepared')) throw new NoticeInstallationError('notice_installation_corrupt', 'Invalid notice installation phase');
+  if (fingerprint) fingerprint.digest = createHash('sha256').update(body).digest('hex');
+  return { ...value, schemaVersion: 1, minWriterVersion: value.minWriterVersion as 1 | 2, installationId: value.installationId };
+}
+async function activateMarker(location: string, expected: InstallationMetadata, flusher: NoticeDirectoryFlusher): Promise<void> {
+  const expectedBytes: { digest?: string } = {};
+  const current = await readMetadata(location, 'marker', expectedBytes);
+  if (!current || current.minWriterVersion !== 2 || current.phase !== 'bootstrapping' || current.installationId !== expected.installationId) throw new NoticeInstallationError('notice_installation_changed', 'Notice bootstrap marker is no longer current');
+  const temporary = `${location}.${randomUUID()}.tmp`;
+  const handle = await fs.open(temporary, 'wx', 0o600);
+  try { await handle.writeFile(JSON.stringify({ ...current, phase: 'active' })); await handle.sync(); } finally { await handle.close(); }
+  const actualBytes: { digest?: string } = {};
+  await readMetadata(location, 'marker', actualBytes);
+  if (actualBytes.digest !== expectedBytes.digest) throw new NoticeInstallationError('notice_installation_changed', 'Notice bootstrap marker changed before activation');
+  // Single-instance + single-flight premise; this is not interprocess compare-and-swap.
+  await fs.rename(temporary, location);
+  await flusher.flush(path.dirname(location));
+}
+async function pristineBootstrap(directory: string, marker: InstallationMetadata): Promise<InstallationMetadata | undefined> {
+  for await (const entry of await fs.opendir(directory)) {
+    if (entry.name !== 'installation.json') throw new NoticeInstallationError('notice_installation_incomplete', 'Notice bootstrap has ambiguous retained data');
+  }
+  const envelope = await readMetadata(path.join(directory, 'installation.json'), 'envelope');
+  if (envelope && (envelope.installationId !== marker.installationId || envelope.minWriterVersion !== 2 || envelope.phase !== 'prepared')) throw new NoticeInstallationError('notice_installation_changed', 'Notice bootstrap envelope is not the prepared identity');
+  return envelope;
 }
 async function writeNewMetadata(location: string, value: InstallationMetadata, flusher: NoticeDirectoryFlusher): Promise<void> {
   const temporary = `${location}.${randomUUID()}.tmp`;
@@ -92,31 +119,43 @@ async function openOwnedInstallation(userData: string, options: NoticeInstallati
   const directory = path.join(userData, NOTICE_INSTALLATION_DIRECTORY);
   const envelopePath = path.join(directory, 'installation.json');
   try {
-    const marker = await readMetadata(markerPath);
+    let marker = await readMetadata(markerPath, 'marker');
     let directoryExists = false;
     try {
       const stat = await fs.lstat(directory);
       if (!stat.isDirectory() || stat.isSymbolicLink()) throw new NoticeInstallationError('notice_installation_corrupt', 'Invalid notice ledger directory');
       directoryExists = true;
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; } // telemetry-exempt: absence is classified against the independent marker
-    if (marker) {
+    if (marker && (marker.minWriterVersion === 1 || marker.phase === 'active')) {
       if (!directoryExists) throw new NoticeInstallationError('notice_installation_incomplete', 'Required notice ledger directory is missing');
-      const envelope = await readMetadata(envelopePath);
+      const envelope = await readMetadata(envelopePath, 'envelope');
       if (!envelope) throw new NoticeInstallationError('notice_installation_incomplete', 'Required notice ledger envelope is missing');
-      if (envelope.installationId !== marker.installationId) throw new NoticeInstallationError('notice_installation_changed', 'Notice installation identities do not match');
-      return { installationId: marker.installationId, directory, created: false, directoryDurability: flusher.observation };
+      if (envelope.installationId !== marker.installationId || envelope.minWriterVersion !== marker.minWriterVersion) throw new NoticeInstallationError('notice_installation_changed', 'Notice installation identities or writer versions do not match');
+      return { installationId: marker.installationId, directory, created: false, resumedBootstrap: false, directoryDurability: flusher.observation };
     }
-    if (directoryExists) throw new NoticeInstallationError('notice_installation_incomplete', 'Notice ledger exists without its required marker');
-    await fs.mkdir(userData, { recursive: true });
-    const metadata: InstallationMetadata = { schemaVersion: 1, minWriterVersion: 1, installationId: randomUUID() };
-    await writeNewMetadata(markerPath, metadata, flusher);
-    await options.testFailure?.('markerSynced');
-    await fs.mkdir(directory, { mode: 0o700 });
-    await flusher.flush(userData);
-    await options.testFailure?.('directoryCreated');
-    await writeNewMetadata(envelopePath, metadata, flusher);
-    await options.testFailure?.('envelopeSynced');
-    return { installationId: metadata.installationId, directory, created: true, directoryDurability: flusher.observation };
+    const resumedBootstrap = !!marker;
+    if (!marker) {
+      if (directoryExists) throw new NoticeInstallationError('notice_installation_incomplete', 'Notice ledger exists without its required marker');
+      await fs.mkdir(userData, { recursive: true });
+      marker = { schemaVersion: 1, minWriterVersion: 2, installationId: randomUUID(), phase: 'bootstrapping' };
+      await writeNewMetadata(markerPath, marker, flusher);
+      await options.testFailure?.('markerSynced');
+    }
+    if (!directoryExists) {
+      await fs.mkdir(directory, { mode: 0o700 });
+      await flusher.flush(userData);
+      await options.testFailure?.('directoryCreated');
+    }
+    const envelope = await pristineBootstrap(directory, marker);
+    if (!envelope) {
+      await writeNewMetadata(envelopePath, { schemaVersion: 1, minWriterVersion: 2, installationId: marker.installationId, phase: 'prepared' }, flusher);
+      await options.testFailure?.('envelopeSynced');
+    }
+    await pristineBootstrap(directory, marker);
+    await options.testFailure?.('beforeMarkerActive');
+    await activateMarker(markerPath, marker, flusher);
+    await options.testFailure?.('markerActive');
+    return { installationId: marker.installationId, directory, created: !resumedBootstrap, resumedBootstrap, directoryDurability: flusher.observation };
   } catch (error) {
     if (error instanceof NoticeInstallationError) throw error;
     throw new NoticeInstallationError('notice_installation_unavailable', 'Local notice installation is unavailable'); // telemetry-exempt: never rebaseline on IO/fault; stable code omits local paths/raw errors
