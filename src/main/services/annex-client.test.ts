@@ -4552,7 +4552,8 @@ describe('annex-client', () => {
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain(`card=actions&source=selected-action-relationships&offset=25&selection=${selection}`);
-      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }] satisfies Array<{ selection?: string; inventoryPageOnly?: true; settings?: Record<string, boolean> }>) {
+      const invalid: Array<{ selection?: string; inventoryPageOnly?: true; settings?: Record<string, boolean> }> = [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }];
+      for (const patch of invalid) {
         const body = 'selection' in patch ? { ...value, inventoryPage: { ...value.inventoryPage, selection: patch.selection } } : { ...value, ...patch };
         answers.push({ status: 200, body }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
       }
@@ -4573,7 +4574,8 @@ describe('annex-client', () => {
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain(`card=canvases&source=selected-canvas-memberships&offset=25&selection=${selection}`);
-      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }] satisfies Array<{ selection?: string; inventoryPageOnly?: true; settings?: Record<string, boolean> }>) {
+      const invalid: Array<{ selection?: string; inventoryPageOnly?: true; settings?: Record<string, boolean> }> = [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }];
+      for (const patch of invalid) {
         const body = 'selection' in patch ? { ...value, inventoryPage: { ...value.inventoryPage, selection: patch.selection } } : { ...value, ...patch };
         answers.push({ status: 200, body }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
       }
@@ -4635,7 +4637,8 @@ describe('annex-client', () => {
         answers.push({ status, body: { private: 'PRIVATE_ERROR' } });
         expect((await annexClient.requestAgentChanges(FP, 'a1', { scope: 'branch' })).status).toBe(status === 429 ? 'rate_limited' : status === 404 || status === 405 ? 'unavailable' : 'forbidden');
       }
-      for (const patch of [{ agentId: 'other' }, { scope: 'turn' }, { version: 2 }, { files: [null] }, { nextOffset: -1 }] satisfies Array<{ agentId?: string; scope?: string; version?: number; files?: unknown[]; nextOffset?: number }>) {
+      const invalid: Array<{ agentId?: string; scope?: string; version?: number; files?: unknown[]; nextOffset?: number }> = [{ agentId: 'other' }, { scope: 'turn' }, { version: 2 }, { files: [null] }, { nextOffset: -1 }];
+      for (const patch of invalid) {
         answers.push({ status: 200, body: { ...value, ...patch } });
         expect(await annexClient.requestAgentChanges(FP, 'a?/#', { scope: 'branch' })).toEqual({ status: 'error' });
       }
