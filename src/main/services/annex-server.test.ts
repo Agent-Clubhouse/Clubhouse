@@ -1,4 +1,17 @@
 import * as selectedDispatcherDetails from './selected-dispatcher-details';
+import { app } from 'electron';
+import { setImmediate as nextTurn } from 'node:timers/promises';
+import { createSettingsStore } from './settings-store';
+import { createServer as createHttpServer } from 'http';
+import { createServer as createHttpsServer } from 'https';
+vi.mock('http', async (original) => {
+  const actual = await original<typeof import('http')>();
+  return { ...actual, createServer: vi.fn(actual.createServer) };
+});
+vi.mock('https', async (original) => {
+  const actual = await original<typeof import('https')>();
+  return { ...actual, createServer: vi.fn(actual.createServer) };
+});
 import * as agentConfigReader from './agent-config-reader';
 import * as dispatcherMetadataService from './dispatcher/dispatcher-service';
 import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
@@ -1112,6 +1125,195 @@ describe('annex-server', () => {
       const { port } = await startAndPair();
       const response = await request(port, 'GET', route);
       expect(response.status).toBe(403); expect(response.body).not.toContain('PRIVATE_LATE_PATCH');
+    });
+  });
+
+  describe('owned secure listener readiness (#3720)', () => {
+    interface ModeledListener {
+      server: net.Server;
+      listening: boolean;
+      port: number;
+      closeCalls: number;
+      open: () => void;
+      onRead?: () => void;
+    }
+    let listeners: ModeledListener[];
+    let autoOpen: boolean;
+    let nextPort: number;
+    const outcome = <T>(promise: Promise<T>) => promise.then(value => ({ value, error: null }), (error: unknown) => ({ value: null, error }));
+    const main = () => listeners.find(item => item.server instanceof https.Server)!;
+    const pairing = () => listeners.find(item => !(item.server instanceof https.Server))!;
+    function fail(error: unknown, superseded: boolean): void {
+      expect(error).toBeInstanceOf(annexServer.AnnexStartFailure);
+      if (!(error instanceof annexServer.AnnexStartFailure)) throw new Error('Expected typed start failure');
+      expect(error.wasSuperseded()).toBe(superseded);
+    }
+
+    beforeEach(() => {
+      listeners = []; autoOpen = true; nextPort = 41000;
+      // Real server objects and production listen promises; modeled events, no OS socket bind.
+      vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        let item = listeners.find(state => state.server === this);
+        if (!item) {
+          item = { server: this, listening: false, port: 0, closeCalls: 0, open: () => {} };
+          listeners.push(item);
+          const state = item;
+          Object.defineProperty(this, 'listening', { configurable: true, get: () => {
+            const hook = state.onRead; state.onRead = undefined; hook?.(); return state.listening;
+          } });
+          vi.spyOn(this, 'address').mockImplementation(() => state.listening ? { port: state.port, address: '127.0.0.1', family: 'IPv4' } : null);
+          vi.spyOn(this, 'close').mockImplementation(function (this: net.Server, callback?: (error?: Error) => void) {
+            state.closeCalls++; state.listening = false; this.emit('close'); callback?.(); return this;
+          });
+        }
+        item.port = typeof args[0] === 'number' && args[0] > 0 ? args[0] : nextPort++;
+        const callback = args[args.length - 1];
+        if (typeof callback === 'function') this.once('listening', callback as () => void);
+        const state = item;
+        item.open = () => { state.listening = true; this.emit('listening'); };
+        if (autoOpen) queueMicrotask(item.open);
+        return this;
+      });
+    });
+
+    it('retains the default start path under the modeled listener driver', async () => {
+      annexServer.start(); await nextTurn();
+      expect(listeners).toHaveLength(2);
+      expect(listeners.every(item => item.listening)).toBe(true);
+      expect(annexServer.getStatus()).toMatchObject({ port: main().port, pairingPort: pairing().port, tlsEnabled: true });
+    });
+    it('waits for both listeners and never revives an unready capture', async () => {
+      autoOpen = false;
+      const unready = annexServer.captureSecureListenerReadiness('127.0.0.1');
+      const pending = outcome(annexServer.startVerifiedWithReceipt('127.0.0.1'));
+      const whileBinding = annexServer.captureSecureListenerReadiness('127.0.0.1');
+      let completed = false; void pending.then(() => { completed = true; });
+      main().open(); await nextTurn(); expect(completed).toBe(false);
+      pairing().open(); const result = await pending;
+      expect(result.error).toBeNull(); expect(result.value?.()).toBe(true);
+      expect(unready()).toBe(false); expect(whileBinding()).toBe(false);
+      expect(annexServer.captureSecureListenerReadiness('different-host')()).toBe(false);
+    });
+    it('invalidates ready captures on stop and replacement even with equal ports/profile', async () => {
+      const ready = await annexServer.startVerifiedWithReceipt('127.0.0.1');
+      const ports = annexServer.liveListenerPorts();
+      annexServer.stop(); expect(ready()).toBe(false);
+      vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: ports.mainPort!, pairingPort: ports.pairingPort! });
+      const replacement = await annexServer.startVerifiedWithReceipt('127.0.0.1');
+      expect(annexServer.liveListenerPorts()).toEqual(ports);
+      expect(ready()).toBe(false); expect(replacement()).toBe(true);
+    });
+    it('isolates the generation fence when modeled listener objects are reused across restart', async () => {
+      const ready = await annexServer.startVerifiedWithReceipt('127.0.0.1');
+      const tlsObject = main().server, pairingObject = pairing().server, ports = annexServer.liveListenerPorts();
+      annexServer.stop();
+      // Deliberate identity-reuse model, not a claim that default constructors reuse objects.
+      vi.mocked(createHttpsServer).mockReturnValueOnce(tlsObject as https.Server);
+      vi.mocked(createHttpServer).mockReturnValueOnce(pairingObject as http.Server);
+      vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: ports.mainPort!, pairingPort: ports.pairingPort! });
+      const replacement = await annexServer.startVerifiedWithReceipt('127.0.0.1');
+      expect(listeners).toHaveLength(2);
+      expect(main().server).toBe(tlsObject); expect(pairing().server).toBe(pairingObject);
+      expect(annexServer.liveListenerPorts()).toEqual(ports);
+      expect(ready()).toBe(false); expect(replacement()).toBe(true);
+    });
+    it('does not revive a not-ready capture with modeled cached positive ports', async () => {
+      await annexServer.startVerifiedWithReceipt('127.0.0.1');
+      main().server.close();
+      const notReady = annexServer.captureSecureListenerReadiness('127.0.0.1');
+      main().open(); // Deliberate same-object event model; no default lifecycle/OS reuse claim.
+      expect(annexServer.getStatus().port).toBeGreaterThan(0);
+      expect(notReady()).toBe(false);
+    });
+    it('observes memory only and rejects an invalid expected host without starting', async () => {
+      const ready = await annexServer.startVerifiedWithReceipt('127.0.0.1');
+      const settingsReads = vi.mocked(annexSettings.getSettings).mock.calls.length;
+      const profileReads = vi.mocked(annexNetworkProfile).mock.calls.length;
+      const broadcasts = mockBroadcastToAllWindows.mock.calls.length;
+      expect(ready()).toBe(true);
+      expect(annexServer.captureSecureListenerReadiness('127.0.0.1')()).toBe(true);
+      expect(vi.mocked(annexSettings.getSettings).mock.calls.length).toBe(settingsReads);
+      expect(vi.mocked(annexNetworkProfile).mock.calls.length).toBe(profileReads);
+      expect(mockBroadcastToAllWindows.mock.calls.length).toBe(broadcasts);
+      const result = await outcome(annexServer.startVerifiedWithReceipt(''));
+      expect(result.error).toBeInstanceOf(TypeError); expect(ready()).toBe(true);
+      expect(listeners.every(item => item.closeCalls === 0)).toBe(true);
+    });
+    it('refuses already-running strict startup without stopping its listeners', async () => {
+      const ready = await annexServer.startVerifiedWithReceipt('127.0.0.1');
+      const result = await outcome(annexServer.startVerifiedWithReceipt('127.0.0.1'));
+      fail(result.error, true); expect(ready()).toBe(true);
+      expect(listeners.every(item => item.closeCalls === 0)).toBe(true);
+    });
+    it('does not grant a receipt to the TLS-unavailable HTTP fallback', async () => {
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementation(() => { throw new Error('modeled TLS unavailable'); });
+      annexServer.start(); await nextTurn();
+      expect(annexServer.getStatus().tlsEnabled).toBe(false);
+      expect(annexServer.captureSecureListenerReadiness('127.0.0.1')()).toBe(false);
+      annexServer.stop();
+      const result = await outcome(annexServer.startVerifiedWithReceipt('127.0.0.1'));
+      fail(result.error, false); expect(result.value).toBeNull();
+    });
+    it.each(['main', 'pairing'])('rejects modeled %s bind failure with owned cleanup', async (which) => {
+      autoOpen = false; const pending = outcome(annexServer.startVerifiedWithReceipt('127.0.0.1'));
+      const failing = which === 'main' ? main() : pairing();
+      failing.server.emit('error', Object.assign(new Error('modeled bind refusal'), { code: 'EACCES' }));
+      const result = await pending; fail(result.error, false);
+      expect(listeners.every(item => !item.listening)).toBe(true);
+      expect(annexServer.liveListenerPorts()).toEqual({});
+    });
+    it('does not stop a replacement between strict completion and wrapper continuation', async () => {
+      const pending = outcome(annexServer.startVerifiedWithReceipt('127.0.0.1'));
+      const original = [...listeners];
+      pairing().onRead = () => queueMicrotask(() => { annexServer.stop(); annexServer.start(); });
+      const result = await pending; fail(result.error, true); await nextTurn();
+      const replacement = listeners.filter(item => !original.includes(item));
+      expect(replacement).toHaveLength(2);
+      expect(replacement.every(item => item.listening && item.closeCalls === 0)).toBe(true);
+      expect(annexServer.captureSecureListenerReadiness('127.0.0.1')()).toBe(true);
+    });
+    it('rejects old wrapper completion even when a restart reuses modeled objects and ports', async () => {
+      const pending = outcome(annexServer.startVerifiedWithReceipt('127.0.0.1'));
+      const tlsObject = main().server, pairingObject = pairing().server;
+      pairing().onRead = () => queueMicrotask(() => {
+        const ports = annexServer.liveListenerPorts(); annexServer.stop();
+        vi.mocked(createHttpsServer).mockReturnValueOnce(tlsObject as https.Server);
+        vi.mocked(createHttpServer).mockReturnValueOnce(pairingObject as http.Server);
+        vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: ports.mainPort!, pairingPort: ports.pairingPort! });
+        annexServer.start();
+      });
+      const result = await pending; fail(result.error, true); await nextTurn();
+      expect(listeners).toHaveLength(2);
+      expect(listeners.every(item => item.listening && item.closeCalls === 1)).toBe(true);
+      expect(annexServer.captureSecureListenerReadiness('127.0.0.1')()).toBe(true);
+    });
+    it('cleans up genuine owned listener loss after strict success', async () => {
+      const pending = outcome(annexServer.startVerifiedWithReceipt('127.0.0.1'));
+      pairing().onRead = () => queueMicrotask(() => { pairing().server.close(); });
+      const result = await pending; fail(result.error, false);
+      expect(main().closeCalls).toBe(1);
+      expect(listeners.every(item => !item.listening)).toBe(true);
+      expect(annexServer.liveListenerPorts()).toEqual({});
+    });
+    it('leaves the newer committed profile running after actual store-queue interleaving (RL-1)', async () => {
+      const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-owned-listener-queue-'));
+      const location = vi.spyOn(app, 'getPath').mockReturnValue(root);
+      try {
+        const a: AnnexSettings = { enableServer: true, enableClient: false, loopbackOnly: false,
+          deviceName: 'test', alias: 'test', icon: 'computer', color: 'indigo', autoReconnect: false };
+        const store = createSettingsStore('owned-profile.json', a, undefined, { rollBackFailedSaves: true });
+        vi.mocked(annexSettings.getSettings).mockImplementation(() => store.get());
+        vi.mocked(annexNetworkProfile).mockImplementation((_env, loopbackOnly) => ({ host: loopbackOnly ? '127.0.0.1' : '0.0.0.0', advertise: false }));
+        await store.save(a); const expectedA = annexNetworkProfile(process.env, store.get().loopbackOnly).host;
+        // Independent writer commits on the actual pendingWrite/updateLock before old A starts.
+        await store.update(current => ({ ...current, loopbackOnly: true }));
+        expect(JSON.parse(await fsp.readFile(path.join(root, 'owned-profile.json'), 'utf8')).loopbackOnly).toBe(true);
+        const result = await outcome(annexServer.startVerifiedWithReceipt(expectedA));
+        fail(result.error, true);
+        expect(listeners.every(item => item.listening && item.closeCalls === 0)).toBe(true);
+        expect(annexServer.captureSecureListenerReadiness('127.0.0.1')()).toBe(true);
+        expect(store.get().loopbackOnly).toBe(true);
+      } finally { location.mockRestore(); await fsp.rm(root, { recursive: true, force: true }); }
     });
   });
 
