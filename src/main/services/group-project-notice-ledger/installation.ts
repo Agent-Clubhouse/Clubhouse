@@ -96,11 +96,16 @@ async function withMetadataTemp(
     await handle.sync();
     await handle.close(); handle = undefined; // Windows rename must not retain the open writer.
     await publish(temporary);
-  } catch (error) { failed = true; original = error; } // telemetry-exempt: propagated below after best-effort own-temp cleanup
-  finally {
+  } catch (error) {
+    // telemetry-exempt: propagated below after best-effort own-temp cleanup
+    failed = true; original = error;
+  } finally {
     if (handle) {
       try { await handle.close(); }
-      catch (error) { if (!failed) { failed = true; original = error; } } // telemetry-exempt: preserve first failure over secondary close error
+      catch (error) {
+        // telemetry-exempt: preserve first failure over secondary close error
+        if (!failed) { failed = true; original = error; }
+      }
     }
     if (created) {
       try {
