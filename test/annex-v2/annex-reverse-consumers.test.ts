@@ -96,7 +96,7 @@ it('preserves binary bytes through one forward and retires the whole owned consu
   let barrier: net.Server | undefined;
   const forwardSockets = new Set<net.Socket>();
   const serverSockets = new Set<Duplex>();
-  let consumerPassed = false;
+  let reportTeardown: (() => void) | undefined;
   try {
     const aDir = join(root, 'a'), bDir = join(root, 'b');
     mkdirSync(aDir); mkdirSync(bDir);
@@ -260,7 +260,12 @@ it('preserves binary bytes through one forward and retires the whole owned consu
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(requester.events).toHaveLength(before);
     expect(requester.control.getLinkReadiness(peerA.fingerprint).acceptedHere).toBe(true);
-    consumerPassed = true;
+    if (!forward || !server) throw new Error('Lost an owned fixture listener before teardown');
+    const ownedForward = forward, ownedServer = server;
+    reportTeardown = () => { process.stdout.write(`ANNEX_REVERSE_FIXTURE_TEARDOWN ${JSON.stringify({
+      forwardSockets: forwardSockets.size, serverSockets: serverSockets.size,
+      forwardListening: ownedForward.listening, serverListening: ownedServer.listening,
+    })}\n`); };
     process.stdout.write(`ANNEX_REVERSE_CONSUMER ${JSON.stringify({
       binaryBytes: decoded.length, sha256: digest, iconBytes: icon.length,
       controlUpgrades: upgrades, ordinaryHttpRequests: httpRequests, handoffRequests,
@@ -280,13 +285,7 @@ it('preserves binary bytes through one forward and retires the whole owned consu
         expect(forwardSockets.size).toBe(0);
         expect(serverSockets.size).toBe(0);
       });
-      if (consumerPassed) {
-        if (!forward || !server) throw new Error('Lost an owned fixture listener before teardown');
-        process.stdout.write(`ANNEX_REVERSE_FIXTURE_TEARDOWN ${JSON.stringify({
-          forwardSockets: forwardSockets.size, serverSockets: serverSockets.size,
-          forwardListening: forward.listening, serverListening: server.listening,
-        })}\n`);
-      }
+      reportTeardown?.();
     } finally {
       a?.headless.disposeAll();
       b?.headless.disposeAll();
