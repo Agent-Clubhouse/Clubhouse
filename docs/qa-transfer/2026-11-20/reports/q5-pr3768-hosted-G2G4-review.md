@@ -57,3 +57,13 @@ Reviewer: qa-details-local-composition, November 21, 2026.
 - **Before marking ready or landing:**
   - the final current-main guard, since main has moved to `f19eceee2` or later;
   - the corrected immutable evidence ref for the owner's bundle, which is the owner's completeness item and not a G2 or G4 blocker.
+
+## Addendum: corrected hosted bundle `0b4338403` (tree `a705bdc0c`). Packaging item CLOSED.
+
+- **Contents:** `d0c9` is preserved, and this commit adds the four previously ignored `.log` excerpts plus cost and timing documents. No source changed.
+- **`pr3768/hosted-bundle-manifest.json`:** all 12 entries match their committed blobs.
+- **Checked against my own `gh` downloads:**
+  - The `rawJobLog` sha256 (`0b30d22f…`) and its byte count (1,578,584) equal the job `136913610220` log I fetched.
+  - Each of the four excerpts (operating system, runner image, Node environment, actual checkout) is **byte-equal** to `log[byteStart:byteEnd]` and matches its recorded sha256.
+  - Both committed shard-2 testsuite XML slices appear verbatim inside the artifact `14716349143` `test-results.xml` I downloaded.
+- **The G2 and G4 verdicts are unchanged.** The system-out attribution correction is pending separately in the owner's docs.
