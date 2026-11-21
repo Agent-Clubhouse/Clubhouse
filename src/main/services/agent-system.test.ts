@@ -1,8 +1,10 @@
 import { managedProviderPlatformCapability } from './managed-provider-platform';
 import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from './dispatcher-federation-context';
 import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
+import { mkdirSync } from 'fs';
+import { app } from 'electron';
 import type { OrchestratorConventions } from '../orchestrators';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { IPC } from '../../shared/ipc-channels';
@@ -405,6 +407,9 @@ function notSessionCapable(provider: Record<string, unknown>): void {
 }
 
 describe('agent-system', () => {
+  // Spawns persist local work under userData, which the app always has. The electron mock's folder
+  // is never created, so a run on a fresh temp dir (CI) would fail every later save in this file.
+  beforeAll(() => { mkdirSync(app.getPath('userData'), { recursive: true }); });
   beforeEach(() => {
     vi.clearAllMocks();
     mockManagedProviderStartGuard.mockReset().mockResolvedValue(() => {});
