@@ -1,0 +1,15 @@
+{
+  "sourceJob": 136842133771,
+  "run": 44902824527,
+  "kind": "selected verbatim lines from actual log; derivative excerpt; full original plan-checkout-log.json preserved",
+  "head": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+  "lines": [
+    "2026-11-21T12:13:41.7948614Z HEAD is now at b3231f1b Merge 4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b into be0091d1676764b0e3300898ab0ad1f135f88a46",
+    "2026-11-21T12:13:41.8037635Z [command]/usr/bin/git log -1 --format=%H",
+    "2026-11-21T12:13:41.8068926Z b3231f1b6d660961e040c5db3e08b99f70476d85",
+    "2026-11-21T12:13:45.6699587Z   BASE: be0091d1676764b0e3300898ab0ad1f135f88a46",
+    "2026-11-21T12:13:45.6699896Z   HEAD: 4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+    "2026-11-21T12:13:45.7274803Z   PR_BASE: be0091d1676764b0e3300898ab0ad1f135f88a46",
+    "2026-11-21T12:13:45.7275142Z   PR_HEAD: 4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b"
+  ]
+}

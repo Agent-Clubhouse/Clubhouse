@@ -1,0 +1,50 @@
+{
+  "observedAt": "2026-11-21T12:17:57.930Z",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Action completed."
+      }
+    ],
+    "structuredContent": {
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3764",
+      "number": 3764,
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "draft": false,
+      "body": "A caller checking only whether launches are open can become eligible again after shutdown closes and reopens the gate. Add an opt-in `captureLaunchAdmission()` predicate that latches open-at-capture and an opaque generation, so a close permanently invalidates that capture while fresh requests remain possible after reopening.\n\nThis is the standalone utility piece. Existing gate policies, work waiters, shutdown callers and production lifecycle behavior are unchanged. Refs #3720.\n\nValidation on exact head `4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b`:\n\n- 20/20 targeted tests; full TypeScript check; ESLint on the three changed source/test files; diff check.\n- No-rotation and reset-on-reopen mutants each cause 6 assertion failures; missing open-at-capture latch causes 1. Byte-restored source passes 20/20.\n- [Independent exact-source approval](https://github.com/Agent-Clubhouse/Clubhouse/blob/1eec9e95128bd172c180a47cebeb7f5e825f1623/docs/qa-transfer/2026-11-20/reports/3720-launch-admission-4e9c3db4c-review.md). [Immutable proof and reproduction notes](https://github.com/Agent-Clubhouse/Clubhouse/blob/0ebdc14199f177a0f688f72c2673e239e2acbefa/docs/implementation-notes/3720-launch-admission/README.md).\n\nThe test-only red was the missing API, not reproduction of an existing Annex defect. Tests use the real shutdown coordinator with mocked drivers and stub effect callbacks. Extra rotation while already closed is source-reviewed; the public predicate cannot independently expose that allocation. Original packaging failures and raw bytes are retained; text views are labeled derivatives and byte-exact JSON carriers are verified.\n\nNo Annex consumer, runtime-readiness integration, real Annex teardown, naming compatibility, live or release acceptance is claimed. Hosted CI on this exact PR head remains required.\n",
+      "title": "Capture launch admission across shutdown and reopen",
+      "base": "main",
+      "base_sha": "be0091d1676764b0e3300898ab0ad1f135f88a46",
+      "head": "annex-wake-readiness/3720-launch-admission",
+      "head_sha": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+      "head_repo_id": 1158026389,
+      "head_repo_full_name": "Agent-Clubhouse/Clubhouse",
+      "merge_commit_sha": "b3231f1b6d660961e040c5db3e08b99f70476d85",
+      "user": {
+        "login": "masra91",
+        "name": "masra91",
+        "email": null,
+        "avatar_url": "https://avatars.githubusercontent.com/u/1669494?v=4",
+        "id": 1669494
+      },
+      "requested_reviewers": null,
+      "requested_team_reviewers": null,
+      "diff": null,
+      "comments": null,
+      "created_at": "2026-11-21T12:13:28Z",
+      "updated_at": "2026-11-21T12:13:28Z",
+      "closed_at": null,
+      "merged_at": null,
+      "commits": 2,
+      "changed_files": 6,
+      "additions": 218,
+      "deletions": 3,
+      "display_url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3764",
+      "display_title": "Capture launch admission across shutdown and reopen"
+    },
+    "isError": false
+  }
+}

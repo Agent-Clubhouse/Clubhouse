@@ -1,0 +1,27 @@
+{
+  "provenance": "Verbatim visible tool-result excerpts from this conversation, not a reconstructed filesystem run receipt or a reissued create. Fresh server readbacks are separate files.",
+  "connector": {
+    "operation": "mcp__codex_apps__github_create_pull_request",
+    "visibleError": "GitHub API error 403: {\"message\":\"Resource not accessible by integration\",\"documentation_url\":\"https://docs.github.com/rest/pulls/pulls#create-a-pull-request\",\"status\":\"403\"}",
+    "errorCode": "FORBIDDEN"
+  },
+  "cli": {
+    "command": "gh pr create --repo Agent-Clubhouse/Clubhouse --base main --head annex-wake-readiness/3720-launch-admission --title 'Capture launch admission across shutdown and reopen' --body-file .cache/3720-launch/pr-body.md",
+    "initialSessionId": 69678,
+    "completionTool": "write_stdin",
+    "completionArguments": {
+      "session_id": 69678,
+      "chars": "",
+      "yield_time_ms": 1000,
+      "max_output_tokens": 2500
+    },
+    "visibleCompletionResult": {
+      "chunk_id": "762638",
+      "wall_time_seconds": 0.000015583,
+      "exit_code": 0,
+      "original_token_count": 14,
+      "output": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3764\n"
+    }
+  },
+  "authorizationLimit": "This task explicitly authorized this standalone PR using existing access. No new authentication, link, grant or general authorization to route around future denied writes."
+}
