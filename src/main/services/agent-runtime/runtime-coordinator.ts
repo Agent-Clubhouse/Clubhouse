@@ -138,12 +138,12 @@ function isObject(value: unknown): value is object {
 }
 
 function reject(reason: string): never {
-  appLog('core:agent', 'warn', 'Runtime coordinator operation rejected', { meta: { reason } });
-  throw new Error(`Runtime coordinator: ${reason}`);
+  appLog('core:agent', 'warn', 'Runtime operation rejected', { meta: { reason } });
+  throw new Error(`Runtime operation: ${reason}`);
 }
 
 function refused(reason: string): Refusal {
-  appLog('core:agent', 'warn', 'Runtime coordinator operation refused', { meta: { reason } });
+  appLog('core:agent', 'warn', 'Runtime operation refused', { meta: { reason } });
   return { kind: 'failed', reason };
 }
 
