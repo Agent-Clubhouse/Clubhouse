@@ -268,6 +268,38 @@ describe('proactive control connections', () => {
     expect(sockets[1].sent).toHaveLength(1);
   });
 
+  it('retires a negotiated control socket when its endpoint is withdrawn', () => {
+    maintain();
+    open();
+    const old = sockets[0];
+    plans = [plan(peers[0], [{ fingerprint: REMOTE, host: 'replacement.local', port: 8443, source: 'announced' }])];
+    control.refreshConnections();
+    expect(old.readyState).toBe(WebSocket.CLOSED);
+    expect(sockets.map((socket) => socket.url)).toEqual([
+      'wss://studio.local:9443/control', 'wss://replacement.local:8443/control',
+    ]);
+    open(sockets[1]);
+    old.emit('error', Object.assign(new Error('stale pin error'), { code: 'ERR_ANNEX_PIN_MISMATCH' }));
+    old.emit('close', CONTROL_CLOSE_REVOKED);
+    for (let i = 0; i < 20; i++) control.refreshConnections();
+    vi.advanceTimersByTime(60_000);
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1].readyState).toBe(WebSocket.OPEN);
+  });
+
+  it('preserves a negotiated control socket when unrelated routes are added or reordered', () => {
+    maintain();
+    open();
+    plans = [plan(peers[0], [
+      { fingerprint: REMOTE, host: 'alternative.local', port: 8443, source: 'announced' },
+      ...plans[0].routes,
+    ])];
+    for (let i = 0; i < 20; i++) control.refreshConnections();
+    vi.advanceTimersByTime(60_000);
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].readyState).toBe(WebSocket.OPEN);
+  });
+
   it('never dials held, wrong-peer or wrong-observer private routes, including on retry', () => {
     const heldPeer = peer({
       fingerprint: 'other-peer', knownHosts: [], mainPort: undefined,

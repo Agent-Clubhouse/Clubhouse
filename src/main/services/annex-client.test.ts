@@ -478,6 +478,33 @@ describe('annex-client', () => {
       expect(fixture.control.readyState).toBe(3);
       expect(fixture.sockets.filter((socket) => socket.url.endsWith('/control'))).toHaveLength(1);
     });
+
+    it('retires negotiated control on saved-host withdrawal after a main drop and refuses stale writes', async () => {
+      const fixture = setup();
+      fixture.openControl();
+      fixture.main.close(1006);
+      const member = fixture.world.peer;
+      if (!member) throw new Error('Expected the paired member');
+      fixture.world.peer = { ...member, knownHosts: ['replacement.local'] };
+      annexControl.refreshConnections();
+      expect(fixture.control.readyState).toBe(3);
+      fixture.control.emit('message', Buffer.from(JSON.stringify({
+        v: 1, type: 'request', id: 'withdrawn-route-write', method: 'POST', path: '/api/v1/mobile/commands',
+      })), false);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.dispatch).not.toHaveBeenCalled();
+      const replacement = fixture.sockets.find((socket) => socket.url === 'wss://replacement.local:9443/control');
+      if (!replacement) throw new Error('Expected a replacement route');
+      fixture.openControl(replacement);
+      fixture.control.emit('error', Object.assign(new Error('stale pin error'), { code: 'ERR_ANNEX_PIN_MISMATCH' }));
+      fixture.control.emit('close', 4403);
+      replacement.emit('message', Buffer.from(JSON.stringify({
+        v: 1, type: 'request', id: 'replacement-route-read', method: 'GET', path: '/api/v1/mobile/capabilities',
+      })), false);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.dispatch).toHaveBeenCalledOnce();
+      expect(replacement.sent).toContainEqual(expect.objectContaining({ type: 'response', id: 'replacement-route-read', status: 200 }));
+    });
   });
 
   // ---- startClient / stopClient ----
