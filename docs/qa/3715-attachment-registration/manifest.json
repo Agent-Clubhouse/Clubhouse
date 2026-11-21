@@ -33,7 +33,9 @@
     "selectorSkipped": 619,
     "filesPassed": 3,
     "breakdown": {
-      "newDirectPinnedHttps": 38,
+      "newCases": 38,
+      "newActualPinnedHttps": 35,
+      "newLeaseOnly": 3,
       "existingUploadAndP6": 7,
       "canonicalAttachment": 1
     },
