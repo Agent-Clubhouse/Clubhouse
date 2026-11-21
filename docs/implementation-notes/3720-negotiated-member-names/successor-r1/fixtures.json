@@ -1,0 +1,280 @@
+{
+  "status": "PROPOSED SUCCESSOR CONTRACT FIXTURES; documentation-vector checks are not product or mixed-version runtime proof",
+  "frozenContract": "afefa41b2c8e1998979d44d383467a21c454e51e",
+  "sourceReference": "be29c82a5eba1003d06a992209f6536506062b64",
+  "trimCodePoints": [
+    "0009-000D",
+    "0020",
+    "00A0",
+    "1680",
+    "2000-200A",
+    "2028",
+    "2029",
+    "202F",
+    "205F",
+    "3000",
+    "FEFF"
+  ],
+  "hashVectors": [
+    {
+      "id": "absent-pairing-id",
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "name": "Studio",
+        "at": 1770000000010,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "id": "acced62da104445a11397b80729743b9c7e9fe05c552dadfaf03d1894b571a64"
+      },
+      "utf16CodeUnits": 6,
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a31373630303030303030303030303a363a53747564696f31333a3137373030303030303030313034373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262",
+      "sha256": "acced62da104445a11397b80729743b9c7e9fe05c552dadfaf03d1894b571a64"
+    },
+    {
+      "id": "exact-200-ascii",
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "at": 1770000000011,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "id": "2a860e8d301f4f3a40b26f2d56cefbc2c2262f675c147cc3e17977ca2300d356"
+      },
+      "utf16CodeUnits": 200,
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303033363a30313233343536372d383961622d346364652d383030302d3031323334353637383961623230303a616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616131333a3137373030303030303030313134373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262",
+      "sha256": "2a860e8d301f4f3a40b26f2d56cefbc2c2262f675c147cc3e17977ca2300d356"
+    },
+    {
+      "id": "supplementary-exact-200",
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83d\ude80",
+        "at": 1770000000012,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "id": "7beba5a53052b606f33129d14949333bea5ab50764c9f3383a8a26facf68b65e"
+      },
+      "utf16CodeUnits": 200,
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303033363a30313233343536372d383961622d346364652d383030302d3031323334353637383961623230323a616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161f09f9a8031333a3137373030303030303030313234373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262",
+      "sha256": "7beba5a53052b606f33129d14949333bea5ab50764c9f3383a8a26facf68b65e"
+    },
+    {
+      "id": "trimmed-writer-result",
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "name": "Studio",
+        "at": 1770000000013,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "id": "47ddcd5f2ffcb1911a09cafe482593bcde546d65ec9705832b7a25790ed91c6e"
+      },
+      "utf16CodeUnits": 6,
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303033363a30313233343536372d383961622d346364652d383030302d303132333435363738396162363a53747564696f31333a3137373030303030303030313334373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262",
+      "sha256": "47ddcd5f2ffcb1911a09cafe482593bcde546d65ec9705832b7a25790ed91c6e"
+    },
+    {
+      "id": "0085-not-trimmed",
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "name": "\u0085Studio\u0085",
+        "at": 1770000000014,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "id": "36dc14f619d98661851d4e478c6e5bbad5018d1f8022dfdb73b0948abfc5b434"
+      },
+      "utf16CodeUnits": 8,
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303033363a30313233343536372d383961622d346364652d383030302d30313233343536373839616231303ac28553747564696fc28531333a3137373030303030303030313434373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262",
+      "sha256": "36dc14f619d98661851d4e478c6e5bbad5018d1f8022dfdb73b0948abfc5b434"
+    },
+    {
+      "id": "180e-not-trimmed",
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "name": "\u180eStudio\u180e",
+        "at": 1770000000015,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "id": "3e9c569251d7bd1738776413778d23675b2fe8ceee442cfec8a795afedef5c68"
+      },
+      "utf16CodeUnits": 8,
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303033363a30313233343536372d383961622d346364652d383030302d30313233343536373839616231323ae1a08e53747564696fe1a08e31333a3137373030303030303030313534373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262",
+      "sha256": "3e9c569251d7bd1738776413778d23675b2fe8ceee442cfec8a795afedef5c68"
+    }
+  ],
+  "stringCases": [
+    {
+      "id": "T01-writer-fixed-trim",
+      "input": "\ufeff\u00a0\tStudio\u3000\r\n",
+      "writerResult": "Studio",
+      "modernReceiverAcceptsInput": false
+    },
+    {
+      "id": "T02-no-Go-trim-substitution",
+      "input": "\u0085Studio\u0085",
+      "writerResult": "\u0085Studio\u0085",
+      "modernReceiverAcceptsInput": true
+    },
+    {
+      "id": "T03-180e-not-trim",
+      "input": "\u180eStudio\u180e",
+      "writerResult": "\u180eStudio\u180e",
+      "modernReceiverAcceptsInput": true
+    },
+    {
+      "id": "T04-exact-200",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "writerResult": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "modernReceiverAcceptsInput": true
+    },
+    {
+      "id": "T05-supplementary-exact-200",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83d\ude80",
+      "writerResult": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83d\ude80",
+      "modernReceiverAcceptsInput": true
+    },
+    {
+      "id": "T06-supplementary-over-200",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83d\ude80",
+      "writerRefuses": true,
+      "modernReceiverAcceptsInput": false
+    },
+    {
+      "id": "T07-legacy-split-surrogate",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83d",
+      "writerRefuses": true,
+      "modernReceiverAcceptsInput": false,
+      "legacyAdapter": "visible skip; preserve name/clock/floor; no close"
+    },
+    {
+      "id": "T08-untrimmed-modern",
+      "input": " Studio ",
+      "writerResult": "Studio",
+      "modernReceiverAcceptsInput": false
+    },
+    {
+      "id": "T09-empty-after-trim",
+      "input": "\ufeff\u3000\t",
+      "writerRefuses": true,
+      "modernReceiverAcceptsInput": false
+    },
+    {
+      "id": "T10-lone-low-surrogate",
+      "input": "\udc00",
+      "writerRefuses": true,
+      "modernReceiverAcceptsInput": false
+    }
+  ],
+  "cases": [
+    {
+      "id": "D01-tokens",
+      "expected": "unloaded != legacy(epoch,hash(alias)) != ordered(epoch,at,by,id) != degraded; raw alias change and same-name newer ordered record invalidate held display receipt"
+    },
+    {
+      "id": "D02-authority-separation",
+      "expected": "held display receipt becomes false/Details changed409; held pairing receipt remains current; snapshotReceipt/connectionGeneration/controllerReadTrust/revisions untouched"
+    },
+    {
+      "id": "D03-no-display-IO",
+      "expected": "every display state uses already-loaded memory only; no load/getSettings/init/migration/emits; authority getPeer/listPeers stay raw"
+    },
+    {
+      "id": "D04-label-refresh",
+      "expected": "same resolver for peek/display list/satellite/devices/actions/details-names/hello/server labels; PEERS_CHANGED+devicesChanged only; no dial/GET/reconnect"
+    },
+    {
+      "id": "D05-degradation",
+      "expected": "raw Details/device labels unchanged; persistent plain text Alias section and Rename area says saved names shown/renames disabled; disabled actions with reason; typed IPC refusal; never ordered-name claim"
+    },
+    {
+      "id": "Q01-two-Alias-saves",
+      "expected": "existing queue serializes clone/apply; reserve A,persist A,settingsChanged,apply A,activate A then reserve B,persist B,settingsChanged,apply B,activate B"
+    },
+    {
+      "id": "Q02-Alias-then-disable",
+      "expected": "all existing disable/read-lease retirement calls run in queued order; no second settings queue"
+    },
+    {
+      "id": "Q03-Alias-and-disable",
+      "expected": "same save reserve,persist,settingsChanged,applyNetworkSettings including synchronous read-lease retirement,activate; post-save authority loss never skips runtime apply"
+    },
+    {
+      "id": "Q04-non-name-disable-broken-store",
+      "expected": "no name-store read/write/health gate; existing save/runtime disable works"
+    },
+    {
+      "id": "Q05-use-local-Alias",
+      "expected": "same queue reads current preference in turn; metadata only; no settings save/settingsChanged/applyNetworkSettings"
+    },
+    {
+      "id": "Q06-navigation-during-flush",
+      "expected": "main-frame navigation/document replacement while held atomic flush rejects precondition; no successful activation/publication; next non-name queue task proceeds"
+    },
+    {
+      "id": "Q07-save-failure",
+      "expected": "discard intent, no activation/publish, typed failure; failed cleanup is explicit unconfirmed/degraded, not claimed rollback"
+    },
+    {
+      "id": "Q08-after-save-failure",
+      "expected": "existing settingsChanged/runtime apply retained; activation failure keeps original pending stamp, explicit name-unconfirmed; no settings/runtime rollback"
+    },
+    {
+      "id": "Q09-remote-during-intent",
+      "expected": "newer remote winner survives activation of old reserved local stamp; no retimestamp"
+    },
+    {
+      "id": "Q10-crash-boundaries",
+      "expected": "before reserve,after reserve,after settings replace,before activation,after activation: recover original stamp only if after-preference+epoch match; never freshen"
+    },
+    {
+      "id": "A01-main-UI-trust",
+      "accepted": [
+        "registered main WebContents + exact mainFrame + exact complete app-entry URL + unchanged document generation"
+      ],
+      "refused": [
+        "plugin/webview",
+        "popout",
+        "subframe",
+        "same-url other window",
+        "destroyed main",
+        "id reuse",
+        "wrong query/fragment",
+        "navigate away and back",
+        "replacement WebContents"
+      ]
+    },
+    {
+      "id": "A02-MCP-commit-ACK",
+      "expected": "original device.manage Ask/Allow behavior retained; fresh refusal, consumed-approval invalidation, caller/context/host replacement, pin/pair/epoch/off-state changes during flush refuse stale callback before commit/ACK; unchanged current approved call succeeds"
+    },
+    {
+      "id": "B01-epoch-cap",
+      "cap": 256,
+      "expected": "257th new epoch visibly refused, no clock advance/eviction; existing epoch update and authorized ended-epoch prune still work"
+    },
+    {
+      "id": "B02-clock-ratchet",
+      "fastNow": 1770000000000,
+      "acceptedRemoteAt": 1770086400000,
+      "nextLocalAt": 1770086400001,
+      "slowPeerNow": 1769996400000,
+      "expected": "fast accepts boundary; next local strictly monotonic; slow skips until within24h; other valid page record applies; no clamp/restamp"
+    },
+    {
+      "id": "B03-initialization",
+      "expected": "both absent/no anchor -> virgin store then durable membership anchor; no mutations while pending; valid virgin unanchored restart anchors same id; nonvirgin/unreadable membership cannot become fresh"
+    },
+    {
+      "id": "B04-loss",
+      "expected": "initialized anchor + missing/unreadable/corrupt/mismatched store -> degraded, no clock reset/name writes; both histories erased explicitly indistinguishable from first run"
+    },
+    {
+      "id": "B05-startup-order",
+      "expected": "name memory load before channel hello; bounded pending first-init is not display-triggered; no old extension sent before negotiation/auth confirmation"
+    }
+  ]
+}

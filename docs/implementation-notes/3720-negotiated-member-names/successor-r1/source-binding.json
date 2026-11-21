@@ -1,0 +1,15 @@
+{
+  "status": "UNAPPLIED UNEXECUTED review-only sketch; membership/UI helper APIs are proposed, not implemented; shared hunks not cleared",
+  "sourceCommit": "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+  "sha256": {
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/ipc/annex-handlers.ts": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b",
+    "src/main/services/clubhouse-mcp/tools/device-tools.ts": "efad3dc8a3f7501044dfbaa33406ebbd9d7564848881a58e2666d751b48687d1",
+    "src/main/index.ts": "7ccb06db73a11ad89afc088a4f92017a04d0e934708bd679e8f43bfab4ae19df"
+  },
+  "patch": "committed-composition.review.patch",
+  "rejectedHistoricalSketch": "unsafe-precondition-only.review.patch.json",
+  "rejectedHistoricalSketchSource": "be29c82a5eba1003d06a992209f6536506062b64",
+  "sourceEquality": "All five patch inputs identical between be29 and50cb; no runtime proof transfers."
+}
