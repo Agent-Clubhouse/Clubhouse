@@ -1,0 +1,378 @@
+{
+  "status": "READ-ONLY SOURCE INVENTORY, not implementation/test/compatibility proof",
+  "base": "77fa095320f2184ebf8870a5251ad0fd26a46501",
+  "headAtCollection": "77fa095320f2184ebf8870a5251ad0fd26a46501",
+  "collectedAt": "2026-11-21T14:29:15.704Z",
+  "cpu": 16,
+  "load": [
+    1.8037109375,
+    1.724609375,
+    1.8359375
+  ],
+  "scannedProductionTsFiles": 1474,
+  "createSettingsStoreCallSites": [
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/actions/actions-store.ts",
+      "line": 127
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/actions/actions-store.ts",
+      "line": 261
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/agent-grants-store.ts",
+      "line": 26
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/agent-runtime/chat-version-policy.ts",
+      "line": 146
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/annex-agent-calls.ts",
+      "line": 851
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/annex-delivery-store.ts",
+      "line": 97
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/annex-network-membership.ts",
+      "line": 64
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/annex-settings.ts",
+      "line": 5
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/annex-settings.ts",
+      "line": 64
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/badge-settings.ts",
+      "line": 4
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/chat-runtime-settings.ts",
+      "line": 25
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/connection-card.ts",
+      "line": 27
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/connection-grants-store.ts",
+      "line": 52
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/connection-guidance.ts",
+      "line": 27
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/dispatcher-federation-lead.ts",
+      "line": 46
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/dispatcher-federation-local-work.ts",
+      "line": 66
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/dispatcher-federation-requests.ts",
+      "line": 73
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/dispatcher-federation.ts",
+      "line": 31
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/dispatcher-lead-outbox.ts",
+      "line": 37
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/dispatcher/dispatcher-settings.ts",
+      "line": 37
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/experimental-settings.ts",
+      "line": 42
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/finished-quick-agents-store.ts",
+      "line": 32
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/free-agent-settings.ts",
+      "line": 22
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/handoff-command-store.ts",
+      "line": 39
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/handoff-preparations.ts",
+      "line": 45
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/handoff-project-links.ts",
+      "line": 23
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/handoff-secret-settings.ts",
+      "line": 40
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/handoff-store.ts",
+      "line": 59
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/handoff-transfer-settings.ts",
+      "line": 25
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/headless-settings.ts",
+      "line": 36
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/helper-auto-state.ts",
+      "line": 49
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/helper-model-catalog.ts",
+      "line": 46
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/linked-project-state-store.ts",
+      "line": 109
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/log-settings.ts",
+      "line": 4
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/managed-settings.ts",
+      "line": 82
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/marketplace-service.ts",
+      "line": 33
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/notification-service.ts",
+      "line": 27
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/orchestration-settings.ts",
+      "line": 71
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/orchestrator-settings.ts",
+      "line": 27
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/project-links-store.ts",
+      "line": 123
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/project-state-store.ts",
+      "line": 30
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/session-settings.ts",
+      "line": 10
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/sound-service.ts",
+      "line": 86
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/source-control-settings.ts",
+      "line": 19
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/theme-service.ts",
+      "line": 8
+    },
+    {
+      "callee": "createSettingsStore",
+      "file": "src/main/services/update-settings.ts",
+      "line": 9
+    }
+  ],
+  "replaceFileCallSites": [
+    {
+      "callee": "replaceFile",
+      "file": "src/main/services/agent-settings-service.ts",
+      "line": 372
+    },
+    {
+      "callee": "replaceFile",
+      "file": "src/main/services/group-project-bulletin.ts",
+      "line": 259
+    },
+    {
+      "callee": "replaceFile",
+      "file": "src/main/services/group-project-json-file.ts",
+      "line": 34
+    },
+    {
+      "callee": "replaceFile",
+      "file": "src/main/services/group-project-notification-store.ts",
+      "line": 22
+    },
+    {
+      "callee": "replaceFile",
+      "file": "src/main/services/group-project-registry.ts",
+      "line": 198
+    },
+    {
+      "callee": "replaceFile",
+      "file": "src/main/services/settings-store.ts",
+      "line": 462
+    }
+  ],
+  "directReplaceImports": [
+    "src/main/services/agent-settings-service.ts",
+    "src/main/services/group-project-bulletin.ts",
+    "src/main/services/group-project-json-file.ts",
+    "src/main/services/group-project-notification-store.ts",
+    "src/main/services/group-project-registry.ts"
+  ],
+  "annexWriteReferences": [
+    {
+      "file": "src/main/ipc/annex-handlers.ts",
+      "line": 79,
+      "writer": "updateSettings",
+      "directCall": true
+    },
+    {
+      "file": "src/main/ipc/annex-handlers.ts",
+      "line": 102,
+      "writer": "updateSettings",
+      "directCall": true
+    },
+    {
+      "file": "src/main/ipc/annex-handlers.ts",
+      "line": 188,
+      "writer": "saveSettings",
+      "directCall": true
+    },
+    {
+      "file": "src/main/ipc/annex-handlers.ts",
+      "line": 252,
+      "writer": "saveSettings",
+      "directCall": true
+    },
+    {
+      "file": "src/main/ipc/annex-handlers.ts",
+      "line": 270,
+      "writer": "saveSettings",
+      "directCall": true
+    }
+  ],
+  "sourceSHA256": {
+    "src/main/ipc/annex-handlers.ts": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b",
+    "src/main/services/actions/actions-store.ts": "a1eab763ffd2b7381bf31f6d1156fc28d258ac89a10c6d0aa07eeabe8de69c13",
+    "src/main/services/agent-grants-store.ts": "73c74e7dbd3cd96fa00a3c3fc62d0caeb22187c8a460cffd23efbefc7bfa9491",
+    "src/main/services/agent-runtime/chat-version-policy.ts": "f477063036b92f0e831c810b5acc0297d7efa78ba08f333e0e577c528953c7e9",
+    "src/main/services/agent-settings-service.ts": "4e570a69e375754a63ce2435e4c0d64ad926a67ef26b2446c9d9f2e98d8a935e",
+    "src/main/services/annex-agent-calls.ts": "ebd29c2160476ec50105326e57fccd952a99a1c456c0da7a9fceda2b41e85b86",
+    "src/main/services/annex-delivery-store.ts": "a30d06ae99ac747bd73f0d67d10903bb62968d7ed7e622e6d9cfbe8a4bfb7c86",
+    "src/main/services/annex-network-membership.ts": "313b1aa6ae0cd889112bfbfc67de51d378918e05324a651577db2beafbbc5c55",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/badge-settings.ts": "90059f05eb23312d0a55268f0f031aa008e2b6d70cec2e2697827cf698162a83",
+    "src/main/services/chat-runtime-settings.ts": "deced6e010fab1aed01c6a78451fc89411506c8691a45399b2679bcae562faed",
+    "src/main/services/clubhouse-mcp/tools/annex-network-tools.ts": "cf22eed5c03266c9226656148ea7c8a4f6d9f8fa3080fb701d7f2c31517498fe",
+    "src/main/services/connection-card.ts": "ee063236a2c5473e8901d0fef6de61242af116de3b34c2f819baccc3c4c0b61b",
+    "src/main/services/connection-grants-store.ts": "a2330bb0b70a84a2ddc2a2b88cf70456ddd2b17f747f3ec987432d337cf513bb",
+    "src/main/services/connection-guidance.ts": "c59ed8e874a59595822090ec6e3fefd2d677712f657a93600346e7c7db44ee23",
+    "src/main/services/dispatcher-federation-lead.ts": "daef364130bbbff1811b1a14226550cce90777ce68ae0b2b1c6484db6e773e25",
+    "src/main/services/dispatcher-federation-local-work.ts": "0c371d9012d87e8cb8a9c3c54e4665e242e71dbe0192b895b5ab789aa80c2c7d",
+    "src/main/services/dispatcher-federation-requests.ts": "947aa0701657eb2fd2a116e1401fbc171a4fc37bb8a1d4c8035f0f706490d8a4",
+    "src/main/services/dispatcher-federation.ts": "ecc0651794119e9d28b42d8977c4634abd8b27d84a9d0a73efeef44444324aed",
+    "src/main/services/dispatcher-lead-outbox.ts": "53372caf202c68bddfa8128dfb7d9ee5195629eadd3d22da8c6c22713d9754ee",
+    "src/main/services/dispatcher/dispatcher-settings.ts": "c486d35ee4689e96c5bc0a05448db59400a456811ca9d4e472cdd319b07f4e91",
+    "src/main/services/experimental-settings.ts": "850b882378efb2b911109bc43ea9b75cdd5eea050f99e57b610e9a47adc78362",
+    "src/main/services/finished-quick-agents-store.ts": "cef8e1200e450d294b1c00d4433e5a7b2a13c6d601c303734c5916f228118ea5",
+    "src/main/services/free-agent-settings.ts": "1858f41983a807fdea017bd768fd6f8b7b5b8bca591e5aff695af384c9464577",
+    "src/main/services/group-project-bulletin.ts": "9ae4fa6481b7c182d995be2df120770f8e766bc1c083f088bb08f10ad60d3a0b",
+    "src/main/services/group-project-json-file.ts": "60738f251551e63f6fe156661d9643b3cbf2e95f44a2933af273ac8902dc20da",
+    "src/main/services/group-project-notification-store.ts": "fa6e5b26054ea5cfc74de3a1edaff15bd9017b326129c264965441183a1498af",
+    "src/main/services/group-project-registry.ts": "6dae33e80270c6e156a7c8f9af408ce57d251fe339138cda77b8c3515616d6ec",
+    "src/main/services/handoff-command-store.ts": "6383654cf8b9d5f7fb5149b6341d5c7a18f396d0b5ef41db03705854796d1178",
+    "src/main/services/handoff-preparations.ts": "668d02f5a22dcb59728d425c57d0c5e60b9d726f59dc39b843c7033faeeef673",
+    "src/main/services/handoff-project-links.ts": "58ab3d69d47f4f478bc18fc84e5fe633fc5b033601817fc568beac1a5139167e",
+    "src/main/services/handoff-secret-settings.ts": "2b6db1cd055789d853ba846257878cb0c6513074475dd199fde9d0db99c6055b",
+    "src/main/services/handoff-store.ts": "b31ef7baa59bcea292186a6ffc4caac31d4c0593c47708636f679580bc3fcde2",
+    "src/main/services/handoff-transfer-settings.ts": "5ac0cc5ccaed3c245cb95819217105e377e89cf6dd8403fe1698c96162f4dbb0",
+    "src/main/services/headless-settings.ts": "097028c9192743bbfd930e88ffc3db15d36312062425c19cf8be7d03fa59b779",
+    "src/main/services/helper-auto-state.ts": "b3fb1367db1eb3be43b3e248506f8de826447be74bafb4c5b8b6013e6cc8bb75",
+    "src/main/services/helper-model-catalog.ts": "796a0ecaea307a0fc8e3b63eabc28e96dbf678b272bfc8db0162f01e307186f7",
+    "src/main/services/linked-project-state-store.ts": "832e6f8711f2224ff3c01f5e94403bb3ae9ca6551c8b3f6d11087161653aaebc",
+    "src/main/services/log-settings.ts": "a04137fae21e22e07d2ccb1f9d361490bb692472ac27471e9900c5947a0fdfa1",
+    "src/main/services/managed-settings.ts": "8018d4a89efd8e5d4eaad5b3311ce2aa85995c2d0c25e6da4cc8b602be37d286",
+    "src/main/services/marketplace-service.ts": "496d38153c5ce5a2bc541407eec8999ffb96bd93543a844db919568687d20121",
+    "src/main/services/notification-service.ts": "2e268f955492cb2c94ec794bafd7e2e5e031240abe49bf4205a14b4f53f7a498",
+    "src/main/services/orchestration-settings.ts": "0e6d67e5171573c643b9654531755e22e521ef4876317828074f8301fe62e4b9",
+    "src/main/services/orchestrator-settings.ts": "a14701debedc44947a536249e3fab47e866933b41818500f48979ee063194aad",
+    "src/main/services/project-links-store.ts": "71f4f0db10e20712f7901cd917c59c6bef4ad3fea9be6dbc7df0d579ccff48b7",
+    "src/main/services/project-state-store.ts": "6a7ce38d15c92f76b2261d96272e862be4e449c75448c7a0a14d87367b17cb30",
+    "src/main/services/session-settings.ts": "d595342b986a7c94a0264129adb9c32f79097d22356c234aeb5c5aa360d26a3e",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/sound-service.ts": "a8eefc75783e65ca2ce26fa10c7f0bff7e1b15729fc269b4010949268e9c6fd2",
+    "src/main/services/source-control-settings.ts": "513ddc73652a9d27fdc6abf81508db86f13309fe270f2644b72b161a74964306",
+    "src/main/services/theme-service.ts": "17d71da59eeeea1038684a0e9f07f0024b8413e7a34603a3777f7d7bed1c2c3c",
+    "src/main/services/update-settings.ts": "1c7fd4de9ec1034ac88770397e0c3b48cd867f5de379030fc9d9b4abda8e05d6",
+    "src/main/telemetry/persist.ts": "4564aa9a24617139876c38aefaf509bbb900993a2409e135b5ab910d6e950122",
+    "src/preload/annex.ts": "93f8a512e2748451c78435bfc18cf9429a0cb5f018ed340b450ca9d3839505f3",
+    "src/renderer/features/command-palette/use-command-source.ts": "83927308f99a9012c3fc7d6eb7dc6baed5a55589d8821d2549a79023e87b981a",
+    "src/renderer/features/settings/AnnexIdentitySection.tsx": "fd8909f0469a799b4539ffc2ce85d890fa421a5b8b4df83bb8c5c163e05501c1",
+    "src/renderer/features/settings/AnnexNetworkSettingsView.tsx": "66315e9405c5e7754858e29925265616d330be67bd0c073d9cb2defdedaf4579",
+    "src/renderer/stores/annexStore.ts": "c054af9d81e82a619b14c9c4eb3dde7f4b09256fabd5e50a66a29c179e4faad4",
+    "src/shared/telemetry/persist-signals.ts": "3ed7f5d107dba3e3418b6dd30672ef2969590f19efc06d65550bb511040cdfbf"
+  },
+  "collectorSHA256": "a78efc1fea1550e02eeee2531760a8d8e902d66854e3b13169343c6e279e32a3"
+}

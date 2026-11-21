@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "rg",
+    "-n",
+    "annexSettings\\.(saveSettings|updateSettings)|from .+annex-settings",
+    "src/main",
+    "--glob",
+    "!*.test.ts",
+    "--glob",
+    "!*.qa.ts"
+  ],
+  "actualExit": 0,
+  "stdout": "src/main/services/group-project-roster.ts:28:import { getSettings } from './annex-settings';\nsrc/main/services/handoff-host.ts:24:import { getSettings, networkEnabled } from './annex-settings';\nsrc/main/services/handoff-capacity-host.ts:5:import { getSettings, networkEnabled } from './annex-settings';\nsrc/main/ipc/annex-handlers.ts:5:import * as annexSettings from '../services/annex-settings';\nsrc/main/ipc/annex-handlers.ts:79:      const settings = await annexSettings.updateSettings((current) => {\nsrc/main/ipc/annex-handlers.ts:102:          restored = await annexSettings.updateSettings((current) => {\nsrc/main/ipc/annex-handlers.ts:188:        await annexSettings.saveSettings(requested);\nsrc/main/ipc/annex-handlers.ts:252:    await annexSettings.saveSettings({ ...annexSettings.getSettings(), enableServer: false, enableClient: false });\nsrc/main/ipc/annex-handlers.ts:270:    await annexSettings.saveSettings({\nsrc/main/ipc/mcp-binding-handlers.ts:1:import { networkEnabled } from '../services/annex-settings';\nsrc/main/services/settings-read-service.ts:31:import * as annexSettings from './annex-settings';\nsrc/main/services/annex-client.ts:37:import * as annexSettings from './annex-settings';\nsrc/main/services/annex-devices.ts:17:import * as annexSettings from './annex-settings';\nsrc/main/services/annex-network-membership.ts:33:import * as annexSettings from './annex-settings';\nsrc/main/services/group-project-host.ts:45:import { networkEnabled } from './annex-settings';\nsrc/main/services/group-project-tool-members.ts:6:import { getSettings } from './annex-settings';\nsrc/main/services/annex-network-channel.ts:37:import * as annexSettings from './annex-settings';\nsrc/main/services/annex-server.ts:98:import * as annexSettings from './annex-settings';\nsrc/main/services/clubhouse-mcp/tools/annex-network-tools.ts:3:import { getSettings, networkEnabled } from '../../annex-settings';\nsrc/main/services/dispatcher-federation-lead.ts:22:import * as annexSettings from './annex-settings';\n",
+  "stderr": ""
+}

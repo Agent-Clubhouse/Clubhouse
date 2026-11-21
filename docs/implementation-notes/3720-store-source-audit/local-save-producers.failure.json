@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "rg",
+    "-n",
+    "saveSettings",
+    "src/renderer/stores/annexStore.ts",
+    "src/renderer/features/settings/AnnexNetworkSettingsView.tsx",
+    "src/renderer/features/settings/AnnexIdentitySection.tsx",
+    "src/renderer/command-palette/use-command-source.ts",
+    "src/preload/annex.ts",
+    "--glob",
+    "!*.test.ts",
+    "--glob",
+    "!*.qa.ts"
+  ],
+  "actualExit": 2,
+  "stdout": "src/preload/annex.ts:10:  saveSettings: (settings: { enableServer: boolean; enableClient: boolean; deviceName: string; alias: string; icon: string; color: string; autoReconnect: boolean; enabled?: boolean }) =>\nsrc/renderer/features/settings/AnnexNetworkSettingsView.tsx:22:  const saveSettings = useAnnexStore((s) => s.saveSettings);\nsrc/renderer/features/settings/AnnexNetworkSettingsView.tsx:88:    await saveSettings({ ...current, ...changes });\nsrc/renderer/features/settings/AnnexNetworkSettingsView.tsx:221:              onChange={(e) => saveSettings({ ...settings, deviceName: e.target.value })}\nsrc/renderer/features/settings/AnnexNetworkSettingsView.tsx:263:              onChange={(e) => saveSettings({ ...settings, reachableAs: e.target.value })}\nsrc/renderer/features/settings/AnnexNetworkSettingsView.tsx:280:          <AnnexIdentitySection settings={settings} status={status} onSave={saveSettings} />\nsrc/renderer/stores/annexStore.ts:30:  saveSettings: (settings: AnnexSettings) => Promise<void>;\nsrc/renderer/stores/annexStore.ts:71:  saveSettings: async (settings: AnnexSettings) => {\nsrc/renderer/stores/annexStore.ts:74:      await window.clubhouse.annex.saveSettings(settings);\n",
+  "stderr": "rg: src/renderer/command-palette/use-command-source.ts: No such file or directory (os error 2)\n"
+}
