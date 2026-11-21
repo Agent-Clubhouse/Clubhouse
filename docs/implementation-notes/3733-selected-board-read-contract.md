@@ -136,7 +136,34 @@ type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'a
 
 - **Delivers:** read-only, selected, fresh-labelled visibility of an omitted board's layout and where the agent sits on it.
 - **Doesn't deliver:** opening that board in the canvas tab. Canvas-tab navigation stays refused while the host's snapshot omits the board, because the canvas tab is a read-write remote surface.
-- So this contract **doesn't complete #13**. Whether the preview satisfies the parity objective, or the canvas-tab limitation stays a recorded retained limit or open item, is a review decision. It isn't claimed here.
+- So this contract **doesn't complete #13**. **Canvas-tab navigation to omitted boards stays OPEN** under the original parity objective. QA can assess this contract's proof and scope, but it can't waive that requirement as product acceptance. The preview is bounded, clearly partial progress.
+
+## Follow-up: safe canvas-tab navigation design path (not in this slice)
+
+This is kept so the objective isn't replaced by the preview. Each step needs its own contract and review after this one.
+
+1. **Read-only canvas origin.** Add a third `dataOrigin` (`'selected-read'`) beside `'local' | 'remote'` (`canvas-store.ts:56`), with its own hydrate entry point. Don't reuse `hydrateFromRemote` (`:85`), which feeds an editable remote surface.
+2. **Write paths closed by origin.** In the canvas view (`main.ts`), every mutation path is guarded so `'selected-read'` neither applies nor forwards:
+   - `remoteForward` (`:515-517`) and every call site (a rough grep finds about 40 candidate `useCallback`, `remoteForward(` and `removeCanvas` lines; an exact inventory is part of that contract);
+   - autosave (`:367-376`);
+   - add, remove and rename of canvases;
+   - drag, resize, edit, wire and pop-out.
+   - The UI shows a read-only banner with the host observation time.
+3. **Content stays the redacted projection.** The tab renders this contract's DTO (geometry plus labels, `Agent` for non-members) as placeholder widgets. Sticky notes, plugin widgets and zones render as labelled boxes with no content. No widget plugin code runs against host data. Showing real widget content would need its own exposure review, beyond the snapshot-parity argument.
+4. **Jump provenance.**
+   - `jumpToRemoteCanvas` (`agent-canvases.ts:146-200`) accepts a second admitted source: a current selected-read page bound to the same host, agent, member, selection, epoch, generation and receipt, checked again when the queued focus fires.
+   - The store must hold that exact page object (as `remoteSource.snapshot` identity is checked today).
+   - Any later snapshot containing the board takes over through the existing remote path; the selected-read state is discarded.
+5. **Isolation.** The selected-read store instance never shares the Home store's local or other-host state (the current collision guard), never persists, and is dropped on host, project or generation change.
+6. **Proof:**
+   - every mutation path refused (spy on `sendRemoteCanvasMutation` and the saves);
+   - focus on the member view;
+   - takeover by a full snapshot;
+   - revocation and generation reset;
+   - colliding ids;
+   - no widget plugin code executed with host data.
+
+Hunk ownership would include the canvas plugin (`canvas-store.ts`, `main.ts` and the view components), outside the files this contract touches. That needs the canvas owner's coordination.
 
 ## Required proof (before PR)
 
