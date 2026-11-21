@@ -9,6 +9,7 @@ import {
 } from '../../../shared/chat/runtime';
 import {
   _resetRuntimeCoordinatorForTests,
+  RuntimePreIntentRefusal,
   runtimeNoticePort as notice,
   runtimeOwnerPort as owner,
   type RuntimeDormantLease,
@@ -61,6 +62,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   _resetRuntimeCoordinatorForTests();
   vi.useRealTimers();
 });
@@ -102,6 +105,7 @@ describe('runtime owner generation and exact resource', () => {
     const nextLease = attach(next.start);
     expect(nextLease.generation).not.toBe(lease.generation);
     expect(handoff.tryEnter()).toEqual({ kind: 'rejected' });
+    expect(() => notice.createHandoff(lease, notice.captureAdmission({}), hooks())).toThrow(RuntimePreIntentRefusal);
     expect(() => notice.createHandoff(lease, notice.captureAdmission({}), hooks())).toThrow('lease_not_current');
     expect(attempt.markEntered).toHaveBeenCalledTimes(1);
   });
@@ -139,6 +143,45 @@ describe('runtime owner generation and exact resource', () => {
 });
 
 describe('private registered handoff and transport capabilities', () => {
+  it.each(['production', 'missing-runner'] as const)('refuses test reset in %s without changing owner, tickets or hold timers', (mode) => {
+    const { lease } = live();
+    const attempt = hooks();
+    const { handoff } = dispatch(lease, {}, attempt);
+    handoff.tryEnter();
+    const ticket = notice.transportAdmission(handoff, lease.resource);
+    const hold = notice.holdScope({}, performance.now() + 20);
+    if (mode === 'production') vi.stubEnv('NODE_ENV', 'production');
+    else vi.stubEnv('VITEST', undefined);
+    expect(() => _resetRuntimeCoordinatorForTests()).toThrow('test_environment_required');
+    expect(notice.captureLease('agent')).toBe(lease);
+    expect(notice.isRegisteredHandoff(handoff)).toBe(true);
+    expect(notice.isRegisteredAdmission(ticket)).toBe(true);
+    expect(ticket.allowed()).toBe(true);
+    expect(notice.scopeHoldStatus(hold)).toEqual({ state: 'pending' });
+    expect(vi.getTimerCount()).toBe(1);
+    expect(attempt.onLoss).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when native weak-reference support is unavailable, without a strong fallback', () => {
+    const { lease } = live();
+    const attempt = hooks();
+    const { handoff } = dispatch(lease, {}, attempt);
+    vi.stubGlobal('WeakRef', undefined);
+    expect(() => notice.transportAdmission(handoff, lease.resource)).toThrow('weak_reference_unavailable');
+    expect(attempt.markEntered).not.toHaveBeenCalled();
+    expect(attempt.onLoss).not.toHaveBeenCalled();
+  });
+
+  it('does not admit a ticket whose weak original record is unavailable even after entry', () => {
+    const { lease } = live();
+    const { handoff } = dispatch(lease);
+    vi.stubGlobal('WeakRef', class { deref() { return undefined; } });
+    const ticket = notice.transportAdmission(handoff, lease.resource);
+    handoff.tryEnter();
+    expect(notice.isRegisteredAdmission(ticket)).toBe(true);
+    expect(ticket.allowed()).toBe(false);
+  });
+
   it('rejects fabricated and cloned symbol-branded handoffs without invoking their methods', () => {
     const { lease } = live();
     const real = dispatch(lease).handoff;
@@ -350,6 +393,45 @@ describe('single entry and coordinator-owned loss claim', () => {
 });
 
 describe('bounded scope holds and fresh authority', () => {
+  it('ordinary per-attempt retirement leaves concurrent work and admission in the same scope live', () => {
+    const { lease } = live();
+    const scope = {};
+    const first = hooks();
+    const second = hooks();
+    const one = dispatch(lease, scope, first).handoff;
+    const two = dispatch(lease, scope, second).handoff;
+    one.tryEnter();
+    two.tryEnter();
+    const retiredTicket = notice.transportAdmission(one, lease.resource);
+    const siblingTicket = notice.transportAdmission(two, lease.resource);
+    notice.retireHandoff(one);
+    expect(retiredTicket.allowed()).toBe(false);
+    expect(siblingTicket.allowed()).toBe(true);
+    expect(notice.captureAdmission(scope)).toBeDefined();
+    expect(first.onLoss).toHaveBeenCalledExactlyOnceWith('unknown');
+    expect(second.onLoss).not.toHaveBeenCalled();
+    expect(second.markEntered).toHaveBeenCalledTimes(1);
+  });
+
+  it('closed and held admission preflight has typed refusals, no handoff entry and no loss/retry', () => {
+    const { lease } = live();
+    const scope = {};
+    const admission = notice.captureAdmission(scope);
+    const attempt = hooks();
+    notice.revokeScope(admission);
+    expect(() => notice.captureAdmission(scope)).toThrow(RuntimePreIntentRefusal);
+    expect(() => notice.captureAdmission(scope)).toThrow('scope_closed');
+    expect(() => notice.createHandoff(lease, admission, attempt)).toThrow(RuntimePreIntentRefusal);
+    expect(() => notice.createHandoff(lease, admission, attempt)).toThrow('scope_closed');
+    notice.holdScope(scope, performance.now() + 25);
+    expect(() => notice.captureAdmission(scope)).toThrow(RuntimePreIntentRefusal);
+    expect(() => notice.captureAdmission(scope)).toThrow('scope_held');
+    expect(() => notice.createHandoff(lease, admission, attempt)).toThrow('scope_held');
+    expect(attempt.markEntered).not.toHaveBeenCalled();
+    expect(attempt.onLoss).not.toHaveBeenCalled();
+    expect(attempt.onReceipt).not.toHaveBeenCalled();
+  });
+
   it('revokes the entire original scope, not unrelated scopes or fresh verified admissions', () => {
     const { lease } = live();
     const scope = {};
@@ -363,9 +445,9 @@ describe('bounded scope holds and fresh authority', () => {
       handoff.tryEnter();
       return notice.transportAdmission(handoff, lease.resource);
     });
-    notice.closeAdmission(admission);
+    notice.revokeScope(admission);
     expect(tickets.map((ticket) => ticket.allowed())).toEqual([false, false, true]);
-    expect(() => notice.captureAdmission(scope)).toThrow('scope_requires_current_authority');
+    expect(() => notice.captureAdmission(scope)).toThrow('scope_closed');
     const hold = notice.holdScope(scope, performance.now() + 25);
     const refreshed = notice.finishScopeHold(hold, { kind: 'authorized', scope });
     if (refreshed.kind !== 'applied') throw new Error('Test refresh failed');
@@ -374,7 +456,7 @@ describe('bounded scope holds and fresh authority', () => {
     owner.bindPublication(next, {});
     next.tryEnter();
     const nextTicket = notice.transportAdmission(next, lease.resource);
-    notice.closeAdmission(admission);
+    notice.revokeScope(admission);
     expect(nextTicket.allowed()).toBe(true);
   });
 
@@ -397,12 +479,12 @@ describe('bounded scope holds and fresh authority', () => {
     const hold = notice.holdScope(scope, performance.now() + 25);
     expect(eligibilityAtLoss).toEqual([[false, false]]);
     expect(notice.scopeHoldStatus(hold)).toEqual({ state: 'pending' });
-    expect(() => notice.captureAdmission(scope)).toThrow('scope_requires_current_authority');
+    expect(() => notice.captureAdmission(scope)).toThrow('scope_held');
     vi.advanceTimersByTime(25);
     expect(notice.scopeHoldStatus(hold)).toEqual({ state: 'expired', reason: 'hold_deadline_expired' });
     expect(vi.getTimerCount()).toBe(0);
     expect(notice.finishScopeHold(hold, { kind: 'authorized', scope })).toEqual({ kind: 'superseded' });
-    expect(() => notice.captureAdmission(scope)).toThrow('scope_requires_current_authority');
+    expect(() => notice.captureAdmission(scope)).toThrow('scope_closed');
     expect(ticketOne.allowed()).toBe(false);
     expect(one.tryEnter()).toEqual({ kind: 'rejected' });
     expect(first.onLoss).toHaveBeenCalledTimes(1);
@@ -438,7 +520,7 @@ describe('bounded scope holds and fresh authority', () => {
     expect(result.kind).toBe('failed');
     expect(notice.scopeHoldStatus(hold).state).toBe('failed');
     expect(vi.getTimerCount()).toBe(0);
-    expect(() => notice.captureAdmission(scope)).toThrow('scope_requires_current_authority');
+    expect(() => notice.captureAdmission(scope)).toThrow('scope_closed');
   });
 
   it('a superseded overlapping hold cannot reopen scope, and expiry permits only fresh verification', () => {
@@ -459,7 +541,7 @@ describe('bounded scope holds and fresh authority', () => {
     const hold = notice.holdScope(scope, performance.now() + 5);
     vi.advanceTimersByTime(5);
     expect(notice.scopeHoldStatus(hold).state).toBe('expired');
-    expect(() => notice.captureAdmission(scope)).toThrow('scope_requires_current_authority');
+    expect(() => notice.captureAdmission(scope)).toThrow('scope_closed');
     expect(vi.getTimerCount()).toBe(0);
   });
 

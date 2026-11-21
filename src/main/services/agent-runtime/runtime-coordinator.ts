@@ -68,6 +68,17 @@ export type RuntimeTransitionResult = { kind: 'applied'; transition: RuntimeTran
 export type RuntimeStartResult = { kind: 'applied'; start: RuntimeStartClaim } | Refusal;
 export type RuntimeAttachResult = { kind: 'applied'; lease: RuntimeLiveLease } | Refusal;
 export type RuntimeAdmissionResult = { kind: 'applied'; admission: RuntimeAdmissionLease } | Refusal;
+export type RuntimePreIntentRefusalReason = 'scope_closed' | 'scope_held' | 'lease_not_current' | 'admission_not_current';
+
+/** Admission preflight only; never evidence about an already-persisted attempt. */
+export class RuntimePreIntentRefusal extends Error {
+  readonly kind = 'pre_intent_refusal';
+
+  constructor(readonly reason: RuntimePreIntentRefusalReason) {
+    super(`Runtime pre-intent admission refused: ${reason}`);
+    this.name = 'RuntimePreIntentRefusal';
+  }
+}
 
 interface Frame {
   agentId: string;
@@ -118,6 +129,10 @@ interface HandoffRecord {
   tickets: Set<TicketState>;
 }
 
+// Keep the ES2020 target and avoid a strong ticket fallback retaining owner or journal hooks.
+interface WeakHandoffReference { deref(): HandoffRecord | undefined }
+declare const WeakRef: { new (target: HandoffRecord): WeakHandoffReference };
+
 function isObject(value: unknown): value is object {
   return value !== null && (typeof value === 'object' || typeof value === 'function');
 }
@@ -130,6 +145,15 @@ function reject(reason: string): never {
 function refused(reason: string): Refusal {
   appLog('core:agent', 'warn', 'Runtime coordinator operation refused', { meta: { reason } });
   return { kind: 'failed', reason };
+}
+
+function refusePreIntent(reason: RuntimePreIntentRefusalReason): never {
+  appLog('core:agent', 'warn', 'Runtime pre-intent admission refused', { meta: { reason } });
+  throw new RuntimePreIntentRefusal(reason);
+}
+
+function transportPredicate(reference: WeakHandoffReference, state: TicketState): () => boolean {
+  return () => coordinator.ticketAllowed(reference, state);
 }
 
 function receiptObserver(
@@ -252,7 +276,8 @@ class RuntimeCoordinator {
   captureAdmission(key: RuntimeAuthorizedNoticeScope): RuntimeAdmissionLease {
     const scope = this.scope(key);
     this.expireDue(scope);
-    if (!scope.open || scope.holds.size) reject('scope_requires_current_authority');
+    if (scope.holds.size) refusePreIntent('scope_held');
+    if (!scope.open) refusePreIntent('scope_closed');
     return this.newAdmission(scope);
   }
 
@@ -268,7 +293,8 @@ class RuntimeCoordinator {
     return record.open && record.scope.open && !record.scope.holds.size && record.revision === record.scope.revision;
   }
 
-  closeAdmission(admission: RuntimeAdmissionLease): void {
+  /** Scope-wide permission/membership revocation, not ordinary attempt completion. */
+  revokeScope(admission: RuntimeAdmissionLease): void {
     const record = this.admissions.get(admission);
     if (!record) reject('unregistered_admission');
     if (!record.open || record.revision !== record.scope.revision) return;
@@ -378,8 +404,12 @@ class RuntimeCoordinator {
   createHandoff(lease: RuntimeLease, admission: RuntimeAdmissionLease, hooks: RuntimeAttemptHooks): RuntimeHandoff {
     const frame = this.leases.get(lease);
     const admitted = this.admissions.get(admission);
-    if (!frame || !this.current(frame)) reject('lease_not_current');
-    if (!admitted || !this.admissionOpen(admitted)) reject('admission_not_current');
+    if (!frame) reject('unregistered_lease');
+    if (!admitted) reject('unregistered_admission');
+    if (!this.current(frame)) refusePreIntent('lease_not_current');
+    if (admitted.scope.holds.size) refusePreIntent('scope_held');
+    if (!admitted.scope.open) refusePreIntent('scope_closed');
+    if (!this.admissionOpen(admitted)) refusePreIntent('admission_not_current');
     const { markEntered, onLoss, onReceipt } = hooks;
     if (typeof markEntered !== 'function' || typeof onLoss !== 'function' || typeof onReceipt !== 'function') reject('invalid_attempt_hooks');
     const dispatchId = Object.freeze({ [runtimeDispatchIdBrand]: true as const });
@@ -426,6 +456,7 @@ class RuntimeCoordinator {
   }
 
   private tryEnter(record: HandoffRecord): RuntimeEntryDecision {
+    // P1 is live-resource-only. Pre-spawn mission argv needs a separately reviewed entry extension.
     if (record.entry === 'journal_owned') return { kind: 'journal_owned' };
     if (record.retired || record.entry !== 'pending' || !record.queue || !record.publication || !this.live(record)) return { kind: 'rejected' };
     const marker = record.marker;
@@ -454,16 +485,23 @@ class RuntimeCoordinator {
   transportAdmission(handoff: RuntimeHandoff, resource: RuntimeResourceId): RuntimeTransportAdmission {
     const record = this.handoff(handoff);
     if (record.retired || !this.live(record) || record.receiptBinding.resource !== resource) reject('transport_resource_not_current');
+    if (typeof WeakRef !== 'function') reject('weak_reference_unavailable');
     const state: TicketState = { open: record.entry === 'entered' };
     const ticket: RuntimeTransportAdmission = Object.freeze({
       [runtimeAdmissionBrand]: true,
       dispatchId: handoff.dispatchId,
       resource,
-      allowed: () => state.open,
+      allowed: transportPredicate(new WeakRef(record), state),
     });
     record.tickets.add(state);
     this.issuedTickets.add(ticket);
     return ticket;
+  }
+
+  ticketAllowed(reference: WeakHandoffReference, state: TicketState): boolean {
+    if (!state.open) return false;
+    const record = reference.deref();
+    return !!record && !record.retired && this.live(record);
   }
 
   private closeTickets(record: HandoffRecord): void {
@@ -534,6 +572,7 @@ class RuntimeCoordinator {
   }
 
   resetForTests(): void {
+    if (process.env.VITEST !== 'true' || process.env.NODE_ENV === 'production') reject('test_environment_required');
     for (const hold of this.activeHolds) if (hold.timer) clearTimeout(hold.timer);
     for (const frame of this.owners.values()) {
       frame.revoked = true;
@@ -582,7 +621,7 @@ export const runtimeNoticePort = Object.freeze({
   isRegisteredAdmission: coordinator.isRegisteredAdmission.bind(coordinator),
   captureLease: coordinator.captureLease.bind(coordinator),
   captureAdmission: coordinator.captureAdmission.bind(coordinator),
-  closeAdmission: coordinator.closeAdmission.bind(coordinator),
+  revokeScope: coordinator.revokeScope.bind(coordinator),
   holdScope: coordinator.holdScope.bind(coordinator),
   scopeHoldStatus: coordinator.scopeHoldStatus.bind(coordinator),
   finishScopeHold: coordinator.finishScopeHold.bind(coordinator),
