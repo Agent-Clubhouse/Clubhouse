@@ -40,40 +40,47 @@ const envelope = (): never => { throw new LocalSettingsInputError('invalid_envel
 const schema = (id: string): never => { throw new LocalSettingsInputError('schema_invalid', id); };
 type DataRecord = Record<string, { value: unknown }>;
 const owns = (value: object, key: PropertyKey): boolean => Object.prototype.hasOwnProperty.call(value, key);
+function inspectData<T>(read: () => T): T {
+  try { return read(); } catch { return envelope(); }
+}
 
 function dataRecord(value: unknown): DataRecord {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return envelope();
-  const proto = Object.getPrototypeOf(value);
-  if (proto !== Object.prototype && proto !== null) return envelope();
-  const result: DataRecord = Object.create(null);
-  const keys = Reflect.ownKeys(value);
-  // No object in this DTO can have more than the editable field count.
-  if (keys.length > EDITABLE_KEYS.length) return envelope();
-  for (const key of keys) {
-    if (typeof key !== 'string') return envelope();
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor || !owns(descriptor, 'value') || descriptor.enumerable !== true) return envelope();
-    result[key] = { value: descriptor.value };
-  }
-  return result;
+  return inspectData(() => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return envelope();
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return envelope();
+    const result: DataRecord = Object.create(null);
+    const keys = Reflect.ownKeys(value);
+    // No object in this DTO can have more than the editable field count.
+    if (keys.length > EDITABLE_KEYS.length) return envelope();
+    for (const key of keys) {
+      if (typeof key !== 'string') return envelope();
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !owns(descriptor, 'value') || descriptor.enumerable !== true) return envelope();
+      result[key] = { value: descriptor.value };
+    }
+    return result;
+  });
 }
 function exactKeys(record: DataRecord, keys: readonly string[]): void {
   if (Reflect.ownKeys(record).length !== keys.length || !keys.every(key => owns(record, key))) envelope();
 }
 function denseUnset(value: unknown): unknown[] {
-  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return envelope();
-  const length = Object.getOwnPropertyDescriptor(value, 'length');
-  if (!length || !owns(length, 'value') || !Number.isSafeInteger(length.value)
-    || length.value < 0 || length.value > EDITABLE_KEYS.length || length.enumerable !== false) return envelope();
-  if (Reflect.ownKeys(value).length !== length.value + 1) return envelope();
-  const result: unknown[] = [];
-  for (let i = 0; i < length.value; i++) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
-    if (!descriptor || !owns(descriptor, 'value') || descriptor.enumerable !== true) return envelope();
-    result.push(descriptor.value);
-  }
-  // Every canonical index plus length accounts for all own keys. No raw iterator/getter is used.
-  return result;
+  return inspectData(() => {
+    if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return envelope();
+    const length = Object.getOwnPropertyDescriptor(value, 'length');
+    if (!length || !owns(length, 'value') || !Number.isSafeInteger(length.value)
+      || length.value < 0 || length.value > EDITABLE_KEYS.length || length.enumerable !== false) return envelope();
+    if (Reflect.ownKeys(value).length !== length.value + 1) return envelope();
+    const result: unknown[] = [];
+    for (let i = 0; i < length.value; i++) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+      if (!descriptor || !owns(descriptor, 'value') || descriptor.enumerable !== true) return envelope();
+      result.push(descriptor.value);
+    }
+    // Every canonical index plus length accounts for all own keys. No raw iterator/getter is used.
+    return result;
+  });
 }
 function isEditable(value: unknown): value is EditableKey {
   return typeof value === 'string' && EDITABLE_KEYS.some(key => key === value);

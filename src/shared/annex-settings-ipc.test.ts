@@ -172,4 +172,11 @@ describe('local settings patch parser (not installed as an IPC handler)', () => 
   it('turns throwing reflection into a fixed envelope refusal without input text', () => {
     refused(new Proxy({}, { ownKeys() { throw new Error('secret input'); } }), 'invalid_envelope');
   });
+  it('does not trust a parser-shaped error thrown by hostile reflection', () => {
+    const hostile = () => { throw new LocalSettingsInputError('schema_invalid', 'not-a-safe-request-id'); };
+    refused(new Proxy({}, { ownKeys: hostile }), 'invalid_envelope');
+    refused({ ...patch(), unset: new Proxy([], { getPrototypeOf: hostile }) }, 'invalid_envelope');
+    const revoked = Proxy.revocable({}, {}); revoked.revoke();
+    refused(revoked.proxy, 'invalid_envelope');
+  });
 });
