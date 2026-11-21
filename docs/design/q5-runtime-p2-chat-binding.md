@@ -217,9 +217,11 @@ full local suite, local E2E, installs or spending is authorized here. Future
 implementation proof must use the ordinary resource gate and structured
 per-command before/after source/config/gate seals on the exact integrated head,
 followed by independent consumer/hunk review. No automatic per-test PR matrix.
-Targeted Vitest uses `lane-p2 4` and at most two workers; types/lint use ordinary
-min-4 admission. Dependency restoration is allowed only after an actual missing
-dependency diagnosis and normal min-6 admission, not for this documentation.
+Targeted Vitest uses `lane-p2 4` and at most two workers; ESLint uses ordinary
+min-4 admission. All production and fixture TypeScript compiler checks require
+ordinary `lane-p2 6` admission (6 GiB minimum). Dependency restoration is allowed
+only after an actual missing dependency diagnosis and normal min-6 admission,
+not for this documentation.
 
 ## Source fingerprints for this preparation
 
