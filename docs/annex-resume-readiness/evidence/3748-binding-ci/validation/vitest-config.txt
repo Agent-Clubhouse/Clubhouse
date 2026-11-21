@@ -1,0 +1,122 @@
+import { defineConfig, Plugin } from 'vitest/config';
+import * as path from 'path';
+import * as fs from 'fs';
+
+/** Vite plugin that loads .md files as raw strings (matching Webpack's asset/source). */
+function rawMarkdown(): Plugin {
+  return {
+    name: 'raw-markdown',
+    transform(_code, id) {
+      if (id.endsWith('.md')) {
+        const content = fs.readFileSync(id, 'utf-8');
+        return { code: `export default ${JSON.stringify(content)};`, map: null };
+      }
+    },
+  };
+}
+
+const sharedTestConfig = {
+  globals: true as const,
+  cache: false as const,
+  mockReset: true,
+  restoreMocks: true,
+};
+
+// Resolve the Azure exporter to its CommonJS build, as webpack does for the
+// main bundle. destinations/azure.ts reaches the exporter's internal
+// ConfigurationManager by file path; both must share one module instance.
+const azureExporterAlias = {
+  '@azure/monitor-opentelemetry-exporter': path.resolve(
+    import.meta.dirname,
+    'node_modules/@azure/monitor-opentelemetry-exporter/dist/commonjs/index.js',
+  ),
+};
+
+const aliases = {
+  ...azureExporterAlias,
+  electron: path.resolve(import.meta.dirname, 'src/__mocks__/electron.ts'),
+  'monaco-editor': path.resolve(import.meta.dirname, 'src/__mocks__/monaco-editor.ts'),
+  ws: path.resolve(import.meta.dirname, 'src/__mocks__/ws.ts'),
+};
+
+/** Integration tests need the real `ws` module (e.g. protocol-client tests). */
+const integrationAliases = {
+  electron: path.resolve(import.meta.dirname, 'src/__mocks__/electron.ts'),
+  'monaco-editor': path.resolve(import.meta.dirname, 'src/__mocks__/monaco-editor.ts'),
+};
+
+export default defineConfig({
+  cacheDir: path.resolve(import.meta.dirname, ".annex-proof-cache"),
+  plugins: [rawMarkdown()],
+  test: {
+    ...sharedTestConfig,
+    globalSetup: ['./test/global-setup.ts'],
+    coverage: {
+      thresholds: {
+        lines: 60,
+        branches: 50,
+        functions: 60,
+        statements: 60,
+      },
+    },
+    projects: [
+      {
+        cacheDir: path.resolve(import.meta.dirname, ".annex-proof-cache"),
+  plugins: [rawMarkdown()],
+        test: {
+          name: 'main',
+          ...sharedTestConfig,
+          include: ['src/main/**/*.test.ts', 'scripts/**/*.test.ts'],
+          setupFiles: ['./test/standard-runtime-boundary.ts'],
+          environment: 'node',
+        },
+        resolve: { alias: aliases },
+      },
+      {
+        cacheDir: path.resolve(import.meta.dirname, ".annex-proof-cache"),
+  plugins: [rawMarkdown()],
+        test: {
+          name: 'renderer',
+          ...sharedTestConfig,
+          include: ['src/renderer/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
+          setupFiles: ['./test/setup-renderer.ts'],
+        },
+        resolve: { alias: aliases },
+      },
+      {
+        cacheDir: path.resolve(import.meta.dirname, ".annex-proof-cache"),
+  plugins: [rawMarkdown()],
+        test: {
+          name: 'shared',
+          ...sharedTestConfig,
+          include: ['src/shared/**/*.test.ts'],
+          environment: 'node',
+        },
+        resolve: { alias: aliases },
+      },
+      {
+        cacheDir: path.resolve(import.meta.dirname, ".annex-proof-cache"),
+  plugins: [rawMarkdown()],
+        test: {
+          name: 'preload',
+          ...sharedTestConfig,
+          include: ['src/preload/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        cacheDir: path.resolve(import.meta.dirname, ".annex-proof-cache"),
+  plugins: [rawMarkdown()],
+        test: {
+          name: 'integration',
+          ...sharedTestConfig,
+          include: ['test/**/*.test.ts'],
+          environment: 'node',
+        },
+        resolve: { alias: integrationAliases },
+      },
+    ],
+  },
+  resolve: { alias: aliases },
+});
