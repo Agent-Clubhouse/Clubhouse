@@ -51,3 +51,17 @@ main/control; the old body changes main to disconnected, needsPairing to true
 and replacement control to CLOSED on the c0cf-based candidate. The same fixture
 passes with the exact approved two-client-file wake composition.
 Final current-main integration and exact-head review/CI remain required.
+
+FINAL ACTUAL-MAIN INTEGRATED DELTA VERDICT:
+Base: 6130b29669f58c8a7bad112aa745d4ca43775971
+Head: cf62a25df9457027b8e2be3eefbdc12524542b47
+Tree: 1e421cee8614e01699795f916a8e3f9e53bb8351
+No high-confidence findings in the bounded integrated P2 delta.
+Negotiated active-endpoint withdrawal remains resolved, including stale-frame/
+callback ownership and foreign-observer exclusion. Known wake dependency is
+satisfied by the actual base, whose client/test blobs match approved source.
+Integration preserves attempt-token, heartbeat and null-before-close fences.
+Product source/fixtures match corrected composition0928358, and the actual
+disconnect/Retry stale-refusal fixture exercises the shared-lifecycle dependency.
+Same independent reviewer, static only; no tests/builds executed.
+Not broader duplex/security/federation/release acceptance.

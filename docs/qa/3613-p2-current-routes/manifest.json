@@ -1,12 +1,28 @@
 {
   "version": 1,
   "scope": "New isolated desktop P2 route/reconnect successor; not broader full-duplex, federation or release acceptance",
-  "base": "c0cf2f1974b98a9418f1682284c6535d1a1e396b",
-  "baselineTests": "61b4662a9e875601d82567c5ad5550b21f485192",
-  "sourceHead": "5d59ba0c0191f08ea4a85ca3f5700e4d51962bfd",
-  "sourceTree": "0fca30e28f06129a27cd6a278f8ddeb089b3f13e",
-  "preFixProofOnly": true,
-  "initialIndependentReview": "Negotiated active endpoint withdrawal finding; sourceHead is not accepted",
+  "base": "6130b29669f58c8a7bad112aa745d4ca43775971",
+  "baselineTests": "cb8b689decb2ebdeb5320c28a965d0e01f551596",
+  "sourceHead": "cf62a25df9457027b8e2be3eefbdc12524542b47",
+  "sourceTree": "1e421cee8614e01699795f916a8e3f9e53bb8351",
+  "integratedProofOnActualLandedMain": true,
+  "finalIndependentReview": "No high-confidence findings on actual6130..cf62; known wake dependency satisfied",
+  "independentReviewer": "qa-p2-current-routes / 70b42127-751b-45f1-a4bd-4c9678e315d0",
+  "hostedCi": "Separate current PR receipt; not covered by local proof or historical CI",
+  "preFixEvidence": {
+    "base": "c0cf2f1974b98a9418f1682284c6535d1a1e396b",
+    "baselineTests": "61b4662a9e875601d82567c5ad5550b21f485192",
+    "sourceHead": "5d59ba0c0191f08ea4a85ca3f5700e4d51962bfd",
+    "sourceTree": "0fca30e28f06129a27cd6a278f8ddeb089b3f13e",
+    "focusedPass": 647,
+    "readWriteRefusalPass": 65,
+    "totalPass": 712,
+    "accepted": false,
+    "initialIndependentReview": "Negotiated active endpoint withdrawal finding",
+    "receipts": "prior-proof.txt"
+  },
+  "preservedPreIntegrationRef": "archive/3613-p2-pre-wake-integration",
+  "preservedPreIntegrationHead": "5ba770ea885d0a4e7e36c4fb995c7bea72db4b8f",
   "correction": {
     "preFixTestHead": "5c37997ca8531c7db9189ba512af1a3156d2875c",
     "preFixFail": 2,
@@ -36,7 +52,7 @@
     "productionTyping": "PASS",
     "actualWakeMerge": "6130b29669f58c8a7bad112aa745d4ca43775971",
     "actualWakeMergedAt": "2026-11-21T06:53:46Z",
-    "finalCurrentMainIntegrationPending": true
+    "finalCurrentMainIntegrationPending": false
   },
   "historicalSemanticsOnly": [
     "038dc9635835ea62f26b930a0188a228c3c192f2",
@@ -44,12 +60,12 @@
   ],
   "noHistoricalAncestryImport": true,
   "counts": {
-    "currentFocusedPass": 647,
+    "currentFocusedPass": 675,
     "currentFocusedFiles": 8,
     "currentReadWriteRefusalPass": 65,
     "currentReadWriteRefusalFiles": 2,
     "currentReadWriteRefusalSelectorSkips": 562,
-    "totalCurrentSourcePass": 712
+    "totalCurrentSourcePass": 740
   },
   "typing": {
     "production": "PASS",
@@ -102,6 +118,8 @@
     "src/main/services/annex-server.ts",
     "src/main/services/agent-config.ts",
     "src/shared/annex-control-protocol.ts",
+    "src/main/services/annex-control-bulk.ts",
+    "src/main/services/annex-authorizer.ts",
     "docs/annex-route-contract-3611.md",
     "package.json",
     "package-lock.json"
@@ -132,7 +150,16 @@
     {"name": "p2-wake-retry-control-dependency-baseline-attempt-03-original.log", "bytes": 44663, "sha256": "1ed8e4acec35d42145faf619313ed4db64ec4e2b1ea838f06b8c3a0184a7cfce"},
     {"name": "p2-corrected-wake-composition-gate-attempt-01-original.log", "bytes": 1187, "sha256": "173ae5f763f9adf33d6ce64a56e38b1df38f640ae75af3ec1f282a35fa14c4c9"},
     {"name": "p2-corrected-wake-composition-lifecycle-attempt-01-original.log", "bytes": 47886, "sha256": "2289544c20510c69d0d275d95487afae68a4f5b6043ee5475b73741099a27663"},
-    {"name": "p2-corrected-wake-composition-tsc-attempt-01-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+    {"name": "p2-corrected-wake-composition-tsc-attempt-01-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    {"name": "p2-6130-baseline-gate-attempt-01-original.log", "bytes": 1184, "sha256": "935878be984123bf2182bd3589a608c7533b11b2b46c7ea1c5641988d6925a24"},
+    {"name": "p2-6130-settings-baseline-vitest-attempt-01-original.log", "bytes": 6656, "sha256": "ecc420024b020af58b6be2425656039d50fedfe3bdf0c624e2f5379f72872081"},
+    {"name": "p2-6130-baseline-eslint-json-original.log", "bytes": 522278, "sha256": "520cb2d88894b67588bc23daed51b0c166e6ef408c1427e79da81d9c7766bf33"},
+    {"name": "p2-cf62-integrated-gate-original.log", "bytes": 2831, "sha256": "c5197afe0f0889d8b83a388fbffd70502bcc7bcd61b6c8db1aa769177ba6c1d3"},
+    {"name": "p2-cf62-integrated-focused-vitest-original.log", "bytes": 1988, "sha256": "6dd4485572ce8fc46092df16acdf9660bf5521c2c59da676feefc50899f6543b"},
+    {"name": "p2-cf62-integrated-read-write-refusal-vitest-original.log", "bytes": 1344, "sha256": "b2bfa103890f9ab708ce7f78e5988735697fc3f19ccbdcbe97026eaa120219ca"},
+    {"name": "p2-cf62-integrated-production-tsc-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    {"name": "p2-cf62-integrated-fixture-tsc-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    {"name": "p2-cf62-integrated-eslint-json-original.log", "bytes": 554100, "sha256": "fe56a3a9938a9626c0a252416205b944d0431b3f3819aeffa3ec1b0430aac093"}
   ],
   "acceptanceBoundaries": [
     "Current independent P2 delta review is required before PR; no historical review or CI transfer",

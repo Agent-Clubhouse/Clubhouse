@@ -73,3 +73,14 @@ This c0cf-based dependent test is intentionally not an accepted delivery head.
 The same complete-state fixture passes with approved wake's attempt-token fence.
 The first attempt's fixture-construction failure (no replacement connection)
 and second attempt's first-field-only failure are both retained separately.
+
+7. Fresh baseline on actual landed wake main, no old baseline transfer
+Actual base: 6130b29669f58c8a7bad112aa745d4ca43775971
+Replayed test-only head: cb8b689decb2ebdeb5320c28a965d0e01f551596
+Client, control and IPC production blobs are exactly the actual base.
+Gate: lane-p2 4, 2026-11-21T06:55:57Z--06:55:58Z.
+Same settings command from (1) observed exit1:
+2 FAIL / 1 PASS / 35 selector skips, refreshConnections called zero times.
+Fresh five-existing-file ESLint on this base passed with 0 errors / 162 warnings.
+The enclosing receipt records expected red exit1 and lint exit0 separately;
+it does not relabel the genuine failing test as green.
