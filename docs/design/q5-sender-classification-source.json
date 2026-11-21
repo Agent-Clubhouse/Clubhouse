@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "source": "5bbabde2d9f6dcb4db248d0976681fc331f5611e",
+  "kind": "source-only-not-executed-incident",
+  "files": [
+    {
+      "path": "src/shared/agent-name.ts",
+      "gitBlob": "03a4ec776ae7ae1203be69eb1aa80b81c6b6c430",
+      "sha256": "e82c190a6ca2ef3fbbd483f352af6fa44ac7e88ff912e330919a974b6e27c7fa"
+    },
+    {
+      "path": "src/main/services/clubhouse-mcp/tools/group-project-tools.ts",
+      "gitBlob": "f6d55316b624d5a0f171fc361ccb6314fde95608",
+      "sha256": "642214cc528803053969b84f226aa1355b2dc6310a66197d2a8a7049fb4f9296"
+    },
+    {
+      "path": "src/main/services/clubhouse-mcp/binding-manager.ts",
+      "gitBlob": "bf86a590f3cee20d5a53becd664ad673f48b783c",
+      "sha256": "256354e2a635777dcf1746459fe6415dc71caac03bacb299413968af86f0e619"
+    },
+    {
+      "path": "src/shared/group-project-network.ts",
+      "gitBlob": "5a86a9cca2056e08359018602e057c69167a2b3f",
+      "sha256": "bff9a34b90c50591e0845599c8227296a0d031096f91bd1a7e00f9022bcf83fb"
+    },
+    {
+      "path": "src/main/services/group-project-host.ts",
+      "gitBlob": "f9f4892579fa1fbcf9e5fce029d9942b8a7a1739",
+      "sha256": "cff6aeea1540b9717cba2f613f49a1070e10b87fe2d30cdb6e12efd14fb35f05"
+    },
+    {
+      "path": "src/main/services/annex-server.ts",
+      "gitBlob": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b",
+      "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500"
+    },
+    {
+      "path": "src/main/services/group-project-delivery.ts",
+      "gitBlob": "cac740263a3500feebe84fe35714542d3e2b0d5d",
+      "sha256": "025a6fe24183b395a45b47aa19e414270853c9aee3175fd68285a2c5403ca016"
+    }
+  ]
+}
