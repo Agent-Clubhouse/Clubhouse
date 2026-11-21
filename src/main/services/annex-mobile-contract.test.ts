@@ -384,6 +384,13 @@ vi.mock('./agent-config', async () => {
     peekDurableConfigs: async (projectPath: string) => W.durables[projectPath] ?? [],
     peekDurableConfigsChecked: async (projectPath: string) => ({ readable: W.providerV2PrimaryReadable, agents: W.durables[projectPath] ?? [] }),
     peekCachedDurableConfig: (projectPath: string, id: string) => find(projectPath, id),
+    readDurableRegistrationLease: async (projectPath: string, id: string, createdAt: string) => ({
+      isCurrent: () => {
+        const current = find(projectPath, id);
+        return !!current && current.createdAt === createdAt && !current.disposedAt;
+      },
+      close: async () => {},
+    }),
     readAgentIconData: async (icon: string) => (icon ? 'data:image/png;base64,R0lGODlhAQABAAAAACw=' : null),
     agentIconFilePath: async (icon: string) => (icon ? `R0lGODlhAQABAAAAACw=|${icon}` : null),
     createDurable: async (projectPath: string, name: string, color: string, model: string | undefined, _worktree: boolean, orchestrator: string, level: string | undefined) => {
