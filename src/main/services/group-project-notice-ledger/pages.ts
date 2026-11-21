@@ -1,6 +1,7 @@
 /** Immutable lazy notice index. Orphan pages confer no baseline/dispatch authority. */
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { constants } from 'fs';
 import { createHash, randomUUID } from 'crypto';
 import { NoticeDirectoryFlusher } from './durability';
 
@@ -14,6 +15,11 @@ export const NOTICE_INDEX_PAGE_BYTES = 256 * 1024;
 export const NOTICE_INDEX_FANOUT = 64;
 const MAX_LEAF_CACHE = 4; // at most256 detailed rows; index cache contains references only
 const MAX_INDEX_CACHE = 16;
+export type NoticePageFailurePoint = 'beforePageOpen' | 'pageTempOpened' | 'beforePageWrite' | 'beforePageSync' | 'beforePageRename' | 'beforeTempCleanup' | 'beforeReusedSync' | 'reusedPageSynced' | 'beforeDirectoryFlush' | 'afterDirectoryFlush';
+export interface NoticePageOptions {
+  /** Deterministic fixture seam only. Production callers omit this. */
+  testFailure?: (point: NoticePageFailurePoint, location: string) => void | Promise<void>;
+}
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const digest = (body: Buffer) => createHash('sha256').update(body).digest('hex');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -68,24 +74,24 @@ function decode(body: Buffer): Page {
 export class NoticePageIndex {
   private readonly leaves = new Map<string, LeafPage>();
   private readonly branches = new Map<string, IndexPage>();
-  private readonly dirtyDirectories = new Set<string>();
+  private readonly dirtyDirectories = new Map<string, symbol>();
   private reads = 0;
   private pageReadBytes = 0;
   private maxPageReadBytes = 0;
   private peakLeafEntries = 0;
   private readonly directoryFlusher = new NoticeDirectoryFlusher();
-  private constructor(private readonly directory: string) {}
-  static async open(directory: string): Promise<NoticePageIndex> {
+  private constructor(private readonly directory: string, private readonly options: NoticePageOptions) {}
+  static async open(directory: string, options: NoticePageOptions = {}): Promise<NoticePageIndex> {
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-    const index = new NoticePageIndex(directory);
-    index.dirtyDirectories.add(directory); index.dirtyDirectories.add(path.dirname(directory));
+    const index = new NoticePageIndex(directory, options);
+    index.dirtyDirectories.set(directory, Symbol()); index.dirtyDirectories.set(path.dirname(directory), Symbol());
     return index;
   }
   /** Fixed-shape diagnostics for bounded-memory tests; no IDs/content. */
   get cacheStats() {
     return { leafPages: this.leaves.size, indexPages: this.branches.size,
       leafEntries: [...this.leaves.values()].reduce((sum, p) => sum + p.entries.length, 0), peakLeafEntries: this.peakLeafEntries, diskReads: this.reads,
-      pageReadBytes: this.pageReadBytes, maxPageReadBytes: this.maxPageReadBytes };
+      pageReadBytes: this.pageReadBytes, maxPageReadBytes: this.maxPageReadBytes, pendingDirectoryCount: this.dirtyDirectories.size };
   }
   get directoryDurability() { return this.directoryFlusher.observation; }
   clearCache(): void { this.leaves.clear(); this.branches.clear(); }
@@ -101,10 +107,13 @@ export class NoticePageIndex {
   }
   private location(hash: string): string { return path.join(this.directory, hash.slice(0, 2), `${hash}.json`); }
   /** Bound allocation and reads before decoding even damaged on-disk content. */
-  private async readPage(location: string): Promise<Buffer> {
+  private async readPage(location: string, expectedDigest: string, syncValidated = false): Promise<Buffer> {
     const initial = await fs.lstat(location);
     if (!initial.isFile() || initial.size > NOTICE_INDEX_PAGE_BYTES) throw new Error('Notice index page type or byte bound invalid');
-    const handle = await fs.open(location, 'r');
+    await this.options.testFailure?.('beforePageOpen', location);
+    // A regular file may be replaced after lstat. Never block on a swapped FIFO.
+    const flags = constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0);
+    const handle = await fs.open(location, flags);
     try {
       const opened = await handle.stat();
       const same = (stat: typeof opened) => stat.isFile() && stat.dev === initial.dev && stat.ino === initial.ino
@@ -120,15 +129,22 @@ export class NoticePageIndex {
       }
       if (used > NOTICE_INDEX_PAGE_BYTES) throw new Error('Notice index page exceeds byte bound');
       if (used !== initial.size || !same(await handle.stat()) || !same(await fs.lstat(location))) throw new Error('Notice index page changed while reading');
-      return buffer.subarray(0, used);
+      const body = buffer.subarray(0, used);
+      if (digest(body) !== expectedDigest) throw new Error('Notice index page checksum mismatch');
+      if (syncValidated) {
+        await this.options.testFailure?.('beforeReusedSync', location);
+        await handle.sync();
+        await this.options.testFailure?.('reusedPageSynced', location);
+        if (!same(await handle.stat()) || !same(await fs.lstat(location))) throw new Error('Reused notice page changed while syncing');
+      }
+      return body;
     } finally { await handle.close(); }
   }
   private async load(root: NoticePageRoot): Promise<Page> {
     rootValid(root);
     let page: Page | undefined = this.leaves.get(root.digest) ?? this.branches.get(root.digest);
     if (!page) {
-      const body = await this.readPage(this.location(root.digest)); this.reads++;
-      if (digest(body) !== root.digest) throw new Error('Notice index page checksum mismatch');
+      const body = await this.readPage(this.location(root.digest), root.digest); this.reads++;
       page = decode(body);
     }
     const actual = reference(page, root.digest);
@@ -142,22 +158,60 @@ export class NoticePageIndex {
     const hash = digest(body);
     const location = this.location(hash);
     let existing: Buffer | undefined;
-    try { existing = await this.readPage(location); }
+    try { existing = await this.readPage(location, hash, true); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; } // telemetry-exempt: storage failures propagate
     if (existing) {
-      if (digest(existing) !== hash) throw new Error('Existing immutable notice page is damaged');
+      this.markPageDirectories(location); // Reused page barrier: must survive process reopen.
     } else {
       const directory = path.dirname(location);
       await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-      const temporary = path.join(directory, `${hash}-${randomUUID()}.tmp`);
-      const handle = await fs.open(temporary, 'wx', 0o600);
-      try { await handle.writeFile(body); await handle.sync(); } finally { await handle.close(); }
-      await fs.rename(temporary, location);
-      this.dirtyDirectories.add(directory); this.dirtyDirectories.add(this.directory);
+      await this.writePage(location, body, hash);
+      this.markPageDirectories(location);
     }
     const root = reference(page, hash); rootValid(root);
     if (retainInCache) this.cache(hash, page);
     return root;
+  }
+  private markPageDirectories(location: string): void {
+    // Only the 256 fixed hash prefixes plus index/parent: never per-page growth.
+    this.dirtyDirectories.set(path.dirname(location), Symbol()); this.dirtyDirectories.set(this.directory, Symbol());
+  }
+  private async writePage(location: string, body: Buffer, hash: string): Promise<void> {
+    const temporary = path.join(path.dirname(location), `${hash}-${randomUUID()}.tmp`);
+    let handle: import('fs/promises').FileHandle | undefined;
+    let created = false; let identity: import('fs').BigIntStats | undefined;
+    let failed = false; let original: unknown;
+    try {
+      handle = await fs.open(temporary, 'wx', 0o600); created = true;
+      identity = await handle.stat({ bigint: true });
+      await this.options.testFailure?.('pageTempOpened', temporary);
+      await this.options.testFailure?.('beforePageWrite', temporary);
+      await handle.writeFile(body);
+      await this.options.testFailure?.('beforePageSync', temporary);
+      await handle.sync();
+      await handle.close(); handle = undefined;
+      await this.options.testFailure?.('beforePageRename', temporary);
+      await fs.rename(temporary, location);
+    } catch (error) {
+      // telemetry-exempt: propagated below after current-own-temp cleanup
+      failed = true; original = error;
+    } finally {
+      if (handle) {
+        try { await handle.close(); }
+        catch (error) {
+          // telemetry-exempt: preserve first failure over a secondary close error
+          if (!failed) { failed = true; original = error; }
+        }
+      }
+      if (created) {
+        try {
+          await this.options.testFailure?.('beforeTempCleanup', temporary);
+          const named = await fs.lstat(temporary, { bigint: true });
+          if (identity && named.isFile() && named.dev === identity.dev && named.ino === identity.ino) await fs.unlink(temporary);
+        } catch { /* telemetry-exempt: best effort only; preserve original failure and ambiguous/prior-process residue */ }
+      }
+    }
+    if (failed) throw original;
   }
   async validateRoot(root: NoticePageRoot): Promise<void> { await this.load(root); }
   /** Full verification streams pages through bounded caches; never returns all rows. */
@@ -210,10 +264,13 @@ export class NoticePageIndex {
   }
   /** Must succeed before an activating journal/root record; no root is activated here. */
   async flush(): Promise<void> {
-    for (const directory of [...this.dirtyDirectories].sort((a, b) => b.length - a.length)) {
+    for (const [directory, version] of [...this.dirtyDirectories].sort(([a], [b]) => b.length - a.length)) {
+      await this.options.testFailure?.('beforeDirectoryFlush', directory);
       await this.directoryFlusher.flush(directory);
-      this.dirtyDirectories.delete(directory);
+      if (this.dirtyDirectories.get(directory) === version) this.dirtyDirectories.delete(directory);
+      await this.options.testFailure?.('afterDirectoryFlush', directory);
     }
+    if (this.dirtyDirectories.size) throw new Error('Notice page preparation changed during flush; retry the barrier');
   }
   async get(root: NoticePageRoot | undefined, key: string): Promise<NoticeJson | undefined> {
     keyValid(key);
