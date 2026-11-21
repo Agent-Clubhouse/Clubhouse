@@ -1,0 +1,886 @@
+$ vitest run --no-cache --maxWorkers=4
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+{"admissionCount":250,"elapsedMs":53,"boardCommits":1,"sequenceChanges":1,"joinPosts":1}
+{"admissionCount":2005,"elapsedMs":405,"boardCommits":1,"sequenceChanges":1,"joinPosts":1}
+Warning: A vi.mock("fs/promises") call in "<worktree>/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "<worktree>/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "<worktree>/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "<worktree>/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "<worktree>/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+QUARANTINE_ROOT_SWAP {"platform":"darwin","node":"v24.22.1","mkdirCalls":2,"swapped":true,"before":{"dev":16777230,"ino":2493130737,"safeDev":true,"safeIno":true,"exactDev":"16777230","exactIno":"2493130737"},"moved":{"dev":16777230,"ino":2493130737,"safeDev":true,"safeIno":true,"exactDev":"16777230","exactIno":"2493130737"},"after":{"dev":16777230,"ino":2493130738,"safeDev":true,"safeIno":true,"exactDev":"16777230","exactIno":"2493130738"},"afterChild":{"dev":16777230,"ino":2493130738,"safeDev":true,"safeIno":true,"exactDev":"16777230","exactIno":"2493130738"},"verifyCalls":1,"outcome":"rejected"}
+AR1_DISCRIMINATOR={"chosen":"A","evaluations":[{"key":"A","provider":"A","verified":true,"load":0,"score":{"basis":"weekly_used","weeklyUsedBp":8200,"pressureBp":8300},"tier":"low","rank":0},{"key":"B","provider":"B","verified":true,"load":0,"score":{"basis":"weekly_used","weeklyUsedBp":2000,"pressureBp":8800},"tier":"headroom","rank":1}]}
+RESET_REPLAY_REPORT=[{"demand":"high","policy":"weekly_used","assumedRateBpPerHour":null,"requested":24,"accepted":24,"refused":0,"picks":{"A":12,"B":12},"unusedA":30,"minHeadroom":30},{"demand":"high","policy":"reset_schedule","assumedRateBpPerHour":null,"requested":24,"accepted":24,"refused":0,"picks":{"A":16,"B":8},"unusedA":20,"minHeadroom":20},{"demand":"high","policy":"cycle_legacy_tiers","assumedRateBpPerHour":25,"requested":24,"accepted":24,"refused":0,"picks":{"A":16,"B":8},"unusedA":20,"minHeadroom":20},{"demand":"high","policy":"pace_deficit","assumedRateBpPerHour":25,"requested":24,"accepted":24,"refused":0,"picks":{"A":20,"B":4},"unusedA":10,"minHeadroom":10},{"demand":"high","policy":"bounded_urgency","assumedRateBpPerHour":25,"requested":24,"accepted":24,"refused":0,"picks":{"A":20,"B":4},"unusedA":10,"minHeadroom":10},{"demand":"high","policy":"bounded_relax_24h","assumedRateBpPerHour":null,"requested":24,"accepted":24,"refused":0,"picks":{"A":22,"B":2},"unusedA":5,"minHeadroom":5},{"demand":"high","policy":"bounded_relax_24h_rate25","assumedRateBpPerHour":25,"requested":24,"accepted":24,"refused":0,"picks":{"A":22,"B":2},"unusedA":5,"minHeadroom":5},{"demand":"high","policy":"bounded_urgency_unknown_rate","assumedRateBpPerHour":null,"requested":24,"accepted":24,"refused":0,"picks":{"A":20,"B":4},"unusedA":10,"minHeadroom":10},{"demand":"low","policy":"weekly_used","assumedRateBpPerHour":null,"requested":4,"accepted":4,"refused":0,"picks":{"A":2,"B":2},"unusedA":55,"minHeadroom":55},{"demand":"low","policy":"reset_schedule","assumedRateBpPerHour":null,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"cycle_legacy_tiers","assumedRateBpPerHour":25,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"pace_deficit","assumedRateBpPerHour":25,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"bounded_urgency","assumedRateBpPerHour":25,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"bounded_relax_24h","assumedRateBpPerHour":null,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"bounded_relax_24h_rate25","assumedRateBpPerHour":25,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"bounded_urgency_unknown_rate","assumedRateBpPerHour":null,"requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"absent","policy":"weekly_used","assumedRateBpPerHour":null,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"reset_schedule","assumedRateBpPerHour":null,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"cycle_legacy_tiers","assumedRateBpPerHour":25,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"pace_deficit","assumedRateBpPerHour":25,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"bounded_urgency","assumedRateBpPerHour":25,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"bounded_relax_24h","assumedRateBpPerHour":null,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"bounded_relax_24h_rate25","assumedRateBpPerHour":25,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"bounded_urgency_unknown_rate","assumedRateBpPerHour":null,"requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60}]
+ ❯ |main| src/main/services/headless-integration.test.ts (21 tests | 21 failed) 7ms
+       × uses PTY when headless is disabled 3ms
+       × uses headless when enabled and kind is quick 0ms
+       × uses PTY for durable agents even when headless is enabled 0ms
+       × falls back to PTY when buildHeadlessCommand returns null 0ms
+       × passes correct args to headless spawn 0ms
+       × headless agents skip hook server setup 0ms
+       × headless provider receives correct opts 0ms
+       × isHeadlessAgent returns true for headless agents 0ms
+       × isHeadlessAgent returns false for PTY agents 0ms
+       × getSpawnMode is called with projectPath 0ms
+       × project set to headless spawns headless even if global is interactive 0ms
+       × project set to interactive spawns PTY even if global is headless 0ms
+       × passes stream-json outputKind to headless manager 0ms
+       × passes text outputKind to headless manager 0ms
+       × defaults to stream-json when provider does not set outputKind 0ms
+       × omits outputFormat from headless opts 0ms
+       × passes permissionMode from free-agent-settings to headless opts 0ms
+       × kills headless agents via headless manager 0ms
+       × kills PTY agents via pty manager 0ms
+       × headless spawn does NOT call snapshotFile (no hooks for headless) 0ms
+       × headless spawn passes onExit callback that calls restoreForAgent 0ms
+ ❯ |main| src/main/telemetry/annex-telemetry.test.ts (15 tests | 1 failed) 327ms
+     × covers every satellite route with a registered template and never a concrete path 320ms
+ ❯ |main| src/main/services/headless-fallback.test.ts (4 tests | 4 failed) 5ms
+     × falls back to PTY when provider has no buildHeadlessCommand (Copilot) 4ms
+     × falls back to PTY when headless disabled + Claude Code 0ms
+     × falls back to PTY when buildHeadlessCommand returns null 0ms
+     × falls back to PTY for durable agents even with headless enabled 0ms
+ ❯ |main| src/main/services/annex-ephemeral-session.test.ts (2 tests | 1 failed) 39ms
+     × generates, caches, revokes and resets identities, TLS keys and peers without any filesystem access 37ms
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ ❯ |renderer| src/renderer/features/agents/details/SettingsCard.test.tsx (36 tests | 1 failed) 434ms
+     × reads no config for an agent on another machine and leaves out local-only rows 6ms
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 28 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/SettingsCard.test.tsx > Settings card edge cases > reads no config for an agent on another machine and leaves out local-only rows
+TestingLibraryElementError: Unable to find an element by: [data-testid="details-setting-access"]
+
+Ignored nodes: comments, script, style
+[36m<section[39m
+  [33maria-label[39m=[32m"Settings"[39m
+  [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+  [33mdata-open[39m=[32m"true"[39m
+  [33mdata-testid[39m=[32m"details-card-settings"[39m
+[36m>[39m
+  [36m<button[39m
+    [33maria-controls[39m=[32m"_r_5t_"[39m
+    [33maria-expanded[39m=[32m"true"[39m
+    [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+    [33mdata-testid[39m=[32m"details-card-settings-toggle"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m>[39m
+    [36m<svg[39m
+      [33maria-hidden[39m=[32m"true"[39m
+      [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+      [33mfill[39m=[32m"none"[39m
+      [33mheight[39m=[32m"12"[39m
+      [33mstroke[39m=[32m"currentColor"[39m
+      [33mstroke-linecap[39m=[32m"round"[39m
+      [33mstroke-linejoin[39m=[32m"round"[39m
+      [33mstroke-width[39m=[32m"1.8"[39m
+      [33mviewBox[39m=[32m"0 0 24 24"[39m
+      [33mwidth[39m=[32m"12"[39m
+    [36m>[39m
+      [36m<path[39m
+        [33md[39m=[32m"M6 9l6 6 6-6"[39m
+      [36m/>[39m
+    [36m</svg>[39m
+    [36m<span[39m
+      [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+    [36m>[39m
+      [0mSettings[0m
+    [36m</span>[39m
+    [36m<span[39m
+      [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+      [33mdata-testid[39m=[32m"details-card-settings-summary"[39m
+      [33mtitle[39m=[32m"Reconnect to the other machine to read its settings."[39m
+    [36m>[39m
+      [0mReconnect to the other machine to read its settings.[0m
+    [36m</span>[39m
+  [36m</button>[39m
+  [36m<div[39m
+    [33mclass[39m=[32m"pb-1.5"[39m
+    [33mid[39m=[32m"_r_5t_"[39m
+  [36m>[39m
+    [36m<p[39m
+      [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+    [36m>[39m
+      [36m<span[39m
+        [33mrole[39m=[32m"status"[39m
+      [36m>[39m
+        [0mReconnect to the other machine to read its settings.[0m
+      [36m</span>[39m
+    [36m</p>[39m
+    [36m<p[39m
+      [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+    [36m>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"details-settings-remote"[39m
+      [36m>[39m
+        [0mChange on [0m
+        [0mthe other machine[0m
+      [36m</span>[39m
+    [36m</p>[39m
+  [36m</div>[39m
+[36m</section>[39m
+ ❯ Object.getElementError ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ src/renderer/features/agents/details/SettingsCard.test.tsx:336:17
+    334|     expect(card.queryByTestId('details-setting-auto-sleep')).not.toBeI…
+    335|     expect(card.queryByTestId('details-setting-clubhouse-mode')).not.t…
+    336|     expect(card.getByTestId('details-setting-access')).toHaveTextConte…
+       |                 ^
+    337|   });
+    338|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/28]⎯
+
+ FAIL  |main| src/main/telemetry/annex-telemetry.test.ts > REST route templates > covers every satellite route with a registered template and never a concrete path
+AssertionError: expected [ …(3) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "GET /api/v1/dispatcher/details",
++   "GET /api/v1/agents/:id/(details)",
++   "GET /api/v1/agents/:id/(changes)",
++ ]
+
+ ❯ src/main/telemetry/annex-telemetry.test.ts:73:59
+     71|     const templates = annexHttpRoutes().map((r) => routeTemplate(r.met…
+     72|     expect(templates.length).toBeGreaterThan(30);
+     73|     expect(templates.filter((t) => !allowed.includes(t))).toEqual([]);
+       |                                                           ^
+     74|     expect(allowed.filter((v) => v !== 'other' && !templates.includes(…
+     75|     expect(routeTemplate('GET', /^\/api\/v1\/agents\/([^/]+)\/sessions…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/28]⎯
+
+ FAIL  |main| src/main/services/annex-ephemeral-session.test.ts > memory-only Annex credentials > generates, caches, revokes and resets identities, TLS keys and peers without any filesystem access
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 2 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "userData",
+    ]
+
+  2nd vi.fn() call:
+
+    Array [
+      "userData",
+    ]
+
+
+Number of calls: 2
+
+ ❯ src/main/services/annex-ephemeral-session.test.ts:58:29
+     56|     expect(identity.getOrCreateIdentity().publicKey).not.toBe(first.pu…
+     57|     for (const operation of [fs.readFileSync, fs.writeFileSync, fs.chm…
+     58|       expect(operation).not.toHaveBeenCalled();
+       |                             ^
+     59|     }
+     60|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/28]⎯
+
+ FAIL  |main| src/main/services/headless-fallback.test.ts > Headless fallback behavior > falls back to PTY when provider has no buildHeadlessCommand (Copilot)
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-fallback.test.ts:109:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/28]⎯
+
+ FAIL  |main| src/main/services/headless-fallback.test.ts > Headless fallback behavior > falls back to PTY when headless disabled + Claude Code
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-fallback.test.ts:125:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/28]⎯
+
+ FAIL  |main| src/main/services/headless-fallback.test.ts > Headless fallback behavior > falls back to PTY when buildHeadlessCommand returns null
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-fallback.test.ts:140:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/28]⎯
+
+ FAIL  |main| src/main/services/headless-fallback.test.ts > Headless fallback behavior > falls back to PTY for durable agents even with headless enabled
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-fallback.test.ts:163:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > headless spawn routing > uses PTY when headless is disabled
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:131:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > headless spawn routing > uses headless when enabled and kind is quick
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:146:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > headless spawn routing > uses PTY for durable agents even when headless is enabled
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:161:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > headless spawn routing > falls back to PTY when buildHeadlessCommand returns null
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:176:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > headless spawn routing > passes correct args to headless spawn
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:191:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > headless spawn routing > headless agents skip hook server setup
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:218:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > headless spawn routing > headless provider receives correct opts
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:233:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > headless agent tracking > isHeadlessAgent returns true for headless agents
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:261:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > headless agent tracking > isHeadlessAgent returns false for PTY agents
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:275:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > per-project spawn mode routing > getSpawnMode is called with projectPath
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:291:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > per-project spawn mode routing > project set to headless spawns headless even if global is interactive
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:306:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > per-project spawn mode routing > project set to interactive spawns PTY even if global is headless
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:322:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > outputKind passthrough > passes stream-json outputKind to headless manager
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:344:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > outputKind passthrough > passes text outputKind to headless manager
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:371:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > outputKind passthrough > defaults to stream-json when provider does not set outputKind
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:398:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > does not pass outputFormat to provider but passes permissionMode > omits outputFormat from headless opts
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:422:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > does not pass outputFormat to provider but passes permissionMode > passes permissionMode from free-agent-settings to headless opts
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:437:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > killAgent routing > kills headless agents via headless manager
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:454:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > killAgent routing > kills PTY agents via pty manager
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:471:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > config pipeline integration (headless) > headless spawn does NOT call snapshotFile (no hooks for headless)
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:490:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/28]⎯
+
+ FAIL  |main| src/main/services/headless-integration.test.ts > Headless integration > config pipeline integration (headless) > headless spawn passes onExit callback that calls restoreForAgent
+Error: [vitest] No "isRunning" export is defined on the "./pty-manager" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("./pty-manager"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ isAgentRunning src/main/services/agent-system.ts:183:21
+    181|  */
+    182| export function isAgentRunning(agentId: string): boolean {
+    183|   return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || …
+       |                     ^
+    184| }
+    185|
+ ❯ Module.spawnAgent src/main/services/agent-system.ts:356:10
+ ❯ src/main/services/headless-integration.test.ts:504:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/28]⎯
+
+
+ Test Files  5 failed | 1458 passed | 13 skipped (1476)
+      Tests  28 failed | 35499 passed | 114 skipped (35641)
+   Start at  23:29:13
+   Duration  401.62s (transform 23.27s, setup 21.07s, import 99.30s, tests 1277.67s, environment 114.79s)
+
+node_modules/.bin/vitest run --no-cache --maxWorkers=4  750.19s user 291.28s system 258% cpu 6:42.30 total
+vitest exit=1
