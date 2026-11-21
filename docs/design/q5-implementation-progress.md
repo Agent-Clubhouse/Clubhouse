@@ -132,6 +132,16 @@ skip-dirty mutation, actual FIFO swap/temp-opened process controls, injected
 IO/cleanup failures and actual rename refusal. No activation, native Windows,
 interprocess CAS or physical power-loss credit follows from these controls.
 
+W1 successor keeps POSIX reads/reuse read-only but opens a Windows reused page
+O_RDWR (without create/truncate/append) before validating. Initial identity,
+bounded content/digest, sync and final checks share that same descriptor, avoiding
+a second reopen gap. Permission/access/sync errors propagate as refusal; only
+initial lstat absence can authorize new-page creation. Test-only platform/open
+seams exercise flags, replacement and failures; they confer no production
+configuration. Native Windows reuse control is present but requires hosted
+Windows execution before any Windows acceptance. Current host policy simulation
+is not FlushFileBuffers proof; directory weak-observation limits stay explicit.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.

@@ -15,10 +15,15 @@ export const NOTICE_INDEX_PAGE_BYTES = 256 * 1024;
 export const NOTICE_INDEX_FANOUT = 64;
 const MAX_LEAF_CACHE = 4; // at most256 detailed rows; index cache contains references only
 const MAX_INDEX_CACHE = 16;
+/** Only absence at the initial lookup permits creation; later IO never does. */
+class NoticePageAbsentError extends Error { readonly code = 'ENOENT'; }
 export type NoticePageFailurePoint = 'beforePageOpen' | 'pageTempOpened' | 'beforePageWrite' | 'beforePageSync' | 'beforePageRename' | 'beforeTempCleanup' | 'beforeReusedSync' | 'reusedPageSynced' | 'beforeDirectoryFlush' | 'afterDirectoryFlush';
 export interface NoticePageOptions {
   /** Deterministic fixture seam only. Production callers omit this. */
   testFailure?: (point: NoticePageFailurePoint, location: string) => void | Promise<void>;
+  /** Branch/descriptor controls only; not application configuration. */
+  testPlatform?: NodeJS.Platform;
+  testOpenPage?: (location: string, flags: number) => Promise<import('fs/promises').FileHandle>;
 }
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const digest = (body: Buffer) => createHash('sha256').update(body).digest('hex');
@@ -108,12 +113,22 @@ export class NoticePageIndex {
   private location(hash: string): string { return path.join(this.directory, hash.slice(0, 2), `${hash}.json`); }
   /** Bound allocation and reads before decoding even damaged on-disk content. */
   private async readPage(location: string, expectedDigest: string, syncValidated = false): Promise<Buffer> {
-    const initial = await fs.lstat(location);
+    let initial: import('fs').Stats;
+    try { initial = await fs.lstat(location); }
+    catch (error) {
+      // telemetry-exempt: only initial absence is new-page permission; all other IO propagates
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoticePageAbsentError('Notice index page is missing');
+      throw error;
+    }
     if (!initial.isFile() || initial.size > NOTICE_INDEX_PAGE_BYTES) throw new Error('Notice index page type or byte bound invalid');
     await this.options.testFailure?.('beforePageOpen', location);
     // A regular file may be replaced after lstat. Never block on a swapped FIFO.
-    const flags = constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0);
-    const handle = await fs.open(location, flags);
+    // Windows FlushFileBuffers needs write access. Open non-truncating BEFORE
+    // validating, so digest/identity checks and sync use one exact descriptor.
+    // Ordinary reads and all POSIX reuse keep the read-only path unchanged.
+    const writableSync = syncValidated && (this.options.testPlatform ?? process.platform) === 'win32';
+    const flags = (writableSync ? constants.O_RDWR : constants.O_RDONLY) | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0);
+    const handle = await (this.options.testOpenPage ?? fs.open)(location, flags);
     try {
       const opened = await handle.stat();
       const same = (stat: typeof opened) => stat.isFile() && stat.dev === initial.dev && stat.ino === initial.ino
@@ -159,7 +174,7 @@ export class NoticePageIndex {
     const location = this.location(hash);
     let existing: Buffer | undefined;
     try { existing = await this.readPage(location, hash, true); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; } // telemetry-exempt: storage failures propagate
+    catch (error) { if (!(error instanceof NoticePageAbsentError)) throw error; } // telemetry-exempt: later IO/sync failures never authorize replacement
     if (existing) {
       this.markPageDirectories(location); // Reused page barrier: must survive process reopen.
     } else {
