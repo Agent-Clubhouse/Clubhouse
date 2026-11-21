@@ -1,0 +1,15 @@
+$ TMPDIR=<fresh default-depth> vitest run --no-cache --maxWorkers=3 src/main/services/annex-client.test.ts src/main/services/annex-control-reconnect.test.ts src/main/services/annex-routes.test.ts src/main/ipc/annex-handlers.test.ts src/main/ipc/annex-client-handlers.test.ts src/main/services/annex-server.test.ts src/main/services/selected-dispatcher-details.test.ts src/main/services/remote-agent-details.test.ts src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx src/renderer/stores/annexClientStore.test.ts src/renderer/stores/annexClientStore.hydration.test.ts src/main/services/agent-system.test.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ Test Files  13 passed (13)
+      Tests  1866 passed (1866)
+   Start at  02:26:33
+   Duration  82.01s (transform 4.42s, setup 303ms, import 5.44s, tests 116.95s, environment 826ms)
+
+vitest exit=0

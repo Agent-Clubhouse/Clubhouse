@@ -1,0 +1,166 @@
+# Excerpt from line 17978 of the job log for run 44878841675 job 136769509094 ( 1428729 bytes, sha256 0c40e28afab54f30cb3a07dfd4aeca45aced7f515cde6c5364973ec0e3c24252); full log at the job URL.
+2026-11-21T07:25:48.0069432Z ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+2026-11-21T07:25:48.0069799Z 
+2026-11-21T07:25:48.0072335Z  FAIL   main  src/main/services/read-only-helper-work.test.ts > passive direct helper work > matches clean/dirty/unpushed counts without writing repository/index/config/object bytes
+2026-11-21T07:25:48.0079702Z AssertionError: expected { dirty: +0, unpushed: +0, …(2) } to deeply equal { dirty: 1, unpushed: 1, …(1) }
+2026-11-21T07:25:48.0080064Z 
+2026-11-21T07:25:48.0080194Z - Expected
+2026-11-21T07:25:48.0080452Z + Received
+2026-11-21T07:25:48.0080578Z 
+2026-11-21T07:25:48.0080667Z   {
+2026-11-21T07:25:48.0080866Z -   "dirty": 1,
+2026-11-21T07:25:48.0081508Z +   "dirty": 0,
+2026-11-21T07:25:48.0082050Z +   "error": "Couldn’t read helper work.",
+2026-11-21T07:25:48.0082492Z     "unmerged": null,
+2026-11-21T07:25:48.0082884Z -   "unpushed": 1,
+2026-11-21T07:25:48.0083209Z +   "unpushed": 0,
+2026-11-21T07:25:48.0083519Z   }
+2026-11-21T07:25:48.0083668Z 
+2026-11-21T07:25:48.0084161Z  ❯ src/main/services/read-only-helper-work.test.ts:52:20
+2026-11-21T07:25:48.0141942Z      50|     const before = await snapshot(root);
+2026-11-21T07:25:48.0143597Z      51|     const result = await readOnlyHelperWork(parent, entry, () => true);
+2026-11-21T07:25:48.0146269Z      52|     expect(result).toEqual({ dirty: 1, unpushed: 1, unmerged: null });
+2026-11-21T07:25:48.0147391Z        |                    ^
+2026-11-21T07:25:48.0148357Z      53|     expect(JSON.stringify(result)).not.toContain('PRIVATE_CONTENT');
+2026-11-21T07:25:48.0149609Z      54|     expect(await snapshot(root)).toEqual(before);
+2026-11-21T07:25:48.0150095Z 
+2026-11-21T07:25:48.0150418Z ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+2026-11-21T07:25:48.0150668Z 
+2026-11-21T07:25:48.0152074Z  FAIL   main  src/main/services/read-only-helper-work.test.ts > passive direct helper work > shares the local classification of generated bridge configuration and real user changes
+2026-11-21T07:25:48.0153708Z AssertionError: expected { dirty: +0, unpushed: +0, …(2) } to match object { dirty: 1 }
+2026-11-21T07:25:48.0154485Z (3 matching properties omitted from actual)
+2026-11-21T07:25:48.0154768Z 
+2026-11-21T07:25:48.0154963Z - Expected
+2026-11-21T07:25:48.0155292Z + Received
+2026-11-21T07:25:48.0155465Z 
+2026-11-21T07:25:48.0155610Z   {
+2026-11-21T07:25:48.0155911Z -   "dirty": 1,
+2026-11-21T07:25:48.0156267Z +   "dirty": 0,
+2026-11-21T07:25:48.0156576Z   }
+2026-11-21T07:25:48.0156727Z 
+2026-11-21T07:25:48.0157224Z  ❯ src/main/services/read-only-helper-work.test.ts:61:65
+2026-11-21T07:25:48.0158082Z      59|     expect(await readOnlyHelperWork(parent, entry, () => true)).toMatc…
+2026-11-21T07:25:48.0158955Z      60|     await fs.writeFile(path.join(project, '.mcp.json'), JSON.stringify…
+2026-11-21T07:25:48.0159830Z      61|     expect(await readOnlyHelperWork(parent, entry, () => true)).toMatc…
+2026-11-21T07:25:48.0160954Z        |                                                                 ^
+2026-11-21T07:25:48.0161503Z      62|   });
+2026-11-21T07:25:48.0162146Z      63|   it('retains staged user MCP work when the worktree was restored to H…
+2026-11-21T07:25:48.0162563Z 
+2026-11-21T07:25:48.0162852Z ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+2026-11-21T07:25:48.0163107Z 
+2026-11-21T07:25:48.0164680Z  FAIL   main  src/main/services/read-only-helper-work.test.ts > passive direct helper work > retains staged user MCP work when the worktree was restored to HEAD, without changing either side
+2026-11-21T07:25:48.0166326Z AssertionError: expected { dirty: +0, unpushed: +0, …(2) } to match object { dirty: 1 }
+2026-11-21T07:25:48.0167122Z (3 matching properties omitted from actual)
+2026-11-21T07:25:48.0167409Z 
+2026-11-21T07:25:48.0167579Z - Expected
+2026-11-21T07:25:48.0167911Z + Received
+2026-11-21T07:25:48.0168062Z 
+2026-11-21T07:25:48.0168191Z   {
+2026-11-21T07:25:48.0168486Z -   "dirty": 1,
+2026-11-21T07:25:48.0168798Z +   "dirty": 0,
+2026-11-21T07:25:48.0169095Z   }
+2026-11-21T07:25:48.0169241Z 
+2026-11-21T07:25:48.0169711Z  ❯ src/main/services/read-only-helper-work.test.ts:70:65
+2026-11-21T07:25:48.0170558Z      68|     await git('add', '.mcp.json'); await fs.writeFile(file, beforeText…
+2026-11-21T07:25:48.0171433Z      69|     const before = await snapshot(root);
+2026-11-21T07:25:48.0172309Z      70|     expect(await readOnlyHelperWork(parent, entry, () => true)).toMatc…
+2026-11-21T07:25:48.0173299Z        |                                                                 ^
+2026-11-21T07:25:48.0174222Z      71|     expect(await snapshot(root)).toEqual(before);
+2026-11-21T07:25:48.0174937Z      72|   });
+2026-11-21T07:25:48.0175158Z 
+2026-11-21T07:25:48.0175445Z ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+2026-11-21T07:25:48.0175699Z 
+2026-11-21T07:25:48.0177052Z  FAIL   main  src/main/services/read-only-helper-work.test.ts > passive direct helper work > counts staged work even when the worktree matches HEAD and preserves staged rename grouping
+2026-11-21T07:25:48.0178663Z AssertionError: expected { dirty: +0, unpushed: +0, …(2) } to match object { dirty: 1 }
+2026-11-21T07:25:48.0179418Z (3 matching properties omitted from actual)
+2026-11-21T07:25:48.0179705Z 
+2026-11-21T07:25:48.0179868Z - Expected
+2026-11-21T07:25:48.0180199Z + Received
+2026-11-21T07:25:48.0180385Z 
+2026-11-21T07:25:48.0180518Z   {
+2026-11-21T07:25:48.0180842Z -   "dirty": 1,
+2026-11-21T07:25:48.0181186Z +   "dirty": 0,
+2026-11-21T07:25:48.0181495Z   }
+2026-11-21T07:25:48.0181645Z 
+2026-11-21T07:25:48.0182120Z  ❯ src/main/services/read-only-helper-work.test.ts:143:65
+2026-11-21T07:25:48.0182981Z     141|     await fs.writeFile(path.join(project, 'ordinary'), 'two\n'); await…
+2026-11-21T07:25:48.0184548Z     142|     await fs.writeFile(path.join(project, 'ordinary'), 'one\n');
+2026-11-21T07:25:48.0185646Z     143|     expect(await readOnlyHelperWork(parent, entry, () => true)).toMatc…
+2026-11-21T07:25:48.0186397Z        |                                                                 ^
+2026-11-21T07:25:48.0187375Z     144|     await git('restore', '--staged', 'ordinary');
+2026-11-21T07:25:48.0188772Z     145|     await git('mv', 'ordinary', 'renamed');
+2026-11-21T07:25:48.0189330Z 
+2026-11-21T07:25:48.0189612Z ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+2026-11-21T07:25:48.0189868Z 
+2026-11-21T07:25:48.0191237Z  FAIL   main  src/main/services/dispatcher/dispatcher-agent-card-display.test.ts > keeps a complete small card available above large Notes, with bounded descriptor bytes and no Notes transport
+2026-11-21T07:25:48.0192693Z AssertionError: expected 0 to be greater than 0
+2026-11-21T07:25:48.0193631Z  ❯ src/main/services/dispatcher/dispatcher-agent-card-display.test.ts:66:22
+2026-11-21T07:25:48.0212916Z 
+2026-11-21T07:25:48.0213085Z 
+2026-11-21T07:25:48.0213948Z ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+2026-11-21T07:25:48.0214304Z 
+2026-11-21T07:25:48.0220266Z 
+2026-11-21T07:25:48.0279374Z  Test Files  2 failed | 731 passed | 5 skipped (738)
+2026-11-21T07:25:48.0434939Z       Tests  5 failed | 16471 passed | 174 skipped (16650)
+2026-11-21T07:25:48.0435803Z    Start at  07:10:38
+2026-11-21T07:25:48.0447220Z    Duration  909.01s (transform 44.75s, setup 64.12s, import 174.49s, tests 2022.68s, environment 307.14s)
+2026-11-21T07:25:48.0449400Z 
+2026-11-21T07:25:50.8268388Z JUNIT report written to D:/a/Clubhouse/Clubhouse/test-results.xml
+2026-11-21T07:25:51.5981467Z ##[error]Process completed with exit code 1.
+2026-11-21T07:25:51.6175134Z ##[group]Run actions/upload-artifact@v7
+2026-11-21T07:25:51.6175436Z with:
+2026-11-21T07:25:51.6175622Z   name: test-results-windows-latest-2
+2026-11-21T07:25:51.6175853Z   path: test-results.xml
+2026-11-21T07:25:51.6176072Z   if-no-files-found: warn
+2026-11-21T07:25:51.6176262Z   compression-level: 6
+2026-11-21T07:25:51.6176437Z   overwrite: false
+2026-11-21T07:25:51.6176613Z   include-hidden-files: false
+2026-11-21T07:25:51.6176811Z   archive: true
+2026-11-21T07:25:51.6176968Z env:
+2026-11-21T07:25:51.6177125Z   ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+2026-11-21T07:25:51.6177333Z ##[endgroup]
+2026-11-21T07:25:51.7663256Z With the provided path, there will be 1 file uploaded
+2026-11-21T07:25:51.7667491Z Artifact name is valid!
+2026-11-21T07:25:51.7668682Z Root directory input is valid!
+2026-11-21T07:25:52.1440516Z Uploading artifact: test-results-windows-latest-2.zip
+2026-11-21T07:25:52.1472741Z Beginning upload of artifact content to blob storage
+2026-11-21T07:25:53.0088625Z Uploaded bytes 551381
+2026-11-21T07:25:53.0879793Z Finished uploading artifact content to blob storage!
+2026-11-21T07:25:53.0880659Z SHA256 digest of uploaded artifact is 7c0b7b09ae881930f44703fee73f6362a71d1ff943ce9183820a646b7646bb96
+2026-11-21T07:25:53.0881344Z Finalizing artifact upload
+2026-11-21T07:25:53.5909050Z Artifact test-results-windows-latest-2 successfully finalized. Artifact ID 14698210037
+2026-11-21T07:25:53.5909755Z Artifact test-results-windows-latest-2 has been successfully uploaded! Final size is 551381 bytes. Artifact ID is 14698210037
+2026-11-21T07:25:53.5910503Z Artifact download URL: https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44878841675/artifacts/14698210037
+2026-11-21T07:25:53.6229804Z Post job cleanup.
+2026-11-21T07:25:53.7619730Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-11-21T07:25:53.7907159Z git version 2.56.1.windows.1
+2026-11-21T07:25:53.7974478Z Temporarily overriding HOME='D:\a\_temp\74567c5c-7f6b-4a68-b7e8-07532405e401' before making global git config changes
+2026-11-21T07:25:53.7975548Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-21T07:25:53.7984502Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\Clubhouse\Clubhouse
+2026-11-21T07:25:53.8324524Z Removing SSH command configuration
+2026-11-21T07:25:53.8336941Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-11-21T07:25:53.8697532Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-11-21T07:25:54.3420714Z Removing HTTP extra header
+2026-11-21T07:25:54.3430364Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-21T07:25:54.3772330Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-11-21T07:25:54.8495668Z Removing includeIf entries pointing to credentials config files
+2026-11-21T07:25:54.8506156Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-21T07:25:54.8795327Z includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git.path
+2026-11-21T07:25:54.8796017Z includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git/worktrees/*.path
+2026-11-21T07:25:54.8796506Z includeif.gitdir:/github/workspace/.git.path
+2026-11-21T07:25:54.8797014Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-21T07:25:54.8837553Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git.path
+2026-11-21T07:25:54.9127044Z D:\a\_temp\git-credentials-3a83e222-5788-4172-9e6d-ba92b5dc8e03.config
+2026-11-21T07:25:54.9171323Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git.path D\:\\a\\_temp\\git\-credentials\-3a83e222\-5788\-4172\-9e6d\-ba92b5dc8e03\.config
+2026-11-21T07:25:54.9544154Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git/worktrees/*.path
+2026-11-21T07:25:54.9828439Z D:\a\_temp\git-credentials-3a83e222-5788-4172-9e6d-ba92b5dc8e03.config
+2026-11-21T07:25:54.9868986Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git/worktrees/*.path D\:\\a\\_temp\\git\-credentials\-3a83e222\-5788\-4172\-9e6d\-ba92b5dc8e03\.config
+2026-11-21T07:25:55.0194227Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-11-21T07:25:55.0501518Z /github/runner_temp/git-credentials-3a83e222-5788-4172-9e6d-ba92b5dc8e03.config
+2026-11-21T07:25:55.0549292Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-3a83e222\-5788\-4172\-9e6d\-ba92b5dc8e03\.config
+2026-11-21T07:25:55.0893304Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-21T07:25:55.1179453Z /github/runner_temp/git-credentials-3a83e222-5788-4172-9e6d-ba92b5dc8e03.config
+2026-11-21T07:25:55.1220698Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-3a83e222\-5788\-4172\-9e6d\-ba92b5dc8e03\.config
+2026-11-21T07:25:55.1556057Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-11-21T07:25:55.6569778Z Removing credentials config 'D:\a\_temp\git-credentials-3a83e222-5788-4172-9e6d-ba92b5dc8e03.config'
+2026-11-21T07:25:55.6752985Z Cleaning up orphan processes

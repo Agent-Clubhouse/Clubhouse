@@ -1,0 +1,14 @@
+$ TMPDIR=<fresh> vitest run --no-cache --maxWorkers=3 read-only-helper-work + dispatcher-agent-card-display + importers
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+
+ Test Files  4 passed (4)
+      Tests  274 passed (274)
+   Start at  02:29:39
+   Duration  4.93s (transform 903ms, setup 16ms, import 1.15s, tests 5.88s, environment 0ms)
+
+vitest exit=0

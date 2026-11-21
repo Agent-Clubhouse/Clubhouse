@@ -1,0 +1,70 @@
+# revert src/main/services/read-only-helper-work.ts to merge 52bbebb21 (JS realpathSync at the fence), new test kept
+83,84c83
+<     // Native, like readOnlyRepositoryRoot's fs.promises.realpath: the JS walk keeps Windows 8.3 names it expands.
+<     if (fs.realpathSync.native(cwd) !== root || rootStat.dev !== finalRoot.dev || rootStat.ino !== finalRoot.ino
+---
+>     if (fs.realpathSync(cwd) !== root || rootStat.dev !== finalRoot.dev || rootStat.ino !== finalRoot.ino
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > matches clean/dirty/unpushed counts without writing repository/index/config/object bytes 438ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > shares the local classification of generated bridge configuration and real user changes 400ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > retains staged user MCP work when the worktree was restored to HEAD, without changing either side 288ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > retains config mode-only work (staged=false) without changing index or worktree 285ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > retains config mode-only work (staged=true) without changing index or worktree 299ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > still excludes a staged generated-only MCP addition after classifying all stored sides 251ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > reports unknown when a remote has not been fetched; never contacts it 224ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > does not execute a configured clean filter or change disk bytes for dirty counts 212ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > does not execute a configured process filter or change disk bytes for dirty counts 227ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > cannot run a clean filter introduced after attributes were read 259ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > cannot run a process filter introduced after attributes were read 284ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > counts staged work even when the worktree matches HEAD and preserves staged rename grouping 414ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > compares CRLF content using the host’s normalization without executing filters 239ms
+ × |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > admits a root whose JS and native realpaths differ in form, and still refuses a different native root 409ms
+   → expected { dirty: 1, unpushed: +0, …(1) } to match object { dirty: +0, unpushed: +0, …(2) }
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > refuses an unrelated helper before Git or file-content reads 80ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > withholds work after the actual helper inventory is released during an actual Git await 228ms
+ ✓ |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > withholds evidence when authority is revoked during an actual Git await 103ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/read-only-helper-work.test.ts > passive direct helper work > admits a root whose JS and native realpaths differ in form, and still refuses a different native root
+AssertionError: expected { dirty: 1, unpushed: +0, …(1) } to match object { dirty: +0, unpushed: +0, …(2) }
+
+- Expected
++ Received
+
+  {
+-   "dirty": 0,
+-   "error": Any<String>,
++   "dirty": 1,
+    "unmerged": null,
+    "unpushed": 0,
+  }
+
+ ❯ src/main/services/read-only-helper-work.test.ts:167:67
+    165|       const other = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse…
+    166|       Object.assign(nodeFs.realpathSync, { native: (p: nodeFs.PathLike…
+    167|       expect(await readOnlyHelperWork(parent, entry, () => true)).toMa…
+       |                                                                   ^
+    168|       await fs.rm(other, { recursive: true, force: true });
+    169|     } finally { vi.mocked(nodeFs.realpathSync).mockRestore(); syncBuil…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 16 passed (17)
+   Start at  02:31:52
+   Duration  4.84s (transform 104ms, setup 4ms, import 131ms, tests 4.64s, environment 0ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+180836d2297505edb55616542ad4968c84b318c21350a3ca15d4c81abe9f8e63  src/main/services/read-only-helper-work.ts
+180836d2297505edb55616542ad4968c84b318c21350a3ca15d4c81abe9f8e63  -
+# post-restore git status --short:
+ M src/main/services/read-only-helper-work.test.ts
