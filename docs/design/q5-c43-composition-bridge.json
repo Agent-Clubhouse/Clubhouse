@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "privateSource": "8a91d171cfb6a4ce31bde7c0c7b28e092fb7082d",
+  "actualMain": "c43ffb37d20650c542e449a8a04a9fd84e65b655",
+  "merge": "2c564644a61253243b4859c21c9cfc43205a4c5a",
+  "kind": "static byte bridge only; no combined execution yet",
+  "privateFiles": [
+    {
+      "path": "src/main/services/group-project-notice-ledger/durability.test.ts",
+      "sha256": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/durability.ts",
+      "sha256": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/framed-journal.ts",
+      "sha256": "bd4246f79b60538e3ddda4bbf2ffb989b49d66b1a3b39303ab49a477d33f3350"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/intervals.test.ts",
+      "sha256": "cc464c9a5cde0412e8b2b6c5d987fcfa5efd7c81050559ff88c35377159d00c7"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/intervals.ts",
+      "sha256": "6dad2906b7b8db5671047d75dd98b3817bd06eb2882f206469b75180ef61650a"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/journal.test.ts",
+      "sha256": "59ac1958f98a9af74cecfd93454224f8389f3fa708fb3ea768f986cb90580c0c"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/journal.ts",
+      "sha256": "6aeecdea2ca2ced1d12f42f1eeec5fc021666c6bc128135c503a27f2d868dcf2"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/legacy-codec.ts",
+      "sha256": "3289756e60dc0bdc4e806dbd90c9745cf53928ec84f4fea47bd163b8b872b190"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/pages.test.ts",
+      "sha256": "26382e4747a3c357903e48a88e282b0b996db9f2511cfd8ce6a223373a5c26ab"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/pages.ts",
+      "sha256": "c1f30a00c1811636bdf5810d13f2541b77717271b8972ade9c806d4b6b650730"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/root-codec.test.ts",
+      "sha256": "9866190cce73c1cf95fa44fb1e9ad3a63f303c639911e654881a2c192f0a2382"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/root-codec.ts",
+      "sha256": "1060c705820976a1424c89e51ef18d0cda2765317397025b7206cb07fb588958"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/sparse-reader.test.ts",
+      "sha256": "4de164800e66b5934ffdfb4a3f46838f3975c70154511b8c8816eac2ce56c761"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/sparse-reader.ts",
+      "sha256": "bccdde772aeaa5af1979e72ba1ad33ad03d1af8373f6975714d36e26017e2437"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/sparse-state.test.ts",
+      "sha256": "0cf1aa5b7f85c4bdb69257d25007721292c847aa44a6af75effca1c4407c98d9"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/sparse-state.ts",
+      "sha256": "0a5437834ae001bb3c9f6de92fdd49c3d52e3c13b324fb9102ad6b4ff14aec51"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/state.test.ts",
+      "sha256": "aa1ffdbe7bd7affa0901f6318f700930e4d3af68a5a7fc1f209cd06ba97e6336"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/state.ts",
+      "sha256": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/validation.ts",
+      "sha256": "1cd7b19b9cbd2fd622cd3eb57c7bc3c442ee88e406ca6d41aaa075bb9076533b"
+    },
+    {
+      "path": "test/research/fixtures/q5-legacy-71bd/journal.source.txt",
+      "sha256": "e0be83586d17de93b1a4274c428bf19072ed618d4b48df84cccdf59ebfc26ec7"
+    },
+    {
+      "path": "test/research/fixtures/q5-legacy-71bd/source.json",
+      "sha256": "304efbed475db8e806a85e9770d276afeeb80840f43685a54bd0c80790a866ed"
+    },
+    {
+      "path": "test/research/q5-legacy-byte-bridge.cjs",
+      "sha256": "9120d0d78e52d6a5595c7676fad9fd1a07fc3a5769b947122e070b8b2af9cb4f"
+    },
+    {
+      "path": "test/research/q5-owner-mutations.cjs",
+      "sha256": "c9015446360425d2b93afbc7cda3baad9a3bc35b5e51b8716175eae9c7cee612"
+    }
+  ],
+  "mainFilesUnchanged": [
+    "src/shared/chat/runtime.ts",
+    "src/main/services/agent-runtime/runtime-coordinator.ts",
+    "src/main/services/agent-runtime/runtime-coordinator.test.ts"
+  ],
+  "configLockUnchanged": true
+}
