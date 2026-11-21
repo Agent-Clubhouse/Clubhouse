@@ -8,6 +8,7 @@ import { chatFixturePath } from '../src/main/orchestrators/adapters/testing/fake
 import { buildChatScript, writeChatScript } from '../src/main/orchestrators/adapters/testing/chat-script';
 import { installFakeClis, type FakeClis } from './chat-fake-cli';
 import { connectMcp } from './mcp-agent';
+import { agentToolsForTarget, requireAgentToolForTarget, type ListedMcpTool } from '../test/mcp-target-tools';
 import { launchApp, type ElectronApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
 
@@ -401,13 +402,13 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
     // Start the Dispatcher. The fake reports the bridge credentials it was given.
     const { mcp } = await startDispatcher(w, dispatcherId);
 
-    const toolFor = (names: string[], suffix: string) => names.find((n) => n.endsWith(`__${suffix}`) && n.includes('conductor'));
+    const toolFor = (tools: ListedMcpTool[], suffix: string) => requireAgentToolForTarget(tools, ORCHESTRATOR_ID, suffix);
 
     // #3656 item 4: a sleeping LOCAL wire lists send_message, but sending never auto-wakes it.
-    const asleep = await mcp.toolNames();
+    const asleep = await mcp.tools();
     expect(toolFor(asleep, 'get_status')).toBeTruthy();
     expect(toolFor(asleep, 'send_message')).toBeTruthy();
-    expect(toolFor(asleep, 'sleep_agent')).toBeUndefined();
+    expect(agentToolsForTarget(asleep, ORCHESTRATOR_ID, 'sleep_agent')).toHaveLength(0);
     const sleepingSend = await mcp.callText(toolFor(asleep, 'send_message')!, { message: 'stay asleep until explicitly woken' });
     expect(sleepingSend.isError).toBe(true);
     expect(sleepingSend.text).toContain(`Agent ${ORCHESTRATOR_ID} is sleeping.`);
@@ -424,8 +425,8 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
     }, { timeout: 20_000 }).toBe(true);
 
     // Awake: sleep_agent instead of wake_agent.
-    const awake = await mcp.toolNames();
-    expect(toolFor(awake, 'wake_agent')).toBeUndefined();
+    const awake = await mcp.tools();
+    expect(agentToolsForTarget(awake, ORCHESTRATOR_ID, 'wake_agent')).toHaveLength(0);
     const sleepTool = toolFor(awake, 'sleep_agent')!;
     expect(sleepTool).toBeTruthy();
 
@@ -438,7 +439,7 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
     const slept = await mcp.call(sleepTool, { force: true });
     expect((slept.body as { status: string }).status).toBe('sleeping');
     expect(((await mcp.call(toolFor(awake, 'get_status')!)).body as { running: boolean }).running).toBe(false);
-    expect(toolFor(await mcp.toolNames(), 'wake_agent')).toBeTruthy();
+    expect(toolFor(await mcp.tools(), 'wake_agent')).toBeTruthy();
   } finally {
     await fs.promises.rm(fixtureDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
