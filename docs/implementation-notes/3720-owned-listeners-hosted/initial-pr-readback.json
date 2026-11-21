@@ -1,0 +1,53 @@
+{
+  "observedAt": "2026-11-21T14:16:13.061Z",
+  "result": {
+    "status": "fulfilled",
+    "value": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Action completed."
+        }
+      ],
+      "structuredContent": {
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3767",
+        "number": 3767,
+        "state": "open",
+        "merged": false,
+        "mergeable": true,
+        "draft": false,
+        "body": "Adds two opt-in, currently unconsumed secure listener helpers for Refs #3720. They capture the existing generation/listener/port/host ownership and return a ready predicate only after strict verification. Superseded attempts and expected-host mismatch refuse without STOP; genuine still-owned readiness loss has narrow cleanup. Production is exactly main plus 37 added lines, with no removals or default lifecycle/caller changes.\n\nExact source `19a681f03ec1c62e26ff328dd3f983e07e52986a` validation:\n\n- 14 focused controls and all 658 server tests passed; full TypeScript, targeted errors-only ESLint and diff checks passed.\n- Eight ownership/readiness mutants failed on assertions; restored source passed the focused controls again.\n- [Independent lifecycle/source QA](https://github.com/Agent-Clubhouse/Clubhouse/blob/f58e882db692463f9d5c42450aa55cd338e2ce0d/docs/qa-transfer/2026-11-20/reports/3720-owned-listeners-19a681f03-review.md) verified exact equality to the approved d64 additions and [immutable proof](https://github.com/Agent-Clubhouse/Clubhouse/tree/90df17c24941444e90d2ef19a92af1a890706837/docs/implementation-notes/3720-owned-listeners), retaining 32 seals and 19 command receipts.\n- Missing-API red is test-only credit. Original untracked runs and constructor-fixture failures remain historical; the named-import fixture correction and final source attribution are explicit.\n\nThe 14 helper cases model net.Server listening/close events without OS binds or teardown credit. RL-1 uses sequential writes through a real settings-store queue and temporary primary file, with modeled listeners and settings/profile facades; it does not exercise actual SAVE/MCP/Ask/grants or RS1–5. Consumers, independent client-off/control effects after TLS failure, private-port-only corruption, full app/OS teardown, naming activation, live and release acceptance remain deferred. A false predicate alone is never STOP permission or caller/commit/intent authority. Hosted exact-head CI remains required.\n",
+        "title": "Add owned secure listener readiness helpers",
+        "base": "main",
+        "base_sha": "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "head": "annex-wake-readiness/3720-owned-listeners",
+        "head_sha": "19a681f03ec1c62e26ff328dd3f983e07e52986a",
+        "head_repo_id": 1158026389,
+        "head_repo_full_name": "Agent-Clubhouse/Clubhouse",
+        "merge_commit_sha": "1fb00da6eca92b4f05fabc9ee3626ef3ce35678c",
+        "user": {
+          "login": "masra91",
+          "name": "masra91",
+          "email": null,
+          "avatar_url": "https://avatars.githubusercontent.com/u/1669494?v=4",
+          "id": 1669494
+        },
+        "requested_reviewers": null,
+        "requested_team_reviewers": null,
+        "diff": null,
+        "comments": null,
+        "created_at": "2026-11-21T14:15:57Z",
+        "updated_at": "2026-11-21T14:15:57Z",
+        "closed_at": null,
+        "merged_at": null,
+        "commits": 4,
+        "changed_files": 3,
+        "additions": 285,
+        "deletions": 0,
+        "display_url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3767",
+        "display_title": "Add owned secure listener readiness helpers"
+      },
+      "isError": false
+    }
+  }
+}

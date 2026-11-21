@@ -1,0 +1,13 @@
+{
+  "source": "plan-checkout-log.json",
+  "derivative": "Selected verbatim lines from decoded original Plan job log, not an independent execution.",
+  "lines": [
+    "2026-11-21T14:16:11.6252077Z HEAD is now at 1fb00da6 Merge 19a681f03ec1c62e26ff328dd3f983e07e52986a into 77fa095320f2184ebf8870a5251ad0fd26a46501",
+    "2026-11-21T14:16:11.6325063Z [command]/usr/bin/git log -1 --format=%H",
+    "2026-11-21T14:16:11.6354127Z 1fb00da6eca92b4f05fabc9ee3626ef3ce35678c",
+    "2026-11-21T14:16:15.6755581Z   BASE: 77fa095320f2184ebf8870a5251ad0fd26a46501",
+    "2026-11-21T14:16:15.6756163Z   HEAD: 19a681f03ec1c62e26ff328dd3f983e07e52986a",
+    "2026-11-21T14:16:15.7376548Z   PR_BASE: 77fa095320f2184ebf8870a5251ad0fd26a46501",
+    "2026-11-21T14:16:15.7376881Z   PR_HEAD: 19a681f03ec1c62e26ff328dd3f983e07e52986a"
+  ]
+}
