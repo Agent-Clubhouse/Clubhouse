@@ -1,12 +1,12 @@
-# Q5 runtime P1: unverified, unwired work in progress
+# Q5 runtime P1: unwired source proof, independent review pending
 
-**NOT ACCEPTED.** Normal admission subsequently executed the frozen `c616`
-candidate: 39 targeted tests and scoped lint passed, but production TypeScript
-failed. This successor contextually types the ten frozen brand constructors and
-annotates the absent-target fixture after its distinct type failure; its exact
-execution proof is still pending. The original refusal and compiler failures
-are preserved, not converted into passes. No PR, runtime binding, phone
-acceptance or journal acceptance is claimed.
+**NOT ACCEPTED; independent exact-source re-review pending.** Exact source
+`2766cc377e766540e4c2e46718a4bcc372ef3d76` passed 39 targeted tests, production
+and fixture TypeScript, and zero-warning scoped lint through ordinary admission.
+Five bounded mutants were killed; every mutation was removed and the restored
+source passed all 39 tests again. Historical refusal and compiler failures remain
+preserved, not converted into passes. No PR, runtime binding, phone acceptance
+or journal acceptance is claimed.
 
 This successor also preserves the prior static candidate
 `c61665ca1d6ccf3285efbac80cac96e0e20c1e8e`, tree
@@ -49,8 +49,14 @@ fingerprints remain available unchanged in history.
 
 ## Preserved source identity
 
-Branch: `lane-3613-p2-routes/q5-runtime-p1`. The following SHA256 values identify
-the exact candidate source in this evidence commit; they are not execution proof.
+Branch: `lane-3613-p2-routes/q5-runtime-p1`. The exact tested source is
+`2766cc377e766540e4c2e46718a4bcc372ef3d76`, tree
+`e263078f60e3ab6bf107264fc915f09e6321d8cc`, parent
+`a5781b18461e8450f88d3997fe506018a5f779a6`. The following SHA256 values identify
+that source and its byte-identical copy in this evidence-only successor.
+Fingerprints alone are not execution proof; the original receipts below bind
+the actual runs to `2766`. No command is claimed to have run on the later
+evidence commit ID, and no source-changing successor may inherit these results.
 
 | File | SHA256 |
 | --- | --- |
@@ -178,8 +184,8 @@ diagnostic, so it was not changed and no lint/lib rule was relaxed.
 `fixture-tsconfig.json` minimally extends the repository config to include this
 test file; production TypeScript excludes tests. Its distinct gated check is
 `npm exec -- tsc --noEmit --project docs/evidence/q5-runtime-p1/fixture-tsconfig.json`.
-Successor tests, production/fixture types, lint, mutants and exact-source
-re-review remain pending. Earlier `c616` passes are not successor proof.
+At this historical stage successor proof remained pending. Earlier `c616`
+passes were not transferred to the successor; its own proof is recorded below.
 
 The brand-typing successor `a5781b18461e8450f88d3997fe506018a5f779a6`
 then passed normally gated production TypeScript (END `19:29:46Z`, rc 0).
@@ -188,8 +194,137 @@ inferred `any` return (END `19:29:54Z`, rc 2).
 `fixture-tsc-attempt-01-original.txt` preserves that byte-identical failure,
 SHA256 `0016e92960427dcac8aa87a5c7ab918e7099cdbe191bbb91433e9d83819f6787`.
 The one-line `: undefined` fixture annotation preserves behavior and satisfies
-the inherited `noImplicitAny`; no compiler option is relaxed. This new head must
-receive its own complete proof and re-review, not inherit earlier passes.
+the inherited `noImplicitAny`; no compiler option is relaxed. Its source head
+`2766` received its own complete proof below, not inherited passes.
+
+## Exact `2766` ordinary-admission proof
+
+All commands ran from the isolated P1 worktree on 2026-11-21, after checking its
+HEAD and source seals. The ordinary gate prefix for each command was
+`~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 --`. No full suite, packaging,
+local E2E, guard edit, reservation, refusal loop or admission bypass was used.
+
+```sh
+~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npm exec -- tsc --noEmit --project docs/evidence/q5-runtime-p1/fixture-tsconfig.json
+~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npm run typecheck
+~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npm test -- --project main src/main/services/agent-runtime/runtime-coordinator.test.ts --maxWorkers=2
+~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npm exec -- eslint src/shared/chat/runtime.ts src/main/services/agent-runtime/runtime-coordinator.ts src/main/services/agent-runtime/runtime-coordinator.test.ts --max-warnings=0
+```
+
+| Actual check | Outcome | UTC END | Original receipt |
+| --- | --- | --- | --- |
+| Fixture TypeScript | PASS, zero diagnostics, rc 0 | `19:31:08Z` | `fixture-tsc-final-original.txt` |
+| Production TypeScript | PASS, zero diagnostics, rc 0 | `19:31:33Z` | `tsc-final-original.txt` |
+| Targeted Vitest | 39 PASS, 1 file, rc 0 | `19:31:36Z` | `vitest-final-original.txt` |
+| Scoped ESLint | PASS, 0 errors / 0 warnings, rc 0 | `19:31:37Z` | `eslint-final-original.txt` |
+| Post-mutation restored Vitest | 39 PASS, 1 file, rc 0 | `19:36:35Z` | `vitest-restored-original.txt` |
+
+The ten `Object.freeze<ExactInterface>` contextual annotations are exclusively
+the compiler correction introduced at `a578`; the fixture return annotation is
+exclusively the subsequent `2766` correction. The complete current matrix ran
+after both changes. Root `tsconfig.json` SHA256 remains
+`bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432`;
+the inherited fixture config SHA256 is
+`3b833584d6df0cd9dc24d5365853d5924b6df4d03f20a404f5e5c01e42922e88`.
+No target, lib, lint rule, brand or public signature was relaxed.
+
+## Bounded mutation controls and restoration
+
+Every mutant was uncommitted, started from exact `2766`, and used the same
+ordinary min-4 gate and at most two workers. Each expected rc 1 is a killed
+mutant, not a baseline defect. SHA256 is of the temporarily mutated coordinator.
+
+| Mutant | Observed result | Mutated source SHA256 |
+| --- | --- | --- |
+| Replace both private issuance registries with symbol-brand membership | 3 FAIL / 36 PASS; rc 1, END `19:33:22Z` | `cc21f00f92a7e21c9cd76d64deadc2f0d5c487ac204cdec155bd5e375f5a7862` |
+| Remove the retirement guard and retain the loss callback | 2 FAIL / 37 SKIPPED; rc 1, END `19:34:06Z` | `f30a9ed996739c5f0374e9938b02015caf6b766fa74a89b3b2e3ceb1aac8d2ec` |
+| Convert unexpected marker exceptions into rejected entry, skipping UNKNOWN loss | 2 FAIL / 37 PASS; rc 1, END `19:34:43Z` | `9b37ccbebc7224cd1551af1241d3dcc0fc0c7c1f3ae62b09cada75969ae51760` |
+| Reopen scope authority automatically on hold expiry | 2 FAIL / 37 PASS; rc 1, END `19:35:07Z` | `8b17ea478670a570d7bd74c59422f0c76ec6188774b7976cf6a3531724f9f019` |
+| Forward a fabricated approved-ACK discriminator | 1 FAIL / 38 PASS; rc 1, END `19:35:39Z` | `11b11dd9be1c6b37f11f1fd00b961e6e0c065612f8bf34a66c27910f97b2dc0d` |
+
+The unchecked-brand controls reject fabricated/cloned handoffs, cloned transport
+tickets and tokens from the old private registry after reset. The repeated-loss
+mutation selected only the two non-reentrant retained-promise/latch controls,
+avoiding unbounded recursion:
+
+```sh
+~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npm test -- --project main src/main/services/agent-runtime/runtime-coordinator.test.ts --maxWorkers=2 --testNamePattern 'retains one actual committed promise|retains a failed promise and the latch'
+```
+
+The other four mutants used the complete targeted 39-case command above.
+Marker controls cover both claimed and journal-owned loss decisions; expiry
+controls reject automatic fresh admission; the ACK control rejects before the
+fake receipt hook. These are fake-only controls, not real journal or SDK proof.
+
+After each run, surgical restoration reproduced coordinator SHA256
+`695423ea0ba6ecb91961b9420b0c64f316e3e26229271b0a12afd3e1360ee9c0`
+and a clean tracked coordinator diff before the next mutation. After the fifth,
+HEAD remained `2766`, both tracked index/worktree diffs were clean, all three
+source seals matched, and ordinary admitted Vitest passed 39/39. Its receipt
+includes the three restoration seals. No mutant was committed or pushed.
+
+## Dependency restoration provenance
+
+The first ordinary `c616` typecheck actually diagnosed
+`src/main/telemetry/destinations/azure.ts(29,38)` TS2307 for the direct relative
+import of the absent task-local
+`node_modules/@azure/monitor-opentelemetry-exporter/dist/commonjs/_configuration/configurationManager.js`.
+Existing ancestor-workspace tooling had allowed the earlier test/lint commands;
+that did not provide this directly referenced task-local file. Only after this
+diagnosis was one ordinary installation admitted:
+
+```sh
+~/.clubhouse/orch/desktop-test-gate.sh lane-p2 6 -- npm ci
+```
+
+It ran in `node_modules/.cache/q5-runtime-p1-work`, START `19:24:25Z`, END
+`19:24:56Z`, rc 0, and added 1,275 packages. The existing root postinstall
+performed its two node-pty spawn-helper executable-bit fixes. No dependency
+manifest, script approval, audit fix, compiler option or source behavior changed.
+Installation restored validation prerequisites; it is not credited as a P1
+product fix. Raw npm deprecation/audit/unapproved-script notices are preserved,
+not treated as a performed security review.
+
+The before identity is the frozen `c616` Git blob for each manifest at the
+installation's source head. **No separate physical pre-install hash sidecar was
+captured.** Current physical hashes were measured after installation and match
+those frozen blobs; `git diff c616 -- package.json package-lock.json` is empty.
+
+| Manifest | SHA256 of both frozen-before Git contents and measured-after physical contents |
+| --- | --- |
+| `package.json` | `02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9` |
+| `package-lock.json` | `bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d` |
+
+The restored local exporter is `@azure/monitor-opentelemetry-exporter`
+`1.0.0-beta.46`. Its package metadata SHA256 is
+`3acaceab55ad1bec11582d3d345c7da20720551ae98eb6b5e759c524375f2fae`;
+the previously missing configuration file now exists with SHA256
+`56dcce68a691b276c492534c25de4a0bfed1b9d56c462b4ed9e55a29b334b6b2`.
+These are installation provenance, not committed vendored dependencies.
+
+## Portable original receipt fingerprints
+
+The following copies are byte-for-byte generated tool output, including original
+FAILs and unsuppressed configuration warnings. Together with the three earlier
+preserved refusal/compiler receipts, they survive outside ignored `node_modules`.
+
+| Receipt | SHA256 |
+| --- | --- |
+| `npm-ci-attempt-01-original.txt` | `ee0243c24e536684374addbf0c7f2235f37c7f7e0e7cc261a472c212015f2647` |
+| `fixture-tsc-final-original.txt` | `dce943ffdc41a635d668198b291f6abd7be410dfdee027344646f61df9a93121` |
+| `tsc-final-original.txt` | `f0c3e46c69a4a37d83aaf3d20b5019db6b00437d86f2db9abb2c09633dc0b92b` |
+| `vitest-final-original.txt` | `0980f24c2f7951a98fc64c5fcc3139fd028d265a4a4e3e982aac4b238b371836` |
+| `eslint-final-original.txt` | `4bf32f91cef872ec643c02e926814ebc8412efadb8ce5dd0cd1ae4f4a60f2c7b` |
+| `vitest-restored-original.txt` | `48fddf5197ef21ff1892b1b8221dab49a3860fced3d5988fc2aafe59ebd80014` |
+| `mutant-unchecked-brands-original.txt` | `69352fe6070ae025f15a78a28d7717c110838f4fae4af6c4e7d7f0bd3dca867c` |
+| `mutant-repeated-loss-original.txt` | `7deb3001c404a774167e306a8fcbb77c4aef5f91a32da294199c2df12c7a28ad` |
+| `mutant-marker-rejected-original.txt` | `3ba6339d8f11c8644404290175f48ed3a1c71ef827330d789d406de5142115f9` |
+| `mutant-expiry-reopens-original.txt` | `f25e69e15226bd48c49f2c77a6a74d5fd8ff280cbc04d95a4b339ce759d81fa3` |
+| `mutant-fabricated-ack-original.txt` | `cb639c93e62e5de3f6a2b73e86e0fb0a217d6ee4cf682f65d78f9eb4b53bc5ba` |
+
+Independent exact-source re-review remains required before any PR. The earlier
+static `fe1` report and typed Q5 `b05` concurrence are preserved prerequisites,
+not approval of this execution evidence or of an executable journal binding.
 
 ## Deliberately deferred
 

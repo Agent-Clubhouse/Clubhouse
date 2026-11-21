@@ -1,0 +1,67 @@
+MUTANT repeated-loss; baseline=2766cc377e766540e4c2e46718a4bcc372ef3d76; bounded non-reentrant selectors
+f30a9ed996739c5f0374e9938b02015caf6b766fa74a89b3b2e3ceb1aac8d2ec  src/main/services/agent-runtime/runtime-coordinator.ts
+2026-11-21T19:34:06Z START lane-p2 idle=90% unused=10G avail=33495M freepct=87 comp=1096M swap=3929M pid=13593 cmd=npm test -- --project main src/main/services/agent-runtime/runtime-coordinator.test.ts --maxWorkers=2 --testNamePattern retains one actual committed promise|retains a failed promise and the latch
+
+> clubhouse@0.43.0-beta.7 test
+> vitest run --project main src/main/services/agent-runtime/runtime-coordinator.test.ts --maxWorkers=2 --testNamePattern retains one actual committed promise|retains a failed promise and the latch
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/q5-runtime-p1-work
+
+ ❯ |main| src/main/services/agent-runtime/runtime-coordinator.test.ts (39 tests | 2 failed | 37 skipped) 7ms
+     × retains one actual committed promise and does not infer it from retirement classification 5ms
+     × retains a failed promise and the latch after a synchronous loss-hook throw 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/agent-runtime/runtime-coordinator.test.ts > single entry and coordinator-owned loss claim > retains one actual committed promise and does not infer it from retirement classification
+AssertionError: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+    "candidateDisposition": "unknown",
+-   "firstRetirement": false,
++   "firstRetirement": true,
+  }
+
+ ❯ src/main/services/agent-runtime/runtime-coordinator.test.ts:293:43
+    291|     expect(handoff.tryEnter()).toEqual({ kind: 'rejected' });
+    292|     expect(notice.retireHandoff(handoff)).toEqual({ candidateDispositi…
+    293|     expect(notice.retireHandoff(handoff)).toEqual({ candidateDispositi…
+       |                                           ^
+    294|     expect(notice.lossSettlement(handoff)).toBe(attempt.committed);
+    295|     await expect(notice.lossSettlement(handoff)).resolves.toEqual({ co…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/runtime-coordinator.test.ts > single entry and coordinator-owned loss claim > retains a failed promise and the latch after a synchronous loss-hook throw
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/main/services/agent-runtime/runtime-coordinator.test.ts:361:59
+    359|     expect(failed).toBeInstanceOf(Promise);
+    360|     await expect(failed).rejects.toBe(error);
+    361|     expect(notice.retireHandoff(handoff).firstRetirement).toBe(false);
+       |                                                           ^
+    362|     expect(notice.lossSettlement(handoff)).toBe(failed);
+    363|     expect(attempt.onLoss).toHaveBeenCalledExactlyOnceWith('unknown');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 37 skipped (39)
+   Start at  14:34:06
+   Duration  115ms (transform 31ms, setup 5ms, import 36ms, tests 7ms, environment 0ms)
+
+2026-11-21T19:34:06Z END lane-p2 rc=1
