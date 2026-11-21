@@ -1,0 +1,10 @@
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness
+
+BINDING_COMMIT_PROBE {"beforeDrain":{"store":[{"agentId":"lead","targetId":"other","targetKind":"agent","label":"Other"}],"attached":true,"text":"1 outgoing connection.Connected-agent tools also need the sender's Clubhouse permission and the tool's per-direction switch. The reverse direction has its own switches.Edit connections","freshIsSame":true},"afterDrain":{"store":[{"agentId":"lead","targetId":"other","targetKind":"agent","label":"Other"}],"attached":true,"text":"1 outgoing connection.Connected-agent tools also need the sender's Clubhouse permission and the tool's per-direction switch. The reverse direction has its own switches.Edit connections","freshIsSame":true}}
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  23:59:15
+   Duration  1.04s (transform 179ms, setup 55ms, import 207ms, tests 534ms, environment 175ms)
+

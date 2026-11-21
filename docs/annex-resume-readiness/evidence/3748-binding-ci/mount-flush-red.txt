@@ -1,0 +1,53 @@
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness
+
+MOUNT_FLUSH_PROBE {"beforeDrain":{"store":[{"agentId":"lead","targetId":"other","targetKind":"agent","label":"Other"}],"attached":true,"text":"0 outgoing connections.These grants currently reach no agents because there are no outgoing connections.Connected-agent tools also need the sender's Clubhouse permission and the tool's per-direction switch. The reverse direction has its own switches.Edit connections","freshIsSame":true},"afterDrain":{"store":[{"agentId":"lead","targetId":"other","targetKind":"agent","label":"Other"}],"attached":true,"text":"1 outgoing connection.Connected-agent tools also need the sender's Clubhouse permission and the tool's per-direction switch. The reverse direction has its own switches.Edit connections","freshIsSame":true}}
+stderr | src/renderer/features/agents/AgentGrantsSettings.test.tsx > Clubhouse permissions page (#2971) > updates the connection count when the live bindings change (#3275)
+An update to AgentGrantsSettings inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AgentGrantsSettings inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ❯ |renderer| src/renderer/features/agents/AgentGrantsSettings.test.tsx (14 tests | 1 failed | 13 skipped) 28ms
+     × updates the connection count when the live bindings change (#3275) 27ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |renderer| src/renderer/features/agents/AgentGrantsSettings.test.tsx > Clubhouse permissions page (#2971) > updates the connection count when the live bindings change (#3275)
+AssertionError: expected '0 outgoing connections.These grants c…' to contain '1 outgoing connection.'
+
+Expected: "1 outgoing connection."
+Received: "0 outgoing connections.These grants currently reach no agents because there are no outgoing connections.Connected-agent tools also need the sender's Clubhouse permission and the tool's per-direction switch. The reverse direction has its own switches.Edit connections"
+
+ ❯ src/renderer/features/agents/AgentGrantsSettings.test.tsx:99:30
+     97|     process.stdout.write('MOUNT_FLUSH_PROBE ' + JSON.stringify({ befor…
+     98|       attached: summary.isConnected, text: summary.textContent, freshI…
+     99|     expect(beforeDrain.text).toContain('1 outgoing connection.');
+       |                              ^
+    100|     expect(summary).toHaveTextContent('1 outgoing connection.');
+    101|     expect(summary).not.toHaveTextContent('currently reach no agents');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 skipped (14)
+   Start at  00:00:15
+   Duration  533ms (transform 180ms, setup 53ms, import 206ms, tests 28ms, environment 177ms)
+
