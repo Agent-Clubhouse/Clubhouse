@@ -1,0 +1,70 @@
+# DIAGNOSTIC (uncommitted) on 2836db383fecc534291da596b9caa471cf10c44c
+341a342,363
+>     expect(startedOn.get('Studio')).toEqual([made.id]);
+>   });
+> 
+>   it('DIAGNOSTIC: a transient project lookup failure during the recovery start loses the start', async () => {
+>     const asked = await ask(A, B, 'Crash window');
+>     const [request] = await waitingOn(B);
+>     const waitingFile = await fsp.readFile(answersFile(B), 'utf-8');
+>     await answer(B, request.requestId, true);
+>     await fsp.writeFile(answersFile(B), waitingFile);
+>     startedOn.clear();
+>     await unload(B);
+>     await load(B);
+>     const [made] = await hosted(B);
+>     const get = B.host!.groupProjectHost.get.bind(B.host!.groupProjectHost); let failed = 0;
+>     vi.spyOn(B.host!.groupProjectHost, 'get').mockImplementation(async (id: string) => { if (id === made.id && !failed) { failed++; throw new Error('transient reconcile failure'); } return get(id); });
+>     expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created', groupProjectId: made.id });
+>     expect(failed).toBe(1);
+>     await new Promise((resolve) => setTimeout(resolve, 200));
+>     console.log('DIAG startedOn after failed lookup:', JSON.stringify(startedOn.get('Studio')));
+>     await retry(A, B, asked.requestId); await unload(B); await load(B); await retry(A, B, asked.requestId);
+>     await new Promise((resolve) => setTimeout(resolve, 200));
+>     console.log('DIAG startedOn after more retries and a reload:', JSON.stringify(startedOn.get('Studio')));
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+stdout | src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > DIAGNOSTIC: a transient project lookup failure during the recovery start loses the start
+DIAG startedOn after failed lookup: undefined
+
+stdout | src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > DIAGNOSTIC: a transient project lookup failure during the recovery start loses the start
+DIAG startedOn after more retries and a reload: undefined
+
+ ❯ |main| src/main/services/group-project-remote-create.sim.test.ts (24 tests | 1 failed | 23 skipped) 1566ms
+     × DIAGNOSTIC: a transient project lookup failure during the recovery start loses the start 1565ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > DIAGNOSTIC: a transient project lookup failure during the recovery start loses the start
+AssertionError: expected undefined to deeply equal [ 'gp_1795246830345_cd1736c2952e' ]
+
+- Expected:
+[
+  "gp_1795246830345_cd1736c2952e",
+]
+
++ Received:
+undefined
+
+ ❯ src/main/services/group-project-remote-create.sim.test.ts:364:37
+    362|     await new Promise((resolve) => setTimeout(resolve, 200));
+    363|     console.log('DIAG startedOn after more retries and a reload:', JSO…
+    364|     expect(startedOn.get('Studio')).toEqual([made.id]);
+       |                                     ^
+    365|   });
+    366|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 23 skipped (24)
+   Start at  02:40:29
+   Duration  1.69s (transform 785ms, setup 4ms, import 46ms, tests 1.57s, environment 0ms)
+
+vitest exit=1
+restored byte-identical
