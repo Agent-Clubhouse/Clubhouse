@@ -91,6 +91,12 @@ describe('member-name primitives (unwired)', () => {
       first.fill(0); expect(first).not.toEqual(second);
       expect(raw).toEqual(payload());
     });
+    it('encodes exact decomposed Unicode bytes without NFC or case folding', () => {
+      const decomposed = Buffer.from(encodeMemberNamePayload({ ...payload(), name: 'e\u0301' }));
+      expect(decomposed.toString('hex')).toContain('333a65cc81'); // ASCII 3: then exact UTF-8 e + combining acute.
+      expect(decomposed).not.toEqual(Buffer.from(encodeMemberNamePayload({ ...payload(), name: 'é' })));
+      expect(encodeMemberNamePayload({ ...payload(), name: 'Studio' })).not.toEqual(encodeMemberNamePayload({ ...payload(), name: 'studio' }));
+    });
     it.each(['fingerprint', 'joinedAt', 'name', 'at', 'by'])('refuses absent %s', key => {
       const raw: Record<string, unknown> = payload(); delete raw[key];
       expect(readMemberNamePayload(raw)).toBeNull();
