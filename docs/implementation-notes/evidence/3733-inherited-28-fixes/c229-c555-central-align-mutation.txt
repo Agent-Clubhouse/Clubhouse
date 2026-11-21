@@ -1,0 +1,1134 @@
+# mutation: revert RemoteAgentDetailsView.tsx to HEAD c2297c45b (gate requires Details ok)
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > carries the real transcript cursor/receipt into explicit older Details reads without replacing current provider facts
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > resolves a pending Subagents focus after hydration, expands the requested child, and handles it once
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > tries the fallback once while refresh delays first fulfillment, ignoring superseded hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps fulfilled focus collapsed across refresh (fallback manually closed: false), and accepts a new nonce
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps fulfilled focus collapsed across refresh (fallback manually closed: true), and accepts a new nonce
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not replay a pending focus or late hydration into a different host with the same raw agent id
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: known total zero
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: absent
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: empty tokens
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: partial input zero
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: partial output
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: input and output
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: total takes precedence
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: zero cost
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: zero cost and tokens
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: usage none
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps known zero turn sums and their resumed-history qualification
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on stop
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on offline
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on snapshot-loss
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on forbidden
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on unmount
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders shared read-only action group fields and outcome/time without local action APIs or management buttons
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > retains old-host plain action fields and explicitly marks unavailable group fields
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps sleeping historical CLI separate from next-start and cached sleep fields: recorded
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps sleeping historical CLI separate from next-start and cached sleep fields: unknown
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps admitted current CLI identity when legacy optional provider fields are absent
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows the actual current CLI separately from a changed inherited next-start provider
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > uses independently read initial provider facts outside a cut transcript only after matching runtime hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not fall back to retained provider reports when a new host explicitly says unavailable
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not fall back to retained provider reports when a new host explicitly says unsupported
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not promote an earlier display report after newer provider metadata arrives during hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session replacement hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session missing-run-id hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session offline hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session error hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows quick launch and current report fields without durable setup, next-wake settings or local reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps old-host quick unavailability explicit without durable settings or local fallback
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds malformed selected identity a1 before any host or local fallback read
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds malformed selected identity remote||sat|| before any host or local fallback read
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a running agent with no local reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a sleeping agent with no local reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a waking agent with no local reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a error agent with no local reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows no live session facts while the host reports waking, then shows them once it reports running
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves Effort/default, CLI version and inherited-provider skills bound to the selected session
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > invalidates results on snapshot loss/offline and ignores a late previous-host result
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps unsupported/error/offline distinct from empty, and exposes each bounded omission
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > makes supplied Settings retry refetch the parent host Details request
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows verified host canvas identities with explicit navigation availability for snapshot omissions
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds retained provider evidence after a forbidden host read
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds retained provider evidence after a error host read
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds retained provider evidence after a unavailable host read
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps the old host’s supported Settings endpoint while marking new cards unavailable
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds same-session retained evidence until reconnect hydration succeeds, even with the same snapshot object
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps retained evidence withheld after failed same-session hydration and identifies cut pages
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds current claims after Details succeeds but delayed hydration is readOnly
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds current claims after Details succeeds but delayed hydration is error
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds current claims after Details succeeds but delayed hydration is session-ended
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > invalidates a successful live receipt after a later same-session stop, including a failed lifecycle reread
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > shows selected running host records independent of provider/handshake health and without fallback reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > shows selected sleeping host records independent of provider/handshake health and without fallback reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across offline continuity changes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across snapshot-unavailable continuity changes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across denied continuity changes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across dispatcher-role continuity changes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across quick-role continuity changes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > does not replay a late previous-host wire record into a different host with the same native agent id
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > shows independently known host Settings fields alongside explicit unavailable next-wake evidence
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > keeps withheld request text out of visible, title and accessibility paths and never falls back to cached raw tasks
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > composes Canvas paging with enclosing Details and drops its private summary after page refusal
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > withholds Canvas pages after refusal and reads a new selection only under a fresh receipt for the same snapshot object
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds denied data across retained clone, remount and regrant before an actual fresh snapshot
+ × |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > shows positive-receipt peers when an older host lacks the Details read, and withholds them on revocation 1183ms
+   → Unable to find an element by: [data-testid="other-machine-PRIVATE_OLD_PEER"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<aside[39m
+      [33maria-label[39m=[32m"Remote details"[39m
+      [33mclass[39m=[32m"w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 pt-2.5 pb-3 pr-3.5 pl-1"[39m
+      [33mdata-testid[39m=[32m"agent-details"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex items-center gap-2 px-1 text-xs text-ctp-overlay1"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"font-semibold"[39m
+        [36m>[39m
+          [0mDetails[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"truncate"[39m
+        [36m>[39m
+          [0mRemote[0m
+        [36m</span>[39m
+        [36m<button[39m
+          [33maria-label[39m=[32m"Hide details"[39m
+          [33mclass[39m=[32m"ml-auto"[39m
+          [33mdata-testid[39m=[32m"agent-details-close"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [0m×[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"px-1 text-xs text-ctp-overlay1"[39m
+        [33mdata-testid[39m=[32m"remote-details-freshness"[39m
+        [33mrole[39m=[32m"status"[39m
+      [36m>[39m
+        [0mThis host does not share these details, or the agent is no longer available. The host may need an update.[0m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex flex-shrink-0 items-center justify-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-surface-1 text-ctp-subtext1 enabled:hover:bg-surface-0 enabled:hover:text-ctp-text "[39m
+          [33mdata-kind[39m=[32m"ghost"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [0mRefresh[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Settings"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-open[39m=[32m"true"[39m
+        [33mdata-testid[39m=[32m"details-card-settings"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_0_"[39m
+          [33maria-expanded[39m=[32m"true"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-settings-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M6 9l6 6 6-6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mSettings[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-settings-summary"[39m
+            [33mtitle[39m=[32m"This host doesn’t share these settings. It may need an update, or the agent is no longer available."[39m
+          [36m>[39m
+            [0mThis host doesn’t share these settings. It may need an update, or the agent is no longer available.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"pb-1.5"[39m
+          [33mid[39m=[32m"_r_0_"[39m
+        [36m>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mrole[39m=[32m"status"[39m
+            [36m>[39m
+              [0mThis host doesn’t share these settings. It may need an update, or the agent is no longer available.[0m
+            [36m</span>[39m
+          [36m</p>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mdata-testid[39m=[32m"details-settings-remote"[39m
+            [36m>[39m
+              [0mChange on [0m
+              [0mStudio[0m
+            [36m</span>[39m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Connections"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-testid[39m=[32m"details-card-connections"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_1_"[39m
+          [33maria-expanded[39m=[32m"false"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-connections-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M9 6l6 6-6 6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mConnections[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-connections-summary"[39m
+            [33mtitle[39m=[32m"This host does not share these details, or this agent is no longer available. The host may need an update."[39m
+          [36m>[39m
+            [0mThis host does not share these details, or this agent is no longer available. The host may need an update.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Other machines"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-open[39m=[32m"true"[39m
+        [33mdata-testid[39m=[32m"details-card-other-machines"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_2_"[39m
+          [33maria-expanded[39m=[32m"true"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-other-machines-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M6 9l6 6 6-6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mOther machines[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-other-machines-summary"[39m
+            [33mtitle[39m=[32m"not shared here"[39m
+          [36m>[39m
+            [0mnot shared here[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"pb-1.5"[39m
+          [33mid[39m=[32m"_r_2_"[39m
+        [36m>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [0mStudio[0m
+            [0m’s Other machines list is unavailable until its current snapshot and Details access are confirmed. Earlier private peers are withheld.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Actions"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-testid[39m=[32m"details-card-actions"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_3_"[39m
+          [33maria-expanded[39m=[32m"false"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-actions-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M9 6l6 6-6 6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mActions[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-actions-summary"[39m
+            [33mtitle[39m=[32m"This host does not share these details, or the agent is no longer available. The host may need an update."[39m
+          [36m>[39m
+            [0mThis host does not share these details, or the agent is no longer available. The host may need an update.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</section>[39m
+    [36m</aside>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<aside[39m
+      [33maria-label[39m=[32m"Remote details"[39m
+      [33mclass[39m=[32m"w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 pt-2.5 pb-3 pr-3.5 pl-1"[39m
+      [33mdata-testid[39m=[32m"agent-details"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex items-center gap-2 px-1 text-xs text-ctp-overlay1"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"font-semibold"[39m
+        [36m>[39m
+          [0mDetails[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"truncate"[39m
+        [36m>[39m
+          [0mRemote[0m
+        [36m</span>[39m
+        [36m<button[39m
+          [33maria-label[39m=[32m"Hide details"[39m
+          [33mclass[39m=[32m"ml-auto"[39m
+          [33mdata-testid[39m=[32m"agent-details-close"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [0m×[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"px-1 text-xs text-ctp-overlay1"[39m
+        [33mdata-testid[39m=[32m"remote-details-freshness"[39m
+        [33mrole[39m=[32m"status"[39m
+      [36m>[39m
+        [0mThis host does not share these details, or the agent is no longer available. The host may need an update.[0m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex flex-shrink-0 items-center justify-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-surface-1 text-ctp-subtext1 enabled:hover:bg-surface-0 enabled:hover:text-ctp-text "[39m
+          [33mdata-kind[39m=[32m"ghost"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [0mRefresh[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Settings"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-open[39m=[32m"true"[39m
+        [33mdata-testid[39m=[32m"details-card-settings"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_0_"[39m
+          [33maria-expanded[39m=[32m"true"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-settings-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M6 9l6 6 6-6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mSettings[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-settings-summary"[39m
+            [33mtitle[39m=[32m"This host doesn’t share these settings. It may need an update, or the agent is no longer available."[39m
+          [36m>[39m
+            [0mThis host doesn’t share these settings. It may need an update, or the agent is no longer available.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"pb-1.5"[39m
+          [33mid[39m=[32m"_r_0_"[39m
+        [36m>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mrole[39m=[32m"status"[39m
+            [36m>[39m
+              [0mThis host doesn’t share these settings. It may need an update, or the agent is no longer available.[0m
+            [36m</span>[39m
+          [36m</p>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mdata-testid[39m=[32m"details-settings-remote"[39m
+            [36m>[39m
+              [0mChange on [0m
+              [0mStudio[0m
+            [36m</span>[39m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Connections"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-testid[39m=[32m"details-card-connections"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_1_"[39m
+          [33maria-expanded[39m=[32m"false"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-connections-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M9 6l6 6-6 6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mConnections[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-connections-summary"[39m
+            [33mtitle[39m=[32m"This host does not share these details, or this agent is no longer available. The host may need an update."[39m
+          [36m>[39m
+            [0mThis host does not share these details, or this agent is no longer available. The host may need an update.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Other machines"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-open[39m=[32m"true"[39m
+        [33mdata-testid[39m=[32m"details-card-other-machines"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_2_"[39m
+          [33maria-expanded[39m=[32m"true"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-other-machines-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M6 9l6 6 6-6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mOther machines[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-other-machines-summary"[39m
+            [33mtitle[39m=[32m"not shared here"[39m
+          [36m>[39m
+            [0mnot shared here[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"pb-1.5"[39m
+          [33mid[39m=[32m"_r_2_"[39m
+        [36m>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [0mStudio[0m
+            [0m’s Other machines list is unavailable until its current snapshot and Details access are confirmed. Earlier private peers are withheld.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Actions"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-testid[39m=[32m"details-card-actions"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_3_"[39m
+          [33maria-expanded[39m=[32m"false"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-actions-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M9 6l6 6-6 6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mActions[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-actions-summary"[39m
+            [33mtitle[39m=[32m"This host does not share these details, or the agent is no longer available. The host may need an update."[39m
+          [36m>[39m
+            [0mThis host does not share these details, or the agent is no longer available. The host may need an update.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</section>[39m
+    [36m</aside>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is forbidden 358ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is error 359ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is offline 356ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is rate_limited 354ms
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > follows receipt and epoch, not snapshot identity, when equal-value snapshots keep their object
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on needsPairing, including an unchanged/retained snapshot and successful stale mock Details
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on receipt, including an unchanged/retained snapshot and successful stale mock Details
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on offline, including an unchanged/retained snapshot and successful stale mock Details
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on snapshotUnavailable, including an unchanged/retained snapshot and successful stale mock Details
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on paused, including an unchanged/retained snapshot and successful stale mock Details
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > shows positive-receipt peers when an older host lacks the Details read, and withholds them on revocation
+TestingLibraryElementError: Unable to find an element by: [data-testid="other-machine-PRIVATE_OLD_PEER"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<aside[39m
+      [33maria-label[39m=[32m"Remote details"[39m
+      [33mclass[39m=[32m"w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 pt-2.5 pb-3 pr-3.5 pl-1"[39m
+      [33mdata-testid[39m=[32m"agent-details"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex items-center gap-2 px-1 text-xs text-ctp-overlay1"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"font-semibold"[39m
+        [36m>[39m
+          [0mDetails[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"truncate"[39m
+        [36m>[39m
+          [0mRemote[0m
+        [36m</span>[39m
+        [36m<button[39m
+          [33maria-label[39m=[32m"Hide details"[39m
+          [33mclass[39m=[32m"ml-auto"[39m
+          [33mdata-testid[39m=[32m"agent-details-close"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [0m×[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"px-1 text-xs text-ctp-overlay1"[39m
+        [33mdata-testid[39m=[32m"remote-details-freshness"[39m
+        [33mrole[39m=[32m"status"[39m
+      [36m>[39m
+        [0mThis host does not share these details, or the agent is no longer available. The host may need an update.[0m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex flex-shrink-0 items-center justify-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-surface-1 text-ctp-subtext1 enabled:hover:bg-surface-0 enabled:hover:text-ctp-text "[39m
+          [33mdata-kind[39m=[32m"ghost"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [0mRefresh[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Settings"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-open[39m=[32m"true"[39m
+        [33mdata-testid[39m=[32m"details-card-settings"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_0_"[39m
+          [33maria-expanded[39m=[32m"true"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-settings-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M6 9l6 6 6-6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mSettings[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-settings-summary"[39m
+            [33mtitle[39m=[32m"This host doesn’t share these settings. It may need an update, or the agent is no longer available."[39m
+          [36m>[39m
+            [0mThis host doesn’t share these settings. It may need an update, or the agent is no longer available.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"pb-1.5"[39m
+          [33mid[39m=[32m"_r_0_"[39m
+        [36m>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mrole[39m=[32m"status"[39m
+            [36m>[39m
+              [0mThis host doesn’t share these settings. It may need an update, or the agent is no longer available.[0m
+            [36m</span>[39m
+          [36m</p>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mdata-testid[39m=[32m"details-settings-remote"[39m
+            [36m>[39m
+              [0mChange on [0m
+              [0mStudio[0m
+            [36m</span>[39m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Connections"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-testid[39m=[32m"details-card-connections"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_1_"[39m
+          [33maria-expanded[39m=[32m"false"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-connections-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M9 6l6 6-6 6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mConnections[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-connections-summary"[39m
+            [33mtitle[39m=[32m"This host does not share these details, or this agent is no longer available. The host may need an update."[39m
+          [36m>[39m
+            [0mThis host does not share these details, or this agent is no longer available. The host may need an update.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Other machines"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-open[39m=[32m"true"[39m
+        [33mdata-testid[39m=[32m"details-card-other-machines"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_2_"[39m
+          [33maria-expanded[39m=[32m"true"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-other-machines-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M6 9l6 6 6-6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mOther machines[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-other-machines-summary"[39m
+            [33mtitle[39m=[32m"not shared here"[39m
+          [36m>[39m
+            [0mnot shared here[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"pb-1.5"[39m
+          [33mid[39m=[32m"_r_2_"[39m
+        [36m>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [0mStudio[0m
+            [0m’s Other machines list is unavailable until its current snapshot and Details access are confirmed. Earlier private peers are withheld.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Actions"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-testid[39m=[32m"details-card-actions"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_3_"[39m
+          [33maria-expanded[39m=[32m"false"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-actions-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M9 6l6 6-6 6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mActions[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-actions-summary"[39m
+            [33mtitle[39m=[32m"This host does not share these details, or the agent is no longer available. The host may need an update."[39m
+          [36m>[39m
+            [0mThis host does not share these details, or the agent is no longer available. The host may need an update.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</section>[39m
+    [36m</aside>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<aside[39m
+      [33maria-label[39m=[32m"Remote details"[39m
+      [33mclass[39m=[32m"w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 pt-2.5 pb-3 pr-3.5 pl-1"[39m
+      [33mdata-testid[39m=[32m"agent-details"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex items-center gap-2 px-1 text-xs text-ctp-overlay1"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"font-semibold"[39m
+        [36m>[39m
+          [0mDetails[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"truncate"[39m
+        [36m>[39m
+          [0mRemote[0m
+        [36m</span>[39m
+        [36m<button[39m
+          [33maria-label[39m=[32m"Hide details"[39m
+          [33mclass[39m=[32m"ml-auto"[39m
+          [33mdata-testid[39m=[32m"agent-details-close"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [0m×[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"px-1 text-xs text-ctp-overlay1"[39m
+        [33mdata-testid[39m=[32m"remote-details-freshness"[39m
+        [33mrole[39m=[32m"status"[39m
+      [36m>[39m
+        [0mThis host does not share these details, or the agent is no longer available. The host may need an update.[0m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex flex-shrink-0 items-center justify-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-surface-1 text-ctp-subtext1 enabled:hover:bg-surface-0 enabled:hover:text-ctp-text "[39m
+          [33mdata-kind[39m=[32m"ghost"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [0mRefresh[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Settings"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-open[39m=[32m"true"[39m
+        [33mdata-testid[39m=[32m"details-card-settings"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_0_"[39m
+          [33maria-expanded[39m=[32m"true"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-settings-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M6 9l6 6 6-6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mSettings[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-settings-summary"[39m
+            [33mtitle[39m=[32m"This host doesn’t share these settings. It may need an update, or the agent is no longer available."[39m
+          [36m>[39m
+            [0mThis host doesn’t share these settings. It may need an update, or the agent is no longer available.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"pb-1.5"[39m
+          [33mid[39m=[32m"_r_0_"[39m
+        [36m>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mrole[39m=[32m"status"[39m
+            [36m>[39m
+              [0mThis host doesn’t share these settings. It may need an update, or the agent is no longer available.[0m
+            [36m</span>[39m
+          [36m</p>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mdata-testid[39m=[32m"details-settings-remote"[39m
+            [36m>[39m
+              [0mChange on [0m
+              [0mStudio[0m
+            [36m</span>[39m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Connections"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-testid[39m=[32m"details-card-connections"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_1_"[39m
+          [33maria-expanded[39m=[32m"false"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-connections-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M9 6l6 6-6 6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mConnections[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-connections-summary"[39m
+            [33mtitle[39m=[32m"This host does not share these details, or this agent is no longer available. The host may need an update."[39m
+          [36m>[39m
+            [0mThis host does not share these details, or this agent is no longer available. The host may need an update.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Other machines"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-open[39m=[32m"true"[39m
+        [33mdata-testid[39m=[32m"details-card-other-machines"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_2_"[39m
+          [33maria-expanded[39m=[32m"true"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-other-machines-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M6 9l6 6 6-6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mOther machines[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-other-machines-summary"[39m
+            [33mtitle[39m=[32m"not shared here"[39m
+          [36m>[39m
+            [0mnot shared here[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"pb-1.5"[39m
+          [33mid[39m=[32m"_r_2_"[39m
+        [36m>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+          [36m>[39m
+            [0mStudio[0m
+            [0m’s Other machines list is unavailable until its current snapshot and Details access are confirmed. Earlier private peers are withheld.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Actions"[39m
+        [33mclass[39m=[32m"flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"[39m
+        [33mdata-testid[39m=[32m"details-card-actions"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33maria-controls[39m=[32m"_r_3_"[39m
+          [33maria-expanded[39m=[32m"false"[39m
+          [33mclass[39m=[32m"w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"[39m
+          [33mdata-testid[39m=[32m"details-card-actions-toggle"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex-shrink-0 text-ctp-overlay0"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"12"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.8"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"12"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M9 6l6 6-6 6"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[13px] font-semibold text-ctp-text whitespace-nowrap"[39m
+          [36m>[39m
+            [0mActions[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"min-w-0 truncate text-xs text-ctp-overlay1"[39m
+            [33mdata-testid[39m=[32m"details-card-actions-summary"[39m
+            [33mtitle[39m=[32m"This host does not share these details, or the agent is no longer available. The host may need an update."[39m
+          [36m>[39m
+            [0mThis host does not share these details, or the agent is no longer available. The host may need an update.[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</section>[39m
+    [36m</aside>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx:790:18
+    788|     render(<AgentDetails agent={agent} />);
+    789|     await waitFor(() => expect(read).toHaveBeenCalled()); openPeers();
+    790|     await screen.findByTestId('other-machine-PRIVATE_OLD_PEER');
+       |                  ^
+    791|     act(() => satellite({ snapshot: snap, snapshotReceipt: undefined, …
+    792|     expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed | 79 skipped (84)
+   Start at  23:27:38
+   Duration  4.16s (transform 1.02s, setup 54ms, import 1.25s, tests 2.61s, environment 169ms)
+
+vitest exit=1
+# post-restore git status --short:
+ M src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx
+ M src/renderer/features/agents/details/RemoteAgentDetailsView.tsx
+# post-restore diff of src/renderer/features/agents/details/RemoteAgentDetailsView.tsx vs aligned copy:
+identical
