@@ -1,0 +1,6 @@
+# sha256 of committed files
+e70897298e123ca11d96ae45475fe43ac44a6b76ec101f3a93ffef125a0ff998  attempt1-test-results-windows-latest-1.zip
+3edec70dbd57c42d816377c75663291165f0d7b81aa9cb346fc4b3a9c00775ad  attempt2-test-results-windows-latest-1.zip
+2b743ea4c1b41826e6168fab39c694836bc118ac1aaf02b24447078f066ca70d  attempt1-job-log-excerpt.txt
+359667ac8e09019819d64a8630c13dad7be15564c61516659f804fa7f389326a  attempt2-job-log-excerpt.txt
+2f05299d6530d1595f190b3eb2557e12040546e5a1bc0fa8b59c6f2f14c35947  federation-test-timings.txt

@@ -1,0 +1,18 @@
+# dispatcher-federation-local-work.test.ts case times (s), from the XML inside each attempt's ZIP
+   0.071     0.084  durable local delegation through real chat-runtime/ALS input > keeps independent assignments independent when their task labels and result text repeat
+   0.238     0.425  durable local delegation through real chat-runtime/ALS input > evicts history at capacity without rejecting sends or losing an assigned result across restart
+   0.604     0.649  durable local delegation through real chat-runtime/ALS input > keeps real-runtime round trips in one lineage slim and bounded at realistic text size, through every durable save
+  11.801    20.168  durable local delegation through real chat-runtime/ALS input > keeps hundreds of real-runtime round trips in one lineage slim and bounded at realistic text size
+   0.149     0.027  durable local delegation through real chat-runtime/ALS input > queues a human prompt racing an accepted remote prompt until its actual turn ends
+   0.219     0.023  durable local delegation through real chat-runtime/ALS input > preserves the deepest cause when a coalesced runtime dispatch exceeds the pending metadata bound
+   1.978     0.038  durable local delegation through real chat-runtime/ALS input > delivers a delegated task through the real PTY paste/submit boundary and tracks its later result
+   0.285     0.044  durable local delegation through real chat-runtime/ALS input > persists every steered assignment and preserves it across restart and unrelated steers
+   0.911     0.066  durable local delegation through real chat-runtime/ALS input > restores the previous durable assignment after a known refused delivery
+   0.468     0.030  durable local delegation through real chat-runtime/ALS input > invalidates durable association for a genuine terminal human prompt, while Stop/tool continuation retains it
+   0.196     0.033  durable local delegation through real chat-runtime/ALS input > returns a worker result in a later turn with the original cause and increments only on the next remote hop
+   5.157     0.557  durable local delegation through real chat-runtime/ALS input > continues related two-desktop work through local workers beyond eight hops
+   1.232     0.059  durable local delegation through real chat-runtime/ALS input > reloads bound work across restart and sleep/wake, while unrelated local input and spoofed ownership cannot copy it
+   0.239     0.071  durable local delegation through real chat-runtime/ALS input > propagates through a sub-helper and restores each helper result through the real batched delivery path
+   0.204     0.043  durable local delegation through real chat-runtime/ALS input > expires stored delegation lineage and merges a deeper input on an identical resend
+   0.172     0.022  durable local delegation through real chat-runtime/ALS input > expires each cause independently when one local task combines requests with different TTLs
+totals 23.924 22.339

@@ -1,0 +1,15 @@
+# Excerpt of job log (attempt 2), full log sha256 cea81b814bff38089fd9e3b64dbd588e68014e0671fc361f10e324e882af5730,  4013748 bytes
+2026-11-21T09:55:39.2776923Z HEAD is now at ba88603 Merge 3ca9a5c74c8c3971b889c69d5dfaa2421aa266af into d8c7247a4dccc1ebff01f0f28f8e61279bdf5437
+2026-11-21T09:59:07.5080757Z  ✓  main  src/main/services/dispatcher-federation-local-work.test.ts (16 tests) 22342ms
+2026-11-21T10:00:37.3340975Z stdout | src/main/services/dispatcher-federation-local-work-writes.test.ts > durable writes per local round trip > commits the ledger once per send: a record and its checkpoint share one write
+2026-11-21T10:00:37.4802709Z stderr | src/main/services/dispatcher-federation-local-work-writes.test.ts > durable writes per local round trip > fails a durable change that cannot be written without losing earlier deferred ones
+2026-11-21T10:00:37.4805510Z [settings-store] Write to dispatcher-federation-local-work.json failed — cache may diverge from disk: disk full
+2026-11-21T10:00:37.4809978Z stderr | src/main/services/dispatcher-federation-local-work-writes.test.ts > durable writes per local round trip > fails a durable change that cannot be written without losing earlier deferred ones
+2026-11-21T10:00:37.4814774Z [settings-store] Previous write to dispatcher-federation-local-work.json failed: disk full
+2026-11-21T10:00:37.5064340Z stderr | src/main/services/dispatcher-federation-local-work-writes.test.ts > durable writes per local round trip > keeps a helper start's lineage across a crash before its spawn checkpoint, and refuses it if the write fails
+2026-11-21T10:00:37.5067181Z [settings-store] Write to dispatcher-federation-local-work.json failed — cache may diverge from disk: disk full
+2026-11-21T10:00:37.5073077Z stderr | src/main/services/dispatcher-federation-local-work-writes.test.ts > durable writes per local round trip > keeps a helper start's lineage across a crash before its spawn checkpoint, and refuses it if the write fails
+2026-11-21T10:00:37.5076273Z [settings-store] Previous write to dispatcher-federation-local-work.json failed: disk full
+2026-11-21T10:00:37.6544259Z  ✓  main  src/main/services/dispatcher-federation-local-work-writes.test.ts (7 tests) 483ms
+2026-11-21T10:07:01.9820792Z  Test Files  734 passed | 7 skipped (741)
+2026-11-21T10:07:01.9935013Z       Tests  19053 passed | 93 skipped (19146)
