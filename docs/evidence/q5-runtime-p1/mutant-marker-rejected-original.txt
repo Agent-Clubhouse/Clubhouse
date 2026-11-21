@@ -1,0 +1,57 @@
+MUTANT marker-exception-rejected; baseline=2766cc377e766540e4c2e46718a4bcc372ef3d76
+9b37ccbebc7224cd1551af1241d3dcc0fc0c7c1f3ae62b09cada75969ae51760  src/main/services/agent-runtime/runtime-coordinator.ts
+2026-11-21T19:34:42Z START lane-p2 idle=75% unused=10G avail=33279M freepct=87 comp=1096M swap=3929M pid=13889 cmd=npm test -- --project main src/main/services/agent-runtime/runtime-coordinator.test.ts --maxWorkers=2
+
+> clubhouse@0.43.0-beta.7 test
+> vitest run --project main src/main/services/agent-runtime/runtime-coordinator.test.ts --maxWorkers=2
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/q5-runtime-p1-work
+
+ ❯ |main| src/main/services/agent-runtime/runtime-coordinator.test.ts (39 tests | 2 failed) 13ms
+     × unexpected marker throw is UNKNOWN and invokes exactly one loss hook before surfacing the error 2ms
+     × unexpected marker throw still makes the sole loss claim when the journal declines it 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/agent-runtime/runtime-coordinator.test.ts > single entry and coordinator-owned loss claim > unexpected marker throw is UNKNOWN and invokes exactly one loss hook before surfacing the error
+AssertionError: expected function to throw an error, but it didn't
+ ❯ src/main/services/agent-runtime/runtime-coordinator.test.ts:326:38
+    324|     const { handoff } = dispatch(lease, {}, attempt);
+    325|     const ticket = notice.transportAdmission(handoff, lease.resource);
+    326|     expect(() => handoff.tryEnter()).toThrow(error);
+       |                                      ^
+    327|     expect(ticket.allowed()).toBe(false);
+    328|     expect(attempt.onLoss).toHaveBeenCalledExactlyOnceWith('unknown');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/runtime-coordinator.test.ts > single entry and coordinator-owned loss claim > unexpected marker throw still makes the sole loss claim when the journal declines it
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/main/services/agent-runtime/runtime-coordinator.test.ts:345:38
+    343|     };
+    344|     const { handoff } = dispatch(lease, {}, attempt);
+    345|     expect(() => handoff.tryEnter()).toThrow('marker failed');
+       |                                      ^
+    346|     expect(attempt.onLoss).toHaveBeenCalledExactlyOnceWith('unknown');
+    347|     expect(notice.retireHandoff(handoff).candidateDisposition).toBe('u…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 37 passed (39)
+   Start at  14:34:42
+   Duration  119ms (transform 29ms, setup 5ms, import 34ms, tests 13ms, environment 0ms)
+
+2026-11-21T19:34:43Z END lane-p2 rc=1

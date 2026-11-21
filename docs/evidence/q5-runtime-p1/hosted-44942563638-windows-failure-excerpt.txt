@@ -1,0 +1,33 @@
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6608514Z [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6608806Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6610611Z [41m[1m FAIL [22m[49m [30m[45m main [49m[39m src/main/services/dispatcher/dispatcher-copy.test.ts[2m > [22mthe Dispatcher uses one identity and calls its controller by its current name (#3036)[2m > [22mno string the app can show mentions a coordinator, a second session or the controller's old name
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6618030Z [31m[1mAssertionError[22m: expected [ …(3) ] to deeply equal [][39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6618311Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6618443Z [32m- Expected[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6618695Z [31m+ Received[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6618840Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6618929Z [32m- [][39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6619086Z [31m+ [[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6619586Z [31m+   "src\\main\\services\\agent-runtime\\runtime-coordinator.ts:141: Runtime coordinator operation rejected",[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6620360Z [31m+   "src\\main\\services\\agent-runtime\\runtime-coordinator.ts:142: Runtime coordinator: ",[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6621191Z [31m+   "src\\main\\services\\agent-runtime\\runtime-coordinator.ts:146: Runtime coordinator operation refused",[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6621546Z [31m+ ][39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6621634Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6621922Z [36m [2m❯[22m src/main/services/dispatcher/dispatcher-copy.test.ts:[2m91:18[22m[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6663105Z     [90m 89|[39m       }
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6663539Z     [90m 90|[39m     }
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6664048Z     [90m 91|[39m     [34mexpect[39m(hits)[33m.[39m[34mtoEqual[39m([])[33m;[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6665032Z     [90m   |[39m                  [31m^[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6665574Z     [90m 92|[39m     // It reads what it should: a tool refusal, a renderer status line…
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6666442Z     [90m 93|[39m     [34mexpect[39m(seen)[33m.[39m[34mtoContain[39m([32m'Only the Dispatcher can use this tool.'[39m)[33m;[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6666937Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6667229Z [31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6667471Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6671806Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6719018Z [2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m735 passed[39m[22m[2m | [22m[33m7 skipped[39m[90m (743)[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6892564Z [2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m19362 passed[39m[22m[2m | [22m[33m93 skipped[39m[90m (19456)[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6893289Z [2m   Start at [22m 19:46:48
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6903963Z [2m   Duration [22m 462.47s[2m (transform 51.07s, setup 58.76s, import 185.23s, tests 714.89s, environment 270.70s)[22m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:30.6906182Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:34.2540445Z JUNIT report written to D:/a/Clubhouse/Clubhouse/test-results.xml
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:54:37.8399052Z ##[error]Process completed with exit code 1.
