@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "q5-ledger",
+    "4",
+    "--",
+    "python3",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-root-backend-dev-seal.py",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/9be48c501-tests-attempt1",
+    "--",
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/group-project-notice-ledger/root-codec.test.ts",
+    "src/main/services/group-project-notice-ledger/sparse-state.test.ts",
+    "src/main/services/group-project-notice-ledger/sparse-reader.test.ts",
+    "src/main/services/group-project-notice-ledger/pages.test.ts",
+    "--maxWorkers=2"
+  ],
+  "prior75SpacingSeconds": 73.451621,
+  "startedAt": "2026-11-21T20:18:32.213116+00:00",
+  "finishedAt": "2026-11-21T20:18:55.961879+00:00",
+  "exitCode": 0
+}

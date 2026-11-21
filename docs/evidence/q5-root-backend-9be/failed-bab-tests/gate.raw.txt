@@ -1,0 +1,47 @@
+2026-11-21T20:17:01Z START q5-ledger idle=83% unused=7486M avail=31746M freepct=86 comp=912M swap=3889M pid=49034 cmd=python3 /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-root-backend-dev-seal.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/babf2bc5a-tests-attempt1 -- ./node_modules/.bin/vitest run --project main src/main/services/group-project-notice-ledger/root-codec.test.ts src/main/services/group-project-notice-ledger/sparse-state.test.ts src/main/services/group-project-notice-ledger/sparse-reader.test.ts src/main/services/group-project-notice-ledger/pages.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design
+
+ ❯ |main| src/main/services/group-project-notice-ledger/sparse-state.test.ts (8 tests | 2 failed) 5242ms
+     × keeps >256 old uncertainty rows accessible while incrementally accepting later work and merging a million-position span 277ms
+     × recovers only explicitly selected at-most50 active attempts per transition; recovered attempts never gain ACK or retry authority 69ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/group-project-notice-ledger/sparse-state.test.ts > prepared root transitions, no journal/activation/receipt authority > keeps >256 old uncertainty rows accessible while incrementally accepting later work and merging a million-position span
+Error: Invalid notice page reference
+ ❯ rootValid src/main/services/group-project-notice-ledger/pages.ts:55:177
+
+ ❯ validateNoticePageRoot src/main/services/group-project-notice-ledger/pages.ts:60:89
+ ❯ decodePreparedNoticeHeader src/main/services/group-project-notice-ledger/sparse-reader.ts:69:50
+ ❯ PreparedNoticeReader.openPrepared src/main/services/group-project-notice-ledger/sparse-reader.ts:81:52
+ ❯ PreparedNoticeState.openPrepared src/main/services/group-project-notice-ledger/sparse-state.ts:43:47
+ ❯ seed src/main/services/group-project-notice-ledger/sparse-state.test.ts:50:30
+ ❯ src/main/services/group-project-notice-ledger/sparse-state.test.ts:73:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/group-project-notice-ledger/sparse-state.test.ts > prepared root transitions, no journal/activation/receipt authority > recovers only explicitly selected at-most50 active attempts per transition; recovered attempts never gain ACK or retry authority
+Error: Invalid notice page reference
+ ❯ rootValid src/main/services/group-project-notice-ledger/pages.ts:55:177
+
+ ❯ validateNoticePageRoot src/main/services/group-project-notice-ledger/pages.ts:60:89
+ ❯ decodePreparedNoticeHeader src/main/services/group-project-notice-ledger/sparse-reader.ts:69:50
+ ❯ PreparedNoticeReader.openPrepared src/main/services/group-project-notice-ledger/sparse-reader.ts:81:52
+ ❯ PreparedNoticeState.openPrepared src/main/services/group-project-notice-ledger/sparse-state.ts:43:47
+ ❯ seed src/main/services/group-project-notice-ledger/sparse-state.test.ts:50:30
+ ❯ src/main/services/group-project-notice-ledger/sparse-state.test.ts:92:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  2 failed | 73 passed | 1 skipped (76)
+   Start at  15:17:01
+   Duration  22.30s (transform 83ms, setup 12ms, import 115ms, tests 28.40s, environment 0ms)
+
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/babf2bc5a-tests-attempt1/receipt.json", "exitCode": 1, "sealEqual": true}
+2026-11-21T20:17:24Z END q5-ledger rc=1

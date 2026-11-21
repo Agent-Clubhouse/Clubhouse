@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "source": "9be48c5016832dc1cecb248e056170b32701f5d3",
+  "tree": "ba866a88ef01ee2e0d65816a231c8cebc684e0d7",
+  "scope": "development root/physical backend + page/prepared reducer closure; shared receipt owner/recovery/proof incomplete",
+  "checks": {
+    "failed-bab-tests": {
+      "head": "babf2bc5a346f5e3e561b73def7845e8557549f6",
+      "tree": "e6548a706e7436251e19a5df49e32396e3d42e0f",
+      "exit": 1,
+      "argv": [
+        "./node_modules/.bin/vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/group-project-notice-ledger/root-codec.test.ts",
+        "src/main/services/group-project-notice-ledger/sparse-state.test.ts",
+        "src/main/services/group-project-notice-ledger/sparse-reader.test.ts",
+        "src/main/services/group-project-notice-ledger/pages.test.ts",
+        "--maxWorkers=2"
+      ],
+      "selectedSourceHashes": 38,
+      "childWallSeconds": 22.530343
+    },
+    "tests": {
+      "head": "9be48c5016832dc1cecb248e056170b32701f5d3",
+      "tree": "ba866a88ef01ee2e0d65816a231c8cebc684e0d7",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/group-project-notice-ledger/root-codec.test.ts",
+        "src/main/services/group-project-notice-ledger/sparse-state.test.ts",
+        "src/main/services/group-project-notice-ledger/sparse-reader.test.ts",
+        "src/main/services/group-project-notice-ledger/pages.test.ts",
+        "--maxWorkers=2"
+      ],
+      "selectedSourceHashes": 38,
+      "childWallSeconds": 22.901907
+    },
+    "types": {
+      "head": "9be48c5016832dc1cecb248e056170b32701f5d3",
+      "tree": "ba866a88ef01ee2e0d65816a231c8cebc684e0d7",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/tsc",
+        "--noEmit",
+        "-p",
+        "tsconfig.json"
+      ],
+      "selectedSourceHashes": 38,
+      "childWallSeconds": 8.454648
+    },
+    "lint": {
+      "head": "9be48c5016832dc1cecb248e056170b32701f5d3",
+      "tree": "ba866a88ef01ee2e0d65816a231c8cebc684e0d7",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/eslint",
+        "src/main/services/group-project-notice-ledger/framed-journal.ts",
+        "src/main/services/group-project-notice-ledger/legacy-codec.ts",
+        "src/main/services/group-project-notice-ledger/pages.ts",
+        "src/main/services/group-project-notice-ledger/pages.test.ts",
+        "src/main/services/group-project-notice-ledger/root-codec.ts",
+        "src/main/services/group-project-notice-ledger/root-codec.test.ts",
+        "src/main/services/group-project-notice-ledger/sparse-reader.ts",
+        "src/main/services/group-project-notice-ledger/sparse-state.ts",
+        "src/main/services/group-project-notice-ledger/validation.ts"
+      ],
+      "selectedSourceHashes": 38,
+      "childWallSeconds": 0.373782
+    }
+  },
+  "dependenciesRestored": true
+}

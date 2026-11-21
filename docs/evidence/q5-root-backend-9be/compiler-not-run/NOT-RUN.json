@@ -1,0 +1,6 @@
+{
+  "status": "NOT RUN",
+  "exit": 75,
+  "reason": "Compiler requested while own prior test wrapper still running; authoritative gate refused slot. No compiler/sealer child ran.",
+  "scope": "launch/raw refusal only, not an embedded source/child seal"
+}
