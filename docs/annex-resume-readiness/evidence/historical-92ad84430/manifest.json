@@ -1,0 +1,32 @@
+{
+  "kind": "surviving-historical-output-only",
+  "attributedSourceHead": "92ad8443020c8d91026cb931fdfc69810aa9edaa",
+  "headBinding": "Historical attribution from the prior tool transcript; the original output files contain no embedded HEAD or exit-code receipts. This manifest was created during successor work, not at the historical invocation.",
+  "preservation": "Byte-for-byte copies; no normalization or reconstructed output. Empty typecheck output does not independently establish success.",
+  "missing": [
+    "No original standalone diff-check stdout/stderr file or exit-code receipt survives. The earlier clean-diff claim remains historical transcript evidence only."
+  ],
+  "files": [
+    {
+      "file": "tests.txt",
+      "sha256": "23e6ed1ee65eae115d48582f78f4645c549bfe6b26caa7c2083eae2662f19370",
+      "bytes": 262,
+      "originalPath": "/tmp/annex-wake-readiness-final-tests.log",
+      "originalMtimeUtc": "2026-11-21T03:44:22.427840+00:00"
+    },
+    {
+      "file": "typecheck.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "originalPath": "/tmp/annex-wake-readiness-final-typecheck.log",
+      "originalMtimeUtc": "2026-11-21T03:44:17.373752+00:00"
+    },
+    {
+      "file": "lint.txt",
+      "sha256": "dbf861ebd1b9d3bd1b0639b568289ebc21ef21cc4fc2c6917c482d34c2f08561",
+      "bytes": 17749,
+      "originalPath": "/tmp/annex-wake-readiness-final-lint.log",
+      "originalMtimeUtc": "2026-11-21T03:44:17.911097+00:00"
+    }
+  ]
+}

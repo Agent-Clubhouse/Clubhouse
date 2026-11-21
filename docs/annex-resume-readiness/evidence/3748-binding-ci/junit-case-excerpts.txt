@@ -1,0 +1,16 @@
+current3748 DERIVATIVE XML excerpt (ElementTree serialization; raw XML is in the ZIP):
+<testcase classname="src/renderer/features/agents/AgentGrantsSettings.test.tsx" name="Clubhouse permissions page (#2971) &gt; updates the connection count when the live bindings change (#3275)" time="0.0784784">
+            <failure message="[2mexpect([22m[31melement[39m[2m).toHaveTextContent()[22m  Expected element to have text content: [32m  1 outgoing connection.[39m Received: [31m  0 outgoing connections.These grants currently reach no agents because there are no outgoing connections.Connected-agent tools also need the sender's Clubhouse permission and the tool's per-direction switch. The reverse direction has its own switches.Edit connections[39m" type="Error">
+Error: expect(element).toHaveTextContent()
+
+Expected element to have text content:
+  1 outgoing connection.
+Received:
+  0 outgoing connections.These grants currently reach no agents because there are no outgoing connections.Connected-agent tools also need the sender's Clubhouse permission and the tool's per-direction switch. The reverse direction has its own switches.Edit connections
+ ❯ src/renderer/features/agents/AgentGrantsSettings.test.tsx:90:21
+            </failure>
+        </testcase>
+        
+main69 DERIVATIVE XML excerpt (ElementTree serialization; raw XML is in the ZIP):
+<testcase classname="src/renderer/features/agents/AgentGrantsSettings.test.tsx" name="Clubhouse permissions page (#2971) &gt; updates the connection count when the live bindings change (#3275)" time="0.0459032">
+        </testcase>

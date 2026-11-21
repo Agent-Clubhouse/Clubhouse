@@ -180,6 +180,8 @@ interface SatelliteConnectionInternal {
   /** The classified reason behind `lastError`. */
   problem?: { code: AnnexProblemCode; status?: number; port?: number } | null;
   ws: WebSocket | null;
+  /** Owns deferred upgrade-refusal work even after that socket has been detached. */
+  connectionAttempt?: symbol;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
   /** Refused as not (or no longer) paired: no automatic reconnects until it's paired again. */
@@ -747,6 +749,7 @@ function satelliteUrl(sat: SatelliteConnectionInternal, urlPath: string, scheme:
  * pairing again; `clock` only waits for the person to retry.
  */
 function haltSatellite(sat: SatelliteConnectionInternal, kind: 'pairing' | 'mismatch' | 'clock', message: string, problem: AnnexProblemCode): void {
+  sat.connectionAttempt = undefined;
   sat.halt = kind;
   sat.needsPairing = kind !== 'clock';
   stopHeartbeat(sat);
@@ -911,6 +914,8 @@ async function identifyService(service: RemoteService, signal: AbortSignal): Pro
 }
 
 async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<void> {
+  const attempt = Symbol('satellite connection');
+  sat.connectionAttempt = attempt;
   sat.snapshotUnavailable = false;
   const peer = annexPeers.getPeer(sat.fingerprint);
   if (!peer || annexPeers.peerNeedsPairing(peer)) {
@@ -954,8 +959,9 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       void readSmallBody(res).then((text) => {
         try { req.destroy(); } catch { /* telemetry-exempt: closing a refused upgrade */ }
         try { ws.terminate(); } catch { /* telemetry-exempt: closing a refused upgrade */ }
-        // Stopped or forgotten while the body arrived: this record is gone, so nothing more to do.
-        if (satellites.get(sat.fingerprint) !== sat) return;
+        // Cleanup above belongs only to the refused socket. A later attempt (or
+        // disconnect/stop) owns the record now, even when the record is reused.
+        if (satellites.get(sat.fingerprint) !== sat || sat.connectionAttempt !== attempt) return;
         let code: unknown;
         try { code = (JSON.parse(text) as { error?: unknown }).error; } catch { /* telemetry-exempt: a refusal without a JSON body is handled as a plain one */ }
         const refusal = needsPairingRefusalFor(code);
@@ -992,7 +998,8 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     });
 
     ws.on('pong', () => {
-      if (sat.ws === ws) confirmConnectivity(sat);
+      if (sat.ws !== ws) return;
+      confirmConnectivity(sat);
       const sentAt = pingSentAt.get(sat);
       if (sentAt !== undefined) {
         pingSentAt.delete(sat);
@@ -1021,6 +1028,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     ws.on('close', (_code, reason) => {
       if (sat.ws !== ws) return;
       sat.ws = null;
+      stopHeartbeat(sat);
       // The satellite removed this pairing; reconnecting would only be refused.
       const refusal = needsPairingRefusalFor(reason?.toString());
       if (refusal) { markNeedsPairing(sat, refusal); return; }
@@ -1032,6 +1040,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
 
     ws.on('error', (err) => {
       if (sat.ws !== ws) return;
+      stopHeartbeat(sat);
       if (haltForTlsError(sat, err)) { sat.ws = null; return; }
       const errorText = (err && typeof err === 'object' && 'message' in err) ? String((err as Error).message) : String(err);
 
@@ -1361,15 +1370,19 @@ async function fetchNewProjectCanvases(sat: SatelliteConnectionInternal, ws: Web
 
 function startHeartbeat(sat: SatelliteConnectionInternal): void {
   stopHeartbeat(sat);
+  const ws = sat.ws;
+  if (!ws) return;
   sat.heartbeatInterval = setInterval(() => {
-    if (!sat.ws || sat.ws.readyState !== WebSocket.OPEN) {
+    // A cleared timer may already be queued when resume replaces its socket.
+    if (sat.ws !== ws) return;
+    if (ws.readyState !== WebSocket.OPEN) {
       stopHeartbeat(sat);
       return;
     }
     // Send ping
     try {
       pingSentAt.set(sat, Date.now());
-      sat.ws.ping();
+      ws.ping();
     } catch {
       stopHeartbeat(sat);
       setState(sat, 'disconnected', 'Heartbeat ping failed', { code: 'stopped-answering' });
@@ -1378,17 +1391,16 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
     }
     // Set pong timeout
     sat.pongTimeout = setTimeout(() => {
+      if (sat.ws !== ws) return;
       appLog('core:annex-client', 'warn', 'Heartbeat pong timeout — closing connection', {
         meta: { fingerprint: sat.fingerprint },
         telemetry: { event: 'clubhouse.annex.heartbeat_timeout' },
       });
-      if (sat.ws) {
-        try { sat.ws.terminate(); } catch (err) {
-          appLog('core:annex-client', 'debug', 'Failed to terminate WebSocket on heartbeat timeout', {
-            meta: { fingerprint: sat.fingerprint, error: err instanceof Error ? err.message : String(err) },
-          });
-        }
-        sat.ws = null;
+      sat.ws = null;
+      try { ws.terminate(); } catch (err) {
+        appLog('core:annex-client', 'debug', 'Failed to terminate WebSocket on heartbeat timeout', {
+          meta: { fingerprint: sat.fingerprint, error: err instanceof Error ? err.message : String(err) },
+        });
       }
       setState(sat, 'disconnected', 'Heartbeat timeout', { code: 'stopped-answering' });
       stopHeartbeat(sat);
@@ -1398,6 +1410,7 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
 }
 
 function stopHeartbeat(sat: SatelliteConnectionInternal): void {
+  pingSentAt.delete(sat);
   if (sat.heartbeatInterval) {
     clearInterval(sat.heartbeatInterval);
     sat.heartbeatInterval = null;
@@ -1526,6 +1539,7 @@ function restorePairedSatellites(): void {
 }
 
 function disconnectSatellite(sat: SatelliteConnectionInternal): void {
+  sat.connectionAttempt = undefined;
   appLog('core:annex-client', 'info', 'Disconnecting satellite', {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias, previousState: sat.state },
   });
@@ -1535,12 +1549,13 @@ function disconnectSatellite(sat: SatelliteConnectionInternal): void {
     sat.reconnectTimer = null;
   }
   if (sat.ws) {
-    try { sat.ws.close(); } catch (err) {
+    const ws = sat.ws;
+    sat.ws = null;
+    try { ws.close(); } catch (err) {
       appLog('core:annex-client', 'debug', 'Failed to close WebSocket during disconnect', {
         meta: { fingerprint: sat.fingerprint, error: err instanceof Error ? err.message : String(err) },
       });
     }
-    sat.ws = null;
   }
   setState(sat, 'disconnected');
 }
@@ -3018,7 +3033,7 @@ export function scan(): void {
 }
 
 /**
- * Resume all disconnected satellites (e.g., after power resume).
+ * Revalidate satellite connections after power resume.
  */
 export function resumeAllConnections(): void {
   // Waking never starts the client: with Connect to satellites off there's nothing to resume.
@@ -3026,7 +3041,13 @@ export function resumeAllConnections(): void {
   for (const sat of satellites.values()) {
     // An address announced before sleep may be another network's.
     sat.discovered = null;
-    if (sat.state === 'disconnected') {
+    // Pairing/pin stops need an explicit repair. A clock stop retains the
+    // existing single pinned retry on wake; TLS must accept it before open.
+    if (sat.needsPairing || (sat.halt && sat.halt !== 'clock')) continue;
+    if (sat.state === 'disconnected' || sat.state === 'connected' || sat.state === 'connecting') {
+      // A pre-sleep socket (including an unfinished upgrade) is not proof of
+      // reachability on the network we woke onto. Retire it before dialing.
+      disconnectSatellite(sat);
       sat.reconnectAttempt = 0; // Reset backoff on resume
       sat.candidateIndex = 0;
       useCandidate(sat, candidatesFor(sat));

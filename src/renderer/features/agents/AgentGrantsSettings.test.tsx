@@ -83,8 +83,10 @@ describe('Clubhouse permissions page (#2971)', () => {
   });
 
   it('updates the connection count when the live bindings change (#3275)', async () => {
-    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
-    const summary = await screen.findByTestId('agent-connection-summary');
+    // The grants Promise mounts the summary asynchronously; finish that mount
+    // before testing a synchronous update from its external store subscription.
+    await act(async () => { render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />); });
+    const summary = screen.getByTestId('agent-connection-summary');
     expect(summary).toHaveTextContent('0 outgoing connections.');
     act(() => useMcpBindingStore.setState({ bindings: [{ agentId: 'lead', targetId: 'other', targetKind: 'agent', label: 'Other' }] }));
     expect(summary).toHaveTextContent('1 outgoing connection.');

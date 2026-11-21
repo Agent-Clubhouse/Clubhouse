@@ -1,0 +1,126 @@
+{
+  "validatedHead": "554cfab37dfd48575b4db819233171377d10e365",
+  "endingHead": "554cfab37dfd48575b4db819233171377d10e365",
+  "trackedContentUnchanged": true,
+  "sourceTree": "272f4581a1fde9bfaf8e0d4f125e59c3fa44041a",
+  "scriptsTree": "795d2e692a745fd348c90115bad3e82eb513b43c",
+  "approvedAnnexHead": "ade92c0099f3a398e3e97b0003da825360eaefb6",
+  "scope": "Test-only initial asynchronous mount barrier; actual live-store update and immediate assertions unchanged. No product/source or bindingmanager changes.",
+  "node": "v24.22.1",
+  "packageLockSha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+  "config": {
+    "file": "vitest-config.txt",
+    "sha256": "d75f7c80ada0b9067c305f946c542e1b126a33c2903a5b71277fd584b684c5a8"
+  },
+  "results": [
+    {
+      "name": "admission",
+      "command": [
+        "uptime"
+      ],
+      "startedAt": "2026-11-21T05:04:15.868251+00:00",
+      "finishedAt": "2026-11-21T05:04:15.871292+00:00",
+      "exitCode": 0,
+      "file": "admission.txt",
+      "bytes": 66,
+      "sha256": "474cc82680e3a11fb6c29863128064ce729c8117be0c981405cd08a9ed978a71"
+    },
+    {
+      "name": "renderer-tests",
+      "command": [
+        "/opt/homebrew/bin/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "--config",
+        "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/.annex-proof.config.ts",
+        "--configLoader",
+        "runner",
+        "--project",
+        "renderer",
+        "src/renderer/features/agents/AgentGrantsSettings.test.tsx",
+        "src/renderer/features/agents/helpers/AgentHelpersSettings.test.tsx",
+        "src/renderer/stores/mcpBindingStore.test.ts",
+        "--maxWorkers",
+        "1",
+        "--no-file-parallelism"
+      ],
+      "startedAt": "2026-11-21T05:04:15.871397+00:00",
+      "finishedAt": "2026-11-21T05:04:17.953080+00:00",
+      "exitCode": 0,
+      "file": "renderer-tests.txt",
+      "bytes": 264,
+      "sha256": "b8309d7743500bbac83accfbcce4009201a870051d1d9554ec312b6068a03f9e"
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "/opt/homebrew/bin/node",
+        "node_modules/typescript/bin/tsc",
+        "--noEmit",
+        "--incremental",
+        "false"
+      ],
+      "startedAt": "2026-11-21T05:04:17.953251+00:00",
+      "finishedAt": "2026-11-21T05:04:26.608839+00:00",
+      "exitCode": 0,
+      "file": "typecheck.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "lint",
+      "command": [
+        "/opt/homebrew/bin/node",
+        "node_modules/eslint/bin/eslint.js",
+        "src/renderer/features/agents/AgentGrantsSettings.test.tsx"
+      ],
+      "startedAt": "2026-11-21T05:04:26.609012+00:00",
+      "finishedAt": "2026-11-21T05:04:27.049582+00:00",
+      "exitCode": 0,
+      "file": "lint.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check",
+        "ade92c0099f3a398e3e97b0003da825360eaefb6",
+        "554cfab37dfd48575b4db819233171377d10e365",
+        "--",
+        ".",
+        ":(exclude)docs/annex-resume-readiness/evidence/**"
+      ],
+      "startedAt": "2026-11-21T05:04:27.049715+00:00",
+      "finishedAt": "2026-11-21T05:04:27.065082+00:00",
+      "exitCode": 0,
+      "file": "diff-check.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "product-equality",
+      "command": [
+        "git",
+        "diff",
+        "--exit-code",
+        "ade92c0099f3a398e3e97b0003da825360eaefb6",
+        "554cfab37dfd48575b4db819233171377d10e365",
+        "--",
+        "src",
+        ":(exclude)src/renderer/features/agents/AgentGrantsSettings.test.tsx",
+        "scripts",
+        "package-lock.json",
+        "vitest.config.ts"
+      ],
+      "startedAt": "2026-11-21T05:04:27.065182+00:00",
+      "finishedAt": "2026-11-21T05:04:27.077975+00:00",
+      "exitCode": 0,
+      "file": "product-equality.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}
