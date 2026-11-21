@@ -78,10 +78,10 @@ type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'a
 ## Redaction and bounds
 
 - **Label:**
-  - for agent views, the host's known display name for `view.agentId` when it's admitted for display, else `displayName` or `title`;
+  - the member view (the selected agent's own view) is labelled with the selected agent's name, already in this Details body;
+  - every **other agent view** is labelled `Agent`, with no name, `displayName` or `title`. No existing permitted Details projection exports other agents' board labels, so this read invents no such exposure;
   - for other types, `displayName` or `title`, and for anchors, `label`;
   - all through `display(v, 240)` (secret redaction and control replacement).
-  - The selected agent's own view is labelled with its name.
 - **Not exported:**
   - sticky-note `content` and `color`;
   - plugin `pluginWidgetType` and `pluginId` (type `plugin` and a label only);
@@ -117,11 +117,26 @@ type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'a
   - "Read from <host> at <time>. A separate host observation, not the live canvas. Not editable here.";
   - a scaled read-only layout of view boxes (labels and type, no content), plus an equivalent accessible list.
 - **Focus:** the member view is highlighted and scrolled into view, and gets keyboard focus when the preview opens. That's the focus behavior; there's no canvas-tab focus.
+- **Transition between preview and snapshot navigation:**
+  - The preview action is offered only while `remoteCanvasJumpUnavailable(agent, hit)` returns the omission or "not in the host's current shared snapshot" reason.
+    - If it returns null (navigable), the row shows the existing Open action only.
+    - If it returns a host or reconnect reason, neither action is offered.
+  - It's re-evaluated on every Annex client store change, as the jump subscription already does.
+  - If an open preview's row becomes navigable (a later full snapshot contains the board), the preview closes and the row switches to Open. It isn't kept as a second copy.
+  - If navigation becomes refused again, nothing reopens automatically; the user can request a fresh preview read.
+  - A preview read that's still pending when the row becomes navigable is discarded on arrival.
+- **Fallback:** an `unavailable` page (changed, invalid, unreadable, limit, unsupported), an older host (400) or a transport status shows the row's existing refusal reason, plus one line naming the preview status. No retained preview is shown.
 - **Freshness:**
   - state is keyed to the card's `freshnessKey` (generation, receipt, pause, retry), the membership `selection` and the row `key`; any change discards it;
   - `onRefused` re-reads central Details (as M2);
   - a page naming another agent, member or selection is never shown.
 - No writes, store hydration, `remoteProjectStore` updates or local canvas reads.
+
+## What this does and doesn't deliver for #13
+
+- **Delivers:** read-only, selected, fresh-labelled visibility of an omitted board's layout and where the agent sits on it.
+- **Doesn't deliver:** opening that board in the canvas tab. Canvas-tab navigation stays refused while the host's snapshot omits the board, because the canvas tab is a read-write remote surface.
+- So this contract **doesn't complete #13**. Whether the preview satisfies the parity objective, or the canvas-tab limitation stays a recorded retained limit or open item, is a review decision. It isn't claimed here.
 
 ## Required proof (before PR)
 
@@ -140,7 +155,9 @@ type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'a
   - capture controls for mutation and getter reads;
   - an `expectedAgentId`-style binding mutation must fail a test.
 - **Renderer:**
-  - the preview opens only for refused rows;
+  - the preview opens only for omission or absence refusals, never for navigable or host-refused rows;
+  - it closes when the row becomes navigable, and a pending read is discarded;
+  - non-member agent views show `Agent`, never a name;
   - the member is highlighted and focused;
   - generation, receipt or selection changes discard it;
   - another agent's page is rejected;
@@ -173,5 +190,6 @@ No preload or IPC signature change: `agentDetails` already takes a `RemoteDetail
 
 ## Open questions for review
 
-- (a) Agent labels: confirm that showing other agents' host display names on the board matches what the snapshot already shows the same desktop. If not, label non-member agent views "Agent" only.
-- (b) Whether to offer the preview also for boards that **are** in the current snapshot. Proposed: no, since those already navigate.
+- (a) Resolved by default: non-member agent views are labelled `Agent`. Showing names would need an exact existing permitted display projection to be identified and reviewed first.
+- (b) No preview while valid snapshot navigation is available. The transition and fallback are defined above.
+- (c) Whether the preview fulfills #13, or the canvas-tab navigation limitation remains (see "What this does and doesn't deliver").
