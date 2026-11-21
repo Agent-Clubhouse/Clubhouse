@@ -168,15 +168,26 @@ export class NoticeFramedJournal<S, D, R> {
       await handle.writeFile(body); await handle.sync(); await handle.close(); handle = undefined;
       await beforeRename?.();
       await fs.rename(temporary, destination);
-    } catch (error) { failed = true; original = error; }
+    } catch (error) {
+      // telemetry-exempt: propagated below after current-own-temp cleanup
+      failed = true; original = error;
+    }
     finally {
-      try { await handle?.close(); } catch (error) { if (!failed) { failed = true; original = error; } }
+      try { await handle?.close(); }
+      catch (error) {
+        // telemetry-exempt: preserve original failure over secondary close error
+        if (!failed) { failed = true; original = error; }
+      }
       if (identity) {
         try {
           const current = await fs.lstat(temporary, { bigint: true });
-          if (!current.isFile() || current.dev !== identity.dev || current.ino !== identity.ino) throw new NoticeLedgerStorageError('notice_ledger_changed', 'Notice temporary identity changed');
-          await fs.unlink(temporary);
-        } catch (error) { if (!missing(error) && !failed) { failed = true; original = error; } }
+          if (!current.isFile() || current.dev !== identity.dev || current.ino !== identity.ino) {
+            if (!failed) { failed = true; original = new NoticeLedgerStorageError('notice_ledger_changed', 'Notice temporary identity changed'); }
+          } else await fs.unlink(temporary);
+        } catch (error) {
+          // telemetry-exempt: absent means renamed; preserve first failure otherwise
+          if (!missing(error) && !failed) { failed = true; original = error; }
+        }
       }
     }
     if (failed) throw original;
