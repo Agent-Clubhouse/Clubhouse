@@ -92,3 +92,21 @@ Combined with the earlier records, every source path in the PR now has a recorde
 - The unrecorded intermittent group-simulation failure, as an observation to assess with current CI.
 - The PR does not close #3733. #13, #14 and the live matrix are deferred.
 - The #3706 public-release hold applies to releases only.
+
+## Addendum: selection-hash scope (source-based, no new test claim)
+
+Both hashes were introduced in this PR: managed in `5271faf5f`, Canvas in `b517b57f3`.
+
+**Managed** (`selected-managed-parts-page.ts:29`) is `sha256([agentId, projectId, project.path, source, selected])`, unkeyed.
+- **Caller-visible inputs:**
+  - agentId, projectId and source;
+  - `project.path`, because the snapshot ships full Project objects (`annex-server.ts:1394`).
+- **Hidden inputs:** the raw asset IDs, plus the withheld grant-gated skill. `GRANT_GATED_SKILL_IDS` holds one public ID.
+- **Entropy:** custom IDs are `asset-${randomUUID()}`, so the list can only be reconstructed for setups that are entirely built-in. Even then a peer could only test the presence and position of the single prepare-handoff ID.
+- **Contract:** the code withholds that entry for *applicability* (comment at :26-28). Delivery is by grant (`delivery.ts:85`). There is no secrecy boundary, so this does not cross a confidentiality contract.
+
+**Canvas** (`selected-canvas-membership-page.ts:90`) hashes `[agentId, projectId, project.path, home, rows]`. The rows are delivered on the pages and the path is in the snapshot, so nothing hidden can be recovered.
+
+**Recommendation:** non-blocking hardening. Key the token with a per-process secret (HMAC). Controls: a stale token after a change, and a token that differs across processes.
+
+**Helper observations** (no selection token, no top-level key allowlist, control characters in text): correctness and defence-in-depth items, not security flaws.
