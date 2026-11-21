@@ -1,0 +1,59 @@
+{
+  "scope": "Source preservation and refused gate admissions only, NO test/compiler/lint pass or atomic executed-command seal",
+  "head": "224e0797daf1b6e696b46ddd82bea5d79894ae4c",
+  "tree": "08fdfe831ea135d013b48e5b203885e8d2b01124",
+  "base": "5bbabde2d9f6dcb4db248d0976681fc331f5611e",
+  "branch": "auto-reset-policy-design/q5-root-backend-state",
+  "upstream": "origin/auto-reset-policy-design/q5-root-backend-state",
+  "attempts": [
+    {
+      "attempt": 1,
+      "exitCode": 75,
+      "gateOutput": "tests-attempt1-REFUSED.txt",
+      "sha256": "827649e8c30bd1df338cba45f38ca7c95d0806f29504afdec0bc3f52c1139ae7",
+      "finishedAt": "2026-11-21T18:04:48.988875+00:00",
+      "childExecuted": false
+    },
+    {
+      "attempt": 2,
+      "exitCode": 75,
+      "gateOutput": "tests-attempt2-REFUSED.txt",
+      "sha256": "827649e8c30bd1df338cba45f38ca7c95d0806f29504afdec0bc3f52c1139ae7",
+      "finishedAt": "2026-11-21T18:06:11.773949+00:00",
+      "childExecuted": false
+    }
+  ],
+  "sourceSha256": {
+    "docs/design/q5-root-state-batch.md": "3f2a89235767f1709329289b563bf7a4f552ba5dfd15b0f337c949300a0afa54",
+    "docs/design/q5-root-state-imported-source-bridge.json": "4b421b8bae137a5cf2dace735ffb9710adf1005a762714b31dcdfa93a4182b2a",
+    "src/main/services/group-project-notice-ledger/intervals.test.ts": "cc464c9a5cde0412e8b2b6c5d987fcfa5efd7c81050559ff88c35377159d00c7",
+    "src/main/services/group-project-notice-ledger/intervals.ts": "6dad2906b7b8db5671047d75dd98b3817bd06eb2882f206469b75180ef61650a",
+    "src/main/services/group-project-notice-ledger/sparse-reader.test.ts": "4de164800e66b5934ffdfb4a3f46838f3975c70154511b8c8816eac2ce56c761",
+    "src/main/services/group-project-notice-ledger/sparse-reader.ts": "cd6d2efa04052d02ecac5572b02a88870b4d824a6dd4816369adb4d9f4b963e3",
+    "src/main/services/group-project-notice-ledger/sparse-state.test.ts": "0cf1aa5b7f85c4bdb69257d25007721292c847aa44a6af75effca1c4407c98d9",
+    "src/main/services/group-project-notice-ledger/sparse-state.ts": "899719861c2dd0b639c47ed30b75552bec58a65812a030098e1cb03448f76b0c",
+    "src/main/services/group-project-notice-ledger/state.test.ts": "aa1ffdbe7bd7affa0901f6318f700930e4d3af68a5a7fc1f209cd06ba97e6336",
+    "src/main/services/group-project-notice-ledger/state.ts": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8"
+  },
+  "testCommand": [
+    "vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/group-project-notice-ledger/sparse-state.test.ts",
+    "src/main/services/group-project-notice-ledger/sparse-reader.test.ts",
+    "src/main/services/group-project-notice-ledger/state.test.ts",
+    "src/main/services/group-project-notice-ledger/intervals.test.ts",
+    "--maxWorkers=2"
+  ],
+  "compiler": "NOT RUN",
+  "lint": "NOT RUN",
+  "sealerExecuted": false,
+  "sealerSha256": "806f6f0e49bf35a167fc1311bc96ba40671fc861e46afeb6b6e2dbacf7a13de9",
+  "dependencyRestored": true,
+  "limits": [
+    "Both gate exits75: swap_grew=1812->3945M; no baseline reset/bypass. Retry spacing >=60s.",
+    "Initial dependency verification incorrectly compared .bin with cache root instead of cache/node_modules; assertion refused before mutations. Corrected cache root lock SHA and all811 package symlinks verified; reversible local linkage restored after refusal.",
+    "Prepared root transitions confer no journal/catalog/activation/runtime/receipt authority."
+  ]
+}
