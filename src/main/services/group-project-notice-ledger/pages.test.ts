@@ -438,6 +438,16 @@ describe('lazy immutable notice index', () => {
       expect(await temps(directory)).toEqual([]);
     });
 
+  it('D1 schema: preserves arbitrary JSON payload fields inside an exact structural envelope', async () => {
+    const index = await NoticePageIndex.open(await home());
+    const value = { unsupportedStructuralField: true, nested: { futurePayloadField: ['kept', 1, null] } };
+    const original = await index.set(undefined, 'id', value);
+    const changed = await index.set(original, 'later-id', false);
+    expect(await index.get(original, 'id')).toEqual(value);
+    expect(await index.get(changed, 'id')).toEqual(value);
+    expect(await index.get(changed, 'later-id')).toBe(false);
+  });
+
   it('pages lexically without treating keys as board ordering and refuses malformed limits/keys/JSON', async () => {
     const index = await NoticePageIndex.open(await home());
     let root: NoticePageRoot | undefined;
