@@ -299,7 +299,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       }
     }
     // Enforce the envelope even when every section fits its individual row limit.
-    if (query?.card === 'connections') selectedConnectionPageEnvelope(result);
+    if (query?.card === 'connections') selectedConnectionPageEnvelope(result, budget);
     if (query?.card === 'orchestrate') {
       if (dispatcher || result.helperPages !== 1) return { status: 400, body: { error: 'unsupported_helper_page' } };
       if (!result.helperPage) return authorized() ? { status: 409, body: { error: 'helper_inventory_changed' } } : refused();
@@ -310,7 +310,8 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       for (const c of cards) if (c.id !== 'orchestrate') { c.requested = false; c.omitted = 0; c.rows = []; c.notes = []; delete c.connectionPage; c.summary = 'Not included in this selected helper page'; }
     }
     while (Buffer.byteLength(JSON.stringify(result)) > budget) {
-      const largest = cards.filter((c) => c.rows.length).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];
+      // A page-only requested Connections card keeps every selected record: the envelope fitted its text, so never pop it here.
+      const largest = cards.filter((c) => c.rows.length && !(result.connectionPageOnly === true && c.id === 'connections')).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];
       if (!largest) throw new Error('details_limit');
       largest.rows.pop(); largest.omitted++;
     }

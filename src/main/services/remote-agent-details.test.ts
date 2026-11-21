@@ -1333,6 +1333,24 @@ describe('Details byte budget for wrapping callers (M1)', () => {
     expect(await readRemoteAgentDetails('a1', () => false, undefined, { maxBytes })).toEqual({ status: 403, body: { error: 'details_read_refused' } });
   });
 
+  it('keeps every requested Connections row in the role-budget window, truncating text instead (M1-a)', async () => {
+    const query = { card: 'connections' as const, source: 'outgoing' as const };
+    const presentation = await import('./remote-details-presentation'), actualSection = presentation.section;
+    const pressure = vi.spyOn(presentation, 'section').mockImplementation(async (c, run) => { await actualSection(c, run); if (c.id === 'connections') c.rows = Array.from({ length: 90 }, (_, i) => ({ label: `Field ${i}`, value: 'v'.repeat(1900) })); });
+    try {
+      const page = await readRemoteAgentDetails('a1', () => true, query);
+      expect(page.status).toBe(200);
+      const plain = (page.body as RemoteAgentDetails).cards.find((c) => c.id === 'connections')!, natural = bytes(page.body);
+      expect(natural).toBeLessThanOrEqual(256 * 1024);
+      const budget = natural - 1000;
+      const fitted = await readRemoteAgentDetails('a1', () => true, query, { maxBytes: budget });
+      expect(fitted.status).toBe(200); expect(isRemoteAgentDetails(fitted.body, 'a1')).toBe(true);
+      const c = (fitted.body as RemoteAgentDetails).cards.find((c) => c.id === 'connections')!;
+      expect(c.rows).toHaveLength(plain.rows.length); expect(c.omitted).toBe(plain.omitted);
+      expect(c.notes.join(' ')).toContain('field text'); expect(bytes(fitted.body)).toBeLessThanOrEqual(budget);
+    } finally { pressure.mockRestore(); }
+  });
+
   it('applies the budget to a Connections page: exact size passes, an irreducible budget fails closed', async () => {
     const query = { card: 'connections' as const, source: 'outgoing' as const };
     const page = await readRemoteAgentDetails('a1', () => true, query);

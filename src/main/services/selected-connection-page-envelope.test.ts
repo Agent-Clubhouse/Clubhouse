@@ -25,3 +25,16 @@ it('omits typed outgoing Wires from source-only pages and refuses mixed unreques
   selectedConnectionPageEnvelope(value); expect(value.outgoingWires).toBeUndefined(); expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
   expect(isRemoteAgentDetails({ ...value, outgoingWires: wires }, 'a1')).toBe(false);
 });
+
+it('fits a caller budget by truncating text, keeping every requested row, and keeps the cap as its default (M1-a)', () => {
+  const longRows = () => { const value = fixture(), c = value.cards.find((c) => c.id === 'connections')!; c.rows = Array.from({ length: 100 }, (_, i) => ({ label: `Field ${i}`, value: 'v'.repeat(1900) })); return { value, c }; };
+  const { value: unbudgeted, c: plain } = longRows(); selectedConnectionPageEnvelope(unbudgeted);
+  const natural = Buffer.byteLength(JSON.stringify(unbudgeted));
+  // A role-sized budget below the envelope's natural size but well above anything irreducible.
+  expect(natural).toBeLessThanOrEqual(REMOTE_DETAILS_MAX_BYTES); expect(plain.notes.join(' ')).not.toContain('field text');
+  const budget = natural - 1000;
+  const { value, c } = longRows(); selectedConnectionPageEnvelope(value, budget);
+  expect(c.rows).toHaveLength(100); expect(c.omitted).toBe(0); expect(c.rows.map((r) => r.label.split(' (')[0])).toEqual(plain.rows.map((r) => r.label.split(' (')[0]));
+  expect(c.notes.join(' ')).toContain('field text'); expect(Buffer.byteLength(JSON.stringify(value))).toBeLessThanOrEqual(budget); expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
+  expect(() => selectedConnectionPageEnvelope(longRows().value, 512)).toThrow('details_page_limit');
+});
