@@ -1,0 +1,238 @@
+[
+  {
+    "mode": "control",
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+      "test/research/q5-owner-mutations.cjs",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-owner-mutant-jqn3utln",
+      "control"
+    ],
+    "startedAt": "2026-11-21T21:10:14.151691+00:00",
+    "finishedAt": "2026-11-21T21:10:15.232542+00:00",
+    "exit": 0,
+    "expectedResult": true,
+    "stdoutSha256": "44ce312efab9b8e3bfe9a68b875b60e275b7dde8e21f3cf0d222952c727e7c0f",
+    "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "parsed": {
+      "mode": "control",
+      "targets": 0,
+      "cases": [
+        "ack-legacy",
+        "entered-legacy",
+        "ack-sparse",
+        "entered-sparse",
+        "recovery-progress",
+        "publication-beforeFinalBookkeeping",
+        "publication-afterAppendBeforeSync"
+      ],
+      "result": "all invariants held"
+    }
+  },
+  {
+    "mode": "ack-fence",
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+      "test/research/q5-owner-mutations.cjs",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-owner-mutant-jqn3utln",
+      "ack-fence"
+    ],
+    "startedAt": "2026-11-21T21:10:15.265627+00:00",
+    "finishedAt": "2026-11-21T21:10:15.616072+00:00",
+    "exit": 2,
+    "expectedResult": true,
+    "stdoutSha256": "c17d14d7906bbeaaaaf1ce0c9e2c0e7102f48169608ac2a6a84d6a3662671e67",
+    "stderrSha256": "916455cbfd46d10c943a9b51332d9096549137dee63cd04b45c99f5a6dc58c9d",
+    "parsed": {
+      "mode": "ack-fence",
+      "targets": 1,
+      "cases": [],
+      "result": "failed",
+      "message": "SAFETY ASSERTION FAILED: ACK-first must synchronously own loss, not merely win a later queue race",
+      "code": 2
+    }
+  },
+  {
+    "mode": "entered-coercion",
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+      "test/research/q5-owner-mutations.cjs",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-owner-mutant-jqn3utln",
+      "entered-coercion"
+    ],
+    "startedAt": "2026-11-21T21:10:15.649078+00:00",
+    "finishedAt": "2026-11-21T21:10:15.991220+00:00",
+    "exit": 2,
+    "expectedResult": true,
+    "stdoutSha256": "c4273871dfba5dda2f1e55f60d6b9f5804973df96d8431881426e2943a011898",
+    "stderrSha256": "46fc7aafd432e098e1788619af8f13829822b7785a786e941cca086fd63fc1bc",
+    "parsed": {
+      "mode": "entered-coercion",
+      "targets": 1,
+      "cases": [],
+      "result": "failed",
+      "message": "SAFETY ASSERTION FAILED: released entered coverage became ready",
+      "code": 2
+    }
+  },
+  {
+    "mode": "recovery-progress",
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+      "test/research/q5-owner-mutations.cjs",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-owner-mutant-jqn3utln",
+      "recovery-progress"
+    ],
+    "startedAt": "2026-11-21T21:10:16.024928+00:00",
+    "finishedAt": "2026-11-21T21:10:16.371728+00:00",
+    "exit": 2,
+    "expectedResult": true,
+    "stdoutSha256": "5ec4e3763c72ab9c542b85161da8612917468a90036c50e9d62f4e6a6847ea92",
+    "stderrSha256": "9a067585a5ddcbc1569112f43aaa9196191a246017177c0d1e73e8a2e0b57ebd",
+    "parsed": {
+      "mode": "recovery-progress",
+      "targets": 1,
+      "cases": [],
+      "result": "failed",
+      "message": "SAFETY ASSERTION FAILED: no-progress recovery must typed-refuse once, not continue",
+      "code": 2
+    }
+  },
+  {
+    "mode": "early-state",
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+      "test/research/q5-owner-mutations.cjs",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-owner-mutant-jqn3utln",
+      "early-state"
+    ],
+    "startedAt": "2026-11-21T21:10:16.398070+00:00",
+    "finishedAt": "2026-11-21T21:10:16.741674+00:00",
+    "exit": 2,
+    "expectedResult": true,
+    "stdoutSha256": "d9724dfa503ad9b10e95f8980db064d89879a9d6862829a6a6bae57220be18aa",
+    "stderrSha256": "0c2fa3c7d85c2deccd993353bccfc0fc4a80225563c30af9ae9f70d7163b8126",
+    "parsed": {
+      "mode": "early-state",
+      "targets": 2,
+      "cases": [],
+      "result": "failed",
+      "message": "SAFETY ASSERTION FAILED: candidate state visible before final IO/publication",
+      "code": 2
+    }
+  },
+  {
+    "mode": "early-revision",
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+      "test/research/q5-owner-mutations.cjs",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-owner-mutant-jqn3utln",
+      "early-revision"
+    ],
+    "startedAt": "2026-11-21T21:10:16.775950+00:00",
+    "finishedAt": "2026-11-21T21:10:17.156229+00:00",
+    "exit": 2,
+    "expectedResult": true,
+    "stdoutSha256": "bd58a522d84d2a59fc56c13045f1effd73b94931266f22ff27b9bb7628134388",
+    "stderrSha256": "1fcc57ad87a8378cf0c9d00d735b62ec02b3fbd29c4c369845af6e4573a5e262",
+    "parsed": {
+      "mode": "early-revision",
+      "targets": 2,
+      "cases": [],
+      "result": "failed",
+      "message": "SAFETY ASSERTION FAILED: candidate revision visible before final IO/publication",
+      "code": 2
+    }
+  },
+  {
+    "mode": "early-digest",
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+      "test/research/q5-owner-mutations.cjs",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-owner-mutant-jqn3utln",
+      "early-digest"
+    ],
+    "startedAt": "2026-11-21T21:10:17.185704+00:00",
+    "finishedAt": "2026-11-21T21:10:17.576508+00:00",
+    "exit": 2,
+    "expectedResult": true,
+    "stdoutSha256": "b38ed0f4170705f8e4bb68078b9a16a2459f6f46d7ac0068de5d088728de798e",
+    "stderrSha256": "cc367aced86c2302fcedff843c6519bb3d3bc89b0f07124d66c39e2601c994b7",
+    "parsed": {
+      "mode": "early-digest",
+      "targets": 2,
+      "cases": [],
+      "result": "failed",
+      "message": "SAFETY ASSERTION FAILED: candidate digest visible before final IO/publication",
+      "code": 2
+    }
+  },
+  {
+    "mode": "early-bytes",
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+      "test/research/q5-owner-mutations.cjs",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-owner-mutant-jqn3utln",
+      "early-bytes"
+    ],
+    "startedAt": "2026-11-21T21:10:17.608780+00:00",
+    "finishedAt": "2026-11-21T21:10:17.966489+00:00",
+    "exit": 2,
+    "expectedResult": true,
+    "stdoutSha256": "9734393814e387e458d8def2712107897999e6211b01b4d7d1a16a0b43b559e5",
+    "stderrSha256": "5527970320f0089fd111dea3b5148a99ebc1df6cbad93b93c51d34a049ec010b",
+    "parsed": {
+      "mode": "early-bytes",
+      "targets": 2,
+      "cases": [],
+      "result": "failed",
+      "message": "SAFETY ASSERTION FAILED: candidate segment/bytes/file hash visible before final IO/publication",
+      "code": 2
+    }
+  },
+  {
+    "mode": "early-file-hash",
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+      "test/research/q5-owner-mutations.cjs",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-owner-mutant-jqn3utln",
+      "early-file-hash"
+    ],
+    "startedAt": "2026-11-21T21:10:18.000693+00:00",
+    "finishedAt": "2026-11-21T21:10:18.351469+00:00",
+    "exit": 2,
+    "expectedResult": true,
+    "stdoutSha256": "eff38df13885ba5050b4b41e58bb29836e4c9d08a3df3d19bd6cf62772bebf39",
+    "stderrSha256": "5527970320f0089fd111dea3b5148a99ebc1df6cbad93b93c51d34a049ec010b",
+    "parsed": {
+      "mode": "early-file-hash",
+      "targets": 1,
+      "cases": [],
+      "result": "failed",
+      "message": "SAFETY ASSERTION FAILED: candidate segment/bytes/file hash visible before final IO/publication",
+      "code": 2
+    }
+  },
+  {
+    "mode": "early-anchors",
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+      "test/research/q5-owner-mutations.cjs",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-owner-mutant-jqn3utln",
+      "early-anchors"
+    ],
+    "startedAt": "2026-11-21T21:10:18.382925+00:00",
+    "finishedAt": "2026-11-21T21:10:18.747915+00:00",
+    "exit": 2,
+    "expectedResult": true,
+    "stdoutSha256": "da192d6f3ca374890e8bc50dd32c7600d673792b7acd638d5235105afcfdf9fd",
+    "stderrSha256": "6c3d01a627bf0a98d8d1bfe26c8e247f13ac2fbf6277b6fbe1a74a4728b68109",
+    "parsed": {
+      "mode": "early-anchors",
+      "targets": 2,
+      "cases": [],
+      "result": "failed",
+      "message": "SAFETY ASSERTION FAILED: new intent anchor/capability visible before final IO/publication",
+      "code": 2
+    }
+  }
+]

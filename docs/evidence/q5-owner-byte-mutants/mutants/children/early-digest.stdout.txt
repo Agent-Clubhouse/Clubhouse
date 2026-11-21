@@ -1,0 +1,1 @@
+{"mode":"early-digest","targets":2,"cases":[],"result":"failed","message":"SAFETY ASSERTION FAILED: candidate digest visible before final IO/publication","code":2}

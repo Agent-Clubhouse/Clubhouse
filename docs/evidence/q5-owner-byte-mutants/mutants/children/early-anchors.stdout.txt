@@ -1,0 +1,1 @@
+{"mode":"early-anchors","targets":2,"cases":[],"result":"failed","message":"SAFETY ASSERTION FAILED: new intent anchor/capability visible before final IO/publication","code":2}

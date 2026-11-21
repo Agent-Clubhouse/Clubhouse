@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "bridgeSource": "02fa8feca87e1aeda2ca18965d94fdfe2175330b",
+  "mutantSource": "8a91d171cfb6a4ce31bde7c0c7b28e092fb7082d",
+  "scope": "private synthetic byte bridge/semantic mutation proof only",
+  "checks": {
+    "bridge": {
+      "source": "02fa8feca87e1aeda2ca18965d94fdfe2175330b",
+      "tree": "d162c0329cf64a0d2e5ea38c5ff63c9d9956486c",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/group-project-notice-ledger/journal.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "bridges frozen legacy"
+      ],
+      "selectedHashCount": 46,
+      "childWallSeconds": 0.742939
+    },
+    "mutants": {
+      "source": "8a91d171cfb6a4ce31bde7c0c7b28e092fb7082d",
+      "tree": "8bbcb7a1b00a21be268aef7ec651dda9842befb0",
+      "exit": 0,
+      "argv": [
+        "python3",
+        "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-owner-mutant-driver.py",
+        "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/8a91d171c-mutant-children"
+      ],
+      "selectedHashCount": 48,
+      "childWallSeconds": 4.653876
+    }
+  },
+  "dependenciesRestored": true,
+  "mutants": [
+    {
+      "mode": "control",
+      "exit": 0,
+      "targets": 0,
+      "expected": true
+    },
+    {
+      "mode": "ack-fence",
+      "exit": 2,
+      "targets": 1,
+      "expected": true
+    },
+    {
+      "mode": "entered-coercion",
+      "exit": 2,
+      "targets": 1,
+      "expected": true
+    },
+    {
+      "mode": "recovery-progress",
+      "exit": 2,
+      "targets": 1,
+      "expected": true
+    },
+    {
+      "mode": "early-state",
+      "exit": 2,
+      "targets": 2,
+      "expected": true
+    },
+    {
+      "mode": "early-revision",
+      "exit": 2,
+      "targets": 2,
+      "expected": true
+    },
+    {
+      "mode": "early-digest",
+      "exit": 2,
+      "targets": 2,
+      "expected": true
+    },
+    {
+      "mode": "early-bytes",
+      "exit": 2,
+      "targets": 2,
+      "expected": true
+    },
+    {
+      "mode": "early-file-hash",
+      "exit": 2,
+      "targets": 1,
+      "expected": true
+    },
+    {
+      "mode": "early-anchors",
+      "exit": 2,
+      "targets": 2,
+      "expected": true
+    }
+  ]
+}

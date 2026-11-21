@@ -1,0 +1,18 @@
+{
+  "argv": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "q5-ledger",
+    "4",
+    "--",
+    "python3",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-owner-mutant-seal.py",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/8a91d171c-mutants-attempt1",
+    "--",
+    "python3",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-owner-mutant-driver.py",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/8a91d171c-mutant-children"
+  ],
+  "startedAt": "2026-11-21T21:10:13.287068+00:00",
+  "finishedAt": "2026-11-21T21:10:18.826793+00:00",
+  "exitCode": 0
+}

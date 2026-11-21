@@ -1,0 +1,1 @@
+{"mode":"entered-coercion","targets":1,"cases":[],"result":"failed","message":"SAFETY ASSERTION FAILED: released entered coverage became ready","code":2}

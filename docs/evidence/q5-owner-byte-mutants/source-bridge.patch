@@ -1,0 +1,156 @@
+diff --git a/src/main/services/group-project-notice-ledger/framed-journal.ts b/src/main/services/group-project-notice-ledger/framed-journal.ts
+index 2e28f0eb0..439f07674 100644
+--- a/src/main/services/group-project-notice-ledger/framed-journal.ts
++++ b/src/main/services/group-project-notice-ledger/framed-journal.ts
+@@ -118,6 +118,8 @@ export class NoticeFramedJournal<S, D, R> {
+   get current(): S | undefined { return this.state; }
+   get committedRevision(): number { return this.revision; }
+   get committedDigest(): string { return this.digest; }
++  /** Internal fixed-shape publication diagnostics; no IO, identities or content. */
++  get committedPosition() { return Object.freeze({ segment: this.segment, segmentBytes: this.segmentBytes, fileHash: this.currentFileHash }); }
+   get healthy(): boolean { return !this.poisoned && !this.closing; }
+   get directoryDurability() { return this.directoryFlusher.observation; }
+   /** Typed reconciliation refusal is also an irreversible admission fence. */
+diff --git a/src/main/services/group-project-notice-ledger/journal.ts b/src/main/services/group-project-notice-ledger/journal.ts
+index 34fa44f7b..c82e5433b 100644
+--- a/src/main/services/group-project-notice-ledger/journal.ts
++++ b/src/main/services/group-project-notice-ledger/journal.ts
+@@ -92,6 +92,8 @@ export class NoticeJournalOwner<S, D, R, V> {
+   get healthy(): boolean { return this.backend.healthy; }
+   get admitting(): boolean { return this.ready && !this.retired && !this.recovering && this.backend.healthy; }
+   get committedRevision(): number { return this.backend.committedRevision; }
++  get committedDigest(): string { return this.backend.committedDigest; }
++  get committedPosition() { return this.backend.committedPosition; }
+   /** Active anchors plus pending producers; weak historical capabilities are caller-lived. */
+   get retention() { return { activeAnchors: this.anchors.size, pendingClaims: this.claims.size }; }
+   snapshot(): V | undefined { return this.backend.current ? this.strategy.view(this.backend.current) : undefined; }
+diff --git a/test/research/q5-owner-mutations.cjs b/test/research/q5-owner-mutations.cjs
+new file mode 100644
+index 000000000..6e6644e22
+--- /dev/null
++++ b/test/research/q5-owner-mutations.cjs
+@@ -0,0 +1,124 @@
++// Bounded synthetic storage proofs. Mutations exist only in transpiled memory.
++const fs = require('node:fs');
++const fsp = require('node:fs/promises');
++const path = require('node:path');
++const ts = require('typescript');
++const mode = process.argv[3]; const home = process.argv[2];
++const modes = ['control', 'ack-fence', 'entered-coercion', 'recovery-progress', 'early-state', 'early-revision', 'early-digest', 'early-bytes', 'early-file-hash', 'early-anchors'];
++if (!modes.includes(mode) || !home || !path.isAbsolute(home)) throw new Error('Explicit synthetic home and known proof mode required');
++let targets = 0;
++function replace(source, from, to) {
++  if (source.split(from).length !== 2) throw new Error(`Mutation setup target missing/ambiguous: ${mode}`);
++  targets++; return source.replace(from, to);
++}
++require.extensions['.ts'] = (m, filename) => {
++  let source = fs.readFileSync(filename, 'utf8');
++  if (filename.endsWith(`${path.sep}journal.ts`)) {
++    if (mode === 'ack-fence') source = replace(source, 'this.bump(anchor); this.claims.set(anchor.attemptId, claim);', '/* mutant: omit synchronous ACK ownership */');
++    if (mode === 'entered-coercion') source = replace(source, '&& claim?.anchor?.entered', '&& false');
++    if (mode === 'recovery-progress') source = replace(source, "if (!result.changed || after.count >= before.count || after.ids.some((id) => before.ids.includes(id))) this.backend.refuseReconciliation('Recovery did not shrink exact active coverage');", '/* mutant: omit no-progress refusal */');
++  }
++  if (filename.endsWith(`${path.sep}framed-journal.ts`)) {
++    const hook = "await this.options.testFailure?.('beforeFinalBookkeeping');";
++    for (const [name, assignment] of [['early-state', 'this.state = prepared.state;'], ['early-revision', 'this.revision = envelope.revision;'], ['early-digest', 'this.digest = digest;'], ['early-bytes', 'this.segmentBytes = targetBytes + frame.length;'], ['early-anchors', 'this.options.published?.(prepared.state, prepared.record, owned);']]) {
++      if (mode === name) { source = replace(source, assignment, ''); source = replace(source, hook, `${assignment}\n        ${hook}`); }
++    }
++    if (mode === 'early-file-hash') source = replace(source, "await handle.writeFile(frame); await this.options.testFailure?.('afterAppendBeforeSync');", "await handle.writeFile(frame); this.currentFileHash = hash(await this.readCurrent(targetSegment, false)); await this.options.testFailure?.('afterAppendBeforeSync');");
++  }
++  m._compile(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, filename);
++};
++const ledger = path.resolve('src/main/services/group-project-notice-ledger');
++const { NoticeJournalOwner } = require(path.join(ledger, 'journal.ts'));
++const { NoticeFramedJournal } = require(path.join(ledger, 'framed-journal.ts'));
++const { sparseRootCodec, noticeHeaderDigest } = require(path.join(ledger, 'root-codec.ts'));
++const { PreparedNoticeState } = require(path.join(ledger, 'sparse-state.ts'));
++const { noticeRecipientKey } = require(path.join(ledger, 'state.ts'));
++const expectedTargets = mode === 'control' ? 0 : mode.startsWith('early-') && mode !== 'early-file-hash' ? 2 : 1;
++if (targets !== expectedTargets) throw new Error(`Mutation setup count ${targets} != ${expectedTargets}`);
++function check(value, message) { if (!value) throw Object.assign(new Error(`SAFETY ASSERTION FAILED: ${message}`), { proofExit: 2 }); }
++const recipient = { groupId: 'synthetic-group', host: null, agentId: 'synthetic-agent', generation: 'synthetic-generation' };
++const installationId = '11111111-2222-3333-4444-555555555555';
++const cases = [];
++async function caseHome(name) { return fsp.mkdtemp(path.join(home, `${name}-`)); }
++async function open(profile, directory, options = {}) {
++  return (profile === 'legacy' ? NoticeJournalOwner.openLegacy : NoticeJournalOwner.openSparse)({ directory, recipient, installationId, ...options });
++}
++async function init(owner) { await owner.append({ kind: 'initialize', recipient, baseline: 0 }); }
++async function intent(owner, seq) {
++  await owner.append({ kind: 'scan', through: seq, eligible: [{ seq, postId: `synthetic-${seq}` }] });
++  await owner.append({ kind: 'intent', attemptId: `attempt-${seq}`, posts: [{ seq, postId: `synthetic-${seq}` }], startedAt: 1 });
++  return owner.captureLiveHandoff(`attempt-${seq}`);
++}
++async function ackFence(profile) {
++  const directory = await caseHome('ack'); const owner = await open(profile, directory);
++  let ack; let loss;
++  try {
++    await init(owner); const handle = await intent(owner, 1); check(owner.tryMarkHandoffEntered(handle) === 'entered', 'control did not enter');
++    ack = owner.acknowledgeLiveHandoff(handle); loss = owner.claimLoss(handle, 'unknown');
++    check(loss.kind === 'journal_owned', 'ACK-first must synchronously own loss, not merely win a later queue race');
++    await ack; cases.push(`ack-${profile}`);
++  } finally { await Promise.allSettled([ack, ...(loss?.kind === 'claimed' ? [loss.committed] : [])]); await owner.close(); await fsp.rm(directory, { recursive: true, force: true }); }
++}
++async function enteredCoercion(profile) {
++  const directory = await caseHome('entered'); const owner = await open(profile, directory);
++  try {
++    await init(owner); const handle = await intent(owner, 1); check(owner.tryMarkHandoffEntered(handle) === 'entered', 'control did not enter');
++    owner.releaseLiveHandoff(handle); await owner.append({ kind: 'settle', attemptId: 'attempt-1', outcome: 'unsubmitted' });
++    const state = owner.snapshot(); const ready = 'roots' in state ? (state.roots.ready?.count ?? 0) : state.pending.filter((p) => !p.attemptId).length;
++    check(ready === 0, 'released entered coverage became ready'); cases.push(`entered-${profile}`);
++  } finally { await owner.close(); await fsp.rm(directory, { recursive: true, force: true }); }
++}
++async function recoveryProgress() {
++  const directory = await caseHome('recovery');
++  const raw = await NoticeFramedJournal.open({ directory, recipientKey: noticeRecipientKey(recipient), installationId, codec: sparseRootCodec(directory, recipient) });
++  await raw.append({ expectedHeaderDigest: null, delta: { kind: 'initialize', recipient, baseline: 0 } });
++  await raw.append({ expectedHeaderDigest: noticeHeaderDigest(raw.current.header), delta: { kind: 'scan', through: 1, eligible: [{ seq: 1, postId: 'synthetic-1' }] } });
++  await raw.append({ expectedHeaderDigest: noticeHeaderDigest(raw.current.header), delta: { kind: 'intent', attemptId: 'attempt-1', posts: [{ seq: 1, postId: 'synthetic-1' }], startedAt: 1, handoffProcess: 'synthetic-prior-process' } });
++  await raw.close();
++  const original = PreparedNoticeState.prototype.prepare; let calls = 0; let failure; let owner;
++  PreparedNoticeState.prototype.prepare = async function (input) {
++    if (input.kind === 'recover') { if (++calls > 2) throw new Error('bounded no-progress continuation'); return this; }
++    return original.call(this, input);
++  };
++  try {
++    try { owner = await open('sparse', directory); } catch (error) { failure = error; }
++    check(failure?.code === 'notice_ledger_reconciliation' && calls === 1, 'no-progress recovery must typed-refuse once, not continue');
++    cases.push('recovery-progress');
++  } finally { PreparedNoticeState.prototype.prepare = original; if (owner) await owner.close(); await fsp.rm(directory, { recursive: true, force: true }); }
++}
++async function publication(point) {
++  const directory = await caseHome('publication'); let enabled = false; let arrive; let release;
++  const held = new Promise((r) => { arrive = r; }); const released = new Promise((r) => { release = r; });
++  const owner = await open('sparse', directory, { testFailure: async (where) => { if (enabled && where === point) { arrive(); await released; } } });
++  let pending; let capture; let minted = false;
++  try {
++    await init(owner); await owner.append({ kind: 'scan', through: 1, eligible: [{ seq: 1, postId: 'synthetic-1' }] });
++    const state = JSON.stringify(owner.snapshot()); const revision = owner.committedRevision; const digest = owner.committedDigest; const position = JSON.stringify(owner.committedPosition);
++    enabled = true; pending = owner.append({ kind: 'intent', attemptId: 'attempt-1', posts: [{ seq: 1, postId: 'synthetic-1' }], startedAt: 1 });
++    await held;
++    capture = owner.captureLiveHandoff('attempt-1').then((h) => { minted = true; return h; });
++    await new Promise((r) => setImmediate(r));
++    check(JSON.stringify(owner.snapshot()) === state, 'candidate state visible before final IO/publication');
++    check(owner.committedRevision === revision, 'candidate revision visible before final IO/publication');
++    check(owner.committedDigest === digest, 'candidate digest visible before final IO/publication');
++    check(JSON.stringify(owner.committedPosition) === position, 'candidate segment/bytes/file hash visible before final IO/publication');
++    check(owner.retention.activeAnchors === 0 && !minted, 'new intent anchor/capability visible before final IO/publication');
++    cases.push(`publication-${point}`);
++  } finally {
++    enabled = false; release(); await Promise.allSettled([pending, capture]); await owner.close(); await fsp.rm(directory, { recursive: true, force: true });
++  }
++}
++(async () => {
++  if (mode === 'control') {
++    for (const profile of ['legacy', 'sparse']) { await ackFence(profile); await enteredCoercion(profile); }
++    await recoveryProgress(); await publication('beforeFinalBookkeeping'); await publication('afterAppendBeforeSync');
++  } else if (mode === 'ack-fence') await ackFence('sparse');
++  else if (mode === 'entered-coercion') await enteredCoercion('sparse');
++  else if (mode === 'recovery-progress') await recoveryProgress();
++  else await publication(mode === 'early-file-hash' ? 'afterAppendBeforeSync' : 'beforeFinalBookkeeping');
++  console.log(JSON.stringify({ mode, targets, cases, result: 'all invariants held' }));
++})().catch((error) => {
++  console.error(error);
++  console.log(JSON.stringify({ mode, targets, cases, result: 'failed', message: error.message, code: error.proofExit ?? 1 }));
++  process.exitCode = error.proofExit ?? 1;
++});

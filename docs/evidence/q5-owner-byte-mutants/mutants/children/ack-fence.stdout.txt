@@ -1,0 +1,1 @@
+{"mode":"ack-fence","targets":1,"cases":[],"result":"failed","message":"SAFETY ASSERTION FAILED: ACK-first must synchronously own loss, not merely win a later queue race","code":2}

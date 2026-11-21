@@ -1,0 +1,1 @@
+{"mode":"early-revision","targets":2,"cases":[],"result":"failed","message":"SAFETY ASSERTION FAILED: candidate revision visible before final IO/publication","code":2}

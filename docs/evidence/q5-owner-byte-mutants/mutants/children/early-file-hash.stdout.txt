@@ -1,0 +1,1 @@
+{"mode":"early-file-hash","targets":1,"cases":[],"result":"failed","message":"SAFETY ASSERTION FAILED: candidate segment/bytes/file hash visible before final IO/publication","code":2}

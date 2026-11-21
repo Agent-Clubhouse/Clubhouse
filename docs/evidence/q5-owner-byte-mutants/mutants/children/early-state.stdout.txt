@@ -1,0 +1,1 @@
+{"mode":"early-state","targets":2,"cases":[],"result":"failed","message":"SAFETY ASSERTION FAILED: candidate state visible before final IO/publication","code":2}

@@ -1,0 +1,1 @@
+{"mode":"control","targets":0,"cases":["ack-legacy","entered-legacy","ack-sparse","entered-sparse","recovery-progress","publication-beforeFinalBookkeeping","publication-afterAppendBeforeSync"],"result":"all invariants held"}

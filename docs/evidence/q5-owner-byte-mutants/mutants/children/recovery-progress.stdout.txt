@@ -1,0 +1,1 @@
+{"mode":"recovery-progress","targets":1,"cases":[],"result":"failed","message":"SAFETY ASSERTION FAILED: no-progress recovery must typed-refuse once, not continue","code":2}

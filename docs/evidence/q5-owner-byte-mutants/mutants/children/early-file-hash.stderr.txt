@@ -1,0 +1,6 @@
+Error: SAFETY ASSERTION FAILED: candidate segment/bytes/file hash visible before final IO/publication
+    at check (/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/q5-owner-mutations.cjs:38:66)
+    at publication (/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/q5-owner-mutations.cjs:104:5)
+    at async /Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/q5-owner-mutations.cjs:118:8 {
+  proofExit: 2
+}
