@@ -1,6 +1,7 @@
 # Q5 sequenced persistence foundation evidence
 
-Latest bounded slice: [prepared-reader-a3b653e34.md](prepared-reader-a3b653e34.md).
+Latest bounded slice: [bounded-page-reads-0826faa44.md](bounded-page-reads-0826faa44.md).
+Previous accepted prepared reader: [prepared-reader-a3b653e34.md](prepared-reader-a3b653e34.md).
 Previous approved journal: [entry-arbitration-71bd4d632.md](entry-arbitration-71bd4d632.md).
 Narrow review follow-up: [entry-mutations-71bd4d632.md](entry-mutations-71bd4d632.md).
 Previous approved slice: [M1-L-6d208ecb2.md](M1-L-6d208ecb2.md).

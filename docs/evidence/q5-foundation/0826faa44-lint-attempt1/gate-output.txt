@@ -1,0 +1,4 @@
+2026-11-21T12:29:04Z START q5-ledger idle=90% unused=17G avail=32865M freepct=73 comp=10G swap=1812M pid=55120 cmd=python3 test/research/q5-seal-implementation.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/0826faa44-lint-attempt1 -- ./node_modules/.bin/eslint src/main/services/group-project-notice-ledger/pages.ts src/main/services/group-project-notice-ledger/pages.test.ts src/main/services/group-project-notice-ledger/sparse-reader.test.ts
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/0826faa44-lint-attempt1/receipt.json", "exitCode": 0, "sealEqual": true}
+2026-11-21T12:29:04Z END q5-ledger rc=0
+
