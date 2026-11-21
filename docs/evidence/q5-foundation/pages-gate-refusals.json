@@ -1,0 +1,19 @@
+{
+  "scope": "Gate refusals only; check wrappers did not execute or emit source seals",
+  "observedAfterBothRefusalsUTC": "2026-11-21 10:17:48 UTC",
+  "refusals": [
+    {
+      "requestedHead": "f935d21af779c5db230d82e54e6159fc33d6e9c5",
+      "check": "full-root tsc, first attempt",
+      "exitCode": 75,
+      "output": "REFUSED: other_test_running\n"
+    },
+    {
+      "requestedHead": "f935d21af779c5db230d82e54e6159fc33d6e9c5",
+      "check": "eight-file scoped lint, first attempt",
+      "exitCode": 75,
+      "output": "REFUSED: other_test_running\n"
+    }
+  ],
+  "spacing": "Two independent initial compiler/lint admissions were refused sequentially. After recording the observation at10:17:48Z, waited60seconds before another admission. Compiler retry admitted10:19:01Z, then lint10:19:10Z. No cancellation, reservation or bypass."
+}

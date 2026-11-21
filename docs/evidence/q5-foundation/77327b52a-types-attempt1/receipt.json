@@ -1,0 +1,62 @@
+{
+  "startedAt": "2026-11-21T10:20:13.912013+00:00",
+  "finishedAt": "2026-11-21T10:20:22.371814+00:00",
+  "cwd": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design",
+  "argv": [
+    "./node_modules/.bin/tsc",
+    "--noEmit",
+    "--project",
+    "tsconfig.json"
+  ],
+  "exitCode": 0,
+  "before": {
+    "head": "77327b52ad25cfe2fa76eded08b7647a9ee777f0",
+    "tree": "2086b52e4089d71bb3f4a0ddcaf480fe8f4e3bf4",
+    "status": "",
+    "sources": {
+      "docs/design/q5-durable-notice-ledger.md": "9fb8c29af06f033ca913d3e91165bc7f8498778d2911dea392c0d443c006992f",
+      "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "src/main/services/group-project-notice-ledger/intervals.test.ts": "cc464c9a5cde0412e8b2b6c5d987fcfa5efd7c81050559ff88c35377159d00c7",
+      "src/main/services/group-project-notice-ledger/intervals.ts": "6dad2906b7b8db5671047d75dd98b3817bd06eb2882f206469b75180ef61650a",
+      "src/main/services/group-project-notice-ledger/journal.test.ts": "bf8c94578a9cc43c455541c4504cbdde57a167511fd2f22bd776bb96aa0d2595",
+      "src/main/services/group-project-notice-ledger/journal.ts": "c6b9896a7722023e9bdf4faa1f062771a8fa6d1dc5c6452aba3309c598065318",
+      "src/main/services/group-project-notice-ledger/pages.test.ts": "351a5c01768eabe194f4494154cd8befbe9e27f2e411ecc86adf6660fa20c5c4",
+      "src/main/services/group-project-notice-ledger/pages.ts": "891c5d48411c20f0e4e9502858fe03d3b074598edeada406771adee5db642832",
+      "src/main/services/group-project-notice-ledger/state.test.ts": "aa1ffdbe7bd7affa0901f6318f700930e4d3af68a5a7fc1f209cd06ba97e6336",
+      "src/main/services/group-project-notice-ledger/state.ts": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8",
+      "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "test/research/q5-entered-mutation.cjs": "0b701deb66d9a8decaa3b67cd1ccf5817804a7dd1e5b87191f852c05872428fa",
+      "test/research/q5-journal-process.cjs": "27aa412cc0dcf07db08b0a321faed4085557985040e17eb9a764b6a69b29e661",
+      "test/research/q5-seal-implementation.py": "9ad4067b1419902766d1ef2b7bfe704a6ccd6de2da4cbb6203e2173dfdcf231f",
+      "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    }
+  },
+  "after": {
+    "head": "77327b52ad25cfe2fa76eded08b7647a9ee777f0",
+    "tree": "2086b52e4089d71bb3f4a0ddcaf480fe8f4e3bf4",
+    "status": "",
+    "sources": {
+      "docs/design/q5-durable-notice-ledger.md": "9fb8c29af06f033ca913d3e91165bc7f8498778d2911dea392c0d443c006992f",
+      "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "src/main/services/group-project-notice-ledger/intervals.test.ts": "cc464c9a5cde0412e8b2b6c5d987fcfa5efd7c81050559ff88c35377159d00c7",
+      "src/main/services/group-project-notice-ledger/intervals.ts": "6dad2906b7b8db5671047d75dd98b3817bd06eb2882f206469b75180ef61650a",
+      "src/main/services/group-project-notice-ledger/journal.test.ts": "bf8c94578a9cc43c455541c4504cbdde57a167511fd2f22bd776bb96aa0d2595",
+      "src/main/services/group-project-notice-ledger/journal.ts": "c6b9896a7722023e9bdf4faa1f062771a8fa6d1dc5c6452aba3309c598065318",
+      "src/main/services/group-project-notice-ledger/pages.test.ts": "351a5c01768eabe194f4494154cd8befbe9e27f2e411ecc86adf6660fa20c5c4",
+      "src/main/services/group-project-notice-ledger/pages.ts": "891c5d48411c20f0e4e9502858fe03d3b074598edeada406771adee5db642832",
+      "src/main/services/group-project-notice-ledger/state.test.ts": "aa1ffdbe7bd7affa0901f6318f700930e4d3af68a5a7fc1f209cd06ba97e6336",
+      "src/main/services/group-project-notice-ledger/state.ts": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8",
+      "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "test/research/q5-entered-mutation.cjs": "0b701deb66d9a8decaa3b67cd1ccf5817804a7dd1e5b87191f852c05872428fa",
+      "test/research/q5-journal-process.cjs": "27aa412cc0dcf07db08b0a321faed4085557985040e17eb9a764b6a69b29e661",
+      "test/research/q5-seal-implementation.py": "9ad4067b1419902766d1ef2b7bfe704a6ccd6de2da4cbb6203e2173dfdcf231f",
+      "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    }
+  },
+  "sealEqual": true,
+  "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,1 @@
+src/main/services/group-project-notice-ledger/pages.ts(23,82): error TS2322: Type 'unknown' is not assignable to type 'NoticeJson'.

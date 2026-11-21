@@ -1,0 +1,4 @@
+2026-11-21T10:19:01Z START q5-ledger idle=90% unused=5075M avail=28769M freepct=81 comp=4266M swap=1812M pid=10058 cmd=python3 test/research/q5-seal-implementation.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/f935d21af-types-attempt2 -- ./node_modules/.bin/tsc --noEmit --project tsconfig.json
+src/main/services/group-project-notice-ledger/pages.ts(23,82): error TS2322: Type 'unknown' is not assignable to type 'NoticeJson'.
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/f935d21af-types-attempt2/receipt.json", "exitCode": 2, "sealEqual": true}
+2026-11-21T10:19:09Z END q5-ledger rc=2
