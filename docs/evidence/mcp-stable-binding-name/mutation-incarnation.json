@@ -1,0 +1,22 @@
+{
+  "head_before": "807360c543a28848e9359564b7917d0bac425e91",
+  "head_after": "807360c543a28848e9359564b7917d0bac425e91",
+  "source_before_sha256": "c7b6eab2de9d9b4f47fc7883570d274fc9b715f88030cc6b1aab760b6afae2e1",
+  "mutated_sha256": "725ffe745ef7399c0d7f661a7ce5309ec65cfe3618e4729642397ae0464bb86c",
+  "source_after_sha256": "c7b6eab2de9d9b4f47fc7883570d274fc9b715f88030cc6b1aab760b6afae2e1",
+  "replace": {
+    "old": "const identity = `${this.incarnation}_${(++this.generation).toString(36)}`;",
+    "new": "const identity = `b${(++this.generation).toString(36)}`;"
+  },
+  "command": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "src/main/services/clubhouse-mcp/binding-incarnation.test.ts",
+    "-t",
+    "reversed-order",
+    "--maxWorkers=1"
+  ],
+  "exit": 1,
+  "mutation_source": "src/main/services/clubhouse-mcp/binding-tool-key.ts"
+}

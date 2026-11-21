@@ -1,0 +1,31 @@
+{
+  "head_before": "807360c543a28848e9359564b7917d0bac425e91",
+  "head_after": "807360c543a28848e9359564b7917d0bac425e91",
+  "base_production": "69ef383cefec405d811f1c199f25c10cdc0395b6",
+  "restored_files": [
+    "src/main/services/clubhouse-mcp/binding-manager.ts",
+    "src/main/services/clubhouse-mcp/tool-registry.ts"
+  ],
+  "sha256_before": {
+    "src/main/services/clubhouse-mcp/binding-manager.ts": "d14ddb0717a660063b5ae8b4e8598e2c8eb8aee859713e8115c19c9ae0157bcb",
+    "src/main/services/clubhouse-mcp/tool-registry.ts": "0c19684bb3f936caab8670edb9461bcf72325c60ca071670bde1957c0d1b96e0"
+  },
+  "sha256_baseline": {
+    "src/main/services/clubhouse-mcp/binding-manager.ts": "4dcd33344dfcca885d5a8440a672e9cf4b3f79a15e3c3fd195926a51901bf670",
+    "src/main/services/clubhouse-mcp/tool-registry.ts": "0476137a74ae677d3bb41c0ac28b92b71d3da4cf05957275c87a4fd7e671c6f8"
+  },
+  "sha256_after": {
+    "src/main/services/clubhouse-mcp/binding-manager.ts": "d14ddb0717a660063b5ae8b4e8598e2c8eb8aee859713e8115c19c9ae0157bcb",
+    "src/main/services/clubhouse-mcp/tool-registry.ts": "0c19684bb3f936caab8670edb9461bcf72325c60ca071670bde1957c0d1b96e0"
+  },
+  "command": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "src/main/services/clubhouse-mcp/tool-registry.test.ts",
+    "--maxWorkers=1",
+    "-t",
+    "issued callable"
+  ],
+  "exit": 1
+}

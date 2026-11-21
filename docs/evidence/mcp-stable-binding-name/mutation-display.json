@@ -1,0 +1,22 @@
+{
+  "head_before": "807360c543a28848e9359564b7917d0bac425e91",
+  "head_after": "807360c543a28848e9359564b7917d0bac425e91",
+  "source_before_sha256": "c7b6eab2de9d9b4f47fc7883570d274fc9b715f88030cc6b1aab760b6afae2e1",
+  "mutated_sha256": "61827b422072a9c32008036c028a71e50e9c4abdf99b9fc3cc9857b4d9bedb4a",
+  "source_after_sha256": "c7b6eab2de9d9b4f47fc7883570d274fc9b715f88030cc6b1aab760b6afae2e1",
+  "replace": {
+    "old": "return bindingToolKeys.get(binding) ?? displayToolKey(binding);",
+    "new": "return displayToolKey(binding);"
+  },
+  "command": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "src/main/services/clubhouse-mcp/tool-registry.test.ts",
+    "-t",
+    "issued callable",
+    "--maxWorkers=1"
+  ],
+  "exit": 1,
+  "mutation_source": "src/main/services/clubhouse-mcp/binding-tool-key.ts"
+}

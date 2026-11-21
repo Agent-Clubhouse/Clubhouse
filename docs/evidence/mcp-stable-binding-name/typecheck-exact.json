@@ -1,0 +1,43 @@
+{
+  "head_before": "807360c543a28848e9359564b7917d0bac425e91",
+  "head_after": "807360c543a28848e9359564b7917d0bac425e91",
+  "command": [
+    "node",
+    "node_modules/typescript/bin/tsc",
+    "--noEmit"
+  ],
+  "gate": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "mcp-stable-binding-name",
+    "6",
+    "--",
+    "node"
+  ],
+  "exit": 0,
+  "sha256_before": {
+    "src/main/services/clubhouse-mcp/binding-incarnation.test.ts": "00b3885c18d0b1646a4b9d9c361eb201e1aba1cad94aa3abfb25f3426a12c56d",
+    "src/main/services/clubhouse-mcp/binding-manager.ts": "d14ddb0717a660063b5ae8b4e8598e2c8eb8aee859713e8115c19c9ae0157bcb",
+    "src/main/services/clubhouse-mcp/binding-tool-key.ts": "c7b6eab2de9d9b4f47fc7883570d274fc9b715f88030cc6b1aab760b6afae2e1",
+    "src/main/services/clubhouse-mcp/bridge-server.test.ts": "20bb217bc9321825b3f90fcac29aadf37d648872f059542575a480a946e696aa",
+    "src/main/services/clubhouse-mcp/local-wake.test.ts": "493cf0bc66221be70bbb2034602405bf2d318b1ae816c6c7038eb4e8702a9ed2",
+    "src/main/services/clubhouse-mcp/tool-grants.test.ts": "bb87c02d8e6126767226d3c2b250d3b6b7f80dd790eb3e76c66f312d193c3a1d",
+    "src/main/services/clubhouse-mcp/tool-registry.test.ts": "2cc05767dd555538050c5b160737f429636311f9f34848e1b0ad2f767f99daa3",
+    "src/main/services/clubhouse-mcp/tool-registry.ts": "0c19684bb3f936caab8670edb9461bcf72325c60ca071670bde1957c0d1b96e0",
+    "src/main/services/clubhouse-mcp/tools/agent-tools.test.ts": "89ce799f1df55c080672afacc88b324a31d18d6d241eecd57a3d3cd8e92adc78",
+    "src/main/services/clubhouse-mcp/tools/group-project-tools.test.ts": "49970fe5002776e2fa31c48350654e0dc904acb5fc2d4f0db67cd053314d01c5",
+    "src/main/services/persisted-bindings.test.ts": "1d9c9a8e759bfec301610f12a07f945a9d69e972d3a4e5c60821762466fd520d"
+  },
+  "sha256_after": {
+    "src/main/services/clubhouse-mcp/binding-incarnation.test.ts": "00b3885c18d0b1646a4b9d9c361eb201e1aba1cad94aa3abfb25f3426a12c56d",
+    "src/main/services/clubhouse-mcp/binding-manager.ts": "d14ddb0717a660063b5ae8b4e8598e2c8eb8aee859713e8115c19c9ae0157bcb",
+    "src/main/services/clubhouse-mcp/binding-tool-key.ts": "c7b6eab2de9d9b4f47fc7883570d274fc9b715f88030cc6b1aab760b6afae2e1",
+    "src/main/services/clubhouse-mcp/bridge-server.test.ts": "20bb217bc9321825b3f90fcac29aadf37d648872f059542575a480a946e696aa",
+    "src/main/services/clubhouse-mcp/local-wake.test.ts": "493cf0bc66221be70bbb2034602405bf2d318b1ae816c6c7038eb4e8702a9ed2",
+    "src/main/services/clubhouse-mcp/tool-grants.test.ts": "bb87c02d8e6126767226d3c2b250d3b6b7f80dd790eb3e76c66f312d193c3a1d",
+    "src/main/services/clubhouse-mcp/tool-registry.test.ts": "2cc05767dd555538050c5b160737f429636311f9f34848e1b0ad2f767f99daa3",
+    "src/main/services/clubhouse-mcp/tool-registry.ts": "0c19684bb3f936caab8670edb9461bcf72325c60ca071670bde1957c0d1b96e0",
+    "src/main/services/clubhouse-mcp/tools/agent-tools.test.ts": "89ce799f1df55c080672afacc88b324a31d18d6d241eecd57a3d3cd8e92adc78",
+    "src/main/services/clubhouse-mcp/tools/group-project-tools.test.ts": "49970fe5002776e2fa31c48350654e0dc904acb5fc2d4f0db67cd053314d01c5",
+    "src/main/services/persisted-bindings.test.ts": "1d9c9a8e759bfec301610f12a07f945a9d69e972d3a4e5c60821762466fd520d"
+  }
+}
