@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "q5-ledger",
+    "4",
+    "--",
+    "python3",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-journal-owner-dev-seal.py",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/20cecb6c1-tests-attempt1",
+    "--",
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/group-project-notice-ledger/journal.test.ts",
+    "src/main/services/group-project-notice-ledger/root-codec.test.ts",
+    "--maxWorkers=2"
+  ],
+  "startedAt": "2026-11-21T20:57:19.283116+00:00",
+  "finishedAt": "2026-11-21T20:57:30.684095+00:00",
+  "exitCode": 0
+}

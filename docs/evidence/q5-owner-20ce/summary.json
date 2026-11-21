@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "source": "20cecb6c1aae636e1a7c72c69e42cc51f6e1d685",
+  "tree": "3540401594c455a23cd5398a125c8a2f057db776",
+  "scope": "unwired shared legacy/sparse journal owner; no actual RuntimeAttemptHooks/provider mapper/P5 caller acceptance",
+  "checks": {
+    "types": {
+      "head": "20cecb6c1aae636e1a7c72c69e42cc51f6e1d685",
+      "tree": "3540401594c455a23cd5398a125c8a2f057db776",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/tsc",
+        "--noEmit",
+        "-p",
+        "tsconfig.json"
+      ],
+      "selectedSourceCount": 43,
+      "wallSeconds": 8.716715
+    },
+    "tests": {
+      "head": "20cecb6c1aae636e1a7c72c69e42cc51f6e1d685",
+      "tree": "3540401594c455a23cd5398a125c8a2f057db776",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/group-project-notice-ledger/journal.test.ts",
+        "src/main/services/group-project-notice-ledger/root-codec.test.ts",
+        "--maxWorkers=2"
+      ],
+      "selectedSourceCount": 43,
+      "wallSeconds": 10.575291
+    },
+    "lint": {
+      "head": "20cecb6c1aae636e1a7c72c69e42cc51f6e1d685",
+      "tree": "3540401594c455a23cd5398a125c8a2f057db776",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/eslint",
+        "src/main/services/group-project-notice-ledger/journal.ts",
+        "src/main/services/group-project-notice-ledger/journal.test.ts",
+        "src/main/services/group-project-notice-ledger/framed-journal.ts",
+        "src/main/services/group-project-notice-ledger/legacy-codec.ts",
+        "src/main/services/group-project-notice-ledger/sparse-state.ts"
+      ],
+      "selectedSourceCount": 43,
+      "wallSeconds": 0.597294
+    }
+  },
+  "dependenciesRestored": true
+}
