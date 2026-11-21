@@ -23,6 +23,14 @@ invalid-tail repair is deferred pending proof, with the liveness cost documented
 These changes and the F1/F2 contract clarifications await exact successor checks
 and independent re-review; no integration acceptance is inferred.
 
+Audit74cd7dec resolved F1–F4 at0d but requested G1: entry lived only on a handle,
+so raw unsubmitted could still return entered posts to ready. The successor
+tracks entered attempt IDs independently of handle lifetime and coerces such
+settlements to uncertainty. New control releases the handle first and verifies
+no ready/retry after disk reopen; an in-memory one-guard mutation must fail that
+assertion and preserves its actual child exit/output in the test log. No feature
+acceptance or lazy-index implementation is claimed by that correction.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.

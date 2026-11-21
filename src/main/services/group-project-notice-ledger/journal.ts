@@ -88,6 +88,8 @@ export class SequencedNoticeJournal {
   /** A receipt capability identity, NOT a runtime/session generation allocator. */
   private readonly handoffProcess = randomUUID();
   private readonly liveHandoffs = new WeakMap<NoticeLiveHandoff, LiveHandoffRecord>();
+  /** Entry is irreversible even after a runtime drops/releases its callback handle. */
+  private readonly enteredAttempts = new Set<string>();
 
   private constructor(options: NoticeJournalOptions) {
     this.directory = options.directory;
@@ -120,6 +122,7 @@ export class SequencedNoticeJournal {
     if (this.poisoned || !proof || proof.consumed || proof.entered || !attempt || attempt.status === 'uncertain'
       || attempt.coverageDigest !== proof.coverageDigest || attempt.handoffProcess !== this.handoffProcess) throw new Error('Notice handoff entry is no longer current');
     proof.entered = true;
+    this.enteredAttempts.add(proof.attemptId);
   }
   releaseLiveHandoff(handle: NoticeLiveHandoff): void { this.liveHandoffs.delete(handle); }
   /** Caller must be the main sink observing a genuine driver acknowledgement. */
@@ -238,7 +241,8 @@ export class SequencedNoticeJournal {
   private enqueue(input: NoticeDelta, liveProof?: LiveHandoffRecord): Promise<SequencedNoticeState> {
     const next = this.work.catch(() => {}).then(async () => {
       if (this.poisoned) throw new NoticeLedgerStorageError('notice_ledger_unavailable', 'Notice storage needs reconciliation');
-      const delta = input.kind === 'intent' ? { ...input, handoffProcess: this.handoffProcess } : input;
+      let delta = input.kind === 'intent' ? { ...input, handoffProcess: this.handoffProcess } : input;
+      if (delta.kind === 'settle' && delta.outcome === 'unsubmitted' && this.enteredAttempts.has(delta.attemptId)) delta = { ...delta, outcome: 'uncertain' };
       if (delta.kind === 'settle' && delta.outcome === 'accepted'
         && (!liveProof || !liveProof.entered || liveProof.attemptId !== delta.attemptId || liveProof.coverageDigest !== delta.acknowledgement?.coverageDigest)) throw new Error('Notice acceptance has no live provenance');
       const candidate = applyNoticeDelta(this.state, delta);

@@ -261,6 +261,12 @@ completion. Once send has been entered, failure is conservatively unknown;
 cleanup cannot turn it into unsubmitted. Receipt publication failure after an
 acknowledged send cannot be classified as send failure. Scope any runtime change
 to necessary settlement/admission fences, independently reviewed.
+G1 invariant: journal-level entered-attempt ownership survives release of its
+volatile callback/receipt handle. An `unsubmitted` settlement after entry is
+coerced to durable `uncertain/handoff_unknown`; posts never become ready again.
+Only never-entered attempts can use proven-unsubmitted recovery. Prove the guard
+with capture→enter→release→unsubmitted and an isolated in-memory mutation that
+removes the guard and fails the no-ready/no-duplicate assertion.
 
 ## Coalescing, continued delivery and rate limits
 

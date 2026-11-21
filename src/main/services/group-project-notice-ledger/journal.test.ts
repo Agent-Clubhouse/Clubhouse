@@ -213,6 +213,38 @@ describe('sequenced notice journal persistence', () => {
     expect((await fs.readdir(directory)).some((n) => n.startsWith('incomplete-tail'))).toBe(false);
   });
 
+  it('never releases entered coverage through unsubmitted, even after its handle is released', async () => {
+    const directory = await home();
+    const journal = await initialized(directory);
+    await journal.append({ kind: 'scan', through: 1, eligible: [post(1)] });
+    await journal.append(intent(1));
+    const handle = journal.captureLiveHandoff('attempt-1');
+    journal.markHandoffEntered(handle);
+    journal.releaseLiveHandoff(handle);
+    await journal.append({ kind: 'settle', attemptId: 'attempt-1', outcome: 'unsubmitted' });
+    expect(journal.snapshot()?.pending[0].attemptId).toBe('attempt-1');
+    expect(journal.snapshot()?.attempts[0]).toMatchObject({ status: 'uncertain', reason: 'handoff_unknown' });
+    await expect(journal.append({ ...intent(1), attemptId: 'duplicate-risk' })).rejects.toThrow('not ready');
+    const restored = await open(directory);
+    expect(restored.snapshot()?.pending[0].attemptId).toBe('attempt-1');
+    await restored.append({ kind: 'scan', through: 2, eligible: [post(2)] });
+    await restored.append(intent(2));
+    expect(restored.snapshot()?.attempts.map((a) => a.attemptId)).toEqual(['attempt-1', 'attempt-2']);
+  });
+
+  it('kills the in-memory mutant that removes the journal entered-attempt guard', async () => {
+    const baseline = await home();
+    const control = await promisify(execFile)(process.execPath, ['test/research/q5-entered-mutation.cjs', baseline, 'guarded'], { cwd: process.cwd() });
+    console.info('Q5 guarded mutation control', JSON.stringify({ code: 0, stdout: control.stdout, stderr: control.stderr }));
+    const mutant = await home();
+    const result = await promisify(execFile)(process.execPath, ['test/research/q5-entered-mutation.cjs', mutant, 'remove-entered-guard'], { cwd: process.cwd() }).then(
+      (value) => ({ code: 0, stdout: value.stdout, stderr: value.stderr }),
+      (error: Error & { code: number; stdout: string; stderr: string }) => ({ code: error.code, stdout: error.stdout, stderr: error.stderr }),
+    );
+    console.info('Q5 removed-guard mutation result', JSON.stringify(result));
+    expect(result).toMatchObject({ code: 2, stdout: expect.stringContaining('SAFETY ASSERTION FAILED: entered coverage became ready') });
+  }, 15000);
+
   it.each(['beforeAppend', 'afterAppendBeforeSync', 'afterSync', 'partial-tail', 'afterPages', 'afterManifest'] as Array<NoticeJournalFailurePoint | 'partial-tail'>)('recovers an actual synthetic child-process exit at %s', async (point) => {
     const directory = await home();
     await expect(promisify(execFile)(process.execPath, ['test/research/q5-journal-process.cjs', directory, point], { cwd: process.cwd() })).rejects.toMatchObject({ code: 77 });
