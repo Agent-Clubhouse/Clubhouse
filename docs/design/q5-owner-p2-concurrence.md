@@ -27,7 +27,7 @@ No concrete journal-interface contradiction identified:
   bounded source; it does not promise SDK drain or provider processing either.
 - Existing delivery mode/Action ACK/catch retry path remains barred from the new
   trusted field until P5. No real caller, provider mapper, wake or phone activation
-  is approved by matching these signatures. Claude/Copilot/PT Y fences remain
+  is approved by matching these signatures. Claude/Copilot/PTY fences remain
   separately owned (P4/P3); nothing is enabled by adding an optional type.
 
 Concrete correction outside the semantic interface: P2's final evidence section

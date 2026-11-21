@@ -155,7 +155,7 @@ describe('root owner complete recovery', () => {
   it('typed-refuses a forced no-progress recovery instead of spinning or admitting a send', async () => {
     const directory = await home(); await priorActive(directory, 1);
     const original = PreparedNoticeState.prototype.prepare; let calls = 0;
-    const spy = vi.spyOn(PreparedNoticeState.prototype, 'prepare').mockImplementation(async function (input) {
+    const spy = vi.spyOn(PreparedNoticeState.prototype, 'prepare').mockImplementation(async function (this: PreparedNoticeState, input) {
       if (input.kind === 'recover') {
         calls++; if (calls > 2) throw new Error('bounded no-progress simulation did not stop');
         return this;
