@@ -1,0 +1,15 @@
+{
+  "scope": "Exact preactivation evidence only",
+  "files": {
+    "summary.json": "2b866565e7ffd06a7203aa09779aaa22b85ffbb6f5bd9120736fadea916d709f",
+    "seal.py": "c7f798cc86d375fa289749aae9b406b66c8983bc8156d049480fd1ff4078a044",
+    "README.md": "ae5c3c29ae94b19004ab00886511f763bb117773637eca5e9db49b1910e37454",
+    "activation-procedure.py": "74e2638417ea33436b1a99a2a09133887b334a8d502b3e1b5d4a8f7f2d31eb52",
+    "full23/raw.txt": "c23b4a2e22a8b2e8e72305d4961ab8b3c555e3c9b281713564ecaa0b3e9e9b2f",
+    "full23/receipt.json": "45153dfdf7a51481d0535d6a1692901927c4cd00315ceee87f873b5df23ba1e8",
+    "original3/raw.txt": "8aec7012d2893c9c03170e473cb3338c345ae6c49ae62cffeeccdc9ef32ab125",
+    "original3/receipt.json": "ad3c2eeaf67371403f4440186313827306f924aff0dd7b4ef860e0d990463089",
+    "floor/raw.txt": "a859fadec728501fb205a139f8c67685ec7ae74aad8aedf0654459cc456acdb0",
+    "floor/receipt.json": "e3c9528feafa66fbd4797e2c729706817503d4bf5b5944a2f8ee7029c6f26467"
+  }
+}

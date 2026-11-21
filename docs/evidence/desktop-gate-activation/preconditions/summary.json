@@ -1,0 +1,100 @@
+{
+  "scope": "Conditional approval execution preconditions only; gate not yet activated at this commit",
+  "qa": "4c101ec95e25d60b3892a1a9e4150040243058b3",
+  "source": "274a39410c714931abfd38369d53b9101d5b60c5",
+  "tree": "e3ae0e77c55a1da6017ed3f85129e8a64bac85b6",
+  "candidateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+  "results": {
+    "full23": {
+      "command": [
+        "python3",
+        "test/research/desktop-gate-repair/test_gate.py",
+        "-v"
+      ],
+      "exitCode": 0,
+      "receiptSha256": "45153dfdf7a51481d0535d6a1692901927c4cd00315ceee87f873b5df23ba1e8",
+      "rawSha256": "c23b4a2e22a8b2e8e72305d4961ab8b3c555e3c9b281713564ecaa0b3e9e9b2f",
+      "mutants": []
+    },
+    "original3": {
+      "command": [
+        "python3",
+        "test/research/desktop-gate-repair/test_gate.py",
+        "--mutants"
+      ],
+      "exitCode": 0,
+      "receiptSha256": "ad3c2eeaf67371403f4440186313827306f924aff0dd7b4ef860e0d990463089",
+      "rawSha256": "8aec7012d2893c9c03170e473cb3338c345ae6c49ae62cffeeccdc9ef32ab125",
+      "mutants": [
+        {
+          "mutant": "remove-nonincreasing",
+          "sha256": "8372a5612c6614c131ae6f7e44b55444c910d4f5efdd22cb0092f7ee57435643",
+          "command": [
+            "/Users/masonallen/.pyenv/versions/3.11.9/bin/python3",
+            "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py",
+            "--candidate",
+            "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-mutant-only-l3twc4u1/mutant.zsh",
+            "GateTests.test_nonincreasing_raw_swap_not_truncated_integer",
+            "-v"
+          ],
+          "exitCode": 1,
+          "killed": true
+        },
+        {
+          "mutant": "relax-spread32-to33",
+          "sha256": "cfecd26338bc810a290f4491b4e4459c5a18b469d47c9dc9d8c296c61de11b0d",
+          "command": [
+            "/Users/masonallen/.pyenv/versions/3.11.9/bin/python3",
+            "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py",
+            "--candidate",
+            "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-mutant-only-fd62f04t/mutant.zsh",
+            "GateTests.test_spread_just_above_32_refuses",
+            "-v"
+          ],
+          "exitCode": 1,
+          "killed": true
+        },
+        {
+          "mutant": "relax-normal-tolerance128-to129",
+          "sha256": "6dd31c5ae8c8c4eb7a7edc18990aaab5f31ee2819ea44c3a948c0e37ee1ac689",
+          "command": [
+            "/Users/masonallen/.pyenv/versions/3.11.9/bin/python3",
+            "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py",
+            "--candidate",
+            "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-mutant-only-0dbuf41w/mutant.zsh",
+            "GateTests.test_tolerance_128_is_unchanged",
+            "-v"
+          ],
+          "exitCode": 1,
+          "killed": true
+        }
+      ]
+    },
+    "floor": {
+      "command": [
+        "python3",
+        "test/research/desktop-gate-repair/test_gate.py",
+        "--unit-mutant"
+      ],
+      "exitCode": 0,
+      "receiptSha256": "e3c9528feafa66fbd4797e2c729706817503d4bf5b5944a2f8ee7029c6f26467",
+      "rawSha256": "a859fadec728501fb205a139f8c67685ec7ae74aad8aedf0654459cc456acdb0",
+      "mutants": [
+        {
+          "mutant": "floor-pressure-MiB",
+          "sha256": "66d3efc476315f8bc13c086232cee69ff99270e21a246d7d4b2030895e796011",
+          "command": [
+            "/Users/masonallen/.pyenv/versions/3.11.9/bin/python3",
+            "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py",
+            "--candidate",
+            "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-unit-mutant-only-8cap2t0m/floor-mutant.zsh",
+            "GateTests.test_memory_units_and_overlimit_fraction_are_conservative",
+            "-v"
+          ],
+          "exitCode": 1,
+          "killed": true
+        }
+      ]
+    }
+  }
+}

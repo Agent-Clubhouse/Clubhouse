@@ -1,0 +1,61 @@
+{"mutant": "remove-nonincreasing", "sha256": "8372a5612c6614c131ae6f7e44b55444c910d4f5efdd22cb0092f7ee57435643", "command": ["/Users/masonallen/.pyenv/versions/3.11.9/bin/python3", "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", "--candidate", "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-mutant-only-l3twc4u1/mutant.zsh", "GateTests.test_nonincreasing_raw_swap_not_truncated_integer", "-v"], "exitCode": 1, "killed": true}
+test_nonincreasing_raw_swap_not_truncated_integer (__main__.GateTests.test_nonincreasing_raw_swap_not_truncated_integer) ... FAIL
+
+======================================================================
+FAIL: test_nonincreasing_raw_swap_not_truncated_integer (__main__.GateTests.test_nonincreasing_raw_swap_not_truncated_integer)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 152, in test_nonincreasing_raw_swap_not_truncated_integer
+    r=self.run_gate([{'used':3945.10},{'used':3945.11},{'used':3945.10}]);self.refused(r)
+                                                                          ^^^^^^^^^^^^^^^
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 117, in refused
+    self.assertEqual(result['rc'],75,result['output'])
+AssertionError: 0 != 75 : 1970-01-02T03:47:40Z SWAP_REPAIR fake-only old=1812 new=3945 age_s=1800 pageouts_delta=0 swapouts_delta=0 sample1(used=3945.1,free=2048,pageouts=1000,swapouts=2000,idle=80,available=32768,freepct=87,compressor=1000) sample2(used=3945.11,free=2048,pageouts=1000,swapouts=2000,idle=80,available=32768,freepct=87,compressor=1000) sample3(used=3945.1,free=2048,pageouts=1000,swapouts=2000,idle=80,available=32768,freepct=87,compressor=1000)
+1970-01-02T03:47:40Z START fake-only idle=80% unused=9000M avail=32768M freepct=87 comp=1000M swap=3945M pid=1992 cmd=/bin/sh -c printf child > /var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-dg1pgmnw/child; exit 0
+1970-01-02T03:47:40Z END fake-only rc=0
+
+
+----------------------------------------------------------------------
+Ran 1 test in 1.931s
+
+FAILED (failures=1)
+{"mutant": "relax-spread32-to33", "sha256": "cfecd26338bc810a290f4491b4e4459c5a18b469d47c9dc9d8c296c61de11b0d", "command": ["/Users/masonallen/.pyenv/versions/3.11.9/bin/python3", "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", "--candidate", "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-mutant-only-fd62f04t/mutant.zsh", "GateTests.test_spread_just_above_32_refuses", "-v"], "exitCode": 1, "killed": true}
+test_spread_just_above_32_refuses (__main__.GateTests.test_spread_just_above_32_refuses) ... FAIL
+
+======================================================================
+FAIL: test_spread_just_above_32_refuses (__main__.GateTests.test_spread_just_above_32_refuses)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 156, in test_spread_just_above_32_refuses
+    r=self.run_gate([{'used':3945},{'used':3929},{'used':3912.99}]);self.refused(r)
+                                                                    ^^^^^^^^^^^^^^^
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 117, in refused
+    self.assertEqual(result['rc'],75,result['output'])
+AssertionError: 0 != 75 : 1970-01-02T03:47:40Z SWAP_REPAIR fake-only old=1812 new=3912 age_s=1800 pageouts_delta=0 swapouts_delta=0 sample1(used=3945,free=2048,pageouts=1000,swapouts=2000,idle=80,available=32768,freepct=87,compressor=1000) sample2(used=3929,free=2048,pageouts=1000,swapouts=2000,idle=80,available=32768,freepct=87,compressor=1000) sample3(used=3912.99,free=2048,pageouts=1000,swapouts=2000,idle=80,available=32768,freepct=87,compressor=1000)
+1970-01-02T03:47:40Z START fake-only idle=80% unused=9000M avail=32768M freepct=87 comp=1000M swap=3912M pid=2244 cmd=/bin/sh -c printf child > /var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-pjpkjm10/child; exit 0
+1970-01-02T03:47:40Z END fake-only rc=0
+
+
+----------------------------------------------------------------------
+Ran 1 test in 1.893s
+
+FAILED (failures=1)
+{"mutant": "relax-normal-tolerance128-to129", "sha256": "6dd31c5ae8c8c4eb7a7edc18990aaab5f31ee2819ea44c3a948c0e37ee1ac689", "command": ["/Users/masonallen/.pyenv/versions/3.11.9/bin/python3", "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", "--candidate", "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-mutant-only-0dbuf41w/mutant.zsh", "GateTests.test_tolerance_128_is_unchanged", "-v"], "exitCode": 1, "killed": true}
+test_tolerance_128_is_unchanged (__main__.GateTests.test_tolerance_128_is_unchanged) ... FAIL
+
+======================================================================
+FAIL: test_tolerance_128_is_unchanged (__main__.GateTests.test_tolerance_128_is_unchanged)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 149, in test_tolerance_128_is_unchanged
+    self.refused(self.run_gate([{'used':1941}],age=0))
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 117, in refused
+    self.assertEqual(result['rc'],75,result['output'])
+AssertionError: 0 != 75 : 1970-01-02T03:46:40Z START fake-only idle=80% unused=9000M avail=32768M freepct=87 comp=1000M swap=1941M pid=2532 cmd=/bin/sh -c printf child > /var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-vdlhkfuf/child; exit 0
+1970-01-02T03:46:40Z END fake-only rc=0
+
+
+----------------------------------------------------------------------
+Ran 1 test in 2.155s
+
+FAILED (failures=1)
