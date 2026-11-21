@@ -1,0 +1,8 @@
+{
+  "atUnix": 1795274501.8952608,
+  "label": "Repeated actual failure after initial unsealed tool transcript; not an original-run receipt",
+  "sourceSHA256": "c0be370021fdec2871560ed6a5ef03c45ee64ed3e40a083cd37eb1da07a9b718",
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "file:///Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/docs/implementation-notes/3720-committed-store-proposal/verify-proposal.mjs:55\n  else throw new Error(`Inventory path absent: ${name}`);\n             ^\n\nError: Inventory path absent: src/main/mcp/tools/annex-network-tools.ts\n    at file:///Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/docs/implementation-notes/3720-committed-store-proposal/verify-proposal.mjs:55:14\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n"
+}

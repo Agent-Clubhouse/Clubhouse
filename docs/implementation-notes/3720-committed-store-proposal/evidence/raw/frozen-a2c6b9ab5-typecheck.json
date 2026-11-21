@@ -1,0 +1,34 @@
+{
+  "kind": "unapplied-proposal-typecheck-only",
+  "head": "a2c6b9ab5846692510b211c1493f40cfb5dc6ac3",
+  "trackedDiff": "",
+  "proposalTracked": "docs/implementation-notes/3720-committed-store-proposal/README.md\ndocs/implementation-notes/3720-committed-store-proposal/annex-committed-store.review.ts.txt\ndocs/implementation-notes/3720-committed-store-proposal/check-proposal.py\ndocs/implementation-notes/3720-committed-store-proposal/proof-obligations.json\ndocs/implementation-notes/3720-committed-store-proposal/recovery-tickets.review.ts.txt\ndocs/implementation-notes/3720-committed-store-proposal/settings-store.proposed.ts.txt\ndocs/implementation-notes/3720-committed-store-proposal/settings-store.review.patch\ndocs/implementation-notes/3720-committed-store-proposal/verify-proposal.mjs\n",
+  "inputsBefore": {
+    "settings-store.proposed.ts.txt": "8f43e3b8cfca8fea9f89040b7aad98ff36f353aa4f7b8ad4550abc2f9ced8000",
+    "annex-committed-store.review.ts.txt": "9bb33fbb45a1c201121f1360019eb2e55d5d49ce51a857e323686f91ccba41a1",
+    "recovery-tickets.review.ts.txt": "d10376fa68504cbd271c0886fb306bbc48d14fb2e5e0e0b89121a98b241581e3",
+    "check-proposal.py": "d64a13d239b7f53a019b76f0fa5b3c37718ba121009dd3f56f2a3819fcb6d5f5"
+  },
+  "inputsAfter": {
+    "settings-store.proposed.ts.txt": "8f43e3b8cfca8fea9f89040b7aad98ff36f353aa4f7b8ad4550abc2f9ced8000",
+    "annex-committed-store.review.ts.txt": "9bb33fbb45a1c201121f1360019eb2e55d5d49ce51a857e323686f91ccba41a1",
+    "recovery-tickets.review.ts.txt": "d10376fa68504cbd271c0886fb306bbc48d14fb2e5e0e0b89121a98b241581e3",
+    "check-proposal.py": "d64a13d239b7f53a019b76f0fa5b3c37718ba121009dd3f56f2a3819fcb6d5f5"
+  },
+  "argv": [
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/node_modules/.bin/tsc",
+    "--project",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/.cache/3720-committed-store-review/tsconfig.json",
+    "--noEmit"
+  ],
+  "startedUnix": 1795274658.750933,
+  "finishedUnix": 1795274668.8987331,
+  "loadAfter": [
+    3.29248046875,
+    2.9599609375,
+    2.76953125
+  ],
+  "exitCode": 0,
+  "stdout": "",
+  "stderr": ""
+}

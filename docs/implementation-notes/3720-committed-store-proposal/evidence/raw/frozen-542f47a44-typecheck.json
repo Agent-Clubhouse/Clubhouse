@@ -1,0 +1,34 @@
+{
+  "kind": "unapplied-proposal-typecheck-only",
+  "head": "542f47a4467a9d5dd5a4947fb170789a85f5cd60",
+  "trackedDiff": "",
+  "proposalTracked": "docs/implementation-notes/3720-committed-store-proposal/README.md\ndocs/implementation-notes/3720-committed-store-proposal/annex-committed-store.review.ts.txt\ndocs/implementation-notes/3720-committed-store-proposal/check-proposal.py\ndocs/implementation-notes/3720-committed-store-proposal/proof-obligations.json\ndocs/implementation-notes/3720-committed-store-proposal/recovery-tickets.review.ts.txt\ndocs/implementation-notes/3720-committed-store-proposal/settings-store.proposed.ts.txt\ndocs/implementation-notes/3720-committed-store-proposal/settings-store.review.patch\n",
+  "inputsBefore": {
+    "settings-store.proposed.ts.txt": "8f43e3b8cfca8fea9f89040b7aad98ff36f353aa4f7b8ad4550abc2f9ced8000",
+    "annex-committed-store.review.ts.txt": "66c57246a1f2da8164c002d1c26485304d8352f7c23c846495b8da6f69fb9d5d",
+    "recovery-tickets.review.ts.txt": "d10376fa68504cbd271c0886fb306bbc48d14fb2e5e0e0b89121a98b241581e3",
+    "check-proposal.py": "d64a13d239b7f53a019b76f0fa5b3c37718ba121009dd3f56f2a3819fcb6d5f5"
+  },
+  "inputsAfter": {
+    "settings-store.proposed.ts.txt": "8f43e3b8cfca8fea9f89040b7aad98ff36f353aa4f7b8ad4550abc2f9ced8000",
+    "annex-committed-store.review.ts.txt": "66c57246a1f2da8164c002d1c26485304d8352f7c23c846495b8da6f69fb9d5d",
+    "recovery-tickets.review.ts.txt": "d10376fa68504cbd271c0886fb306bbc48d14fb2e5e0e0b89121a98b241581e3",
+    "check-proposal.py": "d64a13d239b7f53a019b76f0fa5b3c37718ba121009dd3f56f2a3819fcb6d5f5"
+  },
+  "argv": [
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/node_modules/.bin/tsc",
+    "--project",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/.cache/3720-committed-store-review/tsconfig.json",
+    "--noEmit"
+  ],
+  "startedUnix": 1795274434.2593658,
+  "finishedUnix": 1795274443.655095,
+  "loadAfter": [
+    3.09912109375,
+    2.81103515625,
+    2.68701171875
+  ],
+  "exitCode": 0,
+  "stdout": "",
+  "stderr": ""
+}

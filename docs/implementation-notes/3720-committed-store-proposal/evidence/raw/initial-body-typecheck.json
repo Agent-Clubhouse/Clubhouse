@@ -1,0 +1,34 @@
+{
+  "kind": "unapplied-proposal-typecheck-only",
+  "head": "f19eceee25effd264276d70a419bebfe58924876",
+  "trackedDiff": "",
+  "proposalTracked": "",
+  "inputsBefore": {
+    "settings-store.proposed.ts.txt": "f3f534f11577586d11ed08bd0f831d8a46c1ccbdfaf9042d72ddbe8aed00fa5b",
+    "annex-committed-store.review.ts.txt": "1abd5c45e872773ae49f3e16f3975ca22e0b8b0cc53253dd7e3b8f2b80890695",
+    "recovery-tickets.review.ts.txt": "95dc4be7182f344baa838e5859b6f4c6a94b5280a6c6bea63c7229cc978e96c1",
+    "check-proposal.py": "c3746a87deed89e1d4c66324f48cc77ae1c69d6fe8c541fe0f123007a86d13df"
+  },
+  "inputsAfter": {
+    "settings-store.proposed.ts.txt": "f3f534f11577586d11ed08bd0f831d8a46c1ccbdfaf9042d72ddbe8aed00fa5b",
+    "annex-committed-store.review.ts.txt": "1abd5c45e872773ae49f3e16f3975ca22e0b8b0cc53253dd7e3b8f2b80890695",
+    "recovery-tickets.review.ts.txt": "95dc4be7182f344baa838e5859b6f4c6a94b5280a6c6bea63c7229cc978e96c1",
+    "check-proposal.py": "c3746a87deed89e1d4c66324f48cc77ae1c69d6fe8c541fe0f123007a86d13df"
+  },
+  "argv": [
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/node_modules/.bin/tsc",
+    "--project",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/.cache/3720-committed-store-review/tsconfig.json",
+    "--noEmit"
+  ],
+  "startedUnix": 1795274054.897695,
+  "finishedUnix": 1795274063.478428,
+  "loadAfter": [
+    3.15576171875,
+    2.95263671875,
+    2.68310546875
+  ],
+  "exitCode": 2,
+  "stdout": ".cache/3720-committed-store-review/src/main/services/settings-store.ts(416,43): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any' return type.\n.cache/3720-committed-store-review/src/main/services/settings-store.ts(418,36): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any' return type.\n.cache/3720-committed-store-review/src/main/services/settings-store.ts(418,53): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any' return type.\n.cache/3720-committed-store-review/src/main/telemetry/destinations/azure.ts(29,38): error TS2307: Cannot find module '../../../../node_modules/@azure/monitor-opentelemetry-exporter/dist/commonjs/_configuration/configurationManager.js' or its corresponding type declarations.\n",
+  "stderr": ""
+}

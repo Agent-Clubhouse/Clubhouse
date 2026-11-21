@@ -1,0 +1,24 @@
+{
+  "kind": "docs-only-source-contract",
+  "source": "a2c6b9ab5846692510b211c1493f40cfb5dc6ac3",
+  "base": "f19eceee25effd264276d70a419bebfe58924876",
+  "observedUnix": 1795274748.937836,
+  "productDiff": "",
+  "coreInputSHA256": {
+    "annex-committed-store.review.ts.txt": "9bb33fbb45a1c201121f1360019eb2e55d5d49ce51a857e323686f91ccba41a1",
+    "recovery-tickets.review.ts.txt": "d10376fa68504cbd271c0886fb306bbc48d14fb2e5e0e0b89121a98b241581e3",
+    "settings-store.proposed.ts.txt": "8f43e3b8cfca8fea9f89040b7aad98ff36f353aa4f7b8ad4550abc2f9ced8000",
+    "settings-store.review.patch": "464e03b19f00c2e1b96edccb9dbbace5c0ded9786c8073d2a00254b7bd9c69a3"
+  },
+  "priorDraft": "542f47a4467a9d5dd5a4947fb170789a85f5cd60",
+  "notAccepted": [
+    "runtime tests",
+    "mutants",
+    "consumers",
+    "shared-store application",
+    "IPC",
+    "transport",
+    "OS teardown",
+    "feature delivery"
+  ]
+}

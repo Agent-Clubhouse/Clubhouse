@@ -1,0 +1,54 @@
+{
+  "kind": "unapplied-proposal-stdin-errors-only-lint",
+  "head": "a2c6b9ab5846692510b211c1493f40cfb5dc6ac3",
+  "results": [
+    {
+      "source": "annex-committed-store.review.ts.txt",
+      "sourceSHA256": "9bb33fbb45a1c201121f1360019eb2e55d5d49ce51a857e323686f91ccba41a1",
+      "argv": [
+        "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/node_modules/.bin/eslint",
+        "--quiet",
+        "--stdin",
+        "--stdin-filename",
+        "src/main/services/annex-committed-store.ts"
+      ],
+      "startedUnix": 1795274680.2195609,
+      "finishedUnix": 1795274680.771562,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "source": "recovery-tickets.review.ts.txt",
+      "sourceSHA256": "d10376fa68504cbd271c0886fb306bbc48d14fb2e5e0e0b89121a98b241581e3",
+      "argv": [
+        "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/node_modules/.bin/eslint",
+        "--quiet",
+        "--stdin",
+        "--stdin-filename",
+        "src/main/services/annex-settings-recovery.ts"
+      ],
+      "startedUnix": 1795274680.7717278,
+      "finishedUnix": 1795274681.1104488,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "source": "settings-store.proposed.ts.txt",
+      "sourceSHA256": "8f43e3b8cfca8fea9f89040b7aad98ff36f353aa4f7b8ad4550abc2f9ced8000",
+      "argv": [
+        "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/node_modules/.bin/eslint",
+        "--quiet",
+        "--stdin",
+        "--stdin-filename",
+        "src/main/services/settings-store.ts"
+      ],
+      "startedUnix": 1795274681.110595,
+      "finishedUnix": 1795274681.471651,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ]
+}

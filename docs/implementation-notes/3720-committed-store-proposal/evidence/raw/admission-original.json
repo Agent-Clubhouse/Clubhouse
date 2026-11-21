@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-21T15:19:08.134Z",
+  "cpus": 16,
+  "load": [
+    2.611328125,
+    2.744140625,
+    2.65673828125
+  ],
+  "free": 916914176,
+  "cache": "/Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules",
+  "lockSHA256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+  "checked": 1176,
+  "missing": []
+}
+
