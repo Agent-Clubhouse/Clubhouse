@@ -3,10 +3,16 @@
 Status: contract for independent review; product implementation has not started.
 Inspection base: `d8c7247a4dccc1ebff01f0f28f8e61279bdf5437` (main).
 Task branch: `auto-reset-policy-design/q5-durable-delivery-ledger`.
-Standalone issue: not created yet; GitHub integration refused issue creation with
-403 `Resource not accessible by integration`. Publication remains blocked; do
-not reroute the denied write through another owner, CLI or credentials. Draft
-and exact refusal are in `q5-issue-publication-draft.json`. No new access requested.
+Canonical standalone issue: [Clubhouse #3758](https://github.com/Agent-Clubhouse/Clubhouse/issues/3758).
+Parent published the exact preserved title/body after a later explicit user
+authorization for its existing gh writer. The earlier MCP403 is historical;
+`q5-issue-publication-draft.json` preserves it without alteration. No MCP retry,
+new grant, credentials change or issue-write by this helper occurred.
+
+Contract revision 2 addresses independent review C1–C3 at
+`9d865f4e71ff95cb6581a29ad9fe074f6ece649e`,
+`docs/qa-transfer/2026-11-20/reports/q5-b0d52ee6c-contract-review.md`.
+The original contract remains immutable at `b0d52ee6c384386ef46eba3028634d7fc9d60473`.
 
 ## Decision and canonical history
 
@@ -67,8 +73,8 @@ execution, end-to-end delivery or power-loss guarantee is claimed.**
 
 ## Identity, records and coverage
 
-Use one local versioned ledger in app userData, never replicated board metadata.
-Proposed filename: `group-project-notice-ledger.v1.json`. A store envelope has
+Use a local versioned ledger directory in app userData, never replicated board
+metadata. Proposed directory: `group-project-notice-ledger.v1/`. Its envelope has
 `schemaVersion: 1`, `minWriterVersion: 1`, monotonically increasing `revision`,
 and per-recipient rows. Unknown future schema/minWriter versions refuse writes
 and delivery; preserve original bytes. Unknown additive fields of a supported
@@ -88,10 +94,15 @@ Each recipient row contains:
   at initialization, explicitly **not newly observed delivery**.
 - `scannedThrough`: board change sequence through which a complete bounded scan
   and classification was durably committed. This is a scan frontier, not an ACK.
-- Per-post `{postId, seq, disposition}` above the compacted coverage floor.
-  Eligible posts are ready, assigned to an attempt, confirmed, uncertain or
-  retired. Excluded posts are classified as non-notifiable for this scan (own
-  post, system, irrelevant subscription); they are not called delivered.
+- Compact closed sequence intervals for terminal coverage: **accepted or
+  excluded**, without falsely saying excluded posts were delivered. Adjacent
+  intervals merge even above an uncertain hole. Keep exact `(seq, postId)` only
+  for sparse ready/active/uncertain exceptions and attempt coverage. Intervals
+  do not require a contiguous success frontier from zero. Alternating accepted
+  and excluded posts do not create alternating interval types: both are safely
+  covered for replay, with aggregate accepted/excluded counts, not per-post
+  historical delivery claims. Ineligible own/system/subscription posts stay
+  scan-time exclusions; later subscription changes do not revive them.
 - Batches/attempts with exact sorted `(seq, postId)` coverage, `batchId`,
   `attemptId`, optional parent attempt for explicit retry, state, revision,
   timestamps, bounded reason code, runtime kind, and runtime message ID if known.
@@ -121,8 +132,74 @@ store commits; mutation is copy-on-write, published to cache only after success.
 Stale callbacks can settle only their exact stored attempt and recipient
 generation. Repeated equal terminal outcomes are no-ops; conflicting late
 outcomes are retained as a visible anomaly, never overwrite a newer attempt.
-An absent/invalid sequence or missing stable post identity cannot form a guessed
-coverage key; defer that candidate pending authoritative board data.
+An absent sequence selects the supported post-ID mode below, not indefinite
+deferral. Invalid identity or conflicting sequence is a visible source conflict,
+with the explicit adoption path below; never guess a key.
+
+### C3: supported legacy post-ID mode
+
+Sequencing is preferred, not a minimum host requirement. If current board posts
+lack a safe sequence, use `coverageMode: post-id-v1` for that generation, visibly
+labelled “Older board: tracked by post ID; no host ordering guarantee.” Stable
+`BulletinMessage.id` is required. Snapshot all current authoritative board IDs
+on first upgrade/new member as baseline exclusions; do not replay old history.
+Serialize snapshot activation with queued post events, so events after the
+snapshot remain eligible and duplicate events already in it are suppressed.
+Never infer a host sequence from timestamps, ID text or local arrival order.
+
+Persist exact baseline/covered IDs in content-free, hash-partitioned index pages
+(maximum256 KiB/page), plus sparse unresolved attempts. A digest chooses the
+page; full ID equality decides coverage, so hash collision cannot drop a post.
+One batch has at most50 IDs. Incoming events and a complete existing board
+snapshot are deduplicated against this index and sparse attempts. Recovery
+scans all available IDs instead of querying a numeric cursor; unavailable or
+incomplete board snapshots report that limit and do not invent exclusions.
+No transport fallback, polling/probes or host update is initiated by this mode.
+
+Post-ID index storage is O(distinct covered IDs), an explicit compatibility
+cost which arbitrary unsequenced IDs cannot safely compress into intervals.
+Pages spill incrementally rather than hit a post-count admission cap. This
+does not promise finite disk use for infinite traffic. Retain ID tombstones
+even when content is deleted, so reappearance is not a fresh notice. Runtime
+handoff uncertainty, retry and later-post liveness have the same semantics as
+sequenced mode. A sequenced group alongside it is unaffected. Mixed boards use
+post-ID mode for the generation; a later host upgrade does not auto-switch or
+rebaseline. The local-human adoption action may explicitly start a sequenced
+generation after showing its fresh baseline and the retained old uncertainty.
+Missing stable ID is visible “Board identity unavailable”; manual board access
+remains available and other valid recipients/groups continue. It is not silently
+treated as delivered or deferred forever without status.
+
+### C2: explicit local-human identity adoption
+
+When host identity changes, source sequences regress/conflict, or the user wants
+to leave post-ID mode after a real host upgrade, show “Board identity changed;
+new notices need local confirmation” with old unresolved count, current host
+display label and reason. Do not auto-adopt on reconnect, re-pair, rename or
+restart. No actual pairing or trust change is part of this action.
+
+A trusted local-human prepare-adoption IPC reads the current authenticated
+group/host/board snapshot, validates existing group read/deliver authority, and
+mints and persists a one-use five-minute nonce bound to installation UUID,
+recipient/old generation, expected root revision, exact new host/coverage mode,
+and proposed fresh baseline (sequence or snapshot-ID digest). The confirmation
+explains: old unconfirmed deliveries remain unconfirmed; existing posts become
+the new baseline and are not automatically replayed; new notices resume. A
+second main read must still match those values. Renderer cannot nominate an
+arbitrary fingerprint, generation or baseline. If anything changed, refuse
+without adoption/send and require a new preview.
+
+In one journal commit, consume the nonce, retire old generation with unresolved
+attempts intact, create fresh random generation and baseline, and cancel
+known-held old work. Final runtime entry is fenced by generation so removal
+failure does not authorize a stale queued send. Already submitted old work
+cannot be undone: late receipts remain historical and never change new
+coverage. No notice is sent as part of adoption. Only subsequent eligible posts
+enter the new generation; manual board reading remains available meanwhile.
+Cancel before confirmation sends nothing and leaves generation unchanged.
+Lost reply/double click reads the same persisted adoption result, never repeats
+adoption. No agent, phone/Go route or timer can adopt; old uncertain rows are
+still visible as retired history, not resolved or silently waived.
 
 ## Attempt state machine
 
@@ -175,14 +252,43 @@ restart; an uncertain attempt consumes its slot. Existing wake/urgent budget
 store remains authoritative; ledger commits do not refund these on uncertainty.
 Definite pre-entry refusal may be reported without pretending a notice sent.
 
-Confirmed/scanned coverage can compact only below a floor with no ready,
-active, unsubmitted-recoverable or uncertain hole. Later confirmed rows above
-an uncertain hole remain durable. Retain unresolved attempts without TTL or
-last-N eviction. Proposed hard bounds: 10,000 retained post rows per recipient,
-100,000 overall, 16 MiB encoded file. Capacity refusal is a visible operational
-failure, not conversion to success, data deletion or a persistent-pause policy;
-manual board access and other groups with available capacity remain usable.
-Reviewer must assess these initial bounds; no silent unbounded growth claim.
+### C1: compact coverage and continued flow at the detail bound
+
+One uncertain seq1 followed by1,000,000 accepted/excluded sequences is one sparse
+hole plus interval[2,1000001], not1,000,001 post rows. Ready/active holes split
+intervals; terminal runs on both sides merge independently. Keep a separately
+named contiguous accepted-or-excluded floor for truthful optional legacy cursor
+export; do not call the scan frontier that floor. The normal sequenced storage
+cost after compaction is O(holes+active attempts), not O(later post count).
+
+Shard by recipient generation. Use bounded append-only journal segments (256
+KiB target, maximum512 KiB including a final record), bounded checkpoint/index
+pages (maximum512 KiB), and maximum64 KiB per committed delta. Limit a batch to
+50 IDs and split a burst rather than truncate coverage. No full shared16 MiB
+rewrite per notice. Confirmed/excluded intervals compact incrementally; sealed
+segments are superseded only after the replacement checkpoint manifest commits.
+
+The hot detail budget is256 unresolved/active attempts per recipient, not a
+total uncertainty cap. Crossing it seals older uncertain detail into immutable
+paged history with exact IDs, outcomes and retry links preserved; show “More
+unconfirmed deliveries retained in local history” with exact count and paginated
+lookup. New posts still append and dispatch under ordinary limits. No “capacity
+pause”, TTL waiver, eviction or automatic retry. Archive location/revision is
+deterministic and addressed through the checkpoint manifest; status/retry reads
+the original entry plus later settlement events. A resolved retry does not
+rewrite history as an original confirmed handoff. Keep at most4 uncheckpointed
+segments per recipient by incremental compaction before rolling the next segment;
+the bounded compaction may delay a commit but never require resolving old holes.
+
+This bounds active page/commit size, not total disk for an unlimited number of
+uncertain deliveries. Total retained archive grows O(unresolved holes) (and OIDs
+in legacy mode). Actual disk exhaustion, unreadable storage or failure to commit
+still refuses new handoffs visibly; no software can persist unlimited facts on
+finite disk. That operational failure is different from a deliberately imposed
+hole-count stop. A detail-threshold test must cross256 holes, deliver later work,
+reload, and retrieve the first uncertainty without replay. Measure isolated
+append/file-sync and checkpoint/rename/directory-sync latency at these byte
+bounds; report actual environment/results, not a latency promise or product proof.
 
 ## Explicit retry and visible uncertainty
 
@@ -195,7 +301,9 @@ not a remote-members delivery claim. It is separate from notice permission.
 
 Retry once is a local-human IPC action, not an agent tool, remote Annex command,
 board post or unattended timer. Present explicit confirmation with the duplicate
-warning. Bind request nonce to recipient generation, batch, attempt revision,
+warning. Main mints and persists the nonce at the prepare/preview step; never
+accept a renderer-created nonce. Bind it to installation UUID, trusted window,
+recipient generation, batch, attempt revision,
 one use and a five-minute expiry. Repeated renderer submission of the same nonce
 returns its saved result. Consume authorization and create the child intent in
 one durable transaction **before** handoff. A crash after that commit does not
@@ -203,8 +311,9 @@ leave a reusable authorization or enable automatic repeat. If the retry is also
 uncertain, show that separately; a later further retry needs fresh confirmation.
 No implicit waiver/mark-read/confirm-received operation in this first version.
 
-Closing/cancelling the warning before confirmation performs no write, consumes
-no nonce and sends nothing. After intent commit, cancellation cannot promise
+Closing/cancelling the warning before confirmation consumes no authorization,
+creates no intent and sends nothing; the prepared nonce may remain until its
+expiry and is not interpreted as consent. After intent commit, cancellation cannot promise
 that input was not sent; report queued/accepted/uncertain according to evidence.
 If the IPC reply itself is lost, the UI shows “Retry outcome unconfirmed” and
 reads the saved nonce/attempt result; it never issues a fresh retry or switches
@@ -216,6 +325,18 @@ post availability and current subscription/mention relevance. It cannot wake a
 sleeping member, change permissions, switch recipients, restore removed posts,
 or clear the chat. A refused preflight consumes no new dispatch intent; an
 authorized in-flight attempt remains recorded honestly after revocation.
+
+Both retry and adoption handlers require the registered local main Clubhouse
+window WebContents ID, a live BrowserWindow, `event.senderFrame ===
+event.sender.mainFrame`, and the exact registered app-entry document URL after
+normalization. Reject popouts, window.open children, navigated windows, plugin
+webviews/subframes, detached WebContents, remote/phone/Go/MCP callers. Recheck
+trust on preview, commit and result lookup; nonce storage never substitutes
+for sender validation or current group authority. This reuses the strict issuer
+pattern in `plugin-mcp-handlers.ts`, not a grant to plugins. Ledger IDs and
+baseline are main-owned; serialized renderer input is an expected-state token,
+not authority. This is an app-mediated local-human control, not proof against
+arbitrary code execution in the trusted app renderer.
 
 ### Separately owned Go adoption
 
@@ -236,10 +357,20 @@ boundary with that owner; no direct/new access is implied.
 
 ## Revocation and wake boundary
 
-Recheck membership/generation, permission and ledger attempt ownership before
-handoff and immediately before actual queued provider entry after awaited work.
-Use a narrowly typed owner admission hook in the runtime queue; no owner hook
-is sent to drivers or serialized as authority. Revoke removes known-held items
+Perform asynchronous membership/board/storage admission before handoff. After
+awaited work finishes, the runtime invokes a **synchronous**, narrowly typed
+owner pre-entry hook on main immediately before `session.send`, with no await
+between hook and entry. The hook checks only main-owned cached generation,
+permission/roster revision and exact attempt-admission tokens; it does no IO,
+does not call a driver and cannot schedule work. Async admission must refuse
+if a current revision could not be established; it must not turn stale cache
+into permission. Relevant membership/permission changes synchronously revoke
+the cached token before any asynchronous maintenance. No Promise-returning
+hooks: reject malformed return values. Session mismatch also refuses entry.
+Use the same final fence on immediate and queued sends. Clear references to
+owner hooks/closures on every terminal settlement/removal/discard, including
+unknown; no retained owner references after settlement. Hooks stay inside the
+main runtime and never reach drivers, disk or renderer. Revoke removes known-held items
 by their exact message/attempt IDs. Removal failure is visible; do not log that
 queued input is harmless. A member departure does not undo submitted input.
 Late callbacks update only historical attempts, not a rejoined generation.
@@ -248,6 +379,12 @@ skip uncertain IDs and recheck ordinary eligibility. No new pause switch.
 
 Wrap the existing permitted direct-post wake mission in a saved ledger intent
 too. Preserve its current sender/grant/session/wake-budget guards and authority.
+Run wake-budget availability, required last-session and permission/membership
+prechecks **before** intent creation: a refused precheck makes zero intents and
+zero handoffs. Consume existing budget reservation and recheck admission in
+the existing guarded wake flow; a race refusing before entry is unsubmitted,
+not uncertain solely because a precheck once passed. No budget refund on a
+possibly submitted/uncertain wake. Do not change wake grants or resume policy.
 Do not send the same notice again after wake merely because the lifecycle
 returns false. Current wake Boolean is insufficient for accepted-vs-unknown
 proof; without a verifiable handoff receipt leave that attempt uncertain.
@@ -270,9 +407,36 @@ writer changes rather than overwriting them. This is not a multi-process CAS:
 concurrent app writers sharing userData are unsupported and must be refused by
 the existing single-instance boundary. Test the detection limits honestly.
 
-Commit by temp write in the same directory, file flush, atomic replacement,
-then parent-directory flush where supported. Publication occurs after the
-commit. On platforms without a proven directory flush, document the power-loss
+Each per-recipient journal record is a length-delimited canonical JSON delta,
+with schema/revision, previous-record digest and SHA256 payload digest. One
+record holds a complete logical transaction (nonce consumption plus child
+intent, or adoption plus new baseline). Append then file-sync before publishing
+to cache or handing off. Split discovery scans/bursts into committed bounded
+deltas before dispatching corresponding batches; do not split a single retry
+authorization across records. Exact post-ID page changes are transaction data,
+not independently mutable authority. Journal replay applies each revision once.
+
+On recovery, validate from the last committed checkpoint/digest anchor. A known
+incomplete **last** record from a crashed append is preserved in a diagnostic
+copy and ignored after its last verified boundary: no handoff was authorized
+by an uncommitted tail. Prior durable intents recover uncertain. A checksum
+failure in a complete record, non-tail damage, revision conflict, missing
+referenced page or unknown version refuses that recipient's writes/handoffs
+without replacing data. Healthy recipient shards continue. Never invent a
+verified prefix when the anchor or framing is itself corrupt.
+
+Checkpoint by writing bounded immutable pages with hashes, syncing them and
+their directory, then atomically replace a small manifest naming the checkpoint
+generation, page index root, last included revision/hash and remaining journal
+range. Flush manifest and directory before publication/old-segment retirement.
+The old manifest stays authoritative before that commit; orphan new pages are
+not a new baseline or replay instruction. After commit the new manifest wins;
+duplicate older records are ignored by revision/hash, not applied again. Page
+index is paged too, not an unbounded manifest array. Unresolved archive pages
+are never retired merely for age/space. Temp write/atomic replacement follows
+the existing utility's file-flush pattern without changing shared settings.
+
+On platforms without a proven directory flush, document the power-loss
 limit; deterministic process-crash tests prove process recovery, not hardware
 durability. A failed/ambiguous commit blocks further handoffs from that store
 until reread/reconciliation succeeds. Do not continue from mutated cached data.
@@ -289,6 +453,13 @@ Unreadable/corrupt legacy data needs explicit recovery rather than new silent
 baseline. Existing ledger always wins over an old cursor; never import it again
 after migration or allow a newer old-writer scalar to erase unresolved holes.
 Normal legacy budget writes neither edit nor delete the separate ledger.
+For sequenced generations only, optionally advance legacy `notified` through
+the contiguous accepted-or-excluded floor, never past the earliest unresolved
+or ready gap, and only after that ledger commit. Exclusions retain the old
+subscription semantics; they are not labelled provider-confirmed. Ledger is
+authoritative if the secondary export fails. No cursor export is possible from
+post-ID mode without inventing host order. This bounds some accidental downgrade
+replay but does not make an older active writer supported.
 
 Persist an independent migration marker `group-project-notice-ledger.required`
 with supported version and installation UUID before first ledger activation;
@@ -334,11 +505,12 @@ no paid/provider/live delivery or installed-app restart experiments.
 | Idempotency/coalescing | Duplicate post/overlapping reconnect scan, same key/different coverage refusal, replacement removal racing dispatch; no repeated uncertain coverage in fresh notice. |
 | Failure windows | Inject failure before intent save (zero sends), after save/before call (uncertain), after provider entry/before ACK (uncertain), ACK/before outcome save (uncertain), after outcome save (confirmed); raw disk reload for every window. |
 | Actual process recovery | Child-process fixture exits at persisted barriers, new process opens same temp directory and recovers exact state. A module reset alone is not process restart proof. No laptop app restart. |
-| Retry | Warning/nonce binding, double click, expiry, stale revision, crash after nonce consumption, uncertain retry, accepted retry, sleeping refusal, unavailable post. No auto retry after restart. |
+| Retry/adoption trust | Main-minted persisted nonce, main-window/frame/URL refusal matrix, warning, cancel-no-send, double click, expiry, stale revision, crash after consumption, uncertain reply lookup, sleeping/unavailable-post refusal. Adoption keeps retired uncertainty and fresh explicit baseline; no actual re-pair or automatic adoption. |
 | Revocation | Membership/deliver-off before intent, during awaited admission, in queue and after send entry; removal failure and late callback fenced from rejoin/new session. No post-entry cancellation claim. |
-| Wake | Existing allowed/refused wake with intent, false after possible handoff stays uncertain, sender/permission/budget checks retained, no duplicate post-wake send. |
+| Wake | Budget/session/permission precheck refusal creates no intent or send; possible-handoff false remains uncertain, sender/permission/budget checks retained, no duplicate post-wake send. |
 | Compatibility | Legacy import without replay, invalid legacy refusal, independent old-budget write, unknown versions/fields, external revision change, corrupt/missing ledger; raw originals preserved. Demonstrate old binary limit, not invented compatibility. |
-| Capacity and compaction | Uncertain early hole with many later accepted IDs; no lost hole, no replay above it, cap refuses visibly, no silent TTL pruning. |
+| Capacity and compaction | One early uncertain hole plus1M terminal posts compresses to sparse hole+interval; cross256-hole hot limit with later delivery/reload/old-hole lookup; archive/page/journal crash cuts; real byte-bound latency observations, no count-cap stop or TTL pruning. |
+| Mixed board versions | Sequenced and post-ID groups side by side; fresh post-ID events continue, initial snapshot not replayed, duplicate IDs suppressed, no timestamp ordering, later subscriptions do not revive exclusions; explicit post-ID→sequenced adoption. |
 | Other callback owner | Actions unknown is explicit unconfirmed failure; delivered/expired/replaced/dropped unchanged where truthful, exhaustive future-variant check. |
 | Non-goals | Existing grants/wake/default behavior and phone/Annex schemas remain unchanged except reviewed local IPC additions; no controller/settings-save/chat-clear edits. |
 
