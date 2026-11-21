@@ -26,4 +26,4 @@ Method: I read source and artifacts only and ran nothing.
   - Run alone, the same sim passes 23 of 23 on `b28fbae69` and on main.
   - This is the **second sighting** of an intermittent group-sim failure. The earlier one, before 3751, was unlogged. It is unclassified, so I am not calling it a flake or anything else. A likely hypothesis is recovery-start timing under multi-file load, against the default 1 s `waitFor`, but that is not proven.
   - It needs its own bounded diagnosis, which the owner is assigning.
-- **Gap:** the focused run has a pre-status but no separate post-status file.
+- **Post-status:** there is no separate post-status file, but a clean post-status is printed at the end of `daa7-focused.txt` (README line 18). Correction: an earlier draft of this report wrongly called this a gap.
