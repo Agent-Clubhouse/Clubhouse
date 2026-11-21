@@ -1,0 +1,9 @@
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness
+
+
+ Test Files  3 passed (3)
+      Tests  321 passed (321)
+   Start at  23:34:32
+   Duration  4.95s (transform 1.23s, setup 9ms, import 405ms, tests 4.32s, environment 0ms)
+
