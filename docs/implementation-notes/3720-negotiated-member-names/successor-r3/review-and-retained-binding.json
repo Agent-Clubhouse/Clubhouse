@@ -1,0 +1,14 @@
+{
+  "reviewCommit": "f8c02a0af7bcf09f0ff64f8778f3e06d1e61cbf2",
+  "reviewPath": "docs/qa-transfer/2026-11-20/reports/3720-15383280a-r2-review.md",
+  "reviewSHA256": "19055fdfa4a896860f7908f6b3b2316f02d270c6625d99e7ef40ed127c6e07b2",
+  "retainedCommit": "15383280a1bdd7151b07a66e4177eef38d10b40c",
+  "retainedManifestPath": "docs/implementation-notes/3720-negotiated-member-names/successor-r2/SHA256SUMS.txt",
+  "retainedManifestSHA256": "e55b63c4ae3e4b4d8be2ba21e1e4a6a0b95668da43e99b4d7b4b708a2c7371eb",
+  "validationSource": {
+    "commit": "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+    "path": "src/main/ipc/validation.ts",
+    "sha256": "a707b2e8460759abcacd142fa386a6f27543af2d0049fed921cffd3001c58b09"
+  },
+  "scope": "Actual git object readback; no product execution or old receipts reconstructed"
+}

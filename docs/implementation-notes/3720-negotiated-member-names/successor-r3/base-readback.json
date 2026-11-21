@@ -1,0 +1,30 @@
+{
+  "sourceMain": "be0091d1676764b0e3300898ab0ad1f135f88a46",
+  "remoteMainReadback": "be0091d1676764b0e3300898ab0ad1f135f88a46\trefs/heads/main\n",
+  "comparison": {
+    "argv": [
+      "git",
+      "diff",
+      "--name-status",
+      "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+      "be0091d1676764b0e3300898ab0ad1f135f88a46",
+      "--",
+      "src/main/services/launch-gate.ts",
+      "src/main/services/settings-store.ts",
+      "src/main/services/annex-settings.ts",
+      "src/main/services/clubhouse-mcp/tools/annex-network-tools.ts",
+      "src/main/ipc/annex-handlers.ts",
+      "src/main/ipc/validation.ts",
+      "src/preload/annex.ts",
+      "src/renderer/stores/annexStore.ts",
+      "src/renderer/features/settings/AnnexNetworkSettingsView.tsx",
+      "src/renderer/features/settings/AnnexIdentitySection.tsx",
+      "src/renderer/features/command-palette/use-command-source.ts",
+      "src/shared/ipc-channels.ts"
+    ],
+    "exitCode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "scope": "Actual reserved-source equality only; no product execution or proof transfer"
+}

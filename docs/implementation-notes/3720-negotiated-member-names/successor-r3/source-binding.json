@@ -1,0 +1,20 @@
+{
+  "status": "UNAPPLIED INCOMPLETE scaffold. R2 applied ONLY to disposable review copies for transformation; no product source written/executed. New helpers unimplemented.",
+  "sourceCommit": "be0091d1676764b0e3300898ab0ad1f135f88a46",
+  "sourceByteEqualTo": "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+  "retainedR2": "15383280a1bdd7151b07a66e4177eef38d10b40c",
+  "reviewCommit": "f8c02a0af7bcf09f0ff64f8778f3e06d1e61cbf2",
+  "sha256": {
+    "src/main/services/launch-gate.ts": "d9b34a8f171b7e70818db119cbef2d9ae16e6df6c5e77ef62b457617fd753a28",
+    "src/main/services/clubhouse-mcp/tools/annex-network-tools.ts": "cf22eed5c03266c9226656148ea7c8a4f6d9f8fa3080fb701d7f2c31517498fe",
+    "src/preload/annex.ts": "93f8a512e2748451c78435bfc18cf9429a0cb5f018ed340b450ca9d3839505f3",
+    "src/renderer/stores/annexStore.ts": "c054af9d81e82a619b14c9c4eb3dde7f4b09256fabd5e50a66a29c179e4faad4",
+    "src/renderer/features/settings/AnnexNetworkSettingsView.tsx": "66315e9405c5e7754858e29925265616d330be67bd0c073d9cb2defdedaf4579",
+    "src/renderer/features/settings/AnnexIdentitySection.tsx": "fd8909f0469a799b4539ffc2ce85d890fa421a5b8b4df83bb8c5c163e05501c1",
+    "src/renderer/features/command-palette/use-command-source.ts": "83927308f99a9012c3fc7d6eb7dc6baed5a55589d8821d2549a79023e87b981a",
+    "src/main/ipc/annex-handlers.ts": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b"
+  },
+  "newFile": "src/shared/annex-settings-ipc.ts",
+  "patch": "corrected-boundaries.review.patch",
+  "unchangedLaunchPatchSha256": "49591297ca686ce770609ab8ea79f47dc3112295761e048f562aed6bcc9b8074"
+}

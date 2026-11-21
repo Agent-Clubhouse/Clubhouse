@@ -1,0 +1,171 @@
+{
+  "status": "PROPOSED discriminators only; no product/model/parser/UI/IO/teardown test executed",
+  "retainedR2": "15383280a1bdd7151b07a66e4177eef38d10b40c",
+  "review": "f8c02a0af7bcf09f0ff64f8778f3e06d1e61cbf2",
+  "recoveryBounds": {
+    "inFlight": 1,
+    "recentCompletedGlobal": 32,
+    "sequentialFailuresBeforeSuccessControl": 40
+  },
+  "caseCount": 36,
+  "cases": [
+    {
+      "id": "B1-a",
+      "expected": "UNKNOWN primary; strict valid reread B inside actual pendingWrite then B+off replacement; no public heal/new epoch/name activation"
+    },
+    {
+      "id": "B1-b-missing",
+      "expected": "UNKNOWN primary; missing primary => zero emergency replacement, durable refused/unconfirmed, live-off+degraded remain"
+    },
+    {
+      "id": "B1-b-unreadable",
+      "expected": "UNKNOWN primary; read denied => same no-write/off remains"
+    },
+    {
+      "id": "B1-b-malformed",
+      "expected": "UNKNOWN primary; invalid JSON/shape/witness => no legacy defaults/candidate/stale tuple composition"
+    },
+    {
+      "id": "B1-b-changing",
+      "expected": "UNKNOWN primary; provenance changes while read => no emergency write"
+    },
+    {
+      "id": "B1-c",
+      "expected": "Known primary B/publication failed => emergency uses actual B/receipt, not stale A"
+    },
+    {
+      "id": "B1-d",
+      "expected": "New emergency/reset while reread held => old turn refused; never stops or overwrites replacement state"
+    },
+    {
+      "id": "B1-e",
+      "expected": "Reread equality to pending Alias/witness never activates/adopts intent or reconstructs public versions"
+    },
+    {
+      "id": "L1-a",
+      "expected": "40 sequential failures + fresh-ticket success; one in-flight,32 recent completed globally, no lifetime cap"
+    },
+    {
+      "id": "L1-b",
+      "expected": "Duplicate in-flight same ticket joins status/promise, no second reread"
+    },
+    {
+      "id": "L1-c",
+      "expected": "Authority-first known completion lookup BEFORE healthy; recent duplicate returns recorded outcome, no rotation"
+    },
+    {
+      "id": "L1-d",
+      "expected": "Replay first consumed ticket after result eviction => not_retained, zero IO/rotation/ordinal allocation"
+    },
+    {
+      "id": "L1-e",
+      "expected": "Renderer ordinal field forbidden; old ticket plus forged ordinal cannot become fresh"
+    },
+    {
+      "id": "L1-f",
+      "expected": "Status mode with current ready ticket cannot consume/execute"
+    },
+    {
+      "id": "L1-g",
+      "expected": "Completed oldest-first eviction never removes in-flight; failure retirement allows next fresh ticket"
+    },
+    {
+      "id": "L1-h",
+      "expected": "Success ends scope; reset/restart/new fault invalidates old tickets, no persistence claim or reexecution"
+    },
+    {
+      "id": "L1-i",
+      "expected": "Late evicted reply after new recovery/reset cannot set status/error/cache/clear new draft"
+    },
+    {
+      "id": "L1-j",
+      "expected": "Fresh healthy call noIO/rotation; unretained status returns status only; no silent fresh retry"
+    },
+    {
+      "id": "C1-a",
+      "expected": "Old load success after new load => no settings OR status setter"
+    },
+    {
+      "id": "C1-b",
+      "expected": "Old load failure after accepted new load => no error setter"
+    },
+    {
+      "id": "C1-c",
+      "expected": "View old success/failure after newer action/reset/recovery/unmount => no loadFailed setter"
+    },
+    {
+      "id": "C1-d",
+      "expected": "Purge completion never unconditionally clears current status/peer/device state"
+    },
+    {
+      "id": "C1-e",
+      "expected": "Admitted helper callback denied => no external setter after helper returns"
+    },
+    {
+      "id": "C2-a",
+      "expected": "Queued save retains UI settings-audit attribution without granting authority from origin"
+    },
+    {
+      "id": "C2-b",
+      "expected": "Original sender/main-frame/document captured before validate/queue; later replacement/revisit cannot acquire authority"
+    },
+    {
+      "id": "C2-c",
+      "expected": "Wrong arg count or unsafe envelope => typed invalid_envelope/requestId null, fixed-code logging only"
+    },
+    {
+      "id": "C2-d",
+      "expected": "Safe UUID envelope + semantic schema error => typed schema_invalid/safeId, no queue/write/event"
+    },
+    {
+      "id": "C3-a",
+      "expected": "Nonenumerable extra top/base/changes key refused via Reflect.ownKeys, not lost through Object.keys"
+    },
+    {
+      "id": "C3-b",
+      "expected": "Accessor descriptor refused with zero ordinary getter invocations"
+    },
+    {
+      "id": "C3-c",
+      "expected": "Own custom/symbol/non-index unset property refused"
+    },
+    {
+      "id": "C3-d",
+      "expected": "Own unset index accessor/altered prototype refused; raw iterator/some not invoked"
+    },
+    {
+      "id": "C3-e",
+      "expected": "Dense ordinary/frozen-data array accepted and detached; typed field construction, no unknown-cast proof"
+    },
+    {
+      "id": "C3-f",
+      "expected": "Hole negative preserved: r2 already fails after spread yields undefined; no new baseline defect claimed"
+    },
+    {
+      "id": "C3-g",
+      "expected": "Actual Electron clone strip/reject behavior gets separate test if reachability asserted; direct parser negatives alone insufficient"
+    },
+    {
+      "id": "S1",
+      "expected": "Normal startup establishes tuple before IPC/channels; GET/display do not initialize/heal"
+    },
+    {
+      "id": "R1",
+      "expected": "Void applyNetworkSettings/start failure cannot yield runtime success; committed_unconfirmed on unknown/failed owned readiness"
+    }
+  ],
+  "mutationsThatMustFail": [
+    "UNKNOWN emergency uses legacy loader/defaults/stale public tuple/candidate",
+    "UNKNOWN reread and write in separate handler queue turns",
+    "permanent32 attempt cap",
+    "unknown/evicted request becomes implicit fresh execution",
+    "duplicate lookup after healthy shortcircuit",
+    "renderer ordinal accepted as authoritative",
+    "unconditional setter after denied helper",
+    "recapture IPC caller in queued callback",
+    "drop UI audit surface",
+    "Object.keys exactness or raw array iterator",
+    "parser cast replaces typed construction",
+    "void runtime apply treated as readiness"
+  ]
+}

@@ -1,0 +1,120 @@
+// REVIEW ONLY: typed strict parser body, not product implementation/executed proof.
+// Reuses the r2 DTO/key/origin/limit declarations; replaces its parser helpers.
+export class LocalSettingsInputError extends Error {
+  constructor(readonly kind: 'invalid_envelope' | 'schema_invalid', readonly requestId: string | null = null) {
+    super(kind); // fixed code; never quote hostile input
+  }
+}
+const envelope = (): never => { throw new LocalSettingsInputError('invalid_envelope'); };
+const schema = (id: string): never => { throw new LocalSettingsInputError('schema_invalid', id); };
+type DataDescriptors = Record<string, PropertyDescriptor>;
+function dataRecord(value: unknown): DataDescriptors {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return envelope();
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return envelope();
+  const result: DataDescriptors = Object.create(null);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== 'string') return envelope();
+    const d = Object.getOwnPropertyDescriptor(value, key);
+    if (!d || !Object.hasOwn(d, 'value') || d.enumerable !== true) return envelope();
+    result[key] = d;
+  }
+  return result;
+}
+function exactDescriptors(value: DataDescriptors, keys: readonly string[]): void {
+  const actual = Reflect.ownKeys(value);
+  if (actual.length !== keys.length || !keys.every((key) => Object.hasOwn(value, key))) envelope();
+}
+function denseUnset(value: unknown): unknown[] {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return envelope();
+  const length = Object.getOwnPropertyDescriptor(value, 'length');
+  if (!length || !Object.hasOwn(length, 'value') || !Number.isSafeInteger(length.value)
+    || length.value < 0 || length.value > EDITABLE_KEYS.length || length.enumerable !== false) return envelope();
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== length.value + 1) return envelope();
+  const result: unknown[] = [];
+  for (let i = 0; i < length.value; i++) {
+    const d = Object.getOwnPropertyDescriptor(value, String(i));
+    if (!d || !Object.hasOwn(d, 'value') || d.enumerable !== true) return envelope();
+    result.push(d.value); // never invoke raw array methods/iterator/getters
+  }
+  // Count + every canonical index + length excludes custom/symbol/non-index keys.
+  return result;
+}
+function isEditable(value: unknown): value is EditableKey {
+  return typeof value === 'string' && EDITABLE_KEYS.some((key) => key === value);
+}
+function isOptionalKey(value: unknown): value is OptionalEditableKey {
+  return value === 'loopbackOnly' || value === 'reachableAs' || value === 'networkEnabled' || value === 'acceptHandoffs';
+}
+function isBooleanKey(key: EditableKey): key is 'enableServer'|'enableClient'|'loopbackOnly'|'autoReconnect'|'networkEnabled'|'acceptHandoffs' {
+  return key === 'enableServer' || key === 'enableClient' || key === 'loopbackOnly'
+    || key === 'autoReconnect' || key === 'networkEnabled' || key === 'acceptHandoffs';
+}
+function isOrigin(value: unknown): value is LocalOrigin {
+  return value === 'identity' || value === 'network-settings' || value === 'command-palette';
+}
+function wellFormed(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const d = s.charCodeAt(++i);
+      if (!(d >= 0xdc00 && d <= 0xdfff)) return false;
+    } else if (c >= 0xdc00 && c <= 0xdfff) return false;
+  }
+  return true;
+}
+export function readLocalSettingsPatch(raw: unknown): LocalSettingsPatch {
+  let id: string | null = null;
+  try {
+    const top = dataRecord(raw);
+    exactDescriptors(top, ['v','requestId','origin','base','changes','unset']);
+    if (!uuid(top.requestId.value)) return envelope();
+    id = top.requestId.value;
+    if (top.v.value !== 1 || !isOrigin(top.origin.value)) return schema(id);
+    const origin = top.origin.value;
+    const base = dataRecord(top.base.value);
+    exactDescriptors(base, ['epoch','revision','fields']);
+    if (!uuid(base.epoch.value) || !version(base.revision.value)) return schema(id);
+    const epoch = base.epoch.value, revision = base.revision.value;
+    const suppliedFields = dataRecord(base.fields.value);
+    const suppliedChanges = dataRecord(top.changes.value);
+    const unset: OptionalEditableKey[] = [];
+    for (const key of denseUnset(top.unset.value)) {
+      if (!isOptionalKey(key)) return schema(id);
+      unset.push(key);
+    }
+    const changes: LocalSettingsEdit['changes'] = {};
+    const touched: EditableKey[] = [];
+    for (const key of Reflect.ownKeys(suppliedChanges)) {
+      if (!isEditable(key)) return schema(id);
+      const value = suppliedChanges[key].value;
+      if (isBooleanKey(key)) {
+        if (typeof value !== 'boolean') return schema(id);
+        changes[key] = value;
+      } else {
+        if (typeof value !== 'string' || value.length > limits[key] || !wellFormed(value)) return schema(id);
+        changes[key] = value;
+      }
+      touched.push(key);
+    }
+    touched.push(...unset); // this is our newly constructed dense array
+    if (!touched.length || touched.length > EDITABLE_KEYS.length || new Set(touched).size !== touched.length) return schema(id);
+    if (touched.some((key) => !origins[origin].includes(key)) || origin === 'command-palette' && touched.length !== 1) return schema(id);
+    const suppliedKeys = Reflect.ownKeys(suppliedFields);
+    if (suppliedKeys.length !== touched.length || suppliedKeys.some((key) => !isEditable(key) || !touched.includes(key))) return schema(id);
+    const fields: Partial<Record<EditableKey, number>> = {};
+    for (const key of touched) {
+      const value = suppliedFields[key]?.value;
+      if (!version(value) || value > revision) return schema(id);
+      fields[key] = value;
+    }
+    const request: LocalSettingsPatch = { v: 1, requestId: id, origin, base: { epoch, revision, fields }, changes, unset };
+    if (new TextEncoder().encode(JSON.stringify(request)).length > 8192) return schema(id);
+    return structuredClone(request); // typed, detached construction; no unknown cast
+  } catch (error) {
+    if (error instanceof LocalSettingsInputError) throw error;
+    // Reflection/clone failures are bounded envelope refusals; do not quote input.
+    return envelope();
+  }
+}

@@ -1,0 +1,471 @@
+--- a/src/main/services/launch-gate.ts
++++ b/src/main/services/launch-gate.ts
+@@ -6,0 +7,2 @@
++// REVIEW ONLY: additive observation for opted-in Annex callers.
++let admissionGeneration = Symbol();
+@@ -18,0 +21 @@
++  admissionGeneration = Symbol(); // rotate on EVERY close, including already closed
+@@ -31,0 +35,7 @@
++}
++
++/** Observation only; no cancellation, drain, grant or launch authority. */
++export function captureLaunchAdmission(): () => boolean {
++  const generation = admissionGeneration;
++  const wasOpen = launchesOpen();
++  return () => wasOpen && generation === admissionGeneration && launchesOpen();
+--- a/src/main/services/clubhouse-mcp/tools/annex-network-tools.ts
++++ b/src/main/services/clubhouse-mcp/tools/annex-network-tools.ts
+@@ -12,0 +13,10 @@
++/** REVIEW ONLY: invocation-local capability to observe admission, not approve a grant. */
++export interface AnnexRuntimeAdmission {
++  assertCurrent(): void;
++  dispose(): void;
++}
++export interface AnnexLoopbackContext {
++  admission: AnnexRuntimeAdmission;
++  assertAuthorized(): void;
++  assertExpectedState(): void;
++}
+@@ -15 +25,2 @@
+-  applyLoopbackOnly(value: boolean, assertAuthorized: () => void): Promise<void>;
++  captureRuntimeAdmission(): AnnexRuntimeAdmission;
++  applyLoopbackOnly(value: boolean, context: AnnexLoopbackContext): Promise<void>;
+@@ -72,0 +84,9 @@
++    // Original installed host + admission captured BEFORE queue or Ask await.
++    const installedHost = host;
++    if (!installedHost) return text('Annex Network is not available.', true);
++    const admission = installedHost.captureRuntimeAdmission();
++    const assertAuthorized = () => {
++      if (host !== installedHost) throw new Error('Annex host changed; submit a new invocation.');
++      admission.assertCurrent();
++      assertGrant(agentId, args); // original grant, never replaced by admission
++    };
+@@ -76 +96 @@
+-        assertGrant(agentId, args);
++        assertAuthorized();
+@@ -81 +101 @@
+-        if (!host) throw new Error('Annex Network settings are not available.');
++        assertAuthorized(); // preAsk
+@@ -84 +104 @@
+-        assertGrant(agentId, args);
++        assertAuthorized();
+@@ -86,3 +106,7 @@
+-        await host.applyLoopbackOnly(loopbackOnly, () => {
+-          assertGrant(agentId, args);
+-          if (readAnnexNetworkSettings().expected_state !== args.expected_state) throw new Error('Annex Network settings changed before the write.');
++        await installedHost.applyLoopbackOnly(loopbackOnly, {
++          admission,
++          assertAuthorized,
++          // Only before forward commit. After it, use the exact owned receipt.
++          assertExpectedState: () => {
++            if (readAnnexNetworkSettings().expected_state !== args.expected_state) throw new Error('Annex Network settings changed before the write.');
++          },
+@@ -89,0 +114 @@
++        assertAuthorized();
+@@ -101 +126 @@
+-    return pending;
++    return pending.finally(() => admission.dispose());
+--- a/src/preload/annex.ts
++++ b/src/preload/annex.ts
+@@ -2,0 +3 @@
++import type { CommittedAnnexSettings, LocalSettingsPatch, LocalSettingsResult } from '../shared/annex-settings-ipc';
+@@ -8 +9 @@
+-  getSettings: () =>
++  getSettings: (): Promise<CommittedAnnexSettings> =>
+@@ -10,2 +11,2 @@
+-  saveSettings: (settings: { enableServer: boolean; enableClient: boolean; deviceName: string; alias: string; icon: string; color: string; autoReconnect: boolean; enabled?: boolean }) =>
+-    ipcRenderer.invoke(IPC.ANNEX.SAVE_SETTINGS, settings),
++  saveSettings: (request: LocalSettingsPatch): Promise<LocalSettingsResult> =>
++    ipcRenderer.invoke(IPC.ANNEX.SAVE_SETTINGS, request),
+--- a/src/renderer/stores/annexStore.ts
++++ b/src/renderer/stores/annexStore.ts
+@@ -1,0 +2,4 @@
++import type { CommittedAnnexSettings, LocalSettingsEdit, LocalSettingsResult } from '../../shared/annex-settings-ipc';
++// REVIEW ONLY: proposed session helper, not implemented by this boundary sketch.
++import { createAnnexSettingsSession } from './annexSettingsCommitSession';
++const settingsSession = createAnnexSettingsSession();
+@@ -30 +34,3 @@
+-  saveSettings: (settings: AnnexSettings) => Promise<void>;
++  saveSettings: (edit: LocalSettingsEdit) => Promise<LocalSettingsResult>;
++  settingsSnapshot: CommittedAnnexSettings | null;
++  settingsError: string | null;
+@@ -51,0 +58,2 @@
++  settingsSnapshot: null,
++  settingsError: null,
+@@ -56,0 +65 @@
++    const load = settingsSession.beginLoad();
+@@ -62,2 +71,3 @@
+-      set({
+-        settings: settings || DEFAULT_SETTINGS,
++      // Session enforces generation/load ordering and committed revision only.
++      settingsSession.acceptLoad(load, settings, (snapshot) => set({
++        settings: snapshot.settings, settingsSnapshot: snapshot,
+@@ -65,15 +75,14 @@
+-      });
+-    } catch {
+-      // Keep defaults
+-    }
+-  },
+-
+-  saveSettings: async (settings: AnnexSettings) => {
+-    set({ settings });
+-    try {
+-      await window.clubhouse.annex.saveSettings(settings);
+-      // Status will be pushed via onStatusChanged
+-    } catch {
+-      // Revert on error
+-    }
+-  },
++      })); // ALL setters inside current load ownership callback
++    } catch {
++      settingsSession.failLoad(load, () => set({
++        settingsError: 'Saved Annex settings could not be read.',
++      })); // stale failure cannot publish an external error setter
++    }
++  },
++
++  saveSettings: async (edit: LocalSettingsEdit) => settingsSession.submit(edit, {
++    read: () => window.clubhouse.annex.getSettings(),
++    send: (request) => window.clubhouse.annex.saveSettings(request),
++    accept: (snapshot) => set({ settings: snapshot.settings, settingsSnapshot: snapshot }),
++    error: (message) => set({ settingsError: message }),
++  }),
+@@ -109,0 +119 @@
++    const resetOwner = settingsSession.invalidateForReset(); // BEFORE any await
+@@ -112 +122,3 @@
+-      set({ status: DEFAULT_STATUS, peers: [], devices: [] });
++      // Main's current notifications own status/peer/device state; never clear
++      // a newer published list or status from an old purge completion.
++      if (!settingsSession.isCurrent(resetOwner)) return;
+@@ -113,0 +126 @@
++      const load = settingsSession.beginLoad();
+@@ -115,3 +128,3 @@
+-      set({ settings: settings ? { ...DEFAULT_SETTINGS, ...settings } : DEFAULT_SETTINGS });
+-    } catch {
+-      // Error handled in main
++      settingsSession.acceptLoad(load, settings, (snapshot) => set({ settings: snapshot.settings, settingsSnapshot: snapshot }));
++    } catch {
++      settingsSession.failReset(resetOwner, () => set({ settingsError: 'Reset could not be confirmed.' }));
+--- a/src/renderer/features/settings/AnnexNetworkSettingsView.tsx
++++ b/src/renderer/features/settings/AnnexNetworkSettingsView.tsx
+@@ -12 +12,3 @@
+-import type { AnnexSettings } from '../../../shared/types';
++// REVIEW ONLY: draft getter/explicit-save wiring contract remains unapplied.
++import { settingsSessionDraft, useAnnexSettingsActionOwner } from '../../stores/annexSettingsCommitSession';
++import type { LocalSettingsEdit } from '../../../shared/annex-settings-ipc';
+@@ -18,0 +21 @@
++  const actionOwner = useAnnexSettingsActionOwner(); // generation + latest action + mounted lifetime
+@@ -76,13 +79,5 @@
+-  // Built on what main has saved, so a click before the settings load (or after a reset) keeps the names.
+-  const saveCurrentSettings = async (changes: Partial<AnnexSettings>): Promise<void> => {
+-    let current: AnnexSettings;
+-    try {
+-      current = await window.clubhouse.annex.getSettings();
+-      if (!current) throw new Error('Annex settings unavailable');
+-    } catch {
+-      // telemetry-exempt: shown on the page; never save potentially unloaded defaults.
+-      setSettingsLoadFailed(true);
+-      return;
+-    }
+-    setSettingsLoadFailed(false);
+-    await saveSettings({ ...current, ...changes });
++  // Explicit keys only. The store reads a committed versioned baseline.
++  const saveCurrentSettings = async (changes: LocalSettingsEdit['changes']): Promise<void> => {
++    const owner = actionOwner.begin(); // before await
++    const result = await saveSettings({ origin: 'network-settings', changes, unset: [] });
++    if (owner.current()) setSettingsLoadFailed(result.outcome !== 'committed');
+@@ -90 +84,0 @@
+-  /** On: this machine answers and connects, and new pairings join the network. Off: nothing connects. */
+@@ -220,2 +214,2 @@
+-              value={settings.deviceName}
+-              onChange={(e) => saveSettings({ ...settings, deviceName: e.target.value })}
++              value={settingsSessionDraft('deviceName', settings.deviceName)}
++              onChange={(e) => saveSettings({ origin: 'network-settings', changes: { deviceName: e.target.value }, unset: [] })}
+@@ -262,2 +256,2 @@
+-              value={settings.reachableAs ?? ''}
+-              onChange={(e) => saveSettings({ ...settings, reachableAs: e.target.value })}
++              value={settingsSessionDraft('reachableAs', settings.reachableAs ?? '')}
++              onChange={(e) => saveSettings({ origin: 'network-settings', changes: { reachableAs: e.target.value }, unset: [] })}
+--- a/src/renderer/features/settings/AnnexIdentitySection.tsx
++++ b/src/renderer/features/settings/AnnexIdentitySection.tsx
+@@ -1,0 +2,2 @@
++import type { LocalSettingsEdit, LocalSettingsResult } from '../../../shared/annex-settings-ipc';
++import { settingsSessionDraft } from '../../stores/annexSettingsCommitSession';
+@@ -8 +10 @@
+-  onSave: (settings: AnnexSettings) => void;
++  onSave: (edit: LocalSettingsEdit) => Promise<LocalSettingsResult>;
+@@ -18,2 +20,2 @@
+-          value={settings.alias}
+-          onChange={(e) => onSave({ ...settings, alias: e.target.value })}
++          value={settingsSessionDraft('alias', settings.alias)}
++          onChange={(e) => onSave({ origin: 'identity', changes: { alias: e.target.value }, unset: [] })}
+@@ -35 +37 @@
+-                onClick={() => onSave({ ...settings, color: color.id })}
++                onClick={() => onSave({ origin: 'identity', changes: { color: color.id }, unset: [] })}
+--- a/src/renderer/features/command-palette/use-command-source.ts
++++ b/src/renderer/features/command-palette/use-command-source.ts
+@@ -485 +485,2 @@
+-        useAnnexStore.getState().saveSettings({ ...annexSettings, enableServer: !annexSettings.enableServer });
++        const current = useAnnexStore.getState().settings;
++        void useAnnexStore.getState().saveSettings({ origin: 'command-palette', changes: { enableServer: !current.enableServer }, unset: [] });
+@@ -494 +495,2 @@
+-        useAnnexStore.getState().saveSettings({ ...annexSettings, enableClient: !annexSettings.enableClient });
++        const current = useAnnexStore.getState().settings;
++        void useAnnexStore.getState().saveSettings({ origin: 'command-palette', changes: { enableClient: !current.enableClient }, unset: [] });
+--- a/src/main/ipc/annex-handlers.ts
++++ b/src/main/ipc/annex-handlers.ts
+@@ -21,0 +22,4 @@
++import { readLocalSettingsPatch, LocalSettingsInputError } from '../../shared/annex-settings-ipc';
++import { withSettingsSurface } from '../services/settings-audit';
++// REVIEW ONLY: transaction APIs specified in contract.md, not implemented here.
++import { captureAnnexRuntimeAdmission, captureOriginalAnnexIpcEntry, reportLocalSettingsInputRefusal, applyLocalSettingsTransaction, applyLoopbackTransaction, beginAnnexEmergency } from './annex-settings-transaction';
+@@ -77,49 +81,9 @@
+-    applyLoopbackOnly: async (value, assertAuthorized) => {
+-      const previous = annexSettings.getSettings();
+-      const settings = await annexSettings.updateSettings((current) => {
+-        assertAuthorized();
+-        return { ...current, loopbackOnly: value };
+-      });
+-      settingsChanged('annex');
+-      if (!!settings.loopbackOnly === !!previous.loopbackOnly) return;
+-      try {
+-        if (settings.enableServer) {
+-          annexServer.stop();
+-          await annexServer.startVerified();
+-        }
+-        if (settings.enableClient) annexClient.scan();
+-        assertNetworkSettingsReady(settings);
+-        broadcastStatusChanged();
+-      } catch (err) {
+-        appLog('core:annex', 'error', 'An approved Annex scope change could not be applied securely', { meta: { error: err instanceof Error ? err.message : String(err) } });
+-        if (err instanceof annexServer.AnnexStartFailure && err.wasSuperseded()) {
+-          broadcastStatusChanged();
+-          throw new Error('The Annex change was interrupted by a concurrent runtime change. No rollback was attempted; current settings and runtime readiness are unconfirmed. Check Annex Network on the desktop.');
+-        }
+-        if (!(err instanceof annexServer.AnnexStartFailure) && deliveryHash(annexSettings.getSettings()) === deliveryHash(settings)) annexServer.stop();
+-        let restored: AnnexSettings | undefined;
+-        try {
+-          restored = await annexSettings.updateSettings((current) => {
+-            if (err instanceof annexServer.AnnexStartFailure && err.wasSuperseded()) throw err;
+-            if (deliveryHash(current) !== deliveryHash(settings)) throw new Error('Annex settings changed again; a concurrent edit cannot be overwritten.');
+-            return { ...current, loopbackOnly: previous.loopbackOnly };
+-          });
+-          if (err instanceof annexServer.AnnexStartFailure && err.wasSuperseded()) throw err;
+-          if (restored.enableServer) await annexServer.startVerified();
+-          if (restored.enableClient) annexClient.scan();
+-          assertNetworkSettingsReady(restored);
+-        } catch (restoreError) {
+-          appLog('core:annex', 'error', 'Annex scope rollback was incomplete', { meta: { error: restoreError instanceof Error ? restoreError.message : String(restoreError) } });
+-          const concurrent = (restoreError instanceof annexServer.AnnexStartFailure && restoreError.wasSuperseded())
+-            || (restored && deliveryHash(annexSettings.getSettings()) !== deliveryHash(restored));
+-          if (!concurrent && restored && !(restoreError instanceof annexServer.AnnexStartFailure)) annexServer.stop();
+-          broadcastStatusChanged();
+-          if (concurrent) throw new Error('The Annex change failed and rollback was interrupted by a concurrent change. The replacement runtime was not stopped; current settings and runtime readiness are unconfirmed. Check Annex Network on the desktop.');
+-          throw new Error(restored
+-            ? 'The Annex change failed. The previous setting was restored, but its secure runtime could not be restored; Annex is stopped. Check Annex Network on the desktop.'
+-            : 'The Annex change failed and its previous setting could not be restored. Runtime readiness is unconfirmed; check Annex Network on the desktop before retrying.');
+-        }
+-        broadcastStatusChanged();
+-        throw new Error('The Annex change failed to start its secure listeners. The previous setting and secure runtime were restored; no change was confirmed.');
+-      }
+-    },
++    captureRuntimeAdmission: captureAnnexRuntimeAdmission,
++    applyLoopbackOnly: (value, context) => applyLoopbackTransaction(value, context, {
++      // Helper must check original admission/grant and exact owned commit at
++      // every effect, including stale STOP/catch/restore, as contract specifies.
++      server: annexServer,
++      client: annexClient,
++      settingsChanged: () => settingsChanged('annex'),
++      broadcastStatusChanged,
++    }),
+@@ -178 +142 @@
+-    return annexSettings.getSettings();
++    return annexSettings.getSettingsSnapshot();
+@@ -182,14 +146,28 @@
+-  ipcMain.handle(IPC.ANNEX.SAVE_SETTINGS, withValidatedArgs(
+-    [objectArg<AnnexSettings>()],
+-    (_event, settings) => {
+-      const requested = structuredClone(settings);
+-      const apply = async () => {
+-        const previous = annexSettings.getSettings();
+-        await annexSettings.saveSettings(requested);
+-        settingsChanged('annex');
+-        applyNetworkSettings(requested, previous);
+-      };
+-      const saved = settingsWrites.then(apply, apply);
+-      settingsWrites = saved;
+-      return saved;
+-  }));
++  ipcMain.handle(IPC.ANNEX.SAVE_SETTINGS, (event, ...rawArgs: unknown[]) => {
++    // Original sender/frame/URL/document/runtime receipt, never recaptured in queue.
++    const entry = captureOriginalAnnexIpcEntry(event);
++    return withSettingsSurface('ui', undefined, () => {
++      try {
++        if (rawArgs.length !== 1) throw new LocalSettingsInputError('invalid_envelope');
++        const validated = withValidatedArgs(
++          [(raw: unknown) => readLocalSettingsPatch(raw)],
++          (_originalEvent, request) => {
++            // Typed construction detaches checked values once. Entry is immutable.
++            const apply = () => applyLocalSettingsTransaction(entry, request, {
++              applyNetworkSettings, settingsChanged: () => settingsChanged('annex'),
++            });
++            const saved = settingsWrites.then(apply, apply);
++            settingsWrites = saved.then(() => undefined, () => undefined);
++            return saved.finally(() => entry.runtime.dispose());
++          },
++        );
++        return validated(event, rawArgs[0]);
++      } catch (error) {
++        entry.runtime.dispose();
++        // Only fixed-code typed input errors become typed refusals; unexpected
++        // errors are not reclassified as proof that no commit happened.
++        if (!(error instanceof LocalSettingsInputError)) throw error;
++        return reportLocalSettingsInputRefusal(entry, error);
++      }
++    });
++  });
+@@ -249,0 +228 @@
++    beginAnnexEmergency(); // generation BEFORE existing immediate stop; no IO
+@@ -259,0 +239 @@
++    beginAnnexEmergency({ resetSettingsEpoch: true }); // rotate random epoch BEFORE stop
+--- /dev/null
++++ b/src/shared/annex-settings-ipc.ts
+@@ -0,0 +1,138 @@
++/** REVIEW ONLY: local IPC contract. Not a wire/mobile or authority token. */
++import type { AnnexSettings } from './types';
++export const EDITABLE_KEYS = ['enableServer','enableClient','loopbackOnly','deviceName','alias','icon','color','autoReconnect','reachableAs','networkEnabled','acceptHandoffs'] as const;
++export type EditableKey = typeof EDITABLE_KEYS[number];
++export type OptionalEditableKey = 'loopbackOnly'|'reachableAs'|'networkEnabled'|'acceptHandoffs';
++export type LocalOrigin = 'identity'|'network-settings'|'command-palette';
++export interface LocalSettingsEdit { origin: LocalOrigin; changes: Partial<Pick<AnnexSettings, EditableKey>>; unset: OptionalEditableKey[] }
++export interface CommittedAnnexSettings { v: 1; epoch: string; revision: number; fields: Record<EditableKey, number>; settings: AnnexSettings }
++export interface LocalSettingsPatch extends LocalSettingsEdit { v: 1; requestId: string; base: { epoch: string; revision: number; fields: Partial<Record<EditableKey, number>> } }
++export interface LocalSettingsResult { v: 1; requestId: string | null; outcome: 'committed'|'refused'|'committed_unconfirmed'; code: string; snapshot?: CommittedAnnexSettings }
++const limits: Record<string, number> = { deviceName: 200, alias: 200, icon: 128, color: 128, reachableAs: 1024 };
++const origins: Record<LocalOrigin, readonly string[]> = {
++  identity: ['alias','color','icon'],
++  'network-settings': ['enableServer','enableClient','loopbackOnly','deviceName','autoReconnect','reachableAs','networkEnabled','acceptHandoffs'],
++  'command-palette': ['enableServer','enableClient'],
++};
++const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
++const version = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v < Number.MAX_SAFE_INTEGER;
++// REVIEW ONLY: typed strict parser body, not product implementation/executed proof.
++// Reuses the r2 DTO/key/origin/limit declarations; replaces its parser helpers.
++export class LocalSettingsInputError extends Error {
++  constructor(readonly kind: 'invalid_envelope' | 'schema_invalid', readonly requestId: string | null = null) {
++    super(kind); // fixed code; never quote hostile input
++  }
++}
++const envelope = (): never => { throw new LocalSettingsInputError('invalid_envelope'); };
++const schema = (id: string): never => { throw new LocalSettingsInputError('schema_invalid', id); };
++type DataDescriptors = Record<string, PropertyDescriptor>;
++function dataRecord(value: unknown): DataDescriptors {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return envelope();
++  const proto = Object.getPrototypeOf(value);
++  if (proto !== Object.prototype && proto !== null) return envelope();
++  const result: DataDescriptors = Object.create(null);
++  for (const key of Reflect.ownKeys(value)) {
++    if (typeof key !== 'string') return envelope();
++    const d = Object.getOwnPropertyDescriptor(value, key);
++    if (!d || !Object.hasOwn(d, 'value') || d.enumerable !== true) return envelope();
++    result[key] = d;
++  }
++  return result;
++}
++function exactDescriptors(value: DataDescriptors, keys: readonly string[]): void {
++  const actual = Reflect.ownKeys(value);
++  if (actual.length !== keys.length || !keys.every((key) => Object.hasOwn(value, key))) envelope();
++}
++function denseUnset(value: unknown): unknown[] {
++  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return envelope();
++  const length = Object.getOwnPropertyDescriptor(value, 'length');
++  if (!length || !Object.hasOwn(length, 'value') || !Number.isSafeInteger(length.value)
++    || length.value < 0 || length.value > EDITABLE_KEYS.length || length.enumerable !== false) return envelope();
++  const keys = Reflect.ownKeys(value);
++  if (keys.length !== length.value + 1) return envelope();
++  const result: unknown[] = [];
++  for (let i = 0; i < length.value; i++) {
++    const d = Object.getOwnPropertyDescriptor(value, String(i));
++    if (!d || !Object.hasOwn(d, 'value') || d.enumerable !== true) return envelope();
++    result.push(d.value); // never invoke raw array methods/iterator/getters
++  }
++  // Count + every canonical index + length excludes custom/symbol/non-index keys.
++  return result;
++}
++function isEditable(value: unknown): value is EditableKey {
++  return typeof value === 'string' && EDITABLE_KEYS.some((key) => key === value);
++}
++function isOptionalKey(value: unknown): value is OptionalEditableKey {
++  return value === 'loopbackOnly' || value === 'reachableAs' || value === 'networkEnabled' || value === 'acceptHandoffs';
++}
++function isBooleanKey(key: EditableKey): key is 'enableServer'|'enableClient'|'loopbackOnly'|'autoReconnect'|'networkEnabled'|'acceptHandoffs' {
++  return key === 'enableServer' || key === 'enableClient' || key === 'loopbackOnly'
++    || key === 'autoReconnect' || key === 'networkEnabled' || key === 'acceptHandoffs';
++}
++function isOrigin(value: unknown): value is LocalOrigin {
++  return value === 'identity' || value === 'network-settings' || value === 'command-palette';
++}
++function wellFormed(s: string): boolean {
++  for (let i = 0; i < s.length; i++) {
++    const c = s.charCodeAt(i);
++    if (c >= 0xd800 && c <= 0xdbff) {
++      const d = s.charCodeAt(++i);
++      if (!(d >= 0xdc00 && d <= 0xdfff)) return false;
++    } else if (c >= 0xdc00 && c <= 0xdfff) return false;
++  }
++  return true;
++}
++export function readLocalSettingsPatch(raw: unknown): LocalSettingsPatch {
++  let id: string | null = null;
++  try {
++    const top = dataRecord(raw);
++    exactDescriptors(top, ['v','requestId','origin','base','changes','unset']);
++    if (!uuid(top.requestId.value)) return envelope();
++    id = top.requestId.value;
++    if (top.v.value !== 1 || !isOrigin(top.origin.value)) return schema(id);
++    const origin = top.origin.value;
++    const base = dataRecord(top.base.value);
++    exactDescriptors(base, ['epoch','revision','fields']);
++    if (!uuid(base.epoch.value) || !version(base.revision.value)) return schema(id);
++    const epoch = base.epoch.value, revision = base.revision.value;
++    const suppliedFields = dataRecord(base.fields.value);
++    const suppliedChanges = dataRecord(top.changes.value);
++    const unset: OptionalEditableKey[] = [];
++    for (const key of denseUnset(top.unset.value)) {
++      if (!isOptionalKey(key)) return schema(id);
++      unset.push(key);
++    }
++    const changes: LocalSettingsEdit['changes'] = {};
++    const touched: EditableKey[] = [];
++    for (const key of Reflect.ownKeys(suppliedChanges)) {
++      if (!isEditable(key)) return schema(id);
++      const value = suppliedChanges[key].value;
++      if (isBooleanKey(key)) {
++        if (typeof value !== 'boolean') return schema(id);
++        changes[key] = value;
++      } else {
++        if (typeof value !== 'string' || value.length > limits[key] || !wellFormed(value)) return schema(id);
++        changes[key] = value;
++      }
++      touched.push(key);
++    }
++    touched.push(...unset); // this is our newly constructed dense array
++    if (!touched.length || touched.length > EDITABLE_KEYS.length || new Set(touched).size !== touched.length) return schema(id);
++    if (touched.some((key) => !origins[origin].includes(key)) || origin === 'command-palette' && touched.length !== 1) return schema(id);
++    const suppliedKeys = Reflect.ownKeys(suppliedFields);
++    if (suppliedKeys.length !== touched.length || suppliedKeys.some((key) => !isEditable(key) || !touched.includes(key))) return schema(id);
++    const fields: Partial<Record<EditableKey, number>> = {};
++    for (const key of touched) {
++      const value = suppliedFields[key]?.value;
++      if (!version(value) || value > revision) return schema(id);
++      fields[key] = value;
++    }
++    const request: LocalSettingsPatch = { v: 1, requestId: id, origin, base: { epoch, revision, fields }, changes, unset };
++    if (new TextEncoder().encode(JSON.stringify(request)).length > 8192) return schema(id);
++    return structuredClone(request); // typed, detached construction; no unknown cast
++  } catch (error) {
++    if (error instanceof LocalSettingsInputError) throw error;
++    // Reflection/clone failures are bounded envelope refusals; do not quote input.
++    return envelope();
++  }
++}
