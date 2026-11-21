@@ -528,9 +528,11 @@ describe('annex-client', () => {
       response.emit('data', Buffer.from('{"error":"peer_not_paired"}'));
       response.emit('end');
       await vi.advanceTimersByTimeAsync(0);
-      expect(annexClient.getSatellite(fixture.fingerprint)?.state).toBe('connected');
-      expect(annexClient.getSatellite(fixture.fingerprint)?.needsPairing).not.toBe(true);
-      expect(replacementControl.readyState).toBe(1);
+      expect({
+        mainState: annexClient.getSatellite(fixture.fingerprint)?.state,
+        needsPairing: annexClient.getSatellite(fixture.fingerprint)?.needsPairing ?? false,
+        controlState: replacementControl.readyState,
+      }).toEqual({ mainState: 'connected', needsPairing: false, controlState: 1 });
       replacementControl.emit('message', Buffer.from(JSON.stringify({
         v: 1, type: 'request', id: 'after-stale-main-refusal', method: 'GET', path: '/api/v1/mobile/capabilities',
       })), false);
