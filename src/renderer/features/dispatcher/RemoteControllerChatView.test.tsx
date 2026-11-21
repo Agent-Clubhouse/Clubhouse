@@ -30,12 +30,23 @@ afterEach(() => {
 });
 
 describe('remote controller desktop chat', () => {
-  it('reloads the readonly controller after reverse outbound readiness recovers without a main connection', async () => {
+  it.each(['accepted-only', 'mixed'] as const)('reloads the readonly controller after %s control readiness recovers without a main connection', async (mode) => {
+    const reach: NonNullable<AnnexDevice['reach']> & { acceptedControl: boolean } = {
+      outbound: { state: 'up', via: mode === 'mixed' ? 'direct' : 'reverse' },
+      inbound: { state: 'up' }, acceptedControl: true,
+    };
     const device: AnnexDevice = {
       fingerprint: 'peer', alias: 'Peer', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop',
-      state: 'connected', pairedAt: '', lastSeen: '', problem: null,
-      reach: { outbound: { state: 'up', via: 'reverse' }, inbound: { state: 'down' } },
+      state: 'connected', pairedAt: '', lastSeen: '', problem: null, reach,
     };
+    const withdrawnReach: typeof reach = {
+      acceptedControl: false,
+      outbound: { state: mode === 'mixed' ? 'up' : 'down', ...(mode === 'mixed' && { via: 'direct' }) },
+      inbound: { state: mode === 'mixed' ? 'up' : 'down', ...(mode === 'mixed' && { via: 'reverse' }) },
+    };
+    const withdrawn = { ...device, reach: withdrawnReach };
+    vi.mocked(window.clubhouse.annex.listDevices).mockResolvedValue([withdrawn]);
+    useAnnexStore.setState({ devices: [withdrawn] });
     read().mockResolvedValueOnce({ status: 'offline' }).mockResolvedValue(page([message(1, 'Reverse recovery')]));
     render(<RemoteControllerChatView machine="peer" />);
     expect(await screen.findByText(/That computer is offline/)).toBeInTheDocument();
@@ -46,11 +57,19 @@ describe('remote controller desktop chat', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
-  it('suppresses a late controller result when reverse readiness is withdrawn', async () => {
+  it.each(['accepted-only', 'mixed'] as const)('suppresses a late controller result when %s control readiness is withdrawn', async (mode) => {
+    const reach: NonNullable<AnnexDevice['reach']> & { acceptedControl: boolean } = {
+      outbound: { state: 'up', via: mode === 'mixed' ? 'direct' : 'reverse' },
+      inbound: { state: 'up' }, acceptedControl: true,
+    };
     const device: AnnexDevice = {
       fingerprint: 'peer', alias: 'Peer', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop',
-      state: 'connected', pairedAt: '', lastSeen: '', problem: null,
-      reach: { outbound: { state: 'up', via: 'reverse' }, inbound: { state: 'down' } },
+      state: 'connected', pairedAt: '', lastSeen: '', problem: null, reach,
+    };
+    const withdrawnReach: typeof reach = {
+      acceptedControl: false,
+      outbound: { state: mode === 'mixed' ? 'up' : 'down', ...(mode === 'mixed' && { via: 'direct' }) },
+      inbound: { state: mode === 'mixed' ? 'up' : 'down', ...(mode === 'mixed' && { via: 'reverse' }) },
     };
     let finish!: (result: ReturnType<typeof page>) => void;
     vi.mocked(window.clubhouse.annex.listDevices).mockResolvedValue([device]);
@@ -59,11 +78,30 @@ describe('remote controller desktop chat', () => {
       .mockResolvedValue({ status: 'offline' });
     render(<RemoteControllerChatView machine="peer" />);
     await waitFor(() => expect(read()).toHaveBeenCalledTimes(1));
-    await act(async () => { useAnnexStore.setState({ devices: [] }); });
+    await act(async () => { useAnnexStore.setState({ devices: [{ ...device, reach: withdrawnReach }] }); });
     expect(await screen.findByText(/That computer is offline/)).toBeInTheDocument();
     await act(async () => { finish(page([message(1, 'Retired private result')])); });
     expect(screen.queryByText('Retired private result')).toBeNull();
     expect(read()).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not restart an accepted controller read for presentation or unrelated peer updates', async () => {
+    const reach: NonNullable<AnnexDevice['reach']> & { acceptedControl: boolean } = {
+      outbound: { state: 'up', via: 'reverse' }, inbound: { state: 'up' }, acceptedControl: true,
+    };
+    const device: AnnexDevice = {
+      fingerprint: 'peer', alias: 'Peer', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop',
+      state: 'connected', pairedAt: '', lastSeen: '', problem: null, reach,
+    };
+    vi.mocked(window.clubhouse.annex.listDevices).mockResolvedValue([device]);
+    useAnnexStore.setState({ devices: [device] });
+    render(<RemoteControllerChatView machine="peer" />);
+    await screen.findByText('This conversation has no messages.');
+    const updatedReach: typeof reach = { ...reach, outbound: { state: 'up', via: 'direct' } };
+    await act(async () => {
+      useAnnexStore.setState({ devices: [{ ...device, reach: updatedReach }, { ...device, fingerprint: 'other' }] });
+    });
+    expect(read()).toHaveBeenCalledTimes(1);
   });
 
   it('renders full conversation messages read-only and fetches earlier pages lazily', async () => {

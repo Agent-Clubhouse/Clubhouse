@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { networkInterfaces } from 'node:os';
 import * as tls from 'tls';
 import { Socket as NetSocket } from 'net';
-import type { AnnexPeer } from '../../shared/types';
+import type { AnnexPeer, AnnexSettings } from '../../shared/types';
 import { authorize, stillAuthorized } from './annex-authorizer';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +54,7 @@ vi.mock('node:os', async (original) => {
 // The membership channel has its own tests (annex-network-channel.test.ts).
 vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn(), hasChannel: vi.fn(() => false) }));
 vi.mock('./annex-network-membership', () => ({
+  initNetworkMembership: vi.fn(),
   noteLocalJoin: vi.fn(),
   noteLocalRemoval: vi.fn(),
   // Pairing ids (#3107): fixed, so answers and fixtures don't change from run to run.
@@ -123,7 +124,11 @@ vi.mock('./annex-settings', () => ({
     autoReconnect: true,
   }),
   getLastPorts: vi.fn(() => ({ mainPort: 0, pairingPort: 0 })),
+  saveSettings: vi.fn(),
 }));
+
+vi.mock('./clubhouse-mcp/tools/device-tools', () => ({ setDeviceToolHost: vi.fn() }));
+vi.mock('./clubhouse-mcp/tools/annex-network-tools', () => ({ setAnnexNetworkToolHost: vi.fn() }));
 
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
@@ -158,13 +163,14 @@ import * as annexPeers from './annex-peers';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
 import * as annexSettings from './annex-settings';
-import { devicesChanged } from './annex-device-signal';
+import { devicesChanged, resetDeviceSignalForTests } from './annex-device-signal';
 import { CONTROLLER_CHAT_MAX_BYTES } from '../../shared/controller-chat';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import { EventEmitter } from 'events';
 import * as http from 'http';
 import * as https from 'https';
+import { ipcMain } from 'electron';
 
 describe('bracketHost', () => {
   it('passes through IPv4 addresses', () => {
@@ -4133,6 +4139,74 @@ describe('annex-client', () => {
         annexClient.stopClient();
         vi.mocked(annexControl.getLinkReadiness).mockRestore();
         vi.mocked(annexControl.request).mockRestore();
+      });
+
+      describe('actual SAVE_SETTINGS controller lease lifecycle', () => {
+        let save: (event: unknown, settings: AnnexSettings) => unknown;
+        let finish: (result: annexControl.ControlResult) => void;
+        let signal: AbortSignal | undefined;
+        let pending: ReturnType<typeof annexClient.requestControllerChatPage>;
+        let enabled: AnnexSettings;
+
+        beforeEach(async () => {
+          const handlers = new Map<string, (...args: unknown[]) => unknown>();
+          vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => { handlers.set(channel, handler); });
+          const { registerAnnexHandlers } = await import('../ipc/annex-handlers');
+          registerAnnexHandlers();
+          save = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
+          enabled = { ...annexSettings.getSettings(), networkEnabled: true };
+          vi.mocked(annexSettings.getSettings).mockReturnValue(enabled);
+          vi.mocked(annexSettings.saveSettings).mockImplementation(async (settings) => {
+            vi.mocked(annexSettings.getSettings).mockReturnValue(settings);
+          });
+          vi.mocked(annexControl.request).mockImplementation((_fp, _input, options) => new Promise((resolve) => {
+            finish = resolve; signal = options?.signal;
+          }));
+          pending = annexClient.requestControllerChatPage(FP);
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        });
+
+        afterEach(() => { resetDeviceSignalForTests(); });
+
+        it.each(['sequential', 'overlapping'] as const)('retires the old lease across %s network disable/re-enable without injecting a device event', async (order) => {
+          const disabling = save({}, { ...enabled, networkEnabled: false });
+          if (order === 'sequential') {
+            await disabling;
+            expect(signal?.aborted).toBe(true);
+          }
+          const enabling = save({}, enabled);
+          await Promise.all([disabling, enabling]);
+          expect(signal?.aborted).toBe(true);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          vi.mocked(annexControl.request).mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+          expect(annexControl.request).toHaveBeenCalledTimes(2);
+        });
+
+        it.each(['failed', 'no-op'] as const)('keeps the current lease through a %s settings save', async (kind) => {
+          if (kind === 'failed') {
+            vi.mocked(annexSettings.saveSettings).mockRejectedValue(new Error('save failed'));
+            await expect(save({}, { ...enabled, networkEnabled: false })).rejects.toThrow('save failed');
+          } else await save({}, enabled);
+          expect(signal?.aborted).toBe(false);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'ok', value });
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        });
+
+        it('retires leases on actual client-off and does not clear a manual pause on network re-enable', async () => {
+          await save({}, { ...enabled, enableClient: false });
+          expect(signal?.aborted).toBe(true);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          await save({}, enabled);
+          annexClient.disconnect(FP);
+          await save({}, { ...enabled, networkEnabled: false });
+          await save({}, enabled);
+          expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'offline' });
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        });
       });
 
       it('reads only controller pages and sessions on an authorized reverse route without a main address', async () => {
