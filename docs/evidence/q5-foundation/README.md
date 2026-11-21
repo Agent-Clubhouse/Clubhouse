@@ -1,5 +1,11 @@
 # Q5 sequenced persistence foundation evidence
 
+Latest bounded slice: [markers-8142a812a.md](markers-8142a812a.md).
+Earlier successors: [streaming181](streaming-181046cde.md),
+[lazy index773](pages-77327b52a.md), [G1c504](G1-c504cce7d.md),
+[F1–F4 at0d](F1-F4-0d0fd511f.md). The original36/922 scope and results
+below remain historical; newer proofs do not retroactively validate old heads.
+
 Canonical issue: #3758. This is an **unintegrated WIP slice**, not feature/PR
 acceptance. No app import, notification dispatch change or live action occurred.
 Code branch: `auto-reset-policy-design/q5-durable-delivery-ledger`.
