@@ -1,0 +1,428 @@
+diff --git a/src/main/services/agent-config.ts b/src/main/services/agent-config.ts
+index 34c598f9a..8ff774f99 100644
+--- a/src/main/services/agent-config.ts
++++ b/src/main/services/agent-config.ts
+@@ -1567,6 +1567,116 @@ export function readAgentConnectionCacheForDisplay(projectPath: string, agentId:
+   } catch { return unavailable('invalid'); }
+ }
+ 
++export interface DurableRegistrationLease {
++  isCurrent(): boolean;
++  close(): Promise<void>;
++}
++
++/** A registration lease with fresh, synchronous primary reads at effect boundaries; never loads the mutable cache. */
++export async function readDurableRegistrationLease(
++  projectPath: string, agentId: string, createdAt: string,
++): Promise<DurableRegistrationLease | null> {
++  const file = agentsConfigPath(projectPath);
++  let handle: fsp.FileHandle | undefined;
++  const anchorPaths = [projectPath, clubhouseDir(projectPath)];
++  let anchors: fs.BigIntStats[];
++  const refused = (reason: string) => {
++    appLog('core:agent-config', 'warn', 'Cannot verify durable registration for an effect', {
++      meta: { projectPath, agentId, reason },
++    });
++  };
++  const readFailure = (error: unknown): boolean => {
++    if (error instanceof SyntaxError) { refused('invalid_primary_json'); return true; }
++    if (error instanceof Error && 'code' in error && typeof error.code === 'string'
++      && ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'EIO', 'ELOOP', 'EMFILE', 'ENFILE',
++        'EBUSY', 'ESTALE', 'EBADF', 'ENODEV', 'ENXIO', 'ETIMEDOUT', 'EAGAIN', 'EINVAL',
++        'ENOTSUP', 'EISDIR', 'ENOMEM', 'ERR_FS_FILE_TOO_LARGE'].includes(error.code)) {
++      refused(error.code); return true;
++    }
++    return false;
++  };
++  const sameFile = (a: fs.BigIntStats, b: fs.BigIntStats) => b.isFile()
++    && a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mode === b.mode
++    && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
++  const directoriesMatch = () => anchorPaths.every((member, index) => {
++    const current = fs.statSync(member, { bigint: true });
++    return current.isDirectory() && anchors[index].dev === current.dev && anchors[index].ino === current.ino;
++  });
++  const registrationMatches = (bytes: Buffer) => {
++    const parsed: unknown = JSON.parse(bytes.toString('utf8'));
++    if (!Array.isArray(parsed) || !parsed.every(isAgentRecord)
++      || parsed.some((agent) => typeof agent.name !== 'string' || !agent.name
++        || typeof agent.createdAt !== 'string' || !agent.createdAt
++        || agent.worktreePath !== undefined && typeof agent.worktreePath !== 'string')
++      || validateAgentConfigs(parsed).some((issue) => issue.severity === 'error')
++      || normalizeHelperFields(parsed.map((agent) => ({ ...agent }))) > 0) {
++      refused('invalid_primary_records'); return false;
++    }
++    const agent = parsed.find((record) => record.id === agentId);
++    return !!agent && !isDisposedAgent(agent) && agent.createdAt === createdAt;
++  };
++  try {
++    anchors = await Promise.all(anchorPaths.map((member) => fsp.stat(member, { bigint: true })));
++    if (anchors.some((anchor) => !anchor.isDirectory())) { refused('registration_directory_missing'); return null; }
++    handle = await fsp.open(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
++    const snapshot = await handle.stat({ bigint: true });
++    if (!snapshot.isFile()) { refused('primary_not_file'); return null; }
++    const bytes = await handle.readFile();
++    if (!sameFile(snapshot, await handle.stat({ bigint: true }))
++      || !sameFile(snapshot, fs.statSync(file, { bigint: true })) || !directoriesMatch()
++      || !registrationMatches(bytes)) {
++      refused('registration_changed_while_reading'); return null;
++    }
++  } catch (error) {
++    if (!readFailure(error)) throw error;
++    return null;
++  } finally {
++    await handle?.close();
++  }
++
++  let active = true;
++  let valid = true;
++  // Local mutations can revoke registration before their deferred flush.
++  // A cache miss grants nothing: the effect must still verify the current primary bytes.
++  const cacheMatches = () => {
++    const entry = configCache.get(projectPath);
++    const current = entry?.agentsById.get(agentId);
++    return !entry || !!current && !isDisposedAgent(current) && current.createdAt === createdAt;
++  };
++  const isCurrent = () => {
++    if (!active || !valid) return false;
++    let fd: number | undefined;
++    try {
++      if (!cacheMatches() || !directoriesMatch()) { valid = false; return false; }
++      fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
++      const snapshot = fs.fstatSync(fd, { bigint: true });
++      if (!snapshot.isFile()) { refused('primary_not_file'); valid = false; return false; }
++      const bytes = fs.readFileSync(fd);
++      valid = sameFile(snapshot, fs.fstatSync(fd, { bigint: true }))
++        && sameFile(snapshot, fs.statSync(file, { bigint: true })) && directoriesMatch()
++        && registrationMatches(bytes);
++      return valid;
++    } catch (error) {
++      if (!readFailure(error)) throw error;
++      valid = false; return false;
++    } finally {
++      if (fd !== undefined) fs.closeSync(fd);
++    }
++  };
++  if (!isCurrent()) return null;
++  const unsubscribe = onAgentConfigChanged((changed) => {
++    if (changed === projectPath && !cacheMatches()) valid = false;
++  });
++  return {
++    isCurrent,
++    async close() {
++      if (!active) return;
++      active = false;
++      unsubscribe();
++    },
++  };
++}
++
+ /**
+  * A project's agents, for passive reads that must change nothing (#2653, #3686).
+  * getDurableConfig and listDurable use this snapshot. Mutable loading is reserved
+diff --git a/src/main/services/annex-client.test.ts b/src/main/services/annex-client.test.ts
+index 10f1ef242..4fa3b9105 100644
+--- a/src/main/services/annex-client.test.ts
++++ b/src/main/services/annex-client.test.ts
+@@ -2492,7 +2492,7 @@ describe('annex-client', () => {
+     const FP = 'aa:01:aa:01';
+     const peer = { fingerprint: FP, alias: 'Pinned Mac', icon: 'server', color: 'green', publicKey: 'sat-pk', pairedAt: '2026-01-01',
+       lastSeen: '2026-01-01', role: 'satellite' as const, tlsCertificateFingerprint: 'AB:CD', tlsCertificatePem: 'SATELLITE-PEM' };
+-    let sockets: Array<{ handlers: Record<string, (...args: any[]) => void>; terminate: ReturnType<typeof vi.fn> }>;
++    let sockets: Array<{ handlers: Record<string, (...args: any[]) => void>; terminate: ReturnType<typeof vi.fn>; ping: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }>;
+ 
+     beforeEach(() => {
+       sockets = [];
+@@ -2608,6 +2608,23 @@ describe('annex-client', () => {
+         expect(current().snapshotReceipt).toBe(freshReceipt); expect(broadcasts()).toBe(count);
+       });
+ 
++      it.each(['agent', 'canvas', 'role'] as const)('power-resume revalidation withdraws the receipt and fences an in-flight %s read until the new socket attests', async (kind) => {
++        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
++        const oldReceipt = current().snapshotReceipt, generation = current().connectionGeneration!;
++        expect(oldReceipt).toEqual(expect.any(String));
++        const finish = answer(200, kind === 'role' ? roleResponse() : metadata(), true);
++        const pending = kind === 'role' ? annexClient.requestDispatcherDetails(FP)
++          : annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
++        annexClient.resumeAllConnections();
++        expect(current().snapshotReceipt).toBeUndefined(); expect(publicBroadcast()[0].snapshotReceipt).toBeUndefined();
++        // The pre-sleep socket's late frame cannot re-attest the retired connection.
++        send(0, 'snapshot', payload(5)); expect(current().snapshotReceipt).toBeUndefined();
++        finish(); expect(await pending).toEqual({ status: 'offline' });
++        sockets.at(-1)!.handlers.open(); send(sockets.length - 1, 'snapshot', payload(6));
++        expect(current().snapshotReceipt).toEqual(expect.any(String)); expect(current().snapshotReceipt).not.toBe(oldReceipt);
++        expect(current().connectionGeneration!).toBeGreaterThan(generation);
++      });
++
+       it('mints only on accepted current-socket snapshots, not cached serialization or ignored older frames', async () => {
+         await discover(); sockets[0].handlers.open();
+         expect(current().snapshotReceipt).toBeUndefined();
+@@ -2677,6 +2694,269 @@ describe('annex-client', () => {
+       });
+     });
+ 
++    describe('resume freshness', () => {
++      beforeEach(() => {
++        vi.useFakeTimers();
++        vi.setSystemTime(new Date('2026-11-20T12:00:00Z'));
++      });
++
++      it('requires a new pinned connection after sleep even when the old socket still reports connected', async () => {
++        await discover();
++        const beforeSleep = sockets[0];
++        beforeSleep.handlers.open();
++        expect(annexClient.isMachineConnected(FP)).toBe(true);
++        const confirmed = annexClient.lastConfirmedConnectivity(FP);
++
++        // OS sleep advances wall time without running JS heartbeat timers.
++        vi.setSystemTime(Date.now() + 109_000);
++        annexClient.resumeAllConnections();
++
++        expect(annexClient.isMachineConnected(FP)).toBe(false);
++        expect(annexClient.getSatellite(FP)?.state).toBe('connecting');
++        expect(sockets).toHaveLength(2);
++        expect(beforeSleep.close).toHaveBeenCalledOnce();
++        expect(WebSocketMock.mock.calls.at(-1)![1]).toMatchObject({ pinned: true, handshakeTimeout: 10_000 });
++        beforeSleep.handlers.open();
++        beforeSleep.handlers.pong();
++        expect(annexClient.isMachineConnected(FP)).toBe(false);
++        expect(annexClient.lastConfirmedConnectivity(FP)).toBe(confirmed);
++        sockets[1].handlers.open();
++        expect(annexClient.isMachineConnected(FP)).toBe(true);
++        expect(annexClient.lastConfirmedConnectivity(FP)).toBe(new Date(Date.now()).toISOString());
++      });
++
++      it('replaces a handshake crossing sleep and ignores its captured callbacks', async () => {
++        await discover();
++        const beforeSleep = sockets[0];
++        expect(annexClient.getSatellite(FP)?.state).toBe('connecting');
++        vi.setSystemTime(Date.now() + 101_000);
++        annexClient.resumeAllConnections();
++
++        expect(sockets).toHaveLength(2);
++        beforeSleep.handlers.open();
++        beforeSleep.handlers.message(JSON.stringify({ type: 'snapshot', payload: { protocolVersion: 2, lastSeq: 9, projects: [], agents: {}, quickAgents: {} } }));
++        beforeSleep.handlers.error(Object.assign(new Error('old certificate'), { code: 'CERT_HAS_EXPIRED' }));
++        beforeSleep.handlers.close(4401, Buffer.from('peer_not_paired'));
++        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connecting', snapshot: null });
++        expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
++        sockets[1].handlers.open();
++        expect(annexClient.isMachineConnected(FP)).toBe(true);
++      });
++
++      it('leaves the client off on resume', async () => {
++        await discover();
++        annexClient.stopClient();
++        vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...peer, knownHosts: ['192.168.1.50'], mainPort: 9000 }]);
++        vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), enableClient: false });
++        WebSocketMock.mockClear();
++        mockBonjourInstance.find.mockClear();
++        vi.setSystemTime(Date.now() + 109_000);
++        annexClient.resumeAllConnections();
++        expect(WebSocketMock).not.toHaveBeenCalled();
++        expect(mockBonjourInstance.find).not.toHaveBeenCalled();
++        expect(annexClient.getSatellites()).toEqual([]);
++      });
++
++      it.each(['CERT_HAS_EXPIRED', 'ERR_ANNEX_PIN_MISMATCH'])('preserves the %s stop across resume', async (code) => {
++        await discover();
++        sockets[0].handlers.error(Object.assign(new Error(code), { code }));
++        const stopped = annexClient.getSatellite(FP);
++        vi.setSystemTime(Date.now() + 109_000);
++        annexClient.resumeAllConnections();
++        expect(sockets).toHaveLength(1);
++        expect(annexClient.getSatellite(FP)).toEqual(stopped);
++      });
++
++      it('allows the existing pinned clock-recovery attempt on wake without bypassing certificate checks', async () => {
++        await discover();
++        const clockError = Object.assign(new Error('certificate is not yet valid'), { code: 'CERT_NOT_YET_VALID' });
++        sockets[0].handlers.error(clockError);
++        await vi.advanceTimersByTimeAsync(120_000);
++        expect(sockets).toHaveLength(1);
++        vi.setSystemTime(Date.now() + 109_000);
++        annexClient.resumeAllConnections();
++        expect(sockets).toHaveLength(2);
++        expect(WebSocketMock.mock.calls.at(-1)![1]).toMatchObject({ pinned: true, handshakeTimeout: 10_000 });
++        expect(annexClient.isMachineConnected(FP)).toBe(false);
++        // If the clock/certificate is still invalid, the same pinned path stops again.
++        sockets[1].handlers.error(clockError);
++        await vi.advanceTimersByTimeAsync(120_000);
++        expect(sockets).toHaveLength(2);
++        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', problem: { code: 'cert-not-yet-valid' } });
++        annexClient.resumeAllConnections();
++        expect(sockets).toHaveLength(3);
++        sockets[2].handlers.open();
++        expect(annexClient.isMachineConnected(FP)).toBe(true);
++      });
++
++      describe('delayed upgrade refusal', () => {
++        const cases = [
++          { status: 503, error: 'busy' },
++          { status: 401, error: 'needs_pairing' },
++          { status: 401, error: 'peer_not_paired' },
++        ];
++
++        function pendingRefusal(socket: (typeof sockets)[number], status: number) {
++          const response = Object.assign(new EventEmitter(), { statusCode: status });
++          const request = { destroy: vi.fn() };
++          socket.handlers['unexpected-response'](request, response);
++          return { request, finish: async (error: string) => {
++            response.emit('data', Buffer.from(JSON.stringify({ error })));
++            response.emit('end');
++            await Promise.resolve();
++          } };
++        }
++
++        for (const state of ['connecting', 'connected'] as const) {
++          it.each(cases)(`ignores an old $status/$error body after resume while the replacement is ${state}`, async ({ status, error }) => {
++            await discover();
++            const old = sockets[0];
++            const pending = pendingRefusal(old, status);
++            vi.setSystemTime(Date.now() + 109_000);
++            annexClient.resumeAllConnections();
++            const current = sockets[1];
++            if (state === 'connected') current.handlers.open();
++            const beforeBody = annexClient.getSatellite(FP);
++            const channels = await import('./annex-network-channel');
++            vi.mocked(channels.closeFor).mockClear();
++            const control = await import('./annex-control');
++            const controlClose = vi.spyOn(control, 'closeFor');
++            await pending.finish(error);
++
++            expect(pending.request.destroy).toHaveBeenCalledOnce();
++            expect(old.terminate).toHaveBeenCalledOnce();
++            expect(annexClient.getSatellite(FP)).toEqual(beforeBody);
++            expect(current.close).not.toHaveBeenCalled();
++            expect(current.terminate).not.toHaveBeenCalled();
++            expect(channels.closeFor).not.toHaveBeenCalled();
++            expect(controlClose).not.toHaveBeenCalled();
++            await vi.advanceTimersByTimeAsync(2_000);
++            expect(sockets).toHaveLength(2);
++            if (state === 'connecting') current.handlers.open();
++            current.handlers.message(JSON.stringify({ type: 'snapshot', payload: { protocolVersion: 2, lastSeq: 1, projects: [], agents: {}, quickAgents: {} } }));
++            expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connected', snapshot: { lastSeq: 1 } });
++            expect(annexClient.sendToSatellite(FP, { type: 'ping' })).toEqual({ sent: true });
++          });
++        }
++
++        it.each(cases)('still applies a current $status/$error refusal after resume', async ({ status, error }) => {
++          await discover();
++          annexClient.resumeAllConnections();
++          const current = sockets[1];
++          const pending = pendingRefusal(current, status);
++          await pending.finish(error);
++          expect(pending.request.destroy).toHaveBeenCalledOnce();
++          expect(current.terminate).toHaveBeenCalledOnce();
++          expect(annexClient.isMachineConnected(FP)).toBe(false);
++          if (status === 401) {
++            expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', needsPairing: true });
++            await vi.advanceTimersByTimeAsync(120_000);
++            expect(sockets).toHaveLength(2);
++          } else {
++            expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', problem: { code: 'tls-unavailable' } });
++            await vi.advanceTimersByTimeAsync(2_000);
++            expect(sockets).toHaveLength(3);
++          }
++        });
++
++        it('does not apply a pending refusal after manual disconnect keeps the same record', async () => {
++          await discover();
++          const old = sockets[0];
++          const pending = pendingRefusal(old, 401);
++          annexClient.disconnect(FP);
++          const disconnected = annexClient.getSatellite(FP);
++          await pending.finish('peer_not_paired');
++          expect(annexClient.getSatellite(FP)).toEqual(disconnected);
++          expect(pending.request.destroy).toHaveBeenCalledOnce();
++          expect(old.terminate).toHaveBeenCalledOnce();
++          expect(vi.getTimerCount()).toBe(0);
++        });
++      });
++
++      it('preserves a removed-pairing refusal across resume', async () => {
++        await discover();
++        sockets[0].handlers.open();
++        sockets[0].handlers.close(4401, Buffer.from('peer_not_paired'));
++        const stopped = annexClient.getSatellite(FP);
++        vi.setSystemTime(Date.now() + 109_000);
++        annexClient.resumeAllConnections();
++        expect(sockets).toHaveLength(1);
++        expect(annexClient.getSatellite(FP)).toEqual(stopped);
++      });
++
++      it('keeps the current socket pong effective', async () => {
++        await discover();
++        sockets[0].handlers.open();
++        await vi.advanceTimersByTimeAsync(30_000);
++        sockets[0].handlers.pong();
++        expect(annexClient.lastConfirmedConnectivity(FP)).toBe(new Date(Date.now()).toISOString());
++        await vi.advanceTimersByTimeAsync(10_000);
++        expect(sockets[0].terminate).not.toHaveBeenCalled();
++        expect(annexClient.isMachineConnected(FP)).toBe(true);
++      });
++
++      it.each(['close', 'error'] as const)('retires heartbeat timers after the current socket reports %s with reconnect off', async (event) => {
++        await discover();
++        sockets[0].handlers.open();
++        vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), autoReconnect: false });
++        if (event === 'close') sockets[0].handlers.close(1000, Buffer.from(''));
++        else sockets[0].handlers.error(new Error('lost route'));
++        await vi.advanceTimersByTimeAsync(60_000);
++        expect(annexClient.isMachineConnected(FP)).toBe(false);
++        expect(sockets[0].ping).not.toHaveBeenCalled();
++        expect(vi.getTimerCount()).toBe(0);
++      });
++
++      it('does not let a replaced socket pong cancel the current socket heartbeat deadline', async () => {
++        await discover();
++        const old = sockets[0];
++        old.handlers.open();
++        annexClient.disconnect(FP);
++        annexClient.retry(FP);
++        const current = sockets[1];
++        current.handlers.open();
++        await vi.advanceTimersByTimeAsync(30_000);
++        expect(current.ping).toHaveBeenCalledOnce();
++        const confirmed = annexClient.lastConfirmedConnectivity(FP);
++        old.handlers.pong();
++        expect(annexClient.lastConfirmedConnectivity(FP)).toBe(confirmed);
++        await vi.advanceTimersByTimeAsync(10_000);
++        expect(current.terminate).toHaveBeenCalledOnce();
++        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', problem: { code: 'stopped-answering' } });
++      });
++
++      it.each(['interval', 'deadline'] as const)('ignores a captured heartbeat %s callback belonging to a replaced socket', async (kind) => {
++        const intervals = vi.fn(globalThis.setInterval);
++        const timeouts = vi.fn(globalThis.setTimeout);
++        vi.stubGlobal('setInterval', intervals);
++        vi.stubGlobal('setTimeout', timeouts);
++        try {
++          await discover();
++          sockets[0].handlers.open();
++          const tick = intervals.mock.calls.find(([, delay]) => delay === 30_000)![0];
++          await vi.advanceTimersByTimeAsync(30_000);
++          const expire = timeouts.mock.calls.find(([, delay]) => delay === 10_000)![0];
++          annexClient.disconnect(FP);
++          annexClient.retry(FP);
++          const current = sockets[1];
++          current.handlers.open();
++          const callback = kind === 'interval' ? tick : expire;
++          if (typeof callback !== 'function') throw new Error('Expected a heartbeat callback');
++          callback();
++          expect(current.ping).not.toHaveBeenCalled();
++          expect(current.terminate).not.toHaveBeenCalled();
++          expect(annexClient.isMachineConnected(FP)).toBe(true);
++          // The current generation still owns its normal timeout.
++          await vi.advanceTimersByTimeAsync(40_000);
++          expect(current.ping).toHaveBeenCalledOnce();
++          expect(current.terminate).toHaveBeenCalledOnce();
++        } finally {
++          // Restore wrappers before the outer cleanup restores real timers.
++          vi.unstubAllGlobals();
++        }
++      });
++    });
++
+     it('opens the WebSocket with options pinned to the stored certificate, and no token', async () => {
+       await discover();
+       expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'SATELLITE-PEM', fingerprint: 'AB:CD' });

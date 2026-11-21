@@ -1,0 +1,71 @@
+# mutation: drop receipt clear on state change (src/main/services/annex-client.ts)
+612c612
+<   if (state !== 'connected' || prev !== 'connected') sat.snapshotReceipt = undefined;
+---
+>   // mutation: receipt kept
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 284 skipped (287)
+   Start at  01:58:22
+   Duration  379ms (transform 236ms, setup 5ms, import 292ms, tests 12ms, environment 0ms)
+
+vitest exit=0
+restored byte-identical
+A  docs/annex-attachment-registration.md
+A  docs/annex-attachment-registration.tsconfig.json
+A  docs/annex-resume-readiness/3748-binding-ci.md
+A  docs/annex-resume-readiness/README.md
+A  docs/annex-resume-readiness/baseline.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/SHA256SUMS.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/current-job-log.txt.gz
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/current-unit-1.zip
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/failure-manifest.json
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/hosted-run-ade92.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/junit-case-excerpts.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/main69-unit-1.zip
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/mount-flush-green.patch
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/mount-flush-green.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/mount-flush-red.patch
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/mount-flush-red.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/prequeued-probe.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/validation/admission.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/validation/diff-check.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/validation/lint.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/validation/manifest.json
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/validation/product-equality.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/validation/renderer-tests.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/validation/typecheck.txt
+A  docs/annex-resume-readiness/evidence/3748-binding-ci/validation/vitest-config.txt
+A  docs/annex-resume-readiness/evidence/historical-92ad84430/lint.txt
+A  docs/annex-resume-readiness/evidence/historical-92ad84430/manifest.json
+A  docs/annex-resume-readiness/evidence/historical-92ad84430/tests.txt
+A  docs/annex-resume-readiness/evidence/historical-92ad84430/typecheck.txt
+A  docs/annex-resume-readiness/evidence/successor-baseline.txt
+A  docs/annex-resume-readiness/evidence/successor-validation/SHA256SUMS.txt
+A  docs/annex-resume-readiness/evidence/successor-validation/admission.txt
+A  docs/annex-resume-readiness/evidence/successor-validation/diff-check.txt
+A  docs/annex-resume-readiness/evidence/successor-validation/lint.txt
+A  docs/annex-resume-readiness/evidence/successor-validation/manifest.json
+A  docs/annex-resume-readiness/evidence/successor-validation/tests.txt
+A  docs/annex-resume-readiness/evidence/successor-validation/typecheck.txt
+A  docs/annex-resume-readiness/evidence/successor-validation/vitest-config.txt
+A  docs/annex-resume-readiness/review-regression.txt
+A  docs/qa/3715-attachment-registration/baseline.txt
+A  docs/qa/3715-attachment-registration/green.txt
+A  docs/qa/3715-attachment-registration/independent-review.txt
+A  docs/qa/3715-attachment-registration/manifest.json
+A  scripts/annex-resume-readiness-proof.mjs
+UU src/main/services/agent-config.ts
+A  src/main/services/annex-attachment-registration.test.ts
+UU src/main/services/annex-client.test.ts
+M  src/main/services/annex-client.ts
+M  src/main/services/annex-mobile-contract.test.ts
+M  src/main/services/annex-server.test.ts
+M  src/main/services/annex-server.ts
+M  src/renderer/features/agents/AgentGrantsSettings.test.tsx

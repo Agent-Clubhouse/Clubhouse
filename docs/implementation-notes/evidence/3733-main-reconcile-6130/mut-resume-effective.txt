@@ -1,0 +1,89 @@
+# effective discriminator on ed13e3060: resumeAllConnections revalidates only disconnected satellites (pre-#3748 stale readiness)
+# applied diff:
+3168c3168
+<     if (sat.state === 'disconnected' || sat.state === 'connected' || sat.state === 'connecting') {
+---
+>     if (sat.state === 'disconnected') {
+$ vitest run --no-cache --maxWorkers=2 src/main/services/annex-client.test.ts -t 'power-resume revalidation'
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ❯ |main| src/main/services/annex-client.test.ts (287 tests | 3 failed | 284 skipped) 15ms
+         × power-resume revalidation withdraws the receipt and fences an in-flight agent read until the new socket attests 12ms
+         × power-resume revalidation withdraws the receipt and fences an in-flight canvas read until the new socket attests 2ms
+         × power-resume revalidation withdraws the receipt and fences an in-flight role read until the new socket attests 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > local positive snapshot receipts > power-resume revalidation withdraws the receipt and fences an in-flight agent read until the new socket attests
+AssertionError: expected '2ddafe72-3bd9-449f-be84-f8c1db37e007' to be undefined
+
+- Expected:
+undefined
+
++ Received:
+"2ddafe72-3bd9-449f-be84-f8c1db37e007"
+
+ ❯ src/main/services/annex-client.test.ts:2619:43
+    2617|           : annexClient.requestAgentDetails(FP, 'role1', kind === 'can…
+    2618|         annexClient.resumeAllConnections();
+    2619|         expect(current().snapshotReceipt).toBeUndefined(); expect(publ…
+       |                                           ^
+    2620|         // The pre-sleep socket's late frame cannot re-attest the reti…
+    2621|         send(0, 'snapshot', payload(5)); expect(current().snapshotRece…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > local positive snapshot receipts > power-resume revalidation withdraws the receipt and fences an in-flight canvas read until the new socket attests
+AssertionError: expected 'f9647fd2-6be7-49c5-8eac-997f86a111c1' to be undefined
+
+- Expected:
+undefined
+
++ Received:
+"f9647fd2-6be7-49c5-8eac-997f86a111c1"
+
+ ❯ src/main/services/annex-client.test.ts:2619:43
+    2617|           : annexClient.requestAgentDetails(FP, 'role1', kind === 'can…
+    2618|         annexClient.resumeAllConnections();
+    2619|         expect(current().snapshotReceipt).toBeUndefined(); expect(publ…
+       |                                           ^
+    2620|         // The pre-sleep socket's late frame cannot re-attest the reti…
+    2621|         send(0, 'snapshot', payload(5)); expect(current().snapshotRece…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > local positive snapshot receipts > power-resume revalidation withdraws the receipt and fences an in-flight role read until the new socket attests
+AssertionError: expected '492a151a-0485-4fe0-92e3-35249981f668' to be undefined
+
+- Expected:
+undefined
+
++ Received:
+"492a151a-0485-4fe0-92e3-35249981f668"
+
+ ❯ src/main/services/annex-client.test.ts:2619:43
+    2617|           : annexClient.requestAgentDetails(FP, 'role1', kind === 'can…
+    2618|         annexClient.resumeAllConnections();
+    2619|         expect(current().snapshotReceipt).toBeUndefined(); expect(publ…
+       |                                           ^
+    2620|         // The pre-sleep socket's late frame cannot re-attest the reti…
+    2621|         send(0, 'snapshot', payload(5)); expect(current().snapshotRece…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 284 skipped (287)
+   Start at  02:05:54
+   Duration  407ms (transform 255ms, setup 5ms, import 304ms, tests 15ms, environment 0ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+08c7b0ed1bea06abe27cc4ce9b45ce0802a14dfc8d944afe96e13b9a4d605318  src/main/services/annex-client.ts
+08c7b0ed1bea06abe27cc4ce9b45ce0802a14dfc8d944afe96e13b9a4d605318  -
+# post-restore git status --short:
