@@ -93,7 +93,7 @@ describe('no-chat selected-host Dispatcher role consumer', () => {
     expect(screen.getByTestId('details-card-connections')).toHaveTextContent('published controller-link observation');
   });
 
-  it.each(['forbidden', 'unavailable', 'error', 'offline', 'rate_limited'] as const)('keeps role %s distinct from empty cards and never revives snapshot peers as a fallback', async (status) => {
+  it.each(['forbidden', 'error', 'offline', 'rate_limited'] as const)('keeps role %s distinct from empty cards and never revives snapshot peers as a fallback', async (status) => {
     api.mockResolvedValue({ status, retryAfterMs: 1000 });
     render(<RemoteDispatcherDetails machineId="target" />);
     await screen.findByRole('button', { name: 'Refresh Dispatcher details' });
@@ -101,6 +101,30 @@ describe('no-chat selected-host Dispatcher role consumer', () => {
     expect(api).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('HOST_MODEL')).not.toBeInTheDocument(); expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
     expect(screen.queryByTestId('other-machines-empty')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('unavailable');
+  });
+
+  it('shows only positive-receipt snapshot fields when an older host lacks the role read, and withholds them without that receipt', async () => {
+    api.mockResolvedValue({ status: 'unavailable' });
+    setHost({ snapshot: snapshot({ dispatcher: { enabled: false, agent: null } }) });
+    render(<RemoteDispatcherDetails machineId="target" />);
+    await screen.findByText('This host does not share this Dispatcher role read, or an existing role is unavailable.', { selector: 'p[role="status"]' });
+    expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('Turned off · host snapshot');
+    expect(cards()).toHaveTextContent('The snapshot does not say whether a Dispatcher was previously created.');
+    expect(screen.getByTestId('other-machine-HOST_PRIVATE_PEER')).toBeInTheDocument();
+    expect(screen.queryByText('HOST_MODEL')).not.toBeInTheDocument(); expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('unavailable');
+    act(() => setHost({ snapshot: snapshot({ dispatcher: { enabled: false, agent: null } }), snapshotReceipt: undefined }));
+    expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('unavailable');
+    act(() => setHost({ snapshot: snapshot({ sessionPaused: true }), snapshotReceipt: 'main-receipt-b' }));
+    expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
+  });
+
+  it('does not show snapshot fields as a fallback for a forbidden role read, even with a positive receipt', async () => {
+    api.mockResolvedValue({ status: 'forbidden' });
+    render(<RemoteDispatcherDetails machineId="target" />);
+    await screen.findByText('This host does not allow this desktop to read Dispatcher details.', { selector: 'p[role="status"]' });
+    expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
     expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('unavailable');
   });
 

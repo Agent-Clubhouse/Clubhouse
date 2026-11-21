@@ -52,7 +52,9 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
     : read?.key === key ? read.result : { status: 'loading' };
   const value = result.status === 'ok' ? result.value : undefined;
   const details = value?.details, settings = details?.settings;
-  const snapshot = value && sat?.snapshotReceipt ? sat.snapshot : undefined;
+  // A host without the role read (404/405/409) still shares its snapshot. Under the same positive receipt, show only those snapshot fields; denials stay withheld.
+  const snapshotOnly = eligible && result.status === 'unavailable';
+  const snapshot = (value || snapshotOnly) && sat?.snapshotReceipt ? sat.snapshot : undefined;
   const omitted = (field: string) => !!snapshot?.snapshotTruncated && (!snapshot.snapshotTruncated.omitted || snapshot.snapshotTruncated.omitted.includes(field));
   const peers = !omitted('dispatcherPresence') ? snapshot?.dispatcherPresence?.remotes : undefined;
   const enabled = !omitted('dispatcher') ? snapshot?.dispatcher?.enabled : undefined;
@@ -69,7 +71,8 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
     <Button kind="ghost" disabled={!eligible || result.status === 'loading'} onClick={() => setRetry((n) => n + 1)}>Refresh Dispatcher details</Button>
     <DetailsCard embedded id="settings" title="Settings" summary={settings ? `${settings.provider} · ${settings.model}` : enabled === undefined ? 'unavailable' : enabled ? 'On · host snapshot' : 'Turned off · host snapshot'} open onToggle={() => {}}>
       {enabled !== undefined && <CardRow label="Dispatcher">{enabled ? 'On' : 'Turned off'} · host snapshot</CardRow>}
-      {value && enabled === undefined && <CardNote>{omitted('dispatcher') ? 'Dispatcher settings were omitted from this host snapshot.' : 'Dispatcher on/off state is not included in the host snapshot.'}</CardNote>}
+      {snapshotOnly && enabled === false && <CardNote>The snapshot does not say whether a Dispatcher was previously created.</CardNote>}
+      {(value || snapshotOnly) && enabled === undefined && <CardNote>{omitted('dispatcher') ? 'Dispatcher settings were omitted from this host snapshot.' : 'Dispatcher on/off state is not included in the host snapshot.'}</CardNote>}
       {settings && <>
         <CardRow label="CLI">{settings.provider}</CardRow><CardRow label="Model">{settings.model}</CardRow>
         <CardRow label="Next start">{settings.runtime === 'chat' ? 'Chat' : 'CLI'}</CardRow><CardRow label="Access">{settings.access}</CardRow>
@@ -91,7 +94,7 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
     </DetailsCard>
     <DetailsCard embedded id="other-machines" title="Other machines" summary={peers ? otherMachinesSummary(peers) : 'unavailable'} open onToggle={() => {}}>
       {peers ? <><OtherMachinesList compact remotes={peers} /><CardNote>From the selected host’s confirmed shared snapshot; role metadata is read separately.</CardNote></>
-        : <CardNote>{!value ? note : !sat?.snapshotReceipt ? 'Waiting for a confirmed host snapshot. Earlier private fields are withheld.' : omitted('dispatcherPresence') ? 'Other machines were omitted from this host snapshot.' : 'The selected host has not shared its Other machines list. An absent list is not an empty network.'}</CardNote>}
+        : <CardNote>{!value && !snapshotOnly ? note : !sat?.snapshotReceipt ? 'Waiting for a confirmed host snapshot. Earlier private fields are withheld.' : omitted('dispatcherPresence') ? 'Other machines were omitted from this host snapshot.' : 'The selected host has not shared its Other machines list. An absent list is not an empty network.'}</CardNote>}
     </DetailsCard>
     <DetailsCard embedded id="actions" title="Actions" summary={card('actions')?.summary || 'unavailable'} open onToggle={() => {}}>
       {card('actions') ? <RemoteActionsEvidence card={card('actions')!} agentName={dispatcherName} /> : <CardNote>{note}</CardNote>}
