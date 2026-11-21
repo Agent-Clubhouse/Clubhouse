@@ -1,9 +1,26 @@
 {
   "scope": "Current desktop P7 transport-readiness/UI slice only",
-  "base": "53524110b90d053053d6ed49fd480816b8fcaee6",
+  "testedBase": "53524110b90d053053d6ed49fd480816b8fcaee6",
   "testedSource": "71bad14698f977ffad5e768f06ee9adbf14ef0ed",
   "testedTree": "677f7f3a13bb459ab6db67d2b5893b1420005d25",
   "p7CommitsReplayed": 3,
+  "currentComposition": {
+    "base": "daa7dab5e3db78280ba845602bbcfd7e5f73cf0c",
+    "source": "857fa88e065b70087b51fdba5afe44f3c527226b",
+    "tree": "ab2ead6f520589160fc44f4cb54c076ad689b9ce",
+    "upstreamDeltaFiles": 19,
+    "p7ProductTestDocConfigBlobsUnchanged": true,
+    "independentBoundedIdentitySeal": true,
+    "productionTscPassed": true,
+    "completeP2P7FixtureTscPassed": true,
+    "typeGateStarted": "2026-11-21T07:42:48Z",
+    "typeGateEnded": "2026-11-21T07:43:05Z",
+    "typeGateExit": 0,
+    "firstRefusalWasNotExecutionOrFailedTest": true,
+    "noAutomaticBroadTestRepetition": true,
+    "no845VitestExecutionOnCurrentCompositionClaimed": true,
+    "hostedCandidateCiRequired": true
+  },
   "delivery": {
     "proofOnlyFiles": 5,
     "requiresIndependentSourceConfigTestIdentitySeal": true,
@@ -94,7 +111,9 @@
     {"name":"p7-71bad-complete-fixture-tsc-original.log","bytes":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
     {"name":"p7-71bad-eslint-current-original.json","bytes":82352,"sha256":"9a0f51797828d823fe353998af1ac5cf7d485591a7f248adce2f443ee6f65a9a"},
     {"name":"p7-53524-eslint-baseline-original.json","bytes":81249,"sha256":"e39582c0eaefbe8400b641951a669cf48cf6a8118494e986605eaf74921e3203"},
-    {"name":"p7-71bad-source-integrity-original.json","bytes":1970,"sha256":"b8485ba69806c7f437ff178342880b8f0c5dae047fc94a39688861b7f37cd087"}
+    {"name":"p7-71bad-source-integrity-original.json","bytes":1970,"sha256":"b8485ba69806c7f437ff178342880b8f0c5dae047fc94a39688861b7f37cd087"},
+    {"name":"p7-857fa-daa7-composition-tsc-attempt-01-original.log","bytes":28,"sha256":"4cc9b04085c41e57a354a6a321e779ad2630ee967c14f378e16770a02d4aa903"},
+    {"name":"p7-857fa-daa7-composition-tsc-attempt-2-original.log","bytes":536,"sha256":"432a6963088d0f63e35ff41ac869d340aed0b8b1a18768c1edf356796a40e8fc"}
   ],
   "excluded": "Consumer migration, P7w/P8/federation ancestry or refused production review, grants/permissions, phone wire changes, live/native calibration, full local suite/E2E and release acceptance"
 }

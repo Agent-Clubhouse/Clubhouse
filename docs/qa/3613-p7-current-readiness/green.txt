@@ -1,4 +1,4 @@
-Exact current-main P7 proof
+Exact tested-source P7 proof (535241 was main at execution)
 
 Actual base53524110b90d053053d6ed49fd480816b8fcaee6 (landed #3752).
 Tested source71bad14698f977ffad5e768f06ee9adbf14ef0ed.
@@ -49,3 +49,19 @@ identity must be independently sealed. No local execution on that proof-only
 delivery head is claimed; newly requested hosted CI is a separate gate.
 No full local suite, local E2E, live/native/process-tree calibration, install,
 permissions/settings/release change, consumer migration or P7w/P8 acceptance.
+
+Later current-main composition
+Base daa7dab5e3db78280ba845602bbcfd7e5f73cf0c added19disjoint MCP-incarnation/
+connection-guidance/E2E-helper files. Composed head857fa88e065b70087b51fdba5afe44f3c527226b,
+tree ab2ead6f520589160fc44f4cb54c076ad689b9ce, preserves every reviewed P7
+product/test/doc/config blob and the5proof files. Independent QA sealed this
+bounded current-base composition; upstream implementation was not re-reviewed.
+
+Narrow current857fa/daa7 production and complete P2/P7 fixture tsc: both PASS,
+gated lane-p2 4,2026-11-21T07:42:48Z--07:43:05Z, exit0.
+The first attempt was refused other_test_running before execution; its original
+28-byte refusal is not a failed test. Normal retry followed after>60seconds,
+within the30minute admission bound, with no bypass/reservation/cancellation.
+No automatic broad test repetition:845Vitest cases executed on71bad/535241,
+NOT on857fa/daa7 or the later proof-only delivery commit. Newly requested hosted
+CI supplies the actual complete candidate gate. No broader acceptance inferred.
