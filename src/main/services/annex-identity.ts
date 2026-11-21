@@ -277,7 +277,9 @@ function boundedIdentityOrigin(mode: 'disk' | 'ephemeral', file: string): string
   return typeof file === 'string' && !!file && file.length <= 4096 ? `${mode}:${file}` : undefined;
 }
 function currentIdentityDisplayOrigin(): string | undefined {
-  try { return boundedIdentityOrigin(process.env.CLUBHOUSE_ANNEX_EPHEMERAL === '1' ? 'ephemeral' : 'disk', getIdentityPath()); }
+  // The memory-only session has no identity file and must never look up the profile path.
+  if (process.env.CLUBHOUSE_ANNEX_EPHEMERAL === '1') return boundedIdentityOrigin('ephemeral', 'memory');
+  try { return boundedIdentityOrigin('disk', getIdentityPath()); }
   catch { return undefined; }
 }
 function loadedDisplayFingerprint(): string | undefined {
