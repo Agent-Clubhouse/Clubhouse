@@ -679,8 +679,9 @@ function onMessage(from: string, message: NetworkMessage): void {
     case 'member-renamed': {
       const peer = annexPeers.getPeer(message.fingerprint);
       const last = s.renamedAt[lower(message.fingerprint)];
-      if (peer?.role === 'member' && (!last || Date.parse(message.at) > Date.parse(last)) && peer.alias !== message.name) {
-        annexPeers.addPeer({ ...peer, alias: message.name });
+      if (peer?.role === 'member' && (!last || Date.parse(message.at) > Date.parse(last))) {
+        // A newer event still advances ordering when its label is unchanged.
+        if (peer.alias !== message.name) annexPeers.addPeer({ ...peer, alias: message.name });
         s.renamedAt[lower(message.fingerprint)] = message.at;
         changed = true;
       }
