@@ -50,3 +50,26 @@ TS2554: TLSSocket requires its socket argument.
 Fixed with indexed access and an unconnected, immediately destroyed NetSocket/
 TLSSocket fixture. No TCP dial occurs in this fixture.
 Both production and complete route/reconnect fixture typing subsequently pass.
+
+5. Independent-QA negotiated endpoint finding, before its correction
+Test-only head: 5c37997ca8531c7db9189ba512af1a3156d2875c
+Gate: lane-p2 4, 2026-11-21T06:47:58Z--06:47:59Z, exit 1.
+env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/services/annex-control-reconnect.test.ts src/main/services/annex-client.test.ts -t 'retires.*negotiated|preserves a negotiated control socket' --maxWorkers=1 --reporter=verbose
+Both core and real-control/client fixtures observed negotiated control still
+OPEN (1) instead of CLOSED (3) after its active endpoint was withdrawn.
+The unrelated-route-addition preservation control passed.
+Result: 2 FAIL / 1 PASS / 300 selector skips.
+
+6. Concrete dependency on the separately owned approved-wake fence
+Complete-state test head: 9bc74ee2088a36998caa297fc53e5d7a01bce9d8
+Gate: lane-p2 4, 2026-11-21T06:52:32Z--06:52:33Z, exit 1.
+env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/services/annex-client.test.ts -t 'ignores an old main refusal after Retry' --maxWorkers=1 --reporter=verbose
+An old upgrade refusal body was pending; permitted disconnect and Retry opened
+fresh pinned main and independent control. After that old body arrived:
+Expected: { controlState: 1, mainState: connected, needsPairing: false }
+Received: { controlState: 3, mainState: disconnected, needsPairing: true }
+Result: 1 FAIL / 240 selector skips.
+This c0cf-based dependent test is intentionally not an accepted delivery head.
+The same complete-state fixture passes with approved wake's attempt-token fence.
+The first attempt's fixture-construction failure (no replacement connection)
+and second attempt's first-field-only failure are both retained separately.

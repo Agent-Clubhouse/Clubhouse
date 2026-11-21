@@ -69,6 +69,11 @@ listener change, phone wire field or UI. Current P5/P6 authorization fences,
 request/subscription ownership, strict HTTP reads and #3715 registration leases
 remain in place.
 
+Integration requires the separately delivered #3748 main-connection attempt
+fence: a deferred refusal from an old main attempt must not stop a replacement
+main or its independently authenticated control connection. P2 does not supply
+or replace that patch.
+
 `tsc -p docs/annex-reverse-routes.tsconfig.json` checks production sources and
 the complete deterministic route/reconnect fixtures. Current-head validation
 and independent delta review are required; historical P2 counts are not proof

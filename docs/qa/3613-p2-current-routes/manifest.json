@@ -7,6 +7,37 @@
   "sourceTree": "0fca30e28f06129a27cd6a278f8ddeb089b3f13e",
   "preFixProofOnly": true,
   "initialIndependentReview": "Negotiated active endpoint withdrawal finding; sourceHead is not accepted",
+  "correction": {
+    "preFixTestHead": "5c37997ca8531c7db9189ba512af1a3156d2875c",
+    "preFixFail": 2,
+    "preFixPositiveControlPass": 1,
+    "sourceHead": "664be8bbb62bda29d624670b0736edd6f188407c",
+    "sourceTree": "43fac7c418471dd91c6d1bcad3226a73f868f392",
+    "focusedPass": 651,
+    "focusedFiles": 8,
+    "productionAndCompleteFixtureTyping": "PASS",
+    "lintErrors": 0,
+    "lintWarnings": 162,
+    "independentCorrectionReview": "Original finding resolved; no new high-confidence correction issues",
+    "standaloneOrIntegratedAcceptance": false
+  },
+  "currentIntegrationDependency": {
+    "requiredApprovedWake": "9e46702fa1c9d9d9f3203c6282a637fcf61efe42",
+    "dependentTestHead": "9bc74ee2088a36998caa297fc53e5d7a01bce9d8",
+    "withoutWakeFail": 1,
+    "withoutWakeSelectorSkips": 240,
+    "observedWithoutWake": {"controlState": 3, "mainState": "disconnected", "needsPairing": true},
+    "correctedClientOnlyCompositionHead": "0928358a53e0639ed3eb0f800449802fa9ec88f3",
+    "correctedClientOnlyCompositionTree": "587b9e80e08f8bece0c7460d18b8ad77b1401e13",
+    "compositionPass": 38,
+    "approvedWakePass": 23,
+    "newP2LifecycleEpochPass": 15,
+    "compositionSelectorSkips": 226,
+    "productionTyping": "PASS",
+    "actualWakeMerge": "6130b29669f58c8a7bad112aa745d4ca43775971",
+    "actualWakeMergedAt": "2026-11-21T06:53:46Z",
+    "finalCurrentMainIntegrationPending": true
+  },
   "historicalSemanticsOnly": [
     "038dc9635835ea62f26b930a0188a228c3c192f2",
     "82ad73a3a929880a9f021f5c56bb238152ea7ccd"
@@ -89,7 +120,19 @@
     {"name": "p2-c0cf-baseline-eslint-json-original.log", "bytes": 506727, "sha256": "74f7b1081183f2815777ee2560f480d4a5e6de563e8700b0f300ee56d29a6006"},
     {"name": "p2-wake-858b-composition-gate-attempt-01-original.log", "bytes": 1146, "sha256": "2a1ac85e0573a084370d4f398782c91b7c04ef545736819c43c2300dcf17460c"},
     {"name": "p2-wake-858b-composition-vitest-attempt-01-original.log", "bytes": 47468, "sha256": "efd42d89a5946b823ffe8ffe525cba399a95ce1168c78e47a0b9046d56f282dc"},
-    {"name": "p2-wake-858b-composition-tsc-attempt-01-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+    {"name": "p2-wake-858b-composition-tsc-attempt-01-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    {"name": "p2-negotiated-withdrawal-baseline-attempt-01-original.log", "bytes": 54793, "sha256": "4e883a604f542e32361c24ae75b5a30ccef709cf025c5f8a16b207e602919f48"},
+    {"name": "p2-withdrawal-corrected-gate-attempt-01-original.log", "bytes": 2113, "sha256": "c5e6d5bb14cd2b5c07c386a8772aaa80cb4b803d93ea9e7b3838b2687f4483bd"},
+    {"name": "p2-withdrawal-corrected-focused-attempt-01-original.log", "bytes": 1940, "sha256": "f14c854043e6183fc932b19612a51a22909372a94951fd5399812f213aa9efb6"},
+    {"name": "p2-withdrawal-corrected-production-tsc-attempt-01-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    {"name": "p2-withdrawal-corrected-fixture-tsc-attempt-01-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    {"name": "p2-withdrawal-corrected-eslint-attempt-01-original.log", "bytes": 18459, "sha256": "f25fbcab09064bebcf3466ae310664c8f55533da648268f92691726362bb6796"},
+    {"name": "p2-wake-retry-control-dependency-baseline-attempt-01-original.log", "bytes": 44277, "sha256": "6e450fdac43dfc80e69c6d71b84097d69c5830e98a0b1fdce2a0cc4340b222f8"},
+    {"name": "p2-wake-retry-control-dependency-baseline-attempt-02-original.log", "bytes": 44435, "sha256": "da15006f3ae159ff4aed4d48590a3ae707d1a06ee6833219ccc0a6a0be98d3e3"},
+    {"name": "p2-wake-retry-control-dependency-baseline-attempt-03-original.log", "bytes": 44663, "sha256": "1ed8e4acec35d42145faf619313ed4db64ec4e2b1ea838f06b8c3a0184a7cfce"},
+    {"name": "p2-corrected-wake-composition-gate-attempt-01-original.log", "bytes": 1187, "sha256": "173ae5f763f9adf33d6ce64a56e38b1df38f640ae75af3ec1f282a35fa14c4c9"},
+    {"name": "p2-corrected-wake-composition-lifecycle-attempt-01-original.log", "bytes": 47886, "sha256": "2289544c20510c69d0d275d95487afae68a4f5b6043ee5475b73741099a27663"},
+    {"name": "p2-corrected-wake-composition-tsc-attempt-01-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
   ],
   "acceptanceBoundaries": [
     "Current independent P2 delta review is required before PR; no historical review or CI transfer",

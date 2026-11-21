@@ -18,7 +18,7 @@ env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main sr
 PASS: 65 tests / 2 files / 562 selector skips.
 Includes existing P3 authorizer/refusal, P4/P5 lifetime, P6 bulk/staging fences,
 and one canonical mobile attachment case. It is not the full phone renderer.
-Current source total: 712 PASS, not historical P2/P7w acceptance counts.
+Pre-fix source total: 712 PASS, not historical P2/P7w acceptance counts.
 
 3. Type and lint
 ./node_modules/.bin/tsc --noEmit
@@ -58,3 +58,33 @@ package.json and package-lock.json are unchanged.
 These results prove only the named pre-fix cases and composition.
 No historical CI is transferred; broader duplex, P8, frozen233a, specifically
 refused966a production review and public release acceptance remain separate.
+
+6. Negotiated-endpoint correction, before current-main integration
+Corrected source: 664be8bbb62bda29d624670b0736edd6f188407c
+Tree: 43fac7c418471dd91c6d1bcad3226a73f868f392
+Gate: lane-p2 4, 2026-11-21T06:49:20Z--06:49:43Z, exit 0.
+The same eight-file focused command from (1): 651 PASS / 8 files / 0 skips.
+Production tsc and complete route/reconnect fixture tsc: PASS.
+Scoped eight-file ESLint: 0 errors / 162 warnings.
+New controls prove negotiated endpoint retirement, stale writes/callbacks,
+replacement usability, unrelated additions/reordering preservation and
+foreign-observer withdrawal/no Retry dial.
+Independent correction QA: original finding RESOLVED, no new high-confidence
+correction issues. Main-attempt ownership still requires separate approved wake.
+These are correction-only receipts, not a final integrated delivery head.
+
+7. Corrected P2 plus exact approved wake and actual stale-refusal control case
+Temporary two-client-file composition: 0928358a53e0639ed3eb0f800449802fa9ec88f3
+Tree: 587b9e80e08f8bece0c7460d18b8ad77b1401e13
+Parent P2/test head: 9bc74ee2088a36998caa297fc53e5d7a01bce9d8
+Approved wake source: 9e46702fa1c9d9d9f3203c6282a637fcf61efe42
+Gate: lane-p2 4, 2026-11-21T06:53:06Z--06:53:14Z, exit 0.
+Same composition selector and production tsc commands from (4):
+38 PASS / 226 selector skips = 23 approved wake + 15 P2 lifecycle/epoch cases.
+Includes the actual disconnect/Retry stale-refusal case that was red without
+the attempt-token fence. A replacement control GET completes after the old
+refusal body, while main/control stay valid. Production typing: PASS.
+This is named temporary composition proof. Parent subsequently confirmed
+actual #3748 merge6130b29669f58c8a7bad112aa745d4ca43775971 at
+2026-11-21T06:53:46Z. Current-main integration, final exact-head proof/review and
+hosted CI remain required; these composition results are not transferred.
