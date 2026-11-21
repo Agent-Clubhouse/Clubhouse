@@ -87,6 +87,8 @@ export class SequencedNoticeJournal {
   private readonly liveHandoffs = new WeakMap<NoticeLiveHandoff, LiveHandoffRecord>();
   /** Entry is irreversible even after a runtime drops/releases its callback handle. */
   private readonly enteredAttempts = new Set<string>();
+  private readonly settlingAttempts = new Map<string, number>();
+  private pendingRecoveries = 0;
   private readonly directoryFlusher = new NoticeDirectoryFlusher();
 
   private constructor(options: NoticeJournalOptions) {
@@ -107,10 +109,13 @@ export class SequencedNoticeJournal {
   get healthy(): boolean { return !this.poisoned; }
   get retainedEntryCount(): number { return this.enteredAttempts.size; }
   get directoryDurability() { return this.directoryFlusher.observation; }
+  private entryIsHeld(attemptId: string): boolean {
+    return this.pendingRecoveries > 0 || (this.settlingAttempts.get(attemptId) ?? 0) > 0;
+  }
   /** Main receipt sink only: cannot capture a restarted/recovered attempt. */
   captureLiveHandoff(attemptId: string): NoticeLiveHandoff {
     const attempt = this.state?.attempts.find((a) => a.attemptId === attemptId);
-    if (this.poisoned || !attempt || attempt.status === 'uncertain' || attempt.handoffProcess !== this.handoffProcess) throw new Error('No exact live notice handoff');
+    if (this.poisoned || this.entryIsHeld(attemptId) || this.enteredAttempts.has(attemptId) || !attempt || attempt.status === 'uncertain' || attempt.handoffProcess !== this.handoffProcess) throw new Error('No exact live notice handoff');
     const handle: NoticeLiveHandoff = Object.freeze({ [handoffBrand]: true as const });
     this.liveHandoffs.set(handle, { attemptId, coverageDigest: attempt.coverageDigest, entered: false, consumed: false });
     return handle;
@@ -119,7 +124,7 @@ export class SequencedNoticeJournal {
   markHandoffEntered(handle: NoticeLiveHandoff): void {
     const proof = this.liveHandoffs.get(handle);
     const attempt = proof && this.state?.attempts.find((a) => a.attemptId === proof.attemptId);
-    if (this.poisoned || !proof || proof.consumed || proof.entered || !attempt || attempt.status === 'uncertain'
+    if (this.poisoned || !proof || this.entryIsHeld(proof.attemptId) || this.enteredAttempts.has(proof.attemptId) || proof.consumed || proof.entered || !attempt || attempt.status === 'uncertain'
       || attempt.coverageDigest !== proof.coverageDigest || attempt.handoffProcess !== this.handoffProcess) throw new Error('Notice handoff entry is no longer current');
     proof.entered = true;
     this.enteredAttempts.add(proof.attemptId);
@@ -236,7 +241,19 @@ export class SequencedNoticeJournal {
 
   append(delta: NoticeDelta): Promise<SequencedNoticeState> {
     if (delta.kind === 'settle' && delta.outcome === 'accepted') return Promise.reject(new Error('Use exact live notice acknowledgement capability'));
-    return this.enqueue(delta);
+    const settling = delta.kind === 'settle' ? delta.attemptId : undefined;
+    const recovery = delta.kind === 'recover';
+    // Synchronous admission fence BEFORE any queued work/IO can yield to provider entry.
+    if (settling) this.settlingAttempts.set(settling, (this.settlingAttempts.get(settling) ?? 0) + 1);
+    if (recovery) this.pendingRecoveries++;
+    return this.enqueue(delta).finally(() => {
+      if (settling) {
+        const remaining = (this.settlingAttempts.get(settling) ?? 1) - 1;
+        if (remaining) this.settlingAttempts.set(settling, remaining);
+        else this.settlingAttempts.delete(settling);
+      }
+      if (recovery) this.pendingRecoveries--;
+    });
   }
   private enqueue(input: NoticeDelta, liveProof?: LiveHandoffRecord): Promise<SequencedNoticeState> {
     const next = this.work.catch(() => {}).then(async () => {

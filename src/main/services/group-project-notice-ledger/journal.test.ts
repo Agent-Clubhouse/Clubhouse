@@ -270,6 +270,42 @@ describe('sequenced notice journal persistence', () => {
     expect({ enteredDuringTransition, readyAfterTransition }).not.toEqual({ enteredDuringTransition: true, readyAfterTransition: true });
   });
 
+  it.each(['uncertain', 'recover'] as const)('entry arbitration: %s holds entry synchronously before queued IO', async (kind) => {
+    const journal = await initialized(await home());
+    await journal.append({ kind: 'scan', through: 2, eligible: [post(1), post(2)] });
+    await journal.append(intent(1));
+    await journal.append(intent(2));
+    const first = journal.captureLiveHandoff('attempt-1');
+    const other = journal.captureLiveHandoff('attempt-2');
+    const transition = journal.append(kind === 'recover' ? { kind: 'recover' }
+      : { kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' });
+    expect(() => journal.captureLiveHandoff('attempt-1')).toThrow('No exact');
+    expect(() => journal.markHandoffEntered(first)).toThrow('no longer current');
+    if (kind === 'recover') expect(() => journal.markHandoffEntered(other)).toThrow('no longer current');
+    else journal.markHandoffEntered(other);
+    await transition;
+    expect(() => journal.markHandoffEntered(first)).toThrow('no longer current');
+    if (kind === 'uncertain') {
+      await journal.acknowledgeLiveHandoff(other);
+      expect(journal.snapshot()?.terminal).toEqual([[2, 2]]);
+    }
+  });
+
+  it('entry arbitration: pending uncertainty preserves a genuine already-entered ACK', async () => {
+    const directory = await home();
+    const journal = await initialized(directory);
+    await journal.append({ kind: 'scan', through: 1, eligible: [post(1)] });
+    await journal.append(intent(1));
+    const handle = journal.captureLiveHandoff('attempt-1');
+    journal.markHandoffEntered(handle);
+    expect(() => journal.captureLiveHandoff('attempt-1')).toThrow('No exact');
+    const unknown = journal.append({ kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' });
+    const acknowledgement = journal.acknowledgeLiveHandoff(handle);
+    await Promise.all([unknown, acknowledgement]);
+    expect(journal.snapshot()).toMatchObject({ acceptedCount: 1, lateAcknowledgementCount: 1, attempts: [] });
+    expect((await open(directory)).snapshot()?.terminal).toEqual([[1, 1]]);
+  });
+
   it('kills the in-memory mutant that removes the journal entered-attempt guard', async () => {
     const baseline = await home();
     const control = await promisify(execFile)(process.execPath, ['test/research/q5-entered-mutation.cjs', baseline, 'guarded'], { cwd: process.cwd() });
