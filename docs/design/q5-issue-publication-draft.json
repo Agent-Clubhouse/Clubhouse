@@ -1,0 +1,141 @@
+{
+  "status": "PUBLICATION BLOCKED; no issue exists; do not reroute or retry without actual normal access resolution",
+  "repository_full_name": "Agent-Clubhouse/Clubhouse",
+  "attemptedTitle": "Q5: durable group-notice delivery ledger that preserves uncertain outcomes while later notices continue",
+  "attemptedBody": "The user chose a durable delivery ledger rather than persistent per-member pause. Later eligible notices must continue while earlier unconfirmed deliveries remain explicitly recorded and are excluded from automatic replay.\n\nCanonical prior proposal: [Q5-policy-proposal.json](https://github.com/Agent-Clubhouse/Clubhouse/blob/e2340b51e434c499b5e4f7014e9bc3bcd857920f/notes/diagnose-navi-queue-transfer/evidence/Q5-policy-proposal.json), preserved by diagnose-navi-queue/mini-preservation. Its README records no earlier assignment issue/PR. Prior test-only baseline edce1d072a674bc4d3673296a13b18ad54f535e5 demonstrates callback-owner cursor/replay gaps in modeled tests; it does not prove a provider incident. Withheld runtime candidate 0bb43aba9db9504bd5141f1387a512cf97a9b8ba remains historical evidence, not accepted product code.\n\nAt inspected main d8c7247a4dccc1ebff01f0f28f8e61279bdf5437, group notices persist one monotonic notified cursor. That cannot express an uncertain earlier batch and a later accepted one. The busy callback and idle returned-queued path both need receipt-aware ownership. The receipt validator strips unknown fields, so an additive field alone cannot make old writers safe.\n\nImplementation owner: auto-reset-policy-design, isolated branch auto-reset-policy-design/q5-durable-delivery-ledger. First deliver a contract for idempotency keys, per-post coverage versus scan frontier, uncertain outcomes, explicit duplicate-warning retry, durable versioned storage and rollback, revocation and crash recovery. Independent contract review is required before product implementation. Then deterministic failure/restart/revocation proofs, independent exact source/evidence review, and hosted checks before acceptance.\n\nBoundaries: no exactly-once provider-processing claim; no automatic uncertain resend; no persistent member pause as normal uncertainty policy; no implicit chat clearing (controller recovery preserves chat by default; explicit reset is separately owned); no new grants/probes/wakes/restarts/installs; no Auto activation, release or unrelated controller/SAVE_SETTINGS/Details edits. Existing authorization and wake gates remain. This issue does not authorize merge or release.\n\nRelated historical notices feature: #3362. This is a new standalone Q5 tracking issue, not a renaming of that issue.",
+  "tool": "mcp__codex_apps__github_create_issue",
+  "actualResponse": {
+    "content": [
+      {
+        "type": "text",
+        "text": "GitHub API error 403: {\"message\":\"Resource not accessible by integration\",\"documentation_url\":\"https://docs.github.com/rest/issues/issues#create-an-issue\",\"status\":\"403\"}"
+      }
+    ],
+    "structuredContent": {
+      "error": "GitHub API error 403: {\"message\":\"Resource not accessible by integration\",\"documentation_url\":\"https://docs.github.com/rest/issues/issues#create-an-issue\",\"status\":\"403\"}",
+      "error_code": "FORBIDDEN",
+      "error_data": {
+        "message": "Resource not accessible by integration",
+        "documentation_url": "https://docs.github.com/rest/issues/issues#create-an-issue",
+        "status": "403"
+      }
+    },
+    "isError": true
+  },
+  "dedupEvidence": {
+    "limit": "Content search is bounded and not an exhaustive global absence proof. Canonical historical README explicitly records no prior assignment issue/PR.",
+    "queries": [
+      {
+        "query": "\"Q5\"",
+        "observed": "Inspected result did not identify a standalone Q5 issue; related 3613 is not the Q5 issue."
+      },
+      {
+        "query": "\"delivery\" \"ledger\"",
+        "results": [
+          {
+            "issue": 2784,
+            "title": "[MEDIUM] Experimental: responsive Dispatcher with attention judgment, background coordination and durable memory",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/2784"
+          },
+          {
+            "issue": 3613,
+            "title": "[DESIGN] Annex Network: reverse-initiated control over one existing authenticated peer connection",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3613"
+          },
+          {
+            "issue": 3738,
+            "title": "MCP: initial remote-name hydration invalidates an unchanged binding’s callable tool name",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3738"
+          }
+        ]
+      },
+      {
+        "query": "\"notification\" \"unknown\"",
+        "results": [
+          {
+            "issue": 2889,
+            "title": "[MEDIUM] Auto stage 4: evaluate a device-local adaptive burn model with bounded fallback",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/2889"
+          },
+          {
+            "issue": 3613,
+            "title": "[DESIGN] Annex Network: reverse-initiated control over one existing authenticated peer connection",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3613"
+          },
+          {
+            "issue": 1534,
+            "title": "[P0] GitHub Copilot CLI first-class provider parity and release gate",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/1534"
+          },
+          {
+            "issue": 2211,
+            "title": "[LOW] Annex satellites wait for the next hook event to see a chat agent working (no push on session_state / turn_started)",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/2211"
+          },
+          {
+            "issue": 2304,
+            "title": "[MEDIUM] Chat start, fallback and cancel outcomes aren't in telemetry; add start attributes and a fallback event",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/2304"
+          },
+          {
+            "issue": 2191,
+            "title": "[HIGH] Copilot ACP chat shows Done while Copilot keeps working on its own after the prompt ended",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/2191"
+          },
+          {
+            "issue": 2572,
+            "title": "[LOW] Dispatcher load or read failures hide the row and nav item, so the new error states can't be reached",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/2572"
+          },
+          {
+            "issue": 1535,
+            "title": "[P1] Codex CLI functional parity with first-class providers",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/1535"
+          },
+          {
+            "issue": 380,
+            "title": "[MEDIUM] Codex: No per-tool hook events in PTY mode",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/380"
+          },
+          {
+            "issue": 378,
+            "title": "[HIGH] Codex: Headless agents have no live events — parse existing --json JSONL output",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/378"
+          },
+          {
+            "issue": 860,
+            "title": "Annex V2: Durable Pairing & Key Exchange",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/860"
+          },
+          {
+            "issue": 168,
+            "title": "fix: Headless manager only sends IPC to first window — breaks multi-window/popout hub",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/168"
+          },
+          {
+            "issue": 391,
+            "title": "[HIGH] Structured Mode: Core infrastructure — StructuredEvent types, manager, IPC channels, and settings wiring",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/391"
+          },
+          {
+            "issue": 395,
+            "title": "[HIGH] Structured Mode: ACP adapter (single structured mode path)",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/395"
+          }
+        ]
+      },
+      {
+        "query": "\"group\" \"unconfirmed\"",
+        "observedIssueNumbers": [
+          1533,
+          1531,
+          1534,
+          2149,
+          3219,
+          3034
+        ]
+      }
+    ]
+  },
+  "goAdoption": "Agent-Clubhouse/Clubhouse-Go#626 is separately owned adoption, not this issue."
+}
