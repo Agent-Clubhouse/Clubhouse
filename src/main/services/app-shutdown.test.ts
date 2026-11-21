@@ -29,7 +29,7 @@ vi.mock('./group-project-bulletin', () => ({ flushAllBulletinBoards: () => mocks
 vi.mock('./config-pipeline', () => ({ restoreAll: () => mocks.restoreAll() }));
 
 import { cancelAppShutdown, resetAppShutdownForTests, runAppShutdown, setShutdownBegin } from './app-shutdown';
-import { launchesOpen } from './launch-gate';
+import { captureLaunchAdmission, launchesOpen } from './launch-gate';
 import { clearSessionCaptures, trackSessionCapture } from './session-capture-barrier';
 
 const step = (name: string, ms = 0) => async () => {
@@ -63,6 +63,53 @@ afterEach(() => {
 });
 
 describe('app shutdown (#2053)', () => {
+  it('invalidates an old admission before the actual quit begin hook and never reopens it', async () => {
+    const admitted = captureLaunchAdmission();
+    const commit = vi.fn();
+    let observed: { open: boolean; admitted: boolean } | undefined;
+    const begin = vi.fn(() => {
+      observed = { open: launchesOpen(), admitted: admitted() };
+      if (admitted()) commit();
+    });
+    setShutdownBegin(begin);
+    await runAppShutdown('quit');
+    expect(begin).toHaveBeenCalledOnce();
+    expect(observed).toEqual({ open: false, admitted: false });
+    expect(commit).not.toHaveBeenCalled();
+    cancelAppShutdown();
+    expect(launchesOpen()).toBe(false);
+    expect(admitted()).toBe(false);
+    expect(captureLaunchAdmission()()).toBe(false);
+  });
+
+  it.each(['success', 'failure'] as const)('refuses an old %s effect after a real guarded update fails and reopens', async (outcome) => {
+    const admitted = captureLaunchAdmission();
+    const effect = vi.fn();
+    let resolve!: () => void;
+    let reject!: (reason: Error) => void;
+    const held = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+    const completed = held.then(
+      () => { if (admitted()) effect('start'); },
+      () => { if (admitted()) effect('stop replacement'); },
+    );
+    await expect(runAppShutdown('update', undefined, () => {
+      expect(admitted()).toBe(false);
+      throw new Error('Update validation changed');
+    })).rejects.toThrow('Update validation changed');
+    expect(mocks.killAll).not.toHaveBeenCalled();
+    expect(mocks.restoreAll).not.toHaveBeenCalled();
+    cancelAppShutdown();
+    expect(launchesOpen()).toBe(true);
+    if (outcome === 'success') resolve();
+    else reject(new Error('late startup failure'));
+    await completed;
+    expect(effect).not.toHaveBeenCalled();
+    expect(admitted()).toBe(false);
+    const fresh = captureLaunchAdmission();
+    if (fresh()) effect('fresh explicit request');
+    expect(effect).toHaveBeenCalledExactlyOnceWith('fresh explicit request');
+  });
+
   it('rejects a guarded update after the drain without stopping agents or restoring their live config', async () => {
     const guard = vi.fn(() => {
       expect(events).toEqual(['chat-starts-cancelled', 'spawns-settled']);

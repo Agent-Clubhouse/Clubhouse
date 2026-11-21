@@ -4,6 +4,7 @@
  * stopped, or after config was restored.
  */
 let closedFor: string | null = null;
+let admissionGeneration = Symbol();
 let workClosed = false;
 const workWaiters = new Set<() => void>();
 const activeWork = new Map<string, number>();
@@ -16,6 +17,7 @@ export class LaunchesClosedError extends Error {
 }
 
 export function closeLaunches(reason: string): void {
+  admissionGeneration = Symbol();
   closedFor = reason;
 }
 
@@ -29,6 +31,14 @@ export function reopenLaunches(): void {
 
 export function launchesOpen(): boolean {
   return closedFor === null;
+}
+
+/** Observation only: a close permanently invalidates this capture, even after reopening.
+ * Does not cancel work or grant settings, runtime or agent authority. */
+export function captureLaunchAdmission(): () => boolean {
+  const generation = admissionGeneration;
+  const wasOpen = launchesOpen();
+  return () => wasOpen && generation === admissionGeneration && launchesOpen();
 }
 
 export function assertLaunchesOpen(): void {
