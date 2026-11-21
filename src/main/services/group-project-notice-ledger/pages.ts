@@ -107,7 +107,7 @@ export class NoticePageIndex {
     this.cache(root.digest, page);
     return page;
   }
-  private async put(page: Page): Promise<NoticePageRoot> {
+  private async put(page: Page, retainInCache = true): Promise<NoticePageRoot> {
     const body = Buffer.from(JSON.stringify(page));
     decode(body); // byte/fanout/order/version checks before any filesystem publication
     const hash = digest(body);
@@ -127,8 +127,57 @@ export class NoticePageIndex {
       this.dirtyDirectories.add(directory); this.dirtyDirectories.add(this.directory);
     }
     const root = reference(page, hash); rootValid(root);
-    this.cache(hash, page);
+    if (retainInCache) this.cache(hash, page);
     return root;
+  }
+  async validateRoot(root: NoticePageRoot): Promise<void> { await this.load(root); }
+  /** Full verification streams pages through bounded caches; never returns all rows. */
+  async verify(root: NoticePageRoot | undefined): Promise<{ rows: number; pages: number }> {
+    if (!root) return { rows: 0, pages: 0 };
+    const page = await this.load(root);
+    if (page.kind === 'leaf') return { rows: page.entries.length, pages: 1 };
+    let rows = 0; let pages = 1;
+    for (const child of page.children) {
+      const result = await this.verify(child); rows += result.rows; pages += result.pages;
+    }
+    if (rows !== root.count) throw new Error('Notice index descendant count mismatch');
+    return { rows, pages };
+  }
+  /** Sorted streaming baseline preparation; no generation, nonce or root activation. */
+  async build(entries: Iterable<NoticePageEntry> | AsyncIterable<NoticePageEntry>): Promise<NoticePageRoot | undefined> {
+    const levels: NoticePageRoot[][] = [];
+    let batch: NoticePageEntry[] = [];
+    let previous: string | undefined;
+    const push = async (root: NoticePageRoot, level = 0): Promise<void> => {
+      if (level > 32) throw new Error('Notice baseline index is too deep');
+      (levels[level] ??= []).push(root);
+      if (levels[level].length === NOTICE_INDEX_FANOUT) {
+        const children = levels[level]; levels[level] = [];
+        await push(await this.put({ schemaVersion: 1, minWriterVersion: 1, kind: 'index', children }, false), level + 1);
+      }
+    };
+    for await (const entry of entries) {
+      keyValid(entry.key);
+      if (previous !== undefined && previous >= entry.key) throw new Error('Notice baseline keys must be strictly sorted');
+      previous = entry.key;
+      const row = { key: entry.key, value: json(entry.value) };
+      const page = { schemaVersion: 1 as const, minWriterVersion: 1 as const, kind: 'leaf' as const, entries: [...batch, row] };
+      if (batch.length && (page.entries.length > NOTICE_INDEX_FANOUT || Buffer.byteLength(JSON.stringify(page)) > NOTICE_INDEX_PAGE_BYTES)) {
+        await push(await this.put({ ...page, entries: batch }, false)); batch = [];
+      }
+      batch.push(row);
+    }
+    if (batch.length) await push(await this.put({ schemaVersion: 1, minWriterVersion: 1, kind: 'leaf', entries: batch }, false));
+    let frontier = levels.flat().sort((a, b) => a.first < b.first ? -1 : a.first > b.first ? 1 : 0);
+    while (frontier.length > 1) {
+      const parents: NoticePageRoot[] = [];
+      for (let offset = 0; offset < frontier.length; offset += NOTICE_INDEX_FANOUT) {
+        const children = frontier.slice(offset, offset + NOTICE_INDEX_FANOUT);
+        parents.push(children.length === 1 ? children[0] : await this.put({ schemaVersion: 1, minWriterVersion: 1, kind: 'index', children }, false));
+      }
+      frontier = parents;
+    }
+    return frontier[0];
   }
   /** Must succeed before an activating journal/root record; no root is activated here. */
   async flush(): Promise<void> {
@@ -148,6 +197,22 @@ export class NoticePageIndex {
     }
     const child = page.children.find((c) => key >= c.first && key <= c.last);
     return child ? this.get(child, key) : undefined;
+  }
+  /** Range-neighbour lookup for terminal intervals; lexical key ordering only. */
+  async atOrBefore(root: NoticePageRoot | undefined, key: string): Promise<NoticePageEntry | undefined> {
+    keyValid(key);
+    if (!root) return undefined;
+    const page = await this.load(root);
+    if (page.kind === 'leaf') {
+      for (let index = page.entries.length - 1; index >= 0; index--) if (page.entries[index].key <= key) return copy(page.entries[index]);
+    } else {
+      for (let index = page.children.length - 1; index >= 0; index--) {
+        if (page.children[index].first > key) continue;
+        const entry = await this.atOrBefore(page.children[index], key);
+        if (entry) return entry;
+      }
+    }
+    return undefined;
   }
   async list(root: NoticePageRoot | undefined, options: { after?: string; limit: number }): Promise<{ entries: NoticePageEntry[]; nextAfter?: string }> {
     if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 256) throw new Error('Invalid notice page limit');
