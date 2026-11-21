@@ -1,0 +1,156 @@
+
+ RUN  v4.1.12 <workspace>
+
+ ❯ |main| src/main/services/annex-client.test.ts (237 tests | 9 failed | 226 skipped) 18ms
+         × requires a new pinned connection after sleep even when the old socket still reports connected 10ms
+         × replaces a handshake crossing sleep and ignores its captured callbacks 1ms
+         × preserves the CERT_HAS_EXPIRED stop across resume 1ms
+         × preserves the CERT_NOT_YET_VALID stop across resume 1ms
+         × preserves the ERR_ANNEX_PIN_MISMATCH stop across resume 1ms
+         × preserves a removed-pairing refusal across resume 1ms
+         × does not let a replaced socket pong cancel the current socket heartbeat deadline 1ms
+         × ignores a captured heartbeat interval callback belonging to a replaced socket 1ms
+         × ignores a captured heartbeat deadline callback belonging to a replaced socket 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > requires a new pinned connection after sleep even when the old socket still reports connected
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/main/services/annex-client.test.ts:2538:52
+    2536|         annexClient.resumeAllConnections();
+    2537|
+    2538|         expect(annexClient.isMachineConnected(FP)).toBe(false);
+       |                                                    ^
+    2539|         expect(annexClient.getSatellite(FP)?.state).toBe('connecting');
+    2540|         expect(sockets).toHaveLength(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > replaces a handshake crossing sleep and ignores its captured callbacks
+AssertionError: expected [ Mock{ handlers: { …(6) }, …(7) } ] to have a length of 2 but got 1
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ src/main/services/annex-client.test.ts:2559:25
+    2557|         annexClient.resumeAllConnections();
+    2558|
+    2559|         expect(sockets).toHaveLength(2);
+       |                         ^
+    2560|         beforeSleep.handlers.open();
+    2561|         beforeSleep.handlers.message(JSON.stringify({ type: 'snapshot'…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > preserves the CERT_HAS_EXPIRED stop across resume
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > preserves the CERT_NOT_YET_VALID stop across resume
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > preserves the ERR_ANNEX_PIN_MISMATCH stop across resume
+AssertionError: expected [ …(2) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ src/main/services/annex-client.test.ts:2590:25
+    2588|         vi.setSystemTime(Date.now() + 109_000);
+    2589|         annexClient.resumeAllConnections();
+    2590|         expect(sockets).toHaveLength(1);
+       |                         ^
+    2591|         expect(annexClient.getSatellite(FP)).toEqual(stopped);
+    2592|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > preserves a removed-pairing refusal across resume
+AssertionError: expected [ …(2) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ src/main/services/annex-client.test.ts:2601:25
+    2599|         vi.setSystemTime(Date.now() + 109_000);
+    2600|         annexClient.resumeAllConnections();
+    2601|         expect(sockets).toHaveLength(1);
+       |                         ^
+    2602|         expect(annexClient.getSatellite(FP)).toEqual(stopped);
+    2603|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > does not let a replaced socket pong cancel the current socket heartbeat deadline
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ src/main/services/annex-client.test.ts:2630:35
+    2628|         expect(annexClient.lastConfirmedConnectivity(FP)).toBe(confirm…
+    2629|         await vi.advanceTimersByTimeAsync(10_000);
+    2630|         expect(current.terminate).toHaveBeenCalledOnce();
+       |                                   ^
+    2631|         expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'd…
+    2632|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > ignores a captured heartbeat interval callback belonging to a replaced socket
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array []
+
+
+Number of calls: 1
+
+ ❯ src/main/services/annex-client.test.ts:2649:34
+    2647|         if (typeof callback !== 'function') throw new Error('Expected …
+    2648|         callback();
+    2649|         expect(current.ping).not.toHaveBeenCalled();
+       |                                  ^
+    2650|         expect(current.terminate).not.toHaveBeenCalled();
+    2651|         expect(annexClient.isMachineConnected(FP)).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > ignores a captured heartbeat deadline callback belonging to a replaced socket
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array []
+
+
+Number of calls: 1
+
+ ❯ src/main/services/annex-client.test.ts:2650:39
+    2648|         callback();
+    2649|         expect(current.ping).not.toHaveBeenCalled();
+    2650|         expect(current.terminate).not.toHaveBeenCalled();
+       |                                       ^
+    2651|         expect(annexClient.isMachineConnected(FP)).toBe(true);
+    2652|         // The current generation still owns its normal timeout.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed | 2 passed | 226 skipped (237)
+   Start at  22:37:31
+   Duration  359ms (transform 202ms, setup 4ms, import 260ms, tests 18ms, environment 0ms)
+

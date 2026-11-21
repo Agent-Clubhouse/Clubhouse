@@ -2491,7 +2491,7 @@ describe('annex-client', () => {
     const FP = 'aa:01:aa:01';
     const peer = { fingerprint: FP, alias: 'Pinned Mac', icon: 'server', color: 'green', publicKey: 'sat-pk', pairedAt: '2026-01-01',
       lastSeen: '2026-01-01', role: 'satellite' as const, tlsCertificateFingerprint: 'AB:CD', tlsCertificatePem: 'SATELLITE-PEM' };
-    let sockets: Array<{ handlers: Record<string, (...args: any[]) => void>; terminate: ReturnType<typeof vi.fn> }>;
+    let sockets: Array<{ handlers: Record<string, (...args: any[]) => void>; terminate: ReturnType<typeof vi.fn>; ping: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }>;
 
     beforeEach(() => {
       sockets = [];
@@ -2517,6 +2517,144 @@ describe('annex-client', () => {
       res.emit('data', Buffer.from(JSON.stringify(body)));
       res.emit('end');
     }
+
+    describe('resume freshness', () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-11-20T12:00:00Z'));
+      });
+
+      it('requires a new pinned connection after sleep even when the old socket still reports connected', async () => {
+        await discover();
+        const beforeSleep = sockets[0];
+        beforeSleep.handlers.open();
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+        const confirmed = annexClient.lastConfirmedConnectivity(FP);
+
+        // OS sleep advances wall time without running JS heartbeat timers.
+        vi.setSystemTime(Date.now() + 109_000);
+        annexClient.resumeAllConnections();
+
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+        expect(annexClient.getSatellite(FP)?.state).toBe('connecting');
+        expect(sockets).toHaveLength(2);
+        expect(beforeSleep.close).toHaveBeenCalledOnce();
+        expect(WebSocketMock.mock.calls.at(-1)![1]).toMatchObject({ pinned: true, handshakeTimeout: 10_000 });
+        beforeSleep.handlers.open();
+        beforeSleep.handlers.pong();
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+        expect(annexClient.lastConfirmedConnectivity(FP)).toBe(confirmed);
+        sockets[1].handlers.open();
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+        expect(annexClient.lastConfirmedConnectivity(FP)).toBe(new Date(Date.now()).toISOString());
+      });
+
+      it('replaces a handshake crossing sleep and ignores its captured callbacks', async () => {
+        await discover();
+        const beforeSleep = sockets[0];
+        expect(annexClient.getSatellite(FP)?.state).toBe('connecting');
+        vi.setSystemTime(Date.now() + 101_000);
+        annexClient.resumeAllConnections();
+
+        expect(sockets).toHaveLength(2);
+        beforeSleep.handlers.open();
+        beforeSleep.handlers.message(JSON.stringify({ type: 'snapshot', payload: { protocolVersion: 2, lastSeq: 9, projects: [], agents: {}, quickAgents: {} } }));
+        beforeSleep.handlers.error(Object.assign(new Error('old certificate'), { code: 'CERT_HAS_EXPIRED' }));
+        beforeSleep.handlers.close(4401, Buffer.from('peer_not_paired'));
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connecting', snapshot: null });
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
+        sockets[1].handlers.open();
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+      });
+
+      it('leaves the client off on resume', async () => {
+        await discover();
+        annexClient.stopClient();
+        vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...peer, knownHosts: ['192.168.1.50'], mainPort: 9000 }]);
+        vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), enableClient: false });
+        WebSocketMock.mockClear();
+        mockBonjourInstance.find.mockClear();
+        vi.setSystemTime(Date.now() + 109_000);
+        annexClient.resumeAllConnections();
+        expect(WebSocketMock).not.toHaveBeenCalled();
+        expect(mockBonjourInstance.find).not.toHaveBeenCalled();
+        expect(annexClient.getSatellites()).toEqual([]);
+      });
+
+      it.each(['CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'ERR_ANNEX_PIN_MISMATCH'])('preserves the %s stop across resume', async (code) => {
+        await discover();
+        sockets[0].handlers.error(Object.assign(new Error(code), { code }));
+        const stopped = annexClient.getSatellite(FP);
+        vi.setSystemTime(Date.now() + 109_000);
+        annexClient.resumeAllConnections();
+        expect(sockets).toHaveLength(1);
+        expect(annexClient.getSatellite(FP)).toEqual(stopped);
+      });
+
+      it('preserves a removed-pairing refusal across resume', async () => {
+        await discover();
+        sockets[0].handlers.open();
+        sockets[0].handlers.close(4401, Buffer.from('peer_not_paired'));
+        const stopped = annexClient.getSatellite(FP);
+        vi.setSystemTime(Date.now() + 109_000);
+        annexClient.resumeAllConnections();
+        expect(sockets).toHaveLength(1);
+        expect(annexClient.getSatellite(FP)).toEqual(stopped);
+      });
+
+      it('keeps the current socket pong effective', async () => {
+        await discover();
+        sockets[0].handlers.open();
+        await vi.advanceTimersByTimeAsync(30_000);
+        sockets[0].handlers.pong();
+        expect(annexClient.lastConfirmedConnectivity(FP)).toBe(new Date(Date.now()).toISOString());
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(sockets[0].terminate).not.toHaveBeenCalled();
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+      });
+
+      it('does not let a replaced socket pong cancel the current socket heartbeat deadline', async () => {
+        await discover();
+        const old = sockets[0];
+        old.handlers.open();
+        annexClient.disconnect(FP);
+        annexClient.retry(FP);
+        const current = sockets[1];
+        current.handlers.open();
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(current.ping).toHaveBeenCalledOnce();
+        const confirmed = annexClient.lastConfirmedConnectivity(FP);
+        old.handlers.pong();
+        expect(annexClient.lastConfirmedConnectivity(FP)).toBe(confirmed);
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(current.terminate).toHaveBeenCalledOnce();
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', problem: { code: 'stopped-answering' } });
+      });
+
+      it.each(['interval', 'deadline'] as const)('ignores a captured heartbeat %s callback belonging to a replaced socket', async (kind) => {
+        const intervals = vi.spyOn(globalThis, 'setInterval');
+        const timeouts = vi.spyOn(globalThis, 'setTimeout');
+        await discover();
+        sockets[0].handlers.open();
+        const tick = intervals.mock.calls.find(([, delay]) => delay === 30_000)![0];
+        await vi.advanceTimersByTimeAsync(30_000);
+        const expire = timeouts.mock.calls.find(([, delay]) => delay === 10_000)![0];
+        annexClient.disconnect(FP);
+        annexClient.retry(FP);
+        const current = sockets[1];
+        current.handlers.open();
+        const callback = kind === 'interval' ? tick : expire;
+        if (typeof callback !== 'function') throw new Error('Expected a heartbeat callback');
+        callback();
+        expect(current.ping).not.toHaveBeenCalled();
+        expect(current.terminate).not.toHaveBeenCalled();
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+        // The current generation still owns its normal timeout.
+        await vi.advanceTimersByTimeAsync(40_000);
+        expect(current.ping).toHaveBeenCalledOnce();
+        expect(current.terminate).toHaveBeenCalledOnce();
+      });
+    });
 
     it('opens the WebSocket with options pinned to the stored certificate, and no token', async () => {
       await discover();
