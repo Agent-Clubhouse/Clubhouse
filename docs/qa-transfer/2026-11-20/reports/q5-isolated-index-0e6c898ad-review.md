@@ -62,3 +62,21 @@ Reviewer: qa-details-local-composition, November 21, 2026.
 
 - **APPROVE assembly `0e6c898ad`** for opening the scoped draft PR, after the final current-main check.
 - **Not accepted:** catalog, activation, R1, runtime, whole heap, or native Windows until G2 and G4 pass on hosted CI.
+
+## Addendum: static current-main bridge, evidence `2d4b11285` (tree `241d140ac`)
+
+I checked this independently against git:
+
+- `origin/main` is `b02542b5c`.
+- `git diff --name-only e8e178c4b b02542b5c` lists exactly the 3 new parser, test and proof files.
+- These six blobs are **identical** across `e8e178c4b`, `b02542b5c` and `0e6c898ad`:
+  - `package.json`;
+  - `package-lock.json`;
+  - `vitest.config.ts`;
+  - `tsconfig.json`;
+  - `.github/workflows/validate.yml`;
+  - `eslint.config.mjs`.
+- The four index source and test paths are **absent** on main, and nothing under `src` or `test` on main references `group-project-notice-ledger` or `q5-index-process`.
+- The evidence commit adds only the comparison JSON and Markdown files, so the candidate and the 61 receipts are unchanged.
+
+**Static disjointness is CONFIRMED.** That is not credit for any combined execution. A final current-main guard is still required at PR and at landing.
