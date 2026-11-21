@@ -19,7 +19,7 @@ const page = (text = 'When to reach it: Review work\nOwns: Selected component', 
 const disk = (folder = root): Record<string, unknown> => Object.fromEntries(fs.readdirSync(folder).sort().map((name) => { const f = path.join(folder, name), s = fs.lstatSync(f); return [name, s.isDirectory() ? { ino: s.ino, files: disk(f) } : { bytes: fs.readFileSync(f).toString('base64'), ino: s.ino, mtimeMs: s.mtimeMs }]; }));
 beforeEach(() => {
   setAgentCardSource(null);
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-description-display-'))); memory = path.join(root, 'memory'); store = path.join(root, 'dispatcher-agent-cards.json'); clock = Date.parse('2026-11-19T12:00:00Z');
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-description-display-'))); /* native: the path production opens, long names on Windows */ memory = path.join(root, 'memory'); store = path.join(root, 'dispatcher-agent-cards.json'); clock = Date.parse('2026-11-19T12:00:00Z');
   const unexpected = () => { throw new Error('ordinary control callback invoked by display'); };
   deps = { memoryRoot: memory, storePath: () => store, now: () => clock, activeDispatcherId: vi.fn(unexpected), dispatcherName: vi.fn(unexpected), isDispatcherPath: vi.fn(unexpected), listProjects: vi.fn(unexpected), listAgents: vi.fn(unexpected), connectedIds: vi.fn(unexpected), isWiredToDispatcher: vi.fn(unexpected), send: vi.fn(unexpected), log: vi.fn(), changed: vi.fn() };
   cards = new AgentCards(deps);

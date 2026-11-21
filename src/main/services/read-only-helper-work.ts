@@ -80,7 +80,8 @@ export async function readOnlyHelperWork(parent: AgentConfigTarget, entry: Helpe
     check();
     // Synchronous final fence after all Git/file awaits, including stopped helpers.
     const finalRoot = fs.statSync(root, { bigint: true });
-    if (fs.realpathSync(cwd) !== root || rootStat.dev !== finalRoot.dev || rootStat.ino !== finalRoot.ino
+    // Native, like readOnlyRepositoryRoot's fs.promises.realpath: the JS walk keeps Windows 8.3 names it expands.
+    if (fs.realpathSync.native(cwd) !== root || rootStat.dev !== finalRoot.dev || rootStat.ino !== finalRoot.ino
       || !parentWitness.current() || !helperWitness.current()) return unknown();
     return { dirty, unpushed, unmerged: null };
   } catch (error) { /* telemetry-exempt: no raw errors, names, refs or contents leave a work summary. */ return unknown(error instanceof HelperTransformUnavailable ? HELPER_TRANSFORM_UNAVAILABLE : undefined); }
