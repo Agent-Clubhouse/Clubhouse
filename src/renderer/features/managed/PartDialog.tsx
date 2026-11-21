@@ -1,3 +1,4 @@
+import { InstructionEditor } from './InstructionEditor';
 import { useEffect, useRef, useState } from 'react';
 import { Modal } from '../../components/Modal';
 import { Button } from '../../components/Button';
@@ -280,17 +281,23 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
         busy={busy}
         dirty={draftSnapshot(name, description, content, argsText, envText) !== initialDraft || (!!renaming && renaming.to !== renaming.from)}
         title={title}
-        width="w-[640px]"
+        width={kind === 'block' ? 'w-[1000px] max-w-[calc(100vw-32px)]' : 'w-[640px] max-w-[calc(100vw-32px)]'}
         testId="managed-part-dialog"
-        footer={(dismiss) => <>
-          <span className="mr-auto self-center text-xs text-ctp-overlay1">
-            {editId
-              ? (usedBy.length > 1 ? `Used by ${usedBy.length} agents. They get the change at their next start.` : 'Applies at the next start.')
-              : `Saved to the library${agentName ? ` and added to ${agentName}` : ''}.`}
-          </span>
-          <Button onClick={dismiss} disabled={busy}>Cancel</Button>
-          <Button kind="primary" onClick={save} disabled={busy || !valid} data-testid="managed-part-save">{editId ? 'Save' : `Create ${partKindLabel(kind).toLowerCase()}`}</Button>
-        </>}
+        footer={(dismiss) => (
+          <div className="@container w-full">
+            <div className="flex flex-col gap-2 @min-[480px]:flex-row @min-[480px]:items-center">
+              <span className="text-xs text-ctp-overlay1 @min-[480px]:mr-auto">
+                {editId
+                  ? (usedBy.length > 1 ? `Used by ${usedBy.length} agents. They get the change at their next start.` : 'Applies at the next start.')
+                  : `Saved to the library${agentName ? ` and added to ${agentName}` : ''}.`}
+              </span>
+              <div className="flex shrink-0 justify-end gap-2">
+                <Button onClick={dismiss} disabled={busy}>Cancel</Button>
+                <Button kind="primary" onClick={save} disabled={busy || !valid} data-testid="managed-part-save">{editId ? 'Save' : `Create ${partKindLabel(kind).toLowerCase()}`}</Button>
+              </div>
+            </div>
+          </div>
+        )}
       >
         <div className="flex flex-col gap-3 text-[13px]" onDragOver={(e) => { if (content.kind === 'skill') e.preventDefault(); }} onDrop={(e) => void onDrop(e)}>
           {content.kind === 'skill' && !editId && (
@@ -311,12 +318,9 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
           </label>
 
           {content.kind === 'block' && (
-            <div className="flex items-start gap-4">
-              <span className="w-28 pt-1.5 text-ctp-subtext1">Text</span>
-              <span className="flex-1 flex flex-col gap-2">
-                <textarea aria-label="Block text" className={`${textareaClass} min-h-40`} value={content.content} onChange={(e) => setContent({ kind: 'block', content: e.target.value })} />
-                <WildcardBar values={wildcardValues} />
-              </span>
+            <div className="min-w-0 flex flex-col gap-2">
+              <InstructionEditor label="Block text" value={content.content} onChange={(text) => setContent({ kind: 'block', content: text })} disabled={busy} />
+              <WildcardBar values={wildcardValues} />
             </div>
           )}
 

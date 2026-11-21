@@ -77,6 +77,30 @@ describe('BlockList', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
+  it('previews the live draft without saving, keeps it after a failed save and discards it explicitly', async () => {
+    vi.spyOn(m(), 'getPart').mockResolvedValue({ ok: true, value: { ...part('mine'), content: { kind: 'block', content: 'old' } } } as never);
+    const update = vi.spyOn(m(), 'updatePart').mockResolvedValue({ ok: false, code: 'internal', message: 'Save failed' } as never);
+    render(<BlockList blocks={['mine']} parts={[part('mine')]} agent={agent} onChange={vi.fn()} onFork={vi.fn()} onWrite={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit mine' }));
+    const text = await screen.findByLabelText('mine text');
+    fireEvent.change(text, { target: { value: '# Draft @@AgentName\n\n**Keep this.**' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show preview' }));
+    const preview = screen.getByRole('region', { name: 'Draft preview' });
+    expect(within(preview).getByRole('heading', { name: 'Draft @@AgentName' })).toBeTruthy();
+    expect(preview.querySelector('strong')?.textContent).toBe('Keep this.');
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide preview' }));
+    expect((text as HTMLTextAreaElement).value).toBe('# Draft @@AgentName\n\n**Keep this.**');
+    fireEvent.click(screen.getByTestId('managed-block-save'));
+    expect((await screen.findByRole('alert')).textContent).toContain('Save failed');
+    expect((text as HTMLTextAreaElement).value).toContain('Keep this.');
+    expect(update).toHaveBeenCalledWith({ id: 'mine', expectedRevision: 1, content: { kind: 'block', content: '# Draft @@AgentName\n\n**Keep this.**' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.queryByLabelText('mine text')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit mine' }));
+    expect((await screen.findByLabelText('mine text') as HTMLTextAreaElement).value).toBe('old');
+  });
+
   const openSharedEditor = async (onFork: () => Promise<string | undefined> = vi.fn()) => {
     vi.spyOn(m(), 'getPart').mockResolvedValue({ ok: true, value: { ...part('shared'), content: { kind: 'block', content: 'old' } } } as never);
     render(<BlockList blocks={['shared']} parts={[part('shared', { usedBy: [consumer('release-lead', true), consumer('ada')] })]} agent={agent} onChange={vi.fn()} onFork={onFork} onWrite={vi.fn()} />);
@@ -371,6 +395,9 @@ describe('PartDialog', () => {
     for (const gone of ['@@BuildCommand', '@@TestCommand', '@@LintCommand', '@@SourceControlProvider']) expect(bar).not.toContain(gone);
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Rules' } });
     fireEvent.change(screen.getByLabelText('Block text'), { target: { value: 'Use strict mode.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show preview' }));
+    expect(screen.getByRole('region', { name: 'Draft preview' }).textContent).toContain('Use strict mode.');
+    expect(create).not.toHaveBeenCalled();
     expect(screen.getByText(/added to cool-gazelle/)).toBeTruthy();
     fireEvent.click(screen.getByTestId('managed-part-save'));
     await waitFor(() => expect(create).toHaveBeenCalledWith({ name: 'Rules', description: '', content: { kind: 'block', content: 'Use strict mode.' } }));
@@ -798,42 +825,102 @@ describe('Preview: wildcards, settings and what is running now (#2895)', () => {
     expect(screen.getByTestId('managed-preview-running-text').textContent).toBe('Old rules for @@AgentName.');
   });
 
-  it('draws a rail line per block against the preview lines it covers, with wildcards shown or not (#3187)', async () => {
+  it('pairs each label with its complete source in order, including separators and wildcards', async () => {
     vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
       instructions: 'You are release-lead.\nBe kind.\n\nWork on release-lead/standby.',
       rawInstructions: 'You are @@AgentName.\nBe kind.\n\nWork on @@StandbyBranch.',
       blocks: [
-        { id: 'identity', name: 'Identity', builtin: true, usedBy: 1, startLine: 1, endLine: 2 },
-        { id: 'git', name: 'Git', builtin: false, usedBy: 1, startLine: 4, endLine: 4 },
-      ],
-      skills: [], mcps: [], missing: [],
+        { id: 'identity', name: 'Identity', builtin: true, usedBy: 1, startLine: 1, endLine: 2, rawStartLine: 1, rawEndLine: 2 },
+        { id: 'git', name: 'A long block name that must stay with its short content', builtin: false, usedBy: 1, startLine: 4, endLine: 4, rawStartLine: 4, rawEndLine: 4 },
+      ], skills: [], mcps: [], missing: [],
     } } as never);
-    // jsdom has no layout: line n sits at 20n px from the top, and line 1 wraps onto two lines.
-    const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      return this.dataset.testid === 'managed-preview-rail' ? rect(10, 500) : rect(0, 0);
-    });
-    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(function (this: HTMLElement) {
-      const n = Number(this.dataset.previewLine);
-      if (!n) return [] as unknown as DOMRectList;
-      const rects = n === 1 ? [rect(20, 40), rect(40, 60)] : [rect(20 * (n + 1), 20 * (n + 2))];
-      return rects as unknown as DOMRectList;
-    });
     render(<PreviewPane agent={agent} />);
-    const text = await screen.findByTestId('managed-preview-text');
-    expect(text.textContent).toBe('You are release-lead.\nBe kind.\n\nWork on release-lead/standby.');
-    const check = () => waitFor(() => {
-      const lines = screen.getAllByTestId('managed-preview-rail-line');
-      expect(lines.map((l) => [l.dataset.startLine, l.dataset.endLine])).toEqual([['1', '2'], ['4', '4']]);
-      // Identity: from line 1's first wrapped line (20) to line 2's bottom (80), against the rail's top (10).
-      expect([lines[0].style.top, lines[0].style.height]).toEqual(['10px', '60px']);
-      expect([lines[1].style.top, lines[1].style.height]).toEqual(['90px', '20px']);
-      expect(screen.getByTestId('managed-preview-rail').textContent).toContain('lines 1 to 2');
-    });
-    await check();
+    await screen.findByTestId('managed-preview-text');
+    const blocks = screen.getAllByTestId('managed-preview-block');
+    expect(blocks.map((b) => [b.dataset.startLine, b.dataset.endLine])).toEqual([['1', '2'], ['4', '4']]);
+    expect(within(blocks[0]).getByTestId('managed-preview-block-label').textContent).toContain('Identity');
+    expect(within(blocks[1]).getByTestId('managed-preview-block-label').textContent).toContain('A long block name');
+    const source = () => screen.getAllByTestId('managed-preview-block-text').map((b) => b.textContent).join('');
+    expect(source()).toBe('You are release-lead.\nBe kind.\n\nWork on release-lead/standby.');
     fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
-    expect(text.textContent).toBe('You are @@AgentName.\nBe kind.\n\nWork on @@StandbyBranch.');
-    await check();
+    expect(source()).toBe('You are @@AgentName.\nBe kind.\n\nWork on @@StandbyBranch.');
+  });
+
+  it('uses raw ranges after multiline expansion, without moving Second or changing source bytes', async () => {
+    // Same POSIX LF-path fixture asserted against previewManagedSetup + delivered bytes in delivery.test.ts.
+    const value = {
+      instructions: 'Path ../linked\nproject/.clubhouse/agents/cool-gazelle/\n\nSecond',
+      rawInstructions: 'Path @@Path\n\nSecond',
+      blocks: [
+        { id: 'path', name: 'Path', builtin: false, usedBy: 1, startLine: 1, endLine: 2, rawStartLine: 1, rawEndLine: 1 },
+        { id: 'second', name: 'Second', builtin: false, usedBy: 1, startLine: 4, endLine: 4, rawStartLine: 3, rawEndLine: 3 },
+      ], skills: [], mcps: [], missing: [],
+      running: { instructions: 'Running ../old\npath/', rawInstructions: 'Running @@Path', settings: [], changes: ['Path changed'] },
+    };
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: JSON.parse(JSON.stringify(value)) } as never);
+    render(<PreviewPane agent={agent} />);
+    await screen.findByTestId('managed-preview-text');
+    const chunks = () => screen.getAllByTestId('managed-preview-block-text').map((b) => b.textContent);
+    expect(chunks()).toEqual(['Path ../linked\nproject/.clubhouse/agents/cool-gazelle/\n\n', 'Second']);
+    expect(chunks().join('')).toBe(value.instructions);
+    const second = () => screen.getAllByTestId('managed-preview-block')[1];
+    expect(within(second()).getByTestId('managed-preview-block-label').textContent).toBe('2 SecondCustom · lines 4 to 4');
+    expect(within(second()).getByTestId('managed-preview-block-text').textContent).toBe('Second');
+    expect(screen.getByTestId('managed-preview-running-text').textContent).toBe(value.running.instructions);
+    fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
+    expect(chunks()).toEqual(['Path @@Path\n\n', 'Second']);
+    expect(chunks().join('')).toBe(value.rawInstructions);
+    expect(within(second()).getByTestId('managed-preview-block-label').textContent).toBe('2 SecondCustom · lines 3 to 3');
+    expect(within(second()).getByTestId('managed-preview-block-text').textContent).toBe('Second');
+    expect(screen.getAllByTestId('managed-preview-block').map((b) => [b.dataset.startLine, b.dataset.endLine])).toEqual([['1', '1'], ['3', '3']]);
+    expect(screen.getByRole('heading', { name: 'Instructions 2 blocks, 3 lines' })).toBeTruthy();
+    expect(screen.getByTestId('managed-preview-running-text').textContent).toBe(value.running.rawInstructions);
+    fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
+    expect(chunks().join('')).toBe(value.instructions);
+    expect(within(second()).getByTestId('managed-preview-block-label').textContent).toBe('2 SecondCustom · lines 4 to 4');
+    expect(within(second()).getByTestId('managed-preview-block-text').textContent).toBe('Second');
+    expect(screen.getByTestId('managed-preview-running-text').textContent).toBe(value.running.instructions);
+  });
+
+  it.each(['absent', 'partial', 'out-of-range'])('keeps raw text intact when its ranges are unavailable (%s)', async (ranges) => {
+    const value = JSON.parse(JSON.stringify({
+      instructions: 'Path ../linked\nproject/.clubhouse/agents/cool-gazelle/\n\nSecond',
+      rawInstructions: 'Path @@Path\n\nSecond',
+      blocks: [
+        { id: 'path', name: 'Path', builtin: false, usedBy: 1, startLine: 1, endLine: 2, ...(ranges === 'partial' ? { rawStartLine: 1 } : ranges === 'out-of-range' ? { rawStartLine: 1, rawEndLine: 2 } : {}) },
+        { id: 'second', name: 'Second', builtin: false, usedBy: 1, startLine: 4, endLine: 4, ...(ranges === 'out-of-range' ? { rawStartLine: 4, rawEndLine: 4 } : {}) },
+      ], skills: [], mcps: [], missing: [],
+    }));
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value } as never);
+    render(<PreviewPane agent={agent} />);
+    await screen.findByTestId('managed-preview-text');
+    expect(screen.getAllByTestId('managed-preview-block-label')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
+    expect(screen.getByTestId('managed-preview-text').textContent).toBe(value.rawInstructions);
+    expect(screen.queryByTestId('managed-preview-block-label')).toBeNull();
+    expect(screen.getByTestId('managed-preview-unmapped').textContent).toContain('Showing it intact.');
+    fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
+    expect(screen.queryByTestId('managed-preview-unmapped')).toBeNull();
+    expect(screen.getAllByTestId('managed-preview-block-text').map((b) => b.textContent).join('')).toBe(value.instructions);
+  });
+
+  it.each(['', '\n', '\n\n'])('retains empty blocks, separators and trailing newlines (%j)', async (tail) => {
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: `\n\nrelease-lead\n\n${tail}`, rawInstructions: `\n\n@@AgentName\n\n${tail}`,
+      blocks: [
+        { id: 'empty-start', name: 'Empty start', builtin: false, usedBy: 1, startLine: 1, endLine: 1, rawStartLine: 1, rawEndLine: 1 },
+        { id: 'short', name: 'Short', builtin: false, usedBy: 1, startLine: 3, endLine: 3, rawStartLine: 3, rawEndLine: 3 },
+        { id: 'empty-end', name: 'Trailing block', builtin: false, usedBy: 1, startLine: 5, endLine: 5 + tail.length, rawStartLine: 5, rawEndLine: 5 + tail.length },
+      ], skills: [], mcps: [], missing: [],
+    } } as never);
+    render(<PreviewPane agent={agent} />);
+    await screen.findByTestId('managed-preview-text');
+    expect(screen.getAllByTestId('managed-preview-block-label')).toHaveLength(3);
+    const content = () => screen.getAllByTestId('managed-preview-block-text').map((b) => b.textContent);
+    expect(content()).toEqual(['\n\n', 'release-lead\n\n', tail]);
+    expect(content().join('')).toBe(`\n\nrelease-lead\n\n${tail}`);
+    fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
+    expect(content().join('')).toBe(`\n\n@@AgentName\n\n${tail}`);
   });
 
   it('renders a New agent draft through previewDraft, never an agent preview', async () => {

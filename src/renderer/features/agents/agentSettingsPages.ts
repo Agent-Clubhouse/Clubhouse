@@ -23,15 +23,15 @@ export type AgentSettingsPage =
   | 'preview';
 
 export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; label: string }> = [
-  { page: 'general', label: 'General' },
-  { page: 'instructions', label: 'Instructions' },
-  { page: 'skills', label: 'Skills' },
-  { page: 'mcp', label: 'MCP servers' },
   { page: 'settings', label: 'Settings' },
+  { page: 'skills', label: 'Skills' },
+  { page: 'instructions', label: 'Instructions' },
+  { page: 'mcp', label: 'MCP servers' },
+  { page: 'general', label: 'General' },
   { page: 'grants', label: 'Clubhouse permissions' },
   { page: 'permissions', label: 'Permissions' },
   { page: 'helpers', label: 'Helpers' },
-  { page: 'quick', label: 'Quick agents' },
+  { page: 'quick', label: 'Quick agent defaults' },
   { page: 'actions', label: 'Actions' },
   { page: 'preview', label: 'Preview' },
 ];

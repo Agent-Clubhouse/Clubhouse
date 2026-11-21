@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/Button';
-import { textareaClass } from '../agents/agentSettingsUi';
+import { InstructionEditor } from './InstructionEditor';
 import type { ManagedPart, ManagedPartConsumer, ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { ImpactDialog, needsImpactDialog } from './ImpactDialog';
 import { errorText, isStale, managed, sourceLabel, unwrap } from './managedApi';
@@ -230,7 +230,7 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
       data-block-id={id}
       className={`rounded-lg border bg-ctp-mantle px-2 pt-2 pb-2.5 flex flex-col gap-1.5 ${editing ? 'border-ctp-accent' : 'border-surface-1'}`}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           ref={handleRef}
@@ -262,23 +262,22 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
         </span>
       </div>
       {editing ? (
-        <div className="pl-11 flex flex-col gap-2">
+        <div className="min-w-0 flex flex-col gap-2">
           {others.length > 0 && (
             <p className="text-xs text-ctp-subtext1">
               You're editing {part.name} for {part.usedBy.length} agent{part.usedBy.length === 1 ? '' : 's'}.
             </p>
           )}
-          <label className="sr-only" htmlFor={`block-edit-${id}`}>{part.name} text</label>
-          <textarea
+          <InstructionEditor
             id={`block-edit-${id}`}
-            data-testid="managed-block-text"
-            className={`${textareaClass} min-h-28`}
+            label={`${part.name} text`}
+            testId="managed-block-text"
             value={editing.text}
-            onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+            onChange={(text) => setEditing({ ...editing, text })}
             disabled={busy}
           />
           <WildcardBar values={wildcardValues} />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button kind="primary" onClick={requestSave} disabled={busy} data-testid="managed-block-save">
               {part.usedBy.length > 1 ? `Save for ${part.usedBy.length} agents` : 'Save'}
             </Button>
