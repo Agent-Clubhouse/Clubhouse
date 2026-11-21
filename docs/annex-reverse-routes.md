@@ -185,3 +185,27 @@ Regression-only fixtures separately reproduced coalesced ready-state recovery
 and a failed-first/successful-second optimistic save as two genuine failures.
 Those originals remain separate from the earlier red/green runs; neither
 pre-fix execution is acceptance of the final revision/serialized-save source.
+
+### Current controller-read proof and review
+
+Reviewed source `d0b59fbc8e7274ad1679ca15c5ee0c0776421590`, tree
+`90745279c3d077679193875e4c68f54a33ed8a3e`, incorporates actual landed
+`d8c7247a4dccc1ebff01f0f28f8e61279bdf5437`. Fresh gated validation on
+2026-11-21 ran 886 focused tests plus 65 selected refusal tests: 951 passes,
+with 646 deliberate selector skips. Production and complete fixture types
+passed; scoped lint had zero errors/162 warnings against the current base's
+zero/163, with no added diagnostics.
+
+The initial integrity harness retained stale fd80 fixture expectations after
+lint passed; that failure remains an original. Landed d991 had changed eleven
+fixtures by 324 bytes. A separate corrected gated phone-only check proved all
+103 fixtures/1,529,625 bytes identical across current base, source and worktree,
+SHA256 `8b9b4065da56af163f07fb62efa127d4789f2fa8775e6fbb02e77c1805cb620f`.
+Lint was not rerun; an intervening gate refusal remains no execution.
+
+The same independent reviewer inspected this exact twelve-file delta and
+original focused/type/lint/phone evidence, finding no significant issues after
+the lifecycle and save-ordering corrections. No commands were rerun for that
+review. A later documentation-only delivery tip preserves all eleven
+code/config blobs; it is not another test execution or broader P7w, full-duplex,
+security, merge or release acceptance.
