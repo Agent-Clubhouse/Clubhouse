@@ -1,0 +1,155 @@
+#!/bin/zsh
+# Usage: desktop-test-gate.sh [--dry-run] <owner-label> <min-unused-GB> -- <command...>
+# Atomic single-slot desktop test admission. CPU idle >=40%, available >=min GB,
+# kernel free >=25%, compressor <=12 GB, swap <=last admission+128 MiB, no other
+# desktop vitest/tsc; explicit holds and the existing heavy Swift guard still apply.
+# Callers retry at most every 60 s and give up after 30 minutes, recording NOT RUN.
+LOCK=/tmp/clubhouse-desktop-test.lock
+LOG=/tmp/clubhouse-desktop-test-gate.log
+SWAPBASE=/tmp/clubhouse-desktop-test.swapbase
+dry_run=0
+[ "$1" = "--dry-run" ] && { dry_run=1; shift; }
+owner=$1; min=$2; shift 2; [ "$1" = "--" ] && shift
+if [ -z "$owner" ] || [[ "$min" != <-> ]] || [ "$min" -lt 1 ] || { [ "$dry_run" -eq 0 ] && [ "$#" -eq 0 ]; }; then
+  echo 'Usage: desktop-test-gate.sh [--dry-run] <owner> <min-GB> -- <command...>'; exit 75
+fi
+
+tomb() { print -r -- "$1" | awk '/G$/ {sub("G","");print int($1*1024); next} /M$/ {sub("M","");print int($1)}'; }
+unsigned() { [[ "$1" == <-> ]]; }
+decimal() { [[ "$1" =~ '^[0-9]+([.][0-9]+)?$' ]]; }
+
+# One complete observation. The original predicates/tolerance are retained.
+# Extra paging/free-swap fields qualify repair only; unreadable normal sensors
+# fail closed too. No mutable script overrides or live test-resource inputs.
+read_sample() {
+  local top_line vm_line swap_line pressure_line comm_line process_line reads_ok=1 value
+  top_line=$(top -l 1 -n 0) || reads_ok=0
+  idle=$(print -r -- "$top_line" | awk '/CPU usage/ {for(i=1;i<=NF;i++) if($i ~ /idle/) {gsub("%","",$(i-1)); print int($(i-1))}}')
+  unused=$(print -r -- "$top_line" | awk '/PhysMem/ {for(i=1;i<=NF;i++) if($i ~ /unused/) print $(i-1)}')
+  comp=$(print -r -- "$top_line" | awk '/PhysMem/ {for(i=1;i<=NF;i++) if($i ~ /compressor/) {gsub("\\(","",$(i-1)); print $(i-1)}}')
+  mb=$(tomb "$unused"); compmb=$(tomb "$comp")
+  swap_line=$(sysctl -n vm.swapusage) || reads_ok=0
+  swapmb=$(print -r -- "$swap_line" | awk '{for(i=1;i<=NF;i++) if($i=="used") {v=$(i+2); sub("M","",v); print int(v)}}')
+  swap_used=$(print -r -- "$swap_line" | awk '{for(i=1;i<=NF;i++) if($i=="used" && $(i+2) ~ /^[0-9]+([.][0-9]+)?M$/) {v=$(i+2); sub("M$","",v); print v}}')
+  swap_free=$(print -r -- "$swap_line" | awk '{for(i=1;i<=NF;i++) if($i=="free" && $(i+2) ~ /^[0-9]+([.][0-9]+)?M$/) {v=$(i+2); sub("M$","",v); print v}}')
+  if [ -e "$SWAPBASE" ]; then base=$(cat "$SWAPBASE" 2>/dev/null) || reads_ok=0; else base=$swapmb; fi
+  vm_line=$(vm_stat) || reads_ok=0
+  availmb=$(print -r -- "$vm_line" | awk -F: '/Pages (free|inactive|speculative|purgeable)/{gsub(/[ .]/,"",$2); s+=$2} END{print int(s*16384/1048576)}')
+  pageouts=$(print -r -- "$vm_line" | awk -F: '/^Pageouts:/{v=$2;gsub(/[[:space:]]/,"",v);if(v ~ /^[0-9]+\.$/) {sub(/\.$/,"",v);print v} else print "invalid"}')
+  swapouts=$(print -r -- "$vm_line" | awk -F: '/^Swapouts:/{v=$2;gsub(/[[:space:]]/,"",v);if(v ~ /^[0-9]+\.$/) {sub(/\.$/,"",v);print v} else print "invalid"}')
+  vm_complete=$(print -r -- "$vm_line" | awk -F: '/^Pages (free|inactive|speculative|purgeable):/{v=$2;gsub(/[[:space:]]/,"",v);if(v !~ /^[0-9]+\.$/ || seen[$1]++) bad=1;n++} END{print (!bad && n==4)?1:0}')
+  pressure_line=$(memory_pressure 2>/dev/null) || reads_ok=0
+  freepct=$(print -r -- "$pressure_line" | awk -F': ' '/free percentage/{gsub("%","",$2); print int($2)}')
+  comm_line=$(ps -axo comm=) || reads_ok=0
+  process_line=$(ps -axo pid=,comm=,args=) || reads_ok=0
+  reason=""
+  normal_readable=$reads_ok
+  for value in "$idle" "$mb" "$compmb" "$swapmb" "$availmb" "$freepct" "$base"; do
+    unsigned "$value" || normal_readable=0
+  done
+  decimal "$swap_used" || normal_readable=0
+  if [ "$normal_readable" -eq 0 ]; then reason=' unreadable_sample'; return; fi
+  [ "$idle" -lt 40 ] && reason="$reason idle=${idle}%<40"
+  [ "$availmb" -lt $((min*1024)) ] && reason="$reason available=${availmb}M<${min}G"
+  [ "$freepct" -lt 25 ] && reason="$reason mem_free_pct=${freepct}<25"
+  [ "$compmb" -gt 12288 ] && reason="$reason compressor=${comp}>12G"
+  [ "$swapmb" -gt $((base+129)) ] && reason="$reason swap_grew=${base}->${swapmb}M"
+  if [ -f /tmp/clubhouse-desktop-hold ]; then
+    hold=$(head -c 200 /tmp/clubhouse-desktop-hold)
+    allow=""; case "$hold" in allow=*) allow=${${hold#allow=}%%;*};; esac
+    case ",$allow," in *",$owner,"*) ;; *) reason="$reason explicit_hold(${hold:0:80})";; esac
+  fi
+  [ "$min" -ge 6 ] && print -r -- "$comm_line" | grep -qE '(^|/)(swift-frontend|swiftc|ld)$' && reason="$reason go_compiling_hold_heavy"
+  print -r -- "$process_line" | awk -v me=$$ '$1!=me && $2 ~ /(^|\/)node$/ && $0 ~ /vitest|tsc --noEmit|typescript\/bin\/tsc/ {found=1} END {exit !found}' && reason="$reason other_test_running"
+  return 0
+}
+
+baseline_age() {
+  local now modified
+  [ -f "$SWAPBASE" ] || return 1
+  now=$(date +%s) && modified=$(stat -f %m "$SWAPBASE") || return 1
+  unsigned "$now" && unsigned "$modified" && [ "$now" -ge "$modified" ] || return 1
+  age=$((now-modified))
+}
+
+repair_sample_readable() {
+  [ "$normal_readable" -eq 1 ] && [ "$vm_complete" -eq 1 ] && decimal "$swap_used" && decimal "$swap_free" && unsigned "$pageouts" && unsigned "$swapouts" || return 1
+  awk -v free="$swap_free" 'BEGIN {exit !(free >= 1024)}' || return 1
+  # Counter arithmetic must remain representable; a reset is tested separately.
+  [ "${#pageouts}" -le 15 ] && [ "${#swapouts}" -le 15 ]
+}
+
+if [ "$dry_run" -eq 1 ]; then
+  read_sample
+  baseline_age || age=unknown
+  [ -d "$LOCK" ] && reason="$reason slot_held"
+  echo "DRY_RUN: advisory only; guards=${reason:-pass} baseline_age_s=$age; locked sampling/revalidation required; no slot/baseline/child changes"
+  [ -z "$reason" ] && exit 0
+  exit 75
+fi
+
+if ! mkdir "$LOCK" 2>/dev/null; then echo "REFUSED: slot held by $(cat $LOCK/owner 2>/dev/null)"; exit 75; fi
+baseline_backup=''; baseline_temporary=''; repair_complete=0
+cleanup() {
+  if [ -n "$baseline_backup" ]; then
+    if [ "$repair_complete" -eq 0 ]; then
+      # Restore original bytes AND mtime if post-update revalidation refuses.
+      mv -f "$baseline_backup" "$SWAPBASE" || echo "REFUSED: baseline rollback failed; preserved $baseline_backup" >&2
+    else
+      rm -f "$baseline_backup"
+    fi
+  fi
+  [ -n "$baseline_temporary" ] && rm -f "$baseline_temporary"
+  rm -rf "$LOCK"
+}
+trap cleanup EXIT
+trap 'exit 75' INT TERM
+echo "$owner" > "$LOCK/owner"
+read_sample
+
+if [ "$reason" = " swap_grew=${base}->${swapmb}M" ] && baseline_age && [ "$age" -ge 1800 ]; then
+  old_base=$base; original_mtime=$(stat -f %m "$SWAPBASE") || { echo 'REFUSED: baseline metadata unreadable'; exit 75; }
+  first_used=$swap_used; previous_used=$swap_used; first_pageouts=$pageouts; first_swapouts=$swapouts
+  previous_pageouts=$pageouts; previous_swapouts=$swapouts; samples=''
+  for sample_number in 1 2 3; do
+    if [ "$sample_number" -gt 1 ]; then
+      sleep 30 || { echo 'REFUSED: repair sampling interrupted'; exit 75; }
+      read_sample
+    fi
+    # All normal guards are rechecked. Swap growth remains the ONLY exemption.
+    [ "$base" = "$old_base" ] || { echo "REFUSED: repair sample $sample_number baseline changed"; exit 75; }
+    if [ -n "$reason" ] && [ "$reason" != " swap_grew=${base}->${swapmb}M" ]; then
+      echo "REFUSED: repair sample $sample_number$reason"; exit 75
+    fi
+    repair_sample_readable || { echo "REFUSED: repair sample $sample_number unreadable_or_free_swap_below_1024"; exit 75; }
+    if ! awk -v current="$swap_used" -v previous="$previous_used" -v first="$first_used" 'BEGIN {exit !(current <= previous && first-current <= 32)}'; then
+      echo "REFUSED: unstable swap sample $sample_number"; exit 75
+    fi
+    if [ "$pageouts" -lt "$previous_pageouts" ] || [ "$swapouts" -lt "$previous_swapouts" ] || [ $((pageouts-first_pageouts)) -gt 256 ] || [ $((swapouts-first_swapouts)) -gt 256 ]; then
+      echo "REFUSED: paging activity/reset sample $sample_number"; exit 75
+    fi
+    samples="$samples sample$sample_number(used=$swap_used,free=$swap_free,pageouts=$pageouts,swapouts=$swapouts,idle=$idle,available=$availmb,freepct=$freepct,compressor=$compmb)"
+    previous_used=$swap_used; previous_pageouts=$pageouts; previous_swapouts=$swapouts
+  done
+  [ "$(stat -f %m "$SWAPBASE")" = "$original_mtime" ] || { echo 'REFUSED: baseline changed during sampling'; exit 75; }
+  echo "$(date -u +%FT%TZ) SWAP_REPAIR $owner old=$old_base new=$swapmb age_s=$age pageouts_delta=$((pageouts-first_pageouts)) swapouts_delta=$((swapouts-first_swapouts))$samples" | tee -a "$LOG" || { echo 'REFUSED: repair log failed'; exit 75; }
+  baseline_backup=$(mktemp "${SWAPBASE}.backup.XXXXXX") || { echo 'REFUSED: baseline backup failed'; exit 75; }
+  cp -p "$SWAPBASE" "$baseline_backup" || { rm -f "$baseline_backup"; baseline_backup=''; echo 'REFUSED: baseline backup failed'; exit 75; }
+  baseline_temporary=$(mktemp "${SWAPBASE}.repair.XXXXXX") || { echo 'REFUSED: baseline staging failed'; exit 75; }
+  print -r -- "$swapmb" > "$baseline_temporary" && mv -f "$baseline_temporary" "$SWAPBASE" || { echo 'REFUSED: baseline repair write failed'; exit 75; }
+  baseline_temporary=''
+  # Re-run the ordinary predicates using a fresh observation under the SAME slot.
+  read_sample
+  if ! repair_sample_readable; then echo 'REFUSED: unreadable post-repair sample'; exit 75; fi
+  if [ "$pageouts" -lt "$previous_pageouts" ] || [ "$swapouts" -lt "$previous_swapouts" ] || [ $((pageouts-first_pageouts)) -gt 256 ] || [ $((swapouts-first_swapouts)) -gt 256 ]; then
+    echo 'REFUSED: post-repair paging activity/reset'; exit 75
+  fi
+fi
+
+if [ -n "$reason" ]; then echo "REFUSED:$reason"; exit 75; fi
+echo "$swapmb" > "$SWAPBASE" || { echo 'REFUSED: baseline write failed'; exit 75; }
+repair_complete=1
+echo "$(date -u +%FT%TZ) START $owner idle=${idle}% unused=${unused} avail=${availmb}M freepct=${freepct} comp=${comp} swap=${swapmb}M pid=$$ cmd=$*" | tee -a "$LOG"
+"$@"; rc=$?
+echo "$(date -u +%FT%TZ) END $owner rc=$rc" | tee -a "$LOG"
+exit $rc

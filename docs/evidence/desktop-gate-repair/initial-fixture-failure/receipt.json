@@ -1,0 +1,51 @@
+{
+  "scope": "Authorized LIGHT fake-resource shell simulation ONLY; no live gate invocation, heavy admission, baseline repair or real child test",
+  "command": [
+    "python3",
+    "test/research/desktop-gate-repair/test_gate.py",
+    "-v"
+  ],
+  "exitCode": 1,
+  "startedAt": "2026-11-21T18:52:44.223194+00:00",
+  "finishedAt": "2026-11-21T18:54:00.545240+00:00",
+  "before": {
+    "head": "a6fd6317358ce19d5a90fe3ee8e7df2878c72d22",
+    "tree": "4cc1b0b0f7877425a78a288f316d94b4c5696424",
+    "status": "",
+    "sources": {
+      "test/research/desktop-gate-repair/README.md": "d750ff34ff9a65967e50df96f1d8e08bfe4f16e27cde1ef56753e2b998ba4907",
+      "test/research/desktop-gate-repair/candidate.zsh": "a3de264f42f9a9ef761e292f60d8ad9ce77e603dbec92f325c619646bb8baee4",
+      "test/research/desktop-gate-repair/gate.patch": "36e7383df0d67a9ba2e7d55f7013da650c63b6244b1767af6b25a4ee454da335",
+      "test/research/desktop-gate-repair/original.zsh": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+      "test/research/desktop-gate-repair/test_gate.py": "41f6238a01f18a9caf735db7b9f2b3fee59479523917a34a865d057d98fd2852"
+    },
+    "sealerSha256": "c7f798cc86d375fa289749aae9b406b66c8983bc8156d049480fd1ff4078a044",
+    "liveGateSha256": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+    "liveBaseline": {
+      "sha256": "b5e6c34c4682ddcd4ed5159f0cf79e6a5e7dd814410b5b7f2502ca34e876520b",
+      "mtimeNs": 1795267069576990368
+    }
+  },
+  "after": {
+    "head": "a6fd6317358ce19d5a90fe3ee8e7df2878c72d22",
+    "tree": "4cc1b0b0f7877425a78a288f316d94b4c5696424",
+    "status": "",
+    "sources": {
+      "test/research/desktop-gate-repair/README.md": "d750ff34ff9a65967e50df96f1d8e08bfe4f16e27cde1ef56753e2b998ba4907",
+      "test/research/desktop-gate-repair/candidate.zsh": "a3de264f42f9a9ef761e292f60d8ad9ce77e603dbec92f325c619646bb8baee4",
+      "test/research/desktop-gate-repair/gate.patch": "36e7383df0d67a9ba2e7d55f7013da650c63b6244b1767af6b25a4ee454da335",
+      "test/research/desktop-gate-repair/original.zsh": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+      "test/research/desktop-gate-repair/test_gate.py": "41f6238a01f18a9caf735db7b9f2b3fee59479523917a34a865d057d98fd2852"
+    },
+    "sealerSha256": "c7f798cc86d375fa289749aae9b406b66c8983bc8156d049480fd1ff4078a044",
+    "liveGateSha256": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+    "liveBaseline": {
+      "sha256": "b5e6c34c4682ddcd4ed5159f0cf79e6a5e7dd814410b5b7f2502ca34e876520b",
+      "mtimeNs": 1795267069576990368
+    }
+  },
+  "sourceSealEqual": true,
+  "liveGateUnchanged": true,
+  "liveBaselineUnchanged": true,
+  "rawSha256": "6a22d54aa3902d0d3bbb9d1ff2dff3b2e96f9c29bf93d0a9bb200e65b96290d1"
+}

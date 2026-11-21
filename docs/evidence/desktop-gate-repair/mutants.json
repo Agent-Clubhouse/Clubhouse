@@ -1,0 +1,59 @@
+[
+  {
+    "name": "remove-nonincreasing",
+    "replacement": {
+      "old": "current <= previous && first-current <= 32",
+      "new": "first-current <= 32"
+    },
+    "executedSha256": "cb4fd8833f4e862fc7388d6198fcd2d6d3c3f89277ca305bc4f95c21eeca6404",
+    "reconstructedSha256": "cb4fd8833f4e862fc7388d6198fcd2d6d3c3f89277ca305bc4f95c21eeca6404",
+    "targetCommand": [
+      "/Users/masonallen/.pyenv/versions/3.11.9/bin/python3",
+      "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py",
+      "--candidate",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-mutant-only-u80jaryc/mutant.zsh",
+      "GateTests.test_nonincreasing_raw_swap_not_truncated_integer",
+      "-v"
+    ],
+    "exitCode": 1,
+    "scope": "Temporary executed mutant deleted by fixture; reconstruction is byte-equal to recorded executed SHA, not a claimed retained original file"
+  },
+  {
+    "name": "relax-spread32-to33",
+    "replacement": {
+      "old": "first-current <= 32",
+      "new": "first-current <= 33"
+    },
+    "executedSha256": "5c21f20c00da932385fdcf505dee792b6dbb99155b739d0ad645e30b43d0364f",
+    "reconstructedSha256": "5c21f20c00da932385fdcf505dee792b6dbb99155b739d0ad645e30b43d0364f",
+    "targetCommand": [
+      "/Users/masonallen/.pyenv/versions/3.11.9/bin/python3",
+      "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py",
+      "--candidate",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-mutant-only-ljusz1ig/mutant.zsh",
+      "GateTests.test_spread_just_above_32_refuses",
+      "-v"
+    ],
+    "exitCode": 1,
+    "scope": "Temporary executed mutant deleted by fixture; reconstruction is byte-equal to recorded executed SHA, not a claimed retained original file"
+  },
+  {
+    "name": "relax-normal-tolerance128-to129",
+    "replacement": {
+      "old": "base+128",
+      "new": "base+129"
+    },
+    "executedSha256": "4ad79f38778b39f1755a3b7238ce65675ccaff247667690cc6bcb242da49ee39",
+    "reconstructedSha256": "4ad79f38778b39f1755a3b7238ce65675ccaff247667690cc6bcb242da49ee39",
+    "targetCommand": [
+      "/Users/masonallen/.pyenv/versions/3.11.9/bin/python3",
+      "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py",
+      "--candidate",
+      "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-mutant-only-ly7ib4av/mutant.zsh",
+      "GateTests.test_tolerance_128_is_unchanged",
+      "-v"
+    ],
+    "exitCode": 1,
+    "scope": "Temporary executed mutant deleted by fixture; reconstruction is byte-equal to recorded executed SHA, not a claimed retained original file"
+  }
+]

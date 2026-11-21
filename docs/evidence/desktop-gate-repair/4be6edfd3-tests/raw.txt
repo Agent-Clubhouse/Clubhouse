@@ -1,0 +1,24 @@
+test_absent_baseline_normal_first_admission_is_preserved (__main__.GateTests.test_absent_baseline_normal_first_admission_is_preserved) ... ok
+test_all_normal_guards_each_sample (__main__.GateTests.test_all_normal_guards_each_sample) ... ok
+test_child_failure_is_not_repair_failure_after_normal_admission (__main__.GateTests.test_child_failure_is_not_repair_failure_after_normal_admission) ... ok
+test_counter_reset_even_when_final_delta_small (__main__.GateTests.test_counter_reset_even_when_final_delta_small) ... ok
+test_dry_run_is_advisory_even_on_success_or_stale_baseline_or_held_slot (__main__.GateTests.test_dry_run_is_advisory_even_on_success_or_stale_baseline_or_held_slot) ... ok
+test_existing_slot_refuses_without_observation_or_owner_change (__main__.GateTests.test_existing_slot_refuses_without_observation_or_owner_change) ... ok
+test_free_swap_each_sample (__main__.GateTests.test_free_swap_each_sample) ... ok
+test_interrupted_sampling_or_log_failure_never_changes_baseline (__main__.GateTests.test_interrupted_sampling_or_log_failure_never_changes_baseline) ... ok
+test_nonincreasing_raw_swap_not_truncated_integer (__main__.GateTests.test_nonincreasing_raw_swap_not_truncated_integer) ... ok
+test_normal_revalidation_retains_128_tolerance (__main__.GateTests.test_normal_revalidation_retains_128_tolerance) ... ok
+test_normal_threshold_equality_and_minimum_scope (__main__.GateTests.test_normal_threshold_equality_and_minimum_scope) ... ok
+test_paging_limits_each_across_whole_window (__main__.GateTests.test_paging_limits_each_across_whole_window) ... ok
+test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) ... ok
+test_spread_just_above_32_refuses (__main__.GateTests.test_spread_just_above_32_refuses) ... ok
+test_success_exact_bounds_and_locked_revalidation (__main__.GateTests.test_success_exact_bounds_and_locked_revalidation) ... ok
+test_tolerance_128_is_unchanged (__main__.GateTests.test_tolerance_128_is_unchanged) ... ok
+test_unreadable_or_future_baseline_age_refuses (__main__.GateTests.test_unreadable_or_future_baseline_age_refuses) ... ok
+test_unreadable_samples_are_not_zero_or_safe (__main__.GateTests.test_unreadable_samples_are_not_zero_or_safe) ... ok
+test_young_baseline_never_samples_or_changes (__main__.GateTests.test_young_baseline_never_samples_or_changes) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 129.504s
+
+OK

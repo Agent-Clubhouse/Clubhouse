@@ -1,0 +1,184 @@
+test_absent_baseline_normal_first_admission_is_preserved (__main__.GateTests.test_absent_baseline_normal_first_admission_is_preserved) ... FAIL
+test_all_normal_guards_each_sample (__main__.GateTests.test_all_normal_guards_each_sample) ... ok
+test_child_failure_is_not_repair_failure_after_normal_admission (__main__.GateTests.test_child_failure_is_not_repair_failure_after_normal_admission) ... FAIL
+test_counter_reset_even_when_final_delta_small (__main__.GateTests.test_counter_reset_even_when_final_delta_small) ... ok
+test_dry_run_is_advisory_even_on_success_or_stale_baseline_or_held_slot (__main__.GateTests.test_dry_run_is_advisory_even_on_success_or_stale_baseline_or_held_slot) ... ok
+test_existing_slot_refuses_without_observation_or_owner_change (__main__.GateTests.test_existing_slot_refuses_without_observation_or_owner_change) ... ok
+test_free_swap_each_sample (__main__.GateTests.test_free_swap_each_sample) ... ok
+test_interrupted_sampling_or_log_failure_never_changes_baseline (__main__.GateTests.test_interrupted_sampling_or_log_failure_never_changes_baseline) ... ok
+test_nonincreasing_raw_swap_not_truncated_integer (__main__.GateTests.test_nonincreasing_raw_swap_not_truncated_integer) ... ok
+test_normal_revalidation_retains_128_tolerance (__main__.GateTests.test_normal_revalidation_retains_128_tolerance) ... FAIL
+test_normal_threshold_equality_and_minimum_scope (__main__.GateTests.test_normal_threshold_equality_and_minimum_scope) ... FAIL
+test_paging_limits_each_across_whole_window (__main__.GateTests.test_paging_limits_each_across_whole_window) ... ok
+test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) ... 
+  test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'idle': 39}) ... FAIL
+  test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'used': 4074}) ... FAIL
+  test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'node': True}) ... FAIL
+  test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'hold': 'new-hold'}) ... FAIL
+  test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'malformed_swap': True}) ... FAIL
+  test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'pageouts': 999}) ... FAIL
+  test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'swapouts': 2257}) ... FAIL
+test_spread_just_above_32_refuses (__main__.GateTests.test_spread_just_above_32_refuses) ... ok
+test_success_exact_bounds_and_locked_revalidation (__main__.GateTests.test_success_exact_bounds_and_locked_revalidation) ... FAIL
+test_tolerance_128_is_unchanged (__main__.GateTests.test_tolerance_128_is_unchanged) ... FAIL
+test_unreadable_or_future_baseline_age_refuses (__main__.GateTests.test_unreadable_or_future_baseline_age_refuses) ... ok
+test_unreadable_samples_are_not_zero_or_safe (__main__.GateTests.test_unreadable_samples_are_not_zero_or_safe) ... ok
+test_young_baseline_never_samples_or_changes (__main__.GateTests.test_young_baseline_never_samples_or_changes) ... ok
+
+======================================================================
+FAIL: test_absent_baseline_normal_first_admission_is_preserved (__main__.GateTests.test_absent_baseline_normal_first_admission_is_preserved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 225, in test_absent_baseline_normal_first_admission_is_preserved
+    self.assertEqual(r['rc'],0,r['output']);self.assertTrue(r['child']);self.assertEqual(r['after'][0],b'3945\n')
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 75 != 0 : Traceback (most recent call last):
+  File "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-5ck0vb9a/bin/top", line 18, in <module>
+    print('CPU usage: 10% user, 10% sys, %s%% idle'%s.get('idle',80))
+          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
+TypeError: not enough arguments for format string
+REFUSED: unreadable_sample
+
+
+======================================================================
+FAIL: test_child_failure_is_not_repair_failure_after_normal_admission (__main__.GateTests.test_child_failure_is_not_repair_failure_after_normal_admission)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 230, in test_child_failure_is_not_repair_failure_after_normal_admission
+    self.assertEqual(r['rc'],7,r['output']);self.assertTrue(r['child']);self.assertEqual(r['after'][0],b'3945\n');self.assertFalse(r['slot'])
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 75 != 7 : Traceback (most recent call last):
+  File "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-y_h_wbd_/bin/top", line 18, in <module>
+    print('CPU usage: 10% user, 10% sys, %s%% idle'%s.get('idle',80))
+          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
+TypeError: not enough arguments for format string
+REFUSED: unreadable_sample
+
+
+======================================================================
+FAIL: test_normal_revalidation_retains_128_tolerance (__main__.GateTests.test_normal_revalidation_retains_128_tolerance)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 204, in test_normal_revalidation_retains_128_tolerance
+    self.assertEqual(r['rc'],0,r['output']);self.assertEqual(r['after'][0],b'4073\n')
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 75 != 0 : Traceback (most recent call last):
+  File "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-jx0t33zz/bin/top", line 18, in <module>
+    print('CPU usage: 10% user, 10% sys, %s%% idle'%s.get('idle',80))
+          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
+TypeError: not enough arguments for format string
+REFUSED: unreadable_sample
+
+
+======================================================================
+FAIL: test_normal_threshold_equality_and_minimum_scope (__main__.GateTests.test_normal_threshold_equality_and_minimum_scope)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 180, in test_normal_threshold_equality_and_minimum_scope
+    r=self.run_gate([values]*4,minimum=4);self.assertEqual(r['rc'],0,r['output'])
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 75 != 0 : Traceback (most recent call last):
+  File "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-pdybwyan/bin/top", line 18, in <module>
+    print('CPU usage: 10% user, 10% sys, %s%% idle'%s.get('idle',80))
+          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
+TypeError: not enough arguments for format string
+REFUSED: unreadable_sample
+
+
+======================================================================
+FAIL: test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'idle': 39})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 200, in test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime
+    self.assertIn('SWAP_REPAIR',r['log']);self.assertNotIn(' START ',r['log'])
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SWAP_REPAIR' not found in ''
+
+======================================================================
+FAIL: test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'used': 4074})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 200, in test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime
+    self.assertIn('SWAP_REPAIR',r['log']);self.assertNotIn(' START ',r['log'])
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SWAP_REPAIR' not found in ''
+
+======================================================================
+FAIL: test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'node': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 200, in test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime
+    self.assertIn('SWAP_REPAIR',r['log']);self.assertNotIn(' START ',r['log'])
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SWAP_REPAIR' not found in ''
+
+======================================================================
+FAIL: test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'hold': 'new-hold'})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 200, in test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime
+    self.assertIn('SWAP_REPAIR',r['log']);self.assertNotIn(' START ',r['log'])
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SWAP_REPAIR' not found in ''
+
+======================================================================
+FAIL: test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'malformed_swap': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 200, in test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime
+    self.assertIn('SWAP_REPAIR',r['log']);self.assertNotIn(' START ',r['log'])
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SWAP_REPAIR' not found in ''
+
+======================================================================
+FAIL: test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'pageouts': 999})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 200, in test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime
+    self.assertIn('SWAP_REPAIR',r['log']);self.assertNotIn(' START ',r['log'])
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SWAP_REPAIR' not found in ''
+
+======================================================================
+FAIL: test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime (__main__.GateTests.test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime) (changed={'swapouts': 2257})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 200, in test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime
+    self.assertIn('SWAP_REPAIR',r['log']);self.assertNotIn(' START ',r['log'])
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SWAP_REPAIR' not found in ''
+
+======================================================================
+FAIL: test_success_exact_bounds_and_locked_revalidation (__main__.GateTests.test_success_exact_bounds_and_locked_revalidation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 126, in test_success_exact_bounds_and_locked_revalidation
+    self.assertEqual(r['rc'],0,r['output']);self.assertTrue(r['child']);self.assertEqual(r['after'][0],b'3913\n')
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 75 != 0 : Traceback (most recent call last):
+  File "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-2y9ia5c5/bin/top", line 18, in <module>
+    print('CPU usage: 10% user, 10% sys, %s%% idle'%s.get('idle',80))
+          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
+TypeError: not enough arguments for format string
+REFUSED: unreadable_sample
+
+
+======================================================================
+FAIL: test_tolerance_128_is_unchanged (__main__.GateTests.test_tolerance_128_is_unchanged)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 145, in test_tolerance_128_is_unchanged
+    self.assertEqual(r['rc'],0,r['output']);self.assertTrue(r['child'])
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 75 != 0 : Traceback (most recent call last):
+  File "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-bpwofwyf/bin/top", line 18, in <module>
+    print('CPU usage: 10% user, 10% sys, %s%% idle'%s.get('idle',80))
+          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
+TypeError: not enough arguments for format string
+REFUSED: unreadable_sample
+
+
+----------------------------------------------------------------------
+Ran 19 tests in 76.287s
+
+FAILED (failures=13)

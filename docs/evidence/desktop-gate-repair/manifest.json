@@ -1,0 +1,19 @@
+{
+  "scope": "Immutable source-bound light simulations; independent review pending; no live activation",
+  "source": "4be6edfd3b87fd8434c62550ea17bffb8d356bec",
+  "tree": "5d84bbae9f1bb4b19432e86291f4b9e85bf83009",
+  "files": {
+    "seal.py": "c7f798cc86d375fa289749aae9b406b66c8983bc8156d049480fd1ff4078a044",
+    "mutants.json": "41d0ead7eeb91449d67f54aee0cf80cb510737b6f0cfd7ddb96da8040a83acc0",
+    "REVIEW.md": "3927c92a90d150130149a8c85a4d56fac1860398a4e67c19a75d5c163b84dd50",
+    "4be6edfd3-tests/raw.txt": "83790886608aec7d69effd27a35ce2a7e849a9398de0a36371c1270bb2b4712e",
+    "4be6edfd3-tests/receipt.json": "e07c26c007f06caf948db7025fe7b932a8257d859581029399d81de7129eba0d",
+    "mutants/remove-nonincreasing.zsh.txt": "cb4fd8833f4e862fc7388d6198fcd2d6d3c3f89277ca305bc4f95c21eeca6404",
+    "mutants/relax-normal-tolerance128-to129.zsh.txt": "4ad79f38778b39f1755a3b7238ce65675ccaff247667690cc6bcb242da49ee39",
+    "mutants/relax-spread32-to33.zsh.txt": "5c21f20c00da932385fdcf505dee792b6dbb99155b739d0ad645e30b43d0364f",
+    "initial-fixture-failure/raw.txt": "6a22d54aa3902d0d3bbb9d1ff2dff3b2e96f9c29bf93d0a9bb200e65b96290d1",
+    "initial-fixture-failure/receipt.json": "66c2955599f2103f67f404b5100378b456684e2e559aff6dd95c3004fe0ec30e",
+    "4be6edfd3-mutants/raw.txt": "ae220bace6345aa0015815a3e715ead259033aee44a2d364409574a42689bace",
+    "4be6edfd3-mutants/receipt.json": "4f46c56d17b9220493c95edfee32f4632302047a2b04fb9044387797fad7f6cc"
+  }
+}
