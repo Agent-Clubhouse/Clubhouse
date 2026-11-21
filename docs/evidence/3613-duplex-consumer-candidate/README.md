@@ -9,7 +9,80 @@ Branch: `feat/3613-p7w-remaining-consumers`.
 This is an initial common-request/owned-stream implementation checkpoint, not
 full P7w/P8, current-app, security, phone or release acceptance. The
 [current-main map](../3613-duplex-current-c43/README.md) remains the capability
-and separate-gate inventory. No source push, PR or merge accompanies this record.
+and separate-gate inventory. The initial checkpoint was subsequently authorized,
+pushed and read back at `99083ca0d44930fa7e2287c9d824cb4042ed9b50`.
+No PR or merge accompanies this record.
+
+## Finite paired consumer delivery
+
+Smallest usable behavior: an existing remote-project consumer can receive its
+compatible snapshot, fetch binary icons and read current text files through one
+accepted reverse control connection, while retiring its owned stream, pending
+read and headless display handle on stop. Details, handoff workflows, phone and
+other feature closures are not part of this acceptance request.
+
+Paired fixture source: `6039da94c3385f5c8f2371d7b2ffa180113113aa`,
+tree `a5b2f61ba8c0a0cfa2281d2bf19900a4c29a9868`.
+Final fixture-only lint correction: `6d7aec19dbc11489633a0a3d52629e41341c6548`,
+tree `3196f2477ddfe3224d324e69b1cff85c70a52ad1`.
+The initial production blobs remain byte-identical to `41354e820…`.
+
+`test/annex-v2/annex-reverse-consumers.test.ts` uses two isolated desktop module
+contexts in one Node worker, real generated identities and the existing pinned
+TLS/P1 authorizer/control code. A has no listener. B's saved direct hint names an
+actual closed port, checked for `ECONNREFUSED` after the two owned live listeners
+have acquired different ports. The single usable forward preserves TLS bytes.
+Target route/subscription stores are fixtures, not the app's real handler,
+grant, filesystem-confinement or native shell boundary.
+
+The observed paired result is 81,937 all-byte-values bytes with SHA256
+`f7da8be077ec14d7c37a9e717948bedebdc1b9e4ec14cde538646611e18b643b`,
+a 68-byte PNG through the actual icon adapter, one `/control` upgrade, no ordinary
+HTTP, and one common request. The large envelope uses an existing handoff-shaped
+fixture route solely to exercise bulk transport; it does **not** establish real
+handoff offer/grant/manifest acceptance. The actual text-file adapter also returns
+the complete UTF-8 text.
+
+Before fixture-forced network teardown, the consumer stop leaves zero target
+subscriptions and in-flight reads, an aborted pending-read signal, no owned
+headless handle and zero late IPC; the independently accepted control link stays
+ready. Separately, fixture teardown observes zero forward/server sockets and
+both listeners stopped. There are no Electron/native-PTY/process-tree or firewall
+claims.
+
+| Attempt | Exact attribution and actual result |
+|---|---|
+| mutant-stream-sequence-17 | One genuine assertion failure: replacement sequence stayed 50 instead of 1 |
+| real-pair-18 | Pre-freeze WIP pair passed; not final-source proof |
+| pair-fixture-types-19 | Five actual new-fixture typing diagnostics retained; proper empty tuple, refusal guard, Duplex ownership and existing IconSnapshot view resolve them |
+| pair-fixture-types-20 / pair-eslint-21 | WIP complete fixture types and strict new-file lint passed |
+| frozen-real-pair-22 | Exact clean 6039 paired source passed with emitted byte/cleanup measurements |
+| mutant-real-owned-close-23 | Real target subscription leaked: one instead of zero **before** forced fixture teardown |
+| mutant-stream-dedup-24 | Same-epoch refusal caused two subscriptions instead of one |
+| restored-five-files-25 | Exact clean restored 6039: 610 passed, five files, both projects, at most two workers |
+| restored-production-types-26 / restored-fixture-types-27 | Exact 6039 production and complete fixture types passed, min6 |
+| restored-eslint-baseline-28 | Exact 6039 unchanged production/test lint inputs: zero errors, 160 versus 161 existing warnings, no introduced diagnostics |
+| restored-pair-eslint-29 | Actual final-chain failure: one `no-unsafe-finally` error in the new fixture |
+| final-pair-30 / final-fixture-types-31 / final-pair-eslint-32 | Exact clean 6d7: paired test passed with the same measurements; complete fixture types min6 passed; strict new-file lint min4 had zero errors/warnings |
+
+The three mutants ran sequentially and were restored. The restored source guard
+and five-file execution bind the original production bytes again:
+`annex-client.ts` SHA256
+`81ec2f07313ad58f6bd7aae4297ac3eee842ca8b71b3c731f23fdcb3f4c14833`.
+The final correction is only +8/-9 fixture lines: validate and capture listener
+identities on the successful test path, then emit their observed teardown state
+without an explicit throw in `finally`. All other 6039 inputs are unchanged;
+the corrected fixture alone was re-executed, typed and linted. The 610-case
+execution is credited to 6039, not relabeled as execution of 6d7.
+
+The command receipts bind the tracked paired fixture through their immutable
+HEAD/tree plus clean status/diff seals; the original fixed SHA256 input list did
+not separately list that newly tracked fixture. Originals are retained, not
+retroactively augmented. No broader regression or phone command was repeated
+after the fixture-only correction; production/phone inputs remain unchanged.
+The [paired manifest](paired-manifest.json) records each original/receipt hash,
+actual executed revision and the fixture-only source bridge. Attempts 17–32 add
+32 byte-verified archive files without overwriting attempts 01–16.
 
 ## Exact source execution
 
@@ -89,9 +162,9 @@ remains held. There are no handler, server, control/protocol/bulk, grant, phone
 contract or package/lock changes. Device changes only preserve direct versus
 reverse reach observation when renderer consumer state is live over reverse.
 
-Pending: independent exact-delta review; a bounded real paired one-forward /
-reverse-direct-blocked request/subscription/bytes/cleanup fixture; owner
-concurrence for Details read/positive-receipt integration; meaningful sequential
-mutation/restoration evidence for this source; #3714's separate narrow security
-review; #3711's separate explicit closure; current-app/P8 confinement, process
-cleanup and end-to-end acceptance. No historical proof transfers to these gates.
+The bounded paired and mutation milestones above supersede their initial
+deferred status. This delivery awaits independent exact-delta review and ordinary
+hosted CI/landing. Details owner concurrence, #3714 security, #3711 closure,
+current-app/P8 confinement/process cleanup and end-to-end acceptance remain
+separate unwaived gates, not blanket prerequisites for this useful read/stream
+increment. No historical proof transfers to those gates.
