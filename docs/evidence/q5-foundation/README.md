@@ -1,6 +1,7 @@
 # Q5 sequenced persistence foundation evidence
 
-Latest bounded slice: [reuse-barriers-28348cc4a.md](reuse-barriers-28348cc4a.md).
+Latest bounded slice: [W1-73c16d41c.md](W1-73c16d41c.md).
+Previous approved POSIX boundary: [reuse-barriers-28348cc4a.md](reuse-barriers-28348cc4a.md).
 Previous approved bounded reads: [bounded-page-reads-0826faa44.md](bounded-page-reads-0826faa44.md).
 Previous accepted prepared reader: [prepared-reader-a3b653e34.md](prepared-reader-a3b653e34.md).
 Previous approved journal: [entry-arbitration-71bd4d632.md](entry-arbitration-71bd4d632.md).

@@ -1,0 +1,19 @@
+2026-11-21T12:52:44Z START q5-ledger idle=89% unused=17G avail=33930M freepct=75 comp=8387M swap=1812M pid=65011 cmd=python3 test/research/q5-seal-implementation.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/73c16d41c-direct-W1-controls-attempt1 -- python3 -c import json, subprocess, tempfile
+failure = False
+for mode, marker in [
+    ('win32-sync-policy', 'PASS: non-truncating Windows reuse policy on actual host'),
+    ('win32-sync-failure', 'PASS: Windows sync permission refusal preserved'),
+]:
+    with tempfile.TemporaryDirectory(prefix='q5-W1-proof-') as directory:
+        argv = [subprocess.check_output(['which', 'node'], text=True).strip(), 'test/research/q5-index-process.cjs', directory, mode]
+        result = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(json.dumps({'mode': mode, 'argv': argv, 'expectedExit': 0, 'actualExit': result.returncode, 'raw': result.stdout}), flush=True)
+        if result.returncode != 0 or marker not in result.stdout:
+            failure = True
+raise SystemExit(1 if failure else 0)
+
+{"mode": "win32-sync-policy", "argv": ["/opt/homebrew/bin/node", "test/research/q5-index-process.cjs", "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-W1-proof-1vd4i1kg", "win32-sync-policy"], "expectedExit": 0, "actualExit": 0, "raw": "{\"mode\":\"win32-sync-policy\",\"actualPlatform\":\"darwin\",\"simulatedReusePlatform\":\"win32\",\"flags\":[262,260],\"syncs\":1,\"refusalCode\":null,\"closedDescriptors\":[-1,-1],\"unchanged\":true,\"O_RDWR\":2,\"O_TRUNC\":1024,\"O_CREAT\":512,\"O_APPEND\":8}\nPASS: non-truncating Windows reuse policy on actual host\n"}
+{"mode": "win32-sync-failure", "argv": ["/opt/homebrew/bin/node", "test/research/q5-index-process.cjs", "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-W1-proof-icftyc6i", "win32-sync-failure"], "expectedExit": 0, "actualExit": 0, "raw": "{\"mode\":\"win32-sync-failure\",\"actualPlatform\":\"darwin\",\"simulatedReusePlatform\":\"win32\",\"flags\":[262],\"syncs\":1,\"refusalCode\":\"EPERM\",\"closedDescriptors\":[-1],\"unchanged\":true,\"O_RDWR\":2,\"O_TRUNC\":1024,\"O_CREAT\":512,\"O_APPEND\":8}\nPASS: Windows sync permission refusal preserved\n"}
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/73c16d41c-direct-W1-controls-attempt1/receipt.json", "exitCode": 0, "sealEqual": true}
+2026-11-21T12:52:44Z END q5-ledger rc=0
+
