@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "source": "6007f8afa23bd507d1ce0802455037d93df1a26d",
+  "tree": "06a00f6e1d1b8236982a143b50ff06d22d60ad65",
+  "main": "c43ffb37d20650c542e449a8a04a9fd84e65b655",
+  "scope": "actual composed types + synthetic P1/journal hook execution; no production driver/consumer",
+  "checks": {
+    "types": {
+      "head": "6007f8afa23bd507d1ce0802455037d93df1a26d",
+      "tree": "06a00f6e1d1b8236982a143b50ff06d22d60ad65",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/tsc",
+        "--noEmit",
+        "-p",
+        "tsconfig.json"
+      ],
+      "selectedHashes": 53,
+      "wallSeconds": 8.448221
+    },
+    "tests": {
+      "head": "6007f8afa23bd507d1ce0802455037d93df1a26d",
+      "tree": "06a00f6e1d1b8236982a143b50ff06d22d60ad65",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/group-project-notice-ledger/journal.test.ts",
+        "src/main/services/group-project-notice-ledger/root-codec.test.ts",
+        "src/main/services/group-project-notice-ledger/runtime-hooks.test.ts",
+        "--maxWorkers=2"
+      ],
+      "selectedHashes": 53,
+      "wallSeconds": 11.1474
+    },
+    "lint": {
+      "head": "6007f8afa23bd507d1ce0802455037d93df1a26d",
+      "tree": "06a00f6e1d1b8236982a143b50ff06d22d60ad65",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/eslint",
+        "src/main/services/group-project-notice-ledger/framed-journal.ts",
+        "src/main/services/group-project-notice-ledger/legacy-codec.ts",
+        "src/main/services/group-project-notice-ledger/pages.ts",
+        "src/main/services/group-project-notice-ledger/pages.test.ts",
+        "src/main/services/group-project-notice-ledger/root-codec.ts",
+        "src/main/services/group-project-notice-ledger/root-codec.test.ts",
+        "src/main/services/group-project-notice-ledger/sparse-reader.ts",
+        "src/main/services/group-project-notice-ledger/sparse-state.ts",
+        "src/main/services/group-project-notice-ledger/validation.ts",
+        "src/main/services/group-project-notice-ledger/journal.ts",
+        "src/main/services/group-project-notice-ledger/journal.test.ts",
+        "src/main/services/group-project-notice-ledger/runtime-hooks.test.ts"
+      ],
+      "selectedHashes": 53,
+      "wallSeconds": 0.607254
+    }
+  },
+  "dependenciesRestored": true
+}

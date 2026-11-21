@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "q5-ledger",
+    "6",
+    "--",
+    "python3",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-c43-candidate-seal.py",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/6007f8afa-types-attempt1",
+    "--",
+    "./node_modules/.bin/tsc",
+    "--noEmit",
+    "-p",
+    "tsconfig.json"
+  ],
+  "startedAt": "2026-11-21T21:20:55.792792+00:00",
+  "finishedAt": "2026-11-21T21:21:05.077054+00:00",
+  "exitCode": 0
+}

@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "q5-ledger",
+    "4",
+    "--",
+    "python3",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-c43-candidate-seal.py",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/6007f8afa-tests-attempt1",
+    "--",
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/group-project-notice-ledger/journal.test.ts",
+    "src/main/services/group-project-notice-ledger/root-codec.test.ts",
+    "src/main/services/group-project-notice-ledger/runtime-hooks.test.ts",
+    "--maxWorkers=2"
+  ],
+  "startedAt": "2026-11-21T21:22:03.031579+00:00",
+  "finishedAt": "2026-11-21T21:22:15.016842+00:00",
+  "exitCode": 0
+}
