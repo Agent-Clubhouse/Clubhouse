@@ -59,3 +59,14 @@ See `mutations-run1.txt` and `mutations-run2.txt`. The scripts are saved as `.py
   - M13 service validating the caller object and copying after; M14 the same for the client.
 - **Equivalent, no credit:** M12, the renderer identity reset. A role-context change always unmounts the navigator, because the overview read returns to loading. The identity check is defense in depth, as in the Connections navigator.
 - Every restore was byte-identical (sha256 of the original bytes).
+
+### Count and test-state attribution (docs-only correction after `e92eed445`)
+
+- **Count:** 14 distinct mutations (M1–M14) in 15 executions. Run 1 covered M1–M12; run 2 re-ran M6 and added M13 and M14.
+  - Distinct: 13 of 14 discriminating, and M12 equivalent.
+  - Executions: 13 of 15 failed a test. Run 1 had 10 of 12 (M6 and M12 exited 0); run 2 had 3 of 3.
+  - The earlier report of "14/15 discriminating" was wrong.
+- **M6** is credited only through run 2, after the read-once getter controls were added. Its run 1 survival stays recorded in `mutations-run1.txt`.
+- **Source identity:** in both logs, the pre-mutation sha256 of every mutated product file equals its blob at `e92eed445`.
+- **Test state:** run 1 ran before the two read-once getter tests were added to `annex-client.test.ts` and `services/selected-dispatcher-details.test.ts`. Run 2 and the full suite ran with them, matching `e92eed445`.
+- The raw logs, scripts and full-suite record are unchanged. Only this README's digest changes in `SHA256SUMS`, and the original manifest stays readable at `e92eed445`.
