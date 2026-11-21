@@ -1,0 +1,59 @@
+{
+  "scope": "unintegrated foundation only; predecessor failures preserved; no feature acceptance",
+  "receipts": [
+    {
+      "path": "922542843-tests-attempt1",
+      "head": "922542843ddbc3454c4fbc28d0c163aa837f3132",
+      "tree": "d91c96c72fd8c4a1f55f09b23c21028a061b3924",
+      "exitCode": 0,
+      "rawSha256": "407f757c74b322a0dac4a4c87a7689cc7ae23fb57244287a6d66ebb8460bff31",
+      "receiptSha256": "c25391e8ce4667f21375535fd69af6eb7dac7b220f3494a0f5dd5b5b06d8fe95",
+      "sealEqual": true
+    },
+    {
+      "path": "922542843-types-attempt1",
+      "head": "922542843ddbc3454c4fbc28d0c163aa837f3132",
+      "tree": "d91c96c72fd8c4a1f55f09b23c21028a061b3924",
+      "exitCode": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "receiptSha256": "d26a0ad2c59398d0795d993975c8ab424333d147ff057dabea2fceb0afebddbc",
+      "sealEqual": true
+    },
+    {
+      "path": "922542843-lint-attempt1",
+      "head": "922542843ddbc3454c4fbc28d0c163aa837f3132",
+      "tree": "d91c96c72fd8c4a1f55f09b23c21028a061b3924",
+      "exitCode": 1,
+      "rawSha256": "22c58cb79d7f0a69459703c571a9cec3ab26cd192ed65bd269f1a82c2d634bb4",
+      "receiptSha256": "8281fd42360c49151466c811806549b64401cb55a6b4b9cd32d4cb403f0ee51c",
+      "sealEqual": true
+    },
+    {
+      "path": "36e66d2bc-tests-attempt1",
+      "head": "36e66d2bc938a8dc93bc95725e95ffbcc4aa88f3",
+      "tree": "3d1d55370febb4e2275dd0c449599ed1d1457b33",
+      "exitCode": 0,
+      "rawSha256": "6863617704b53de5f5b996ea61de7e8590707e7252eeda8506bb83274fb15458",
+      "receiptSha256": "d5e91319179a9e35c49b36e5403d99eec56349c17900e9722ff99c366b0d29ca",
+      "sealEqual": true
+    },
+    {
+      "path": "36e66d2bc-types-attempt1",
+      "head": "36e66d2bc938a8dc93bc95725e95ffbcc4aa88f3",
+      "tree": "3d1d55370febb4e2275dd0c449599ed1d1457b33",
+      "exitCode": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "receiptSha256": "fa64dfdea87c483bf669f163ea68cde6611cc9fa50f0f419bd8c5775c1df9cd9",
+      "sealEqual": true
+    },
+    {
+      "path": "36e66d2bc-lint-attempt1",
+      "head": "36e66d2bc938a8dc93bc95725e95ffbcc4aa88f3",
+      "tree": "3d1d55370febb4e2275dd0c449599ed1d1457b33",
+      "exitCode": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "receiptSha256": "a3749b77efcf7aede042cd782684f553c608f5cf6df53d01dab6d60205d47bfb",
+      "sealEqual": true
+    }
+  ]
+}

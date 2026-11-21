@@ -1,0 +1,9 @@
+2026-11-21T09:53:23Z START q5-ledger idle=89% unused=2744M avail=27422M freepct=81 comp=4904M swap=1812M pid=96727 cmd=python3 test/research/q5-seal-implementation.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/922542843-lint-attempt1 -- ./node_modules/.bin/eslint src/main/services/group-project-notice-ledger/intervals.ts src/main/services/group-project-notice-ledger/intervals.test.ts src/main/services/group-project-notice-ledger/state.ts src/main/services/group-project-notice-ledger/state.test.ts src/main/services/group-project-notice-ledger/journal.ts src/main/services/group-project-notice-ledger/journal.test.ts
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/src/main/services/group-project-notice-ledger/state.ts
+  43:80  error  Unexpected control character(s) in regular expression: \x00, \x1f  no-control-regex
+
+✖ 1 problem (1 error, 0 warnings)
+
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/922542843-lint-attempt1/receipt.json", "exitCode": 1, "sealEqual": true}
+2026-11-21T09:53:23Z END q5-ledger rc=1
