@@ -259,6 +259,39 @@ describe('lazy immutable notice index', () => {
     expect(await fs.readFile(file + '.saved')).toEqual(before);
   });
 
+  it('follows a swapped final symlink without O_NOFOLLOW and refuses after actual content read', async ({ skip }) => {
+    const directory = await home(); const initial = await NoticePageIndex.open(directory);
+    const root = await initial.set(undefined, 'stable-id', true);
+    const prefix = path.join(directory, root.digest.slice(0, 2)); const savedPrefix = prefix + '.saved';
+    const file = path.join(prefix, `${root.digest}.json`); const saved = path.join(savedPrefix, path.basename(file));
+    const before = await fs.readFile(file); const originalIdentity = await fs.lstat(file);
+    const preparedLink = path.join(directory, 'prepared-final-link');
+    try { await fs.symlink(saved, preparedLink); }
+    catch (error) {
+      // telemetry-exempt: only actual unsupported native fixture creation skips
+      if (process.platform === 'win32' && ['EPERM', 'ENOTSUP', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) { skip(); return; }
+      throw error;
+    }
+    let syncs = 0; let effectiveFlags!: number;
+    const index = await NoticePageIndex.open(directory, { testPlatform: 'win32', testFailure: async (point) => {
+      if (point === 'beforePageOpen') {
+        // Moving the directory preserves the target file's inode/mtime/ctime;
+        // this reaches the final lstat check without fabricating stat results.
+        await fs.rename(prefix, savedPrefix); await fs.mkdir(prefix); await fs.rename(preparedLink, file);
+      }
+    }, testOpenPage: async (location, flags) => {
+      effectiveFlags = flags & ~(constants.O_NOFOLLOW ?? 0);
+      const handle = await fs.open(location, effectiveFlags); const sync = handle.sync.bind(handle);
+      handle.sync = async () => { syncs++; await sync(); }; return handle;
+    } });
+    await expect(index.set(undefined, 'stable-id', true)).rejects.toThrow('changed while reading');
+    expect(effectiveFlags & (constants.O_NOFOLLOW ?? 0)).toBe(0);
+    expect(index.cacheStats.pageReadBytes).toBe(before.length); expect(syncs).toBe(0);
+    const targetIdentity = await fs.lstat(saved);
+    expect(targetIdentity.ino).toBe(originalIdentity.ino); expect(targetIdentity.dev).toBe(originalIdentity.dev);
+    expect((await fs.lstat(file)).isSymbolicLink()).toBe(true); expect(await fs.readFile(saved)).toEqual(before);
+  });
+
   it.skipIf(process.platform !== 'win32')('native Windows reuse sync succeeds without platform or descriptor overrides', async () => {
     const directory = await home(); const first = await NoticePageIndex.open(directory);
     const root = await first.set(undefined, 'stable-id', true);
