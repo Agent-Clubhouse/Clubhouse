@@ -1,0 +1,22 @@
+RESTORED exact baseline2766 after five bounded mutants; source seals follow
+3d30b01c5a256a3f7d7b2735e1506ea18922c8c2bb0e55ab60a446aa4104bb32  src/shared/chat/runtime.ts
+695423ea0ba6ecb91961b9420b0c64f316e3e26229271b0a12afd3e1360ee9c0  src/main/services/agent-runtime/runtime-coordinator.ts
+b74712c6a5373dc24ff913588ce714fd09bacda084b09d10f60d3bf17300de55  src/main/services/agent-runtime/runtime-coordinator.test.ts
+2026-11-21T19:36:35Z START lane-p2 idle=78% unused=9563M avail=32916M freepct=86 comp=1096M swap=3929M pid=14994 cmd=npm test -- --project main src/main/services/agent-runtime/runtime-coordinator.test.ts --maxWorkers=2
+
+> clubhouse@0.43.0-beta.7 test
+> vitest run --project main src/main/services/agent-runtime/runtime-coordinator.test.ts --maxWorkers=2
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/q5-runtime-p1-work
+
+
+ Test Files  1 passed (1)
+      Tests  39 passed (39)
+   Start at  14:36:35
+   Duration  126ms (transform 39ms, setup 6ms, import 43ms, tests 11ms, environment 0ms)
+
+2026-11-21T19:36:35Z END lane-p2 rc=0

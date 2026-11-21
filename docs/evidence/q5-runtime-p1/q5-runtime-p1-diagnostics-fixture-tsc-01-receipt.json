@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "attempt": "diagnostics-fixture-tsc-01",
+  "command": [
+    "npm",
+    "exec",
+    "--",
+    "tsc",
+    "--noEmit",
+    "--project",
+    "docs/evidence/q5-runtime-p1/fixture-tsconfig.json"
+  ],
+  "gate": "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+  "minimum": 4,
+  "gateSha256Before": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+  "gateSha256After": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+  "startedUtc": "2026-11-21T20:11:08.458310+00:00",
+  "endedUtc": "2026-11-21T20:11:10.088641+00:00",
+  "sourceBefore": {
+    "head": "0d07e07e36d144d4668bec378f2faf3e06d59695",
+    "tree": "92eedd815a7dddaab871ed00caffa96e90e88dcd",
+    "status": "",
+    "sha256": {
+      "src/shared/chat/runtime.ts": "3d30b01c5a256a3f7d7b2735e1506ea18922c8c2bb0e55ab60a446aa4104bb32",
+      "src/main/services/agent-runtime/runtime-coordinator.ts": "9107c5a2d55363479fc64f46becf8538a028dacb33a7fe1ca166cd19e8c065f0",
+      "src/main/services/agent-runtime/runtime-coordinator.test.ts": "b74712c6a5373dc24ff913588ce714fd09bacda084b09d10f60d3bf17300de55",
+      "src/main/services/dispatcher/dispatcher-copy.test.ts": "b34c0d94af5a7b8a864406c159658a276d3e28749eccb7c85f6eba058c34954b",
+      "package.json": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "eslint.config.mjs": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+      "docs/evidence/q5-runtime-p1/fixture-tsconfig.json": "3b833584d6df0cd9dc24d5365853d5924b6df4d03f20a404f5e5c01e42922e88"
+    }
+  },
+  "sourceAfter": {
+    "head": "0d07e07e36d144d4668bec378f2faf3e06d59695",
+    "tree": "92eedd815a7dddaab871ed00caffa96e90e88dcd",
+    "status": "",
+    "sha256": {
+      "src/shared/chat/runtime.ts": "3d30b01c5a256a3f7d7b2735e1506ea18922c8c2bb0e55ab60a446aa4104bb32",
+      "src/main/services/agent-runtime/runtime-coordinator.ts": "9107c5a2d55363479fc64f46becf8538a028dacb33a7fe1ca166cd19e8c065f0",
+      "src/main/services/agent-runtime/runtime-coordinator.test.ts": "b74712c6a5373dc24ff913588ce714fd09bacda084b09d10f60d3bf17300de55",
+      "src/main/services/dispatcher/dispatcher-copy.test.ts": "b34c0d94af5a7b8a864406c159658a276d3e28749eccb7c85f6eba058c34954b",
+      "package.json": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "eslint.config.mjs": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+      "docs/evidence/q5-runtime-p1/fixture-tsconfig.json": "3b833584d6df0cd9dc24d5365853d5924b6df4d03f20a404f5e5c01e42922e88"
+    }
+  },
+  "exitCode": 0,
+  "admissionObserved": true,
+  "sourceAndGateStable": true,
+  "rawOutput": "q5-runtime-p1-diagnostics-fixture-tsc-01-original.txt",
+  "rawSha256": "bdbe68733939b037f91e3515464b1baf3190a65e76ce59512c80989781720369"
+}

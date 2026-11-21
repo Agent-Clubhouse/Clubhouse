@@ -1,0 +1,6 @@
+2026-11-21T19:31:25Z START lane-p2 idle=88% unused=10G avail=33524M freepct=87 comp=1097M swap=3929M pid=12426 cmd=npm run typecheck
+
+> clubhouse@0.43.0-beta.7 typecheck
+> tsc --noEmit
+
+2026-11-21T19:31:33Z END lane-p2 rc=0
