@@ -12,7 +12,7 @@ import * as annexTls from '../services/annex-tls';
 import * as annexDevices from '../services/annex-devices';
 import * as networkChannel from '../services/annex-network-channel';
 import * as membership from '../services/annex-network-membership';
-import { onDevicesChanged } from '../services/annex-device-signal';
+import { devicesChanged, onDevicesChanged } from '../services/annex-device-signal';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, objectArg, stringArg, booleanArg } from './validation';
@@ -30,6 +30,10 @@ function broadcastPeersChanged(): void {
 }
 
 function applyNetworkSettings(settings: AnnexSettings, previous: AnnexSettings): void {
+  if ((settings.networkEnabled !== false) !== (previous.networkEnabled !== false)) {
+    if (settings.networkEnabled === false) annexClient.abortControllerReads();
+    devicesChanged();
+  }
   const bindingChanged = !!settings.loopbackOnly !== !!previous.loopbackOnly;
   if (settings.enableServer && (!previous.enableServer || bindingChanged)) {
     if (previous.enableServer) annexServer.stop();

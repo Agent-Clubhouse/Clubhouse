@@ -189,7 +189,7 @@ function controllerReadCurrent(lease: ControllerReadLease): boolean {
     && reverseControllerReadReady(lease.fingerprint);
 }
 
-function abortControllerReads(fingerprint?: string): void {
+export function abortControllerReads(fingerprint?: string): void {
   for (const lease of controllerReads) {
     if (!fingerprint || lease.fingerprint === fingerprint.toLowerCase()) lease.controller.abort();
   }

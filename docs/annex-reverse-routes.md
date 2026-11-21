@@ -118,6 +118,11 @@ pairing/pin/clock halt. Each read owns a cancellation/trust lease. Revocation,
 trust changes, explicit disconnect, stop, forget and host replacement retire
 that lease; a normal main-socket drop does not. Explicit Connect or Retry can
 lift a manual pause. Responses from a retired lease are never published.
+A successful network-enabled to network-disabled settings transition aborts
+only controller-read leases synchronously before notifying device observers.
+It uses the committed transition, not a possibly re-enabled cached flag.
+Failed and semantic no-op saves leave leases alone; direct requests and
+unrelated sockets keep their existing lifecycle.
 
 The receive limit remains exactly 8 MiB and the request timeout remains 30
 seconds. The local limit is checked against decoded inline bytes and before
@@ -125,8 +130,13 @@ bulk credit/allocation, without new wire fields or changes to existing target
 limits, P5/P6 authority, deadlines or retry policy. Existing controller
 404/405, 401/403 and 429 states remain unavailable, forbidden and rate-limited.
 
-The existing read-only renderer consumes device readiness transitions to
-reload after reverse loss/recovery and suppress stale results. It keeps its
+The existing read-only renderer consumes the optional desktop-local
+`reach.acceptedControl` observation to reload after accepted request-readiness
+loss/recovery and suppress stale results. This is local IPC metadata, not a
+phone/control/network wire field or routing authority. Aggregate direction
+presentation can stay up through an opened control or ordinary main link even
+when the accepted request link changes; it is not a substitute for this
+observation. Missing metadata retains the previous reverse-only hint. It keeps its
 polling, history selection and command-free UI. Global satellite connectivity,
 Settings/Details reads, writes, other adapters and subscriptions are unchanged.
 This is not full P7w/P8, terminal/transfer/federation or phone parity acceptance.
@@ -137,3 +147,18 @@ The fixture configuration uses ES2022 library declarations for existing test
 APIs supported by the test/Electron runtime, including `Array.at`. Production's
 ES2020 target and `noImplicitAny` remain unchanged; raw wire fixtures and chat
 envelopes are contextually typed rather than excluded or cast through `any`.
+Observed runtime qualification is Node 24.22.1 and Electron 45.2.3. Complete
+fixture typing originally exposed 91 individually mapped diagnostics: 90
+legacy-exposed and one introduced. These were 48 TS2550 library diagnostics,
+39 TS7018 contextual-fixture diagnostics (38 legacy, one new), one legacy
+TS2345 incomplete PeerTrust fixture and three legacy TS2322 chat-envelope
+diagnostics. All originals and their classifications are retained.
+
+Pre-fix source `4a9cdd11e8146e4379efd124f65b46dc99694da8` had 890 actual
+passes on `fd80a1c58e3362b03440f7a315db8918cda15ee4`, but independent review
+found the network-transition and mixed-direction observation gaps above.
+Regression-only fixtures reproduced two actual SAVE_SETTINGS semantic failures
+with three controls passing, and three UI semantic failures with two
+accepted-only controls passing. Earlier IPC fixture setup failures remain
+separate receipts, not semantic negatives. That pre-fix proof is not acceptance
+of the corrected/current-main composition.

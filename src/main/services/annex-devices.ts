@@ -196,7 +196,7 @@ function reachFor(peer: AnnexPeer, sat: annexClient.SatelliteConnection | undefi
       action: specific ?? `Add an address for ${name} with Address, such as a local forward to its Annex port.`,
     };
   }
-  return { outbound, inbound, ...(notice && { notice }) };
+  return { outbound, inbound, ...(control && { acceptedControl: sources.clientOn && control.acceptedHere }), ...(notice && { notice }) };
 }
 
 /** The device list from given sources. Exported for tests. */

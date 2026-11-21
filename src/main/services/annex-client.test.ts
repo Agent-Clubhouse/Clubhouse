@@ -4012,7 +4012,7 @@ describe('annex-client', () => {
   describe('chat across desktops (#2390)', () => {
     const FP = 'dd:04:dd:04';
     let requests: Array<{ url: string; method: string; body?: any }>;
-    let answers: Array<{ status: number; body: object; headers?: Record<string, string> }>;
+    let answers: Array<{ status: number; body: object; headers?: Record<string, string>; hold?: (finish: () => void) => void }>;
 
     beforeEach(() => {
       requests = [];
@@ -4026,9 +4026,12 @@ describe('annex-client', () => {
             requests.push({ url, method: options.method, body });
             const answer = answers.shift() ?? { status: 200, body: {} };
             const res = Object.assign(new EventEmitter(), { statusCode: answer.status, headers: answer.headers });
-            cb(res);
-            res.emit('data', Buffer.from(JSON.stringify(answer.body)));
-            res.emit('end');
+            const finish = () => {
+              cb(res);
+              res.emit('data', Buffer.from(JSON.stringify(answer.body)));
+              res.emit('end');
+            };
+            if (answer.hold) answer.hold(finish); else finish();
           },
         });
         return req;
@@ -4196,6 +4199,22 @@ describe('annex-client', () => {
           expect(signal?.aborted).toBe(false);
           finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
           expect(await pending).toEqual({ status: 'ok', value });
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not reset a main socket or cancel an already-sent direct controller request while retiring reverse leases', async () => {
+          let finishDirect!: () => void;
+          annexClient._addConnectedSatelliteForTesting(FP);
+          answers.push({ status: 200, body: value, hold: (resolve) => { finishDirect = resolve; } });
+          const direct = annexClient.requestControllerChatPage(FP);
+          expect(requests).toHaveLength(1);
+          await save({}, { ...enabled, networkEnabled: false });
+          expect(signal?.aborted).toBe(true);
+          expect(annexClient.getSatellite(FP)?.state).toBe('connected');
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          finishDirect();
+          expect(await direct).toEqual({ status: 'ok', value });
           expect(annexControl.request).toHaveBeenCalledTimes(1);
         });
 

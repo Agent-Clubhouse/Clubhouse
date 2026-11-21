@@ -25,7 +25,8 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
   const loadDevices = useAnnexStore((s) => s.loadDevices);
   const reverseReady = useAnnexStore((s) => s.devices.some((device) =>
     device.fingerprint.toLowerCase() === machine.toLowerCase() && device.role === 'member' && device.kind === 'desktop'
-    && device.reach?.outbound.state === 'up' && device.reach.outbound.via === 'reverse'));
+    && (device.reach?.acceptedControl
+      ?? (device.reach?.outbound.state === 'up' && device.reach.outbound.via === 'reverse'))));
   const [selected, setSelected] = useState(''); // empty follows the current conversation
   const [sessions, setSessions] = useState<ChatSessionSummary[] | null>(null);
   const [sessionsError, setSessionsError] = useState(false);
