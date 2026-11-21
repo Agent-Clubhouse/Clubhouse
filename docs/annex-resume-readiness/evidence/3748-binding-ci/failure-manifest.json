@@ -1,0 +1,77 @@
+{
+  "artifactProvenance": {
+    "current": {
+      "run": 44867358806,
+      "job": 136733974159,
+      "artifact": 14693135135,
+      "name": "test-results-windows-latest-1",
+      "head": "ade92c0099f3a398e3e97b0003da825360eaefb6",
+      "artifactApi": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14693135135/zip"
+    },
+    "comparison": {
+      "run": 44853735230,
+      "artifact": 14687822914,
+      "head": "69ef383cefec405d811f1c199f25c10cdc0395b6",
+      "artifactApi": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14687822914/zip"
+    }
+  },
+  "probeProvenance": "Local controlled probes attributed to the task transcript; patches apply to frozen ade92 original test. Raw probe output did not embed a source HEAD or exit receipt. The red/green patches and outputs are preserved exactly, not relabeled as sealed final-head executions.",
+  "originalTestSha256": "c508804690f9b02a48c618d660ba525496cc84a3b1aff37664202fca88573117",
+  "files": [
+    {
+      "file": "current-unit-1.zip",
+      "bytes": 566262,
+      "sha256": "9096af59f78b6005b0067f4a6100cfad9bdcf2f271a94c69ba9bd93ce5176a1f",
+      "originalLocalPath": "/tmp/annex-wake-3748-windows-unit-1.zip"
+    },
+    {
+      "file": "main69-unit-1.zip",
+      "bytes": 565576,
+      "sha256": "764035ca37beb2f9d64a6a1bc3cc91ed71d95cc8cac1256794e88b8ea21dade9",
+      "originalLocalPath": "/tmp/annex-wake-main69-windows-unit-1.zip"
+    },
+    {
+      "file": "prequeued-probe.txt",
+      "bytes": 945,
+      "sha256": "ce251c9b0a72624aaa2a92dcd57222efb93b5084b25e1e14150294e8058872b7",
+      "originalLocalPath": "/tmp/annex-wake-3748-binding-file-order-probe.txt"
+    },
+    {
+      "file": "mount-flush-red.txt",
+      "bytes": 3418,
+      "sha256": "8cb56c1dd616defb3390856235b4fb47087e4a3fb2d902b0ad7558e0a5dddbde",
+      "originalLocalPath": "/tmp/annex-wake-3748-mount-flush-probe.txt"
+    },
+    {
+      "file": "mount-flush-red.patch",
+      "bytes": 2531,
+      "sha256": "a317db0d1e56a2d5a81c8906e147f39a1b51aa532985b8036985782ac14c3594",
+      "originalLocalPath": "/tmp/annex-wake-3748-mount-flush-red.patch"
+    },
+    {
+      "file": "mount-flush-green.txt",
+      "bytes": 954,
+      "sha256": "ea5204678078f39eafdb3f7c0dfb433e0cc11b122e246163ab676f10a3027169",
+      "originalLocalPath": "/tmp/annex-wake-3748-mount-flush-green.txt"
+    },
+    {
+      "file": "mount-flush-green.patch",
+      "bytes": 2702,
+      "sha256": "535a099ea02ae21b5fac102b4ffe13beb6a260f3453f3c1dd8d375dec1659f1a",
+      "originalLocalPath": "/tmp/annex-wake-3748-mount-flush-green.patch"
+    },
+    {
+      "file": "current-job-log.txt.gz",
+      "bytes": 395881,
+      "sha256": "74d4298c3f066d26394ece9c9767b7ffd4bab6abaaf9633f7ba803ffe4c4d647",
+      "uncompressedBytes": 4153307,
+      "uncompressedSha256": "d09df1edb508e4c260bfea5a9afb43049fbca4a6db2d995666601a406859c460",
+      "encoding": "gzip, lossless; original raw job log retained in /tmp and GitHub job136733974159"
+    },
+    {
+      "file": "junit-case-excerpts.txt",
+      "sha256": "f71379063b47ef2cada7f3b627c10e5c178cdb90b68553c09c44ff19a7fdaede",
+      "kind": "labeled derivative; original zip payloads are unmodified"
+    }
+  ]
+}

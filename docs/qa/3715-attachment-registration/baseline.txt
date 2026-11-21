@@ -1,0 +1,58 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 $WORKTREE
+
+ × |main| src/main/services/annex-attachment-registration.test.ts > authoritative attachment registration (#3715), direct pinned HTTPS only > uploads exact bytes from an initialized but cold durable cache without warming it 102ms
+   → {"version":1,"error":"agent_not_found"}: expected 404 to be 200 // Object.is equality
+ × |main| src/main/services/annex-attachment-registration.test.ts > authoritative attachment registration (#3715), direct pinned HTTPS only > keeps an unchanged registration usable after a real benign watcher eviction 120ms
+   → {"version":1,"error":"agent_not_found"}: expected 404 to be 200 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-attachment-registration.test.ts > authoritative attachment registration (#3715), direct pinned HTTPS only > uploads exact bytes from an initialized but cold durable cache without warming it
+AssertionError: {"version":1,"error":"agent_not_found"}: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ expectUploaded src/main/services/annex-attachment-registration.test.ts:101:54
+     99| async function expectUploaded() {
+    100|   const result = await upload();
+    101|   expect(result.status, JSON.stringify(result.body)).toBe(200);
+       |                                                      ^
+    102|   expect(result).toMatchObject({ status: 200, body: { version: 1, byte…
+    103|   expect(typeof result.body.attachmentId).toBe('string');
+ ❯ src/main/services/annex-attachment-registration.test.ts:172:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/annex-attachment-registration.test.ts > authoritative attachment registration (#3715), direct pinned HTTPS only > keeps an unchanged registration usable after a real benign watcher eviction
+AssertionError: {"version":1,"error":"agent_not_found"}: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ expectUploaded src/main/services/annex-attachment-registration.test.ts:101:54
+     99| async function expectUploaded() {
+    100|   const result = await upload();
+    101|   expect(result.status, JSON.stringify(result.body)).toBe(200);
+       |                                                      ^
+    102|   expect(result).toMatchObject({ status: 200, body: { version: 1, byte…
+    103|   expect(typeof result.body.attachmentId).toBe('string');
+ ❯ src/main/services/annex-attachment-registration.test.ts:185:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  00:26:33
+   Duration  1.81s (transform 1.16s, setup 4ms, import 1.44s, tests 291ms, environment 0ms)

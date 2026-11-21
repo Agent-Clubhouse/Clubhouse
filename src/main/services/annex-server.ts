@@ -4747,6 +4747,7 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
   if (!principal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
   const epoch = mobileCommands.epoch;
   const authorized = () => mobileCommands.epoch === epoch && stillAuthorized(ctx.principal, authorizerDeps);
+  let registrationLease: agentConfig.DurableRegistrationLease | null = null;
   let bodyRead = false;
   const refuse = (status: number, error: string, retryAfterMs?: number) => {
     if (retryAfterMs !== undefined) ctx.res.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
@@ -4763,14 +4764,18 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
     const agentId = decodeURIComponent(match[1]);
     if (!isUploadContentType(ctx.req.headers['content-type'])) { refuse(415, 'unsupported_media_type'); return; }
     mobileAttachments.checkLimits(principal, Math.min(Number(ctx.req.headers['content-length']) || 0, CHAT_IMAGE_MAX_BYTES));
+    const projectGeneration = projectStore.projectRegistryMutationState().generation;
     const info = await findMobileAgent(agentId);
     if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(agentId)) { refuse(404, 'agent_not_found'); return; }
     const runtime = getAgentRuntime(agentId);
     if (!runtime || runtime.kind !== 'chat' || !runtime.isRunning()) { refuse(409, 'not_chat'); return; }
     if (runtime.getCapabilities?.()?.images !== true) { refuse(409, 'images_not_supported'); return; }
     const quick = trackedQuickAgents.get(agentId);
-    const projectGeneration = projectStore.projectRegistryMutationState().generation;
     const registration = info && !isDisposedAgent(info.config) ? { project: info.project, createdAt: info.config.createdAt } : undefined;
+    if (registration && !isDispatcherProjectId(registration.project.id)) {
+      registrationLease = await agentConfig.readDurableRegistrationLease(registration.project.path, agentId, registration.createdAt);
+      if (!registrationLease) { refuse(404, 'agent_not_found'); return; }
+    }
     const body = await readCappedBody(ctx.req, CHAT_IMAGE_MAX_BYTES);
     bodyRead = true;
     // A peer can be revoked while its body is streaming.
@@ -4784,9 +4789,10 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
       if (registration) {
         const projects = projectStore.projectRegistryMutationState();
         if (projects.pending || projects.generation !== projectGeneration) throw new MobileUploadError('agent_not_found', 404);
-        const current = isDispatcherProjectId(registration.project.id) ? activeDispatcher(agentId)?.config
-          : agentConfig.peekCachedDurableConfig(registration.project.path, agentId);
-        if (!current || isDisposedAgent(current) || current.createdAt !== registration.createdAt) throw new MobileUploadError('agent_not_found', 404);
+        if (isDispatcherProjectId(registration.project.id)) {
+          const current = activeDispatcher(agentId)?.config;
+          if (!current || isDisposedAgent(current) || current.createdAt !== registration.createdAt) throw new MobileUploadError('agent_not_found', 404);
+        } else if (!registrationLease?.isCurrent()) throw new MobileUploadError('agent_not_found', 404);
       } else if (!quick || trackedQuickAgents.get(agentId) !== quick) throw new MobileUploadError('agent_not_found', 404);
     };
     const result = await mobileAttachments.upload(principal, agentId, body, beforeWrite);
@@ -4796,6 +4802,8 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
     // telemetry-exempt: bounded upload errors go to the caller; image bytes are never logged.
     if (err instanceof MobileUploadError) refuse(err.statusCode, err.code, err.retryAfterMs);
     else refuse(400, 'upload_failed');
+  } finally {
+    await registrationLease?.close();
   }
 }
 

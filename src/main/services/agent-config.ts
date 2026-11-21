@@ -1567,6 +1567,116 @@ export function readAgentConnectionCacheForDisplay(projectPath: string, agentId:
   } catch { return unavailable('invalid'); }
 }
 
+export interface DurableRegistrationLease {
+  isCurrent(): boolean;
+  close(): Promise<void>;
+}
+
+/** A registration lease with fresh, synchronous primary reads at effect boundaries; never loads the mutable cache. */
+export async function readDurableRegistrationLease(
+  projectPath: string, agentId: string, createdAt: string,
+): Promise<DurableRegistrationLease | null> {
+  const file = agentsConfigPath(projectPath);
+  let handle: fsp.FileHandle | undefined;
+  const anchorPaths = [projectPath, clubhouseDir(projectPath)];
+  let anchors: fs.BigIntStats[];
+  const refused = (reason: string) => {
+    appLog('core:agent-config', 'warn', 'Cannot verify durable registration for an effect', {
+      meta: { projectPath, agentId, reason },
+    });
+  };
+  const readFailure = (error: unknown): boolean => {
+    if (error instanceof SyntaxError) { refused('invalid_primary_json'); return true; }
+    if (error instanceof Error && 'code' in error && typeof error.code === 'string'
+      && ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'EIO', 'ELOOP', 'EMFILE', 'ENFILE',
+        'EBUSY', 'ESTALE', 'EBADF', 'ENODEV', 'ENXIO', 'ETIMEDOUT', 'EAGAIN', 'EINVAL',
+        'ENOTSUP', 'EISDIR', 'ENOMEM', 'ERR_FS_FILE_TOO_LARGE'].includes(error.code)) {
+      refused(error.code); return true;
+    }
+    return false;
+  };
+  const sameFile = (a: fs.BigIntStats, b: fs.BigIntStats) => b.isFile()
+    && a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mode === b.mode
+    && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+  const directoriesMatch = () => anchorPaths.every((member, index) => {
+    const current = fs.statSync(member, { bigint: true });
+    return current.isDirectory() && anchors[index].dev === current.dev && anchors[index].ino === current.ino;
+  });
+  const registrationMatches = (bytes: Buffer) => {
+    const parsed: unknown = JSON.parse(bytes.toString('utf8'));
+    if (!Array.isArray(parsed) || !parsed.every(isAgentRecord)
+      || parsed.some((agent) => typeof agent.name !== 'string' || !agent.name
+        || typeof agent.createdAt !== 'string' || !agent.createdAt
+        || agent.worktreePath !== undefined && typeof agent.worktreePath !== 'string')
+      || validateAgentConfigs(parsed).some((issue) => issue.severity === 'error')
+      || normalizeHelperFields(parsed.map((agent) => ({ ...agent }))) > 0) {
+      refused('invalid_primary_records'); return false;
+    }
+    const agent = parsed.find((record) => record.id === agentId);
+    return !!agent && !isDisposedAgent(agent) && agent.createdAt === createdAt;
+  };
+  try {
+    anchors = await Promise.all(anchorPaths.map((member) => fsp.stat(member, { bigint: true })));
+    if (anchors.some((anchor) => !anchor.isDirectory())) { refused('registration_directory_missing'); return null; }
+    handle = await fsp.open(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+    const snapshot = await handle.stat({ bigint: true });
+    if (!snapshot.isFile()) { refused('primary_not_file'); return null; }
+    const bytes = await handle.readFile();
+    if (!sameFile(snapshot, await handle.stat({ bigint: true }))
+      || !sameFile(snapshot, fs.statSync(file, { bigint: true })) || !directoriesMatch()
+      || !registrationMatches(bytes)) {
+      refused('registration_changed_while_reading'); return null;
+    }
+  } catch (error) {
+    if (!readFailure(error)) throw error;
+    return null;
+  } finally {
+    await handle?.close();
+  }
+
+  let active = true;
+  let valid = true;
+  // Local mutations can revoke registration before their deferred flush.
+  // A cache miss grants nothing: the effect must still verify the current primary bytes.
+  const cacheMatches = () => {
+    const entry = configCache.get(projectPath);
+    const current = entry?.agentsById.get(agentId);
+    return !entry || !!current && !isDisposedAgent(current) && current.createdAt === createdAt;
+  };
+  const isCurrent = () => {
+    if (!active || !valid) return false;
+    let fd: number | undefined;
+    try {
+      if (!cacheMatches() || !directoriesMatch()) { valid = false; return false; }
+      fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+      const snapshot = fs.fstatSync(fd, { bigint: true });
+      if (!snapshot.isFile()) { refused('primary_not_file'); valid = false; return false; }
+      const bytes = fs.readFileSync(fd);
+      valid = sameFile(snapshot, fs.fstatSync(fd, { bigint: true }))
+        && sameFile(snapshot, fs.statSync(file, { bigint: true })) && directoriesMatch()
+        && registrationMatches(bytes);
+      return valid;
+    } catch (error) {
+      if (!readFailure(error)) throw error;
+      valid = false; return false;
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+    }
+  };
+  if (!isCurrent()) return null;
+  const unsubscribe = onAgentConfigChanged((changed) => {
+    if (changed === projectPath && !cacheMatches()) valid = false;
+  });
+  return {
+    isCurrent,
+    async close() {
+      if (!active) return;
+      active = false;
+      unsubscribe();
+    },
+  };
+}
+
 /**
  * A project's agents, for passive reads that must change nothing (#2653, #3686).
  * getDurableConfig and listDurable use this snapshot. Mutable loading is reserved

@@ -1,0 +1,123 @@
+{
+  "schema": 1,
+  "validatedHead": "ad4edfd11d0b8c80853c95acbe8fabafe342bba1",
+  "endingHead": "ad4edfd11d0b8c80853c95acbe8fabafe342bba1",
+  "base": "69ef383cefec405d811f1c199f25c10cdc0395b6",
+  "startedAt": "2026-11-21T04:34:31.950Z",
+  "finishedAt": "2026-11-21T04:34:48.348Z",
+  "trackedContentUnchanged": true,
+  "sourceTree": "e9c841d3166dc82fab00024b0470cf7cfbae231e",
+  "scriptsTree": "795d2e692a745fd348c90115bad3e82eb513b43c",
+  "node": "v24.22.1",
+  "platform": "darwin",
+  "cpuCount": 16,
+  "packageLockSha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+  "dependencyLocation": "/Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules",
+  "verifiedNonoptionalDependencyPackages": 1176,
+  "config": {
+    "file": "vitest-config.txt",
+    "sha256": "1fad7d172513bd4774df47e3a495d06e48871b4a14c3ba085196bd3482f01fbe"
+  },
+  "rawOutputPolicy": "stdout and stderr share an output file descriptor; files are unmodified captures. Empty output plus exitCode 0 is an observed successful check. Raw payloads are excluded only from whitespace checking, not integrity checks.",
+  "results": [
+    {
+      "name": "admission",
+      "command": [
+        "uptime"
+      ],
+      "startedAt": "2026-11-21T04:34:31.950Z",
+      "finishedAt": "2026-11-21T04:34:31.954Z",
+      "exitCode": 0,
+      "signal": null,
+      "spawnError": null,
+      "file": "admission.txt",
+      "bytes": 66,
+      "sha256": "0619580a51444fa97bf3595dbbf05b246761fd94248d7b2735bd18de140812e3"
+    },
+    {
+      "name": "tests",
+      "command": [
+        "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "--config",
+        "/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/.annex-proof-56f3ca49-6ffe-4fb0-9d0e-3e2c5f97ce69.config.ts",
+        "--configLoader",
+        "runner",
+        "--project",
+        "main",
+        "src/main/services/annex-client.test.ts",
+        "src/main/services/annex-client-buffer.test.ts",
+        "src/main/ipc/annex-client-handlers.test.ts",
+        "--maxWorkers",
+        "1",
+        "--no-file-parallelism"
+      ],
+      "startedAt": "2026-11-21T04:34:31.955Z",
+      "finishedAt": "2026-11-21T04:34:37.257Z",
+      "exitCode": 0,
+      "signal": null,
+      "spawnError": null,
+      "file": "tests.txt",
+      "bytes": 262,
+      "sha256": "a2df094513675a314cc614aa06ffffd4a26eed42c70b03ed2b7a37d6d04f64a2"
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+        "node_modules/typescript/bin/tsc",
+        "--noEmit",
+        "--incremental",
+        "false"
+      ],
+      "startedAt": "2026-11-21T04:34:37.257Z",
+      "finishedAt": "2026-11-21T04:34:47.375Z",
+      "exitCode": 0,
+      "signal": null,
+      "spawnError": null,
+      "file": "typecheck.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "lint",
+      "command": [
+        "/opt/homebrew/Cellar/node@24/24.22.1/bin/node",
+        "node_modules/eslint/bin/eslint.js",
+        "src/main/services/annex-client.ts",
+        "src/main/services/annex-client.test.ts",
+        "scripts/annex-resume-readiness-proof.mjs"
+      ],
+      "startedAt": "2026-11-21T04:34:47.375Z",
+      "finishedAt": "2026-11-21T04:34:48.290Z",
+      "exitCode": 0,
+      "signal": null,
+      "spawnError": null,
+      "file": "lint.txt",
+      "bytes": 17749,
+      "sha256": "649a0a8bd12bfd6f7c03803f8b9012604a47ce8d87c01ed6ccaf5d116180d03f"
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check",
+        "69ef383cefec405d811f1c199f25c10cdc0395b6",
+        "ad4edfd11d0b8c80853c95acbe8fabafe342bba1",
+        "--",
+        ".",
+        ":(exclude)docs/annex-resume-readiness/evidence/**"
+      ],
+      "startedAt": "2026-11-21T04:34:48.291Z",
+      "finishedAt": "2026-11-21T04:34:48.315Z",
+      "exitCode": 0,
+      "signal": null,
+      "spawnError": null,
+      "file": "diff-check.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}
