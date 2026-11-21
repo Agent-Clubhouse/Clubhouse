@@ -97,7 +97,7 @@ type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'a
 
 ## Client
 
-`requestAgentDetails` (`annex-client.ts:2683-2700`):
+`requestAgentDetails` (`annex-client.ts:2683-2721`):
 - **Capture:** copy the query once before any await, validate the copy, then build a frozen page. The URL params are `card`, `source`, `member`, `selection`.
 - **Response:** must pass `isRemoteAgentDetails(body, agentId)` and be page-only with an `inventoryPage` that passes `isRemoteCanvasBoardPage`, with equal `member`, `selection` and `agentId`. Otherwise `error`.
 - **Status mapping:**
