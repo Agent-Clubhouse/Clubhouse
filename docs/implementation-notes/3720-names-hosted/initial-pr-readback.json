@@ -1,0 +1,53 @@
+{
+  "observedAt": "2026-11-21T13:30:59.199Z",
+  "result": {
+    "status": "fulfilled",
+    "value": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Action completed."
+        }
+      ],
+      "structuredContent": {
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3766",
+        "number": 3766,
+        "state": "open",
+        "merged": false,
+        "mergeable": true,
+        "draft": false,
+        "body": "Adds pure, currently unwired member-name value primitives for Refs #3720: fixed trim/UTF-16 validation, detached payload snapshots, explicit canonical UTF-8 bytes, deterministic epoch/order comparisons, and explicit clock/skew arithmetic. No existing protocol or runtime flow changes.\n\nExact source `13844778782e87f33608fcf86619a217d6803f8c` validation:\n\n- 126/126 tests, full TypeScript check, targeted ESLint and base-to-head diff check passed.\n- Thirteen safeguard mutants failed on assertions; byte-restored source passed 126/126 again.\n- Eleven canonical byte/SHA vectors and ten string cases match immutable contract objects, independently reproduced in Python and by QA. Product code neither computes nor verifies hashes.\n- [Independent exact-source QA](https://github.com/Agent-Clubhouse/Clubhouse/blob/2a85de28fd56058ee21acc1b2761043c9803b682/docs/qa-transfer/2026-11-20/reports/3720-name-primitives-138447787-review.md) and [immutable evidence](https://github.com/Agent-Clubhouse/Clubhouse/tree/34b85c945c31692a7692a8c6668e5518baae045a/docs/implementation-notes/3720-name-primitives) retain 34 seals, 24 actual receipts and the original failures.\n\nThe original first red label actually records a Vite fixture-transform failure before API import, not a product defect; its raw result is retained. The corrected loader then reached the absent-module red (zero tests). The initial untracked 122-test run and intermediate 125-test run remain historical only.\n\nPayloads are detached, not frozen; byte arrays are fresh and mutable. IDs, hashes, epochs and stamps confer no authority. Primitives require lowercase fingerprints; future callers must handle that requirement explicitly at a reviewed boundary while the existing case-insensitive legacy codec remains unchanged. No record-ID verification, store, negotiation/transport, admission/grants, display resolver, mixed-version, readiness, live or release acceptance is claimed. Hosted exact-head CI remains required.\n",
+        "title": "Add deterministic member name value primitives",
+        "base": "main",
+        "base_sha": "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+        "head": "annex-wake-readiness/3720-name-primitives",
+        "head_sha": "13844778782e87f33608fcf86619a217d6803f8c",
+        "head_repo_id": 1158026389,
+        "head_repo_full_name": "Agent-Clubhouse/Clubhouse",
+        "merge_commit_sha": "cda894f23a5ff1a019bace13fdac35a277fed412",
+        "user": {
+          "login": "masra91",
+          "name": "masra91",
+          "email": null,
+          "avatar_url": "https://avatars.githubusercontent.com/u/1669494?v=4",
+          "id": 1669494
+        },
+        "requested_reviewers": null,
+        "requested_team_reviewers": null,
+        "diff": null,
+        "comments": null,
+        "created_at": "2026-11-21T13:30:50Z",
+        "updated_at": "2026-11-21T13:30:50Z",
+        "closed_at": null,
+        "merged_at": null,
+        "commits": 4,
+        "changed_files": 4,
+        "additions": 677,
+        "deletions": 0,
+        "display_url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3766",
+        "display_title": "Add deterministic member name value primitives"
+      },
+      "isError": false
+    }
+  }
+}

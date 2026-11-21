@@ -1,0 +1,18 @@
+{
+  "observedAt": "2026-11-21T13:30:59.199Z",
+  "result": {
+    "status": "fulfilled",
+    "value": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Action completed."
+        }
+      ],
+      "structuredContent": {
+        "workflow_runs": []
+      },
+      "isError": false
+    }
+  }
+}
