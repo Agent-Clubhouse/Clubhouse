@@ -192,7 +192,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     return createPortal(<section className="w-full mt-[30px] text-left flex flex-col gap-2" aria-label={`${agent.name} orchestration`} data-testid="sleeping-remote-orchestration">
       <CardNote>Helpers and policy read from the selected host. Read-only.</CardNote>
       {snapshotUnavailable && <CardNote>The host snapshot is unavailable. Helper details are withheld until it is current.</CardNote>}
-      <RemoteHelpersCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} />
+      <RemoteHelpersCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} onRefused={() => setRetry((n) => n + 1)} />
     </section>, inlineTarget);
   }
   return <aside className="w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 pt-2.5 pb-3 pr-3.5 pl-1" data-testid="agent-details" aria-label={`${agent.name} details`}
@@ -213,7 +213,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
 
     {!dispatcher && <RemoteChangesCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('changes')} onToggle={() => toggleCard('changes')} />}
     {!dispatcher && agent.kind === 'durable' && !agent.parentAgentId && basic('dispatcher', 'Dispatcher')}
-    {!dispatcher && agent.kind === 'durable' && <RemoteHelpersCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} />}
+    {!dispatcher && agent.kind === 'durable' && <RemoteHelpersCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} onRefused={() => setRetry((n) => n + 1)} />}
     {showSubagents && session && map && <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
       {(!connected || asleep || snapshotUnavailable) && <CardNote>Last loaded session snapshot. Current subagent status is not confirmed.</CardNote>}
       {hydrated.evidence && !hydrated.evidence.values.subagents && <CardNote>No subagent report has arrived in this runtime open. Earlier conversation activity is separate.</CardNote>}

@@ -1,0 +1,458 @@
+# mutation view-wiring on src/renderer/features/agents/details/RemoteAgentDetailsView.tsx (head 5640526d70dae737b76b1bf0ee1ab98ee8363be7)
+# applied diff:
+216c216
+<     {!dispatcher && agent.kind === 'durable' && <RemoteHelpersCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} onRefused={() => setRetry((n) => n + 1)} />}
+---
+>     {!dispatcher && agent.kind === 'durable' && <RemoteHelpersCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} />}
+249c249
+<       message={resultMessage(result.status)} onToggle={() => toggleCard('canvases')} onRefused={() => setRetry((n) => n + 1)} />}
+---
+>       message={resultMessage(result.status)} onToggle={() => toggleCard('canvases')} />}
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > carries the real transcript cursor/receipt into explicit older Details reads without replacing current provider facts
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > resolves a pending Subagents focus after hydration, expands the requested child, and handles it once
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > tries the fallback once while refresh delays first fulfillment, ignoring superseded hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps fulfilled focus collapsed across refresh (fallback manually closed: false), and accepts a new nonce
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps fulfilled focus collapsed across refresh (fallback manually closed: true), and accepts a new nonce
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not replay a pending focus or late hydration into a different host with the same raw agent id
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: known total zero
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: absent
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: empty tokens
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: partial input zero
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: partial output
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: input and output
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: total takes precedence
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: zero cost
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: zero cost and tokens
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: usage none
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps known zero turn sums and their resumed-history qualification
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on stop
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on offline
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on snapshot-loss
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on forbidden
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on unmount
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders shared read-only action group fields and outcome/time without local action APIs or management buttons
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > retains old-host plain action fields and explicitly marks unavailable group fields
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps sleeping historical CLI separate from next-start and cached sleep fields: recorded
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps sleeping historical CLI separate from next-start and cached sleep fields: unknown
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps admitted current CLI identity when legacy optional provider fields are absent
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows the actual current CLI separately from a changed inherited next-start provider
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > uses independently read initial provider facts outside a cut transcript only after matching runtime hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not fall back to retained provider reports when a new host explicitly says unavailable
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not fall back to retained provider reports when a new host explicitly says unsupported
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not promote an earlier display report after newer provider metadata arrives during hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session replacement hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session missing-run-id hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session offline hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session error hydration
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows quick launch and current report fields without durable setup, next-wake settings or local reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps old-host quick unavailability explicit without durable settings or local fallback
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds malformed selected identity a1 before any host or local fallback read
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds malformed selected identity remote||sat|| before any host or local fallback read
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a running agent with no local reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a sleeping agent with no local reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a waking agent with no local reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a error agent with no local reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows no live session facts while the host reports waking, then shows them once it reports running
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves Effort/default, CLI version and inherited-provider skills bound to the selected session
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > invalidates results on snapshot loss/offline and ignores a late previous-host result
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps unsupported/error/offline distinct from empty, and exposes each bounded omission
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > makes supplied Settings retry refetch the parent host Details request
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows verified host canvas identities with explicit navigation availability for snapshot omissions
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds retained provider evidence after a forbidden host read
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds retained provider evidence after a error host read
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds retained provider evidence after a unavailable host read
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps the old host’s supported Settings endpoint while marking new cards unavailable
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds same-session retained evidence until reconnect hydration succeeds, even with the same snapshot object
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps retained evidence withheld after failed same-session hydration and identifies cut pages
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds current claims after Details succeeds but delayed hydration is readOnly
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds current claims after Details succeeds but delayed hydration is error
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds current claims after Details succeeds but delayed hydration is session-ended
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > invalidates a successful live receipt after a later same-session stop, including a failed lifecycle reread
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > shows selected running host records independent of provider/handshake health and without fallback reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > shows selected sleeping host records independent of provider/handshake health and without fallback reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across offline continuity changes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across snapshot-unavailable continuity changes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across denied continuity changes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across dispatcher-role continuity changes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across quick-role continuity changes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > does not replay a late previous-host wire record into a different host with the same native agent id
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > shows independently known host Settings fields alongside explicit unavailable next-wake evidence
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > keeps withheld request text out of visible, title and accessibility paths and never falls back to cached raw tasks
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > composes Canvas paging with enclosing Details and drops its private summary after page refusal
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > withholds Canvas pages after refusal and reads a new selection only under a fresh receipt for the same snapshot object
+ × |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > re-reads central Details when a helper page is refused, like Actions and Canvases (M2) 1251ms
+   → expected [ [ 'sat', 'a1' ] ] to have a length of 2 but got 1
+
+Ignored nodes: comments, script, style
+<html>
+  <head />
+  <body>
+    <div>
+      <aside
+        aria-label="Remote details"
+        class="w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 pt-2.5 pb-3 pr-3.5 pl-1"
+        data-testid="agent-details"
+      >
+        <div
+          class="flex items-center gap-2 px-1 text-xs text-ctp-overlay1"
+        >
+          <span
+            class="font-semibold"
+          >
+            Details
+          </span>
+          <span
+            class="truncate"
+          >
+            Remote
+          </span>
+          <button
+            aria-label="Hide details"
+            class="ml-auto"
+            data-testid="agent-details-close"
+            type="button"
+          >
+            ×
+          </button>
+        </div>
+        <div
+          class="px-1 text-xs text-ctp-overlay1"
+          data-testid="remote-details-freshness"
+          role="status"
+        >
+          Read from 
+          Studio
+           at 
+          7:00:00 PM
+          . Read-only.
+        </div>
+        <section
+          aria-label="Settings"
+          class="flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"
+          data-open="true"
+          data-testid="details-card-settings"
+        >
+          <button
+            aria-controls="_r_0_"
+            aria-expanded="true"
+            class="w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"
+            data-testid="details-card-settings-toggle"
+            type="button"
+          >
+            <svg
+              aria-hidden="true"
+              class="flex-shrink-0 text-ctp-overlay0"
+              fill="none"
+              height="12"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.8"
+              viewBox="0 0 24 24"
+              width="12"
+            >
+              <path
+                d="M6 9l6 6 6-6"
+              />
+            </svg>
+            <span
+              class="text-[13px] font-semibold text-ctp-text whitespace-nowrap"
+            >
+              Settings
+            </span>
+            <span
+              class="min-w-0 truncate text-xs text-ctp-overlay1"
+              data-testid="details-card-settings-summary"
+              title="Chat · model now, next start: host-model · Ask first"
+            >
+              Chat · model now, next start: host-model · Ask first
+            </span>
+          </button>
+          <div
+            class="pb-1.5"
+            id="_r_0_"
+          >
+            <div
+              class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+              data-testid="details-setting-cli"
+            >
+              <span
+                class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+              >
+                CLI
+              </span>
+              <span
+                class="min-w-0 text-ctp-text break-words"
+              >
+                Host CLI 1.2.3
+              </span>
+            </div>
+            <div
+              class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+              data-testid="details-setting-runs-in"
+            >
+              <span
+                class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+              >
+                Runs in
+              </span>
+              <span
+                class="min-w-0 text-ctp-text break-words"
+              >
+                Chat
+              </span>
+            </div>
+            <div
+              class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+              data-testid="details-setting-model"
+            >
+              <span
+                class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+              >
+                Model
+              </span>
+              <span
+                class="min-w-0 text-ctp-text break-words"
+              >
+                model now, next start: host-model
+              </span>
+            </div>
+            <div
+              class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+              data-testid="details-setting-effort"
+            >
+              <span
+                class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+              >
+                Effort
+              </span>
+              <span
+                class="min-w-0 text-ctp-text break-words"
+              >
+                High (default)
+              </span>
+            </div>
+            <div
+              class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+              data-testid="details-setting-access"
+            >
+              <span
+                class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+              >
+                Access
+              </span>
+              <s...
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds denied data across retained clone, remount and regrant before an actual fresh snapshot
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > shows positive-receipt peers when an older host lacks the Details read, and withholds them on revocation
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is forbidden
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is error
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is offline
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is rate_limited
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > follows receipt and epoch, not snapshot identity, when equal-value snapshots keep their object
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on needsPairing, including an unchanged/retained snapshot and successful stale mock Details
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on receipt, including an unchanged/retained snapshot and successful stale mock Details
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on offline, including an unchanged/retained snapshot and successful stale mock Details
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on snapshotUnavailable, including an unchanged/retained snapshot and successful stale mock Details
+ ↓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on paused, including an unchanged/retained snapshot and successful stale mock Details
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > re-reads central Details when a helper page is refused, like Actions and Canvases (M2)
+AssertionError: expected [ [ 'sat', 'a1' ] ] to have a length of 2 but got 1
+
+Ignored nodes: comments, script, style
+<html>
+  <head />
+  <body>
+    <div>
+      <aside
+        aria-label="Remote details"
+        class="w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 pt-2.5 pb-3 pr-3.5 pl-1"
+        data-testid="agent-details"
+      >
+        <div
+          class="flex items-center gap-2 px-1 text-xs text-ctp-overlay1"
+        >
+          <span
+            class="font-semibold"
+          >
+            Details
+          </span>
+          <span
+            class="truncate"
+          >
+            Remote
+          </span>
+          <button
+            aria-label="Hide details"
+            class="ml-auto"
+            data-testid="agent-details-close"
+            type="button"
+          >
+            ×
+          </button>
+        </div>
+        <div
+          class="px-1 text-xs text-ctp-overlay1"
+          data-testid="remote-details-freshness"
+          role="status"
+        >
+          Read from 
+          Studio
+           at 
+          7:00:00 PM
+          . Read-only.
+        </div>
+        <section
+          aria-label="Settings"
+          class="flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"
+          data-open="true"
+          data-testid="details-card-settings"
+        >
+          <button
+            aria-controls="_r_0_"
+            aria-expanded="true"
+            class="w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"
+            data-testid="details-card-settings-toggle"
+            type="button"
+          >
+            <svg
+              aria-hidden="true"
+              class="flex-shrink-0 text-ctp-overlay0"
+              fill="none"
+              height="12"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.8"
+              viewBox="0 0 24 24"
+              width="12"
+            >
+              <path
+                d="M6 9l6 6 6-6"
+              />
+            </svg>
+            <span
+              class="text-[13px] font-semibold text-ctp-text whitespace-nowrap"
+            >
+              Settings
+            </span>
+            <span
+              class="min-w-0 truncate text-xs text-ctp-overlay1"
+              data-testid="details-card-settings-summary"
+              title="Chat · model now, next start: host-model · Ask first"
+            >
+              Chat · model now, next start: host-model · Ask first
+            </span>
+          </button>
+          <div
+            class="pb-1.5"
+            id="_r_0_"
+          >
+            <div
+              class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+              data-testid="details-setting-cli"
+            >
+              <span
+                class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+              >
+                CLI
+              </span>
+              <span
+                class="min-w-0 text-ctp-text break-words"
+              >
+                Host CLI 1.2.3
+              </span>
+            </div>
+            <div
+              class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+              data-testid="details-setting-runs-in"
+            >
+              <span
+                class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+              >
+                Runs in
+              </span>
+              <span
+                class="min-w-0 text-ctp-text break-words"
+              >
+                Chat
+              </span>
+            </div>
+            <div
+              class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+              data-testid="details-setting-model"
+            >
+              <span
+                class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+              >
+                Model
+              </span>
+              <span
+                class="min-w-0 text-ctp-text break-words"
+              >
+                model now, next start: host-model
+              </span>
+            </div>
+            <div
+              class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+              data-testid="details-setting-effort"
+            >
+              <span
+                class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+              >
+                Effort
+              </span>
+              <span
+                class="min-w-0 text-ctp-text break-words"
+              >
+                High (default)
+              </span>
+            </div>
+            <div
+              class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+              data-testid="details-setting-access"
+            >
+              <span
+                class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+              >
+                Access
+              </span>
+              <s...
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx:759:79
+    757|   fireEvent.click(await screen.findByRole('button', { name: 'Next help…
+    758|   await waitFor(() => expect(read.mock.calls.filter(([, , query]) => q…
+    759|   await waitFor(() => expect(read.mock.calls.filter(([, , query]) => !…
+       |                                                                               ^
+    760| });
+    761|
+ ❯ runWithExpensiveErrorDiagnosticsDisabled ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/config.js:47:12
+ ❯ checkCallback ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/wait-for.js:124:77
+ ❯ Timeout.checkRealTimersCallback ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/wait-for.js:118:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 84 skipped (85)
+   Start at  04:15:56
+   Duration  2.78s (transform 974ms, setup 54ms, import 1.20s, tests 1.25s, environment 177ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+# post-restore git status --short:

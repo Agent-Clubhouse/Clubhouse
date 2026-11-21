@@ -13,8 +13,8 @@ type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
 const statusLabel: Record<RemoteHelperRow['status'], string> = { disposed: 'Disposed', 'handed-off': 'Handed off', creating: 'Starting', failed: 'Failed', running: 'Running', 'needs-you': 'Needs you', waking: 'Starting', 'not-running': 'Not running', unknown: 'Runtime state unavailable' };
 const message = (status: Result['status']) => status === 'forbidden' ? 'The host does not allow this helper read.' : status === 'offline' ? 'Host offline. Reconnect to read helpers.' : status === 'unavailable' ? 'This host does not support selected helper pages.' : status === 'error' ? 'Couldn’t read this helper page. Refresh to try again.' : status === 'rate_limited' ? 'The host is busy. Try again shortly.' : 'Loading helpers from the host…';
 const policyLabels = new Set(['Orchestration', 'Helpers get', 'Control', 'At once', 'App-wide limit', 'Cross-project helpers', 'Auto provider', 'Helper access ceiling']);
-export function RemoteHelpersCard({ agent, details, status, freshnessKey, open, onToggle }: {
-  agent: Agent; details: RemoteAgentDetails | null; status: Result['status']; freshnessKey: string; open: boolean; onToggle(): void;
+export function RemoteHelpersCard({ agent, details, status, freshnessKey, open, onToggle, onRefused }: {
+  agent: Agent; details: RemoteAgentDetails | null; status: Result['status']; freshnessKey: string; open: boolean; onToggle(): void; onRefused?(): void;
 }) {
   const address = remoteDetailsAddress(agent.id), host = useAnnexClientStore((s) => s.satellites.find((h) => h.id === address?.satelliteId));
   useRemoteProjectStore((s) => s.remoteAgents);
@@ -27,11 +27,13 @@ export function RemoteHelpersCard({ agent, details, status, freshnessKey, open, 
   const [response, setResponse] = useState<{ key: string; snapshot: typeof snapshot; result: Result } | null>(null);
   const key = `${identity}:${selected?.offset ?? 0}:${selected?.retry ?? 0}`;
   const eligible = connected && !host?.snapshotUnavailable && status === 'ok' && !!details && details.agentId === address?.agentId;
+  // A refused page tells the enclosing view to re-read, like the Actions and Canvas pages.
+  const refused = useRef(onRefused); refused.current = onRefused;
   useEffect(() => {
     if (!open || !eligible || !selected || !address || details?.helperPages !== 1) return;
     let active = true;
     Promise.resolve().then(() => window.clubhouse.annexClient.agentDetails(address.satelliteId, address.agentId, { card: 'orchestrate', source: 'helpers', offset: selected.offset })).then(
-      (result) => { if (active) setResponse({ key, snapshot, result }); },
+      (result) => { if (active) { setResponse({ key, snapshot, result }); if (result.status === 'forbidden') refused.current?.(); } },
       // telemetry-exempt: bounded read status replaces raw transport errors.
       () => { if (active) setResponse({ key, snapshot, result: { status: 'error' } }); },
     );

@@ -1,0 +1,2628 @@
+$ TMPDIR=<fresh> vitest run --no-cache --maxWorkers=3 --reporter=verbose src/renderer/features/agents/details/RemoteHelpersCard.test.tsx src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx src/renderer/features/agents/helpers/SleepingRemoteOrchestration.test.tsx src/renderer/features/agents/details/AgentDetails.test.tsx src/renderer/features/agents/details/RemoteActionsCard.test.tsx src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > keeps passive skill reports and MCP evidence inside one combined card
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ProviderSkillsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ProviderSkillsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ProviderSkillsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ProviderSkillsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ProviderSkillsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > fills the cards it can and leaves out the ones the terminal can't fill
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > fills the cards it can and leaves out the ones the terminal can't fill
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > keeps passive skill reports and MCP evidence inside one combined card 56ms
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > fills the cards it can and leaves out the ones the terminal can't fill
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > hides on Escape and gives focus back to this pane's toggle, not another pane's
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens a card asked for from elsewhere
+An update to AgentActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AgentActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens a card asked for from elsewhere
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens a card asked for from elsewhere
+An update to LocalSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens a card asked for from elsewhere
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to McpCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > fills the cards it can and leaves out the ones the terminal can't fill 111ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > hides on Escape and gives focus back to this pane's toggle, not another pane's 30ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens a card asked for from elsewhere 11ms
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > lets Action dialogs handle Escape without hiding details or discarding edits
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ActionLine inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ActionForm inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > starts cards collapsed, keeps Settings saved, and resets other cards on a new agent visit
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ |renderer| src/renderer/features/agents/helpers/SleepingRemoteOrchestration.test.tsx > shows selected read-only helpers and pending rows inline without hydrating transcript or local state 248ms
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > offers an empty Connections card for a local durable agent before it has wires
+An update to AgentActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AgentActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > offers an empty Connections card for a local durable agent before it has wires
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > offers an empty Connections card for a local durable agent before it has wires
+An update to LocalSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > offers an empty Connections card for a local durable agent before it has wires
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteConnections inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > offers an empty Connections card for a local durable agent before it has wires
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > offers an empty Connections card for a local durable agent before it has wires
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens an empty Connections card from permissions settings (#3275)
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteConnections inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteConnections inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens an empty Connections card from permissions settings (#3275)
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens an empty Connections card from permissions settings (#3275)
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > lets Action dialogs handle Escape without hiding details or discarding edits 63ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > starts cards collapsed, keeps Settings saved, and resets other cards on a new agent visit 17ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens applicable host cards or falls back for helpers on a remote agent 7ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens applicable host cards or falls back for subagents on a remote agent 6ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens applicable host cards or falls back for dispatcher on a remote agent 6ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens applicable host cards or falls back for connections on a remote agent 6ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > offers an empty Connections card for a local durable agent before it has wires 35ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > opens an empty Connections card from permissions settings (#3275) 10ms
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > lets a quick agent edit its existing disabled tools through the canvas Connections route (#3213)
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteConnections inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteConnections inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to DirectionColumn inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > lets a quick agent edit its existing disabled tools through the canvas Connections route (#3213)
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > lets a quick agent edit its existing disabled tools through the canvas Connections route (#3213)
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > carries the real transcript cursor/receipt into explicit older Details reads without replacing current provider facts 329ms
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails Canvases > hides empty Canvases and sends its focus requests to Session
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails Canvases > opens indexed memberships at the end and falls back when the last one is removed
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > lists its peers on other machines compactly, and only when there are any (#3349)
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > shows Settings and Actions but none of an agent's internals (#3184)
+An update to DispatcherActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to DispatcherActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > shows Settings and Actions but none of an agent's internals (#3184)
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > shows Settings and Actions but none of an agent's internals (#3184)
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > leaves out Last session while it sleeps
+An update to DispatcherActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to DispatcherActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > leaves out Last session while it sleeps
+An update to LocalAgentDetails inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > leaves out Last session while it sleeps
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > falls back from a missing Canvases target to its own Actions card
+An update to AgentSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails in the terminal > lets a quick agent edit its existing disabled tools through the canvas Connections route (#3213) 68ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails Canvases > hides empty Canvases and sends its focus requests to Session 8ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails Canvases > opens indexed memberships at the end and falls back when the last one is removed 5ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > lists its peers on other machines compactly, and only when there are any (#3349) 4ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > shows Settings and Actions but none of an agent's internals (#3184) 2ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > leaves out Last session while it sleeps 1ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for the Dispatcher > falls back from a missing Canvases target to its own Actions card 3ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > resolves a pending Subagents focus after hydration, expands the requested child, and handles it once 196ms
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for a remote Dispatcher > uses Dispatcher cards for its snapshot record in __dispatcher__, without local controls
+An update to RemoteSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteAgentDetailsView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ |renderer| src/renderer/features/agents/helpers/SleepingRemoteOrchestration.test.tsx > keeps one read owner while moving between hidden Details inline and the Details column 383ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for a remote Dispatcher > uses Dispatcher cards for its snapshot record in __dispatcher__, without local controls 188ms
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for a remote Dispatcher > uses Dispatcher cards for its snapshot record in ordinary-project, without local controls
+An update to RemoteSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteAgentDetailsView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for a remote Dispatcher > recognizes the namespaced Dispatcher project while its host is offline without a snapshot
+An update to RemoteSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteAgentDetailsView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for a remote Dispatcher > keeps ordinary remote agents named Dispatcher on their normal cards
+An update to RemoteSettingsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteChangesCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteHelpersCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteConnectionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteActionsCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteCanvasesCard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RemoteAgentDetailsView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for a remote Dispatcher > uses Dispatcher cards for its snapshot record in ordinary-project, without local controls 194ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for a remote Dispatcher > recognizes the namespaced Dispatcher project while its host is offline without a snapshot 2ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > AgentDetails for a remote Dispatcher > keeps ordinary remote agents named Dispatcher on their normal cards 3ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > useBranchChanges > reads at most once per interval and never overlaps reads 2ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > relativeFolder > only treats a path as inside the project on a separator boundary 0ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > detailsStore > toggles, remembers the choice and reveals a card 0ms
+ ✓ |renderer| src/renderer/features/agents/details/AgentDetails.test.tsx > detailsStore > doesn't change the main window's choice from a popout 0ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > tries the fallback once while refresh delays first fulfillment, ignoring superseded hydration 351ms
+ ✓ |renderer| src/renderer/features/agents/helpers/SleepingRemoteOrchestration.test.tsx > withholds old helper facts across disconnect, reconnect and subsequent refusal 317ms
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ ✓ |renderer| src/renderer/features/agents/helpers/SleepingRemoteOrchestration.test.tsx > does not read when agent/project host identities disagree 205ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps fulfilled focus collapsed across refresh (fallback manually closed: false), and accepts a new nonce 393ms
+ ✓ |renderer| src/renderer/features/agents/helpers/SleepingRemoteOrchestration.test.tsx > ignores an old parent read that completes after selection changed 315ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > wires selected Details to all saved membership pages while omitted boards remain disabled 298ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > rejects a page with mismatched agent enclosing evidence 11ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > rejects a page with mismatched project enclosing evidence 10ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > rejects a page with mismatched mixed enclosing evidence 10ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > rejects a page with mismatched default enclosing evidence 10ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > rejects a page with mismatched card enclosing evidence 10ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > rejects a page with mismatched source enclosing evidence 9ms
+ ✓ |renderer| src/renderer/features/agents/helpers/SleepingRemoteOrchestration.test.tsx > does not admit inline helper reads while the current host snapshot is unavailable 207ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps fulfilled focus collapsed across refresh (fallback manually closed: true), and accepts a new nonce 392ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > withholds late selected rows after offline 58ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > withholds late selected rows after denied 57ms
+ ✓ |renderer| src/renderer/features/agents/helpers/SleepingRemoteOrchestration.test.tsx > requires a fresh read after visibility was disabled instead of reviving retained helper facts 315ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > withholds late selected rows after frame 62ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > withholds late selected rows after project 63ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > withholds late selected rows after snapshot 64ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteCanvasesCard.test.tsx > preserves old-host summary without inventing a selected source 6ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not replay a pending focus or late hydration into a different host with the same raw agent id 324ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: known total zero 170ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: absent 170ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > renders separate state/work/project/disposed counts and replaces bounded selected pages without writes 126ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > withholds mismatched helper offset and private old content after denied or offline reads 32ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > ignores delayed page results after selected parent replacement 70ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > preserves an older host legacy summary without probing helper pages 1ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > reports a refused helper page to the enclosing view only when the page read is forbidden (forbidden) 18ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > reports a refused helper page to the enclosing view only when the page read is forbidden (error) 17ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > reports a refused helper page to the enclosing view only when the page read is forbidden (offline) 17ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > reports a refused helper page to the enclosing view only when the page read is forbidden (ok) 16ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: empty tokens 167ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteActionsCard.test.tsx > reaches the final relationship group with the shared selection token and no local management APIs 201ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteActionsCard.test.tsx > withholds late/private page records after offline 82ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteActionsCard.test.tsx > withholds late/private page records after refused 85ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: partial input zero 168ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteActionsCard.test.tsx > withholds late/private page records after new-frame 81ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteActionsCard.test.tsx > preserves old-host summaries and does not invent source continuation 8ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: partial output 171ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: input and output 180ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: total takes precedence 173ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: zero cost 182ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: zero cost and tokens 172ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves usage knownness: usage none 172ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps known zero turn sums and their resumed-history qualification 177ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on stop 31ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on offline 21ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on snapshot-loss 20ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on forbidden 13ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > ticks elapsed body and collapsed summary without host events, then cleans up on unmount 5ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders shared read-only action group fields and outcome/time without local action APIs or management buttons 170ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > retains old-host plain action fields and explicitly marks unavailable group fields 170ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps sleeping historical CLI separate from next-start and cached sleep fields: recorded 174ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps sleeping historical CLI separate from next-start and cached sleep fields: unknown 176ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps admitted current CLI identity when legacy optional provider fields are absent 174ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows the actual current CLI separately from a changed inherited next-start provider 176ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > uses independently read initial provider facts outside a cut transcript only after matching runtime hydration 191ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not fall back to retained provider reports when a new host explicitly says unavailable 589ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not fall back to retained provider reports when a new host explicitly says unsupported 368ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > does not promote an earlier display report after newer provider metadata arrives during hydration 545ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session replacement hydration 532ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session missing-run-id hydration 534ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session offline hydration 530ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds initial provider reports across same-session error hydration 540ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows quick launch and current report fields without durable setup, next-wake settings or local reads 168ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps old-host quick unavailability explicit without durable settings or local fallback 162ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds malformed selected identity a1 before any host or local fallback read 8ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds malformed selected identity remote||sat|| before any host or local fallback read 6ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a running agent with no local reads 199ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a sleeping agent with no local reads 190ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a waking agent with no local reads 197ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > renders applicable host cards read-only for a error agent with no local reads 195ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows no live session facts while the host reports waking, then shows them once it reports running 336ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > preserves Effort/default, CLI version and inherited-provider skills bound to the selected session 179ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > invalidates results on snapshot loss/offline and ignores a late previous-host result 172ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps unsupported/error/offline distinct from empty, and exposes each bounded omission 183ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > makes supplied Settings retry refetch the parent host Details request 373ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > shows verified host canvas identities with explicit navigation availability for snapshot omissions 180ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds retained provider evidence after a forbidden host read 165ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds retained provider evidence after a error host read 165ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds retained provider evidence after a unavailable host read 166ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps the old host’s supported Settings endpoint while marking new cards unavailable 170ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds same-session retained evidence until reconnect hydration succeeds, even with the same snapshot object 349ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > keeps retained evidence withheld after failed same-session hydration and identifies cut pages 520ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds current claims after Details succeeds but delayed hydration is readOnly 562ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds current claims after Details succeeds but delayed hydration is error 564ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > withholds current claims after Details succeeds but delayed hydration is session-ended 567ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > remote full Details host evidence > invalidates a successful live receipt after a later same-session stop, including a failed lifecycle reread 354ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > shows selected running host records independent of provider/handshake health and without fallback reads 187ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > shows selected sleeping host records independent of provider/handshake health and without fallback reads 187ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across offline continuity changes 174ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across snapshot-unavailable continuity changes 534ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across denied continuity changes 516ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across dispatcher-role continuity changes 180ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > withholds prior wire records across quick-role continuity changes 172ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > selected host outgoing Wires consumer > does not replay a late previous-host wire record into a different host with the same native agent id 328ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > shows independently known host Settings fields alongside explicit unavailable next-wake evidence 172ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > keeps withheld request text out of visible, title and accessibility paths and never falls back to cached raw tasks 175ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > composes Canvas paging with enclosing Details and drops its private summary after page refusal 408ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > withholds Canvas pages after refusal and reads a new selection only under a fresh receipt for the same snapshot object 629ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > re-reads central Details when a helper page is refused, like Actions and Canvases (M2) 383ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds denied data across retained clone, remount and regrant before an actual fresh snapshot 806ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > shows positive-receipt peers when an older host lacks the Details read, and withholds them on revocation 361ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is forbidden 359ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is error 356ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is offline 354ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > withholds positive-receipt peers when the Details read is rate_limited 355ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > follows receipt and epoch, not snapshot identity, when equal-value snapshots keep their object 795ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on needsPairing, including an unchanged/retained snapshot and successful stale mock Details 360ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on receipt, including an unchanged/retained snapshot and successful stale mock Details 369ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on offline, including an unchanged/retained snapshot and successful stale mock Details 356ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on snapshotUnavailable, including an unchanged/retained snapshot and successful stale mock Details 369ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx > real-chat Dispatcher private Other machines admission > hides current private peers on paused, including an unchanged/retained snapshot and successful stale mock Details 369ms
+
+ Test Files  6 passed (6)
+      Tests  145 passed (145)
+   Start at  04:16:43
+   Duration  25.67s (transform 2.27s, setup 268ms, import 3.48s, tests 28.49s, environment 1.18s)
+
+vitest exit=0
+# post status:

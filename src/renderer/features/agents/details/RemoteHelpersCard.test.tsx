@@ -38,3 +38,11 @@ it('preserves an older host legacy summary without probing helper pages', () => 
   show({ details: { ...details, helperPages: undefined, helperPage: undefined, cards: [{ ...details.cards[0], rows: [{ label: 'Legacy helper', value: 'Recorded older helper summary' }] }] } });
   expect(screen.getByText('Recorded older helper summary')).toBeInTheDocument(); expect(screen.getByText(/Structured helper rows and work pages need a host update/)).toBeInTheDocument(); expect(request).not.toHaveBeenCalled();
 });
+it.each(['forbidden', 'error', 'offline', 'ok'] as const)('reports a refused helper page to the enclosing view only when the page read is forbidden (%s)', async (status) => {
+  const onRefused = vi.fn();
+  request.mockImplementation(async (_sat, _id, query) => status === 'ok' ? { status: 'ok', value: { ...details, helperPageOnly: true, helperPage: page(query.offset) } } : { status });
+  show({ onRefused }); fireEvent.click(screen.getByRole('button', { name: 'Next helpers' }));
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+  await act(async () => { await Promise.resolve(); });
+  expect(onRefused).toHaveBeenCalledTimes(status === 'forbidden' ? 1 : 0);
+});

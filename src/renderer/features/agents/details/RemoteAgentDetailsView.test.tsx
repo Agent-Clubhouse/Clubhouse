@@ -748,6 +748,17 @@ it('withholds Canvas pages after refusal and reads a new selection only under a 
   expect(window.clubhouse.canvas.getAgentCanvases).not.toHaveBeenCalled();
 });
 
+it('re-reads central Details when a helper page is refused, like Actions and Canvases (M2)', async () => {
+  const helperPage = (offset = 0) => ({ version: 1, source: 'selected-direct-helpers', state: 'ok', offset, next: offset ? null : 8, total: 9, liveCount: 8, disposedCount: 1, pendingCount: null, pending: [], notes: [], rows: [{ key: 'helper-' + offset, name: 'Helper ' + offset, projectName: 'Host project', status: 'needs-you', statusSource: 'current-run', branch: 'feature', failure: null, disposedAt: null, work: { state: 'recorded', text: '0 uncommitted' } }] });
+  const value = { ...fixture(), helperPages: 1, helperPage: helperPage() } as RemoteAgentDetails;
+  read.mockImplementation(async (_host, _id, query) => query?.card === 'orchestrate' ? { status: 'forbidden' } : { status: 'ok', value });
+  useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'orchestrate' });
+  render(<AgentDetails agent={agent} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Next helpers' }));
+  await waitFor(() => expect(read.mock.calls.filter(([, , query]) => query?.card === 'orchestrate')).toHaveLength(1));
+  await waitFor(() => expect(read.mock.calls.filter(([, , query]) => !query)).toHaveLength(2));
+});
+
 describe('real-chat Dispatcher private Other machines admission', () => {
   const privateSnapshot = (peer = 'PRIVATE_OLD_PEER') => ({ dispatcher: { agent: { ...agent, id: 'a1', projectId: '__dispatcher__' } }, dispatcherPresence: { remotes: [
     { machineId: peer, machineName: peer, dispatcherName: 'Private host peer', label: `Private host peer on ${peer}`, address: null, state: 'online', link: { state: 'active' } },

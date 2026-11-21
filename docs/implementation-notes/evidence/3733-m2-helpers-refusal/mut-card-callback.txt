@@ -1,0 +1,46 @@
+# mutation card-callback on src/renderer/features/agents/details/RemoteHelpersCard.tsx (head 5640526d70dae737b76b1bf0ee1ab98ee8363be7)
+# applied diff:
+36c36
+<       (result) => { if (active) { setResponse({ key, snapshot, result }); if (result.status === 'forbidden') refused.current?.(); } },
+---
+>       (result) => { if (active) { setResponse({ key, snapshot, result }); } },
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ↓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > renders separate state/work/project/disposed counts and replaces bounded selected pages without writes
+ ↓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > withholds mismatched helper offset and private old content after denied or offline reads
+ ↓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > ignores delayed page results after selected parent replacement
+ ↓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > preserves an older host legacy summary without probing helper pages
+ × |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > reports a refused helper page to the enclosing view only when the page read is forbidden (forbidden) 77ms
+   → expected "vi.fn()" to be called 1 times, but got 0 times
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > reports a refused helper page to the enclosing view only when the page read is forbidden (error) 19ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > reports a refused helper page to the enclosing view only when the page read is forbidden (offline) 17ms
+ ✓ |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > reports a refused helper page to the enclosing view only when the page read is forbidden (ok) 18ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/RemoteHelpersCard.test.tsx > reports a refused helper page to the enclosing view only when the page read is forbidden (forbidden)
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ src/renderer/features/agents/details/RemoteHelpersCard.test.tsx:47:21
+     45|   await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+     46|   await act(async () => { await Promise.resolve(); });
+     47|   expect(onRefused).toHaveBeenCalledTimes(status === 'forbidden' ? 1 :…
+       |                     ^
+     48| });
+     49|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed | 4 skipped (8)
+   Start at  04:15:55
+   Duration  514ms (transform 63ms, setup 59ms, import 57ms, tests 132ms, environment 173ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+# post-restore git status --short:
