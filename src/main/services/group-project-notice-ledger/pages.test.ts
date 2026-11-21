@@ -85,6 +85,45 @@ describe('lazy immutable notice index', () => {
     expect(await fs.readFile(file, 'utf8')).toBe('damaged');
   });
 
+  it('refuses oversized immutable files before reading contents on cold load and page reuse', async () => {
+    const directory = await home();
+    let index = await NoticePageIndex.open(directory);
+    const root = await index.set(undefined, 'stable-id', { state: 'uncertain' });
+    await index.flush();
+    const file = path.join(directory, root.digest.slice(0, 2), `${root.digest}.json`);
+    const oversized = Buffer.alloc(NOTICE_INDEX_PAGE_BYTES + 1, 120);
+    await fs.writeFile(file, oversized);
+    index = await NoticePageIndex.open(directory);
+    await expect(index.get(root, 'stable-id')).rejects.toThrow('byte bound');
+    await expect(index.set(undefined, 'stable-id', { state: 'uncertain' })).rejects.toThrow('byte bound');
+    expect(index.cacheStats.pageReadBytes).toBe(0);
+    expect(await fs.readFile(file)).toEqual(oversized);
+  });
+
+  it('refuses directory or symlink page replacements without following or replacing them', async ({ skip }) => {
+    const directory = await home();
+    let index = await NoticePageIndex.open(directory);
+    const root = await index.set(undefined, 'stable-id', true);
+    await index.flush();
+    const file = path.join(directory, root.digest.slice(0, 2), `${root.digest}.json`);
+    const saved = file + '.saved'; await fs.rename(file, saved);
+    await fs.mkdir(file);
+    index = await NoticePageIndex.open(directory);
+    await expect(index.get(root, 'stable-id')).rejects.toThrow('type');
+    await fs.rmdir(file);
+    try { await fs.symlink(saved, file); }
+    catch (error) {
+      // telemetry-exempt: skip only actual unsupported native fixture creation
+      if (process.platform === 'win32' && ['EPERM', 'ENOTSUP', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) { skip(); return; }
+      throw error;
+    }
+    await expect(index.get(root, 'stable-id')).rejects.toThrow('type');
+    await expect(index.set(undefined, 'stable-id', true)).rejects.toThrow('type');
+    expect(index.cacheStats.pageReadBytes).toBe(0);
+    expect((await fs.lstat(file)).isSymbolicLink()).toBe(true);
+    expect(await fs.readlink(file)).toBe(saved);
+  });
+
   it('rejects a future page writer version even with a correct content hash', async () => {
     const directory = await home();
     const index = await NoticePageIndex.open(directory);

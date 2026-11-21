@@ -80,7 +80,7 @@ describe('prepared sparse notice reader, no activation authority', () => {
     expect(await (await PreparedNoticeReader.openPrepared(index, excluded)).legacyFloor()).toBe(1000000000000);
   });
 
-  it.each(['ready-missing', 'ready-owned', 'post-id-missing', 'post-id-orphan', 'attempt-missing', 'attempt-extra-post', 'active-missing', 'active-uncertain'])(
+  it.each(['ready-missing', 'ready-owned', 'post-id-missing', 'post-id-orphan', 'duplicate-post-id', 'attempt-missing', 'attempt-extra-post', 'attempt-digest', 'active-missing', 'active-uncertain'])(
     'refuses cross-index damage: %s', async (kind) => {
       const { index, header } = await fixture(await home());
       const r = header.roots;
@@ -88,7 +88,9 @@ describe('prepared sparse notice reader, no activation authority', () => {
       if (kind === 'ready-owned') r.ready = await index.set(r.ready, noticeSequenceKey(1), postId(0));
       if (kind === 'post-id-missing') r.postIds = await index.delete(r.postIds, postId(0));
       if (kind === 'post-id-orphan') r.postIds = await index.set(r.postIds, 'orphan', 1);
+      if (kind === 'duplicate-post-id') r.pending = await index.set(r.pending, noticeSequenceKey(3), { ...post(1), postId: postId(0), attemptId: attemptId(1) });
       if (kind === 'attempt-missing') r.attempts = await index.delete(r.attempts, attemptId(0));
+      if (kind === 'attempt-digest') r.attempts = await index.set(r.attempts, attemptId(0), { ...attempt(0, 3), coverageDigest: '0'.repeat(64) });
       if (kind === 'attempt-extra-post') {
         const posts = [post(0), post(2)];
         r.attempts = await index.set(r.attempts, attemptId(0), { ...attempt(0, 3), posts, coverageDigest: noticeCoverageDigest(posts) });

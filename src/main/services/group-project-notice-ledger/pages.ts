@@ -70,6 +70,8 @@ export class NoticePageIndex {
   private readonly branches = new Map<string, IndexPage>();
   private readonly dirtyDirectories = new Set<string>();
   private reads = 0;
+  private pageReadBytes = 0;
+  private maxPageReadBytes = 0;
   private peakLeafEntries = 0;
   private readonly directoryFlusher = new NoticeDirectoryFlusher();
   private constructor(private readonly directory: string) {}
@@ -82,7 +84,8 @@ export class NoticePageIndex {
   /** Fixed-shape diagnostics for bounded-memory tests; no IDs/content. */
   get cacheStats() {
     return { leafPages: this.leaves.size, indexPages: this.branches.size,
-      leafEntries: [...this.leaves.values()].reduce((sum, p) => sum + p.entries.length, 0), peakLeafEntries: this.peakLeafEntries, diskReads: this.reads };
+      leafEntries: [...this.leaves.values()].reduce((sum, p) => sum + p.entries.length, 0), peakLeafEntries: this.peakLeafEntries, diskReads: this.reads,
+      pageReadBytes: this.pageReadBytes, maxPageReadBytes: this.maxPageReadBytes };
   }
   get directoryDurability() { return this.directoryFlusher.observation; }
   clearCache(): void { this.leaves.clear(); this.branches.clear(); }
@@ -97,11 +100,34 @@ export class NoticePageIndex {
     this.peakLeafEntries = Math.max(this.peakLeafEntries, this.cacheStats.leafEntries);
   }
   private location(hash: string): string { return path.join(this.directory, hash.slice(0, 2), `${hash}.json`); }
+  /** Bound allocation and reads before decoding even damaged on-disk content. */
+  private async readPage(location: string): Promise<Buffer> {
+    const initial = await fs.lstat(location);
+    if (!initial.isFile() || initial.size > NOTICE_INDEX_PAGE_BYTES) throw new Error('Notice index page type or byte bound invalid');
+    const handle = await fs.open(location, 'r');
+    try {
+      const opened = await handle.stat();
+      const same = (stat: typeof opened) => stat.isFile() && stat.dev === initial.dev && stat.ino === initial.ino
+        && stat.size === initial.size && stat.mtimeMs === initial.mtimeMs && stat.ctimeMs === initial.ctimeMs;
+      if (!same(opened)) throw new Error('Notice index page changed while opening');
+      const buffer = Buffer.alloc(NOTICE_INDEX_PAGE_BYTES + 1);
+      let used = 0;
+      while (used < buffer.length) {
+        const { bytesRead } = await handle.read(buffer, used, buffer.length - used, used);
+        used += bytesRead; this.pageReadBytes += bytesRead;
+        this.maxPageReadBytes = Math.max(this.maxPageReadBytes, used);
+        if (!bytesRead) break;
+      }
+      if (used > NOTICE_INDEX_PAGE_BYTES) throw new Error('Notice index page exceeds byte bound');
+      if (used !== initial.size || !same(await handle.stat()) || !same(await fs.lstat(location))) throw new Error('Notice index page changed while reading');
+      return buffer.subarray(0, used);
+    } finally { await handle.close(); }
+  }
   private async load(root: NoticePageRoot): Promise<Page> {
     rootValid(root);
     let page: Page | undefined = this.leaves.get(root.digest) ?? this.branches.get(root.digest);
     if (!page) {
-      const body = await fs.readFile(this.location(root.digest)); this.reads++;
+      const body = await this.readPage(this.location(root.digest)); this.reads++;
       if (digest(body) !== root.digest) throw new Error('Notice index page checksum mismatch');
       page = decode(body);
     }
@@ -116,7 +142,7 @@ export class NoticePageIndex {
     const hash = digest(body);
     const location = this.location(hash);
     let existing: Buffer | undefined;
-    try { existing = await fs.readFile(location); }
+    try { existing = await this.readPage(location); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; } // telemetry-exempt: storage failures propagate
     if (existing) {
       if (digest(existing) !== hash) throw new Error('Existing immutable notice page is damaged');
