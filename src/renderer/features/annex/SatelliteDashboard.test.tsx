@@ -76,6 +76,24 @@ describe('SatelliteDashboard', () => {
     expect(screen.getByText('No projects on this satellite')).toBeTruthy();
   });
 
+  it('shows an incomplete catalog while remaining connected, without claiming empty or retrying', () => {
+    useAnnexClientStore.setState({ satellites: [makeSatellite({ catalogIncomplete: true })] });
+    render(<SatelliteDashboard activeHostId="sat-1" />);
+    expect(screen.getByText(/Connected/)).toBeTruthy();
+    expect(screen.getByText('Project catalog is incomplete')).toBeTruthy();
+    expect(screen.getByText('Waiting for a fresh project snapshot.')).toBeTruthy();
+    expect(screen.queryByText('No projects on this satellite')).toBeNull();
+    expect(screen.queryByText(/Retrying/)).toBeNull();
+  });
+
+  it('preserves known rows while marking incomplete updates', () => {
+    useAnnexClientStore.setState({ satellites: [makeSatellite({ catalogIncomplete: true })] });
+    useRemoteProjectStore.setState({ satelliteProjects: { 'sat-1': [makeRemoteProject()] } });
+    render(<SatelliteDashboard activeHostId="sat-1" />);
+    expect(screen.getByText('remote-project')).toBeTruthy();
+    expect(screen.getByText('Project updates are incomplete. Waiting for a fresh project snapshot.')).toBeTruthy();
+  });
+
   it('says it is retrying, not that there are no projects, when a satellite cannot build a snapshot', () => {
     useAnnexClientStore.setState({ satellites: [makeSatellite({ snapshotUnavailable: true, snapshot: null })] });
     useRemoteProjectStore.setState({ satelliteProjects: { 'sat-1': [] } });

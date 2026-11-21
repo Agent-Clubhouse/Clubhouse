@@ -1,0 +1,1089 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Agent, SatelliteSnapshot } from '../../shared/types';
+import { initAnnexClientListener, useAnnexClientStore, type SatelliteConnection } from './annexClientStore';
+import { useRemoteProjectStore, namespacedAgentId, namespacedProjectId } from './remoteProjectStore';
+import { usePendingPermissionStore } from './pendingPermissionStore';
+
+const satellite: SatelliteConnection = {
+  id: 'synthetic', fingerprint: 'synthetic', alias: 'Synthetic', icon: '', color: '',
+  state: 'connected', host: 'synthetic.invalid', mainPort: 1, pairingPort: 2,
+  snapshot: null, lastError: null,
+};
+const permission = {
+  requestId: 'request', agentId: 'agent', toolName: 'Bash', createdAt: 1, timeoutMs: 1000,
+};
+function snapshot(overrides: Partial<SatelliteSnapshot> = {}): SatelliteSnapshot {
+  return {
+    projects: [{ id: 'project', name: 'Synthetic project', path: '/synthetic' }],
+    agents: { project: [{ id: 'agent', projectId: 'project', name: 'Synthetic agent', kind: 'durable', status: 'running', color: '' } as Agent] },
+    quickAgents: {}, theme: {}, orchestrators: {}, pendingPermissions: [permission], lastSeq: 42,
+    ...overrides,
+  };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+const agentId = namespacedAgentId(satellite.id, 'agent');
+const projectId = namespacedProjectId(satellite.id, 'project');
+const requestId = namespacedAgentId(satellite.id, 'request');
+
+// Use real projection stores: a connected Settings record is not a populated catalog.
+describe('satellite catalog reconciliation (#3695)', () => {
+  let changed: (satellites: SatelliteConnection[]) => void;
+  let receive: (event: { satelliteId: string; type: string; payload: unknown }) => void;
+  let read: ReturnType<typeof vi.fn<() => Promise<SatelliteConnection[]>>>;
+  let cleanups: Array<() => void>;
+  const catalog = () => useRemoteProjectStore.getState();
+  const send = (type: string, payload: unknown) => receive({ satelliteId: satellite.id, type, payload });
+  const list = (value: SatelliteSnapshot | null, state: SatelliteConnection['state'] = 'connected') => [{ ...satellite, state, snapshot: value }];
+  const tick = async () => { await Promise.resolve(); await Promise.resolve(); };
+  const start = () => { const off = initAnnexClientListener(); cleanups.push(off); return off; };
+
+  beforeEach(() => {
+    cleanups = [];
+    read = vi.fn(async () => [] as SatelliteConnection[]);
+    Object.assign(window.clubhouse.annexClient, {
+      getSatellites: read,
+      onSatellitesChanged: vi.fn((cb) => { changed = cb; return vi.fn(); }),
+      onDiscoveredChanged: vi.fn(() => vi.fn()),
+      onSatelliteEvent: vi.fn((cb) => { receive = cb; return vi.fn(); }),
+    });
+    useAnnexClientStore.setState({ satellites: [], satellitePaused: {} });
+    useRemoteProjectStore.setState({ satelliteProjects: {}, remoteAgents: {}, remoteAgentDetailedStatus: {}, remoteProjectIcons: {}, remoteAgentIcons: {}, remoteCanvasState: {}, remoteAppCanvasState: {}, pluginMatchState: {} });
+    usePendingPermissionStore.setState({ byRequestId: {} });
+  });
+  afterEach(() => { for (const off of cleanups) off(); });
+
+  it('subscribes before reading and hydrates an initial cached snapshot without another event', async () => {
+    read.mockImplementationOnce(async () => {
+      expect(window.clubhouse.annexClient.onSatelliteEvent).toHaveBeenCalled();
+      expect(window.clubhouse.annexClient.onSatellitesChanged).toHaveBeenCalled();
+      return list(snapshot());
+    });
+    start();
+    await tick();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(catalog().satelliteProjects[satellite.id][0].id).toBe(projectId);
+    expect(catalog().remoteAgents[agentId].name).toBe('Synthetic agent');
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+  });
+
+  it('hydrates a connected list update after wake without a snapshot event', () => {
+    start();
+    changed(list(null, 'disconnected'));
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    changed(list(snapshot()));
+    expect(catalog().remoteAgents[agentId]).toBeDefined();
+  });
+
+  it('manual local reads hydrate and identical IPC clones preserve live agent, pause and permission updates', async () => {
+    const cached = snapshot({ sessionPaused: true });
+    read.mockResolvedValueOnce(list(cached));
+    await useAnnexClientStore.getState().loadSatellites();
+    start();
+    send('pty:exit', { agentId: 'agent', exitCode: 0 });
+    send('permission:response', { requestId: 'request' });
+    send('session:resumed', {});
+    const projects = catalog().satelliteProjects[satellite.id];
+    const storedSnapshot = useAnnexClientStore.getState().satellites[0].snapshot;
+    changed(structuredClone(list(cached)));
+    expect(catalog().satelliteProjects[satellite.id]).toBe(projects);
+    expect(useAnnexClientStore.getState().satellites[0].snapshot).toBe(storedSnapshot);
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(false);
+  });
+
+  it('applies changed same-seq canvas/icons and detects in-place mutation without mutating the input', () => {
+    start();
+    const cached = snapshot();
+    changed(list(cached));
+    cached.projectIcons = { project: 'data:image/png;base64,synthetic' };
+    cached.canvasState = { project: { canvases: [{ id: 'canvas', views: [{ agentId: 'agent' }] }], activeCanvasId: 'canvas' } };
+    changed(list(cached));
+    expect(catalog().remoteProjectIcons[projectId]).toBe(cached.projectIcons.project);
+    expect(catalog().remoteCanvasState[projectId].canvases).toMatchObject([{ views: [{ agentId }] }]);
+    expect(cached.canvasState.project.canvases).toMatchObject([{ views: [{ agentId: 'agent' }] }]);
+  });
+
+  it.each(['snapshot', 'pty:exit', 'permission:response'])('rejects an initial read completing after a newer %s event', async (type) => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    start();
+    changed(list(snapshot()));
+    const pendingRefresh = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pendingRefresh.promise);
+    const refresh = useAnnexClientStore.getState().loadSatellites();
+    if (type === 'snapshot') send(type, snapshot({ projects: [], agents: {}, lastSeq: 43, pendingPermissions: [] }));
+    if (type === 'pty:exit') send(type, { agentId: 'agent', exitCode: 0 });
+    if (type === 'permission:response') send(type, { requestId: 'request' });
+    pending.resolve(list(snapshot()));
+    pendingRefresh.resolve(list(snapshot()));
+    await refresh;
+    await tick();
+    if (type === 'snapshot') expect(catalog().satelliteProjects[satellite.id]).toEqual([]);
+    if (type === 'pty:exit') expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+  });
+
+  it('keeps the newest overlapping read, and a failed read preserves the existing catalog', async () => {
+    const first = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(first.promise).mockResolvedValueOnce(list(snapshot({ lastSeq: 43, projects: [] })));
+    const oldRead = useAnnexClientStore.getState().loadSatellites();
+    await useAnnexClientStore.getState().loadSatellites();
+    first.resolve(list(snapshot()));
+    await oldRead;
+    expect(catalog().satelliteProjects[satellite.id]).toEqual([]);
+    read.mockRejectedValueOnce(new Error('synthetic read failure'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await useAnnexClientStore.getState().loadSatellites();
+    expect(warn).toHaveBeenCalled();
+    expect(useAnnexClientStore.getState().satellites[0].snapshot?.lastSeq).toBe(43);
+    warn.mockRestore();
+  });
+
+  it('accepts a fresh lower sequence after reconnect without replaying the old cache at socket open', () => {
+    start();
+    const cached = snapshot({ sessionPaused: true });
+    changed(list(cached));
+    send('pty:exit', { agentId: 'agent' });
+    changed(structuredClone(list(cached, 'disconnected')));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    changed(structuredClone(list(cached)));
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    changed(list(snapshot({ lastSeq: 0, projects: [], agents: {}, pendingPermissions: [], sessionPaused: false })));
+    send('snapshot', snapshot({ lastSeq: 0, projects: [], agents: {}, pendingPermissions: [] }));
+    expect(catalog().satelliteProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteAgents[agentId]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(false);
+  });
+
+  it('an authoritative reconnect snapshot restores permissions even with identical contents', () => {
+    start();
+    const cached = snapshot();
+    changed(list(cached));
+    changed(list(cached, 'disconnected'));
+    changed(structuredClone(list(cached)));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    send('snapshot', structuredClone(cached));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+  });
+
+  it('does not hydrate disconnected or missing snapshots; forgetting removes only that host', () => {
+    start();
+    changed(list(snapshot(), 'disconnected'));
+    expect(catalog().remoteAgents[agentId]).toBeUndefined();
+    changed(list(null));
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    changed([...list(snapshot()), { ...satellite, id: 'other', snapshot: snapshot() }]);
+    changed([{ ...satellite, id: 'other', snapshot: snapshot() }]);
+    send('snapshot', snapshot());
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    expect(catalog().remoteAgents[agentId]).toBeUndefined();
+    expect(catalog().satelliteProjects.other).toHaveLength(1);
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+  });
+
+  it('old listener callbacks and reads cannot restore removed state across cleanup/reinitialization', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    const off = start();
+    changed(list(snapshot()));
+    const oldChanged = changed;
+    const oldReceive = receive;
+    off();
+    read.mockResolvedValueOnce([]);
+    start();
+    await tick();
+    oldChanged(list(snapshot()));
+    oldReceive({ satelliteId: satellite.id, type: 'snapshot', payload: snapshot() });
+    pending.resolve(list(snapshot()));
+    await tick();
+    expect(useAnnexClientStore.getState().satellites).toEqual([]);
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+  });
+  it('hydrates when exit and settlement cross the first read with no later list, preserving both newer updates', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    start();
+    send('pty:exit', { agentId: 'agent', exitCode: 0, data: 'must not retain output' });
+    send('permission:response', { requestId: 'request' });
+    pending.resolve(list(snapshot()));
+    await tick();
+    expect(catalog().satelliteProjects[satellite.id]).toHaveLength(1);
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves validated permission requests, ordered settlement and status/pause operations before the first catalog', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    start();
+    send('permission:request', { ...permission, requestId: 'new', toolInput: { command: 'synthetic' } });
+    send('permission:response', { requestId: 'request' });
+    send('agent:status', { agentId: 'agent', status: 'sleeping', detailedStatus: { state: 'idle', message: 'Synthetic', timestamp: 2 } });
+    send('session:paused', {});
+    pending.resolve(list(snapshot()));
+    await tick();
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    expect(catalog().remoteAgentDetailedStatus[agentId]).toMatchObject({ state: 'idle', timestamp: 2 });
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(usePendingPermissionStore.getState().byRequestId[namespacedAgentId(satellite.id, 'new')]).toMatchObject({ toolInput: { command: 'synthetic' } });
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(true);
+  });
+
+  it('a later authoritative snapshot supersedes the journal, including same-seq changes', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    useAnnexClientStore.setState({ satellites: list(null) });
+    start();
+    send('pty:exit', { agentId: 'agent' });
+    send('permission:response', { requestId: 'request' });
+    send('snapshot', snapshot({ projectIcons: { project: 'new-icon' } }));
+    pending.resolve(list(snapshot()));
+    await tick();
+    expect(catalog().remoteAgents[agentId].status).toBe('running');
+    expect(catalog().remoteProjectIcons[projectId]).toBe('new-icon');
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+  });
+
+  it('a list received during the first read seeds then replays, and a following snapshot supersedes the replay', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    start();
+    send('pty:exit', { agentId: 'agent' });
+    changed(list(snapshot()));
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    send('snapshot', snapshot());
+    pending.resolve(list(snapshot({ projects: [] })));
+    await tick();
+    expect(catalog().remoteAgents[agentId].status).toBe('running');
+    expect(catalog().satelliteProjects[satellite.id]).toHaveLength(1);
+  });
+
+  it('uses at most one extra read for a snapshot preceding metadata, retaining later incremental operations', async () => {
+    const first = deferred<SatelliteConnection[]>();
+    const second = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    start();
+    send('snapshot', snapshot({ lastSeq: 0 }));
+    first.resolve(list(snapshot()));
+    await tick();
+    expect(read).toHaveBeenCalledTimes(2);
+    send('pty:exit', { agentId: 'agent' });
+    second.resolve(list(snapshot({ lastSeq: 0 })));
+    await tick();
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    expect(useAnnexClientStore.getState().satellites[0].snapshot?.lastSeq).toBe(0);
+  });
+
+  it('defers after sustained snapshot invalidations without looping, then recovers on a live snapshot', async () => {
+    const first = deferred<SatelliteConnection[]>();
+    const second = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    start();
+    send('snapshot', snapshot({ lastSeq: 1 }));
+    first.resolve(list(snapshot()));
+    await tick();
+    send('snapshot', snapshot({ lastSeq: 2 }));
+    second.resolve(list(snapshot({ lastSeq: 1 })));
+    await tick();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    changed(list(snapshot({ lastSeq: 2 })));
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    send('snapshot', snapshot({ lastSeq: 2 }));
+    expect(catalog().satelliteProjects[satellite.id]).toHaveLength(1);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it.each(['entries', 'payload', 'unsupported'])('defers %s overflow without replaying stale permissions and recovers only from a live snapshot', async (limit) => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    start();
+    if (limit === 'entries') for (let i = 0; i < 33; i++) send('pty:exit', { agentId: 'agent' });
+    if (limit === 'payload') send('permission:request', { ...permission, toolInput: { command: 'x'.repeat(2048) } });
+    if (limit === 'unsupported') send('agent:spawned', { agentId: 'new-agent', projectId: 'project', name: 'Synthetic' });
+    pending.resolve(list(snapshot()));
+    await tick();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    changed(list(snapshot({ lastSeq: 43 })));
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    send('snapshot', snapshot({ lastSeq: 43, pendingPermissions: [] }));
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+    expect(catalog().satelliteProjects[satellite.id]).toHaveLength(1);
+  });
+
+  it('caps hosts and ignores PTY/chat payloads while waiting for the first catalog', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    start();
+    for (let i = 0; i < 100; i++) {
+      send('pty:data', { agentId: 'agent', data: 'x'.repeat(4096) });
+      send('chat:event', { agentId: 'agent', event: { body: 'x'.repeat(4096) } });
+    }
+    for (let i = 0; i < 9; i++) receive({ satelliteId: `host-${i}`, type: 'pty:exit', payload: { agentId: 'agent' } });
+    pending.resolve(Array.from({ length: 9 }, (_, i) => ({ ...satellite, id: `host-${i}`, snapshot: snapshot() })));
+    await tick();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(useAnnexClientStore.getState().satellites.every((sat) => sat.catalogIncomplete)).toBe(true);
+    expect(catalog().satelliteProjects).toEqual({});
+  });
+
+  it('cleanup cancels the bounded retry and drops journal operations', async () => {
+    const first = deferred<SatelliteConnection[]>();
+    const second = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const off = start();
+    send('snapshot', snapshot());
+    first.resolve(list(snapshot()));
+    await tick();
+    expect(read).toHaveBeenCalledTimes(2);
+    send('pty:exit', { agentId: 'agent' });
+    off();
+    second.resolve(list(snapshot()));
+    await tick();
+    expect(useAnnexClientStore.getState().satellites).toEqual([]);
+    expect(catalog().satelliteProjects).toEqual({});
+  });
+
+  it('coalesces a concurrent Settings load with startup instead of losing its overlay', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    start();
+    send('pty:exit', { agentId: 'agent' });
+    const settingsRead = useAnnexClientStore.getState().loadSatellites();
+    pending.resolve(list(snapshot()));
+    await settingsRead;
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+  });
+
+  it('clears the journal on disconnect/removal and waits for a fresh reconnect snapshot when only the old cache exists', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    const cached = snapshot();
+    read.mockReturnValueOnce(pending.promise);
+    start();
+    send('pty:exit', { agentId: 'agent' });
+    changed(list(cached, 'disconnected'));
+    changed(structuredClone(list(cached)));
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', cached);
+    expect(catalog().remoteAgents[agentId].status).toBe('running');
+    changed([]);
+    pending.resolve(list(cached));
+    await tick();
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites).toEqual([]);
+  });
+
+  it('caps aggregate retained size across hosts', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    start();
+    for (let host = 0; host < 8; host++) for (let operation = 0; operation < 24; operation++) {
+      receive({ satelliteId: `host-${host}`, type: 'permission:request', payload: { ...permission, requestId: `request-${operation}`, message: 'x'.repeat(500) } });
+    }
+    pending.resolve(Array.from({ length: 8 }, (_, host) => ({ ...satellite, id: `host-${host}`, snapshot: snapshot() })));
+    await tick();
+    expect(useAnnexClientStore.getState().satellites.some((sat) => sat.catalogIncomplete)).toBe(true);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not clear deferred acceptance on cleanup/reinit; a fresh snapshot clears it', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    const off = start();
+    send('canvas:state', {});
+    pending.resolve(list(snapshot()));
+    await tick();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    off();
+    read.mockResolvedValueOnce(list(snapshot()));
+    start();
+    await tick();
+    expect(catalog().satelliteProjects[satellite.id]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', snapshot({ projects: [], agents: {}, pendingPermissions: [] }));
+    expect(catalog().satelliteProjects[satellite.id]).toEqual([]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it('a live authoritative snapshot stays reconciled during host overflow and subsequent cloned lists', async () => {
+    const pending = deferred<SatelliteConnection[]>();
+    read.mockReturnValueOnce(pending.promise);
+    start();
+    for (let i = 0; i < 9; i++) receive({ satelliteId: `host-${i}`, type: 'pty:exit', payload: { agentId: 'agent' } });
+    const satellites = Array.from({ length: 9 }, (_, i) => ({ ...satellite, id: `host-${i}`, snapshot: snapshot() }));
+    changed(satellites);
+    receive({ satelliteId: 'host-0', type: 'snapshot', payload: snapshot() });
+    changed(structuredClone(satellites));
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
+    expect(catalog().satelliteProjects['host-0']).toHaveLength(1);
+    pending.resolve(satellites);
+    await tick();
+  });
+
+  it.each(['list', 'read'])('HY1: cached canvas/icon changes through %s do not replay older agent, permission or pause state', async (source) => {
+    const cached = snapshot({ sessionPaused: true });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    send('pty:exit', { agentId: 'agent', exitCode: 0 });
+    send('permission:response', { requestId: 'request' });
+    send('session:resumed', {});
+    expect({
+      status: catalog().remoteAgents[agentId].status,
+      permission: usePendingPermissionStore.getState().byRequestId[requestId],
+      paused: useAnnexClientStore.getState().satellitePaused[satellite.id],
+    }).toEqual({ status: 'sleeping', permission: undefined, paused: false });
+    // Main folds canvas events into sat.snapshot, but does not fold the three
+    // events above. A later local list/read therefore legitimately mixes them.
+    const updated = structuredClone(cached);
+    updated.canvasState = { project: { canvases: [{ id: 'canvas', views: [{ agentId: 'agent' }] }], activeCanvasId: 'canvas' } };
+    updated.projectIcons = { project: 'data:image/png;base64,updated' };
+    if (source === 'list') changed(list(updated));
+    else {
+      read.mockResolvedValueOnce(list(updated));
+      await useAnnexClientStore.getState().loadSatellites();
+    }
+    expect(catalog().remoteCanvasState[projectId].canvases).toMatchObject([{ views: [{ agentId }] }]);
+    expect(catalog().remoteProjectIcons[projectId]).toBe(updated.projectIcons.project);
+    expect({
+      status: catalog().remoteAgents[agentId].status,
+      permission: usePendingPermissionStore.getState().byRequestId[requestId],
+      paused: useAnnexClientStore.getState().satellitePaused[satellite.id],
+    }).toEqual({ status: 'sleeping', permission: undefined, paused: false });
+  });
+
+  it('HY1: changed live agent domain defers while independent project metadata and detailed status survive', async () => {
+    const cached = snapshot({ agentsMeta: { agent: { detailedStatus: { state: 'idle', message: 'Old', timestamp: 1 } } } });
+    cached.agents.project[0].pluginMetadata = { changed: 'old', unchanged: 'old' };
+    cached.projects[0].color = 'blue';
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    send('pty:exit', { agentId: 'agent' });
+    catalog().updateRemoteAgentStatus(satellite.id, 'agent', { state: 'working', message: 'Newer', timestamp: 2 });
+    useRemoteProjectStore.setState((state) => ({
+      remoteAgents: { ...state.remoteAgents, [agentId]: { ...state.remoteAgents[agentId], pluginMetadata: { changed: 'old', unchanged: 'live' } } },
+      satelliteProjects: { ...state.satelliteProjects, [satellite.id]: state.satelliteProjects[satellite.id].map((project) => ({ ...project, color: 'green' })) },
+    }));
+    const updated = structuredClone(cached);
+    updated.agents.project[0].color = 'purple';
+    updated.agents.project[0].pluginMetadata!.changed = 'cached-new';
+    updated.projects[0].displayName = 'New project label';
+    changed(list(updated));
+    expect(catalog().remoteAgents[agentId]).toMatchObject({ status: 'sleeping', color: '', pluginMetadata: { changed: 'old', unchanged: 'live' } });
+    expect(catalog().remoteAgentDetailedStatus[agentId]).toMatchObject({ state: 'working', timestamp: 2 });
+    expect(catalog().satelliteProjects[satellite.id][0]).toMatchObject({ displayName: 'New project label', color: 'green' });
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY1: uncertain agent/permission membership defers while project/icon clearing and another host survive', async () => {
+    const cached = snapshot();
+    cached.projects.push({ id: 'removed-project', name: 'Removed', path: '/synthetic-removed' });
+    cached.agents.project.push({ ...cached.agents.project[0], id: 'removed-agent' });
+    cached.projectIcons = { project: 'old-icon' };
+    cached.agentIcons = { agent: 'old-agent-icon' };
+    cached.pendingPermissions.push({ ...permission, requestId: 'removed-request' });
+    cached.agentsMeta = { agent: { detailedStatus: { state: 'idle', message: 'Old', timestamp: 1 } } };
+    read.mockResolvedValueOnce([...list(structuredClone(cached)), { ...satellite, id: 'other', snapshot: snapshot() }]);
+    start();
+    await tick();
+    send('agent:spawned', { id: 'live-agent', projectId: 'project', status: 'running', name: 'Live' });
+    send('permission:request', { ...permission, requestId: 'live-request' });
+    const otherProjects = catalog().satelliteProjects.other;
+    const updated = structuredClone(cached);
+    updated.projects = [updated.projects[0], { id: 'new-project', name: 'New', path: '/synthetic-new' }];
+    updated.agents.project = [updated.agents.project[0], { ...updated.agents.project[0], id: 'new-agent', projectId: 'new-project' }];
+    updated.pendingPermissions = [permission, { ...permission, requestId: 'new-request' }];
+    updated.projectIcons = {};
+    updated.agentIcons = {};
+    updated.agentsMeta = {};
+    changed([...list(updated), { ...satellite, id: 'other', snapshot: snapshot() }]);
+    expect(catalog().satelliteProjects[satellite.id].map((project) => project.id)).toEqual([projectId, namespacedProjectId(satellite.id, 'new-project')]);
+    expect(catalog().remoteAgents[namespacedAgentId(satellite.id, 'removed-agent')]).toBeDefined();
+    expect(catalog().remoteAgents[namespacedAgentId(satellite.id, 'new-agent')]).toBeUndefined();
+    expect(catalog().remoteAgents[namespacedAgentId(satellite.id, 'live-agent')]).toBeDefined();
+    expect(catalog().remoteProjectIcons[projectId]).toBeUndefined();
+    expect(catalog().remoteAgentIcons[agentId]).toBeUndefined();
+    expect(catalog().remoteAgentDetailedStatus[agentId]).toBeUndefined();
+    expect(usePendingPermissionStore.getState().byRequestId[namespacedAgentId(satellite.id, 'removed-request')]).toBeDefined();
+    expect(usePendingPermissionStore.getState().byRequestId[namespacedAgentId(satellite.id, 'new-request')]).toBeUndefined();
+    expect(usePendingPermissionStore.getState().byRequestId[namespacedAgentId(satellite.id, 'live-request')]).toBeDefined();
+    expect(catalog().satelliteProjects.other).toBe(otherProjects);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', updated);
+    expect(catalog().remoteAgents[namespacedAgentId(satellite.id, 'removed-agent')]).toBeUndefined();
+    expect(catalog().remoteAgents[namespacedAgentId(satellite.id, 'new-agent')]).toBeDefined();
+    expect(usePendingPermissionStore.getState().byRequestId[namespacedAgentId(satellite.id, 'new-request')]).toBeDefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it('HY1: explicit undefined and omitted cached properties clear only the changed source fields', async () => {
+    const cached = snapshot();
+    cached.projects[0].emoji = 'old';
+    cached.agents.project[0].model = 'old-model';
+    cached.agents.project[0].pluginMetadata = { keep: 'keep', remove: 'remove' };
+    cached.pendingPermissions = [{ ...permission, message: 'old-message' }];
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    const updated = structuredClone(cached);
+    updated.projects[0].emoji = undefined;
+    delete updated.agents.project[0].model;
+    delete updated.agents.project[0].pluginMetadata!.remove;
+    updated.pendingPermissions = [{ ...permission, message: undefined }];
+    changed(list(updated));
+    expect(catalog().satelliteProjects[satellite.id][0]).toHaveProperty('emoji', undefined);
+    expect(catalog().remoteAgents[agentId]).not.toHaveProperty('model');
+    expect(catalog().remoteAgents[agentId].pluginMetadata).toEqual({ keep: 'keep' });
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toHaveProperty('message', undefined);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
+  });
+
+  it.each([42, 0])('HY1: same-field conflict keeps current state, applies independent deltas, and waits for live seq %s', async (seq) => {
+    const cached = snapshot();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    useRemoteProjectStore.setState((state) => ({ remoteAgents: { ...state.remoteAgents, [agentId]: { ...state.remoteAgents[agentId], name: 'Renderer C' } } }));
+    const updated = structuredClone(cached);
+    updated.agents.project[0].name = 'Cached B';
+    updated.agents.project[0].color = 'blue';
+    changed(list(updated));
+    expect(catalog().remoteAgents[agentId]).toMatchObject({ name: 'Renderer C', color: 'blue' });
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    changed(list({ ...updated, projectIcons: { project: 'later-cache' } }));
+    expect(catalog().remoteAgents[agentId].name).toBe('Renderer C');
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...updated, lastSeq: seq });
+    expect(catalog().remoteAgents[agentId].name).toBe('Cached B');
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it('HY1: a cached edit cannot resurrect a settled permission or delete a newer conflicting row', async () => {
+    const cached = snapshot();
+    cached.pendingPermissions = [{ ...permission, message: 'A' }];
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    send('permission:response', { requestId: 'request' });
+    send('pty:exit', { agentId: 'agent' });
+    const updated = structuredClone(cached);
+    updated.pendingPermissions = [{ ...permission, message: 'B' }];
+    updated.agents = {};
+    changed(list(updated));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...updated, pendingPermissions: [] });
+    expect(catalog().remoteAgents[agentId]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it('HY1: live canvas domain defers changed cached rows until authoritative snapshot', async () => {
+    const cached = snapshot({ canvasState: { project: { canvases: [
+      { id: '1', name: 'Old', views: [{ id: 'view', agentId: 'agent', x: 0 }] },
+      { id: '2', name: 'Second', views: [] },
+    ], activeCanvasId: '1' } } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    catalog().updateRemoteCanvasState(projectId, { canvases: [
+      { id: '1', name: 'Old', views: [{ id: 'view', agentId, x: 10 }] },
+      { id: '2', name: 'Second', views: [] },
+    ], activeCanvasId: '1' });
+    const updated = structuredClone(cached);
+    updated.canvasState!.project.canvases = [
+      updated.canvasState!.project.canvases[1],
+      { id: '1', name: 'Cached rename', views: [{ id: 'view', agentId: 'agent', x: 0 }] },
+    ];
+    changed(list(updated));
+    expect(catalog().remoteCanvasState[projectId].canvases).toEqual([
+      { id: '1', name: 'Old', views: [{ id: 'view', agentId, x: 10 }] },
+      { id: '2', name: 'Second', views: [] },
+    ]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', updated);
+    expect(catalog().remoteCanvasState[projectId].canvases).toEqual([
+      { id: '2', name: 'Second', views: [] },
+      { id: '1', name: 'Cached rename', views: [{ id: 'view', agentId, x: 0 }] },
+    ]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it.each(['list', 'read'])('HY2: conflicting cached row order through %s preserves current order and defers', async (source) => {
+    const rows = [{ id: '1', views: [] }, { id: '2', views: [] }, { id: '3', views: [] }];
+    const cached = snapshot({ canvasState: { project: { canvases: rows, activeCanvasId: '1' } } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    const order = () => (catalog().remoteCanvasState[projectId].canvases as Array<{ id: string }>).map((row) => row.id);
+    expect(order()).toEqual(['1', '2', '3']);
+    catalog().updateRemoteCanvasState(projectId, { canvases: [rows[1], rows[0], rows[2]], activeCanvasId: '1' });
+    expect(order()).toEqual(['2', '1', '3']);
+    const updated = structuredClone(cached);
+    updated.canvasState!.project.canvases = [rows[0], rows[2], rows[1]];
+    if (source === 'list') changed(list(updated));
+    else {
+      read.mockResolvedValueOnce(list(updated));
+      await useAnnexClientStore.getState().loadSatellites();
+    }
+    expect(order()).toEqual(['2', '1', '3']);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it.each([['list', 'roundtrip'], ['read', 'roundtrip'], ['list', 'unknown'], ['read', 'unknown']])('HY3: %s cannot admit cached permission addition after %s settlement ABA', async (source, mode) => {
+    const cached = snapshot({ pendingPermissions: [] });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    if (mode === 'roundtrip') {
+      send('permission:request', permission);
+      expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+    }
+    send('permission:response', { requestId: 'request' });
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    const updated = { ...structuredClone(cached), pendingPermissions: [permission], projectIcons: { project: 'independent-icon' } };
+    if (source === 'list') changed(list(updated));
+    else { read.mockResolvedValueOnce(list(updated)); await useAnnexClientStore.getState().loadSatellites(); }
+    expect(catalog().remoteProjectIcons[projectId]).toBe('independent-icon');
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it.each(['list', 'read'])('HY3: %s cannot re-add a canvas row after an observed add/delete roundtrip', async (source) => {
+    const canvas = { id: 'canvas', name: 'Synthetic', views: [], viewport: {}, nextZIndex: 0, zoomedViewId: null, selectedViewId: null };
+    const cached = snapshot({ canvasState: { project: { canvases: [canvas], activeCanvasId: 'canvas' } } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    const views = () => (catalog().remoteCanvasState[projectId].canvases as Array<{ views: unknown[] }>)[0].views;
+    expect(views()).toEqual([]);
+    vi.useFakeTimers();
+    try {
+      const event = (value: unknown[]) => ({ projectId: 'project', state: { ...canvas, canvasId: 'canvas', views: value, allCanvasTabs: [{ id: 'canvas', name: 'Synthetic' }] } });
+      send('canvas:state', event([{ id: 'new-view', agentId: 'agent' }]));
+      vi.runOnlyPendingTimers();
+      expect(views()).toMatchObject([{ id: 'new-view', agentId }]);
+      send('canvas:state', event([]));
+      vi.runOnlyPendingTimers();
+      expect(views()).toEqual([]);
+    } finally { vi.useRealTimers(); }
+    const updated = structuredClone(cached);
+    updated.canvasState!.project.canvases = [{ ...canvas, views: [{ id: 'new-view', agentId: 'agent' }] }];
+    if (source === 'list') changed(list(updated));
+    else { read.mockResolvedValueOnce(list(updated)); await useAnnexClientStore.getState().loadSatellites(); }
+    expect(views()).toEqual([]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY3: pause/resume ABA cannot admit an older cached pause', async () => {
+    const cached = snapshot({ sessionPaused: false });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(false);
+    send('session:paused', {});
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(true);
+    send('session:resumed', {});
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(false);
+    changed(list({ ...cached, sessionPaused: true }));
+    expect(useAnnexClientStore.getState().satellitePaused[satellite.id]).toBe(false);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY3: running/sleeping/running ABA cannot admit an older cached sleep', async () => {
+    const cached = snapshot({ pendingPermissions: [] });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start();
+    await tick();
+    expect(catalog().remoteAgents[agentId].status).toBe('running');
+    send('pty:exit', { agentId: 'agent' });
+    expect(catalog().remoteAgents[agentId].status).toBe('sleeping');
+    send('agent:woken', { agentId: 'agent' });
+    expect(catalog().remoteAgents[agentId].status).toBe('running');
+    const updated = structuredClone(cached);
+    updated.agents.project[0].status = 'sleeping';
+    changed(list(updated));
+    expect(catalog().remoteAgents[agentId].status).toBe('running');
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY3: clean cached nested metadata and new permission/agent rows remain admissible', async () => {
+    const cached = snapshot({ pendingPermissions: [] });
+    cached.agents.project[0].pluginMetadata = { keep: 'old', changed: 'old' };
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const updated = structuredClone(cached);
+    updated.agents.project[0].pluginMetadata!.changed = 'new';
+    updated.agents.project.push({ ...updated.agents.project[0], id: 'new-agent' });
+    updated.pendingPermissions = [permission];
+    changed(list(updated));
+    expect(catalog().remoteAgents[agentId].pluginMetadata).toEqual({ keep: 'old', changed: 'new' });
+    expect(catalog().remoteAgents[namespacedAgentId(satellite.id, 'new-agent')]).toBeDefined();
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
+  });
+
+  it.each([42, 0])('HY3: convergence retains uncertainty; authoritative seq %s resets established permission state', async (seq) => {
+    const cached = snapshot({ pendingPermissions: [] });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    send('permission:request', permission);
+    changed(list({ ...cached, pendingPermissions: [permission] }));
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
+    changed(list(cached));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...cached, lastSeq: seq });
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+    changed(list({ ...cached, lastSeq: seq, pendingPermissions: [permission] }));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+  });
+
+  it('HY3: cloned records and listener gaps retain uncertainty; removal discards that record history', async () => {
+    const cached = snapshot({ pendingPermissions: [] });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    const off = start(); await tick();
+    send('permission:response', { requestId: 'request' });
+    changed(structuredClone(list(cached)));
+    off();
+    read.mockResolvedValueOnce(list({ ...cached, pendingPermissions: [permission] }));
+    start(); await tick();
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    changed([]);
+    changed(list({ ...cached, pendingPermissions: [permission] }));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
+  });
+
+  it('HY3: an observation gap defers changed cached state even without a recorded live event', async () => {
+    const cached = snapshot({ pendingPermissions: [] });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    const off = start(); await tick(); off();
+    read.mockResolvedValueOnce(list({ ...cached, pendingPermissions: [permission] }));
+    start(); await tick();
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY3: unrelated agent exit conservatively defers new cached permissions but keeps independent icons', async () => {
+    const cached = snapshot({ pendingPermissions: [] });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    send('pty:exit', { agentId: 'unrelated-agent' });
+    changed(list({ ...cached, pendingPermissions: [permission], projectIcons: { project: 'new-icon' } }));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(catalog().remoteProjectIcons[projectId]).toBe('new-icon');
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('permission:request', permission);
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+  });
+
+  it.each(['canvasState', 'appCanvasState', 'groupProjects', 'bulletinDigests', 'groupProjectMembers'])('HY3: authoritative omission cannot clear deferred %s projection', async (field) => {
+    const data = { canvases: [{ id: 'canvas', views: [] }], activeCanvasId: 'canvas' };
+    const cached = snapshot({ canvasState: { project: data }, appCanvasState: data, groupProjects: [{ id: 'group' }], bulletinDigests: { group: [] }, groupProjectMembers: { group: [] } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    const off = start(); await tick(); off();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const updated = structuredClone(cached);
+    if (field === 'canvasState') updated.canvasState!.project.activeCanvasId = 'other';
+    if (field === 'appCanvasState') updated.appCanvasState!.activeCanvasId = 'other';
+    if (field === 'groupProjects') {
+      updated.groupProjects = [{ id: 'other-group' }];
+      // Positive recovery supplies actual typed evidence for the new visible ID.
+      updated.bulletinDigests = { 'other-group': [] };
+      updated.groupProjectMembers = { 'other-group': [] };
+    }
+    if (field === 'bulletinDigests') updated.bulletinDigests = { group: [{ id: 'new-message' }] };
+    if (field === 'groupProjectMembers') updated.groupProjectMembers = { group: [{ agentId: 'new-agent', agentName: 'Synthetic', status: 'running' }] };
+    changed(list(updated));
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    const omitted = structuredClone(updated);
+    delete omitted[field as keyof SatelliteSnapshot];
+    send('snapshot', omitted);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', updated);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it.each(['cached-only', 'convergent'])('HY2: %s reorder applies without conflict and live snapshots resolve competing orders', async (mode) => {
+    const rows = [{ id: '1', views: [] }, { id: '2', views: [] }, { id: '3', views: [] }];
+    const cached = snapshot({ canvasState: { project: { canvases: rows, activeCanvasId: '1' } } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const updated = structuredClone(cached);
+    updated.canvasState!.project.canvases = [rows[0], rows[2], rows[1]];
+    if (mode === 'convergent') catalog().updateRemoteCanvasState(projectId, updated.canvasState!.project);
+    changed(list(updated));
+    expect(catalog().remoteCanvasState[projectId].canvases).toEqual(updated.canvasState!.project.canvases);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
+  });
+
+  it('HY2: competing common-ID order with additions/removals keeps current order, known rows and deferred acceptance', async () => {
+    const rows = ['1', '2', '3', '4'].map((id) => ({ id, views: [] }));
+    const cached = snapshot({ canvasState: { project: { canvases: rows, activeCanvasId: '1' } } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    catalog().updateRemoteCanvasState(projectId, { canvases: [rows[1], rows[0], rows[2], rows[3]], activeCanvasId: '1' });
+    const updated = structuredClone(cached);
+    updated.canvasState!.project.canvases = [rows[0], rows[3], rows[1], { id: 'new', views: [] }];
+    changed(list(updated));
+    const order = () => (catalog().remoteCanvasState[projectId].canvases as Array<{ id: string }>).map((row) => row.id);
+    expect(order()).toEqual(['2', '1', '3', '4']);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...updated, lastSeq: 0 });
+    expect(order()).toEqual(['1', '4', '2', 'new']);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it('HY3: the agent deletion UI mutator cannot be undone by a cached new-ID addition', async () => {
+    const cached = snapshot();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const added = { ...cached.agents.project[0], id: 'deleted-agent' };
+    catalog().upsertRemoteAgent(satellite.id, added);
+    const id = namespacedAgentId(satellite.id, added.id);
+    expect(catalog().remoteAgents[id]).toBeDefined();
+    catalog().removeRemoteAgent(satellite.id, added.id);
+    expect(catalog().remoteAgents[id]).toBeUndefined();
+    const updated = structuredClone(cached);
+    updated.agents.project.push(added);
+    changed(list(updated));
+    expect(catalog().remoteAgents[id]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY3: group edit/delete invalidation is scoped to its host and does not recursively taint cache reconciliation', async () => {
+    const cached = snapshot({ groupProjects: [] });
+    read.mockResolvedValueOnce([...list(structuredClone(cached)), { ...satellite, id: 'other', snapshot: structuredClone(cached) }]);
+    start(); await tick();
+    catalog().updateRemoteGroupProject(satellite.id, 'created', { id: 'group', name: 'A' });
+    catalog().updateRemoteGroupProject(satellite.id, 'updated', { id: 'group', name: 'C' });
+    expect(catalog().remoteGroupProjects[satellite.id]).toMatchObject([{ name: 'C' }]);
+    catalog().updateRemoteGroupProject(satellite.id, 'deleted', { id: 'group' });
+    expect(catalog().remoteGroupProjects[satellite.id]).toEqual([]);
+    const updated = { ...cached, groupProjects: [{ id: 'group', name: 'B' }] };
+    changed([...list(updated), { ...satellite, id: 'other', snapshot: updated }]);
+    expect(catalog().remoteGroupProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteGroupProjects.other).toEqual(updated.groupProjects);
+    expect(useAnnexClientStore.getState().satellites.find((sat) => sat.id === 'other')?.catalogIncomplete).not.toBe(true);
+    changed([...list(updated), { ...satellite, id: 'other', snapshot: { ...updated, groupProjects: [{ id: 'second', name: 'Second' }] } }]);
+    expect(catalog().remoteGroupProjects.other).toMatchObject([{ id: 'second' }]);
+  });
+
+  it('HY3: permission resolution display removal invalidates cache without changing the host action or granting again', async () => {
+    const cached = snapshot({ pendingPermissions: [] });
+    const respond = vi.fn(async () => ({ status: 'resolved' as const }));
+    Object.assign(window.clubhouse.annexClient, { respondPermission: respond });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    usePendingPermissionStore.getState().addPending({ ...permission, requestId, agentId });
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+    await usePendingPermissionStore.getState().resolve(agentId, requestId, 'allow');
+    expect(respond).toHaveBeenCalledWith(satellite.id, 'agent', 'request', 'allow');
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    changed(list({ ...cached, pendingPermissions: [permission] }));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeUndefined();
+    expect(respond).toHaveBeenCalledTimes(1);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY3: repeated old cleanup cannot invalidate a newly established listener or retain mutation callbacks', async () => {
+    const cached = snapshot({ pendingPermissions: [] });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    const off = start(); await tick(); off();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    send('snapshot', cached);
+    off();
+    changed(list({ ...cached, pendingPermissions: [permission] }));
+    expect(usePendingPermissionStore.getState().byRequestId[requestId]).toBeDefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).not.toBe(true);
+  });
+
+  it('HY4: a live omitted digest entry cannot erase deferred evidence after bulletin invalidation removed its current key', async () => {
+    const cached = snapshot({ groupProjects: [{ id: 'group' }], bulletinDigests: { group: [{ id: 'old' }] } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const key = `${satellite.id}::group`;
+    expect(catalog().remoteBulletinDigests[key]).toEqual([{ id: 'old' }]);
+    catalog().addRemoteBulletinMessage(satellite.id, 'group', { id: 'event' });
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    const updated = { ...cached, bulletinDigests: { group: [{ id: 'cached-new' }] } };
+    changed(list(updated));
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...cached, bulletinDigests: {} });
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it('HY4: omitted membership entry cannot vacuously reset an observed-gap conflict after current membership disappeared', async () => {
+    const member = { agentId: 'agent', agentName: 'Synthetic', status: 'running' };
+    const cached = snapshot({ groupProjects: [{ id: 'group' }], groupProjectMembers: { group: [member] } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    const off = start(); await tick();
+    const key = `${satellite.id}::group`;
+    expect(catalog().remoteGroupProjectMembers[key]).toEqual([member]);
+    off();
+    useRemoteProjectStore.setState({ remoteGroupProjectMembers: {} });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    expect(catalog().remoteGroupProjectMembers[key]).toBeUndefined();
+    changed(list({ ...cached, groupProjectMembers: { group: [{ ...member, agentName: 'Cached' }] } }));
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...cached, groupProjectMembers: {} });
+    expect(catalog().remoteGroupProjectMembers[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+  });
+
+  it.each(['canvasState', 'bulletinDigests', 'groupProjectMembers'])('HY4-cache: still-visible omitted %s key is not a cached deletion', async (field) => {
+    const cached = snapshot({ groupProjects: [{ id: 'group' }], canvasState: { project: { canvases: [{ id: 'canvas', views: [] }], activeCanvasId: 'canvas' } }, bulletinDigests: { group: [{ id: 'old' }] }, groupProjectMembers: { group: [{ agentId: 'agent', agentName: 'Synthetic', status: 'running' }] } });
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const row = () => field === 'canvasState' ? catalog().remoteCanvasState[projectId]
+      : field === 'bulletinDigests' ? catalog().remoteBulletinDigests[`${satellite.id}::group`]
+      : catalog().remoteGroupProjectMembers[`${satellite.id}::group`];
+    const before = structuredClone(row());
+    expect(before).toBeDefined();
+    changed(list({ ...cached, [field]: {} }));
+    expect(row()).toEqual(before);
+  });
+
+  const fullPartialSnapshot = () => snapshot({
+    pendingPermissions: [], groupProjects: [{ id: 'group' }],
+    canvasState: { project: { canvases: [{ id: 'canvas', views: [] }], activeCanvasId: 'canvas' } },
+    bulletinDigests: { group: [{ id: 'old' }] },
+    groupProjectMembers: { group: [{ agentId: 'agent', agentName: 'Old', status: 'running' }] },
+  });
+
+  it.each(['bulletinDigests', 'groupProjectMembers', 'canvasState'])('HY4: missing directory/map/key and invalid %s entry cannot reset; own typed empty can', async (field) => {
+    const cached = fullPartialSnapshot();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    const off = start(); await tick(); off();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const updated = structuredClone(cached);
+    if (field === 'canvasState') updated.canvasState!.project.activeCanvasId = 'new';
+    if (field === 'bulletinDigests') updated.bulletinDigests = { group: [{ id: 'cached-new' }] };
+    if (field === 'groupProjectMembers') updated.groupProjectMembers = { group: [{ agentId: 'new', agentName: 'New', status: 'running' }] };
+    changed(list(updated));
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    const missingDirectory = structuredClone(updated);
+    if (field === 'canvasState') delete (missingDirectory as Partial<SatelliteSnapshot>).projects;
+    else delete missingDirectory.groupProjects;
+    send('snapshot', missingDirectory);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    const missingMap = structuredClone(updated);
+    delete missingMap[field as keyof SatelliteSnapshot];
+    send('snapshot', missingMap);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...updated, [field]: {} });
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', { ...updated, [field]: { [field === 'canvasState' ? 'project' : 'group']: null } });
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    const empty = field === 'canvasState' ? { project: { canvases: [], activeCanvasId: '' } } : { group: [] };
+    send('snapshot', { ...updated, [field]: empty });
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+    if (field === 'canvasState') expect(catalog().remoteCanvasState[projectId]).toEqual(empty.project);
+    if (field === 'bulletinDigests') expect(catalog().remoteBulletinDigests[`${satellite.id}::group`]).toEqual([]);
+    if (field === 'groupProjectMembers') expect(catalog().remoteGroupProjectMembers[`${satellite.id}::group`]).toEqual([]);
+  });
+
+  it.each(['visible removal', 'fail-closed hideAll visibility'])('HY4: %s evicts only that host; stale rows cannot reappear without typed admission', async () => {
+    const cached = fullPartialSnapshot();
+    read.mockResolvedValueOnce([...list(structuredClone(cached)), { ...satellite, id: 'other', snapshot: structuredClone(cached) }]);
+    start(); await tick();
+    const key = `${satellite.id}::group`;
+    const otherCanvas = catalog().remoteCanvasState[namespacedProjectId('other', 'project')];
+    const otherDigest = catalog().remoteBulletinDigests['other::group'];
+    catalog().addRemoteBulletinMessage(satellite.id, 'group', {});
+    changed([...list({ ...cached, bulletinDigests: { group: [{ id: 'withheld' }] } }), { ...satellite, id: 'other', snapshot: structuredClone(cached) }]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    // The renderer sees explicit visible[], not the reason (removal or hideAll).
+    // Neither case is evidence of physical deletion on the host.
+    send('snapshot', { ...cached, projects: [], agents: {}, groupProjects: [], canvasState: {}, bulletinDigests: {}, groupProjectMembers: {} });
+    expect(catalog().satelliteProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteGroupProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteCanvasState[projectId]).toBeUndefined();
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    expect(catalog().remoteGroupProjectMembers[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+    expect(catalog().remoteCanvasState[namespacedProjectId('other', 'project')]).toBe(otherCanvas);
+    expect(catalog().remoteBulletinDigests['other::group']).toBe(otherDigest);
+    const noPayload = { ...cached, canvasState: {}, bulletinDigests: {}, groupProjectMembers: {} };
+    changed([...list(noPayload), { ...satellite, id: 'other', snapshot: structuredClone(cached) }]);
+    expect(catalog().satelliteProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteGroupProjects[satellite.id]).toEqual([]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', noPayload);
+    expect(catalog().remoteCanvasState[projectId]).toBeUndefined();
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    expect(catalog().remoteGroupProjectMembers[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    const fresh = fullPartialSnapshot();
+    fresh.canvasState!.project = { canvases: [{ id: 'fresh', views: [] }], activeCanvasId: 'fresh' };
+    fresh.bulletinDigests = { group: [{ id: 'fresh' }] };
+    fresh.groupProjectMembers = { group: [{ agentId: 'fresh', agentName: 'Fresh', status: 'running' }] };
+    send('snapshot', fresh);
+    expect(catalog().remoteCanvasState[projectId].activeCanvasId).toBe('fresh');
+    expect(catalog().remoteBulletinDigests[key]).toEqual([{ id: 'fresh' }]);
+    expect(catalog().remoteGroupProjectMembers[key]).toMatchObject([{ agentId: 'fresh' }]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+    expect(catalog().remoteBulletinDigests['other::group']).toBe(otherDigest);
+  });
+
+  it('HY4: cached-only shrink never performs authority cleanup, and authority reappearance without payload evicts old retained data', async () => {
+    const cached = fullPartialSnapshot();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const key = `${satellite.id}::group`;
+    changed(list({ ...cached, projects: [], groupProjects: [], canvasState: {}, bulletinDigests: {}, groupProjectMembers: {} }));
+    expect(catalog().satelliteProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteGroupProjects[satellite.id]).toEqual([]);
+    expect(catalog().remoteCanvasState[projectId]).toBeDefined();
+    expect(catalog().remoteBulletinDigests[key]).toEqual([{ id: 'old' }]);
+    expect(catalog().remoteGroupProjectMembers[key]).toBeDefined();
+    send('snapshot', { ...cached, canvasState: {}, bulletinDigests: {}, groupProjectMembers: {} });
+    expect(catalog().remoteCanvasState[projectId]).toBeUndefined();
+    expect(catalog().remoteBulletinDigests[key]).toBeUndefined();
+    expect(catalog().remoteGroupProjectMembers[key]).toBeUndefined();
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(true);
+    send('snapshot', cached);
+    expect(catalog().remoteCanvasState[projectId]).toBeDefined();
+    expect(catalog().remoteBulletinDigests[key]).toEqual([{ id: 'old' }]);
+    expect(useAnnexClientStore.getState().satellites[0].catalogIncomplete).toBe(false);
+  });
+
+  it('HY4: invalid/absent visible directories cannot evict still-visible partial maps', async () => {
+    const cached = fullPartialSnapshot();
+    read.mockResolvedValueOnce(list(structuredClone(cached)));
+    start(); await tick();
+    const before = catalog().remoteBulletinDigests[`${satellite.id}::group`];
+    send('snapshot', { ...cached, groupProjects: [{ id: 'group' }, { id: 'group' }], bulletinDigests: {} });
+    expect(catalog().remoteBulletinDigests[`${satellite.id}::group`]).toBe(before);
+    const omitted = { ...cached, bulletinDigests: {} };
+    delete omitted.groupProjects;
+    send('snapshot', omitted);
+    expect(catalog().remoteBulletinDigests[`${satellite.id}::group`]).toBe(before);
+  });
+
+});

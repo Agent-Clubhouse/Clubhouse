@@ -65,7 +65,7 @@ export function SatelliteStartPage({ activeHostId }: { activeHostId: string }) {
   const summary = [
     stateLine(satellite?.state),
     satellite?.host,
-    connected ? (list.length > 0 ? `${plural(list.length, 'project')}, ${plural(agentCount, 'agent')}` : 'no projects open') : '',
+    connected && !satellite?.catalogIncomplete ? (list.length > 0 ? `${plural(list.length, 'project')}, ${plural(agentCount, 'agent')}` : 'no projects open') : '',
   ].filter(Boolean).join(' · ');
 
   const openAnnexSettings = () => {
@@ -84,14 +84,17 @@ export function SatelliteStartPage({ activeHostId }: { activeHostId: string }) {
           <h1 className="text-lg font-semibold text-ctp-text truncate">{name}</h1>
         </div>
         <p className="text-[12.5px] text-ctp-overlay1">{summary}</p>
+        {satellite?.catalogIncomplete && (
+          <p className="mt-[18px] text-[13px] leading-normal text-ctp-subtext1">Project updates are incomplete. Waiting for a fresh project snapshot.</p>
+        )}
 
         {list.length === 0 ? (
           <>
-            <p className="mt-[18px] text-[13px] leading-normal text-ctp-subtext1">
+            {!satellite?.catalogIncomplete && <p className="mt-[18px] text-[13px] leading-normal text-ctp-subtext1">
               {connected
                 ? `Nothing is open on ${name} yet. Open a project in Clubhouse on that machine and it shows up here.`
                 : `${name} isn't reachable right now. Its projects show up here when it reconnects.`}
-            </p>
+            </p>}
             <div className="mt-3 flex gap-1.5">
               <Button kind="ghost" onClick={() => { switchHost(null); reportChromeFeature('host_switch'); }} className="focus-ring">
                 Switch to Local
