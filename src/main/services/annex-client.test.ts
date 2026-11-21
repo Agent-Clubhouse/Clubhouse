@@ -2581,7 +2581,7 @@ describe('annex-client', () => {
         expect(annexClient.getSatellites()).toEqual([]);
       });
 
-      it.each(['CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'ERR_ANNEX_PIN_MISMATCH'])('preserves the %s stop across resume', async (code) => {
+      it.each(['CERT_HAS_EXPIRED', 'ERR_ANNEX_PIN_MISMATCH'])('preserves the %s stop across resume', async (code) => {
         await discover();
         sockets[0].handlers.error(Object.assign(new Error(code), { code }));
         const stopped = annexClient.getSatellite(FP);
@@ -2589,6 +2589,112 @@ describe('annex-client', () => {
         annexClient.resumeAllConnections();
         expect(sockets).toHaveLength(1);
         expect(annexClient.getSatellite(FP)).toEqual(stopped);
+      });
+
+      it('allows the existing pinned clock-recovery attempt on wake without bypassing certificate checks', async () => {
+        await discover();
+        const clockError = Object.assign(new Error('certificate is not yet valid'), { code: 'CERT_NOT_YET_VALID' });
+        sockets[0].handlers.error(clockError);
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(sockets).toHaveLength(1);
+        vi.setSystemTime(Date.now() + 109_000);
+        annexClient.resumeAllConnections();
+        expect(sockets).toHaveLength(2);
+        expect(WebSocketMock.mock.calls.at(-1)![1]).toMatchObject({ pinned: true, handshakeTimeout: 10_000 });
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+        // If the clock/certificate is still invalid, the same pinned path stops again.
+        sockets[1].handlers.error(clockError);
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(sockets).toHaveLength(2);
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', problem: { code: 'cert-not-yet-valid' } });
+        annexClient.resumeAllConnections();
+        expect(sockets).toHaveLength(3);
+        sockets[2].handlers.open();
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+      });
+
+      describe('delayed upgrade refusal', () => {
+        const cases = [
+          { status: 503, error: 'busy' },
+          { status: 401, error: 'needs_pairing' },
+          { status: 401, error: 'peer_not_paired' },
+        ];
+
+        function pendingRefusal(socket: (typeof sockets)[number], status: number) {
+          const response = Object.assign(new EventEmitter(), { statusCode: status });
+          const request = { destroy: vi.fn() };
+          socket.handlers['unexpected-response'](request, response);
+          return { request, finish: async (error: string) => {
+            response.emit('data', Buffer.from(JSON.stringify({ error })));
+            response.emit('end');
+            await Promise.resolve();
+          } };
+        }
+
+        for (const state of ['connecting', 'connected'] as const) {
+          it.each(cases)(`ignores an old $status/$error body after resume while the replacement is ${state}`, async ({ status, error }) => {
+            await discover();
+            const old = sockets[0];
+            const pending = pendingRefusal(old, status);
+            vi.setSystemTime(Date.now() + 109_000);
+            annexClient.resumeAllConnections();
+            const current = sockets[1];
+            if (state === 'connected') current.handlers.open();
+            const beforeBody = annexClient.getSatellite(FP);
+            const channels = await import('./annex-network-channel');
+            vi.mocked(channels.closeFor).mockClear();
+            const control = await import('./annex-control');
+            const controlClose = vi.spyOn(control, 'closeFor');
+            await pending.finish(error);
+
+            expect(pending.request.destroy).toHaveBeenCalledOnce();
+            expect(old.terminate).toHaveBeenCalledOnce();
+            expect(annexClient.getSatellite(FP)).toEqual(beforeBody);
+            expect(current.close).not.toHaveBeenCalled();
+            expect(current.terminate).not.toHaveBeenCalled();
+            expect(channels.closeFor).not.toHaveBeenCalled();
+            expect(controlClose).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(2_000);
+            expect(sockets).toHaveLength(2);
+            if (state === 'connecting') current.handlers.open();
+            current.handlers.message(JSON.stringify({ type: 'snapshot', payload: { protocolVersion: 2, lastSeq: 1, projects: [], agents: {}, quickAgents: {} } }));
+            expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connected', snapshot: { lastSeq: 1 } });
+            expect(annexClient.sendToSatellite(FP, { type: 'ping' })).toEqual({ sent: true });
+          });
+        }
+
+        it.each(cases)('still applies a current $status/$error refusal after resume', async ({ status, error }) => {
+          await discover();
+          annexClient.resumeAllConnections();
+          const current = sockets[1];
+          const pending = pendingRefusal(current, status);
+          await pending.finish(error);
+          expect(pending.request.destroy).toHaveBeenCalledOnce();
+          expect(current.terminate).toHaveBeenCalledOnce();
+          expect(annexClient.isMachineConnected(FP)).toBe(false);
+          if (status === 401) {
+            expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', needsPairing: true });
+            await vi.advanceTimersByTimeAsync(120_000);
+            expect(sockets).toHaveLength(2);
+          } else {
+            expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', problem: { code: 'tls-unavailable' } });
+            await vi.advanceTimersByTimeAsync(2_000);
+            expect(sockets).toHaveLength(3);
+          }
+        });
+
+        it('does not apply a pending refusal after manual disconnect keeps the same record', async () => {
+          await discover();
+          const old = sockets[0];
+          const pending = pendingRefusal(old, 401);
+          annexClient.disconnect(FP);
+          const disconnected = annexClient.getSatellite(FP);
+          await pending.finish('peer_not_paired');
+          expect(annexClient.getSatellite(FP)).toEqual(disconnected);
+          expect(pending.request.destroy).toHaveBeenCalledOnce();
+          expect(old.terminate).toHaveBeenCalledOnce();
+          expect(vi.getTimerCount()).toBe(0);
+        });
       });
 
       it('preserves a removed-pairing refusal across resume', async () => {
