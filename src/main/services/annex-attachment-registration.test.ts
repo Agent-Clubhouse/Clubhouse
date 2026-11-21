@@ -277,6 +277,27 @@ describe('authoritative attachment registration (#3715), direct pinned HTTPS onl
     } finally { release(); fixture.stage = undefined; }
   });
 
+  it('refuses project removal while the real registration lookup is awaiting', async () => {
+    const read = agentConfig.peekDurableConfigs;
+    const before = await savedFiles();
+    let entered = false;
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(agentConfig, 'peekDurableConfigs').mockImplementation(async (projectPath) => {
+      const records = await read(projectPath);
+      if (projectPath === project.path) { entered = true; await held; }
+      return records;
+    });
+    const pending = upload();
+    try {
+      await vi.waitFor(() => expect(entered).toBe(true));
+      await projectStore.remove(project.id);
+      release();
+      expect(await pending).toMatchObject({ status: 404, body: { error: 'agent_not_found' } });
+      expect(await savedFiles()).toEqual(before);
+    } finally { release(); }
+  });
+
   it('closes its registration lease after an actual body abort, without stranding later uploads', async () => {
     const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
     const acquired = vi.spyOn(agentConfig, 'readDurableRegistrationLease');

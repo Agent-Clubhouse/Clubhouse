@@ -7,8 +7,8 @@ does not unregister a running agent.
 Before reading an upload body, the handler acquires a read-only registration
 lease using the primary `agents.json` file. The file must contain healthy,
 uniquely identified records, and the target must match the registration's
-`createdAt` and not be
-disposed. Neither a backup nor a cached record can replace this verification.
+`createdAt` and not be disposed. Neither a backup nor a cached record can replace
+this verification.
 The read does not initialize, repair, migrate, warm, or persist agent settings.
 
 Staging keeps its synchronous `beforeWrite` checks. Every check reads and
@@ -22,7 +22,12 @@ request releases the change listener; no descriptor waits for the upload body.
 
 Missing, disposed, changed-epoch, unreadable or corrupt registration fails
 closed with `agent_not_found`, without restoring a backup. The existing
-principal, project-generation/pending, exact-runtime, image-capability, reverse-request
-liveness, Dispatcher, and quick-agent checks remain in place. Lost authority
+principal, project-generation/pending, exact-runtime, image-capability,
+reverse-request liveness, Dispatcher, and quick-agent checks remain in place. Lost authority
 during staging discards the image before publication. No phone fields, grants,
 pairing rules, or reverse-control protocol change.
+
+The direct pinned-HTTPS regression fixture uses real config, project, staging,
+and TLS stores under its own temporary root, without starting a provider.
+`tsc -p docs/annex-attachment-registration.tsconfig.json` checks both production
+sources and this fixture; the normal production config excludes test files.
