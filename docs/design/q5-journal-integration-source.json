@@ -1,0 +1,276 @@
+{
+  "schema": 1,
+  "kind": "source-inspection-not-executed-reproduction",
+  "observedAt": "2026-11-21T19:42:42.797548+00:00",
+  "preparedSource": "224e0797daf1b6e696b46ddd82bea5d79894ae4c",
+  "producerSource": "5bbabde2d9f6dcb4db248d0976681fc331f5611e",
+  "files": [
+    {
+      "path": "src/main/services/group-project-host.ts",
+      "sha256": "cff6aeea1540b9717cba2f613f49a1070e10b87fe2d30cdb6e12efd14fb35f05",
+      "gitBlob": "f9f4892579fa1fbcf9e5fce029d9942b8a7a1739"
+    },
+    {
+      "path": "src/main/services/group-project-bulletin.ts",
+      "sha256": "9ae4fa6481b7c182d995be2df120770f8e766bc1c083f088bb08f10ad60d3a0b",
+      "gitBlob": "f47566e6556ffcef37b3f26d01c59205e6274435"
+    },
+    {
+      "path": "src/shared/group-project-network.ts",
+      "sha256": "bff9a34b90c50591e0845599c8227296a0d031096f91bd1a7e00f9022bcf83fb",
+      "gitBlob": "5a86a9cca2056e08359018602e057c69167a2b3f"
+    },
+    {
+      "path": "src/shared/group-project-types.ts",
+      "sha256": "97dec73c2bd2e8f6952a2bb395c356707bea90c625c52567d0498ae505547a6b",
+      "gitBlob": "846b878f85cefb9c9dec98317dad96aca8baaf6f"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/state.ts",
+      "sha256": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8",
+      "gitBlob": "d5a8ebc447aa641f516e46a4e14198e43ef5a24d"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/sparse-state.ts",
+      "sha256": "899719861c2dd0b639c47ed30b75552bec58a65812a030098e1cb03448f76b0c",
+      "gitBlob": "cb50912fd00919f502ee5a853981921786bcccef"
+    }
+  ],
+  "dedupe": {
+    "scope": "bounded text search, not exhaustive repository-wide issue audit",
+    "searches": [
+      {
+        "argv": [
+          "gh",
+          "issue",
+          "list",
+          "--repo",
+          "Agent-Clubhouse/Clubhouse",
+          "--state",
+          "all",
+          "--search",
+          "bulletin duplicate",
+          "--limit",
+          "15",
+          "--json",
+          "number,title,url,state"
+        ],
+        "exit": 0,
+        "results": [
+          {
+            "number": 3718,
+            "state": "OPEN",
+            "title": "[LOW] [Files] Annex: negotiate bounded full-file reads and paged project browsing for mobile viewers",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3718"
+          },
+          {
+            "number": 3666,
+            "state": "CLOSED",
+            "title": "[MEDIUM] Network Group Projects: missing member inboxes, local-only tool rosters and dropped post notices",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3666"
+          },
+          {
+            "number": 3613,
+            "state": "OPEN",
+            "title": "[DESIGN] Annex Network: reverse-initiated control over one existing authenticated peer connection",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3613"
+          },
+          {
+            "number": 3698,
+            "state": "CLOSED",
+            "title": "Group projects: simpler messaging \u2014 urgent posts, wake on @mention or inbox, retire polling, shoulder tap and broadcast",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3698"
+          },
+          {
+            "number": 1830,
+            "state": "CLOSED",
+            "title": "[HIGH] Work channels are silently discarded once protected topics exceed maxTotal \u2014 post_bulletin reports success, message and topic are deleted on write",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/1830"
+          },
+          {
+            "number": 1643,
+            "state": "CLOSED",
+            "title": "[HIGH] BulletinBoard.ensureLoaded() reentrancy duplicates board messages",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/1643"
+          },
+          {
+            "number": 2673,
+            "state": "CLOSED",
+            "title": "[HIGH] A large pending permission can push Annex frames past the phone's limit",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/2673"
+          }
+        ]
+      },
+      {
+        "argv": [
+          "gh",
+          "issue",
+          "list",
+          "--repo",
+          "Agent-Clubhouse/Clubhouse",
+          "--state",
+          "all",
+          "--search",
+          "outbox replay",
+          "--limit",
+          "15",
+          "--json",
+          "number,title,url,state"
+        ],
+        "exit": 0,
+        "results": [
+          {
+            "number": 3613,
+            "state": "OPEN",
+            "title": "[DESIGN] Annex Network: reverse-initiated control over one existing authenticated peer connection",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3613"
+          },
+          {
+            "number": 3530,
+            "state": "CLOSED",
+            "title": "[MEDIUM] [TEST] annex-v2 agents-across-machines \"sender crash after a durable200\" E2E flakes on Linux and Windows",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3530"
+          },
+          {
+            "number": 3550,
+            "state": "CLOSED",
+            "title": "[MEDIUM] Group Projects: queued vs applied outcomes for network changes",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3550"
+          },
+          {
+            "number": 3667,
+            "state": "OPEN",
+            "title": "[MEDIUM] Actions: support remote message targets and machine-qualified agent event sources",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3667"
+          },
+          {
+            "number": 3334,
+            "state": "CLOSED",
+            "title": "[HIGH] Agents across machines: exactly-once delivery that survives restarts, and outbox items removed only when truly done",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3334"
+          }
+        ]
+      },
+      {
+        "argv": [
+          "gh",
+          "issue",
+          "list",
+          "--repo",
+          "Agent-Clubhouse/Clubhouse",
+          "--state",
+          "all",
+          "--search",
+          "\"applied\" \"2000\"",
+          "--limit",
+          "15",
+          "--json",
+          "number,title,url,state"
+        ],
+        "exit": 0,
+        "results": []
+      },
+      {
+        "argv": [
+          "gh",
+          "issue",
+          "list",
+          "--repo",
+          "Agent-Clubhouse/Clubhouse",
+          "--state",
+          "all",
+          "--search",
+          "\"group\" \"idempotency\"",
+          "--limit",
+          "15",
+          "--json",
+          "number,title,url,state"
+        ],
+        "exit": 0,
+        "results": [
+          {
+            "number": 3758,
+            "state": "OPEN",
+            "title": "Q5: durable group-notice delivery ledger that preserves uncertain outcomes while later notices continue",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3758"
+          },
+          {
+            "number": 3613,
+            "state": "OPEN",
+            "title": "[DESIGN] Annex Network: reverse-initiated control over one existing authenticated peer connection",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3613"
+          },
+          {
+            "number": 3667,
+            "state": "OPEN",
+            "title": "[MEDIUM] Actions: support remote message targets and machine-qualified agent event sources",
+            "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3667"
+          }
+        ]
+      }
+    ],
+    "issues": [
+      {
+        "argv": [
+          "gh",
+          "issue",
+          "view",
+          "3758",
+          "--repo",
+          "Agent-Clubhouse/Clubhouse",
+          "--json",
+          "number,title,body,state,url"
+        ],
+        "exit": 0,
+        "result": {
+          "body": "The user chose a durable delivery ledger rather than persistent per-member pause. Later eligible notices must continue while earlier unconfirmed deliveries remain explicitly recorded and are excluded from automatic replay.\n\nCanonical prior proposal: [Q5-policy-proposal.json](https://github.com/Agent-Clubhouse/Clubhouse/blob/e2340b51e434c499b5e4f7014e9bc3bcd857920f/notes/diagnose-navi-queue-transfer/evidence/Q5-policy-proposal.json), preserved by diagnose-navi-queue/mini-preservation. Its README records no earlier assignment issue/PR. Prior test-only baseline edce1d072a674bc4d3673296a13b18ad54f535e5 demonstrates callback-owner cursor/replay gaps in modeled tests; it does not prove a provider incident. Withheld runtime candidate 0bb43aba9db9504bd5141f1387a512cf97a9b8ba remains historical evidence, not accepted product code.\n\nAt inspected main d8c7247a4dccc1ebff01f0f28f8e61279bdf5437, group notices persist one monotonic notified cursor. That cannot express an uncertain earlier batch and a later accepted one. The busy callback and idle returned-queued path both need receipt-aware ownership. The receipt validator strips unknown fields, so an additive field alone cannot make old writers safe.\n\nImplementation owner: auto-reset-policy-design, isolated branch auto-reset-policy-design/q5-durable-delivery-ledger. First deliver a contract for idempotency keys, per-post coverage versus scan frontier, uncertain outcomes, explicit duplicate-warning retry, durable versioned storage and rollback, revocation and crash recovery. Independent contract review is required before product implementation. Then deterministic failure/restart/revocation proofs, independent exact source/evidence review, and hosted checks before acceptance.\n\nBoundaries: no exactly-once provider-processing claim; no automatic uncertain resend; no persistent member pause as normal uncertainty policy; no implicit chat clearing (controller recovery preserves chat by default; explicit reset is separately owned); no new grants/probes/wakes/restarts/installs; no Auto activation, release or unrelated controller/SAVE_SETTINGS/Details edits. Existing authorization and wake gates remain. This issue does not authorize merge or release.\n\nRelated historical notices feature: #3362. This is a new standalone Q5 tracking issue, not a renaming of that issue.",
+          "number": 3758,
+          "state": "OPEN",
+          "title": "Q5: durable group-notice delivery ledger that preserves uncertain outcomes while later notices continue",
+          "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3758"
+        }
+      },
+      {
+        "argv": [
+          "gh",
+          "issue",
+          "view",
+          "3334",
+          "--repo",
+          "Agent-Clubhouse/Clubhouse",
+          "--json",
+          "number,title,body,state,url"
+        ],
+        "exit": 0,
+        "result": {
+          "body": "Part of #2235. Follow-up to #3064 (stage 7 of #3056). Related: #1533 (provider-neutral delivery confirmation), which stays separate. Handoffs depend on this.\n\n## Problem\n\nCalls to agents on other computers (`src/main/services/annex-agent-calls.ts`) promise that a retry after a lost answer \"doesn't deliver twice\", and that waiting messages go in order when the other machine is back. Reading the code at `6c374609`, that holds only while both apps stay running:\n\n1. **Dedupe is memory-only.** The receiver remembers call ids in `seenCalls`, an in-memory `Map` capped at 2,000 entries with oldest-first eviction. If the receiver restarts after running a call but before the sender got the answer, the sender's retry runs it again. Eviction under load has the same effect.\n2. **Removal after success isn't atomic with delivery.** `flushOutbox` removes an item only after the POST resolves. If the sender quits or crashes between the receiver's 200 and `outbox.update`, the item is sent again on the next connect, and (1) means it can be delivered again.\n3. **An error result is treated as delivered.** Any HTTP 200 removes the item, including a 200 whose tool result has `isError` (for example, a target that can't take the message right now). The message is gone and nobody is told.\n4. **Final refusals and expiry are silent to the sender.** A non-transient refusal is logged and dropped; items older than 7 days (`OUTBOX_MAX_AGE_MS`) disappear on the next read. The sending agent was told \"Queued\" and never learns otherwise.\n5. **The direct path has no stable id.** When the outbox is empty and the machine is online, the call is sent once with a fresh `callId`. A timeout after the receiver ran it returns \"Couldn't reach \u2026\", and the agent's natural retry gets a new id, so it's delivered twice.\n6. **A cached failure is replayed.** `seenCalls` stores the run's promise even if it rejects, so a later retry with the same id gets the same failure rather than a real retry.\n\n## Scope\n\n- **Persistent receiver dedupe:** record `(senderMachine, callId) \u2192 outcome` in an atomic store with a TTL at least the outbox max age (7 days) plus clock skew, bounded by count and size. Look it up before running; record before awaiting the run (as today) and persist the outcome after.\n- **Outcome-aware removal:** the receiver answers with a typed outcome (`delivered`, `refused`, `retry_later`), separate from the tool's text. The sender removes an item only on `delivered` or `refused`; `retry_later` (including tool errors that mean \"try later\") keeps it.\n- **Crash-safe flush:** mark an item `sending` with its callId before POSTing; on restart resend with the **same** callId so (1) dedupes it.\n- **Stable ids for direct sends:** every `send_message`/`send_file` across machines gets a callId derived from an optional caller-supplied `idempotency_key` (or `task_id`) plus caller and target; a retry with the same key is a duplicate.\n- **Tell the sender:** a final refusal or expiry produces a short notice to the sending agent (a queued system message) and a row in action history with the target and reason. A queued message's state is readable by id (`get_delivery(callId)` or in `get_status`).\n- Never retry a non-idempotent tool (`wake_agent`, reset tools) automatically; only messages and files are queued, as today.\n\n## Acceptance criteria\n\n- [ ] Receiver restarts between run and answer: the sender's retry does not run the tool again (test with a fake store reloaded).\n- [ ] Sender crashes after the receiver's 200 and before removal: after restart the item is resent with the same id and delivered once.\n- [ ] A tool result that means \"try later\" keeps the item; a final refusal removes it and notifies the sender.\n- [ ] Expired items notify the sender and are listed in action history.\n- [ ] Two direct sends with the same `idempotency_key` deliver once and return the same answer.\n- [ ] Order is preserved per machine across restarts.\n- [ ] Dedupe store stays within its bounds under 10k calls.\n\n## Validation\n\nUnit tests in `annex-agent-calls.test.ts` for each case above, using fake transports and a reloaded settings store; the two-desktop Annex E2E spec extended with a restart mid-flush. Keep CI token-free.\n\n## Non-goals\n\nPTY submission confirmation on the receiving machine (#1531, #1533); changing rate or loop limits.",
+          "number": 3334,
+          "state": "CLOSED",
+          "title": "[HIGH] Agents across machines: exactly-once delivery that survives restarts, and outbox items removed only when truly done",
+          "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3334"
+        }
+      },
+      {
+        "argv": [
+          "gh",
+          "issue",
+          "view",
+          "3363",
+          "--repo",
+          "Agent-Clubhouse/Clubhouse",
+          "--json",
+          "number,title,body,state,url"
+        ],
+        "exit": 0,
+        "result": {
+          "body": "Part of #2917.\n\n## Outcome\n\nA group project with network reach works from any of my computers. Its host keeps the truth. Other machines show a recent copy and hold my changes until the host is reachable, then the host applies or refuses them.\n\n## Today\n\nAnnex can show a remote machine's group projects and inject shoulder taps for its agents (#2390 table), but each machine's group projects are its own. Unread counts across controller and satellite are unverified (#1559).\n\n## Scope\n\n- **Host-authoritative.** Only the host changes state (#3356). Members on other machines read and write through the host over Annex Network, checked against the host's grants (#3360) with the caller's machine-qualified address.\n- **Cached views.** Every member machine keeps a cache of the record, members and the board, following the host's sequence numbers. It catches up on reconnect, from the last sequence it saw.\n- **Queued writes.** A post or change made while the host is offline is queued locally, shown as \"Waiting for <host machine>\", bounded and with an expiry. On reconnect the host applies or refuses each in order. Refusals are shown to the author.\n- **Delivery.** Event notices (#3362) for members on other machines go from the host to their machine, which delivers locally.\n- **Read state** is per machine and per person, and unread counts are right on every machine (#1559).\n- **Machine removed.** Removing a member machine drops its agents from network group projects. Removing the host makes its group projects read-only caches elsewhere, with a clear message. (Host transfer is out of scope.)\n\n## Acceptance criteria\n\n- [ ] An agent on a non-host machine posts to a network group project, and every member machine shows it.\n- [ ] With the host off, reads come from cache and writes queue. On return they're applied or refused, in order.\n- [ ] A refused queued write tells its author why.\n- [ ] Unread counts match across machines (#1559's case).\n- [ ] Removing the host leaves read-only caches with a message.\n\n## Validation\n\nUnit tests for cache catch-up and the write queue. Two-desktop E2E with fake CLIs for host offline and return.",
+          "number": 3363,
+          "state": "CLOSED",
+          "title": "[MEDIUM] Group Projects: network group projects over Annex, with cached views and queued writes",
+          "url": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3363"
+        }
+      }
+    ],
+    "publication": "No issue created or edited; Q5 remains #3758."
+  }
+}
