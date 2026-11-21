@@ -1,0 +1,10 @@
+{
+  "state": "prepared_only_not_published",
+  "repository_full_name": "Agent-Clubhouse/Clubhouse",
+  "base": "main",
+  "head": "auto-reset-policy-design/q5-isolated-index",
+  "head_sha": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+  "draft": true,
+  "title": "Add isolated immutable notice index and native reuse controls",
+  "body": "Adds an isolated immutable notice index for Q5's future durable delivery ledger. Reused pages earn file and directory barriers, structural page schemas reject unknown fields before rewrite, and identity or IO failures refuse preparation. The module is unimported by app entry points.\n\nThis is a five-file storage foundation related to #3758. Catalog, activation, migration, delivery/runtime integration, and whole-process memory guarantees remain separate work.\n\nValidation on exact head `0e6c898ad`:\n\n- 49 focused tests passed; the native-Windows-only reuse test was skipped on Darwin.\n- Root ES2020 typecheck passed.\n- Scoped four-file lint passed with 0 errors and 0 warnings.\n\n[Exact source bridge, raw receipts, and limits](https://github.com/Agent-Clubhouse/Clubhouse/blob/4bc64b9089c86dccbd5a6146cdce91ecddf492af/docs/evidence/q5-foundation/isolated-0e6c898ad.md).\n\nNative Windows acceptance requires the no-override reuse case present, passed, and not skipped in ordinary Windows CI, with its merge-checkout identity verified. Inspect fixture-exit, symlink, and rename skips/failures. Directory file-sync-only observations remain weaker; FAT/network/ino=0 behavior and power-loss guarantees are unproven. Access and sharing failures must refuse rather than downgrade."
+}
