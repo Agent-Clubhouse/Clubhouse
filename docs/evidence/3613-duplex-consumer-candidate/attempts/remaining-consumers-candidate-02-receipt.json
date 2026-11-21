@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "attempt": "remaining-consumers-candidate-02",
+  "cwd": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work",
+  "command": [
+    "npm",
+    "test",
+    "--",
+    "--project",
+    "main",
+    "src/main/services/annex-client.test.ts",
+    "--maxWorkers=2",
+    "-t",
+    "remaining reverse consumers"
+  ],
+  "gate": "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+  "minimum": 4,
+  "gateSha256Before": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+  "gateSha256After": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+  "startedUtc": "2026-11-21T22:51:20.980449+00:00",
+  "endedUtc": "2026-11-21T22:51:22.423408+00:00",
+  "sourceBefore": {
+    "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+    "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+    "status": " M src/main/services/annex-client.ts\n",
+    "diffSha256": "bf159bcea008b728d5abdd822c67f388962cb1ac85abb37a29743df03d5c8416",
+    "sha256": {
+      "docs/annex-reverse-routes.tsconfig.json": "f26f6346c114d43e12d9eeffaa82cae66610554c4d0d2af0f6a96e00abe3941a",
+      "eslint.config.mjs": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+      "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "package.json": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "src/main/ipc/annex-handlers.ts": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b",
+      "src/main/services/annex-client-buffer.test.ts": "3f9362484c38327ca3bc4e59cd2c0b1967fa1a814b692faada0840daf2202215",
+      "src/main/services/annex-client.test.ts": "d6d5d9ec5d7426ffb92f9b0b60f2ec699750ed4e9491bfdda5a9995a76ba354c",
+      "src/main/services/annex-client.ts": "adb18c26859216225be975ebf71efaf1142c7194ed884d06eebece4b57794fcf",
+      "src/main/services/annex-control-bulk.ts": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee",
+      "src/main/services/annex-control.test.ts": "6f81ce8c236fc5d94a704fe51c0716c21bba640eb956af74e9332126356248c0",
+      "src/main/services/annex-control.ts": "4d69cb8bd02dc20d00e03c7685878d09ab0e2c228e44217e477aa775539ffbba",
+      "src/main/services/annex-devices.test.ts": "d121bc94c14a4a277051c06aee0211aba2632031fbb8628596ac6eb1fcd03de0",
+      "src/main/services/annex-devices.ts": "9500d0cd06aeaee11be17043b6b7e5abddc58e805ef6045a007df7403260da72",
+      "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    }
+  },
+  "sourceAfter": {
+    "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+    "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+    "status": " M src/main/services/annex-client.ts\n",
+    "diffSha256": "bf159bcea008b728d5abdd822c67f388962cb1ac85abb37a29743df03d5c8416",
+    "sha256": {
+      "docs/annex-reverse-routes.tsconfig.json": "f26f6346c114d43e12d9eeffaa82cae66610554c4d0d2af0f6a96e00abe3941a",
+      "eslint.config.mjs": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+      "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "package.json": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "src/main/ipc/annex-handlers.ts": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b",
+      "src/main/services/annex-client-buffer.test.ts": "3f9362484c38327ca3bc4e59cd2c0b1967fa1a814b692faada0840daf2202215",
+      "src/main/services/annex-client.test.ts": "d6d5d9ec5d7426ffb92f9b0b60f2ec699750ed4e9491bfdda5a9995a76ba354c",
+      "src/main/services/annex-client.ts": "adb18c26859216225be975ebf71efaf1142c7194ed884d06eebece4b57794fcf",
+      "src/main/services/annex-control-bulk.ts": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee",
+      "src/main/services/annex-control.test.ts": "6f81ce8c236fc5d94a704fe51c0716c21bba640eb956af74e9332126356248c0",
+      "src/main/services/annex-control.ts": "4d69cb8bd02dc20d00e03c7685878d09ab0e2c228e44217e477aa775539ffbba",
+      "src/main/services/annex-devices.test.ts": "d121bc94c14a4a277051c06aee0211aba2632031fbb8628596ac6eb1fcd03de0",
+      "src/main/services/annex-devices.ts": "9500d0cd06aeaee11be17043b6b7e5abddc58e805ef6045a007df7403260da72",
+      "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    }
+  },
+  "exitCode": 0,
+  "admissionObserved": true,
+  "sourceAndGateStable": true,
+  "rawOutput": "remaining-consumers-candidate-02-original.txt",
+  "rawSha256": "0553312fb6f860076777381f36a3d0754240c60280a8ac8b715755a0303b7223"
+}
