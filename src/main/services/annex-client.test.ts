@@ -2572,6 +2572,28 @@ describe('annex-client', () => {
         expect(current().snapshotReceipt).toEqual(expect.any(String)); expect(current().snapshotReceipt).not.toBe(oldReceipt);
       });
 
+      it.each(['agent', 'canvas'] as const)('a late same-epoch %s denial read under an older receipt keeps the newer receipt', async (kind) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const oldReceipt = current().snapshotReceipt, generation = current().connectionGeneration;
+        const finish = answer(403, {}, true);
+        const pending = annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
+        send(0, 'snapshot', payload(2));
+        const newReceipt = current().snapshotReceipt;
+        expect(newReceipt).toEqual(expect.any(String)); expect(newReceipt).not.toBe(oldReceipt); expect(current().connectionGeneration).toBe(generation);
+        const count = broadcasts(); finish();
+        expect(await pending).toEqual({ status: 'forbidden' });
+        expect(current().snapshotReceipt).toBe(newReceipt); expect(broadcasts()).toBe(count);
+      });
+
+      it.each(['agent', 'canvas'] as const)('a late %s denial still revokes the receipt it was read under', async (kind) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const finish = answer(401, {}, true);
+        const pending = annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
+        const count = broadcasts(); finish();
+        expect(await pending).toEqual({ status: 'forbidden' });
+        expect(current().snapshotReceipt).toBeUndefined(); expect(broadcasts()).toBe(count + 1);
+      });
+
       it.each(['agent', 'role', 'canvas'] as const)('ignores a stale prior-epoch %s denial rather than clearing a fresh connection receipt', async (kind) => {
         await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
         const finish = answer(403, {}, true);

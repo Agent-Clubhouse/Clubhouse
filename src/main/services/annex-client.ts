@@ -2495,9 +2495,9 @@ export async function requestAgentSettings(machine: string, agentId: string): Pr
   }
 }
 
-/** Metadata denial revokes only the positive admission; legacy retained snapshot data stays untouched. */
-function invalidateSnapshotAdmission(sat: SatelliteConnectionInternal): void {
-  if (!sat.snapshotReceipt) return;
+/** Metadata denial revokes only the positive admission it was read under; legacy retained snapshot data stays untouched. */
+function invalidateSnapshotAdmission(sat: SatelliteConnectionInternal, admitted: string | undefined): void {
+  if (!sat.snapshotReceipt || sat.snapshotReceipt !== admitted) return;
   sat.snapshotReceipt = undefined;
   broadcastSatellitesChanged();
 }
@@ -2519,7 +2519,7 @@ export async function requestDispatcherDetails(machine: string): Promise<Control
     const res = await satelliteJson(sat.fingerprint, 'GET', '/api/v1/dispatcher/details', undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
     if (!current()) return { status: 'offline' };
     if (res.status === 404 || res.status === 405 || res.status === 409) return { status: 'unavailable' };
-    if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat); return { status: 'forbidden' }; }
+    if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat, receipt); return { status: 'forbidden' }; }
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
     if (res.status !== 200 || !isSelectedDispatcherDetails(res.body)) return { status: 'error' };
     return { status: 'ok', value: res.body };
@@ -2537,13 +2537,14 @@ export async function requestAgentDetails(machine: string, agentId: string, quer
   const params = page ? new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset ?? 0), ...((page.card === 'skills-mcp' || page.card === 'actions' || page.card === 'canvases') ? page.selection ? { selection: page.selection } : {} : { projectOffset: String(page.projectOffset ?? 0) }) }) : undefined;
   const sat = satelliteFor(machine);
   if (!sat || sat.state !== 'connected') return { status: 'offline' };
-  const epoch = connectionEpochs.get(sat.id) ?? 0;
+  // A late denial may revoke only the receipt it was read under, never one minted by a newer snapshot.
+  const epoch = connectionEpochs.get(sat.id) ?? 0, receipt = sat.snapshotReceipt;
   const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
   try {
     const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/details${params ? `?${params}` : ''}`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
     if (!current()) return { status: 'offline' };
     if (res.status === 404 || res.status === 405 || page && res.status === 400) return { status: 'unavailable' };
-    if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat); return { status: 'forbidden' }; }
+    if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat, receipt); return { status: 'forbidden' }; }
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
     if (res.status !== 200 || !isRemoteAgentDetails(res.body, agentId)) return { status: 'error' };
     if (!page && (res.body.connectionPageOnly === true || res.body.helperPageOnly === true || res.body.inventoryPageOnly === true)) return { status: 'error' };
