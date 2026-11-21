@@ -1,0 +1,37 @@
+{
+  "conclusion": null,
+  "created_at": "2026-11-21T16:47:19Z",
+  "event": "pull_request",
+  "head_branch": "auto-reset-policy-design/q5-isolated-index",
+  "head_sha": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+  "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44926471482",
+  "id": 44926471482,
+  "pull_requests": [
+    {
+      "base": {
+        "ref": "main",
+        "repo": {
+          "id": 1158026389,
+          "name": "Clubhouse",
+          "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse"
+        },
+        "sha": "f19eceee25effd264276d70a419bebfe58924876"
+      },
+      "head": {
+        "ref": "auto-reset-policy-design/q5-isolated-index",
+        "repo": {
+          "id": 1158026389,
+          "name": "Clubhouse",
+          "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse"
+        },
+        "sha": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19"
+      },
+      "id": 5430152130,
+      "number": 3768,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/pulls/3768"
+    }
+  ],
+  "run_attempt": 1,
+  "status": "in_progress",
+  "updated_at": "2026-11-21T16:47:36Z"
+}

@@ -1,0 +1,139 @@
+{
+  "scope": "static prepublication f19 composition and observed PR merge-ref bridge; actual job checkout/artifacts still pending",
+  "observedAtUTC": "2026-11-21T16:50:06.012180+00:00",
+  "source": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+  "sourceTree": "9d15165a116d7645f116ad2cc9e2a44a3108ced9",
+  "previousComparedMain": "77fa095320f2184ebf8870a5251ad0fd26a46501",
+  "publicationMain": "f19eceee25effd264276d70a419bebfe58924876",
+  "changedPaths": [
+    "docs/implementation-notes/3720-owned-listeners/run-proof.py",
+    "src/main/services/annex-server.test.ts",
+    "src/main/services/annex-server.ts"
+  ],
+  "assessment": "Read full listener diff: additive opt-in readiness exports and tests/proof only; index is unconsumed, no index imports or dependency/config/setup overlap.",
+  "observedMerge": "a2b621bbd6790059d22abaae2ef519b747bb202e",
+  "mergeParents": [
+    "f19eceee25effd264276d70a419bebfe58924876",
+    "0e6c898ada85efefb80bc3aec61e07d3d15d2b19"
+  ],
+  "unchangedContexts": [
+    {
+      "path": "package.json",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "equalAcross": [
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "f19eceee25effd264276d70a419bebfe58924876",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+        "a2b621bbd6790059d22abaae2ef519b747bb202e"
+      ]
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "equalAcross": [
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "f19eceee25effd264276d70a419bebfe58924876",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+        "a2b621bbd6790059d22abaae2ef519b747bb202e"
+      ]
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "equalAcross": [
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "f19eceee25effd264276d70a419bebfe58924876",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+        "a2b621bbd6790059d22abaae2ef519b747bb202e"
+      ]
+    },
+    {
+      "path": "vitest.config.ts",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "equalAcross": [
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "f19eceee25effd264276d70a419bebfe58924876",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+        "a2b621bbd6790059d22abaae2ef519b747bb202e"
+      ]
+    },
+    {
+      "path": "eslint.config.mjs",
+      "sha256": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+      "equalAcross": [
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "f19eceee25effd264276d70a419bebfe58924876",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+        "a2b621bbd6790059d22abaae2ef519b747bb202e"
+      ]
+    },
+    {
+      "path": ".github/workflows/validate.yml",
+      "sha256": "2612b8fd22c3ded25f53b95495aed6c49c62f404763d3173f52bf760c7f55963",
+      "equalAcross": [
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "f19eceee25effd264276d70a419bebfe58924876",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+        "a2b621bbd6790059d22abaae2ef519b747bb202e"
+      ]
+    },
+    {
+      "path": "test/global-setup.ts",
+      "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "equalAcross": [
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "f19eceee25effd264276d70a419bebfe58924876",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+        "a2b621bbd6790059d22abaae2ef519b747bb202e"
+      ]
+    },
+    {
+      "path": "test/standard-runtime-boundary.ts",
+      "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "equalAcross": [
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "f19eceee25effd264276d70a419bebfe58924876",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+        "a2b621bbd6790059d22abaae2ef519b747bb202e"
+      ]
+    }
+  ],
+  "fiveFiles": [
+    {
+      "path": "src/main/services/group-project-notice-ledger/pages.ts",
+      "sourceSha256": "53973c5468babb7830d2a198f1d17d011f44f8201558569bb5dd95b2135d8513",
+      "mergeSha256": "53973c5468babb7830d2a198f1d17d011f44f8201558569bb5dd95b2135d8513",
+      "sourceBlob": "f058508d00c11bf48001d0ef188cf9881bf78d47",
+      "mergeBlob": "f058508d00c11bf48001d0ef188cf9881bf78d47"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/pages.test.ts",
+      "sourceSha256": "f3531a965b9a43478ca29c8862c3398907f7c1fe76c6c0bb18c73138687dd010",
+      "mergeSha256": "f3531a965b9a43478ca29c8862c3398907f7c1fe76c6c0bb18c73138687dd010",
+      "sourceBlob": "b1d20a24859e330c363a710aac95f4b9bcbf28e5",
+      "mergeBlob": "b1d20a24859e330c363a710aac95f4b9bcbf28e5"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/durability.ts",
+      "sourceSha256": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9",
+      "mergeSha256": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9",
+      "sourceBlob": "8bfd5a55ce0095c133f70d15b53f9c6ea0c3e142",
+      "mergeBlob": "8bfd5a55ce0095c133f70d15b53f9c6ea0c3e142"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/durability.test.ts",
+      "sourceSha256": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903",
+      "mergeSha256": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903",
+      "sourceBlob": "66aaec835714e5ee183c1e91e9637f39a11459c5",
+      "mergeBlob": "66aaec835714e5ee183c1e91e9637f39a11459c5"
+    },
+    {
+      "path": "test/research/q5-index-process.cjs",
+      "sourceSha256": "f5f22a04236fd812a99be1257bca10fa7ea843dc56baa4c473a2ced2466bac8c",
+      "mergeSha256": "f5f22a04236fd812a99be1257bca10fa7ea843dc56baa4c473a2ced2466bac8c",
+      "sourceBlob": "e6b46981ecc5854f8c50e6c4ad9c99d9dd1d8195",
+      "mergeBlob": "e6b46981ecc5854f8c50e6c4ad9c99d9dd1d8195"
+    }
+  ],
+  "limits": "Git blob hashes, not atomic hosted working-tree seals. Bind actual job checkout log and JUnit before native Windows acceptance. No manual dispatch/rerun/cancellation or source push during validation."
+}

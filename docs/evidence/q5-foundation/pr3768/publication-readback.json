@@ -1,0 +1,16 @@
+{
+  "base_ref": "main",
+  "base_sha": "f19eceee25effd264276d70a419bebfe58924876",
+  "body": "Adds an isolated immutable notice index for Q5's future durable delivery ledger. Reused pages earn file and directory barriers, structural page schemas reject unknown fields before rewrite, and identity or IO failures refuse preparation. The module is unimported by app entry points.\n\nThis is a five-file storage foundation. Refs #3758; the full ledger task remains open. Catalog, activation, migration, delivery/runtime integration, and whole-process memory guarantees remain separate work.\n\nValidation on exact head `0e6c898ad`:\n\n- 49 focused tests passed; the native-Windows-only reuse test was skipped on Darwin.\n- Root ES2020 typecheck passed.\n- Scoped four-file lint passed with 0 errors and 0 warnings.\n\n[Exact source bridge, raw receipts, and limits](https://github.com/Agent-Clubhouse/Clubhouse/blob/4bc64b9089c86dccbd5a6146cdce91ecddf492af/docs/evidence/q5-foundation/isolated-0e6c898ad.md).\n\nNative Windows acceptance requires the no-override reuse case present, passed, and not skipped in ordinary Windows CI, with its merge-checkout identity verified. Inspect fixture-exit, symlink, and rename skips/failures. Directory file-sync-only observations remain weaker; FAT/network/ino=0 behavior and power-loss guarantees are unproven. Access and sharing failures must refuse rather than downgrade.\n\n[Independent exact-head QA and static-main addendum](https://github.com/Agent-Clubhouse/Clubhouse/blob/bf6eed30ed26676e00c692a97a54be4a57518a6f/docs/qa-transfer/2026-11-20/reports/q5-isolated-index-0e6c898ad-review.md) \u00b7 [Exact five-file SHA/blob bridge](https://github.com/Agent-Clubhouse/Clubhouse/blob/4bc64b9089c86dccbd5a6146cdce91ecddf492af/docs/evidence/q5-foundation/0e6c898ad-assembly-bridge.json).",
+  "created_at": "2026-11-21T16:47:15Z",
+  "draft": true,
+  "head_ref": "auto-reset-policy-design/q5-isolated-index",
+  "head_sha": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+  "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3768",
+  "merge_commit_sha": "a2b621bbd6790059d22abaae2ef519b747bb202e",
+  "number": 3768,
+  "state": "open",
+  "title": "Add isolated immutable notice index and native reuse controls",
+  "updated_at": "2026-11-21T16:47:15Z",
+  "user": "masra91"
+}
