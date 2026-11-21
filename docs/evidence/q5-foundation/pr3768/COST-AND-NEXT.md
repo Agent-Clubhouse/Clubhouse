@@ -59,3 +59,24 @@ Git's *.log ignore omitted four listed log excerpts. This successor adds only
 those exact preserved checkout/OS/image/Node bytes with explicit force-add.
 Every manifest entry is verified from staged then committed Git blobs, not only
 from workspace files. Original d0c9 remains unchanged; source0e6/CI are unchanged.
+
+## Queue and publication timing, kept separate
+
+The gh jobs API reports created_at→started_at delays for33successful jobs:
+55seconds total across jobs, range1–3seconds each. This excludes
+dependency wait before GitHub creates downstream job records; it is not an
+end-to-end queue estimate. The first planning job waited2seconds. Run
+run_started_at equals created_at, so the run-level timestamp reports0seconds
+between those two fields; it does not negate individual job waits.
+
+PRcreated16:47:15Z→run updated/completed17:09:27Z is22m12s. The
+actual source-push timestamp was not retained, so source-push→result walltime
+is UNKNOWN. Commit author/committer time is not substituted for push time.
+Run-created→updated22m08s and summed job execution149m56s remain separate.
+The raw per-job timing API selection is job-timing-readback.ndjson.
+
+For CI coordination the suggested method is changed paths plus dependants,
+widen for shared/unknown impact, batch genuinely dependent tiny slices into
+one immutable candidate and run broad integration once. This is a proposal
+for comparison, not an implemented workflow change or measured savings. The
+Windows G2/G4 requirement remains. No Go pipeline measurements were taken here.

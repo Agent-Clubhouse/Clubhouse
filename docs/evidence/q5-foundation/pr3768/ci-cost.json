@@ -14,167 +14,299 @@
     {
       "name": "Plan the run",
       "seconds": 12,
-      "jobId": 136913546329
+      "jobId": 136913546329,
+      "createdAt": "2026-11-21T16:47:19Z",
+      "startedAt": "2026-11-21T16:47:21Z",
+      "completedAt": "2026-11-21T16:47:33Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Codex app-server schema drift",
       "seconds": 18,
-      "jobId": 136913610105
+      "jobId": 136913610105,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:35Z",
+      "completedAt": "2026-11-21T16:47:53Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Build app (windows-2022)",
       "seconds": 425,
-      "jobId": 136913610153
+      "jobId": 136913610153,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:35Z",
+      "completedAt": "2026-11-21T16:54:40Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Copilot SDK chunk (ubuntu-latest)",
       "seconds": 138,
-      "jobId": 136913610160
+      "jobId": 136913610160,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:35Z",
+      "completedAt": "2026-11-21T16:49:53Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "ESLint (errors only)",
       "seconds": 145,
-      "jobId": 136913610162
+      "jobId": 136913610162,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:35Z",
+      "completedAt": "2026-11-21T16:50:00Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Typecheck + API surface",
       "seconds": 116,
-      "jobId": 136913610176
+      "jobId": 136913610176,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:35Z",
+      "completedAt": "2026-11-21T16:49:31Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Build app (ubuntu-latest)",
       "seconds": 373,
-      "jobId": 136913610191
+      "jobId": 136913610191,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:35Z",
+      "completedAt": "2026-11-21T16:53:48Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Unit + Component Tests (windows-latest, 2/2)",
       "seconds": 1311,
-      "jobId": 136913610220
+      "jobId": 136913610220,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:35Z",
+      "completedAt": "2026-11-21T17:09:26Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Unit + Component Tests (ubuntu-latest, 1/2)",
       "seconds": 561,
-      "jobId": 136913610225
+      "jobId": 136913610225,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:36Z",
+      "completedAt": "2026-11-21T16:56:57Z",
+      "createdToStartedSeconds": 3
     },
     {
       "name": "Copilot SDK chunk (windows-2022)",
       "seconds": 176,
-      "jobId": 136913610234
+      "jobId": 136913610234,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:35Z",
+      "completedAt": "2026-11-21T16:50:31Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Workflow lint (actionlint)",
       "seconds": 8,
-      "jobId": 136913610235
+      "jobId": 136913610235,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:35Z",
+      "completedAt": "2026-11-21T16:47:43Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Unit + Component Tests (windows-latest, 1/2)",
       "seconds": 605,
-      "jobId": 136913610243
+      "jobId": 136913610243,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:35Z",
+      "completedAt": "2026-11-21T16:57:40Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Unit + Component Tests (ubuntu-latest, 2/2)",
       "seconds": 399,
-      "jobId": 136913610255
+      "jobId": 136913610255,
+      "createdAt": "2026-11-21T16:47:33Z",
+      "startedAt": "2026-11-21T16:47:36Z",
+      "completedAt": "2026-11-21T16:54:15Z",
+      "createdToStartedSeconds": 3
     },
     {
       "name": "Classic layout E2E Tests (windows-2022, 1/1)",
       "seconds": 183,
-      "jobId": 136915566137
+      "jobId": 136915566137,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:57:45Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Classic layout E2E Tests (ubuntu-latest, 1/1)",
       "seconds": 162,
-      "jobId": 136915566146
+      "jobId": 136915566146,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:57:24Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Annex E2E Tests (ubuntu-latest, 1/2)",
       "seconds": 262,
-      "jobId": 136915566149
+      "jobId": 136915566149,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:59:04Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Stable-mode E2E Tests (ubuntu-latest)",
       "seconds": 172,
-      "jobId": 136915566158
+      "jobId": 136915566158,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:57:34Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Stable-mode E2E Tests (windows-2022)",
       "seconds": 236,
-      "jobId": 136915566171
+      "jobId": 136915566171,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:58:38Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Chat E2E Tests (windows-2022, 3/3)",
       "seconds": 200,
-      "jobId": 136915566174
+      "jobId": 136915566174,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:58:02Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Annex E2E Tests (windows-2022, 1/2)",
       "seconds": 399,
-      "jobId": 136915566176
+      "jobId": 136915566176,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:43Z",
+      "completedAt": "2026-11-21T17:01:22Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Chat E2E Tests (windows-2022, 2/3)",
       "seconds": 259,
-      "jobId": 136915566181
+      "jobId": 136915566181,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:43Z",
+      "completedAt": "2026-11-21T16:59:02Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "Annex E2E Tests (windows-2022, 2/2)",
       "seconds": 424,
-      "jobId": 136915566194
+      "jobId": 136915566194,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:43Z",
+      "completedAt": "2026-11-21T17:01:47Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "E2E Tests (ubuntu-latest, 1/3)",
       "seconds": 240,
-      "jobId": 136915566195
+      "jobId": 136915566195,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:58:42Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Chat E2E Tests (ubuntu-latest, 1/3)",
       "seconds": 149,
-      "jobId": 136915566196
+      "jobId": 136915566196,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:43Z",
+      "completedAt": "2026-11-21T16:57:12Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "E2E Tests (windows-2022, 1/3)",
       "seconds": 254,
-      "jobId": 136915566198
+      "jobId": 136915566198,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:58:56Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Annex E2E Tests (ubuntu-latest, 2/2)",
       "seconds": 258,
-      "jobId": 136915566199
+      "jobId": 136915566199,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:59:00Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Chat E2E Tests (windows-2022, 1/3)",
       "seconds": 246,
-      "jobId": 136915566216
+      "jobId": 136915566216,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:58:48Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Chat E2E Tests (ubuntu-latest, 3/3)",
       "seconds": 165,
-      "jobId": 136915566220
+      "jobId": 136915566220,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:43Z",
+      "completedAt": "2026-11-21T16:57:28Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "E2E Tests (ubuntu-latest, 2/3)",
       "seconds": 211,
-      "jobId": 136915566221
+      "jobId": 136915566221,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:58:13Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "Chat E2E Tests (ubuntu-latest, 2/3)",
       "seconds": 149,
-      "jobId": 136915566235
+      "jobId": 136915566235,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:57:11Z",
+      "createdToStartedSeconds": 1
     },
     {
       "name": "E2E Tests (ubuntu-latest, 3/3)",
       "seconds": 249,
-      "jobId": 136915566236
+      "jobId": 136915566236,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:43Z",
+      "completedAt": "2026-11-21T16:58:52Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "E2E Tests (windows-2022, 2/3)",
       "seconds": 249,
-      "jobId": 136915566249
+      "jobId": 136915566249,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:43Z",
+      "completedAt": "2026-11-21T16:58:52Z",
+      "createdToStartedSeconds": 2
     },
     {
       "name": "E2E Tests (windows-2022, 3/3)",
       "seconds": 242,
-      "jobId": 136915566263
+      "jobId": 136915566263,
+      "createdAt": "2026-11-21T16:54:41Z",
+      "startedAt": "2026-11-21T16:54:42Z",
+      "completedAt": "2026-11-21T16:58:44Z",
+      "createdToStartedSeconds": 1
     }
   ],
   "localExactHead": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
@@ -232,5 +364,16 @@
     "Local two-file maxWorkers2 run is not equivalent to full cross-platform unit/component/build/E2E CI.",
     "Gate wait/dependency preparation is not included in child receipt times.",
     "No Go pipeline baseline was measured by this helper."
-  ]
+  ],
+  "successfulJobCreatedToStartedSeconds": {
+    "sum": 55,
+    "min": 1,
+    "max": 3,
+    "count": 33,
+    "definition": "API started_at minus created_at per successful job; excludes dependency wait before job record creation, not end-to-end pipeline queue latency"
+  },
+  "prCreatedAt": "2026-11-21T16:47:15Z",
+  "prCreatedToRunUpdatedSeconds": 1332,
+  "sourcePushToResultSeconds": null,
+  "sourcePushTimingLimit": "No actual source push event timestamp retained; commit author/committer time is not push time. PR-created to result is measured instead."
 }

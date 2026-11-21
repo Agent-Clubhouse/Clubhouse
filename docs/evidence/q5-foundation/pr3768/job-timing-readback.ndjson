@@ -1,0 +1,37 @@
+{"completed_at":"2026-11-21T16:47:33Z","conclusion":"success","created_at":"2026-11-21T16:47:19Z","id":136913546329,"name":"Plan the run","started_at":"2026-11-21T16:47:21Z"}
+{"completed_at":"2026-11-21T16:47:19Z","conclusion":"skipped","created_at":"2026-11-21T16:47:20Z","id":136913547515,"name":"Dependency resolution preflight","started_at":"2026-11-21T16:47:20Z"}
+{"completed_at":"2026-11-21T16:47:53Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610105,"name":"Codex app-server schema drift","started_at":"2026-11-21T16:47:35Z"}
+{"completed_at":"2026-11-21T16:54:40Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610153,"name":"Build app (windows-2022)","started_at":"2026-11-21T16:47:35Z"}
+{"completed_at":"2026-11-21T16:49:53Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610160,"name":"Copilot SDK chunk (ubuntu-latest)","started_at":"2026-11-21T16:47:35Z"}
+{"completed_at":"2026-11-21T16:50:00Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610162,"name":"ESLint (errors only)","started_at":"2026-11-21T16:47:35Z"}
+{"completed_at":"2026-11-21T16:49:31Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610176,"name":"Typecheck + API surface","started_at":"2026-11-21T16:47:35Z"}
+{"completed_at":"2026-11-21T16:53:48Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610191,"name":"Build app (ubuntu-latest)","started_at":"2026-11-21T16:47:35Z"}
+{"completed_at":"2026-11-21T17:09:26Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610220,"name":"Unit + Component Tests (windows-latest, 2/2)","started_at":"2026-11-21T16:47:35Z"}
+{"completed_at":"2026-11-21T16:56:57Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610225,"name":"Unit + Component Tests (ubuntu-latest, 1/2)","started_at":"2026-11-21T16:47:36Z"}
+{"completed_at":"2026-11-21T16:50:31Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610234,"name":"Copilot SDK chunk (windows-2022)","started_at":"2026-11-21T16:47:35Z"}
+{"completed_at":"2026-11-21T16:47:43Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610235,"name":"Workflow lint (actionlint)","started_at":"2026-11-21T16:47:35Z"}
+{"completed_at":"2026-11-21T16:57:40Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610243,"name":"Unit + Component Tests (windows-latest, 1/2)","started_at":"2026-11-21T16:47:35Z"}
+{"completed_at":"2026-11-21T16:54:15Z","conclusion":"success","created_at":"2026-11-21T16:47:33Z","id":136913610255,"name":"Unit + Component Tests (ubuntu-latest, 2/2)","started_at":"2026-11-21T16:47:36Z"}
+{"completed_at":"2026-11-21T16:47:33Z","conclusion":"skipped","created_at":"2026-11-21T16:47:34Z","id":136913611497,"name":"macOS unit","started_at":"2026-11-21T16:47:34Z"}
+{"completed_at":"2026-11-21T16:47:33Z","conclusion":"skipped","created_at":"2026-11-21T16:47:34Z","id":136913611734,"name":"Linux Package Smoke Test","started_at":"2026-11-21T16:47:34Z"}
+{"completed_at":"2026-11-21T16:47:33Z","conclusion":"skipped","created_at":"2026-11-21T16:47:34Z","id":136913611768,"name":"macOS build + E2E smoke","started_at":"2026-11-21T16:47:34Z"}
+{"completed_at":"2026-11-21T16:57:45Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566137,"name":"Classic layout E2E Tests (windows-2022, 1/1)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:57:24Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566146,"name":"Classic layout E2E Tests (ubuntu-latest, 1/1)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:59:04Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566149,"name":"Annex E2E Tests (ubuntu-latest, 1/2)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:57:34Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566158,"name":"Stable-mode E2E Tests (ubuntu-latest)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:58:38Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566171,"name":"Stable-mode E2E Tests (windows-2022)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:58:02Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566174,"name":"Chat E2E Tests (windows-2022, 3/3)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T17:01:22Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566176,"name":"Annex E2E Tests (windows-2022, 1/2)","started_at":"2026-11-21T16:54:43Z"}
+{"completed_at":"2026-11-21T16:59:02Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566181,"name":"Chat E2E Tests (windows-2022, 2/3)","started_at":"2026-11-21T16:54:43Z"}
+{"completed_at":"2026-11-21T17:01:47Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566194,"name":"Annex E2E Tests (windows-2022, 2/2)","started_at":"2026-11-21T16:54:43Z"}
+{"completed_at":"2026-11-21T16:58:42Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566195,"name":"E2E Tests (ubuntu-latest, 1/3)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:57:12Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566196,"name":"Chat E2E Tests (ubuntu-latest, 1/3)","started_at":"2026-11-21T16:54:43Z"}
+{"completed_at":"2026-11-21T16:58:56Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566198,"name":"E2E Tests (windows-2022, 1/3)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:59:00Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566199,"name":"Annex E2E Tests (ubuntu-latest, 2/2)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:58:48Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566216,"name":"Chat E2E Tests (windows-2022, 1/3)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:57:28Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566220,"name":"Chat E2E Tests (ubuntu-latest, 3/3)","started_at":"2026-11-21T16:54:43Z"}
+{"completed_at":"2026-11-21T16:58:13Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566221,"name":"E2E Tests (ubuntu-latest, 2/3)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:57:11Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566235,"name":"Chat E2E Tests (ubuntu-latest, 2/3)","started_at":"2026-11-21T16:54:42Z"}
+{"completed_at":"2026-11-21T16:58:52Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566236,"name":"E2E Tests (ubuntu-latest, 3/3)","started_at":"2026-11-21T16:54:43Z"}
+{"completed_at":"2026-11-21T16:58:52Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566249,"name":"E2E Tests (windows-2022, 2/3)","started_at":"2026-11-21T16:54:43Z"}
+{"completed_at":"2026-11-21T16:58:44Z","conclusion":"success","created_at":"2026-11-21T16:54:41Z","id":136915566263,"name":"E2E Tests (windows-2022, 3/3)","started_at":"2026-11-21T16:54:42Z"}

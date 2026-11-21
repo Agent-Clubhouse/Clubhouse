@@ -68,8 +68,15 @@ collect-hosted.py is preserved and hashed; a separate bundle manifest binds
 all retained files. Reviewer can independently download the named artifacts
 through gh and reproduce each slice/hash/status before their expiry.
 
-JUnit has no captured child stdout here: passing process-control assertions
-establish their expected exits, not separately emitted raw child diagnostics.
+Correction to historical d0c9/0b433 wording: the reused-page discriminator's
+JUnit system-out DOES capture child diagnostics. Its guarded result is code0,
+preparationExit77/signalnull, pendingBeforeFlush3→pendingAfterFlush0,
+syncPosition2 before prefixPosition3. The skip-dirty mutant returns code2,
+pendingBeforeFlush2, prefixPosition-1 and the explicit missing-prefix safety
+assertion. The exact raw XML slice already preserved those bytes; the earlier
+claim that child stdout was absent was an interpretation error. See
+DIAGNOSTICS-ADDENDUM.md for attribution. This does not turn every passing
+fixture assertion into separately captured child output.
 The native testcase does not emit directoryDurability: no stronger directory
 sync mode is inferred from its success. Existing file-sync-only observations
 remain weaker. No power-loss, whole heap, FAT/network/ino=0, native read-only
