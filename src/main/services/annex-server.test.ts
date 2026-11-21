@@ -2,6 +2,16 @@ import * as selectedDispatcherDetails from './selected-dispatcher-details';
 import { app } from 'electron';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import { createSettingsStore } from './settings-store';
+import { createServer as createHttpServer } from 'http';
+import { createServer as createHttpsServer } from 'https';
+vi.mock('http', async (original) => {
+  const actual = await original<typeof import('http')>();
+  return { ...actual, createServer: vi.fn(actual.createServer) };
+});
+vi.mock('https', async (original) => {
+  const actual = await original<typeof import('https')>();
+  return { ...actual, createServer: vi.fn(actual.createServer) };
+});
 import * as agentConfigReader from './agent-config-reader';
 import * as dispatcherMetadataService from './dispatcher/dispatcher-service';
 import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
@@ -1198,10 +1208,11 @@ describe('annex-server', () => {
       const tlsObject = main().server, pairingObject = pairing().server, ports = annexServer.liveListenerPorts();
       annexServer.stop();
       // Deliberate identity-reuse model, not a claim that default constructors reuse objects.
-      vi.spyOn(https, 'createServer').mockReturnValue(tlsObject as https.Server);
-      vi.spyOn(http, 'createServer').mockReturnValue(pairingObject as http.Server);
+      vi.mocked(createHttpsServer).mockReturnValueOnce(tlsObject as https.Server);
+      vi.mocked(createHttpServer).mockReturnValueOnce(pairingObject as http.Server);
       vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: ports.mainPort!, pairingPort: ports.pairingPort! });
       const replacement = await annexServer.startVerifiedWithReceipt('127.0.0.1');
+      expect(listeners).toHaveLength(2);
       expect(main().server).toBe(tlsObject); expect(pairing().server).toBe(pairingObject);
       expect(annexServer.liveListenerPorts()).toEqual(ports);
       expect(ready()).toBe(false); expect(replacement()).toBe(true);
@@ -1266,8 +1277,8 @@ describe('annex-server', () => {
       const tlsObject = main().server, pairingObject = pairing().server;
       pairing().onRead = () => queueMicrotask(() => {
         const ports = annexServer.liveListenerPorts(); annexServer.stop();
-        vi.spyOn(https, 'createServer').mockReturnValue(tlsObject as https.Server);
-        vi.spyOn(http, 'createServer').mockReturnValue(pairingObject as http.Server);
+        vi.mocked(createHttpsServer).mockReturnValueOnce(tlsObject as https.Server);
+        vi.mocked(createHttpServer).mockReturnValueOnce(pairingObject as http.Server);
         vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: ports.mainPort!, pairingPort: ports.pairingPort! });
         annexServer.start();
       });
