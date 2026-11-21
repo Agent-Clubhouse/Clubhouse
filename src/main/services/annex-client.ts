@@ -1,4 +1,4 @@
-import { isSelectedDispatcherDetails, type SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
+import { isSelectedDispatcherConnectionPage, isSelectedDispatcherConnectionsQuery, isSelectedDispatcherDetails, type SelectedDispatcherConnectionsQuery, type SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
 import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
 import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
 import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
@@ -2522,8 +2522,11 @@ function invalidateSnapshotAdmission(sat: SatelliteConnectionInternal, admitted:
   broadcastSatellitesChanged();
 }
 
-/** Explicit selected-host role GET. Never resolves an address, caches a role or falls back to another surface. */
-export async function requestDispatcherDetails(machine: string): Promise<ControllerReadResult<SelectedDispatcherDetails>> {
+/** Explicit selected-host role GET. Never resolves an address, caches a role or falls back to another surface.
+ * A Connections page query must name the role agent its first page returned; a different role is an error. */
+export async function requestDispatcherDetails(machine: string, query?: SelectedDispatcherConnectionsQuery, expectedAgentId?: string): Promise<ControllerReadResult<SelectedDispatcherDetails>> {
+  if (query !== undefined && (!isSelectedDispatcherConnectionsQuery(query) || typeof expectedAgentId !== 'string' || !expectedAgentId)) return { status: 'error' };
+  const page = query && { card: 'connections' as const, source: query.source, offset: query.offset ?? 0, projectOffset: query.projectOffset ?? 0 };
   const sat = satelliteFor(machine);
   if (!sat || sat.state !== 'connected' || sat.needsPairing) return { status: 'offline' };
   const peer = annexPeers.getPeer(sat.fingerprint), pin = peer?.tlsCertificateFingerprint;
@@ -2536,12 +2539,14 @@ export async function requestDispatcherDetails(machine: string): Promise<Control
       && !!now && now.tlsCertificateFingerprint === pin && now.role === role && now.kind === kind && !now.networkPending;
   };
   try {
-    const res = await satelliteJson(sat.fingerprint, 'GET', '/api/v1/dispatcher/details', undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
+    const params = page && new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset), projectOffset: String(page.projectOffset) });
+    const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/dispatcher/details${params ? `?${params}` : ''}`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
     if (!current()) return { status: 'offline' };
-    if (res.status === 404 || res.status === 405 || res.status === 409) return { status: 'unavailable' };
+    // An older host rejects any role query; its role pages are unavailable, not an error.
+    if (res.status === 404 || res.status === 405 || res.status === 409 || page && res.status === 400) return { status: 'unavailable' };
     if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat, receipt); return { status: 'forbidden' }; }
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
-    if (res.status !== 200 || !isSelectedDispatcherDetails(res.body)) return { status: 'error' };
+    if (res.status !== 200 || !(page ? isSelectedDispatcherConnectionPage(res.body, page) && res.body.agentId === expectedAgentId : isSelectedDispatcherDetails(res.body))) return { status: 'error' };
     return { status: 'ok', value: res.body };
   } catch {
     // telemetry-exempt: bounded status only; never a local/controller/mobile fallback.
