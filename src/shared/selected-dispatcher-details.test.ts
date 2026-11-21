@@ -19,9 +19,10 @@ describe('selected Dispatcher full wrapper validation', () => {
     Object.assign(value.details, { [kind]: true });
     expect(isSelectedDispatcherDetails(value)).toBe(false);
   });
-  it('explicitly rejects a malformed managed inventory partial injection accepted as an unknown additive field by the old Details validator', () => {
+  it('rejects a malformed inventory partial injection at both the Details validator and the role wrapper', () => {
+    // The selected inventory validator now rejects inventoryPageOnly without a page; the wrapper must reject it independently.
     const value = roleFixture(); Object.assign(value.details, { inventoryPageOnly: true });
-    expect(isRemoteAgentDetails(value.details, value.agentId)).toBe(true);
+    expect(isRemoteAgentDetails(value.details, value.agentId)).toBe(false);
     expect(isSelectedDispatcherDetails(value)).toBe(false);
   });
   it('enforces the full UTF-8 wrapper bound, even when character count is below the byte limit', () => {

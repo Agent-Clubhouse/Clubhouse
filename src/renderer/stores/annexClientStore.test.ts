@@ -555,8 +555,9 @@ describe('annexClientStore', () => {
       expect(getState().satellites[0].snapshot).toBe(cached);
       expect(getState().satellites[0].snapshotReceipt).toBeUndefined();
       eventCallback({ satelliteId: SATELLITE.id, type: 'session:resumed', payload: {} });
+      // Snapshot events now store their payload; the renderer still never mints or restores a receipt.
       eventCallback({ satelliteId: SATELLITE.id, type: 'snapshot', payload: JSON.parse(JSON.stringify(cached)) });
-      expect(getState().satellites[0].snapshot).toBe(cached);
+      expect(getState().satellites[0].snapshot).toEqual(cached);
       expect(getState().satellites[0].snapshotReceipt).toBeUndefined();
       cleanup();
     });
