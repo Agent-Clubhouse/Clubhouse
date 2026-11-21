@@ -66,7 +66,9 @@ export function decodePreparedNoticeHeader(value: unknown): PreparedNoticeRoots 
   noticeRecipientKey(value.recipient as unknown as NoticeRecipient);
   for (const field of ['baselineThrough', 'scannedThrough', 'acceptedCount', 'excludedSequenceCount', 'lateAcknowledgementCount']) noticeSequence(value[field] as number);
   if ((value.baselineThrough as number) > (value.scannedThrough as number) || Object.keys(value.roots).some((name) => !rootNames.includes(name as typeof rootNames[number]))) throw new Error('Invalid sparse notice frontier or roots');
-  for (const root of Object.values(value.roots)) validateNoticePageRoot(root);
+  // Known optional roots can be undefined in the in-memory prepared API; the
+  // canonical clone omits them. Unknown names still refuse above, even undefined.
+  for (const root of Object.values(value.roots)) if (root !== undefined) validateNoticePageRoot(root);
   return clone(value) as unknown as PreparedNoticeRoots;
 }
 
