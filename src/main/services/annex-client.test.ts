@@ -2572,23 +2572,26 @@ describe('annex-client', () => {
         expect(current().snapshotReceipt).toEqual(expect.any(String)); expect(current().snapshotReceipt).not.toBe(oldReceipt);
       });
 
-      it.each(['agent', 'canvas'] as const)('a late same-epoch %s denial read under an older receipt keeps the newer receipt', async (kind) => {
+      it.each(['agent', 'canvas', 'role-page'] as const)('a late same-epoch %s denial read under an older receipt keeps the newer receipt', async (kind) => {
         await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
         const oldReceipt = current().snapshotReceipt, generation = current().connectionGeneration;
         const finish = answer(403, {}, true);
-        const pending = annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
+        const pending = kind === 'role-page' ? annexClient.requestDispatcherDetails(FP, { card: 'connections', source: 'incoming', offset: 0, projectOffset: 0 }, 'role1')
+          : annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
         send(0, 'snapshot', payload(2));
         const newReceipt = current().snapshotReceipt;
         expect(newReceipt).toEqual(expect.any(String)); expect(newReceipt).not.toBe(oldReceipt); expect(current().connectionGeneration).toBe(generation);
         const count = broadcasts(); finish();
-        expect(await pending).toEqual({ status: 'forbidden' });
+        // The role read also fences a changed receipt, so its late reply is offline; either way the newer receipt stays.
+        expect(await pending).toEqual({ status: kind === 'role-page' ? 'offline' : 'forbidden' });
         expect(current().snapshotReceipt).toBe(newReceipt); expect(broadcasts()).toBe(count);
       });
 
-      it.each(['agent', 'canvas'] as const)('a late %s denial still revokes the receipt it was read under', async (kind) => {
+      it.each(['agent', 'canvas', 'role-page'] as const)('a late %s denial still revokes the receipt it was read under', async (kind) => {
         await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
         const finish = answer(401, {}, true);
-        const pending = annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
+        const pending = kind === 'role-page' ? annexClient.requestDispatcherDetails(FP, { card: 'connections', source: 'incoming', offset: 0, projectOffset: 0 }, 'role1')
+          : annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
         const count = broadcasts(); finish();
         expect(await pending).toEqual({ status: 'forbidden' });
         expect(current().snapshotReceipt).toBeUndefined(); expect(broadcasts()).toBe(count + 1);
@@ -3505,6 +3508,27 @@ describe('annex-client', () => {
           expect(await annexClient.requestDispatcherDetails(FP)).toEqual({ status: 'error' });
         }
       });
+      it('pages role Connections bound to the first page\'s role agent, with older hosts unavailable', async () => {
+        const query = { card: 'connections' as const, source: 'incoming' as const, offset: 25, projectOffset: 0 };
+        const page = (agentId = 'role1', source = 'incoming') => { const value = response(); value.agentId = agentId; Object.assign(value.details, { agentId, connectionPageEnvelope: 1, connectionPageOnly: true, connectionPages: 1 });
+          value.details.cards = value.details.cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { source, offset: 25, projectOffset: 0, next: null, known: 0, complete: true } } : { ...c, requested: false }) as never; return value; };
+        const value = page(); answers.push({ status: 200, body: value });
+        expect(await annexClient.requestDispatcherDetails(FP, query, 'role1')).toEqual({ status: 'ok', value });
+        expect(requests.at(-1)!.url).toContain('/api/v1/dispatcher/details?card=connections&source=incoming&offset=25&projectOffset=0');
+        // A different role between pages, a mismatched page or a whole read is an error, never admitted.
+        for (const body of [page('role2'), page('role1', 'outgoing'), response()]) {
+          answers.push({ status: 200, body }); expect(await annexClient.requestDispatcherDetails(FP, query, 'role1')).toEqual({ status: 'error' });
+        }
+        answers.push({ status: 400, body: { error: 'invalid_dispatcher_details_query' } });
+        expect(await annexClient.requestDispatcherDetails(FP, query, 'role1')).toEqual({ status: 'unavailable' });
+        const before = requests.length;
+        expect(await annexClient.requestDispatcherDetails(FP, query)).toEqual({ status: 'error' });
+        expect(await annexClient.requestDispatcherDetails(FP, { card: 'orchestrate', source: 'helpers' } as never, 'role1')).toEqual({ status: 'error' });
+        expect(requests).toHaveLength(before);
+        // A whole read keeps 400 as an error; only a page query maps it to unavailable.
+        answers.push({ status: 400, body: {} }); expect(await annexClient.requestDispatcherDetails(FP)).toEqual({ status: 'error' });
+      });
+
       it.each(['pin', 'kind', 'role', 'pending', 'removed'] as const)('fences an in-flight response after peer %s changes, including in-place peer mutation', async (mode) => {
         let peer: Record<string, unknown> | undefined = { fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' };
         vi.mocked(annexPeers.getPeer).mockImplementation(() => peer as never);

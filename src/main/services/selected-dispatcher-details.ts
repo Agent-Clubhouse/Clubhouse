@@ -15,10 +15,10 @@ export type { SelectedDispatcherDetails } from '../../shared/selected-dispatcher
  */
 export async function readSelectedDispatcherDetails(authorized?: () => boolean, query?: SelectedDispatcherConnectionsQuery): Promise<{ status: number; body: unknown; receipt?: DisplayReceipt }> {
   const allowed = authorized ?? (() => false);
-  if (query !== undefined && !isSelectedDispatcherConnectionsQuery(query)) return { status: 400, body: { error: 'invalid_dispatcher_details_query' } };
   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });
   const changed = () => ({ status: 409, body: { error: 'dispatcher_role_changed' } });
   if (!allowed()) return refused();
+  if (query !== undefined && !isSelectedDispatcherConnectionsQuery(query)) return { status: 400, body: { error: 'invalid_dispatcher_details_query' } };
   const receipts: DisplayReceipt[] = [];
   const current = () => receipts.every((receipt) => receipt.current());
   try {

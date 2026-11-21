@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SatelliteConnection, SatelliteSnapshot } from '../../../shared/types';
 import type { RemoteDispatcherPresence } from '../../../shared/dispatcher-presence';
@@ -205,6 +205,44 @@ describe('no-chat selected-host Dispatcher role consumer', () => {
     expect(api).toHaveBeenLastCalledWith('target');
     expect(view.container.innerHTML).not.toContain('UNTRUSTED_EVENT_ID');
     view.unmount(); expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('pages role Connections by source with the overview role agent and resets on a role event', async () => {
+    let event!: (value: { satelliteId: string; type: string; payload: unknown }) => void;
+    vi.spyOn(window.clubhouse.annexClient, 'onSatelliteEvent').mockImplementation((callback) => { event = callback; return vi.fn(); });
+    const overview = role(); Object.assign(overview.details, { connectionPages: 1, connectionPageSources: ['outgoing', 'incoming'] });
+    const page = (offset: number, agentId = 'role1'): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId, details: { ...role(agentId).details, connectionPageEnvelope: 1, connectionPageOnly: true, connectionPages: 1,
+      cards: role(agentId).details.cards.map((c) => c.id === 'connections' ? { ...c, rows: [{ label: `Incoming row ${offset}`, value: 'HOST_PAGE' }], connectionPage: { source: 'incoming', offset, projectOffset: 0, next: offset === 0 ? { offset: 25, projectOffset: 0 } : null, known: 1, complete: true } } : { ...c, requested: false }) } });
+    let pageAgent = 'role1';
+    api.mockImplementation(async (_machine: string, query?: { offset?: number }) => query ? { status: 'ok', value: page(query.offset ?? 0, pageAgent) } : { status: 'ok', value: overview });
+    render(<RemoteDispatcherDetails machineId="target" />); await loaded();
+    const connections = within(screen.getByTestId('details-card-connections'));
+    act(() => connections.getByRole('button', { name: 'Incoming bindings' }).click());
+    await connections.findByText('Incoming row 0');
+    expect(api).toHaveBeenLastCalledWith('target', { card: 'connections', source: 'incoming', offset: 0, projectOffset: 0 }, 'role1');
+    act(() => connections.getByRole('button', { name: 'Next' }).click());
+    await connections.findByText('Incoming row 25');
+    expect(api).toHaveBeenLastCalledWith('target', { card: 'connections', source: 'incoming', offset: 25, projectOffset: 0 }, 'role1');
+    act(() => connections.getByRole('button', { name: 'Previous' }).click());
+    await connections.findByText('Incoming row 0');
+    // A page claiming another role agent is never shown as this Dispatcher's page.
+    pageAgent = 'role2';
+    act(() => connections.getByRole('button', { name: 'Next' }).click());
+    await connections.findByText('The host did not return the selected source page for this Dispatcher.');
+    expect(connections.queryByText('Incoming row 25')).not.toBeInTheDocument();
+    // A role event changes the role context: navigation returns to the overview.
+    pageAgent = 'role1';
+    act(() => event({ satelliteId: 'sat', type: 'dispatcher:changed', payload: {} }));
+    await waitFor(() => expect(connections.getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(connections.queryByText('Incoming row 0')).not.toBeInTheDocument();
+  });
+
+  it('shows the Connections summary only for an older host without role pages', async () => {
+    render(<RemoteDispatcherDetails machineId="target" />); await loaded();
+    const connections = within(screen.getByTestId('details-card-connections'));
+    expect(connections.queryByRole('button', { name: 'Incoming bindings' })).not.toBeInTheDocument();
+    expect(connections.getByText('This host shares the Dispatcher Connections summary only. Source pages need a host update.')).toBeInTheDocument();
+    expect(api).toHaveBeenCalledExactlyOnceWith('target');
   });
 
   it('cancels a deferred read on unmount and does not poll without events', async () => {

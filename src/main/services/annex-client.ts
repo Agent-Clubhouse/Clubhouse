@@ -2526,8 +2526,10 @@ export async function requestDispatcherDetails(machine: string, query?: Selected
     if (res.status === 404 || res.status === 405 || res.status === 409 || page && res.status === 400) return { status: 'unavailable' };
     if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat, receipt); return { status: 'forbidden' }; }
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
-    if (res.status !== 200 || !(page ? isSelectedDispatcherConnectionPage(res.body, page) && res.body.agentId === expectedAgentId : isSelectedDispatcherDetails(res.body))) return { status: 'error' };
-    return { status: 'ok', value: res.body };
+    if (res.status !== 200) return { status: 'error' };
+    const body: unknown = res.body;
+    if (page) return isSelectedDispatcherConnectionPage(body, page) && body.agentId === expectedAgentId ? { status: 'ok', value: body } : { status: 'error' };
+    return isSelectedDispatcherDetails(body) ? { status: 'ok', value: body } : { status: 'error' };
   } catch {
     // telemetry-exempt: bounded status only; never a local/controller/mobile fallback.
     return { status: current() ? 'error' : 'offline' };
