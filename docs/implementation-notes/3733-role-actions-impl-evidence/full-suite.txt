@@ -1,0 +1,5 @@
+# Full suite on the implementation tree before commit: vitest run --no-cache --maxWorkers=4, fresh TMPDIR /var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/dlc-fresh.4tVI, load about 2-3.4.
+# tsc --noEmit rc=0; eslint on changed files: 0 errors, no warnings on changed lines or the new file.
+ Test Files  1468 passed | 13 skipped (1481)
+      Tests  35867 passed | 114 skipped (35981)
+exit=0

@@ -1,4 +1,4 @@
-import { isSelectedDispatcherConnectionPage, isSelectedDispatcherConnectionsQuery, isSelectedDispatcherDetails, type SelectedDispatcherConnectionsQuery, type SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
+import { isSelectedDispatcherDetails, isSelectedDispatcherPage, isSelectedDispatcherPageQuery, type SelectedDispatcherDetails, type SelectedDispatcherPageQuery } from '../../shared/selected-dispatcher-details';
 import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
 import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
 import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
@@ -2637,10 +2637,17 @@ function invalidateSnapshotAdmission(sat: SatelliteConnectionInternal, admitted:
 }
 
 /** Explicit selected-host role GET. Never resolves an address, caches a role or falls back to another surface.
- * A Connections page query must name the role agent its first page returned; a different role is an error. */
-export async function requestDispatcherDetails(machine: string, query?: SelectedDispatcherConnectionsQuery, expectedAgentId?: string): Promise<ControllerReadResult<SelectedDispatcherDetails>> {
-  if (query !== undefined && (!isSelectedDispatcherConnectionsQuery(query) || typeof expectedAgentId !== 'string' || !expectedAgentId)) return { status: 'error' };
-  const page = query && { card: 'connections' as const, source: query.source, offset: query.offset ?? 0, projectOffset: query.projectOffset ?? 0 };
+ * A Connections or Actions page query must name the role agent its first page returned; a different role is an error. */
+export async function requestDispatcherDetails(machine: string, query?: SelectedDispatcherPageQuery, expectedAgentId?: string): Promise<ControllerReadResult<SelectedDispatcherDetails>> {
+  // Capture the page identity before any await, then validate the copy; no caller object can retarget the URL or response check.
+  let copy: unknown;
+  try { copy = query === undefined ? undefined : { ...query }; }
+  catch { return { status: 'error' }; /* telemetry-exempt: an unreadable caller query is invalid, never partially used. */ }
+  const expected = expectedAgentId, valid = copy === undefined ? undefined : isSelectedDispatcherPageQuery(copy) ? copy : null;
+  if (valid === null || valid && (typeof expected !== 'string' || !expected)) return { status: 'error' };
+  const page: Readonly<SelectedDispatcherPageQuery> | undefined = !valid ? undefined : valid.card === 'actions'
+    ? Object.freeze({ card: valid.card, source: valid.source, offset: valid.offset ?? 0, ...(valid.selection !== undefined && { selection: valid.selection }) })
+    : Object.freeze({ card: valid.card, source: valid.source, offset: valid.offset ?? 0, projectOffset: valid.projectOffset ?? 0 });
   const sat = satelliteFor(machine);
   if (!sat || sat.state !== 'connected' || sat.needsPairing) return { status: 'offline' };
   const peer = annexPeers.getPeer(sat.fingerprint), pin = peer?.tlsCertificateFingerprint;
@@ -2653,7 +2660,9 @@ export async function requestDispatcherDetails(machine: string, query?: Selected
       && !!now && now.tlsCertificateFingerprint === pin && now.role === role && now.kind === kind && !now.networkPending;
   };
   try {
-    const params = page && new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset), projectOffset: String(page.projectOffset) });
+    const params = page && new URLSearchParams(page.card === 'actions'
+      ? { card: page.card, source: page.source, offset: String(page.offset ?? 0), ...(page.selection !== undefined && { selection: page.selection }) }
+      : { card: page.card, source: page.source, offset: String(page.offset ?? 0), projectOffset: String(page.projectOffset ?? 0) });
     const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/dispatcher/details${params ? `?${params}` : ''}`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
     if (!current()) return { status: 'offline' };
     // An older host rejects any role query; its role pages are unavailable, not an error.
@@ -2662,7 +2671,7 @@ export async function requestDispatcherDetails(machine: string, query?: Selected
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
     if (res.status !== 200) return { status: 'error' };
     const body: unknown = res.body;
-    if (page) return isSelectedDispatcherConnectionPage(body, page) && body.agentId === expectedAgentId ? { status: 'ok', value: body } : { status: 'error' };
+    if (page) return isSelectedDispatcherPage(body, page) && body.agentId === expected ? { status: 'ok', value: body } : { status: 'error' };
     return isSelectedDispatcherDetails(body) ? { status: 'ok', value: body } : { status: 'error' };
   } catch {
     // telemetry-exempt: bounded status only; never a local/controller/mobile fallback.

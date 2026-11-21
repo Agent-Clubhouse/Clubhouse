@@ -245,6 +245,49 @@ describe('no-chat selected-host Dispatcher role consumer', () => {
     expect(api).toHaveBeenCalledExactlyOnceWith('target');
   });
 
+  it('pages role Actions relationships with the overview role agent, carries the selection and resets on a role event (#14)', async () => {
+    let event!: (value: { satelliteId: string; type: string; payload: unknown }) => void;
+    vi.spyOn(window.clubhouse.annexClient, 'onSatelliteEvent').mockImplementation((callback) => { event = callback; return vi.fn(); });
+    const selection = 'a'.repeat(64), overview = role(); Object.assign(overview.details, { inventoryPages: 1, inventorySources: ['selected-action-relationships'] });
+    const page = (offset: number, agentId = 'role1'): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId, details: { ...role(agentId).details, settings: null, inventoryPages: 1, inventorySources: ['selected-action-relationships'], inventoryPageOnly: true,
+      cards: role(agentId).details.cards.map((c) => ({ ...c, rows: [], summary: '', ...(c.id !== 'actions' && { requested: false as const }) })),
+      inventoryPage: { version: 1, source: 'selected-action-relationships', state: 'recorded', offset, selection, next: offset === 0 ? 25 : null, totalRelationships: 30, uniqueActions: 30, observedAt: 1, notes: [],
+        rows: Array.from({ length: offset === 0 ? 25 : 5 }, (_, i) => ({ key: (offset + i).toString(16).padStart(64, '0'), name: `Dispatcher Action ${offset + i}`, group: 'dispatcher' as const, enabled: false, description: 'Once → Message Dispatcher' })) } } });
+    let pageAgent = 'role1';
+    api.mockImplementation(async (_machine: string, query?: { offset?: number }) => query ? { status: 'ok', value: page(query.offset ?? 0, pageAgent) } : { status: 'ok', value: overview });
+    render(<RemoteDispatcherDetails machineId="target" />); await loaded();
+    const actions = within(screen.getByTestId('details-card-actions'));
+    expect(actions.queryByText(/Actions summary only/)).not.toBeInTheDocument();
+    act(() => actions.getByRole('button', { name: 'Browse recorded Actions' }).click());
+    await actions.findByText('Dispatcher Action 0');
+    expect(actions.getByText('Made by the Dispatcher')).toBeInTheDocument();
+    expect(api).toHaveBeenLastCalledWith('target', { card: 'actions', source: 'selected-action-relationships', offset: 0 }, 'role1');
+    act(() => actions.getByRole('button', { name: 'Next Actions' }).click());
+    await actions.findByText('Dispatcher Action 25');
+    expect(api).toHaveBeenLastCalledWith('target', { card: 'actions', source: 'selected-action-relationships', offset: 25, selection }, 'role1');
+    act(() => actions.getByRole('button', { name: 'Previous Actions' }).click());
+    await actions.findByText('Dispatcher Action 0');
+    expect(api).toHaveBeenLastCalledWith('target', { card: 'actions', source: 'selected-action-relationships', offset: 0, selection }, 'role1');
+    // A page claiming another role agent is never shown as this Dispatcher's page.
+    pageAgent = 'role2';
+    act(() => actions.getByRole('button', { name: 'Next Actions' }).click());
+    await actions.findByText('Couldn’t read this Actions page. Refresh to try again.');
+    expect(actions.queryByText('Dispatcher Action 25')).not.toBeInTheDocument();
+    // A role event changes the role context: navigation returns to the overview.
+    pageAgent = 'role1';
+    act(() => event({ satelliteId: 'sat', type: 'dispatcher:changed', payload: {} }));
+    await waitFor(() => expect(actions.getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(actions.queryByText(/Dispatcher Action \d/)).not.toBeInTheDocument();
+  });
+
+  it('shows the Actions summary only for an older host without role inventory pages', async () => {
+    render(<RemoteDispatcherDetails machineId="target" />); await loaded();
+    const actions = within(screen.getByTestId('details-card-actions'));
+    expect(actions.queryByRole('button', { name: 'Browse recorded Actions' })).not.toBeInTheDocument();
+    expect(actions.getByText('This host shares the Dispatcher Actions summary only. Relationship pages need a host update.')).toBeInTheDocument();
+    expect(api).toHaveBeenCalledExactlyOnceWith('target');
+  });
+
   it('cancels a deferred read on unmount and does not poll without events', async () => {
     vi.useFakeTimers();
     try {

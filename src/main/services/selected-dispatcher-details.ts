@@ -4,21 +4,26 @@ import type { DisplayReceipt } from './display-settings';
 import { dispatcherControllerForDisplay } from './remote-dispatcher-card';
 import { readRemoteAgentDetails } from './remote-agent-details';
 
-import { isSelectedDispatcherConnectionPage, isSelectedDispatcherConnectionsQuery, type SelectedDispatcherConnectionsQuery, type SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
+import { isSelectedDispatcherPage, isSelectedDispatcherPageQuery, type SelectedDispatcherDetails, type SelectedDispatcherPageQuery } from '../../shared/selected-dispatcher-details';
 export type { SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
 
 /**
  * The pinned desktop adapter must supply the SAME desktopDetailsAuthorized
  * callback as ordinary agent Details, before and after this call. No caller-
  * supplied id, address, role, path or controller/mobile grant is accepted here.
- * An optional Connections page query pages the same host-selected role only.
+ * An optional Connections or Actions page query pages the same host-selected role only.
  */
-export async function readSelectedDispatcherDetails(authorized?: () => boolean, query?: SelectedDispatcherConnectionsQuery): Promise<{ status: number; body: unknown; receipt?: DisplayReceipt }> {
+export async function readSelectedDispatcherDetails(authorized?: () => boolean, query?: SelectedDispatcherPageQuery): Promise<{ status: number; body: unknown; receipt?: DisplayReceipt }> {
   const allowed = authorized ?? (() => false);
   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });
   const changed = () => ({ status: 409, body: { error: 'dispatcher_role_changed' } });
   if (!allowed()) return refused();
-  if (query !== undefined && !isSelectedDispatcherConnectionsQuery(query)) return { status: 400, body: { error: 'invalid_dispatcher_details_query' } };
+  const invalid = () => ({ status: 400, body: { error: 'invalid_dispatcher_details_query' } });
+  // Capture before any await, then validate the copy: later caller mutation cannot retarget the read or its page check.
+  let page: Readonly<SelectedDispatcherPageQuery> | undefined;
+  try { page = query === undefined ? undefined : Object.freeze({ ...query }); }
+  catch { return invalid(); /* telemetry-exempt: an unreadable caller query is invalid, never partially used. */ }
+  if (page !== undefined && !isSelectedDispatcherPageQuery(page)) return invalid();
   const receipts: DisplayReceipt[] = [];
   const current = () => receipts.every((receipt) => receipt.current());
   try {
@@ -31,13 +36,13 @@ export async function readSelectedDispatcherDetails(authorized?: () => boolean, 
     if (!target) return { status: 404, body: { error: 'dispatcher_role_unavailable' } };
     // The wrapper adds bytes around the inner body; trim the inner body to what remains so the whole response fits.
     const overhead = Buffer.byteLength(JSON.stringify({ version: 1, role: 'dispatcher', agentId: target.agent.id, details: null })) - Buffer.byteLength('null');
-    const result = await readRemoteAgentDetails(target.agent.id, allowed, query && { ...query }, { maxBytes: REMOTE_DETAILS_MAX_BYTES - overhead });
+    const result = await readRemoteAgentDetails(target.agent.id, allowed, page && { ...page }, { maxBytes: REMOTE_DETAILS_MAX_BYTES - overhead });
     if (!allowed()) return refused();
     if (!current()) return changed();
     if (result.status !== 200) return result;
     if (!isRemoteAgentDetails(result.body, target.agent.id)) return { status: 500, body: { error: 'dispatcher_details_invalid' } };
     const body: SelectedDispatcherDetails = { version: 1, role: 'dispatcher', agentId: target.agent.id, details: result.body };
-    if (query ? !isSelectedDispatcherConnectionPage(body, query) : result.body.connectionPageOnly === true
+    if (page ? !isSelectedDispatcherPage(body, page) : result.body.connectionPageOnly === true
       || ('helperPageOnly' in result.body && result.body.helperPageOnly === true)
       || ('inventoryPageOnly' in result.body && result.body.inventoryPageOnly === true)) {
       return { status: 500, body: { error: 'dispatcher_details_invalid' } };

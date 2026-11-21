@@ -1,4 +1,4 @@
-import type { SelectedDispatcherConnectionsQuery, SelectedDispatcherDetails } from '../shared/selected-dispatcher-details';
+import type { SelectedDispatcherDetails, SelectedDispatcherPageQuery } from '../shared/selected-dispatcher-details';
 import type { RemoteDetailsQuery } from '../shared/remote-details-query';
 import { ipcRenderer } from 'electron';
 import type { RemoteAgentSettings } from '../shared/remote-agent-settings';
@@ -47,7 +47,7 @@ export const annexClient = {
   /** A page of a satellite chat agent's transcript and state (#2390). */
   agentSettings: (machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentSettings>> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_SETTINGS, machine, agentId),
-  dispatcherDetails: (machine: string, query?: SelectedDispatcherConnectionsQuery, expectedAgentId?: string): Promise<ControllerReadResult<SelectedDispatcherDetails>> =>
+  dispatcherDetails: (machine: string, query?: SelectedDispatcherPageQuery, expectedAgentId?: string): Promise<ControllerReadResult<SelectedDispatcherDetails>> =>
     query === undefined ? ipcRenderer.invoke(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS, machine) : ipcRenderer.invoke(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS, machine, query, expectedAgentId),
   agentDetails: (machine: string, agentId: string, query?: RemoteDetailsQuery): Promise<ControllerReadResult<RemoteAgentDetails>> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DETAILS, machine, agentId, query),

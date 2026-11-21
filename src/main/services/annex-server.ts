@@ -1,5 +1,5 @@
 import { readSelectedDispatcherDetails } from './selected-dispatcher-details';
-import { isSelectedDispatcherConnectionsQuery } from '../../shared/selected-dispatcher-details';
+import { isSelectedDispatcherActionsQuery, isSelectedDispatcherConnectionsQuery } from '../../shared/selected-dispatcher-details';
 import { isRemoteDetailsQuery } from '../../shared/remote-details-query';
 import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
 import { readRemoteAgentSettings } from './remote-agent-settings';
@@ -4116,16 +4116,18 @@ async function handleSelectedDispatcherDetailsRoute(ctx: AnnexRouteContext): Pro
   if (ctx.requireMtls()) return;
   const authorized = () => desktopDetailsAuthorized(ctx);
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'desktop_controller_required' }); return; }
-  // Selection belongs to this pinned host. No caller id, address, role or path is accepted; only a
-  // Connections source page of the host-selected role, parsed as strictly as ordinary Details pages.
+  // Selection belongs to this pinned host. No caller id, address, role or path is accepted; only a Connections
+  // source page or Actions relationship page of the host-selected role, parsed as strictly as ordinary Details pages.
   const params = new URL(ctx.url, 'http://localhost').searchParams;
-  const query = params.size ? { card: params.get('card'), source: params.get('source'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('projectOffset') && { projectOffset: Number(params.get('projectOffset')) }) } : undefined;
-  if (query !== undefined && ([...params.keys()].some((key) => !['card', 'source', 'offset', 'projectOffset'].includes(key))
-    || [...params.keys()].some((key) => params.getAll(key).length !== 1) || ['offset', 'projectOffset'].some((key) => params.has(key) && !/^(0|[1-9]\d{0,3})$/.test(params.get(key)!))
-    || !isSelectedDispatcherConnectionsQuery(query))) {
-    sendJson(ctx.res, 400, { error: 'invalid_dispatcher_details_query' }); return;
-  }
-  const result = await readSelectedDispatcherDetails(authorized, query && isSelectedDispatcherConnectionsQuery(query) ? query : undefined);
+  const actions = params.get('card') === 'actions', allowedKeys = actions ? ['card', 'source', 'offset', 'selection'] : ['card', 'source', 'offset', 'projectOffset'];
+  const query = !params.size ? undefined : actions
+    ? { card: params.get('card'), source: params.get('source'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('selection') && { selection: params.get('selection') }) }
+    : { card: params.get('card'), source: params.get('source'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('projectOffset') && { projectOffset: Number(params.get('projectOffset')) }) };
+  const valid = query === undefined || ![...params.keys()].some((key) => !allowedKeys.includes(key) || params.getAll(key).length !== 1)
+    && !['offset', 'projectOffset'].some((key) => params.has(key) && !/^(0|[1-9]\d{0,3})$/.test(params.get(key)!))
+    && (actions ? isSelectedDispatcherActionsQuery(query) : isSelectedDispatcherConnectionsQuery(query));
+  if (!valid) { sendJson(ctx.res, 400, { error: 'invalid_dispatcher_details_query' }); return; }
+  const result = await readSelectedDispatcherDetails(authorized, query && (isSelectedDispatcherActionsQuery(query) || isSelectedDispatcherConnectionsQuery(query)) ? query : undefined);
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'details_read_refused' }); return; }
   if (result.status === 200) {
     let current = false;
