@@ -1,0 +1,27 @@
+2026-11-21T12:42:57Z START q5-ledger idle=90% unused=17G avail=33972M freepct=75 comp=8400M swap=1812M pid=60786 cmd=python3 test/research/q5-seal-implementation.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/28348cc4a-direct-index-controls-attempt1 -- python3 -c import json, subprocess, sys, tempfile
+from pathlib import Path
+failure = False
+for mode, expected, marker in [
+    ('reuse-guarded', 0, 'PASS: reused orphan earned file and prefix barriers'),
+    ('skip-reuse-dirty', 2, 'SAFETY ASSERTION FAILED: reused orphan prefix barrier missing'),
+    ('temp-opened', 77, 'pageTempOpened'),
+    ('fifo-swap', 0, 'PASS: swapped FIFO refused without blocking'),
+]:
+    if mode == 'fifo-swap' and sys.platform == 'win32':
+        print(json.dumps({'mode': mode, 'skipped': 'Unix FIFO fixture unsupported on native Windows'}))
+        continue
+    with tempfile.TemporaryDirectory(prefix='q5-index-proof-') as directory:
+        argv = [subprocess.check_output(['which', 'node'], text=True).strip(), 'test/research/q5-index-process.cjs', directory, mode]
+        result = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(json.dumps({'mode': mode, 'argv': argv, 'expectedExit': expected, 'actualExit': result.returncode, 'raw': result.stdout}), flush=True)
+        if result.returncode != expected or marker not in result.stdout:
+            failure = True
+raise SystemExit(1 if failure else 0)
+
+{"mode": "reuse-guarded", "argv": ["/opt/homebrew/bin/node", "test/research/q5-index-process.cjs", "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-index-proof-9ntk9ize", "reuse-guarded"], "expectedExit": 0, "actualExit": 0, "raw": "{\"preparationExit\":77,\"preparationSignal\":null,\"stdout\":\"{\\\"root\\\":{\\\"digest\\\":\\\"6411f2ac6b934b5ee579b473dc865a7f8f3fe7b60139b829bccf7ec5b637e2e0\\\",\\\"first\\\":\\\"stable-id\\\",\\\"last\\\":\\\"stable-id\\\",\\\"count\\\":1,\\\"depth\\\":0},\\\"skippedFlush\\\":true}\\n\",\"stderr\":\"\"}\n{\"mode\":\"reuse-guarded\",\"pendingBeforeFlush\":3,\"syncPosition\":2,\"prefixPosition\":3,\"pendingAfterFlush\":0}\nPASS: reused orphan earned file and prefix barriers\n"}
+{"mode": "skip-reuse-dirty", "argv": ["/opt/homebrew/bin/node", "test/research/q5-index-process.cjs", "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-index-proof-goqpgpqw", "skip-reuse-dirty"], "expectedExit": 2, "actualExit": 2, "raw": "{\"preparationExit\":77,\"preparationSignal\":null,\"stdout\":\"{\\\"root\\\":{\\\"digest\\\":\\\"6411f2ac6b934b5ee579b473dc865a7f8f3fe7b60139b829bccf7ec5b637e2e0\\\",\\\"first\\\":\\\"stable-id\\\",\\\"last\\\":\\\"stable-id\\\",\\\"count\\\":1,\\\"depth\\\":0},\\\"skippedFlush\\\":true}\\n\",\"stderr\":\"\"}\n{\"mode\":\"skip-reuse-dirty\",\"pendingBeforeFlush\":2,\"syncPosition\":2,\"prefixPosition\":-1,\"pendingAfterFlush\":0}\nSAFETY ASSERTION FAILED: reused orphan prefix barrier missing\n"}
+{"mode": "temp-opened", "argv": ["/opt/homebrew/bin/node", "test/research/q5-index-process.cjs", "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-index-proof-e0bx7t82", "temp-opened"], "expectedExit": 77, "actualExit": 77, "raw": "{\"point\":\"pageTempOpened\",\"location\":\"/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-index-proof-e0bx7t82/64/6411f2ac6b934b5ee579b473dc865a7f8f3fe7b60139b829bccf7ec5b637e2e0-06836ded-866a-4928-b578-1f7ab0a40a10.tmp\"}\n"}
+{"mode": "fifo-swap", "argv": ["/opt/homebrew/bin/node", "test/research/q5-index-process.cjs", "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-index-proof-xm283efe", "fifo-swap"], "expectedExit": 0, "actualExit": 0, "raw": "{\"refused\":true,\"code\":null,\"message\":\"Notice index page changed while opening\"}\nPASS: swapped FIFO refused without blocking\n"}
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/28348cc4a-direct-index-controls-attempt1/receipt.json", "exitCode": 0, "sealEqual": true}
+2026-11-21T12:42:58Z END q5-ledger rc=0
+

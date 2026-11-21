@@ -1,0 +1,13 @@
+{
+  "scope": "Admission only; wrapper never invoked; no source seal or executed check",
+  "attemptedHead": "4b06ebcfee61999336dccb25d2ff1e4d087d5eff",
+  "attemptedCommand": "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh q5-ledger 4 -- python3 test/research/q5-seal-implementation.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/4b06ebcfe-page-reader-tests-attempt1 -- ./node_modules/.bin/vitest run --project main src/main/services/group-project-notice-ledger/pages.test.ts src/main/services/group-project-notice-ledger/sparse-reader.test.ts --maxWorkers=2",
+  "observedAtOrBefore": "2026-11-21T12:40:00Z",
+  "result": {
+    "chunk_id": "9757fe",
+    "wall_time_seconds": 0.65524375,
+    "exit_code": 75,
+    "original_token_count": 7,
+    "output": "REFUSED: other_test_running\n"
+  }
+}
