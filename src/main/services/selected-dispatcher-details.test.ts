@@ -272,3 +272,25 @@ describe('role Actions relationship pages (#14, RED-first)', () => {
     expect(m.resolve).not.toHaveBeenCalled(); expect(m.details).not.toHaveBeenCalled();
   });
 });
+
+// Contract review condition (2026-11-21): the normalized query and selection are captured BEFORE the first await.
+describe('role page query is captured before any await (RED-first)', () => {
+  const pageFor = (source: 'outgoing' | 'incoming', offset = 0): RemoteAgentDetails => ({ ...details(), connectionPageOnly: true, cards: details().cards.map((c) => c.id === 'connections'
+    ? { ...c, connectionPage: { version: 1, source, offset, projectOffset: 0, known: 0, complete: true, next: null } } : { ...c, requested: false }) } as unknown as RemoteAgentDetails);
+  it('a caller mutating its Connections query during role resolution cannot retarget the producer read or the page check', async () => {
+    const query: { card: 'connections'; source: 'outgoing' | 'incoming'; offset: number; projectOffset: number } = { card: 'connections', source: 'outgoing', offset: 0, projectOffset: 0 };
+    const resolved = await m.resolve();
+    m.resolve.mockImplementationOnce(async () => { query.source = 'incoming'; query.offset = 4095; return resolved; });
+    m.details.mockResolvedValue({ status: 200, body: pageFor('outgoing') });
+    await readSelectedDispatcherDetails(() => true, query);
+    expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', expect.any(Function), { card: 'connections', source: 'outgoing', offset: 0, projectOffset: 0 }, { maxBytes: budgetFor('role1') });
+  });
+  it('a caller mutating its Actions selection during role resolution cannot retarget the producer read', async () => {
+    const selection = 'd'.repeat(64), query = { card: 'actions' as const, source: 'selected-action-relationships' as const, offset: 25, selection };
+    const resolved = await m.resolve();
+    m.resolve.mockImplementationOnce(async () => { query.selection = 'e'.repeat(64); query.offset = 50; return resolved; });
+    m.details.mockResolvedValue({ status: 500, body: { error: 'details_read_failed' } });
+    await readSelectedDispatcherDetails(() => true, query as never);
+    expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', expect.any(Function), { card: 'actions', source: 'selected-action-relationships', offset: 25, selection }, { maxBytes: budgetFor('role1') });
+  });
+});

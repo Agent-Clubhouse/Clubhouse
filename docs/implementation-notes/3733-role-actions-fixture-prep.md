@@ -47,3 +47,15 @@ Prepared tests:
 
 - Commands: targeted `vitest --no-cache --maxWorkers=1` with a fresh `TMPDIR` on both files, `tsc --noEmit` (no errors in these files), and eslint on both test files (clean).
 - The isolated per-entry `node_modules` symlinks excluded `.cache` and `.vite`. No installs, and no writes to the shared store.
+
+## 4. Query captured before any await (contract review condition, added after lane3613 clearance)
+
+Condition: an immutable normalized query and selection exist **before** the first await, and are the only values used afterwards.
+
+- **Client** `requestDispatcherDetails` (`annex-client.ts` ~2643): already builds `page` from the validated query before `satelliteFor` and the transport await. The Actions variant must add `selection` to that same pre-await capture.
+- **Route** `handleSelectedDispatcherDetailsRoute` (~4121): builds a fresh object from `searchParams` and never mutates it. The Actions variant keeps this, with selection taken from the single-valued param.
+- **Service** `readSelectedDispatcherDetails`: **gap on `main` today.** It validates the caller's object before awaiting, but copies it only after `await dispatcherControllerForDisplay(...)` (`query && { ...query }`). The final page check also reads the caller's object.
+  - The RED test "a caller mutating its Connections query during role resolution…" shows the producer receiving `source: 'incoming', offset: 4095` (unvalidated: 4095 is not a multiple of 25) after the caller mutated its object during role resolution.
+  - Exposure is in-process callers only: the HTTP route never mutates its fresh object, and the producer validates the query again. So this is hardening, not an exploitable path.
+  - Fix in the implementation: normalize once at entry into a frozen local value (card, source, offset defaulted, projectOffset or selection) and use only that for the producer call and `isSelected…Page`.
+  - The Actions twin test is RED for the same reason and also because of the current 400.
