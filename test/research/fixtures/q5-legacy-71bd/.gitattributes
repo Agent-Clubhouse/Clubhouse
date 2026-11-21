@@ -1,0 +1,2 @@
+# Preserve the frozen Git-source hash even in a CRLF-configured Windows checkout.
+journal.source.txt text eol=lf

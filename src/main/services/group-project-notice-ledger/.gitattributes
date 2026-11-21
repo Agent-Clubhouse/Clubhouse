@@ -1,0 +1,4 @@
+# Frozen legacy source verification compares these dependencies byte for byte.
+state.ts text eol=lf
+intervals.ts text eol=lf
+durability.ts text eol=lf
