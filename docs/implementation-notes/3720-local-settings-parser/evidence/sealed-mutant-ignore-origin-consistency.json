@@ -1,0 +1,45 @@
+{
+  "label": "sealed-mutant-ignore-origin-consistency",
+  "headAtExecution": "b908917305eaea9d2b8a11030e2361830b1478b9",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-parser/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/shared/annex-settings-ipc.test.ts"
+  ],
+  "expectedExit": 1,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T12:42:37.291069+00:00",
+  "endedAtUTC": "2026-11-21T12:42:37.633411+00:00",
+  "inputSHA256": {
+    "src/shared/annex-settings-ipc.ts": "4d6b38c3fd982a10dfb4a4f99b3de0e7808960447d79078d0ef9c74eb71cdb7f",
+    "src/shared/annex-settings-ipc.test.ts": "5658d53eefcada035b448da5b0324991dd0a6caca60987bb6e29378a058d6f17",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-settings-ipc.ts": "4d6b38c3fd982a10dfb4a4f99b3de0e7808960447d79078d0ef9c74eb71cdb7f",
+    "src/shared/annex-settings-ipc.test.ts": "5658d53eefcada035b448da5b0324991dd0a6caca60987bb6e29378a058d6f17",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/shared/annex-settings-ipc.ts b/src/shared/annex-settings-ipc.ts\nindex c07e48f7d..7329bd8d9 100644\n--- a/src/shared/annex-settings-ipc.ts\n+++ b/src/shared/annex-settings-ipc.ts\n@@ -142,7 +142,7 @@ export function readLocalSettingsPatch(raw: unknown): LocalSettingsPatch {\n     }\n     touched.push(...unset);\n     if (!touched.length || touched.length > EDITABLE_KEYS.length || new Set(touched).size !== touched.length) return schema(id);\n-    if (touched.some(key => !origins[origin].includes(key)) || origin === 'command-palette' && touched.length !== 1) return schema(id);\n+    // MUTANT: ignore origin consistency\n     const suppliedKeys = Reflect.ownKeys(suppliedFields);\n     if (suppliedKeys.length !== touched.length || suppliedKeys.some(key => !isEditable(key) || !touched.includes(key))) return schema(id);\n     const fields: Partial<Record<EditableKey, number>> = {};\n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |shared| src/shared/annex-settings-ipc.test.ts (112 tests | 4 failed) 13ms\n     \u00d7 refuses origin/field mismatch 0 2ms\n     \u00d7 refuses origin/field mismatch 1 0ms\n     \u00d7 refuses origin/field mismatch 2 0ms\n     \u00d7 refuses origin/field mismatch 3 0ms\n\n Test Files  1 failed (1)\n      Tests  4 failed | 108 passed (112)\n   Start at  07:42:37\n   Duration  97ms (transform 10ms, setup 0ms, import 16ms, tests 13ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 4 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |shared| src/shared/annex-settings-ipc.test.ts > local settings patch parser (not installed as an IPC handler) > refuses origin/field mismatch 0\n FAIL  |shared| src/shared/annex-settings-ipc.test.ts > local settings patch parser (not installed as an IPC handler) > refuses origin/field mismatch 1\n FAIL  |shared| src/shared/annex-settings-ipc.test.ts > local settings patch parser (not installed as an IPC handler) > refuses origin/field mismatch 2\n FAIL  |shared| src/shared/annex-settings-ipc.test.ts > local settings patch parser (not installed as an IPC handler) > refuses origin/field mismatch 3\nAssertionError: expected undefined to be an instance of LocalSettingsInputError\n \u276f refused src/shared/annex-settings-ipc.test.ts:16:18\n     14|   let caught: unknown;\n     15|   try { readLocalSettingsPatch(raw); } catch (error) { caught = error;\u2026\n     16|   expect(caught).toBeInstanceOf(LocalSettingsInputError);\n       |                  ^\n     17|   expect(caught).toMatchObject({ kind, requestId: id, message: kind });\n     18| }\n \u276f src/shared/annex-settings-ipc.test.ts:119:72\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/4]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "1c546c3d4969d157d40aa442bf1debed7239e3a51dd8371879904b23ac26429c"
+}

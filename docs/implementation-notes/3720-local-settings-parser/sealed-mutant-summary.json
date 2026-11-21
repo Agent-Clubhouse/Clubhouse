@@ -1,0 +1,56 @@
+{
+  "head": "b908917305eaea9d2b8a11030e2361830b1478b9",
+  "originalSourceSHA256": "675ed849d24bced3a6778ed465ea728549e340ff46677fbb632b9aaa8da2f928",
+  "restoredSourceSHA256": "675ed849d24bced3a6778ed465ea728549e340ff46677fbb632b9aaa8da2f928",
+  "runnerSHA256": "5bd62376b1ba7f7396cc84ff3a39e5a2733dc93c530f34c317220fd07c5fd519",
+  "mutants": [
+    {
+      "label": "enumerable-keys-only",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "4edbdb8d805476b8fca0e8603f2738348b19c3d9d8b180207be5d16ee9012006"
+    },
+    {
+      "label": "ignore-array-extra-keys",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "f1e91be2190e8fc8b8cf3c92b7b92fc2022541ea3da8bdfaf597bc708b8b9d16"
+    },
+    {
+      "label": "silently-deduplicate-touched",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "e37ca4e6bb53a1b35c782761bf4e478a5649074a6426f65b53ab023e4b8a25c7"
+    },
+    {
+      "label": "ignore-origin-consistency",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "4d6b38c3fd982a10dfb4a4f99b3de0e7808960447d79078d0ef9c74eb71cdb7f"
+    },
+    {
+      "label": "allow-future-field-version",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "b8a8d9847139127e92d02175d49cbc0756a1a949fdab0a09807afc03fd15eecf"
+    },
+    {
+      "label": "ignore-protocol-version",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "244987d7d45a637686e197f489a782884c0903acd6fbdfd7b1ea3f0c4799c88a"
+    },
+    {
+      "label": "allow-unpaired-surrogates",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "5be02e10de20e7cf2ab539f7e895d7de1515020d26cb6aa005e1c9a3693d80cf"
+    },
+    {
+      "label": "trust-reflection-parser-error",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "0175f9bb630d5e79c9789a75da43194377270097a17a3bda0a4ea9be2a71f51d"
+    }
+  ]
+}

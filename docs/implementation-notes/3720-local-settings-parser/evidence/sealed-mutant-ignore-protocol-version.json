@@ -1,0 +1,45 @@
+{
+  "label": "sealed-mutant-ignore-protocol-version",
+  "headAtExecution": "b908917305eaea9d2b8a11030e2361830b1478b9",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-parser/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/shared/annex-settings-ipc.test.ts"
+  ],
+  "expectedExit": 1,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T12:42:38.018761+00:00",
+  "endedAtUTC": "2026-11-21T12:42:38.360717+00:00",
+  "inputSHA256": {
+    "src/shared/annex-settings-ipc.ts": "244987d7d45a637686e197f489a782884c0903acd6fbdfd7b1ea3f0c4799c88a",
+    "src/shared/annex-settings-ipc.test.ts": "5658d53eefcada035b448da5b0324991dd0a6caca60987bb6e29378a058d6f17",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-settings-ipc.ts": "244987d7d45a637686e197f489a782884c0903acd6fbdfd7b1ea3f0c4799c88a",
+    "src/shared/annex-settings-ipc.test.ts": "5658d53eefcada035b448da5b0324991dd0a6caca60987bb6e29378a058d6f17",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/shared/annex-settings-ipc.ts b/src/shared/annex-settings-ipc.ts\nindex c07e48f7d..46555c23f 100644\n--- a/src/shared/annex-settings-ipc.ts\n+++ b/src/shared/annex-settings-ipc.ts\n@@ -113,7 +113,7 @@ export function readLocalSettingsPatch(raw: unknown): LocalSettingsPatch {\n     exactKeys(top, ['v', 'requestId', 'origin', 'base', 'changes', 'unset']);\n     if (!uuid(top.requestId.value)) return envelope();\n     const id = top.requestId.value;\n-    if (top.v.value !== 1 || !isOrigin(top.origin.value)) return schema(id);\n+    if (!isOrigin(top.origin.value)) return schema(id);\n     const origin = top.origin.value;\n     const base = dataRecord(top.base.value);\n     exactKeys(base, ['epoch', 'revision', 'fields']);\n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |shared| src/shared/annex-settings-ipc.test.ts (112 tests | 4 failed) 14ms\n     \u00d7 classifies unsupported v=0 as schema_invalid with safe request ID 2ms\n     \u00d7 classifies unsupported v=2 as schema_invalid with safe request ID 0ms\n     \u00d7 classifies unsupported v=1 as schema_invalid with safe request ID 0ms\n     \u00d7 classifies unsupported v=null as schema_invalid with safe request ID 0ms\n\n Test Files  1 failed (1)\n      Tests  4 failed | 108 passed (112)\n   Start at  07:42:38\n   Duration  103ms (transform 11ms, setup 0ms, import 18ms, tests 14ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 4 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |shared| src/shared/annex-settings-ipc.test.ts > local settings patch parser (not installed as an IPC handler) > classifies unsupported v=0 as schema_invalid with safe request ID\n FAIL  |shared| src/shared/annex-settings-ipc.test.ts > local settings patch parser (not installed as an IPC handler) > classifies unsupported v=2 as schema_invalid with safe request ID\n FAIL  |shared| src/shared/annex-settings-ipc.test.ts > local settings patch parser (not installed as an IPC handler) > classifies unsupported v=1 as schema_invalid with safe request ID\n FAIL  |shared| src/shared/annex-settings-ipc.test.ts > local settings patch parser (not installed as an IPC handler) > classifies unsupported v=null as schema_invalid with safe request ID\nAssertionError: expected undefined to be an instance of LocalSettingsInputError\n \u276f refused src/shared/annex-settings-ipc.test.ts:16:18\n     14|   let caught: unknown;\n     15|   try { readLocalSettingsPatch(raw); } catch (error) { caught = error;\u2026\n     16|   expect(caught).toBeInstanceOf(LocalSettingsInputError);\n       |                  ^\n     17|   expect(caught).toMatchObject({ kind, requestId: id, message: kind });\n     18| }\n \u276f src/shared/annex-settings-ipc.test.ts:87:105\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/4]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "1c546c3d4969d157d40aa442bf1debed7239e3a51dd8371879904b23ac26429c"
+}

@@ -1,0 +1,50 @@
+{
+  "head": "3ee9910cdbf2b5267f825534e0492e3403cca4bc",
+  "originalSourceSHA256": "208c5f75dad541653ff66a22de823227ad5f5677807662edbec9a3c8dd270649",
+  "restoredSourceSHA256": "208c5f75dad541653ff66a22de823227ad5f5677807662edbec9a3c8dd270649",
+  "runnerSHA256": "52969f34d04d43ffe5e6a3a1d7d2560d38f5eb7bf264de07d9c2373eee642f37",
+  "mutants": [
+    {
+      "label": "enumerable-keys-only",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "1e50f9cc8d77bb24116d5d08eafc0c0556f9843fb209b82730fa6dba138dfcdb"
+    },
+    {
+      "label": "ignore-array-extra-keys",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "806c5f8e9e61c38ac1574de3595a1c54a683d2f59df52a752580a7c3377715cf"
+    },
+    {
+      "label": "silently-deduplicate-touched",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "08e6c538d091fa3282b1793b0de02a59a1290d24ed457bf675d6476f9540479f"
+    },
+    {
+      "label": "ignore-origin-consistency",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "0897b9acb91121417822a266cd66e74e93ea88e7eae571239a95b44bdf6c3133"
+    },
+    {
+      "label": "allow-future-field-version",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "da67038b6908fc348f7bbee4f1146aba0242786ca8d9460ebfdac6e93efc4f24"
+    },
+    {
+      "label": "ignore-protocol-version",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "eb92b3e1539da6dd493c82dd5ce3447c954b520d7cb3bf058351309f9c8a04ef"
+    },
+    {
+      "label": "allow-unpaired-surrogates",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "c773d9d4a38d6796c41be7fc9a768e661e0d0e288ce7a561597f5195756c81f1"
+    }
+  ]
+}

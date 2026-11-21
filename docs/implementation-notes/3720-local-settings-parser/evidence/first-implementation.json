@@ -1,0 +1,45 @@
+{
+  "label": "first-implementation",
+  "headAtExecution": "0b4e4858bd1bf15734e380493520c9ba480fc837",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-parser/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/shared/annex-settings-ipc.test.ts"
+  ],
+  "expectedExit": 0,
+  "actualExit": 0,
+  "startedAtUTC": "2026-11-21T12:39:16.791289+00:00",
+  "endedAtUTC": "2026-11-21T12:39:17.122321+00:00",
+  "inputSHA256": {
+    "src/shared/annex-settings-ipc.ts": "12fd87cea3c1b58e7f1f2528e31004007228ff41b381b2acb223115e4ecee1f9",
+    "src/shared/annex-settings-ipc.test.ts": "601cee5466fe6489dfb6003ebf0fee36cbd23eefe197531accb06eaff26ed5c7",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-settings-ipc.ts": "12fd87cea3c1b58e7f1f2528e31004007228ff41b381b2acb223115e4ecee1f9",
+    "src/shared/annex-settings-ipc.test.ts": "601cee5466fe6489dfb6003ebf0fee36cbd23eefe197531accb06eaff26ed5c7",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n\n Test Files  1 passed (1)\n      Tests  109 passed (109)\n   Start at  07:39:16\n   Duration  89ms (transform 10ms, setup 0ms, import 16ms, tests 11ms, environment 0ms)\n\n",
+  "stderr": "",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "1c546c3d4969d157d40aa442bf1debed7239e3a51dd8371879904b23ac26429c"
+}

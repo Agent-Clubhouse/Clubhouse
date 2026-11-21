@@ -1,0 +1,15 @@
+{
+  "candidateHead": "b908917305eaea9d2b8a11030e2361830b1478b9",
+  "base": "e8e178c4bf462bcf443bfb1b91cbfbcd1f35d1c2",
+  "contract": "38cbdaa9fff26aa28630ad14b5db9c13359d39f1",
+  "observedAt": "2026-11-21T12:44:39.408035+00:00",
+  "candidateSHA256": {
+    "src/shared/annex-settings-ipc.ts": "675ed849d24bced3a6778ed465ea728549e340ff46677fbb632b9aaa8da2f928",
+    "src/shared/annex-settings-ipc.test.ts": "5658d53eefcada035b448da5b0324991dd0a6caca60987bb6e29378a058d6f17",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+  },
+  "dependencyCacheLockEqual": true,
+  "unwiredImportSearch": "src/shared/annex-settings-ipc.test.ts:2:import { LocalSettingsInputError, readLocalSettingsPatch } from './annex-settings-ipc';\n"
+}

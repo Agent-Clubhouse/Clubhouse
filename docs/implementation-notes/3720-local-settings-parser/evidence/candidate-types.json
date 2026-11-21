@@ -1,0 +1,37 @@
+{
+  "label": "candidate-types",
+  "headAtExecution": "a6dbf6a7337af6f736ddc13e2b516c6640ad0022",
+  "argv": [
+    "node",
+    "node_modules/typescript/bin/tsc",
+    "--noEmit"
+  ],
+  "expectedExit": 0,
+  "actualExit": 2,
+  "startedAtUTC": "2026-11-21T12:39:50.574504+00:00",
+  "endedAtUTC": "2026-11-21T12:39:59.197476+00:00",
+  "inputSHA256": {
+    "src/shared/annex-settings-ipc.ts": "12fd87cea3c1b58e7f1f2528e31004007228ff41b381b2acb223115e4ecee1f9",
+    "src/shared/annex-settings-ipc.test.ts": "d8918e8b4d03dc32f2c8812e518623ffbffc3a57603885d2fd2407b80d99724b",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-settings-ipc.ts": "12fd87cea3c1b58e7f1f2528e31004007228ff41b381b2acb223115e4ecee1f9",
+    "src/shared/annex-settings-ipc.test.ts": "d8918e8b4d03dc32f2c8812e518623ffbffc3a57603885d2fd2407b80d99724b",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "",
+  "stdout": "src/shared/annex-settings-ipc.ts(54,32): error TS2550: Property 'hasOwn' does not exist on type 'ObjectConstructor'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.\nsrc/shared/annex-settings-ipc.ts(60,83): error TS2550: Property 'hasOwn' does not exist on type 'ObjectConstructor'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.\nsrc/shared/annex-settings-ipc.ts(65,26): error TS2550: Property 'hasOwn' does not exist on type 'ObjectConstructor'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.\nsrc/shared/annex-settings-ipc.ts(71,32): error TS2550: Property 'hasOwn' does not exist on type 'ObjectConstructor'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.\n",
+  "stderr": "",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "1c546c3d4969d157d40aa442bf1debed7239e3a51dd8371879904b23ac26429c"
+}

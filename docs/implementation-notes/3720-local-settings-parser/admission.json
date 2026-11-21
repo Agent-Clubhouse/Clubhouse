@@ -1,0 +1,13 @@
+{
+  "observedAt": "2026-11-21T12:38:18.094857+00:00",
+  "cpu": 16,
+  "load": [
+    2.97119140625,
+    2.30810546875,
+    2.20166015625
+  ],
+  "lockSHA256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+  "cache": "/Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules",
+  "verifiedNonoptional": 1176,
+  "mismatches": []
+}

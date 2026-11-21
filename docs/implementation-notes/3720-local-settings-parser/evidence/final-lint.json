@@ -1,0 +1,40 @@
+{
+  "label": "final-lint",
+  "headAtExecution": "3ee9910cdbf2b5267f825534e0492e3403cca4bc",
+  "argv": [
+    "node",
+    "node_modules/eslint/bin/eslint.js",
+    "src/shared/annex-settings-ipc.ts",
+    "src/shared/annex-settings-ipc.test.ts",
+    "--max-warnings",
+    "0"
+  ],
+  "expectedExit": 0,
+  "actualExit": 0,
+  "startedAtUTC": "2026-11-21T12:40:55.484181+00:00",
+  "endedAtUTC": "2026-11-21T12:40:55.835729+00:00",
+  "inputSHA256": {
+    "src/shared/annex-settings-ipc.ts": "208c5f75dad541653ff66a22de823227ad5f5677807662edbec9a3c8dd270649",
+    "src/shared/annex-settings-ipc.test.ts": "d8918e8b4d03dc32f2c8812e518623ffbffc3a57603885d2fd2407b80d99724b",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-settings-ipc.ts": "208c5f75dad541653ff66a22de823227ad5f5677807662edbec9a3c8dd270649",
+    "src/shared/annex-settings-ipc.test.ts": "d8918e8b4d03dc32f2c8812e518623ffbffc3a57603885d2fd2407b80d99724b",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "",
+  "stdout": "",
+  "stderr": "",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "1c546c3d4969d157d40aa442bf1debed7239e3a51dd8371879904b23ac26429c"
+}

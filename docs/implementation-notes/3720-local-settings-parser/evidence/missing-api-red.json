@@ -1,0 +1,45 @@
+{
+  "label": "missing-api-red",
+  "headAtExecution": "0b4e4858bd1bf15734e380493520c9ba480fc837",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-parser/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/shared/annex-settings-ipc.test.ts"
+  ],
+  "expectedExit": 1,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T12:38:18.346706+00:00",
+  "endedAtUTC": "2026-11-21T12:38:18.686219+00:00",
+  "inputSHA256": {
+    "src/shared/annex-settings-ipc.ts": null,
+    "src/shared/annex-settings-ipc.test.ts": "601cee5466fe6489dfb6003ebf0fee36cbd23eefe197531accb06eaff26ed5c7",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-settings-ipc.ts": null,
+    "src/shared/annex-settings-ipc.test.ts": "601cee5466fe6489dfb6003ebf0fee36cbd23eefe197531accb06eaff26ed5c7",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-parser/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |shared| src/shared/annex-settings-ipc.test.ts (0 test)\n\n Test Files  1 failed (1)\n      Tests  no tests\n   Start at  07:38:18\n   Duration  88ms (transform 7ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af Failed Suites 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |shared| src/shared/annex-settings-ipc.test.ts [ src/shared/annex-settings-ipc.test.ts ]\nError: Cannot find module './annex-settings-ipc' imported from /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/src/shared/annex-settings-ipc.test.ts\n \u276f src/shared/annex-settings-ipc.test.ts:2:1\n      1| import { describe, expect, it, vi } from 'vitest';\n      2| import { LocalSettingsInputError, readLocalSettingsPatch } from './ann\u2026\n       | ^\n      3|\n      4| const ID = '11111111-1111-4111-8111-111111111111';\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "1c546c3d4969d157d40aa442bf1debed7239e3a51dd8371879904b23ac26429c"
+}
