@@ -1,10 +1,16 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom/vitest"],
+    "typeRoots": ["../node_modules/@types", "../node_modules"]
   },
   "files": [
     "../src/main/services/annex-routes.test.ts",
-    "../src/main/services/annex-control-reconnect.test.ts"
+    "../src/main/services/annex-control-reconnect.test.ts",
+    "../src/main/services/annex-control.test.ts",
+    "../src/main/services/annex-devices.test.ts",
+    "../src/renderer/features/settings/AnnexDeviceList.test.tsx",
+    "../src/renderer/features/settings/AnnexNetworkSettingsView.test.tsx"
   ]
 }

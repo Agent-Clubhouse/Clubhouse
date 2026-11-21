@@ -1341,6 +1341,8 @@ export type AnnexDirectionState = 'up' | 'down' | 'unknown' | 'off' | 'not-used'
 
 export interface AnnexDirection {
   state: AnnexDirectionState;
+  /** Desktop Settings observation only, not a phone or network wire field. */
+  via?: 'direct' | 'reverse';
   /** ISO time it was last observed up in this session, if it was. */
   lastUp?: string;
 }

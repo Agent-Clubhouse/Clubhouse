@@ -1,0 +1,67 @@
+Exact tested-source P7 proof (535241 was main at execution)
+
+Actual base53524110b90d053053d6ed49fd480816b8fcaee6 (landed #3752).
+Tested source71bad14698f977ffad5e768f06ee9adbf14ef0ed.
+Tree677f7f3a13bb459ab6db67d2b5893b1420005d25.
+Only3P7 commits replayed onto actualmain; P2/wake/3715 are landed dependencies.
+
+Fresh gated lane-p2 4,2026-11-21T07:29:50Z--07:30:32Z, exit0.
+Admission: idle85%, available27737MiB, free82%; one Vitest worker.
+All commands unset COPILOT_CONNECTION_TOKEN.
+
+1. Current route/control/wake/device/Settings behavior
+./node_modules/.bin/vitest run --project main --project renderer --maxWorkers=1 --reporter=dot src/main/services/annex-routes.test.ts src/main/services/annex-control-reconnect.test.ts src/main/services/annex-control.test.ts src/main/services/annex-client.test.ts src/main/ipc/annex-handlers.test.ts src/main/services/annex-reach.test.ts src/main/services/annex-peers.test.ts src/main/services/annex-authorizer.test.ts src/main/services/annex-devices.test.ts src/main/services/annex-device-signal.test.ts src/renderer/features/settings/AnnexDeviceList.test.tsx src/renderer/features/settings/AnnexNetworkSettingsView.test.tsx
+780 PASS /12 files /0 skips.
+Includes35new P7 cases, all23wake freshness cases and15P2 lifecycle/epoch cases.
+Our6new forward-help cases no longer emit React act warnings.8unchanged legacy
+Settings cases still emit their pre-existing QR-effect act warnings.
+
+2. Current read/write/refusal and canonical attachment case
+./node_modules/.bin/vitest run --project main --maxWorkers=1 --reporter=dot src/main/services/annex-server.test.ts src/main/services/annex-mobile-contract.test.ts -t "reverse requests over the control connection|principal and authorizer|Annex mobile contract fixtures attachments$"
+65 PASS /2 files /562 selector skips.
+Existing P3/P4/P5/P6 authorization, lifetime/bulk/staging fences and the canonical
+mobile attachment case are included. Total on this exact source:845 PASS.
+
+3. Production and complete current P2/P7 fixture typing
+./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/tsc -p docs/annex-reverse-routes.tsconfig.json
+Both PASS. The fixture config checks complete route/reconnect/control/device/
+Settings files, with installed Vitest and DOM matcher type roots.
+
+4. Scoped installed-ESLint validation and fresh actual535241 baseline
+ESLint.lintFiles on9changed source/test files; ESLint.lintText on their actual
+535241 Git blobs with the same installed ESLint/config and file paths.
+Both0errors/1warning. Relative-file/rule/severity/message multisets are identical.
+SHA256 a59936842eeba5709f01674796c5ef888bbfe7f79cfb157196a2212f8de70cb6
+The exact runner/original JSON results are retained; manifest.json lists them.
+
+5. Direct phone/source integrity
+103tracked phone fixture files /1529301bytes, committed and worktree
+byte-identical to actual535241. Sorted repository-relative path NUL byteLength
+NUL originalBytes aggregate SHA256:
+93027e7e0cd104ec5f9f1664c7965b54e37156c60dffec23ef8ef9f503c4fbbf
+11product/test/doc/config files changed; client/server/authorizer/bulk/protocol/
+device-signal implementation/phone contract/dependency manifests are untouched.
+
+Final independent bounded current-main delta verdict: no high-confidence findings.
+Delivery adds only these5proof files after tested71bad; source/config/test
+identity must be independently sealed. No local execution on that proof-only
+delivery head is claimed; newly requested hosted CI is a separate gate.
+No full local suite, local E2E, live/native/process-tree calibration, install,
+permissions/settings/release change, consumer migration or P7w/P8 acceptance.
+
+Later current-main composition
+Base daa7dab5e3db78280ba845602bbcfd7e5f73cf0c added19disjoint MCP-incarnation/
+connection-guidance/E2E-helper files. Composed head857fa88e065b70087b51fdba5afe44f3c527226b,
+tree ab2ead6f520589160fc44f4cb54c076ad689b9ce, preserves every reviewed P7
+product/test/doc/config blob and the5proof files. Independent QA sealed this
+bounded current-base composition; upstream implementation was not re-reviewed.
+
+Narrow current857fa/daa7 production and complete P2/P7 fixture tsc: both PASS,
+gated lane-p2 4,2026-11-21T07:42:48Z--07:43:05Z, exit0.
+The first attempt was refused other_test_running before execution; its original
+28-byte refusal is not a failed test. Normal retry followed after>60seconds,
+within the30minute admission bound, with no bypass/reservation/cancellation.
+No automatic broad test repetition:845Vitest cases executed on71bad/535241,
+NOT on857fa/daa7 or the later proof-only delivery commit. Newly requested hosted
+CI supplies the actual complete candidate gate. No broader acceptance inferred.

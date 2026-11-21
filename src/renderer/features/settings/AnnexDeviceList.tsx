@@ -69,7 +69,9 @@ function confirmationText(confirmation: NonNullable<AnnexDevice['confirmation']>
 /** Each direction with a computer as a sentence (#3608). Only connections that proved who they are count. */
 function outboundText(direction: AnnexDirection, now: number): string | null {
   switch (direction.state) {
-    case 'up': return 'This computer can reach it.';
+    case 'up': return direction.via === 'reverse'
+      ? 'This computer can reach it through its connection to this computer.'
+      : 'This computer can reach it.';
     case 'down': return `This computer can't reach it.${lastReached(direction, now)}`;
     case 'unknown': return 'Checking whether this computer can reach it.';
     case 'off': return "This computer isn't connecting to other computers.";
@@ -79,7 +81,9 @@ function outboundText(direction: AnnexDirection, now: number): string | null {
 
 function inboundText(direction: AnnexDirection, now: number): string | null {
   switch (direction.state) {
-    case 'up': return 'It can reach this computer.';
+    case 'up': return direction.via === 'reverse'
+      ? "It can reach this computer through this computer's connection to it."
+      : 'It can reach this computer.';
     case 'down': return `It can't reach this computer.${lastReached(direction, now)}`;
     case 'unknown': return 'Checking whether it can reach this computer.';
     case 'off': return "This computer isn't accepting connections.";
