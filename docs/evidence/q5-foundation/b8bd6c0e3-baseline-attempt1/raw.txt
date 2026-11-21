@@ -1,0 +1,45 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design
+
+ ❯ |main| src/main/services/group-project-notice-ledger/journal.test.ts (21 tests | 2 failed | 19 skipped) 69ms
+     × entry arbitration: two handles cannot enter the same attempt twice 38ms
+     × entry arbitration: a pending unsubmitted commit cannot both admit entry and release coverage 31ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/group-project-notice-ledger/journal.test.ts > sequenced notice journal persistence > entry arbitration: two handles cannot enter the same attempt twice
+AssertionError: expected [Function] to throw an error
+ ❯ src/main/services/group-project-notice-ledger/journal.test.ts:246:54
+    244|     const second = journal.captureLiveHandoff('attempt-1');
+    245|     journal.markHandoffEntered(first);
+    246|     expect(() => journal.markHandoffEntered(second)).toThrow();
+       |                                                      ^
+    247|   });
+    248|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/group-project-notice-ledger/journal.test.ts > sequenced notice journal persistence > entry arbitration: a pending unsubmitted commit cannot both admit entry and release coverage
+AssertionError: expected { enteredDuringTransition: true, …(1) } to not deeply equal { enteredDuringTransition: true, …(1) }
+
+Compared values have no visual difference.
+
+ ❯ src/main/services/group-project-notice-ledger/journal.test.ts:270:67
+    268|     finally { release(); await transition; }
+    269|     const readyAfterTransition = journal.snapshot()?.pending[0].attemp…
+    270|     expect({ enteredDuringTransition, readyAfterTransition }).not.toEq…
+       |                                                                   ^
+    271|   });
+    272|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 19 skipped (21)
+   Start at  07:07:50
+   Duration  174ms (transform 22ms, setup 4ms, import 28ms, tests 69ms, environment 0ms)
+

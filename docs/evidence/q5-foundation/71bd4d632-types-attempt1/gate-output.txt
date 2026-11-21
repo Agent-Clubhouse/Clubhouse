@@ -1,0 +1,4 @@
+2026-11-21T12:12:41Z START q5-ledger idle=89% unused=19G avail=32334M freepct=71 comp=11G swap=1812M pid=48906 cmd=python3 test/research/q5-seal-implementation.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/71bd4d632-types-attempt1 -- ./node_modules/.bin/tsc --noEmit -p tsconfig.json
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/71bd4d632-types-attempt1/receipt.json", "exitCode": 0, "sealEqual": true}
+2026-11-21T12:12:50Z END q5-ledger rc=0
+

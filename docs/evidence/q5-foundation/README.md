@@ -1,6 +1,7 @@
 # Q5 sequenced persistence foundation evidence
 
-Latest bounded slice: [M1-L-6d208ecb2.md](M1-L-6d208ecb2.md).
+Latest bounded slice: [entry-arbitration-71bd4d632.md](entry-arbitration-71bd4d632.md).
+Previous approved slice: [M1-L-6d208ecb2.md](M1-L-6d208ecb2.md).
 Previous algorithm: [M1-f58bf00d3.md](M1-f58bf00d3.md).
 Previous approved boundary: [markers-8142a812a.md](markers-8142a812a.md).
 Earlier successors: [streaming181](streaming-181046cde.md),
