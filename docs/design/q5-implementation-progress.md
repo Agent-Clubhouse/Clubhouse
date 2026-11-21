@@ -48,6 +48,22 @@ activates a generation nor consumes a nonce. The planned >64KiB activation
 record/partial-tail/process-crash controls remain separate and unimplemented;
 producer-failure/orphan tests are not credited as those R1 controls.
 
+Marker/durability successor adds a fixed local installation UUID marker and
+matching directory envelope, bounded stable reads, single-flight main creation,
+future/corrupt/missing/mismatched metadata refusal without rewriting originals.
+Its factory does not migrate legacy receipts or create any member generation,
+baseline or nonce. Real synthetic process-exit controls cover marker-only,
+directory-without-envelope, and fully synced-envelope boundaries. An incomplete
+bootstrap refuses explicitly; it does not silently manufacture a fresh ledger.
+
+Directory flush observations are explicit: observed directory sync, file sync
+only for narrow known Windows directory results, or not observed. Actual IO,
+disk-full and access errors propagate; no power-loss/native-Windows proof is
+implied by synthetic policy controls. Journal/pages use this private flusher,
+without changing settings-store/replaceFile/renameOver or legacy budget writers.
+Native platform verification and safe explicit incomplete-bootstrap repair are
+still pending. None of these modules is imported by app startup or delivery.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.

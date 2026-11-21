@@ -13,7 +13,7 @@ def git(*args):
 
 def state():
     files = [str(p) for p in Path('src/main/services/group-project-notice-ledger').glob('*.ts')]
-    files += ['test/research/q5-journal-process.cjs', 'test/research/q5-entered-mutation.cjs', 'test/research/q5-seal-implementation.py',
+    files += ['test/research/q5-journal-process.cjs', 'test/research/q5-entered-mutation.cjs', 'test/research/q5-installation-process.cjs', 'test/research/q5-seal-implementation.py',
               'docs/design/q5-durable-notice-ledger.md', 'package-lock.json', 'tsconfig.json',
               'vitest.config.ts', 'test/global-setup.ts', 'test/standard-runtime-boundary.ts']
     return {'head': git('rev-parse', 'HEAD'), 'tree': git('rev-parse', 'HEAD^{tree}'),
