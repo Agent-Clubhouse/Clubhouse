@@ -160,6 +160,7 @@ describe('capability hello and mixed versions', () => {
     control._attachForTesting(ws as never, TARGET, TARGET_PIN, 'in');
     await flush();
     expect(ws.sent).toEqual([]);
+    expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: false, openedHere: false });
     expect(control.hasReverseLink(TARGET)).toBe(false);
     await expect(control.request(TARGET, { method: 'GET', path: '/api/v1/status' })).rejects.toMatchObject({ code: 'transport_unavailable', indeterminate: false });
     expect(ws.sent).toEqual([]);
@@ -176,6 +177,8 @@ describe('capability hello and mixed versions', () => {
     await expect(control.request(TARGET, { method: 'POST', path: '/api/v1/network/agent-call', body: '{}' })).rejects.toMatchObject({ code: 'not_supported', indeterminate: false });
     expect(control.hasReverseLink(TARGET)).toBe(false);
     expect(sentOfType(ws, 'request')).toEqual([]);
+    expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: false, openedHere: false });
+    expect(devicesChanged).not.toHaveBeenCalled();
   });
 
   it('a target that agreed to no features answers a request not_supported and never runs it', async () => {
@@ -223,6 +226,49 @@ describe('capability hello and mixed versions', () => {
 });
 
 describe('read-only direction readiness (#3613 P7)', () => {
+  it('reports the negotiated physical direction without dialing, sending frames or dispatching requests', async () => {
+    const { requesterWs, targetWs } = await connected();
+    const sent = [requesterWs.sent.length, targetWs.sent.length];
+    const changes = vi.mocked(devicesChanged).mock.calls.length;
+    for (let i = 0; i < 10; i++) {
+      expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: true, openedHere: false });
+      expect(control.getLinkReadiness(REQUESTER)).toEqual({ acceptedHere: false, openedHere: true });
+      expect(control.getLinkReadiness('unknown')).toEqual({ acceptedHere: false, openedHere: false });
+    }
+    expect([requesterWs.sent.length, targetWs.sent.length]).toEqual(sent);
+    expect(devicesChanged).toHaveBeenCalledTimes(changes);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+    requesterWs.readyState = 2;
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(false);
+    requesterWs.readyState = 1;
+    control.closeFor(TARGET, 'in');
+    await flush();
+    expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: false, openedHere: false });
+    expect(control.getLinkReadiness(REQUESTER)).toEqual({ acceptedHere: false, openedHere: false });
+  });
+
+  it.each(['revoked', 're-pinned', 'network-off', 'role-changed', 'session-only'] as const)('uses the request authority for a %s peer even while both sockets remain OPEN', async (change) => {
+    const { requesterWs, targetWs } = await connected();
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(true);
+    expect(control.getLinkReadiness(REQUESTER).openedHere).toBe(true);
+    inboundAllowed = false;
+    switch (change) {
+      case 'revoked': world.peer = undefined; break;
+      case 're-pinned': world.peer = peer({ tlsCertificateFingerprint: 'NEW:PIN' }); break;
+      case 'network-off': world.networkEnabled = false; break;
+      case 'role-changed': world.peer = peer({ role: 'satellite' }); break;
+      case 'session-only': world.sessionOnly = true; break;
+    }
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(false);
+    expect(control.getLinkReadiness(REQUESTER).openedHere).toBe(false);
+    expect(requesterWs.readyState).toBe(1);
+    expect(targetWs.readyState).toBe(1);
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+  });
+
   it('notifies once on negotiated readiness and once on close, never for heartbeats or ordinary frames', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     const ws = new FakeSocket();
@@ -234,6 +280,7 @@ describe('read-only direction readiness (#3613 P7)', () => {
       vi.advanceTimersByTime(control.HEARTBEAT_MS);
       ws.emit('pong');
       ws.deliver({ v: 1, type: 'response', id: `unclaimed-${i}`, status: 200, headers: {}, body: '{}', encoding: 'utf8' });
+      expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(true);
     }
     expect(ws.pings).toBe(3);
     expect(devicesChanged).toHaveBeenCalledTimes(1);

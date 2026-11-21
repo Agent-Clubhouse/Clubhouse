@@ -1,4 +1,6 @@
-# Desktop reverse-control routes (#3613 P2)
+# Desktop reverse-control routes and readiness (#3613 P2/P7)
+
+## Route and reconnect slice (P2)
 
 This is a partial implementation slice, not full reverse-parity acceptance.
 The phone contract, `/ws`, `/network`, pairing, grants and approvals are unchanged.
@@ -78,3 +80,26 @@ or replace that patch.
 the complete deterministic route/reconnect fixtures. Current-head validation
 and independent delta review are required; historical P2 counts are not proof
 of this successor or its composition with the separate wake fix.
+
+## Desktop direction readiness (P7)
+
+This separate successor depends on P2. Settings reports each direction
+independently, preferring a direct observation. A control socket counts only
+while open, after negotiating request capability, and while the request path's
+existing authority still allows its pinned peer. An accepted connection
+provides reverse outbound readiness; an opened connection provides reverse
+inbound readiness. Only active, pinned desktop network members use it.
+
+The existing desktop device-list IPC publishes negotiation and closure
+transitions, not heartbeats or request frames. If reverse control covers a
+missing direction, Settings does not suggest another forward for that
+direction. Old-peer one-way advice and phone behavior remain unchanged.
+
+These are transport-readiness observations, not proof of end-to-end reverse
+requests, subscriptions, terminals or transfers. P7 changes no transport
+selection, connection ownership, reconnect, grants, permissions or phone wire
+fields. P7w consumer migration and full P8 acceptance remain separate; historical
+P7 results are not evidence for this current-source successor.
+
+The same fixture tsconfig also checks the complete current control, device-list
+and Settings test files for P7, in addition to the P2 route/reconnect fixtures.

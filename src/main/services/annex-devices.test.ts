@@ -28,9 +28,11 @@ vi.mock('./annex-server', () => ({
 }));
 vi.mock('./annex-network-channel', () => ({ inboundMembers: vi.fn(() => new Set()) }));
 vi.mock('./annex-device-signal', () => ({ devicesChanged: vi.fn() }));
+vi.mock('./annex-control', () => ({ getLinkReadiness: vi.fn(() => ({ acceptedHere: false, openedHere: false })) }));
 
 import * as annexPeers from './annex-peers';
 import * as annexClient from './annex-client';
+import * as annexControl from './annex-control';
 import * as annexServer from './annex-server';
 import { buildDeviceList, listDevices, removeDevice, ReachTracker, REACH_SETTLE_MS, resetReachForTests } from './annex-devices';
 import * as networkChannel from './annex-network-channel';
@@ -58,10 +60,13 @@ function satellite(overrides: Partial<annexClient.SatelliteConnection>): annexCl
   };
 }
 
-const empty = { peers: [], sessionPeers: [], satellites: [], connected: new Set<string>(), clientOn: true, addressOf: () => undefined };
+const empty: Parameters<typeof buildDeviceList>[0] = { peers: [], sessionPeers: [], satellites: [], connected: new Set<string>(), clientOn: true, addressOf: () => undefined };
 
 describe('annex device list', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+  });
 
   it('lists devices both ways in one list, sorted by name', () => {
     const devices = buildDeviceList({
@@ -217,7 +222,7 @@ describe('annex device list', () => {
 
   describe('each direction on its own (#3608)', () => {
     const studio = (overrides: Partial<AnnexPeer> = {}) => peer({ fingerprint: 'fp-sat', alias: 'Studio', role: 'member', kind: 'desktop', tlsCertificatePem: 'PEM', ...overrides });
-    let onSettle: ReturnType<typeof vi.fn>;
+    let onSettle: () => void;
     let reach: ReachTracker;
     beforeEach(() => {
       vi.useFakeTimers();
@@ -254,6 +259,82 @@ describe('annex device list', () => {
       expect(list(sources).reach).toMatchObject({ outbound: { state: 'down' }, inbound: { state: 'down' } });
       ready = true;
       checkReady();
+    });
+
+    it('prefers direct observations over a negotiated reverse connection in both directions', () => {
+      const device = list({
+        satellites: [satellite({ state: 'connected' })], connected: new Set(['fp-sat']),
+        controlOf: () => ({ acceptedHere: true, openedHere: true }),
+      });
+      expect(device.reach).toMatchObject({ outbound: { state: 'up' }, inbound: { state: 'up' } });
+      expect(device.reach?.outbound.via).toBeUndefined();
+      expect(device.reach?.inbound.via).toBeUndefined();
+    });
+
+    it.each([
+      { role: 'satellite' }, { role: 'controller' }, { kind: 'phone' }, { kind: undefined },
+      { networkPending: true }, { tlsCertificateFingerprint: undefined },
+    ] satisfies Partial<AnnexPeer>[])('does not add reverse readiness for an ineligible peer (%j)', (overrides) => {
+      const controlOf = vi.fn(() => ({ acceptedHere: true, openedHere: true }));
+      const device = list({ peers: [studio(overrides)], controlOf });
+      expect(controlOf).not.toHaveBeenCalled();
+      expect(device.state).not.toBe('connected');
+      expect(device.reach?.outbound.via).toBeUndefined();
+      expect(device.reach?.inbound.via).toBeUndefined();
+    });
+
+    it('does not observe control readiness while the current satellite needs pairing', () => {
+      const controlOf = vi.fn(() => ({ acceptedHere: true, openedHere: true }));
+      const device = list({ satellites: [satellite({ needsPairing: true })], controlOf });
+      expect(controlOf).not.toHaveBeenCalled();
+      expect(device).toMatchObject({ state: 'needs-pairing' });
+      expect(device.reach).toBeUndefined();
+    });
+
+    it('does not use reverse readiness for session-only or removing devices', () => {
+      const controlOf = vi.fn(() => ({ acceptedHere: true, openedHere: true }));
+      const [session, removing] = buildDeviceList({
+        ...empty, sessionPeers: [studio()], controlOf, reach, now: Date.now(),
+        removals: [{ fingerprint: 'gone', name: 'Was here', confirmedBy: [], waitingOn: ['fp-sat'] }],
+      });
+      expect(controlOf).not.toHaveBeenCalled();
+      expect(session.reach).toBeUndefined();
+      expect(removing).toMatchObject({ state: 'removing' });
+      expect(removing.reach).toBeUndefined();
+    });
+
+    it('preserves off directions even when a control socket has negotiated', () => {
+      const device = list({ clientOn: false, serverOn: false, controlOf: () => ({ acceptedHere: true, openedHere: true }) });
+      expect(device.reach).toEqual({ outbound: { state: 'off' }, inbound: { state: 'off' } });
+    });
+
+    it('keeps old-peer one-way advice exact when control has not negotiated request capability', () => {
+      const sources = {
+        satellites: [satellite({ state: 'connected' })],
+        controlOf: () => ({ acceptedHere: false, openedHere: false }),
+      };
+      list(sources);
+      vi.advanceTimersByTime(REACH_SETTLE_MS);
+      expect(list(sources).reach?.notice).toEqual({
+        message: "You can reach Studio, but it can't reach this computer.",
+        action: 'On Studio, open Annex Network in Settings and add an address for this computer. A forward there must reach port 7443 on this computer.',
+      });
+    });
+
+    it('reads negotiated control readiness through the existing live device status source', () => {
+      resetReachForTests();
+      vi.mocked(annexPeers.listPeers).mockReturnValue([studio()]);
+      vi.mocked(annexClient.getSatellites).mockReturnValue([]);
+      vi.mocked(annexServer.connectedPeerFingerprints).mockReturnValue(new Set());
+      vi.mocked(networkChannel.inboundMembers).mockReturnValue(new Set());
+      vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: true });
+      const device = listDevices()[0];
+      expect(annexControl.getLinkReadiness).toHaveBeenCalledWith('fp-sat');
+      expect(device).toMatchObject({
+        state: 'connected', problem: null,
+        reach: { outbound: { state: 'up' }, inbound: { state: 'up', via: 'reverse' } },
+      });
+      resetReachForTests();
     });
 
     it('reports outbound up and inbound not known yet, then down once the settle window passes', () => {

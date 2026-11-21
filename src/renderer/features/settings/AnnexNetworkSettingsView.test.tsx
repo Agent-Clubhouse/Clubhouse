@@ -85,6 +85,26 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('A forward from another computer to this one must reach this port.');
   });
 
+  it.each([
+    { label: 'phone', device: { kind: 'phone' }, settings: {} },
+    { label: 'legacy kind', device: { kind: undefined }, settings: {} },
+    { label: 'one-to-one pairing', device: { role: 'satellite' }, settings: {} },
+    { label: 'offline device', device: { state: 'offline' }, settings: {} },
+    { label: 'server off', device: {}, settings: { enableServer: false } },
+    { label: 'client off', device: {}, settings: { enableClient: false } },
+  ] satisfies Array<{ label: string; device: Partial<AnnexDevice>; settings: Partial<typeof ON> }>)('preserves exact forward advice for $label', ({ device, settings }) => {
+    const observed: AnnexDevice = {
+      fingerprint: 'm', alias: 'Laptop', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop',
+      state: 'connected', pairedAt: '', lastSeen: '', problem: null,
+      reach: { outbound: { state: 'up' }, inbound: { state: 'up', via: 'reverse' } },
+      ...device,
+    };
+    setup({ ...ON, loopbackOnly: true, ...settings }, { devices: [observed] });
+    render(<AnnexNetworkSettingsView />);
+    expect(screen.getByText('Listen only on this computer and turn off local discovery. Other computers on your network and your phone can reach this computer only through a forward you set up.')).toBeInTheDocument();
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('A forward from another computer to this one must reach this port.');
+  });
+
   it('lets the person turn incoming handoffs off without changing connectivity', async () => {
     window.clubhouse.annex.getSettings = vi.fn().mockResolvedValue(ON);
     setup(ON);
@@ -133,7 +153,7 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
   });
 
   it('opens Pair again by the device, and offers it only while this computer connects to others', () => {
-    const needs = { fingerprint: 'm', alias: 'Laptop', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop', state: 'needs-pairing', pairedAt: '', lastSeen: '', problem: null };
+    const needs: AnnexDevice = { fingerprint: 'm', alias: 'Laptop', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop', state: 'needs-pairing', pairedAt: '', lastSeen: '', problem: null };
     setup(ON, { devices: [needs] });
     const { unmount } = render(<AnnexNetworkSettingsView />);
     fireEvent.click(screen.getByRole('button', { name: 'Pair again' }));
