@@ -1,0 +1,57 @@
+{
+  "refs": {
+    "foundation": "f19eceee25effd264276d70a419bebfe58924876",
+    "current": "c43ffb37d20650c542e449a8a04a9fd84e65b655"
+  },
+  "blobs": {
+    "src/main/services/settings-store.ts": {
+      "foundation": "83bc7d24a08ec3b8387f42e706e1966b472d7dfb",
+      "current": "83bc7d24a08ec3b8387f42e706e1966b472d7dfb"
+    },
+    "src/main/services/annex-settings.ts": {
+      "foundation": "e92b079e5f6d33b12247320b3d13969bb1bda79e",
+      "current": "e92b079e5f6d33b12247320b3d13969bb1bda79e"
+    },
+    "src/main/ipc/annex-handlers.ts": {
+      "foundation": "4213cb7848e6371334024e713f5b9b6714acc5b6",
+      "current": "4213cb7848e6371334024e713f5b9b6714acc5b6"
+    },
+    "src/main/services/clubhouse-mcp/tools/annex-network-tools.ts": {
+      "foundation": "f73b1e7b7bb98bc1d796d410ade7d0f588722366",
+      "current": "f73b1e7b7bb98bc1d796d410ade7d0f588722366"
+    },
+    "src/main/services/annex-network-membership.ts": {
+      "foundation": "4d4777ffaa3003f385db42efd6565ec08240cbed",
+      "current": "4d4777ffaa3003f385db42efd6565ec08240cbed"
+    },
+    "src/main/services/annex-network-channel.ts": {
+      "foundation": "239df9e8f206c3bd15646c1389ac4652c561d4b8",
+      "current": "239df9e8f206c3bd15646c1389ac4652c561d4b8"
+    },
+    "src/shared/annex-network-protocol.ts": {
+      "foundation": "be560dfb045028abf38c9a9ebe62c0b755115d72",
+      "current": "be560dfb045028abf38c9a9ebe62c0b755115d72"
+    },
+    "src/main/services/annex-peers.ts": {
+      "foundation": "b85f7eece758f9d1bf400d6ab85bf1b51bbd764d",
+      "current": "b85f7eece758f9d1bf400d6ab85bf1b51bbd764d"
+    },
+    "src/main/services/annex-server.ts": {
+      "foundation": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b",
+      "current": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b"
+    },
+    "src/main/services/annex-client.ts": {
+      "foundation": "5ee86d1c066f7aac8911c773bca283d0f7616df9",
+      "current": "5ee86d1c066f7aac8911c773bca283d0f7616df9"
+    },
+    "package-lock.json": {
+      "foundation": "7e45389f84ca58c5c7832cab169aa5674320d25d",
+      "current": "7e45389f84ca58c5c7832cab169aa5674320d25d"
+    },
+    "vitest.config.ts": {
+      "foundation": "e371e57159be74b4f5baf9aadcb0339fa6034025",
+      "current": "e371e57159be74b4f5baf9aadcb0339fa6034025"
+    }
+  },
+  "meaning": "byte equality and ownership inventory only; no reexecution of old type/runtime proofs"
+}

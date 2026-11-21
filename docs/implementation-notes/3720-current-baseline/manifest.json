@@ -1,0 +1,10 @@
+{
+  "kind": "intentionally-red-test-only-baseline",
+  "files": {
+    "README.md": "94a402e4ce691b02ce4c82cab0bb8f379760e15e093f0e646a334c02bff7ec0b",
+    "current-main-bindings.json": "b07ee62978dec4c69767c7621f6e2e6485868d0a8c4169a3f6ed075db8527216",
+    "raw/current-c43-membership-red.json": "8c2c618b48b26c5fec36cc7d474ef1fd6edd5ce148ff3618e62f7e4b5de8d107",
+    "raw/current-c43-membership.xml": "e4dd4977c965143c9e8b47fe105eb36fa42b8a1ff2e07ff2e9dd7eec3821e5d3",
+    "run-proof.py": "a8ebe350f281b1dbd715933832a2a0620f1278f0bb0fe9e30e5e7b392101f3ff"
+  }
+}

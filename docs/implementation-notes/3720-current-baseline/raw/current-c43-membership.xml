@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="94" failures="3" errors="0" time="0.025051458">
+    <testsuite name="src/main/services/annex-network-membership.test.ts" timestamp="2026-11-21T22:37:48.004Z" hostname="Masons-MacBook-Pro-13346.local" tests="94" failures="3" errors="0" skipped="0" time="0.025051458">
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; tells others its view: itself, its members with their certificates, and removals" time="0.001454084">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; keeps the existing wire contract and never shares local forward addresses or remapped ports" time="0.000261333">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a member never travels with an older removal of itself (#3608, phone safety) &gt; a member update: both in one message, removal first, as a sender orders them" time="0.0008195">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a member never travels with an older removal of itself (#3608, phone safety) &gt; catching up after being offline: an old removal kept from before, then the newer member" time="0.000337458">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a member never travels with an older removal of itself (#3608, phone safety) &gt; an old removal relayed again later never comes back beside the newer member" time="0.00022625">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a member never travels with an older removal of itself (#3608, phone safety) &gt; keeps the known epoch across restart and same id with a later clock, but still applies its actual revocation" time="0.000556834">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a member never travels with an older removal of itself (#3608, phone safety) &gt; keeps the known epoch across restart and different id with an equal clock, but still applies its actual revocation" time="0.000258417">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a member never travels with an older removal of itself (#3608, phone safety) &gt; keeps the known epoch across restart and different id with an older clock, but still applies its actual revocation" time="0.000271458">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a member never travels with an older removal of itself (#3608, phone safety) &gt; keeps the known epoch across restart and legacy input with a later clock, but still applies its actual revocation" time="0.000291375">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a member never travels with an older removal of itself (#3608, phone safety) &gt; pairing again here drops the old removal" time="0.000852666">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a member never travels with an older removal of itself (#3608, phone safety) &gt; a phone vouching for it again drops the old removal" time="0.000322083">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a member never travels with an older removal of itself (#3608, phone safety) &gt; a removal that does end its pairing ends the member, so the two are not left side by side" time="0.000230167">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; does not activate or export the resolved endpoint retained in held evidence" time="0.000168167">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; leaves out a non-loopback pairing override address" time="0.000127459">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; leaves out the address used to pair without a link, and its port" time="0.000081584">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; never shares a loopback-first default port as `port`" time="0.000093625">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; shares only the shared hosts of a mixed set, with their port" time="0.000162">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; still shares an address the device itself gave, even if it was also typed here" time="0.00006875">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; before its hello, a continuity re-pair through a private remapped port exports the link endpoint at the link port, never the private one" time="0.000081208">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; a private host and port on another IP never decides the port for a shared one" time="0.000095167">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; keeps its own forward when the device announces itself, and still never shares it" time="0.000238125">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; in a forward-only mesh of 3 computers, no member record carries anyone&apos;s local forward" time="0.000238958">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; in a forward-only mesh of 5 computers, no member record carries anyone&apos;s local forward" time="0.000149542">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; merges a member record from an older build, which has hosts and a port" time="0.000113042">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; this computer&apos;s own routes are never shared (#3608) &gt; merges a record with no hosts and no port, as this build may now send" time="0.00010525">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; shares a self-announced loopback endpoint and follows its later port change (saved port: undefined)" time="0.000214167">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; shares a self-announced loopback endpoint and follows its later port change (saved port: 9443)" time="0.000165083">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; shares the announced loopback port without overwriting or exporting a local forward on the same host" time="0.000184417">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; keeps a saved forward available after a member announces a full set of direct hosts" time="0.000214875">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; keeps each saved port when a member announces a different direct address or port" time="0.000219166">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; adds a device a member vouches for, pins it, connects to it, and tells the other members" time="0.00033375">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; refuses a vouched-for record that does not prove itself" time="0.000087291">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; follows only members: a one-to-one pairing is heard, not followed" time="0.000049833">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; leaves an existing one-to-one pairing as it is until it is paired again" time="0.00004725">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; removes a device everywhere when a member says so, and remembers the removal for members that were off" time="0.000144">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; names the pairing it ends when made here" time="0.000124375">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; a device paired again keeps its new pairing though the removal&apos;s clock runs ahead of the pairing member&apos;s" time="0.000457792">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; removing a device moments after it was paired takes, whatever the clocks" time="0.00013075">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; a record without a pairing id never moves a pairing: a desktop&apos;s own stamp from pairing with it is not a pairing" time="0.000125208">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; learns a pairing id it hadn&apos;t: a desktop this machine just paired with, from its own record" time="0.000083333">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; learns this machine&apos;s own pairing from a member&apos;s record of it, and a removal of an older one doesn&apos;t remove it" time="0.000145542">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; keeps the removal of the later pairing over one of an earlier pairing" time="0.000082667">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; a device a phone vouches for keeps the pairing it has; one removed here gets a new pairing" time="0.000298167">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; the pairing exchange: a joiner keeps the pairing it offers unless a removal here ends it, and this machine starts its own once" time="0.000226667">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; rejects a pairing record that doesn&apos;t hold together" time="0.000098083">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a removal ends the pairing it names, whatever the clocks say (#3107) &gt; leaving clears this machine&apos;s own pairing" time="0.0000505">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; a later join beats an earlier removal" time="0.00007575">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; catches up a member that was off: its view brings joins it missed, and ours carries removals it missed" time="0.000113459">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; leaves the network when told this machine was removed" time="0.00006275">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; leaving announces no removals: no member is told to remove another, or itself" time="0.000140209">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; removing a member here tells every member, the removed one included, and tracks where it is confirmed" time="0.000272417">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; tracks where a join made here is confirmed" time="0.000136042">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; renames everywhere, and an older rename never wins" time="0.000083792">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; #3720 current-source diagnostic regressions (test-only, not a legacy wire policy) &gt; retains a chosen network name when the target repeats its old preference via hello" time="0.002726166">
+            <failure message="expected &apos;Studio&apos; to be &apos;Studio in the network&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;Studio&apos; to be &apos;Studio in the network&apos; // Object.is equality
+
+Expected: &quot;Studio in the network&quot;
+Received: &quot;Studio&quot;
+
+ ❯ src/main/services/annex-network-membership.test.ts:621:27
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; #3720 current-source diagnostic regressions (test-only, not a legacy wire policy) &gt; retains a chosen network name when the target repeats its old preference via members" time="0.000293333">
+            <failure message="expected &apos;Studio&apos; to be &apos;Studio in the network&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;Studio&apos; to be &apos;Studio in the network&apos; // Object.is equality
+
+Expected: &quot;Studio in the network&quot;
+Received: &quot;Studio&quot;
+
+ ❯ src/main/services/annex-network-membership.test.ts:621:27
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; #3720 current-source diagnostic regressions (test-only, not a legacy wire policy) &gt; advances rename ordering even when the newest accepted name equals the current label" time="0.000326208">
+            <failure message="expected &apos;Older laptop&apos; to be &apos;Laptop&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;Older laptop&apos; to be &apos;Laptop&apos; // Object.is equality
+
+Expected: &quot;Laptop&quot;
+Received: &quot;Older laptop&quot;
+
+ ❯ src/main/services/annex-network-membership.test.ts:627:49
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; #3720 current-source diagnostic regressions (test-only, not a legacy wire policy) &gt; preserves legacy own-name and route learning before there is any chosen network rename" time="0.000079292">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; does nothing while Annex Network is off here" time="0.000064958">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; learns a member&apos;s address from its own hello, and connects only to desktops while the client is on" time="0.000166666">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; after review &gt; ignores an old removal of this machine once it has joined again" time="0.000123958">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; after review &gt; takes a newer join from a view, so an older removal no longer removes it, and drops that removal" time="0.000164083">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; after review &gt; never ends a one-to-one pairing on a member&apos;s word" time="0.000080583">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; after review &gt; tells a device that is not a member only about this machine" time="0.000115125">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; after review &gt; tracks confirmations only for joins and removals made here" time="0.000075125">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; after review &gt; keeps at most 200 removals, newest first" time="0.003545">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; after review &gt; records a removal made here once, however many paths report it" time="0.000137708">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; after review &gt; takes a member&apos;s own hello as where it is now, and its name" time="0.000119958">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; defers mutation authority from a pending sender: member-renamed" time="0.000259625">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; defers mutation authority from a pending sender: member-removed" time="0.000248375">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; defers mutation authority from a pending sender: members.removals" time="0.000156458">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; defers mutation authority from a pending sender: self-removal" time="0.00013075">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; never replays a pending removal after the sender changes pairing" time="0.000132459">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; never replays a pending removal after the sender changes pin" time="0.000113875">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; discards deferred traffic when the confirming view changes the sender pairing (duplicate: false)" time="0.00020275">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; discards deferred traffic when the confirming view changes the sender pin (duplicate: false)" time="0.000143667">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; discards deferred traffic when the confirming view changes the sender pairing and pin (duplicate: false)" time="0.000145583">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; discards deferred traffic when the confirming view changes the sender pairing (duplicate: true)" time="0.000139917">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; discards deferred traffic when the confirming view changes the sender pin (duplicate: true)" time="0.0001385">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; discards deferred traffic when the confirming view changes the sender pairing and pin (duplicate: true)" time="0.000148458">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; adopts a later self pairing before reconciling a deferred removal of the old one" time="0.000159333">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; discards old deferred traffic when the person explicitly pairs with the sender again" time="0.000141458">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; does not let a pending sender introduce a phone or update another member" time="0.000161917">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; records which member acknowledged the current join, ignoring a stale pairing" time="0.000174542">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; keeps a phone introduction pending until the desktop confirms this identity, pin and pairing" time="0.000238292">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; takes devices a member phone vouches for, connects to desktops, and tracks the joins" time="0.000169083">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; refuses vouching from a phone that is not a member, a desktop, or with Annex Network off" time="0.000236291">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; never connects to a phone it learns of" time="0.000122333">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member (#3062) &gt; tells listeners when the membership changes" time="0.00011275">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member, after review &gt; rejoins through the phone a desktop that was removed before: it counts as a fresh join" time="0.0001725">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member, after review &gt; says why a record was skipped: one-to-one here, this machine, or not holding together" time="0.00008825">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member, after review &gt; treats an uppercase fingerprint as the same device" time="0.000060667">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member, after review &gt; a removal made here with a phone in the network still completes" time="0.000166459">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member, after review &gt; remembers a removed phone as a phone" time="0.000114209">
+        </testcase>
+        <testcase classname="src/main/services/annex-network-membership.test.ts" name="Annex Network membership (#3061) &gt; the phone as a member, after review &gt; pins a member&apos;s new certificate when a newer join says so" time="0.000114167">
+        </testcase>
+    </testsuite>
+</testsuites>
