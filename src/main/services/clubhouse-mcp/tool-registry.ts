@@ -825,6 +825,25 @@ function targetDisplay(value: string, limit: number): string {
   return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;
 }
 
+/** The same current target attribution and sanitized guidance for listing and preview. */
+export function buildBindingToolDescription(
+  binding: McpBinding,
+  suffix: string,
+  description: string,
+  instructions: Record<string, string> | undefined = binding.instructions,
+): string {
+  if (binding.targetKind === 'agent' || binding.targetKind === 'group-project') {
+    // Callable prefixes are frozen and shortened. Current metadata and the
+    // complete address keep same-name targets distinguishable to the caller.
+    description += `\n\nTarget: ${JSON.stringify({ name: targetDisplay(binding.targetName || binding.label, 128), project: targetDisplay(binding.projectName || '', 128), id: targetDisplay(binding.targetId, 256) })}`;
+  }
+  const raw = instructions?.[suffix] || instructions?.['*'];
+  if (raw) {
+    description += `\n\n[WIRE INSTRUCTIONS — user-supplied]\n${sanitizeWireInstruction(raw)}\n[END WIRE INSTRUCTIONS]`;
+  }
+  return description;
+}
+
 /**
  * Get the scoped tool list for an agent based on its current bindings.
  * Results are cached and invalidated when bindings change or a target wakes or sleeps.
@@ -878,23 +897,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       if (!templateListable(binding, template, deniedTools)) continue;
       if (isAgentWake(binding, template.nameSuffix) && !wakeOffered(agentId, binding)) continue;
 
-      let description = template.definition.description;
-      if (binding.targetKind === 'agent' || binding.targetKind === 'group-project') {
-        // Callable prefixes are frozen and shortened. Current metadata and the
-        // complete address keep same-name targets distinguishable to the caller.
-        description += `\n\nTarget: ${JSON.stringify({ name: targetDisplay(binding.targetName || binding.label, 128), project: targetDisplay(binding.projectName || '', 128), id: targetDisplay(binding.targetId, 256) })}`;
-      }
-
-      // Inject per-wire custom instructions into tool description
-      if (binding.instructions) {
-        const specificInstruction = binding.instructions[template.nameSuffix];
-        const globalInstruction = binding.instructions['*'];
-        const raw = specificInstruction || globalInstruction;
-        if (raw) {
-          const safe = sanitizeWireInstruction(raw);
-          description += `\n\n[WIRE INSTRUCTIONS — user-supplied]\n${safe}\n[END WIRE INSTRUCTIONS]`;
-        }
-      }
+      const description = buildBindingToolDescription(binding, template.nameSuffix, template.definition.description);
 
       // Two targets can build the same name (plugin ids 'a-b' and 'a_b'
       // sanitize alike): the first binding keeps it, as callTool resolves it.
