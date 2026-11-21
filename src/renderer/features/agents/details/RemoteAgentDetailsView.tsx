@@ -63,7 +63,9 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const transport = useRef({ connected, snapshotUnavailable, readEnabled: readAdmitted, generation: 0 });
   if (transport.current.connected !== connected || transport.current.snapshotUnavailable !== snapshotUnavailable || transport.current.readEnabled !== readAdmitted) transport.current = { connected, snapshotUnavailable, readEnabled: readAdmitted, generation: transport.current.generation + 1 };
   const refreshKey = `${agent.id}:${agent.status}:${retry}:${chat?.sessionId ?? ''}:${chat?.nativeSessionId ?? ''}:${chat?.turnId ?? ''}:${chat?.workspaceRevision ?? 0}:${transport.current.generation}`;
-  const [read, setRead] = useState<{ key: string; snapshot: typeof snapshot; result: Result } | null>(null);
+  // Equal snapshots keep their object across broadcasts, so a new receipt or epoch must start its own read.
+  const admission = `${satellite?.connectionGeneration ?? 0}:${satellite?.snapshotReceipt ?? ''}`;
+  const [read, setRead] = useState<{ key: string; snapshot: typeof snapshot; admission: string; result: Result } | null>(null);
   const satelliteId = address?.satelliteId;
   const agentId = address?.agentId;
   useEffect(() => {
@@ -72,15 +74,15 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     // One visible Details or inline-helper surface owns this read. Coalesce rapid host snapshots/tool events.
     const timer = setTimeout(() => {
       Promise.resolve().then(() => window.clubhouse.annexClient.agentDetails(satelliteId, agentId)).then(
-        (result) => { if (active) setRead({ key: refreshKey, snapshot, result }); },
+        (result) => { if (active) setRead({ key: refreshKey, snapshot, admission, result }); },
         // telemetry-exempt: a retryable display status, never host error text.
-        () => { if (active) setRead({ key: refreshKey, snapshot, result: { status: 'error' } }); },
+        () => { if (active) setRead({ key: refreshKey, snapshot, admission, result: { status: 'error' } }); },
       );
     }, 150);
     return () => { active = false; clearTimeout(timer); };
-  }, [readAdmitted, connected, snapshotUnavailable, satelliteId, agentId, refreshKey, snapshot]);
+  }, [readAdmitted, connected, snapshotUnavailable, satelliteId, agentId, refreshKey, snapshot, admission]);
   const received: Result = !readAdmitted ? { status: 'loading' } : !address ? { status: 'unavailable' } : !connected ? { status: 'offline' }
-    : read?.key === refreshKey && read.snapshot === snapshot ? read.result : { status: 'loading' };
+    : read?.key === refreshKey && read.snapshot === snapshot && read.admission === admission ? read.result : { status: 'loading' };
   const result: Result = received.status === 'ok' && received.value.agentId !== agentId ? { status: 'error' } : received;
   const details = result.status === 'ok' ? result.value : null;
   const { openCards, setOpenCards, toggleCard } = useDetailsCardState(agent.id, helpersOnly && (details?.helperPage?.pendingCount ?? 0) > 0);

@@ -700,6 +700,39 @@ it('composes Canvas paging with enclosing Details and drops its private summary 
   expect(window.clubhouse.canvas.getAgentCanvases).not.toHaveBeenCalled(); expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
 });
 
+it('withholds Canvas pages after refusal and reads a new selection only under a fresh receipt for the same snapshot object', async () => {
+  const value = fixture(); value.inventoryPages = 1; value.inventorySources = ['selected-canvas-memberships'];
+  value.running = false; value.status = 'sleeping'; value.sessionId = null; value.nativeSessionId = null;
+  value.cards.find((c) => c.id === 'canvases')!.rows = [{ label: 'Private saved summary', value: 'Saved membership' }];
+  const pageFor = (selection: string, name: string): RemoteAgentDetails => ({ ...value, settings: null, inventoryPageOnly: true,
+    cards: value.cards.map((c) => ({ ...c, rows: [], notes: [], omitted: 0, ...(c.id !== 'canvases' && { requested: false as const }) })),
+    inventoryPage: { version: 1, source: 'selected-canvas-memberships', agentId: 'a1', projectId: 'p1', offset: 0, observedAt: 1, notes: [], state: 'recorded', selection, total: 1, next: null, rows: [{ key: 'b'.repeat(64), scope: 'project', canvasId: 'board', viewId: 'view', name }] } });
+  let host: 'a' | 'refused' | 'b' = 'a';
+  read.mockImplementation(async (_host, _id, query) => host === 'refused' ? { status: 'forbidden' }
+    : { status: 'ok', value: query?.card === 'canvases' ? pageFor((host === 'a' ? 'a' : 'c').repeat(64), host === 'a' ? 'Private page A' : 'Private page B') : value });
+  const snap = {};
+  satellite({ snapshot: snap, snapshotReceipt: 'r1', connectionGeneration: 1 });
+  useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'canvases' });
+  render(<AgentDetails agent={agent} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Read saved Canvas memberships' }));
+  await screen.findByText('Private page A');
+  // Main revokes the receipt on a page 401/403; the snapshot object stays equal and is reused.
+  host = 'refused'; fireEvent.click(screen.getByRole('button', { name: 'Restart saved membership pages' }));
+  act(() => satellite({ snapshot: snap, snapshotReceipt: undefined, connectionGeneration: 1 }));
+  await waitFor(() => expect(screen.queryByText('Private saved summary')).not.toBeInTheDocument());
+  expect(screen.queryByText('Private page A')).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('does not allow this details read'));
+  // Regrant arrives as a fresh receipt for an equal snapshot; the host has since chosen a new selection.
+  host = 'b'; const before = read.mock.calls.length;
+  act(() => satellite({ snapshot: snap, snapshotReceipt: 'r2', connectionGeneration: 1 }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Read saved Canvas memberships' }));
+  await screen.findByText('Private page B');
+  expect(screen.queryByText('Private page A')).not.toBeInTheDocument();
+  const pageQueries = read.mock.calls.slice(before).map(([, , query]) => query).filter(Boolean);
+  expect(pageQueries).toEqual([{ card: 'canvases', source: 'selected-canvas-memberships', offset: 0 }]);
+  expect(window.clubhouse.canvas.getAgentCanvases).not.toHaveBeenCalled();
+});
+
 describe('real-chat Dispatcher private Other machines admission', () => {
   const privateSnapshot = (peer = 'PRIVATE_OLD_PEER') => ({ dispatcher: { agent: { ...agent, id: 'a1', projectId: '__dispatcher__' } }, dispatcherPresence: { remotes: [
     { machineId: peer, machineName: peer, dispatcherName: 'Private host peer', label: `Private host peer on ${peer}`, address: null, state: 'online', link: { state: 'active' } },
@@ -730,6 +763,37 @@ describe('real-chat Dispatcher private Other machines admission', () => {
     expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld');
     act(() => satellite({ snapshot: privateSnapshot('PRIVATE_FRESH_PEER'), snapshotReceipt: 'fresh-b', connectionGeneration: 0 }));
     await screen.findByTestId('other-machine-PRIVATE_FRESH_PEER');
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+  });
+
+  it('follows receipt and epoch, not snapshot identity, when equal-value snapshots keep their object', async () => {
+    // Cached catalog reconciliation keeps a value-equal snapshot object, so only receipt/generation mark admission changes.
+    const snap = privateSnapshot();
+    satellite({ snapshot: snap, snapshotReceipt: 'positive-a', connectionGeneration: 3 });
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI'));
+    openPeers(); expect(screen.getByTestId('other-machine-PRIVATE_OLD_PEER')).toBeInTheDocument();
+    // Revoked receipt on the same object refuses even while the mocked host still answers ok.
+    act(() => satellite({ snapshot: snap, snapshotReceipt: undefined, connectionGeneration: 3 }));
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+    // A denial cached on this object must not survive a fresh receipt for an equal snapshot.
+    read.mockResolvedValue({ status: 'forbidden' });
+    act(() => satellite({ snapshot: snap, snapshotReceipt: 'positive-b', connectionGeneration: 3 }));
+    await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('does not allow this details read'));
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+    act(() => satellite({ snapshot: snap, snapshotReceipt: undefined, connectionGeneration: 3 }));
+    read.mockResolvedValue({ status: 'ok', value: fixture() });
+    const calls = read.mock.calls.length;
+    act(() => satellite({ snapshot: snap, snapshotReceipt: 'fresh-c', connectionGeneration: 3 }));
+    await screen.findByTestId('other-machine-PRIVATE_OLD_PEER');
+    expect(read.mock.calls.length).toBeGreaterThan(calls);
+    // A stale prior-epoch read result is not reused under a new generation, even with the same object and receipt text.
+    read.mockResolvedValue({ status: 'forbidden' });
+    act(() => satellite({ snapshot: snap, snapshotReceipt: 'fresh-c', connectionGeneration: 4 }));
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('does not allow this details read'));
     expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
   });
 

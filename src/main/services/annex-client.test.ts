@@ -2558,10 +2558,25 @@ describe('annex-client', () => {
         expect(current().snapshotReceipt).toEqual(expect.any(String)); expect(current().snapshotReceipt).not.toBe(oldReceipt);
       });
 
-      it.each(['agent', 'role'] as const)('ignores a stale prior-epoch %s denial rather than clearing a fresh connection receipt', async (kind) => {
+      it.each([401, 403])('invalidates positive admission once on a Canvas page %s across selections, keeping the cached snapshot', async (status) => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        const cached = current().snapshot, oldReceipt = current().snapshotReceipt;
+        const query = { card: 'canvases' as const, source: 'selected-canvas-memberships' as const, offset: 0 };
+        answer(status, {}); const before = broadcasts();
+        expect(await annexClient.requestAgentDetails(FP, 'role1', query)).toEqual({ status: 'forbidden' });
+        expect(current().snapshot).toBe(cached); expect(current().snapshotReceipt).toBeUndefined();
+        expect(publicBroadcast()[0].snapshotReceipt).toBeUndefined(); expect(broadcasts()).toBe(before + 1);
+        expect(await annexClient.requestAgentDetails(FP, 'role1', { ...query, selection: 'a'.repeat(64) })).toEqual({ status: 'forbidden' });
+        expect(broadcasts()).toBe(before + 1);
+        send(0, 'snapshot', payload(2));
+        expect(current().snapshotReceipt).toEqual(expect.any(String)); expect(current().snapshotReceipt).not.toBe(oldReceipt);
+      });
+
+      it.each(['agent', 'role', 'canvas'] as const)('ignores a stale prior-epoch %s denial rather than clearing a fresh connection receipt', async (kind) => {
         await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
         const finish = answer(403, {}, true);
-        const pending = kind === 'role' ? annexClient.requestDispatcherDetails(FP) : annexClient.requestAgentDetails(FP, 'role1');
+        const pending = kind === 'role' ? annexClient.requestDispatcherDetails(FP)
+          : annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
         const generation = current().connectionGeneration;
         annexClient.disconnect(FP); annexClient.connect(FP); sockets[1].handlers.open(); send(1, 'snapshot', payload(2));
         const freshReceipt = current().snapshotReceipt;
