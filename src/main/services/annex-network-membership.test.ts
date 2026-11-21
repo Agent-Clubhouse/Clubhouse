@@ -605,6 +605,34 @@ describe('Annex Network membership (#3061)', () => {
     expect(peers.get(B.toLowerCase())?.alias).toBe('Travel laptop');
   });
 
+  describe('#3720 current-source diagnostic regressions (test-only, not a legacy wire policy)', () => {
+    it.each(['hello', 'members'] as const)('retains a chosen network name when the target repeats its old preference via %s', (type) => {
+      const original = peers.get(A.toLowerCase())!;
+      listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio') });
+      expect(membership.renameMember(A, 'Studio in the network')).toBe(true);
+      expect(peers.get(A.toLowerCase())?.alias).toBe('Studio in the network');
+      const oldPreference = member(A, '0a', 'Studio', { hosts: ['192.168.1.4'], port: 7000 });
+      listener!(A, type === 'hello' ? { v: 1, type, member: oldPreference } : view([oldPreference]));
+      const after = peers.get(A.toLowerCase())!;
+      expect(after.role).toBe(original.role);
+      expect(after.tlsCertificateFingerprint).toBe(original.tlsCertificateFingerprint);
+      expect(after.pairedAt).toBe(original.pairedAt);
+      expect(after.mainPort).toBe(7000);
+      expect(after.alias).toBe('Studio in the network');
+    });
+
+    it('advances rename ordering even when the newest accepted name equals the current label', () => {
+      listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, name: 'Laptop', at: '2030-03-01T00:00:00.000Z' });
+      listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, name: 'Older laptop', at: '2030-02-01T00:00:00.000Z' });
+      expect(peers.get(B.toLowerCase())?.alias).toBe('Laptop');
+    });
+
+    it('preserves legacy own-name and route learning before there is any chosen network rename', () => {
+      listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio Pro', { hosts: ['192.168.1.4'], port: 7000 }) });
+      expect(peers.get(A.toLowerCase())).toMatchObject({ alias: 'Studio Pro', mainPort: 7000 });
+    });
+  });
+
   it('does nothing while Annex Network is off here', () => {
     vi.mocked(annexSettings.networkEnabled).mockReturnValue(false);
     listener!(A, view([member(N, '0e', 'New Mac')]));
