@@ -1,3 +1,7 @@
+PRE-FIX RECEIPTS, NOT FINAL ACCEPTANCE: independent delta QA subsequently found
+negotiated endpoint withdrawal was not enforced. See independent-review.txt.
+The original passing results remain preserved, not transferred to its fix.
+
 Exact P2 source: 5d59ba0c0191f08ea4a85ca3f5700e4d51962bfd
 Tree: 0fca30e28f06129a27cd6a278f8ddeb089b3f13e
 Base: c0cf2f1974b98a9418f1682284c6535d1a1e396b (#3750 landed)
@@ -51,6 +55,6 @@ Algorithm: sorted relativePath NUL byteLength NUL originalBytes.
 annex-server.ts, agent-config.ts, shared control protocol, phone route contract,
 package.json and package-lock.json are unchanged.
 
-This proves only the bounded new P2 product delta and named composition.
+These results prove only the named pre-fix cases and composition.
 No historical CI is transferred; broader duplex, P8, frozen233a, specifically
 refused966a production review and public release acceptance remain separate.

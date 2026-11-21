@@ -300,6 +300,17 @@ describe('proactive control connections', () => {
     expect(sockets[0].readyState).toBe(WebSocket.OPEN);
   });
 
+  it('closes negotiated control when its last route becomes private to another observer', () => {
+    maintain();
+    open();
+    plans = [plan(peers[0], [{ ...plans[0].routes[0], privateTo: 'another-observer' }])];
+    for (let i = 0; i < 20; i++) control.refreshConnections();
+    expect(sockets[0].readyState).toBe(WebSocket.CLOSED);
+    control.retryConnection(REMOTE);
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
   it('never dials held, wrong-peer or wrong-observer private routes, including on retry', () => {
     const heldPeer = peer({
       fingerprint: 'other-peer', knownHosts: [], mainPort: undefined,

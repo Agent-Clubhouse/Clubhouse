@@ -5,6 +5,8 @@
   "baselineTests": "61b4662a9e875601d82567c5ad5550b21f485192",
   "sourceHead": "5d59ba0c0191f08ea4a85ca3f5700e4d51962bfd",
   "sourceTree": "0fca30e28f06129a27cd6a278f8ddeb089b3f13e",
+  "preFixProofOnly": true,
+  "initialIndependentReview": "Negotiated active endpoint withdrawal finding; sourceHead is not accepted",
   "historicalSemanticsOnly": [
     "038dc9635835ea62f26b930a0188a228c3c192f2",
     "82ad73a3a929880a9f021f5c56bb238152ea7ccd"

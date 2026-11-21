@@ -311,6 +311,7 @@ interface KeptConnection {
   blocked?: 'stopped' | 'revoked' | 'pin' | 'unsupported';
   timer: ReturnType<typeof setTimeout> | null;
   socket: WebSocket | null;
+  route: AnnexRoute | null;
   readyAt: number | null;
   resetFailures: number;
   everReady: boolean;
@@ -1339,6 +1340,8 @@ function cancelKept(connection: KeptConnection, revoked = false): void {
   connection.timer = null;
   const ws = connection.socket;
   connection.socket = null;
+  connection.route = null;
+  connection.readyAt = null;
   let attached = false;
   for (const link of [...links]) {
     if (link.direction === 'out' && link.fingerprint === connection.plan.fingerprint) {
@@ -1353,7 +1356,7 @@ function cancelKept(connection: KeptConnection, revoked = false): void {
   }
 }
 
-/** Reconcile membership/route changes without resetting a live connection or its backoff. */
+/** Reconcile membership/routes, preserving a live socket only while its endpoint remains allowed. */
 export function refreshConnections(): void {
   const plans = target && connectionSource ? connectionSource.plans() : [];
   const wanted = new Map(plans.filter((plan) => target?.authorize({ fingerprint: plan.fingerprint, pin: plan.pin, via: 'reverse' }).ok)
@@ -1370,7 +1373,7 @@ export function refreshConnections(): void {
     if (!connection) {
       connection = {
         plan, routeKey: routesKey(plan), attempt: 0, nextRoute: 0, started: false,
-        timer: null, socket: null, readyAt: null, resetFailures: 0, everReady: false,
+        timer: null, socket: null, route: null, readyAt: null, resetFailures: 0, everReady: false,
       };
       keptConnections.set(plan.fingerprint, connection);
     } else {
@@ -1386,6 +1389,11 @@ export function refreshConnections(): void {
       }
       connection.routeKey = key;
       connection.plan = plan;
+      if (connection.socket && !allowedRoutes(plan).some((route) =>
+        route.host === connection.route?.host && route.port === connection.route?.port)) {
+        cancelKept(connection);
+        connection.started = false;
+      }
     }
     if (!connectionSource?.autoReconnect() && connection.timer) {
       clearTimeout(connection.timer);
@@ -1410,6 +1418,7 @@ function dialKept(connection: KeptConnection): void {
   if (!routes.length) return;
   const route = routes[connection.nextRoute % routes.length];
   connection.started = true;
+  connection.route = route;
   connection.readyAt = null;
   let resetBeforeUpgrade = false;
   const current = () => {
@@ -1420,6 +1429,7 @@ function dialKept(connection: KeptConnection): void {
   const closed = (code: number) => {
     if (keptConnections.get(plan.fingerprint) !== connection || connection.socket !== ws) return;
     connection.socket = null;
+    connection.route = null;
     connection.resetFailures = resetBeforeUpgrade && !connection.everReady
       ? Math.min(connection.resetFailures + 1, UNKNOWN_PEER_RESET_LIMIT) : 0;
     if (code === CONTROL_CLOSE_REVOKED) connection.blocked = 'revoked';
@@ -1444,11 +1454,13 @@ function dialKept(connection: KeptConnection): void {
       },
     });
     connection.socket = ws;
+    if (!ws) connection.route = null;
   } catch (err) { // telemetry-exempt: setup failure is logged below and enters bounded backoff
     appLog('core:annex', 'warn', 'Could not open an Annex control route', {
       meta: { fingerprint: plan.fingerprint, error: err instanceof Error ? err.message : String(err) },
     });
     if (terminalTlsError(err)) connection.blocked = 'pin';
+    connection.route = null;
     scheduleKept(connection);
   }
 }

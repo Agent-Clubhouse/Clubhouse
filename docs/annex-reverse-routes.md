@@ -13,7 +13,9 @@ Private forwards belong to the desktop that saved them and the specific peer
 they reach. Route selection checks both identities. Announced loopback addresses
 are not usable. A shared endpoint on the same host as a private forward retains
 its own announced port. No route metadata here is persisted or sent to phones or
-other members. The request selector prefers a live direct route, otherwise an
+other members. Withdrawing the active endpoint also retires negotiated control;
+unrelated additions or reordered routes preserve a still-allowed live socket.
+The request selector prefers a live direct route, otherwise an
 already-negotiated reverse control link, and selects only one transport.
 Migrating request/subscription consumers and proving full-surface parity are
 separate work; P2 does not change request forwarding.

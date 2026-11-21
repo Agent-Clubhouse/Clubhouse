@@ -1,0 +1,36 @@
+Independent bounded P2 delta QA
+Reviewer: qa-p2-current-routes, code-review
+Agent: 70b42127-751b-45f1-a4bd-4c9678e315d0
+Execution: static only; no tests, builds, changes or delegates.
+Base: c0cf2f1974b98a9418f1682284c6535d1a1e396b
+Initial source: 5d59ba0c0191f08ea4a85ca3f5700e4d51962bfd
+Tree: 0fca30e28f06129a27cd6a278f8ddeb089b3f13e
+Scope: new P2 delta and narrowly named approved-wake composition only.
+Not historical federation/full-duplex/frozen233a review or acceptance.
+
+INITIAL VERDICT: one medium P2-local finding.
+Source: annex-control.ts:1377-1388 in the initial source.
+A negotiated control socket stayed on its saved endpoint after /ws dropped
+and that endpoint was withdrawn/replaced. Route-key changes reset bookkeeping
+without retiring the live socket. Peer-authority checks did not enforce endpoint
+withdrawal after hello. The unfinished-handshake replacement test did not cover
+this negotiated state. Approved wake does not fix this P2-local reconciliation.
+
+Same-review follow-up found a separate concrete integration dependency:
+Source: initial annex-client.ts:954-962,763.
+An old main upgrade refusal can finish after explicit Retry reused the satellite
+record and established a fresh pinned main connection. Its delayed peer_not_paired
+body can markNeedsPairing/haltSatellite and close valid independent control.
+The main refusal ownership defect predates P2; its new integration consequence
+is old main work terminating separately-lived control. Approved wake9e467's
+attempt-token fence blocks it. Parent accepted wake-first/current-main ordering.
+This is not a dependency on, or replay of, refused966a production review.
+
+No permanent-stranding finding: connectTo clears the maintained stopped block
+after a permitted fresh pinned main connection; explicit Retry clears blocking/
+backoff while socketless, and current plans/settings/authority remain checked.
+
+The initial source's passing counts are pre-fix receipts, not acceptance.
+Negotiated replacement/late-write and unrelated-route positive controls were
+added before implementation correction; original red evidence is retained.
+Correction and final integrated delta-review receipts remain required.
