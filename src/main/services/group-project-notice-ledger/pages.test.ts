@@ -107,4 +107,60 @@ describe('lazy immutable notice index', () => {
     await expect(index.set(root, 'bad-json', Number.NaN)).rejects.toThrow('finite JSON');
     await expect(index.get({ ...root!, digest: '../../outside' }, 'id')).rejects.toThrow('reference');
   });
+
+  it('streams a >64KiB baseline into bounded pages and verifies without collecting all details', async () => {
+    const directory = await home();
+    let yielded = 0;
+    async function* baseline() {
+      for (let n = 0; n < 4097; n++) {
+        yielded++;
+        yield { key: key(n), value: { postId: `${key(n)}-${'x'.repeat(180)}`, excluded: true } };
+      }
+    }
+    const index = await NoticePageIndex.open(directory);
+    const root = await index.build(baseline());
+    await index.flush();
+    expect(yielded).toBe(4097);
+    expect(root?.count).toBe(4097);
+    expect(root!.depth).toBeGreaterThanOrEqual(2);
+    expect(Buffer.byteLength(JSON.stringify(root))).toBeLessThan(512);
+    expect(index.cacheStats.leafEntries).toBe(0);
+    const verified = await index.verify(root);
+    expect(verified.rows).toBe(4097);
+    expect(verified.pages).toBeLessThan(100);
+    expect(index.cacheStats.peakLeafEntries).toBeLessThanOrEqual(256);
+    expect((await fs.readdir(directory)).includes('manifest.json')).toBe(false);
+    const cold = await NoticePageIndex.open(directory);
+    expect(await cold.get(root, key(4096))).toMatchObject({ excluded: true });
+    expect(cold.cacheStats.diskReads).toBeLessThanOrEqual(4);
+  }, 30000);
+
+  it('keeps prepared orphan pages inert on producer failure or duplicate baseline IDs', async () => {
+    const directory = await home();
+    const index = await NoticePageIndex.open(directory);
+    const old = await index.set(undefined, 'old-id', { priorBaseline: true });
+    await index.flush();
+    async function* failed() {
+      for (let n = 0; n < 130; n++) yield { key: key(n), value: true };
+      throw new Error('synthetic-baseline-source-failure');
+    }
+    await expect(index.build(failed())).rejects.toThrow('synthetic-baseline');
+    await expect(index.build([{ key: 'duplicate', value: true }, { key: 'duplicate', value: false }])).rejects.toThrow('strictly sorted');
+    await expect(index.build([{ key: 'z', value: true }, { key: 'a', value: true }])).rejects.toThrow('strictly sorted');
+    const reopened = await NoticePageIndex.open(directory);
+    expect(await reopened.get(old, 'old-id')).toEqual({ priorBaseline: true });
+    expect(await reopened.get(old, key(0))).toBeUndefined();
+    expect((await fs.readdir(directory)).includes('manifest.json')).toBe(false);
+  });
+
+  it('finds predecessor intervals across leaves without loading the whole index', async () => {
+    const index = await NoticePageIndex.open(await home());
+    const root = await index.build(Array.from({ length: 200 }, (_, n) => ({ key: key(n * 2), value: n })));
+    expect(await index.atOrBefore(root, key(199))).toEqual({ key: key(198), value: 99 });
+    expect(await index.atOrBefore(root, key(200))).toEqual({ key: key(200), value: 100 });
+    expect(await index.atOrBefore(root, 'a')).toBeUndefined();
+    expect(await index.atOrBefore(root, 'z')).toEqual({ key: key(398), value: 199 });
+    expect(await index.verify(undefined)).toEqual({ rows: 0, pages: 0 });
+    expect(await index.build([])).toBeUndefined();
+  });
 });

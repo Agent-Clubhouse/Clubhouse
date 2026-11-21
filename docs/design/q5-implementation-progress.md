@@ -41,6 +41,13 @@ or R1 adoption, and does not by itself close the full sparse-state memory gap.
 Terminal acknowledged attempts also release the journal's volatile entry-ID
 tracking; uncertain entered IDs remain tracked independently of handles.
 
+Successor index work adds sorted streaming baseline preparation, bounded
+multi-level root references, predecessor lookup and full streaming verification.
+Preparation produces only immutable orphan pages/root references. It neither
+activates a generation nor consumes a nonce. The planned >64KiB activation
+record/partial-tail/process-crash controls remain separate and unimplemented;
+producer-failure/orphan tests are not credited as those R1 controls.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.
