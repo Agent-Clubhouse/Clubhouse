@@ -1,0 +1,50 @@
+{
+  "headBefore": "7d06c7882a38bf3f10af7db3e8b61403ba414ecf",
+  "inputsBefore": {
+    "src/renderer/stores/annexClientStore.ts": "ad3c60004d10f1a12404312004a9802d8f03854cf90102a421597861d5bce6d0",
+    "src/renderer/stores/annexClientStore.label-notification.test.ts": "8fa07055a3552aabcff553d82f4d9edb18bfc6bba77e66c82c9c56a817551b6e",
+    "src/renderer/stores/remoteProjectStore.ts": "3e1ee4b5b6ecf19378f6b4113a14c1f603b83ef0eb9213604500f9c3ff16a206",
+    "src/renderer/stores/pendingPermissionStore.ts": "bfc1916632e268724ea89edc63aa0348a7fb4560bef72233f58ea1e2a104ec3b",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/setup-renderer.ts": "6e47beedacf3cab21257971d9d339ac5b7fcbb38aa26b26bd06a3ef326a7aa63"
+  },
+  "trackedDiffBefore": "",
+  "argv": [
+    "node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "renderer",
+    "src/renderer/stores/annexClientStore.label-notification.test.ts",
+    "--maxWorkers=1",
+    "--no-file-parallelism",
+    "--cache=false"
+  ],
+  "admission": {
+    "cpus": 16,
+    "load": [
+      2.15234375,
+      2.12158203125,
+      2.13134765625
+    ],
+    "matchedVersions": 1176,
+    "cache": "/Users/masonallen/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules"
+  },
+  "startedUTC": "2026-11-21T22:50:35.559789+00:00",
+  "runnerSHA256": "411148617541d05b27c40cea4a06ba482f95dea6c2ed7ff691da933d5f298349",
+  "headAfter": "7d06c7882a38bf3f10af7db3e8b61403ba414ecf",
+  "inputsAfter": {
+    "src/renderer/stores/annexClientStore.ts": "ad3c60004d10f1a12404312004a9802d8f03854cf90102a421597861d5bce6d0",
+    "src/renderer/stores/annexClientStore.label-notification.test.ts": "8fa07055a3552aabcff553d82f4d9edb18bfc6bba77e66c82c9c56a817551b6e",
+    "src/renderer/stores/remoteProjectStore.ts": "3e1ee4b5b6ecf19378f6b4113a14c1f603b83ef0eb9213604500f9c3ff16a206",
+    "src/renderer/stores/pendingPermissionStore.ts": "bfc1916632e268724ea89edc63aa0348a7fb4560bef72233f58ea1e2a104ec3b",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/setup-renderer.ts": "6e47beedacf3cab21257971d9d339ac5b7fcbb38aa26b26bd06a3ef326a7aa63"
+  },
+  "trackedDiffAfter": "",
+  "finishedUTC": "2026-11-21T22:50:36.437108+00:00",
+  "exitCode": 1,
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |renderer| src/renderer/stores/annexClientStore.label-notification.test.ts (3 tests | 2 failed) 5ms\n     \u00d7 does not hydrate a missing catalog merely to publish a label (receipt: undefined) 4ms\n     \u00d7 does not hydrate a missing catalog merely to publish a label (receipt: already-eligible-receipt) 0ms\n\n Test Files  1 failed (1)\n      Tests  2 failed | 1 passed (3)\n   Start at  17:50:35\n   Duration  666ms (transform 47ms, setup 105ms, import 31ms, tests 5ms, environment 430ms)\n\n",
+  "stderr": "(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 2 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |renderer| src/renderer/stores/annexClientStore.label-notification.test.ts > #3720 proposed label-only full-list notification > does not hydrate a missing catalog merely to publish a label (receipt: undefined)\n FAIL  |renderer| src/renderer/stores/annexClientStore.label-notification.test.ts > #3720 proposed label-only full-list notification > does not hydrate a missing catalog merely to publish a label (receipt: already-eligible-receipt)\nAssertionError: expected { Object (id, projectId, ...) } to be undefined\n\n- Expected:\nundefined\n\n+ Received:\n{\n  \"color\": \"\",\n  \"id\": \"remote||synthetic||agent\",\n  \"kind\": \"durable\",\n  \"name\": \"Synthetic\",\n  \"projectId\": \"remote||synthetic||project\",\n  \"status\": \"running\",\n}\n\n \u276f src/renderer/stores/annexClientStore.label-notification.test.ts:52:68\n     50|     expect(useAnnexClientStore.getState().satellites[0]?.alias).toBe('\u2026\n     51|     expect(window.clubhouse.annexClient.getSatellites).toHaveBeenCalle\u2026\n     52|     expect(useRemoteProjectStore.getState().remoteAgents[agentId]).toB\u2026\n       |                                                                    ^\n     53|     expect(usePendingPermissionStore.getState().byRequestId).toEqual({\u2026\n     54|   });\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/2]\u23af\n\n"
+}
