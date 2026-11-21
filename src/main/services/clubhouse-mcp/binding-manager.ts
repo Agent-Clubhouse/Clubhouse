@@ -4,6 +4,7 @@
  */
 
 import type { McpBinding, BindingTargetKind } from './types';
+import { initializeBindingToolKey } from './binding-tool-key';
 
 export type BindingChangeListener = (agentId: string) => void;
 
@@ -87,11 +88,13 @@ class BindingManager {
     // A connection's saved permissions apply from the moment it's bound (D129).
     const disabledTools = this.toolsResolver?.(agentId, target.targetId, target.targetKind);
     const instructions = this.instructionsResolver?.(agentId, target.targetId, target.targetKind);
-    agentBindings.push({
+    const binding: McpBinding = {
       agentId, ...target,
       ...(disabledTools && disabledTools.length > 0 && { disabledTools }),
       ...(instructions && Object.keys(instructions).length > 0 && { instructions: { ...instructions } }),
-    });
+    };
+    initializeBindingToolKey(binding);
+    agentBindings.push(binding);
     this.notifyChange(agentId);
     return true;
   }

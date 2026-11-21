@@ -71,8 +71,10 @@ import { mcpAdapter } from './mcp-adapter';
 import { registerAgentTools } from './tools/agent-tools';
 import { appLog } from '../log-service';
 import { bindingManager } from './binding-manager';
+
 import { groupProjectRegistry } from '../group-project-registry';
 import { registerBuiltinProviders } from '../../orchestrators';
+import type { McpBinding } from './types';
 import { registerToolTemplate, registerGlobalTool, buildToolName, _resetForTesting as resetTools } from './tool-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { IPC } from '../../../shared/ipc-channels';
@@ -170,6 +172,13 @@ function openStream(port: number, path: string, headers: Record<string, string>)
     req.on('error', (err) => { if ((err as NodeJS.ErrnoException).code !== 'ECONNRESET') reject(err); });
     req.end();
   });
+}
+
+// Callable identities belong to managed binding lifetimes, not reconstructed descriptors.
+function boundBinding(descriptor: McpBinding): McpBinding {
+  const binding = bindingManager.getBindingsForAgent(descriptor.agentId).find(b => b.targetId === descriptor.targetId);
+  if (!binding) throw new Error(`Missing test binding: ${descriptor.agentId} -> ${descriptor.targetId}`);
+  return binding;
 }
 
 describe('BridgeServer', () => {
@@ -285,7 +294,7 @@ describe('BridgeServer', () => {
 
     expect(body.result.tools).toHaveLength(1);
     const expectedName = buildToolName(
-      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2', targetName: 'scrappy-robin', projectName: 'myapp' },
+      boundBinding({ agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2', targetName: 'scrappy-robin', projectName: 'myapp' }),
       'send_message',
     );
     expect(body.result.tools[0].name).toBe(expectedName);
@@ -306,7 +315,7 @@ describe('BridgeServer', () => {
     });
 
     const toolName = buildToolName(
-      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2', targetName: 'scrappy-robin', projectName: 'myapp' },
+      boundBinding({ agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2', targetName: 'scrappy-robin', projectName: 'myapp' }),
       'send_message',
     );
 
@@ -333,7 +342,7 @@ describe('BridgeServer', () => {
     registerToolTemplate('agent', 'private_error', { description: 'Errors', inputSchema: { type: 'object' } }, handler);
     const binding = { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent' as const, label: 'A2', targetName: 'robin', projectName: 'app' };
     bindingManager.bind('agent-1', binding);
-    const toolName = buildToolName(binding, 'private_error');
+    const toolName = buildToolName(boundBinding(binding), 'private_error');
     vi.mocked(appLog).mockClear();
     const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 23, method: 'tools/call', params: { name: toolName, arguments: { opaqueToolInput: marker } } }, 'test-nonce');
     const logs = vi.mocked(appLog).mock.calls;
@@ -355,7 +364,7 @@ describe('BridgeServer', () => {
     });
 
     const toolName = buildToolName(
-      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' },
+      boundBinding({ agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' }),
       'err_tool',
     );
 
@@ -538,7 +547,7 @@ describe('BridgeServer', () => {
     });
 
     const toolName = buildToolName(
-      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' },
+      boundBinding({ agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' }),
       'fail_tool',
     );
 
@@ -572,7 +581,7 @@ describe('BridgeServer', () => {
       registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } },
         vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'sent' }] }));
       bindingManager.bind('agent-1', binding);
-      await call(40, buildToolName(binding, 'send_message'));
+      await call(40, buildToolName(boundBinding(binding), 'send_message'));
       expect(mockRecordMcpToolCall).toHaveBeenCalledWith(expect.any(String), expect.any(Number), 'ok', false, { agentId: 'agent-1', refusal: undefined });
     });
 
@@ -586,7 +595,7 @@ describe('BridgeServer', () => {
       registerToolTemplate('agent', 'fail_tool', { description: 'Fails', inputSchema: { type: 'object' } },
         vi.fn().mockRejectedValue(new Error('boom')));
       bindingManager.bind('agent-1', binding);
-      await call(42, buildToolName(binding, 'fail_tool'));
+      await call(42, buildToolName(boundBinding(binding), 'fail_tool'));
       expect(mockRecordMcpToolCall).toHaveBeenCalledWith(expect.any(String), expect.any(Number), 'threw', false, { agentId: 'agent-1' });
     });
 
@@ -594,7 +603,7 @@ describe('BridgeServer', () => {
       registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } },
         vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'sent' }] }));
       bindingManager.bind('agent-1', binding);
-      await call(43, buildToolName(binding, 'send_message'));
+      await call(43, buildToolName(boundBinding(binding), 'send_message'));
       await call(44, 'not-a-scoped-tool');
       const logged = JSON.stringify(vi.mocked(appLog).mock.calls);
       expect(logged).not.toContain(secret);
@@ -628,7 +637,7 @@ describe('BridgeServer', () => {
       });
 
       const toolName = buildToolName(
-        { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' },
+        boundBinding({ agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' }),
         'send_message',
       );
 
@@ -664,7 +673,7 @@ describe('BridgeServer', () => {
       });
 
       const toolName = buildToolName(
-        { agentId: 'agent-1', targetId: 'gp-1', targetKind: 'group-project', label: 'My Group', targetName: 'mygroup' },
+        boundBinding({ agentId: 'agent-1', targetId: 'gp-1', targetKind: 'group-project', label: 'My Group', targetName: 'mygroup' }),
         'post_bulletin',
       );
 
@@ -700,7 +709,7 @@ describe('BridgeServer', () => {
       });
 
       const toolName = buildToolName(
-        { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' },
+        boundBinding({ agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' }),
         'read_output',
       );
 

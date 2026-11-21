@@ -12,6 +12,7 @@ import { isToolGrantPassThrough, toolGrantDeclarations, type ToolGrant } from '.
 import type { GrantAction } from '../../../shared/agent-grants';
 import type { GrantToolMap } from '../../../shared/agent-grant-changes';
 import { bindingManager } from './binding-manager';
+import { buildToolKey } from './binding-tool-key';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
 import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
@@ -727,44 +728,11 @@ export function isGlobalTool(name: string): boolean {
   return globalTools.has(name);
 }
 
-/** Sanitize an ID for use in tool names (replace non-alphanumeric with underscores). */
-export function sanitizeId(id: string): string {
-  return id.replace(/[^a-zA-Z0-9]/g, '_');
-}
-
-/** Generate a short 4-character hash of a string for uniqueness in tool names (FNV-1a). */
-export function shortHash(input: string): string {
-  let hash = 0x811c9dc5; // FNV offset basis
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193); // FNV prime
-  }
-  return (hash >>> 0).toString(36).padStart(4, '0').slice(0, 4);
-}
-
-/**
- * Build a tool key (the middle segment of a tool name) from a binding.
- * For agent targets: `<project>_<targetName>_<hash>`
- * For other targets: sanitized targetId.
- */
-export function buildToolKey(binding: McpBinding): string {
-  if (binding.targetKind === 'agent') {
-    const project = sanitizeId(binding.projectName || 'project');
-    const name = sanitizeId(binding.targetName || binding.label || binding.targetId);
-    const hash = shortHash(binding.targetId);
-    return `${project}_${name}_${hash}`;
-  }
-  if (binding.targetKind === 'group-project') {
-    const name = sanitizeId(binding.targetName || binding.label || binding.targetId);
-    const hash = shortHash(binding.targetId);
-    return `${name}_${hash}`;
-  }
-  return sanitizeId(binding.targetId);
-}
+export { sanitizeId, shortHash, buildToolKey } from './binding-tool-key';
 
 /**
  * Build the full tool name from a binding and action suffix.
- * Agent targets: `clubhouse__<project>_<name>_<hash>__<suffix>`
+ * Agent targets: `clubhouse__<project>_<name>_<hash>_b<generation>__<suffix>`
  * Other targets: `<targetKind>__<sanitizedId>__<suffix>`
  */
 export function buildToolName(binding: McpBinding, suffix: string): string {
@@ -1122,7 +1090,7 @@ export async function callTool(
     if (isRemoteDispatcherWire(binding) && parsed.suffix === 'get_status') return remoteDispatcherWireStatus(binding.targetId);
     const address = parseAgentAddress(binding.targetId);
     const controller = address.machine ? (await import('../dispatcher-federation')).remoteFederationController(address.machine) : undefined;
-    // Keep targetName for callable tool keys; use the label for display.
+    // Display metadata stays live independently of the binding’s callable key.
     const display = controller?.agentId === address.agentId ? binding.label : binding.targetName || binding.label || 'That agent';
     return forwardAgentCall(agentId, binding.targetId, display, parsed.suffix, args);
   }
