@@ -57,6 +57,24 @@ describe('local settings patch parser (not installed as an IPC handler)', () => 
     const raw = patch(); raw.base.revision = Number.MAX_SAFE_INTEGER - 1; raw.base.fields.alias = 0;
     expect(readLocalSettingsPatch(raw).base).toEqual(raw.base);
   });
+  it('accepts frozen enumerable data and a dense frozen unset array', () => {
+    const raw = patch({}, 'network-settings', ['loopbackOnly', 'reachableAs']);
+    Object.freeze(raw.unset); Object.freeze(raw.changes); Object.freeze(raw.base.fields);
+    Object.freeze(raw.base); Object.freeze(raw);
+    expect(readLocalSettingsPatch(raw)).toEqual(raw);
+  });
+  it('accepts the largest current-origin escaped-string payload below the canonical byte cap', () => {
+    const raw = patch({
+      enableServer: false, enableClient: false, loopbackOnly: false,
+      deviceName: '\0'.repeat(200), autoReconnect: false, reachableAs: '\0'.repeat(1024),
+      networkEnabled: false, acceptHandoffs: false,
+    }, 'network-settings');
+    raw.base.revision = Number.MAX_SAFE_INTEGER - 1;
+    for (const key of Object.keys(raw.base.fields)) raw.base.fields[key] = raw.base.revision;
+    // Current field/origin limits are tighter than 8 KiB; no unreachable over-cap negative is claimed.
+    expect(new TextEncoder().encode(JSON.stringify(raw)).length).toBe(7970);
+    expect(readLocalSettingsPatch(raw)).toEqual(raw);
+  });
 
   it.each([null, undefined, true, 1, 'body', [], new Date(), Object.create({})])('refuses non-data envelope %#', raw => refused(raw, 'invalid_envelope'));
   it.each(['v', 'requestId', 'origin', 'base', 'changes', 'unset'])('refuses absent envelope key %s', key => {
