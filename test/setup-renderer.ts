@@ -413,6 +413,7 @@ vi.stubGlobal('clubhouse', {
   },
   annexClient: {
     agentSettings: vi.fn(async () => ({ status: 'offline' })),
+    dispatcherDetails: vi.fn(async () => ({ status: 'unavailable' })),
     controllerChatPage: vi.fn(async () => ({ status: 'offline' })),
     controllerChatSessions: vi.fn(async () => ({ status: 'offline' })),
     getSatellites: async () => [],

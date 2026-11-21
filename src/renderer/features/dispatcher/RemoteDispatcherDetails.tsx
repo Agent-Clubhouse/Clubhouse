@@ -1,6 +1,6 @@
 import { useAnnexClientStore } from '../../stores/annexClientStore';
-import { CardNote, CardRow, DetailsCard } from '../agents/details/DetailsCard';
-import { OtherMachinesList, otherMachinesSummary, presenceLinkText } from './OtherMachinesList';
+import { presenceLinkText } from './OtherMachinesList';
+import { RemoteDispatcherRoleDetails } from './RemoteDispatcherRoleDetails';
 import { CONTROLLER_LINK_STATE_LABELS, REMOTE_DISPATCHER_STATE_LABELS, type RemoteDispatcherPresence } from '../../../shared/dispatcher-presence';
 import { useDispatcherPresence } from './useDispatcherPresence';
 
@@ -28,18 +28,6 @@ export function RemoteDispatcherDetails({ machineId }: { machineId: string }) {
   const remote = presence?.remotes.find((r) => r.machineId.toLowerCase() === machine);
   const satellite = useAnnexClientStore((s) => s.satellites.find((sat) => sat.fingerprint.toLowerCase() === machine));
   const connected = satellite?.state === 'connected';
-  const limitation = satellite?.needsPairing ? 'Pairing with this host is unavailable. Access must be renewed before reading host details.'
-    : !connected ? 'This computer has no connected read from the selected host.'
-      : satellite.snapshotUnavailable || !satellite.snapshot ? 'The host snapshot is unavailable. Earlier private fields are withheld.'
-        : satellite.snapshot.sessionPaused ? 'Host sharing is paused. Earlier private fields are withheld.'
-          : !satellite.snapshotReceipt ? 'Waiting for a confirmed host snapshot. Earlier private fields are withheld.' : null;
-  const snapshot = limitation ? null : satellite?.snapshot;
-  const omitted = (field: string) => !!snapshot?.snapshotTruncated && (!snapshot.snapshotTruncated.omitted || snapshot.snapshotTruncated.omitted.includes(field));
-  const enabled = !omitted('dispatcher') ? snapshot?.dispatcher?.enabled : undefined;
-  const peers = !omitted('dispatcherPresence') ? snapshot?.dispatcherPresence?.remotes : undefined;
-  const identityLimit = 'The host has not shared an existing Dispatcher chat identity. Detailed settings, Connections and Actions are unavailable without that identity.';
-  const settingsLimit = limitation ?? (omitted('dispatcher') ? 'Dispatcher settings were omitted from this host snapshot.' : enabled === undefined ? 'This host snapshot does not report Dispatcher settings. Its version or role state may not support them.' : identityLimit);
-  const unavailable = limitation ?? identityLimit;
   return (
     <div className="h-full min-h-0 flex bg-ctp-base" data-testid="remote-dispatcher-details">
       <div className="flex-1 min-w-0 flex flex-col items-center justify-center gap-2 px-7 text-center" role="status">
@@ -56,24 +44,7 @@ export function RemoteDispatcherDetails({ machineId }: { machineId: string }) {
         )}
         <p className="text-xs text-ctp-overlay1">Published presence and link observed by this computer.</p>
       </div>
-      <aside className="w-[340px] flex-shrink-0 min-h-0 overflow-y-auto flex flex-col gap-2 py-3 pr-3.5" aria-label="Dispatcher snapshot details" data-testid="remote-dispatcher-snapshot-cards">
-        <p className="px-3 text-xs text-ctp-overlay1">Read-only observations. {snapshot ? 'From the selected host’s shared snapshot.' : 'Current host details are unavailable.'}</p>
-        <DetailsCard embedded id="settings" title="Settings" summary={enabled === undefined ? 'unavailable' : enabled ? 'On · host snapshot' : 'Turned off · host snapshot'} open onToggle={() => {}}>
-          {enabled !== undefined && <CardRow label="Dispatcher">{enabled ? 'On' : 'Turned off'}</CardRow>}
-          <CardNote>{settingsLimit}</CardNote>
-          {enabled === false && <CardNote>The snapshot does not say whether a Dispatcher was previously created.</CardNote>}
-        </DetailsCard>
-        <DetailsCard embedded id="connections" title="Connections" summary={remote ? 'published link only' : 'unavailable'} open onToggle={() => {}}>
-          {remote && <><CardRow label="Link from here" labelWidth="wide">{presenceLinkText(remote)}</CardRow><CardNote>This computer’s published controller-link observation. It is not the selected host’s connection inventory.</CardNote></>}
-          <CardNote>{unavailable}</CardNote>
-        </DetailsCard>
-        <DetailsCard embedded id="other-machines" title="Other machines" summary={peers ? otherMachinesSummary(peers) : 'unavailable'} open onToggle={() => {}}>
-          {peers ? <OtherMachinesList compact remotes={peers} /> : <CardNote>{limitation ?? (omitted('dispatcherPresence') ? 'Other machines were omitted from this host snapshot.' : 'The selected host has not shared its Other machines list. An absent list is not an empty network.')}</CardNote>}
-        </DetailsCard>
-        <DetailsCard embedded id="actions" title="Actions" summary="unavailable" open onToggle={() => {}}>
-          <CardNote>{unavailable}</CardNote><CardNote>No host Action inventory has been read for this selection.</CardNote>
-        </DetailsCard>
-      </aside>
+      <RemoteDispatcherRoleDetails key={machine} machineId={machine} dispatcherName={remote?.dispatcherName || 'Dispatcher'} publishedLink={remote ? presenceLinkText(remote) : undefined} />
     </div>
   );
 }

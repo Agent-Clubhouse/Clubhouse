@@ -46,6 +46,8 @@ export interface SatelliteConnection {
   snapshot: SatelliteSnapshot | null;
   /** Main-only positive receipt for a snapshot from the current pinned socket; absent for retained/unattested snapshots. */
   snapshotReceipt?: string;
+  /** Existing main-process connection epoch; no role data is retained here. */
+  connectionGeneration?: number;
   lastError: string | null;
   /** This connection's satellite can't build a snapshot yet, and is retrying. */
   snapshotUnavailable?: boolean;

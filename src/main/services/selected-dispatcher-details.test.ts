@@ -104,6 +104,11 @@ describe('staged selected-host Dispatcher Details', () => {
     expect(m.details).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a managed inventory-page-only response even before that additive page type is known locally', async () => {
+    m.details.mockResolvedValue({ status: 200, body: { ...details(), inventoryPageOnly: true } });
+    expect(await readSelectedDispatcherDetails(() => true)).toEqual({ status: 500, body: { error: 'dispatcher_details_invalid' } });
+  });
+
   it('rejects a selected helper-page-only envelope instead of presenting it as full Dispatcher Details', async () => {
     m.details.mockResolvedValue({ status: 200, body: { ...details(), helperPageOnly: true } });
     expect(await readSelectedDispatcherDetails(() => true)).toEqual({ status: 500, body: { error: 'dispatcher_details_invalid' } });

@@ -177,7 +177,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round(ctx.used / ctx.size * 100)) : null;
   const limits = session?.capabilities?.limits ? session.usage.limits : [];
   const skillReport = reportedSkillsFor(agent, session, details ? { orchestrator: details.providerId } : undefined);
-  const otherMachines = snapshot?.dispatcherPresence?.remotes;
+  const otherMachines = dispatcher && result.status === 'ok' && connected && !satellite?.needsPairing && !snapshotUnavailable
+    && satellite?.snapshotReceipt && !snapshot?.sessionPaused ? snapshot?.dispatcherPresence?.remotes : undefined;
   if (!readEnabled) return null;
   if (helpersOnly) {
     if (!inlineTarget || dispatcher || agent.kind !== 'durable') return null;
@@ -218,8 +219,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     </DetailsCard>}
     <RemoteConnectionsCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} dispatcher={dispatcher} open={open('connections')} onToggle={() => toggleCard('connections')} />
     {dispatcher && <DetailsCard id="other-machines" title="Other machines" summary={otherMachines ? otherMachinesSummary(otherMachines) : 'not shared here'} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
-      {(!connected || snapshotUnavailable) && <CardNote>Last host snapshot; these states may be stale.</CardNote>}
-      {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host} hasn’t shared its other machines here.</CardNote>}
+      {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host}’s Other machines list is unavailable until its current snapshot and Details access are confirmed. Earlier private peers are withheld.</CardNote>}
     </DetailsCard>}
     <RemoteActionsCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('actions')} readable={!snapshotUnavailable && !runtimeUnconfirmed}
       message={resultMessage(result.status)} onToggle={() => toggleCard('actions')} onRefused={() => setRetry((n) => n + 1)} />

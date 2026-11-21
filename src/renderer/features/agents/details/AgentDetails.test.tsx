@@ -301,7 +301,8 @@ describe('AgentDetails for a remote Dispatcher', () => {
     for (const card of ['changes', 'subagents', 'canvases', 'context', 'skills-mcp', 'session']) {
       expect(screen.queryByTestId(`details-card-${card}`)).not.toBeInTheDocument();
     }
-    expect(screen.getByTestId('other-machine-remote-peer')).toHaveTextContent('Studio on Desk');
+    expect(screen.queryByTestId('other-machine-remote-peer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld');
     // Keep the host response pending explicitly: Connections has its own loading copy.
     await waitFor(() => expect(hostRead).toHaveBeenCalledTimes(1));
     expect(hostRead).toHaveBeenCalledWith('sat', hostAgent.id);
@@ -318,7 +319,8 @@ describe('AgentDetails for a remote Dispatcher', () => {
       expect(screen.getByTestId(`details-card-${card}`)).not.toHaveTextContent('Loading');
     }
     expect(screen.getByTestId('details-card-settings')).toHaveTextContent('This host doesn’t share these settings.');
-    expect(screen.getByTestId('other-machine-remote-peer')).toHaveTextContent('Studio on Desk');
+    expect(screen.queryByTestId('other-machine-remote-peer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld');
     expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
     expect(screen.getByTestId('details-settings-remote')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add connection' })).not.toBeInTheDocument();
@@ -341,7 +343,7 @@ describe('AgentDetails for a remote Dispatcher', () => {
     render(<AgentDetails agent={remote} />);
     expect(screen.queryByTestId('details-card-session')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('details-card-other-machines-toggle'));
-    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Mini hasn’t shared its other machines here.');
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld.');
     expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
     expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Host offline');
   });
