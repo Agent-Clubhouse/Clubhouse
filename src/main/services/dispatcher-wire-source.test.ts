@@ -76,7 +76,9 @@ import { dispatcherRoleDisplayName } from '../../shared/dispatcher-name';
 vi.mock('./pty-manager', () => ({ write: vi.fn(), isRunning: vi.fn(() => true) }));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { buildToolKey, buildToolName } from './clubhouse-mcp/tool-registry';
+import { buildToolKey, buildToolName, callTool, getScopedToolList, refusalReasonOf, registerToolTemplate, _resetForTesting as resetTools } from './clubhouse-mcp/tool-registry';
+import { agentRegistry } from './agent-registry';
+import { setMcpCaller, _resetMcpCallGateForTesting } from './clubhouse-mcp/mcp-call-gate';
 import {
   rebuildPersistedBindings,
   registerPersistedBindingSource,
@@ -111,6 +113,16 @@ const optedOut = { orchestrate: true, connectToDispatcher: false };
 const key = (b: { agentId: string; targetId: string }) => `${b.agentId}->${b.targetId}`;
 const boundPairs = () => bindingManager.getAllBindings().map(key).sort();
 
+function wireToolsForCaller(agentId: string) {
+  const handler = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'sent' }] }));
+  registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, handler, {
+    grant: { actions: ['agent.message'], target: 'bound' },
+  });
+  agentRegistry.register(agentId, { projectPath, runtime: 'chat', orchestrator: 'claude-code' });
+  setMcpCaller(agentId, projectPath, null);
+  return handler;
+}
+
 function setAgents(p: string, agents: DurableAgentConfig[]): void {
   configs.set(p, agents);
   for (const listener of configListeners) listener(p);
@@ -142,6 +154,8 @@ beforeEach(() => {
   dispatcher.listeners.clear();
   projects.listeners.clear();
   bindingManager._resetForTesting();
+  resetTools();
+  _resetMcpCallGateForTesting();
   _resetPersistedBindingSourcesForTesting();
   _resetDispatcherWireSourceForTesting();
   projects.list = [
@@ -162,6 +176,9 @@ afterEach(() => {
   // Listeners outlive a test, so every watcher is stopped.
   for (const stop of stops.splice(0)) stop();
   vi.useRealTimers();
+  agentRegistry.untrack('durable_lead');
+  agentRegistry.untrack(DISPATCHER);
+  _resetMcpCallGateForTesting();
 });
 
 describe('dispatcherWiresForProject', () => {
@@ -262,7 +279,10 @@ describe('Dispatcher wire rebuild', () => {
     const toLead = () => bindingManager.getBindingsForAgent(DISPATCHER).find((b) => b.targetId === 'durable_lead')!;
     const fromLead = () => bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)!;
     expect(fromLead()).toMatchObject({ label: 'Dispatcher', targetName: 'Dispatcher' });
+    wireToolsForCaller('durable_lead');
     const before = fromLead();
+    const name = buildToolName(before, 'send_message');
+    const beforeDescription = getScopedToolList('durable_lead')[0].description;
 
     dispatcher.name = 'Rosie';
     const result = await rebuild();
@@ -272,8 +292,33 @@ describe('Dispatcher wire rebuild', () => {
     expect(fromLead()).toMatchObject({ label: 'Rosie', agentName: 'lead', targetName: 'Rosie' });
     expect(toLead()).toMatchObject({ agentName: 'Rosie' });
     expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
-    expect(buildToolName(fromLead(), 'send_message')).toBe(buildToolName({ ...fromLead(), label: 'Rosie' }, 'send_message'));
-    expect(buildToolName(fromLead(), 'send_message')).toMatch(/^clubhouse__Wardfall_Rosie_[a-z0-9]+__send_message$/);
+    expect(buildToolName(fromLead(), 'send_message')).toBe(name);
+    const [listed] = getScopedToolList('durable_lead');
+    expect(listed.name).toBe(name);
+    expect(listed.description).not.toBe(beforeDescription);
+    expect(listed.description).toContain('Rosie');
+    expect(listed.description).toContain('Wardfall');
+    expect(listed.description).toContain(DISPATCHER);
+  });
+
+  it('refuses a removed Dispatcher callable after the source recreates an identical wire (#3738)', async () => {
+    await rebuild();
+    const handler = wireToolsForCaller('durable_lead');
+    const original = bindingManager.getBindingsForAgent('durable_lead').find(b => b.targetId === DISPATCHER)!;
+    const name = buildToolName(original, 'send_message');
+    const args = { message: 'same message' };
+    const first = await callTool('durable_lead', name, args);
+    expect(first.isError).toBeFalsy();
+    bindingManager.unbind('durable_lead', DISPATCHER);
+    expect(refusalReasonOf(await callTool('durable_lead', name, args))).toBe('no_binding');
+    await rebuild();
+    const replacement = bindingManager.getBindingsForAgent('durable_lead').find(b => b.targetId === DISPATCHER)!;
+    expect(replacement).not.toBe(original);
+    const newName = buildToolName(replacement, 'send_message');
+    expect(newName).not.toBe(name);
+    expect(refusalReasonOf(await callTool('durable_lead', name, args))).toBe('no_binding');
+    expect(await callTool('durable_lead', newName, args)).toEqual(first);
+    expect(handler).toHaveBeenCalledTimes(2);
   });
 
   it('a rename alone makes the watcher rebuild the wires (#3053)', async () => {
@@ -539,8 +584,11 @@ describe('watchDispatcherWires', () => {
     const { onChange, flush } = await watched();
     const toLead = () => bindingManager.getBindingsForAgent(DISPATCHER).find((b) => b.targetId === 'durable_lead')!;
     const fromLead = () => bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)!;
+    wireToolsForCaller(DISPATCHER);
     const binding = toLead();
     const toolKey = buildToolKey(binding);
+    const name = buildToolName(binding, 'send_message');
+    const beforeDescription = getScopedToolList(DISPATCHER).find(t => t.name === name)!.description;
 
     setProjects(projects.list.map((p) => (p.path === projectPath ? { ...p, displayName: 'Renamed' } : p)));
     await flush();
@@ -549,8 +597,12 @@ describe('watchDispatcherWires', () => {
     expect(toLead()).toBe(binding);
     expect(toLead().projectName).toBe('Renamed');
     expect(fromLead().projectName).toBe('Renamed');
-    expect(buildToolKey(toLead())).not.toBe(toolKey);
-    expect(buildToolKey(toLead())).toMatch(/^Renamed_lead_/);
+    expect(buildToolKey(toLead())).toBe(toolKey);
+    const listed = getScopedToolList(DISPATCHER).find(t => t.name === name)!;
+    expect(listed.description).not.toBe(beforeDescription);
+    expect(listed.description).toContain('Renamed');
+    expect(listed.description).toContain('lead');
+    expect(listed.description).not.toContain('Wardfall');
 
     // Committed: a later unrelated write does not rebuild again.
     setAgents(projectPath, [...configs.get(projectPath)!]);

@@ -67,6 +67,13 @@ function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetI
   return { label: 'Test', ...overrides };
 }
 
+// Callable identities belong to managed binding lifetimes, not reconstructed descriptors.
+function boundBinding(descriptor: McpBinding): McpBinding {
+  const binding = bindingManager.getBindingsForAgent(descriptor.agentId).find(b => b.targetId === descriptor.targetId);
+  if (!binding) throw new Error(`Missing test binding: ${descriptor.agentId} -> ${descriptor.targetId}`);
+  return binding;
+}
+
 describe('ToolRegistry', () => {
   beforeEach(() => {
     _resetForTesting();
@@ -130,6 +137,59 @@ describe('ToolRegistry', () => {
         agentId: 'a1', targetId: 'widget.123', targetKind: 'browser',
       });
       expect(buildToolKey(binding)).toBe('widget_123');
+    });
+
+    it('keeps group callable identity across live display changes and replaces it on rebind (#3738)', () => {
+      const target = { targetId: 'gp_3738', targetKind: 'group-project' as const, label: 'Old', targetName: 'Old' };
+      bindingManager.bind('agent-1', target);
+      const original = bindingManager.getBindingsForAgent('agent-1')[0];
+      const key = buildToolKey(original);
+      bindingManager.updateBinding('agent-1', target.targetId, { label: 'New', targetName: 'New', projectName: 'New Project' });
+      expect(original.targetName).toBe('New');
+      expect(buildToolKey(original)).toBe(key);
+      bindingManager.unbind('agent-1', target.targetId);
+      bindingManager.bind('agent-1', target);
+      expect(buildToolKey(bindingManager.getBindingsForAgent('agent-1')[0])).not.toBe(key);
+    });
+
+    it('isolates real short-hash collisions on different remote machines (#3738)', async () => {
+      const targets = [
+        'same-agent@00:00:00:00:00:00:00:00:00:00:00:00:00:00:02:36',
+        'same-agent@00:00:00:00:00:00:00:00:00:00:00:00:00:00:04:41',
+      ];
+      expect(shortHash(targets[0])).toBe(shortHash(targets[1]));
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+      for (const targetId of targets) bindingManager.bind('agent-1', { targetId, targetKind: 'agent', label: 'Same', targetName: 'Same' });
+      const tools = getScopedToolList('agent-1');
+      expect(tools).toHaveLength(2);
+      expect(new Set(tools.map(t => t.name)).size).toBe(2);
+      for (const tool of tools) expect((await callTool('agent-1', tool.name, { message: 'hello' })).isError).toBeFalsy();
+      expect(forwarded.calls.map(call => call[1])).toEqual(targets);
+    });
+
+    it('bounds complete built-in tool names without truncating callable identity (#3738)', () => {
+      for (const targetKind of ['agent', 'group-project'] as const) {
+        bindingManager.bind('agent-1', { targetId: targetKind, targetKind, label: 'robin'.repeat(1000), projectName: 'application'.repeat(1000) });
+        const binding = bindingManager.getBindingsForAgent('agent-1').find(b => b.targetId === targetKind)!;
+        const name = buildToolName(binding, targetKind === 'agent' ? 'check_connectivity' : 'get_project_info');
+        expect(name.length).toBeLessThanOrEqual(targetKind === 'agent' ? 64 : 58);
+        expect(name).toMatch(/^[A-Za-z0-9_]+$/);
+        const key = parseToolName(name)!.toolKey;
+        expect(key).toMatch(/[a-z0-9]{25}_[a-z0-9]+$/);
+      }
+    });
+
+    it('never reuses a callable through repeated identical binding churn (#3738)', () => {
+      const keys = new Set<string>();
+      const target = { targetId: 'same-agent', targetKind: 'agent' as const, label: 'Same' };
+      for (let i = 0; i < 1000; i++) {
+        bindingManager.bind('agent-1', target);
+        const key = buildToolKey(bindingManager.getBindingsForAgent('agent-1')[0]);
+        expect(keys.has(key)).toBe(false);
+        keys.add(key);
+        bindingManager.unbindAgent('agent-1');
+      }
+      expect(bindingManager.getAllBindings()).toHaveLength(0);
     });
 
     it('builds key with name and hash for group-project targets', () => {
@@ -235,6 +295,33 @@ describe('ToolRegistry', () => {
       expect(getScopedToolList('agent-1')).toHaveLength(0);
     });
 
+    it('bounds and cleans only public target display metadata in descriptions (#3738)', () => {
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+      const far = `durable@${Array(16).fill('bb').join(':')}`;
+      bindingManager.bind('agent-1', {
+        targetId: far, targetKind: 'agent', label: 'Public label',
+        targetName: 'robin\n\t\u001b'.repeat(100), projectName: 'Public Project\r'.repeat(100),
+      });
+      const [tool] = getScopedToolList('agent-1');
+      const publicData = tool.description.split('\n\nTarget: ')[1];
+      const target = JSON.parse(publicData);
+      expect(Object.keys(target)).toEqual(['name', 'project', 'id']);
+      expect(target.id).toBe(far);
+      expect(target.name.length).toBeLessThanOrEqual(128);
+      expect(target.project.length).toBeLessThanOrEqual(128);
+      expect(publicData.length).toBeLessThanOrEqual(1100);
+      expect(target.name + target.project).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
+      const binding = bindingManager.getBindingsForAgent('agent-1')[0];
+      Object.assign(binding, { projectPath: '/private/project', privateConfig: 'private-marker' });
+      bindingManager.updateBinding('agent-1', far, { targetName: 'Learned Name', projectName: 'Learned Project' });
+      const [updated] = getScopedToolList('agent-1');
+      expect(updated.name).toBe(tool.name);
+      expect(updated.description).toContain('Learned Name');
+      expect(updated.description).toContain('Learned Project');
+      expect(updated.description).not.toContain('/private/project');
+      expect(updated.description).not.toContain('private-marker');
+    });
+
     it('returns tools for bound targets with human-readable names', () => {
       registerToolTemplate('agent', 'send_message', {
         description: 'Send message',
@@ -254,10 +341,10 @@ describe('ToolRegistry', () => {
 
       const tools = getScopedToolList('agent-1');
       expect(tools).toHaveLength(2);
-      const expectedKey = buildToolKey(makeBinding({
+      const expectedKey = buildToolKey(boundBinding(makeBinding({
         agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
         targetName: 'scrappy-robin', projectName: 'myapp',
-      }));
+      })));
       expect(tools[0].name).toBe(`clubhouse__${expectedKey}__send_message`);
       expect(tools[1].name).toBe(`clubhouse__${expectedKey}__get_status`);
     });
@@ -355,7 +442,7 @@ describe('ToolRegistry', () => {
       });
 
       const tools = getScopedToolList('agent-1');
-      expect(tools[0].description).toBe('Send a message');
+      expect(tools[0].description).toBe('Send a message\n\nTarget: {"name":"Agent 2","project":"","id":"agent-2"}');
       expect(tools[0].description).not.toContain('WIRE INSTRUCTIONS');
     });
 
@@ -475,10 +562,10 @@ describe('ToolRegistry', () => {
         targetName: 'robin', projectName: 'app',
       });
 
-      const toolName = buildToolName(makeBinding({
+      const toolName = buildToolName(boundBinding(makeBinding({
         agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
         targetName: 'robin', projectName: 'app',
-      }), 'send_message');
+      })), 'send_message');
 
       const result = await callTool('agent-1', toolName, { message: 'hello' });
       expect(result.isError).toBeFalsy();
@@ -492,7 +579,7 @@ describe('ToolRegistry', () => {
       registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, handler);
       const far = `agent-9@${Array(16).fill('bb').join(':')}`;
       bindingManager.bind('agent-1', { targetId: far, targetKind: 'agent', label: 'Far', targetName: 'far' });
-      const toolName = buildToolName(makeBinding({ agentId: 'agent-1', targetId: far, targetKind: 'agent', targetName: 'far' }), 'send_message');
+      const toolName = buildToolName(boundBinding(makeBinding({ agentId: 'agent-1', targetId: far, targetKind: 'agent', targetName: 'far' })), 'send_message');
       forwarded.calls.length = 0;
       const result = await callTool('agent-1', toolName, { message: 'hello' });
       expect(result.content[0].text).toBe('sent there');
@@ -506,6 +593,119 @@ describe('ToolRegistry', () => {
       expect(forwarded.calls).toHaveLength(1);
     });
 
+    it.each(['claude-code', 'codex-cli'])('keeps an issued callable through actual name hydration on %s (#3738)', async (orchestrator) => {
+      registerBuiltinProviders();
+      agentRegistry.register('agent-1', { runtime: 'chat', projectPath: '/test', orchestrator });
+      try {
+        registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+        const id = 'durable_1795076596637_iq1wwx';
+        const far = `${id}@${Array(16).fill('bb').join(':')}`;
+        bindingManager.bind('agent-1', { targetId: far, targetKind: 'agent', label: id, targetName: id });
+        const original = bindingManager.getBindingsForAgent('agent-1')[0];
+        const tools = getScopedToolList('agent-1').filter(t => t.name.endsWith('__send_message'));
+        expect(tools).toHaveLength(1);
+        const name = tools[0].name;
+        const args = { message: 'same delivery', task_id: 'stable-task' };
+        const first = await callTool('agent-1', name, args);
+        expect(first.isError).toBeFalsy();
+        expect(bindingManager.updateBinding('agent-1', far, { label: 'reverse-B', targetName: 'reverse-B' })).toBe(true);
+        expect(bindingManager.getBindingsForAgent('agent-1')[0]).toBe(original);
+        expect(original.targetId).toBe(far);
+        // A fixed-list client repeats the original name without fetching another list.
+        expect(await callTool('agent-1', name, args)).toEqual(first);
+        expect(forwarded.calls).toEqual([
+          ['agent-1', far, id, 'send_message', args],
+          ['agent-1', far, 'reverse-B', 'send_message', args],
+        ]);
+        expect(getScopedToolList('agent-1').filter(t => t.name.endsWith('__send_message')).map(t => t.name)).toEqual([name]);
+        expect(getScopedToolList('agent-1')[0].description).toContain('reverse-B');
+        bindingManager.updateBinding('agent-1', far, { projectName: 'Renamed Project', agentName: 'Renamed Caller' });
+        expect(getScopedToolList('agent-1').filter(t => t.name.endsWith('__send_message')).map(t => t.name)).toEqual([name]);
+        expect(await callTool('agent-1', name, args)).toEqual(first);
+      } finally {
+        agentRegistry.untrack('agent-1');
+      }
+    });
+
+    describe('binding lifetime controls (#3738)', () => {
+      const id = 'durable_1795076596637_iq1wwx';
+      const far = `${id}@${Array(16).fill('bb').join(':')}`;
+      const target = { targetId: far, targetKind: 'agent' as const, label: id, targetName: id };
+      const args = { message: 'same delivery', task_id: 'stable-task' };
+      const listed = () => getScopedToolList('agent-1').filter(t => t.name.endsWith('__send_message')).map(t => t.name);
+      beforeEach(() => {
+        registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn(), { grant: { actions: ['agent.message'], target: 'bound' } });
+        bindingManager.bind('agent-1', target);
+      });
+
+      it('preserves the same object and callable across repeated rebuild binds', async () => {
+        const original = bindingManager.getBindingsForAgent('agent-1')[0];
+        const [name] = listed();
+        for (const learned of ['reverse-B', 'Renamed Again']) {
+          expect(bindingManager.bind('agent-1', { ...target, label: learned, targetName: learned })).toBe(false);
+          bindingManager.updateBinding('agent-1', far, { label: learned, targetName: learned, projectName: learned });
+          expect(bindingManager.getBindingsForAgent('agent-1')[0]).toBe(original);
+          expect(listed()).toEqual([name]);
+          expect((await callTool('agent-1', name, args)).isError).toBeFalsy();
+        }
+        expect(forwarded.calls).toHaveLength(2);
+      });
+
+      it.each(['wire', 'target', 'caller'])('never revives a removed callable after %s removal and identical replacement', async (removal) => {
+        const [name] = listed();
+        const original = bindingManager.getBindingsForAgent('agent-1')[0];
+        expect((await callTool('agent-1', name, args)).isError).toBeFalsy();
+        if (removal === 'wire') bindingManager.unbind('agent-1', far);
+        else if (removal === 'target') bindingManager.unbindTarget(far);
+        else bindingManager.unbindAgent('agent-1');
+        expect(refusalReasonOf(await callTool('agent-1', name, args))).toBe('no_binding');
+        bindingManager.bind('agent-1', target);
+        expect(bindingManager.getBindingsForAgent('agent-1')[0]).not.toBe(original);
+        expect(listed()).toHaveLength(1);
+        expect(listed()[0]).not.toBe(name);
+        expect(refusalReasonOf(await callTool('agent-1', name, args))).toBe('no_binding');
+        expect((await callTool('agent-1', listed()[0], args)).isError).toBeFalsy();
+        expect(forwarded.calls).toHaveLength(2);
+      });
+
+      it('checks current wire switches, caller access and grants after hydration', async () => {
+        const [name] = listed();
+        expect((await callTool('agent-1', name, args)).isError).toBeFalsy();
+        bindingManager.updateBinding('agent-1', far, { label: 'reverse-B', targetName: 'reverse-B' });
+        bindingManager.setDisabledTools('agent-1', far, ['send_message']);
+        expect(refusalReasonOf(await callTool('agent-1', name, args))).toBe('tool_denied');
+        bindingManager.setDisabledTools('agent-1', far, []);
+        await updateAgentGrantChanges('agent-1', () => ({ changes: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'off' }] }));
+        try {
+          expect(refusalReasonOf(await callTool('agent-1', name, args))).toBe('no_grant');
+        } finally { await updateAgentGrantChanges('agent-1', () => undefined); }
+        gate.access = 'closed';
+        try { expect((await callTool('agent-1', name, args)).isError).toBe(true); }
+        finally { gate.access = 'open'; }
+        expect(forwarded.calls).toHaveLength(1);
+        expect((await callTool('agent-1', name, args)).isError).toBeFalsy();
+        expect(forwarded.calls).toHaveLength(2);
+      });
+
+      it('isolates same display names and durable IDs on different hosts and callers', async () => {
+        const other = `${id}@${Array(16).fill('cc').join(':')}`;
+        bindingManager.bind('agent-1', { ...target, targetId: other, projectName: 'Other Project' });
+        bindingManager.bind('agent-3', target);
+        const names = listed();
+        const descriptions = getScopedToolList('agent-1').map(t => t.description);
+        expect(descriptions[0]).toContain(far);
+        expect(descriptions[1]).toContain(other);
+        expect(descriptions[1]).toContain('Other Project');
+        expect(new Set(names).size).toBe(2);
+        for (const name of names) expect((await callTool('agent-1', name, args)).isError).toBeFalsy();
+        expect(forwarded.calls.map(call => call[1])).toEqual([far, other]);
+        expect(refusalReasonOf(await callTool('agent-3', names[0], args))).toBe('no_binding');
+        bindingManager.unbind('agent-1', far);
+        expect(refusalReasonOf(await callTool('agent-1', names[0], args))).toBe('no_binding');
+        expect(forwarded.calls).toHaveLength(2);
+      });
+    });
+
     it('uses a remote Dispatcher display label without changing its callable name', async () => {
       registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
       const far = `controller@${Array(16).fill('bb').join(':')}`;
@@ -513,7 +713,7 @@ describe('ToolRegistry', () => {
       try {
         bindingManager.bind('agent-1', { targetId: far, targetKind: 'agent', label: 'Tael on Desk', targetName: 'Dispatcher controller', projectName: 'Desk' });
         const binding = makeBinding({ agentId: 'agent-1', targetId: far, targetKind: 'agent', targetName: 'Dispatcher controller', projectName: 'Desk' });
-        const tool = buildToolName(binding, 'send_message');
+        const tool = buildToolName(boundBinding(binding), 'send_message');
         forwarded.calls.length = 0;
         await callTool('agent-1', tool, { message: 'hello' });
         expect(forwarded.calls[0]).toEqual(['agent-1', far, 'Tael on Desk', 'send_message', { message: 'hello' }]);
@@ -551,10 +751,10 @@ describe('ToolRegistry', () => {
         targetName: 'robin', projectName: 'app',
       });
 
-      const key = buildToolKey(makeBinding({
+      const key = buildToolKey(boundBinding(makeBinding({
         agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
         targetName: 'robin', projectName: 'app',
-      }));
+      })));
 
       const result = await callTool('agent-1', `clubhouse__${key}__nonexistent`, {});
       expect(result.isError).toBe(true);
@@ -578,10 +778,10 @@ describe('ToolRegistry', () => {
         targetName: 'robin', projectName: 'app',
       });
 
-      const toolName = buildToolName(makeBinding({
+      const toolName = buildToolName(boundBinding(makeBinding({
         agentId: 'agent-1', targetId: 'agent.2', targetKind: 'agent',
         targetName: 'robin', projectName: 'app',
-      }), 'send_message');
+      })), 'send_message');
 
       const result = await callTool('agent-1', toolName, { message: 'hi' });
       expect(result.isError).toBeFalsy();
@@ -599,9 +799,9 @@ describe('ToolRegistry', () => {
       bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
       // agent-3 is NOT bound to agent-2
 
-      const toolName = buildToolName(makeBinding({
+      const toolName = buildToolName(boundBinding(makeBinding({
         agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2',
-      }), 'send_message');
+      })), 'send_message');
 
       const result = await callTool('agent-3', toolName, {});
       expect(result.isError).toBe(true);
@@ -619,9 +819,9 @@ describe('ToolRegistry', () => {
 
       bindingManager.bind('agent-1', { targetId: 'gp_123', targetKind: 'group-project', label: 'GP', targetName: 'My Project' });
 
-      const toolName = buildToolName(makeBinding({
+      const toolName = buildToolName(boundBinding(makeBinding({
         agentId: 'agent-1', targetId: 'gp_123', targetKind: 'group-project', targetName: 'My Project',
-      }), 'list_members');
+      })), 'list_members');
 
       const result = await callTool('agent-1', toolName, {});
       expect(result.isError).toBeFalsy();
@@ -649,10 +849,10 @@ describe('ToolRegistry', () => {
         targetName: 'robin', projectName: 'app',
       });
 
-      const toolName = buildToolName(makeBinding({
+      const toolName = buildToolName(boundBinding(makeBinding({
         agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
         targetName: 'robin', projectName: 'app',
-      }), 'send_message');
+      })), 'send_message');
 
       const result = await callTool('agent-1', toolName, {});
       expect(result.isError).toBe(true);
@@ -683,10 +883,10 @@ describe('ToolRegistry', () => {
         targetName: 'robin', projectName: 'app',
       });
 
-      const toolName = buildToolName(makeBinding({
+      const toolName = buildToolName(boundBinding(makeBinding({
         agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
         targetName: 'robin', projectName: 'app',
-      }), 'send_message');
+      })), 'send_message');
 
       const result = await callTool('agent-1', toolName, { message: 123 });
       expect(result.isError).toBe(true);
@@ -735,18 +935,18 @@ describe('ToolRegistry', () => {
       expect(getConnectionToolCatalog('agent-1', target, 'agent').tools.filter((t) => t.available).map((t) => t.suffix)).toEqual(['send_message', 'send_file']);
       for (const state of ['working', 'asleep', 'offline', 'unknown']) {
         presence.remotes = [{ machineId: machine, address: target, state, lastSeen: '2026-11-17T09:00:00Z', link: { state: 'paused' } }];
-        const result = await callTool('agent-1', buildToolName(binding, 'get_status'), {});
+        const result = await callTool('agent-1', buildToolName(boundBinding(binding), 'get_status'), {});
         expect(JSON.parse(result.content[0].text!)).toMatchObject({ source: 'local_presence', stale: true, state, lastSeen: '2026-11-17T09:00:00Z' });
       }
       expect(forwarded.calls).toEqual([]);
       expect(handler).not.toHaveBeenCalled();
       await updateAgentGrantChanges('agent-1', () => ({ changes: [{ action: 'agent.read', target: { kind: 'connected' }, mode: 'off' }] }));
       try {
-        expect((await callTool('agent-1', buildToolName(binding, 'get_status'), {})).isError).toBe(true);
+        expect((await callTool('agent-1', buildToolName(boundBinding(binding), 'get_status'), {})).isError).toBe(true);
         expect(forwarded.calls).toEqual([]);
       } finally { await updateAgentGrantChanges('agent-1', () => undefined); }
       bindingManager.setDisabledTools('agent-1', target, ['get_status']);
-      expect((await callTool('agent-1', buildToolName(binding, 'get_status'), {})).isError).toBe(true);
+      expect((await callTool('agent-1', buildToolName(boundBinding(binding), 'get_status'), {})).isError).toBe(true);
       expect(forwarded.calls).toEqual([]);
       remoteController.id = 'replacement';
       expect(getScopedToolList('agent-1').map((t) => t.name.split('__').pop())).toContain('read_output');
@@ -866,7 +1066,7 @@ describe('ToolRegistry', () => {
         { suffix: 'wake_agent', description: definition.description, available: true },
       ]);
       for (const args of [{}, { wakeOn: true }, { wakeOn: true, binding: { wakeOn: true }, wire: { wakeOn: true } }]) {
-        const result = await callTool(binding.agentId, buildToolName(binding, 'wake_agent'), args);
+        const result = await callTool(binding.agentId, buildToolName(boundBinding(binding), 'wake_agent'), args);
         expect(refusalReasonOf(result)).toBe('tool_denied');
       }
       expect(handler).not.toHaveBeenCalled();
@@ -882,7 +1082,7 @@ describe('ToolRegistry', () => {
       };
       bindingManager.bind(binding.agentId, binding);
       expect(getConnectionToolCatalog(binding.agentId, binding.targetId, binding.targetKind).tools[0].available).toBe(true);
-      const result = await callTool(binding.agentId, buildToolName(binding, 'get_status'), {
+      const result = await callTool(binding.agentId, buildToolName(boundBinding(binding), 'get_status'), {
         wakeOn: true, binding: { wakeOn: true }, wire: { wakeOn: true },
       });
       expect(refusalReasonOf(result)).toBe('no_grant');
@@ -1012,7 +1212,7 @@ describe('ToolRegistry', () => {
       const binding = { targetId, targetKind, label: 'Target', targetName: 'target', projectName: 'app' };
       bindingManager.bind('agent-1', binding);
       bindingManager.setDisabledTools('agent-1', targetId, [suffix]);
-      const name = (tool: string) => buildToolName({ agentId: 'agent-1', ...binding }, tool);
+      const name = (tool: string) => buildToolName(boundBinding({ agentId: 'agent-1', ...binding }), tool);
 
       // Refused before the arguments are checked: the reason is the wire, not the call.
       const refused = await callTool('agent-1', name(suffix), {});
@@ -1045,7 +1245,7 @@ describe('ToolRegistry', () => {
       registerToolTemplate('agent', 'send_message', def, handler);
       const binding = { targetId: 'agent-2', targetKind: 'agent' as const, label: 'A2', targetName: 'robin', projectName: 'app' };
       bindingManager.bind('agent-1', binding);
-      const name = buildToolName({ agentId: 'agent-1', ...binding }, 'send_message');
+      const name = buildToolName(boundBinding({ agentId: 'agent-1', ...binding }), 'send_message');
 
       expect((await callTool('agent-1', name, { text: 'x' })).isError).toBeUndefined();
       bindingManager.setDisabledTools('agent-1', 'agent-2', ['send_message']);
@@ -1063,8 +1263,8 @@ describe('ToolRegistry', () => {
       bindingManager.bind('agent-1', second);
       bindingManager.setDisabledTools('agent-1', 'agent-2', ['send_message']);
 
-      expect((await callTool('agent-1', buildToolName({ agentId: 'agent-1', ...first }, 'send_message'), { text: 'x' })).isError).toBe(true);
-      expect((await callTool('agent-1', buildToolName({ agentId: 'agent-1', ...second }, 'send_message'), { text: 'x' })).isError).toBeUndefined();
+      expect((await callTool('agent-1', buildToolName(boundBinding({ agentId: 'agent-1', ...first }), 'send_message'), { text: 'x' })).isError).toBe(true);
+      expect((await callTool('agent-1', buildToolName(boundBinding({ agentId: 'agent-1', ...second }), 'send_message'), { text: 'x' })).isError).toBeUndefined();
     });
   });
 
@@ -1159,9 +1359,9 @@ describe('ToolRegistry', () => {
       bindingManager.bind('agent-1', {
         targetId: 'gp_test_4', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });
-      const toolName = buildToolName(makeBinding({
+      const toolName = buildToolName(boundBinding(makeBinding({
         agentId: 'agent-1', targetId: 'gp_test_4', targetKind: 'group-project', targetName: 'TestProj',
-      }), 'wake_agent');
+      })), 'wake_agent');
       const result = await callTool('agent-1', toolName, {});
       expect(result.content[0].text).toContain('group_project.lead');
       expect(refusalReasonOf(result)).toBe('no_grant');
@@ -1175,7 +1375,7 @@ describe('ToolRegistry', () => {
       await grantLead('gp_test_5');
       bindingManager.bind('agent-1', { targetId: 'gp_test_5', targetKind: 'group-project', label: 'GP', targetName: 'TestProj' });
       bindingManager.setDisabledTools('agent-1', 'gp_test_5', ['wake_agent', 'clear_agent']);
-      const name = (tool: string) => buildToolName(makeBinding({ agentId: 'agent-1', targetId: 'gp_test_5', targetKind: 'group-project', targetName: 'TestProj' }), tool);
+      const name = (tool: string) => buildToolName(boundBinding(makeBinding({ agentId: 'agent-1', targetId: 'gp_test_5', targetKind: 'group-project', targetName: 'TestProj' })), tool);
       for (const tool of ['wake_agent', 'clear_agent']) {
         const result = await callTool('agent-1', name(tool), { target_agent_id: 'agent-2' });
         expect(result.content[0].text).toBe(`${tool} is turned off on this wire.`);
@@ -1412,8 +1612,8 @@ describe('ToolRegistry', () => {
       const binding = { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent' as const, label: 'A2', targetName: 'robin', projectName: 'app' };
       agentRegistry.register('agent-2', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'pty' });
       bindingManager.bind('agent-1', binding);
-      const connect = buildToolName(binding, 'connect_helper');
-      const send = buildToolName(binding, 'send_message');
+      const connect = buildToolName(boundBinding(binding), 'connect_helper');
+      const send = buildToolName(boundBinding(binding), 'send_message');
 
       expect(names('agent-1')).toEqual([send]);
       const refused = await callTool('agent-1', connect, {});
@@ -1627,7 +1827,7 @@ describe('ToolRegistry', () => {
         expect(suffixes('agent-1')).toEqual(['get_status', 'send_message']);
         const binding = bindingManager.getBindingsForAgent('agent-1')[0];
         for (const suffix of ['wake_agent', 'sleep_agent']) {
-          const refused = await callTool('agent-1', buildToolName(binding, suffix), {});
+          const refused = await callTool('agent-1', buildToolName(boundBinding(binding), suffix), {});
           expect(refused).toEqual({ content: [{ type: 'text', text: ONLY }], isError: true });
         }
         expect(handler).not.toHaveBeenCalled();

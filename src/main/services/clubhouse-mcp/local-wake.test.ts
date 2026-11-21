@@ -43,9 +43,14 @@ import { AUTOMATIC_CONNECTION_SWITCHES, EVERY_SWITCH_ON, type StartingSwitches }
 import type { McpBinding } from './types';
 
 const wire = (agentId: string, targetId: string): McpBinding => ({ agentId, targetId, targetKind: 'agent', label: targetId, targetName: targetId, projectName: 'app' });
+const boundWire = (agentId: string, targetId: string): McpBinding => {
+  const binding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
+  if (!binding) throw new Error(`Missing test wire: ${agentId} -> ${targetId}`);
+  return binding;
+};
 const suffixes = (agentId: string, targetId: string) =>
-  getScopedToolList(agentId).filter((t) => t.name.startsWith(`${buildToolName(wire(agentId, targetId), '')}`)).map((t) => t.name.split('__').pop());
-const call = (agentId: string, targetId: string, suffix: string, args: Record<string, unknown> = {}) => callTool(agentId, buildToolName(wire(agentId, targetId), suffix), args);
+  getScopedToolList(agentId).filter((t) => t.name.startsWith(`${buildToolName(boundWire(agentId, targetId), '')}`)).map((t) => t.name.split('__').pop());
+const call = (agentId: string, targetId: string, suffix: string, args: Record<string, unknown> = {}) => callTool(agentId, buildToolName(boundWire(agentId, targetId), suffix), args);
 const WAKE_ON = { kind: 'connected' as const, wakeOn: true };
 let stop: () => void = () => {};
 
@@ -131,7 +136,7 @@ describe('wake on a local connection (#3215)', () => {
     expect(refusalReasonOf(asked)).toBe('ask_first');
     const wake = listToolGrants().find((tool) => tool.kind === 'agent' && tool.name === 'wake_agent');
     if (!wake?.grant || wake.grant === 'plugin') throw new Error('Wake grant unavailable');
-    const name = buildToolName(wire('a', 'b'), 'wake_agent');
+    const name = buildToolName(boundWire('a', 'b'), 'wake_agent');
     const targets = await resolveArgTargets('a', wake.grant, {});
     const context = grantApprovalContext('a', name, {}, wake.grant, targets, { binding: wire('a', 'b') });
     expect(ask.askFirst).toHaveBeenCalledWith('a', name, {}, [{ action: 'agent.wake', where: 'an agent you are connected to' }], context);
