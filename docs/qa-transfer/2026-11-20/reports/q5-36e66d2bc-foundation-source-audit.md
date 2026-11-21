@@ -67,6 +67,22 @@ The known gaps acknowledged by the owner are not counted as findings: sparse row
 - The "hole spill" today is page partitioning (256 attempts per page). The contract's hot-detail budget and archive addressing are not implemented, which is a known gap.
 - `boundedId` permits DEL (0x7f). That's harmless here, but align it with the other identity validators.
 
-## Pending
+## Evidence verification (`origin/auto-reset-policy-design/q5-ledger-evidence` @ `02cc252422b25e305dd3b822a441d16ffb3a7266`, tree `b5d49b2b…`)
 
-Artifact verification against the owner's portable proof (36 tests in 3 files, root tsc 0, scoped lint 0), bound to the exact head. That waits for the ref.
+- **What's being checked:** the evidence commit is the tested source `36e66d2bc` plus `docs/evidence/q5-foundation/` only, and no other path changes. The tested source is `36e66d2bc`, not the evidence commit.
+- **Manifest:** `manifest.json` lists 6 receipts. For each, the SHA256 of the receipt and of the raw output **matches the committed blob**.
+- **Per receipt:**
+  - the head is the same before and after (`922542843` or `36e66d2bc`);
+  - the trees are `d91c96c7` and `3d1d5537` respectively;
+  - status is clean before and after, and `sealEqual` is true;
+  - all **14** recorded source SHA256s equal the blobs at that head, with 0 mismatches.
+- **Results:**
+
+| Head | Tests | Types | Lint |
+| --- | --- | --- | --- |
+| `922542843` | 3 files, 34 passed, exit 0 | exit 0 | **exit 1** (`no-control-regex` in `state.ts`). Preserved as the prior failure. |
+| `36e66d2bc` | 3 files, **36 passed**, exit 0 | exit 0 | exit 0 |
+
+- **Between the two heads:** `922542843 → 36e66d2bc` changes one line of `state.ts`, replacing the control-character regex with the `charCodeAt` check, and adds 46 test lines (hole spill and rollover).
+- **Diff-check warnings:** the trailing blank lines in the three `raw.txt` files are preserved artifacts. No source whitespace exception follows from them.
+- **Scope:** bounded foundation proof only. Findings F1–F4 and the known gaps stand, and nothing here is feature acceptance or product-latency proof.
