@@ -122,6 +122,12 @@ function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetI
   return { label: 'Test', targetKind: 'group-project', ...overrides };
 }
 
+function groupToolName(descriptor: McpBinding, suffix: string): string {
+  const live = bindingManager.getBindingsForAgent(descriptor.agentId).find(b => b.targetId === descriptor.targetId);
+  if (!live) throw new Error(`Missing test binding: ${descriptor.agentId} -> ${descriptor.targetId}`);
+  return buildToolName(live, suffix);
+}
+
 describe('GroupProjectTools', () => {
   beforeEach(() => {
     grantFx.changes.clear();
@@ -264,7 +270,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const toolName = buildToolName(binding, 'list_members');
+    const toolName = groupToolName(binding, 'list_members');
     const result = await callTool('agent-1', toolName, {});
 
     expect(result.isError).toBeFalsy();
@@ -279,7 +285,7 @@ describe('GroupProjectTools', () => {
     rosterFx.describe.mockResolvedValueOnce({ status: 'available', source: 'live', complete: false, stale: 'offline', members: [
       { agentId: 'remote', key: 'remote@other', machine: 'other', label: 'Twin', machineLabel: 'MBP', thisComputer: false },
     ] } as never);
-    const result = await callTool('agent-1', buildToolName(makeBinding({ agentId: 'agent-1', targetId: 'gp_roster', targetName: 'Roster' }), suffix), {});
+    const result = await callTool('agent-1', groupToolName(makeBinding({ agentId: 'agent-1', targetId: 'gp_roster', targetName: 'Roster' }), suffix), {});
     const body = JSON.parse(result.content[0].text!);
     const members = Array.isArray(body) ? body : body.members;
     expect(members).toEqual([expect.objectContaining({ address: 'remote@other', name: 'Twin', computer: 'MBP', status: 'unknown' })]);
@@ -295,7 +301,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const toolName = buildToolName(binding, 'post_bulletin');
+    const toolName = groupToolName(binding, 'post_bulletin');
     const result = await callTool('agent-1', toolName, { topic: 'progress', body: 'Done with step 1', urgent: true });
 
     expect(result.isError).toBeFalsy();
@@ -314,7 +320,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const toolName = buildToolName(binding, 'post_bulletin');
+    const toolName = groupToolName(binding, 'post_bulletin');
     const result = await callTool('agent-1', toolName, { topic: 'system', body: 'hack' });
 
     expect(result.isError).toBe(true);
@@ -324,7 +330,7 @@ describe('GroupProjectTools', () => {
   it('post_bulletin posts to an existing channel of any name, but names a new one plainly (#3362)', async () => {
     bindingManager.bind('agent-1', { targetId: 'gp_123', targetKind: 'group-project', label: 'GP', agentName: 'robin' });
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const postName = buildToolName(binding, 'post_bulletin');
+    const postName = groupToolName(binding, 'post_bulletin');
     // A channel made before the rule (by a person, or an older build).
     await getBulletinBoard('gp_123').postMessage('user', 'release notes', 'kickoff');
 
@@ -348,11 +354,11 @@ describe('GroupProjectTools', () => {
 
     // Post some messages first
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const postName = buildToolName(binding, 'post_bulletin');
+    const postName = groupToolName(binding, 'post_bulletin');
     await callTool('agent-1', postName, { topic: 'updates', body: 'msg1' });
     await callTool('agent-1', postName, { topic: 'updates', body: 'msg2' });
 
-    const readName = buildToolName(binding, 'read_bulletin');
+    const readName = groupToolName(binding, 'read_bulletin');
     const result = await callTool('agent-1', readName, {});
 
     expect(result.isError).toBeFalsy();
@@ -371,10 +377,10 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const postName = buildToolName(binding, 'post_bulletin');
+    const postName = groupToolName(binding, 'post_bulletin');
     await callTool('agent-1', postName, { topic: 'progress', body: 'Step 1 done' });
 
-    const readName = buildToolName(binding, 'read_topic');
+    const readName = groupToolName(binding, 'read_topic');
     const result = await callTool('agent-1', readName, { topic: 'progress' });
 
     expect(result.isError).toBeFalsy();
@@ -401,7 +407,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'InfoProj' });
-    const toolName = buildToolName(binding, 'get_project_info');
+    const toolName = groupToolName(binding, 'get_project_info');
     const result = await callTool('agent-1', toolName, {});
 
     expect(result.isError).toBeFalsy();
@@ -422,7 +428,7 @@ describe('GroupProjectTools', () => {
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_notices', targetName: 'Notices' });
     bindingManager.bind('agent-1', binding);
 
-    const result = await callTool('agent-1', buildToolName(binding, 'get_project_info'), {});
+    const result = await callTool('agent-1', groupToolName(binding, 'get_project_info'), {});
     const text: string = JSON.parse(result.content[0].text!).systemInstructions;
 
     expect(text).toContain('NOTICES:');
@@ -441,7 +447,7 @@ describe('GroupProjectTools', () => {
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_legacy', targetName: 'Legacy' });
     bindingManager.bind('agent-1', binding);
 
-    const result = await callTool('agent-1', buildToolName(binding, 'get_project_info'), {});
+    const result = await callTool('agent-1', groupToolName(binding, 'get_project_info'), {});
 
     expect(JSON.parse(result.content[0].text!).scope).toBeNull();
     expect((await groupProjectRegistry.get('gp_legacy'))?.scope).toBeUndefined();
@@ -456,7 +462,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_unknown', targetName: 'Unknown' });
-    const toolName = buildToolName(binding, 'get_project_info');
+    const toolName = groupToolName(binding, 'get_project_info');
     const result = await callTool('agent-1', toolName, {});
 
     expect(result.isError).toBe(true);
@@ -479,7 +485,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const toolName = buildToolName(binding, 'list_members');
+    const toolName = groupToolName(binding, 'list_members');
     const result = await callTool('agent-1', toolName, {});
 
     const members = JSON.parse(result.content[0].text!);
@@ -499,7 +505,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const toolName = buildToolName(binding, 'list_members');
+    const toolName = groupToolName(binding, 'list_members');
     const result = await callTool('agent-1', toolName, {});
 
     const members = JSON.parse(result.content[0].text!);
@@ -529,7 +535,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const toolName = buildToolName(binding, 'list_members');
+    const toolName = groupToolName(binding, 'list_members');
     const result = await callTool('agent-1', toolName, {});
 
     const members = JSON.parse(result.content[0].text!);
@@ -562,7 +568,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'StatusProj' });
-    const toolName = buildToolName(binding, 'get_project_info');
+    const toolName = groupToolName(binding, 'get_project_info');
     const result = await callTool('agent-1', toolName, {});
 
     const parsed = JSON.parse(result.content[0].text!);
@@ -580,7 +586,7 @@ describe('GroupProjectTools', () => {
     it('adds the computer to a colliding sender and leaves existing posts unchanged', async () => {
       const project = await groupProjectRegistry.create('Board');
       bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Board', agentName: 'Twin' });
-      const toolName = buildToolName(makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Board' }), 'post_bulletin');
+      const toolName = groupToolName(makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Board' }), 'post_bulletin');
       await callTool('agent-1', toolName, { topic: 'test', body: 'before' });
       rosterFx.describe.mockResolvedValueOnce({ status: 'available', members: [
         { agentId: 'agent-1', key: 'agent-1@one', machine: 'one', label: 'Twin', machineLabel: 'Mac mini', thisComputer: false },
@@ -610,7 +616,7 @@ describe('GroupProjectTools', () => {
       await groupProjectRegistry.update(project.id, { name: 'NewName' });
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'GP' });
-      const toolName = buildToolName(binding, 'post_bulletin');
+      const toolName = groupToolName(binding, 'post_bulletin');
       await callTool('agent-1', toolName, { topic: 'test', body: 'hello' });
 
       // Message sender should reflect the updated project name
@@ -632,7 +638,7 @@ describe('GroupProjectTools', () => {
       await groupProjectRegistry.update(project.id, { name: 'NewName' });
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'GP' });
-      const toolName = buildToolName(binding, 'post_bulletin');
+      const toolName = groupToolName(binding, 'post_bulletin');
       await callTool('agent-1', toolName, { topic: 'test', body: 'hello' });
 
       // bindingManager should have the refreshed name
@@ -655,7 +661,7 @@ describe('GroupProjectTools', () => {
       vi.spyOn(groupProjectRegistry, 'get').mockRejectedValueOnce(new Error('registry unavailable'));
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'GP' });
-      const toolName = buildToolName(binding, 'post_bulletin');
+      const toolName = groupToolName(binding, 'post_bulletin');
       await callTool('agent-1', toolName, { topic: 'test', body: 'hello' });
 
       vi.spyOn(groupProjectRegistry, 'get').mockImplementation(origGet);
@@ -726,7 +732,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'WakeProj' });
-    const toolName = buildToolName(binding, 'wake_agent');
+    const toolName = groupToolName(binding, 'wake_agent');
     const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-stranger' });
 
     expect(result.isError).toBe(true);
@@ -756,7 +762,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'WakeRunning' });
-    const toolName = buildToolName(binding, 'wake_agent');
+    const toolName = groupToolName(binding, 'wake_agent');
     const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
 
     expect(result.isError).toBeFalsy();
@@ -792,7 +798,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'WakeSpawn' });
-    const toolName = buildToolName(binding, 'wake_agent');
+    const toolName = groupToolName(binding, 'wake_agent');
     const result = await callTool('agent-1', toolName, {
       target_agent_id: 'agent-2',
       message: 'Start working on Mission 42',
@@ -848,7 +854,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'WakeResume' });
-    const toolName = buildToolName(binding, 'wake_agent');
+    const toolName = groupToolName(binding, 'wake_agent');
     const result = await callTool('agent-1', toolName, {
       target_agent_id: 'agent-2',
       resume: true,
@@ -893,7 +899,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'WakeFail' });
-    const toolName = buildToolName(binding, 'wake_agent');
+    const toolName = groupToolName(binding, 'wake_agent');
     const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
 
     expect(result.isError).toBe(true);
@@ -930,7 +936,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'SleepAgent' });
-    const toolName = buildToolName(binding, 'sleep_agent');
+    const toolName = groupToolName(binding, 'sleep_agent');
     // A terminal agent's turn state is unknown: it needs force.
     mockKillAgent.mockImplementation(async () => { mockIsRunning.mockReturnValue(false); });
     const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2', force: true });
@@ -958,7 +964,7 @@ describe('GroupProjectTools', () => {
         bindingManager.bind(id, { targetId: project.id, targetKind: 'group-project', label: 'SF', agentName, targetName: 'SleepForce' });
       }
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'SleepForce' });
-      return callTool('agent-1', buildToolName(binding, 'sleep_agent'), { target_agent_id: 'agent-2', ...args });
+      return callTool('agent-1', groupToolName(binding, 'sleep_agent'), { target_agent_id: 'agent-2', ...args });
     }
 
     beforeEach(() => {
@@ -1020,7 +1026,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'AlreadySleep' });
-    const toolName = buildToolName(binding, 'sleep_agent');
+    const toolName = groupToolName(binding, 'sleep_agent');
     const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
 
     expect(result.isError).toBeFalsy();
@@ -1057,11 +1063,11 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const postName = buildToolName(binding, 'post_bulletin');
+    const postName = groupToolName(binding, 'post_bulletin');
     const postResult = await callTool('agent-1', postName, { topic: 'progress', body: 'Detailed update here' });
     const { messageId } = JSON.parse(postResult.content[0].text!);
 
-    const readName = buildToolName(binding, 'read_message');
+    const readName = groupToolName(binding, 'read_message');
     const result = await callTool('agent-1', readName, { message_id: messageId });
 
     expect(result.isError).toBeFalsy();
@@ -1078,7 +1084,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const readName = buildToolName(binding, 'read_message');
+    const readName = groupToolName(binding, 'read_message');
     const result = await callTool('agent-1', readName, { message_id: 'msg_nonexistent' });
 
     expect(result.isError).toBe(true);
@@ -1096,12 +1102,12 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const postName = buildToolName(binding, 'post_bulletin');
+    const postName = groupToolName(binding, 'post_bulletin');
     const longBody = 'x'.repeat(500);
     await callTool('agent-1', postName, { topic: 'verbose', body: longBody });
     await callTool('agent-1', postName, { topic: 'verbose', body: 'short' });
 
-    const readName = buildToolName(binding, 'read_topic');
+    const readName = groupToolName(binding, 'read_topic');
     const result = await callTool('agent-1', readName, { topic: 'verbose', summary: true });
 
     expect(result.isError).toBeFalsy();
@@ -1131,10 +1137,10 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
-    const postName = buildToolName(binding, 'post_bulletin');
+    const postName = groupToolName(binding, 'post_bulletin');
     await callTool('agent-1', postName, { topic: 'test', body: 'hello' });
 
-    const readName = buildToolName(binding, 'read_bulletin');
+    const readName = groupToolName(binding, 'read_bulletin');
     const result = await callTool('agent-1', readName, {});
 
     expect(result.isError).toBeFalsy();
@@ -1180,12 +1186,12 @@ describe('GroupProjectTools', () => {
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'ClearProj' });
 
     // Post some messages first
-    const postName = buildToolName(binding, 'post_bulletin');
+    const postName = groupToolName(binding, 'post_bulletin');
     await callTool('agent-1', postName, { topic: 'old-stuff', body: 'msg1' });
     await callTool('agent-1', postName, { topic: 'old-stuff', body: 'msg2' });
 
     // Clear the topic
-    const clearName = buildToolName(binding, 'clear_topic');
+    const clearName = groupToolName(binding, 'clear_topic');
     const result = await callTool('agent-1', clearName, { topic: 'old-stuff' });
 
     expect(result.isError).toBeFalsy();
@@ -1193,7 +1199,7 @@ describe('GroupProjectTools', () => {
     expect(parsed.deleted).toBe(true);
 
     // Verify topic is gone
-    const readName = buildToolName(binding, 'read_topic');
+    const readName = groupToolName(binding, 'read_topic');
     const readResult = await callTool('agent-1', readName, { topic: 'old-stuff' });
     const messages = JSON.parse(readResult.content[0].text!);
     expect(messages).toHaveLength(0);
@@ -1212,7 +1218,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'SysProj' });
-    const clearName = buildToolName(binding, 'clear_topic');
+    const clearName = groupToolName(binding, 'clear_topic');
     const result = await callTool('agent-1', clearName, { topic: 'system' });
 
     expect(result.isError).toBe(true);
@@ -1232,7 +1238,7 @@ describe('GroupProjectTools', () => {
     });
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'DelMsgProj' });
-    const postName = buildToolName(binding, 'post_bulletin');
+    const postName = groupToolName(binding, 'post_bulletin');
 
     await callTool('agent-1', postName, { topic: 'cleanup', body: 'keep me' });
     const r2 = await callTool('agent-1', postName, { topic: 'cleanup', body: 'delete me' });
@@ -1241,7 +1247,7 @@ describe('GroupProjectTools', () => {
     const id2 = JSON.parse(r2.content[0].text!).messageId;
     const id3 = JSON.parse(r3.content[0].text!).messageId;
 
-    const delName = buildToolName(binding, 'delete_messages');
+    const delName = groupToolName(binding, 'delete_messages');
     const result = await callTool('agent-1', delName, {
       topic: 'cleanup',
       message_ids: [id2, id3],
@@ -1253,7 +1259,7 @@ describe('GroupProjectTools', () => {
     expect(parsed.requested).toBe(2);
 
     // Verify only first message remains
-    const readName = buildToolName(binding, 'read_topic');
+    const readName = groupToolName(binding, 'read_topic');
     const readResult = await callTool('agent-1', readName, { topic: 'cleanup' });
     const remaining = JSON.parse(readResult.content[0].text!);
     expect(remaining).toHaveLength(1);
@@ -1269,7 +1275,7 @@ describe('GroupProjectTools', () => {
       });
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'InfoEditProj' });
-      const name = buildToolName(binding, 'set_project_info');
+      const name = groupToolName(binding, 'set_project_info');
       const result = await callTool('agent-1', name, {
         description: 'New purpose', instructions: 'Follow these rules',
       });
@@ -1294,7 +1300,7 @@ describe('GroupProjectTools', () => {
       });
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PartialProj' });
-      const name = buildToolName(binding, 'set_project_info');
+      const name = groupToolName(binding, 'set_project_info');
       await callTool('agent-1', name, { instructions: 'updated instr' });
 
       const updated = await groupProjectRegistry.get(project.id);
@@ -1310,7 +1316,7 @@ describe('GroupProjectTools', () => {
       });
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'GuardProj' });
-      const name = buildToolName(binding, 'set_project_info');
+      const name = groupToolName(binding, 'set_project_info');
       const result = await callTool('agent-1', name, { description: 'hijack' });
 
       expect(result.isError).toBe(true);
@@ -1372,7 +1378,7 @@ describe('GroupProjectTools', () => {
       ];
 
       for (const test of toolTests) {
-        const toolName = buildToolName(binding, test.suffix);
+        const toolName = groupToolName(binding, test.suffix);
         const result = await callTool('agent-1', toolName, test.args);
         expect(result.isError).toBe(true);
         // A typed refusal from the grant check: the lead grant on this group project.
@@ -1403,7 +1409,7 @@ describe('GroupProjectTools', () => {
       agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'ClearProj' });
-      const toolName = buildToolName(binding, 'clear_agent');
+      const toolName = groupToolName(binding, 'clear_agent');
       const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
 
       expect(result.isError).toBeFalsy();
@@ -1422,7 +1428,7 @@ describe('GroupProjectTools', () => {
       });
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, label: 'GP' });
-      const toolName = buildToolName(binding, 'clear_agent');
+      const toolName = groupToolName(binding, 'clear_agent');
       const result = await callTool('agent-1', toolName, { target_agent_id: 'not-a-member' });
 
       expect(result.isError).toBe(true);
@@ -1441,7 +1447,7 @@ describe('GroupProjectTools', () => {
       // agent-2 not in agentRegistry = sleeping
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, label: 'GP' });
-      const toolName = buildToolName(binding, 'clear_agent');
+      const toolName = groupToolName(binding, 'clear_agent');
       const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
 
       expect(result.isError).toBe(true);
@@ -1471,7 +1477,7 @@ describe('GroupProjectTools', () => {
       agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'CompactProj' });
-      const toolName = buildToolName(binding, 'compact_agent');
+      const toolName = groupToolName(binding, 'compact_agent');
       const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
 
       expect(result.isError).toBeFalsy();
@@ -1494,7 +1500,7 @@ describe('GroupProjectTools', () => {
       // agent-2 sleeping
 
       const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, label: 'GP' });
-      const toolName = buildToolName(binding, 'compact_agent');
+      const toolName = groupToolName(binding, 'compact_agent');
       const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
 
       expect(result.isError).toBe(true);

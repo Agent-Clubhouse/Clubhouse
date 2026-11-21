@@ -6,7 +6,7 @@ import type { BindingTargetKind, McpBinding } from './clubhouse-mcp/types';
 import { connectionEnd } from './connection-grants';
 import { connectionGuidanceOwnership, getConnectionGuidanceSourceVersion, inspectConnectionGuidance, isBindingRemovedByUser, setConnectionGuidanceRestore } from './persisted-bindings';
 import { createSettingsStore, peekStoredSettingsSync } from './settings-store';
-import { getConnectionToolCatalog, keepsFirstToolList, sanitizeWireInstruction } from './clubhouse-mcp/tool-registry';
+import { buildBindingToolDescription, getConnectionToolCatalog, keepsFirstToolList } from './clubhouse-mcp/tool-registry';
 import { appLog } from './log-service';
 import { agentRegistry } from './agent-registry';
 
@@ -188,10 +188,9 @@ export function previewConnectionGuidance(agentId: string, targetId: string, raw
   const binding = requireBinding(agentId, targetId);
   const instructions = instructionsOf(raw);
   const catalog = getConnectionToolCatalog(binding.agentId, binding.targetId, binding.targetKind);
-  return Object.fromEntries(catalog.tools.map((tool) => {
-    const text = instructions[tool.suffix] || instructions['*'];
-    return [tool.suffix, tool.description + (text ? `\n\n[WIRE INSTRUCTIONS — user-supplied]\n${sanitizeWireInstruction(text)}\n[END WIRE INSTRUCTIONS]` : '')];
-  }));
+  return Object.fromEntries(catalog.tools.map((tool) => [
+    tool.suffix, buildBindingToolDescription(binding, tool.suffix, tool.description, instructions),
+  ]));
 }
 
 export function saveConnectionGuidance(agentId: string, targetId: string, request: SaveConnectionGuidance): Promise<ConnectionGuidanceSnapshot> {

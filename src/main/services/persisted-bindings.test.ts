@@ -99,7 +99,7 @@ describe('relabelling a live binding (#2561)', () => {
   });
   const live = () => bindingManager.getBindingsForAgent('a')[0];
 
-  it('a claim updates the label fields in place and refreshes the tool names', () => {
+  it('a claim updates the label fields in place and preserves callable identity', () => {
     listSource('mine');
     claimSourceBinding('mine', named('Wardfall'));
     const before = buildToolKey(live());
@@ -111,8 +111,7 @@ describe('relabelling a live binding (#2561)', () => {
     // The same binding, not unbound and bound again.
     expect(live()).toBe(binding);
     expect(live()).toMatchObject({ label: 'Lead', agentName: 'Dispatcher 2', targetName: 'Lead', projectName: 'Wardfall Two' });
-    expect(buildToolKey(live())).not.toBe(before);
-    expect(buildToolKey(live())).toMatch(/^Wardfall_Two_Lead_/);
+    expect(buildToolKey(live())).toBe(before);
     expect(changes).toHaveBeenCalledTimes(1);
     expect(changes).toHaveBeenCalledWith('a');
   });
@@ -131,11 +130,13 @@ describe('relabelling a live binding (#2561)', () => {
     mine.push(named('Wardfall'));
     await rebuildPersistedBindings();
     const binding = live();
+    const key = buildToolKey(binding);
 
     mine[0] = named('Wardfall Two');
     expect((await rebuildPersistedBindings()).sources[0]).toMatchObject({ created: 0, existing: 1, pruned: 0 });
     expect(live()).toBe(binding);
     expect(live().projectName).toBe('Wardfall Two');
+    expect(buildToolKey(live())).toBe(key);
 
     // Still the source's: it goes once the source stops listing it.
     mine.length = 0;

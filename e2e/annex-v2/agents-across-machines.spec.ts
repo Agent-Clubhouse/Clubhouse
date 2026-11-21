@@ -33,6 +33,7 @@ import { addProject, assertRunLayout, createDurableAgent } from '../smoke-helper
 import { isNewLayout } from '../layout';
 import { SDK_FIXTURE_ENV, writeAuthenticatedSdkFixture } from '../chat-rich/copilot-sdk-fixture';
 import { enableAnnexViaPreload } from './helpers';
+import { requireAgentToolForTarget, type ListedMcpTool } from '../../test/mcp-target-tools';
 import { armDeliveryCommitBarrier, observeDeliveryRequests, readOwnedSenderIdentity, restoreDeliveryInstrumentation, waitForDurableDeliveryPath, waitForFakeCliRegistration, type DeliveryBoundary } from './delivery-crash';
 
 let fakesHere: FakeClis | undefined;
@@ -173,8 +174,10 @@ async function connectMcp(env: Record<string, string | null>) {
     return (await res.json()).result;
   };
   await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
+  const tools = async (): Promise<ListedMcpTool[]> => (await rpc('tools/list')).tools;
   return {
-    toolNames: async (): Promise<string[]> => (await rpc('tools/list')).tools.map((t: { name: string }) => t.name),
+    tools,
+    toolNames: async (): Promise<string[]> => (await tools()).map((t) => t.name),
     call: async (name: string, args: Record<string, unknown>) => {
       const result: McpToolResult = await rpc('tools/call', { name, arguments: args });
       return { isError: !!result.isError, text: result.content[0].text as string, result };
@@ -326,7 +329,8 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   await waitForDurableDeliveryPath(here, there, receiverFingerprint);
   await waitForDurableDeliveryPath(there, here, senderFingerprint);
   let mcp = await connectMcp(senderReport.env);
-  const send = (await mcp.toolNames()).find((name) => name.endsWith('__send_message'));
+  const targetAddress = `${receiverId}@${receiverFingerprint}`;
+  const send = requireAgentToolForTarget(await mcp.tools(), targetAddress, 'send_message');
   expect(send).toBeTruthy();
   // A one-shot disconnect can be undone by discovery or membership reconciliation.
   // Keep the client off until both durable admissions are persisted and the barrier is armed.
@@ -396,14 +400,32 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   }, { id: senderId, project: senderProject });
   const restartedReport = await waitForFakeCliRegistration(here, fakesHere, senderId, oldCliPid);
   mcp = await connectMcp(restartedReport.env);
-  const duplicate = await mcp.call(send!, firstArgs);
+  // A new process has new callable identities. Refusing the retired name must
+  // not forward input or consume/rewrite the retained durable receipt.
+  const receiverInputs = async () => (await there!.window.evaluate((id) => window.clubhouse.chat.readTranscript(id), receiverId))
+    .filter((event) => event.type === 'user_message' && event.data.source === 'mcp');
+  await expect.poll(receiverInputs).toHaveLength(2);
+  const inputsBeforeRetiredCall = await receiverInputs();
+  const requestsBeforeRetiredCall = await fs.promises.readFile(requestsPath, 'utf8');
+  const retired = await mcp.call(send, firstArgs);
+  expect(retired.isError, retired.text).toBe(true);
+  expect(retired.text).toContain('No binding found for target:');
+  expect(await fs.promises.readFile(requestsPath, 'utf8')).toBe(requestsBeforeRetiredCall);
+  expect(await receiverInputs()).toEqual(inputsBeforeRetiredCall);
+  const afterRetiredCall: DeliveryFile = JSON.parse(await fs.promises.readFile(receiverStore, 'utf8'));
+  expect(afterRetiredCall.inbox.find((row) => row.key === receipt!.key)).toEqual(receipt);
+  const currentTools = await mcp.tools();
+  expect(currentTools.map((tool) => tool.name)).not.toContain(send);
+  const currentSend = requireAgentToolForTarget(currentTools, targetAddress, 'send_message');
+  expect(currentSend).not.toBe(send);
+  const duplicate = await mcp.call(currentSend, firstArgs);
   expect(duplicate.isError).toBe(false);
   expect(createHash('sha256').update(JSON.stringify(duplicate.result)).digest('hex')).toBe(boundary.resultHash);
   const statusTool = (await mcp.toolNames()).find((name) => name.endsWith('get_delivery'));
   expect(statusTool).toBeTruthy();
   expect(JSON.parse((await mcp.call(statusTool!, { delivery_id: firstId })).text)).toMatchObject({ callId: firstId, state: 'delivered', attempts: 2 });
   await expect(receiverChat).toHaveAttribute('data-state', 'idle');
-  const fileTool = (await mcp.toolNames()).find((name) => name.endsWith('__send_file'));
+  const fileTool = requireAgentToolForTarget(await mcp.tools(), targetAddress, 'send_file');
   expect(fileTool).toBeTruthy();
   const content = 'Exact file bytes.\r\nSecond line.\n';
   const fileArgs = { content, filename: 'durable.txt', task_id: 'durable-file', idempotency_key: 'durable-file' };
@@ -434,7 +456,7 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   const otherReport = await waitForFakeCliRegistration(here, fakesHere, otherId);
   const otherMcp = await connectMcp(otherReport.env);
   expect(await otherMcp.call(statusTool!, { delivery_id: firstId })).toMatchObject({ isError: true, text: 'No retained delivery with that id belongs to you.' });
-  await info.attach('durable-replay-witness', { body: JSON.stringify({ firstId, secondId, attempts: [2, 1], actualRequestIds: ids, runtimeInputs: 3, fileBytes: Buffer.byteLength(content), fileHash: createHash('sha256').update(content).digest('hex') }), contentType: 'application/json' });
+  await info.attach('durable-replay-witness', { body: JSON.stringify({ firstId, secondId, attempts: [2, 1], actualRequestIds: ids, runtimeInputs: 3, retiredCallableRefused: retired.isError, targetAddress, oldCallable: send, currentCallable: currentSend, fileBytes: Buffer.byteLength(content), fileHash: createHash('sha256').update(content).digest('hex') }), contentType: 'application/json' });
 });
 
 test('default native Copilot SDK fixtures accept one remote input and replay a stable delivery without a second input', async () => {

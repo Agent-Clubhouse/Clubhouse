@@ -11,10 +11,12 @@
  *   `agent.answerGrantRequest` API, or another computer's lead chat (#3354).
  */
 import { expect, type Page } from '@playwright/test';
+import type { ListedMcpTool } from '../test/mcp-target-tools';
 
 export type McpEnv = Record<string, string | null | undefined>;
 
 export interface McpAgent {
+  tools(): Promise<ListedMcpTool[]>;
   toolNames(): Promise<string[]>;
   call(name: string, args?: Record<string, unknown>): Promise<{ isError: boolean; body: unknown }>;
   callText(name: string, args?: Record<string, unknown>): Promise<{ isError: boolean; text: string }>;
@@ -39,7 +41,8 @@ export async function connectMcp(env: McpEnv): Promise<McpAgent> {
     return (await res.json()).result;
   };
   await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
-  const toolNames = async (): Promise<string[]> => (await rpc('tools/list')).tools.map((t: { name: string }) => t.name);
+  const tools = async (): Promise<ListedMcpTool[]> => (await rpc('tools/list')).tools;
+  const toolNames = async (): Promise<string[]> => (await tools()).map((t) => t.name);
   const callText = async (name: string, args: Record<string, unknown> = {}) => {
     const result = await rpc('tools/call', { name, arguments: args });
     return { isError: !!result.isError, text: result.content[0].text as string };
@@ -48,7 +51,7 @@ export async function connectMcp(env: McpEnv): Promise<McpAgent> {
     const { isError, text } = await callText(name, args);
     return { isError, body: JSON.parse(text) };
   };
-  return { toolNames, call, callText };
+  return { tools, toolNames, call, callText };
 }
 
 export interface AskFirstRequest {
