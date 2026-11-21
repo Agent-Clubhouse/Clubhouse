@@ -28,8 +28,20 @@ card=canvases&source=selected-canvas-board&member=<64 hex>&selection=<64 hex>
 - **`member`** is the `key` of a row from a `selected-canvas-memberships` page: `hash([agentId, projectId, scope, canvasId, viewId])`, from `selected-canvas-membership-page.ts:80`. No raw board, view or path id is accepted.
 - **`selection`** is that membership page's `selection` (`:90`). Both are required.
 - **Key rules:** exactly `card`, `source`, `member`, `selection`, each once, with no `offset` or `projectOffset`. Anything else is `400 invalid_details_query`.
+- **Mutual refusal (QA B-1):**
+  - The route admits the `member` key **only** when `source=selected-canvas-board` (`annex-server.ts:4094-4097`). A membership query carrying `member` is 400.
+  - A board query carrying `offset` or `projectOffset` is 400.
+  - `isRemoteCanvasMembershipQuery` (`shared/remote-canvas-membership-page.ts:16-19`) keeps its key set, so it already rejects `member`. `isRemoteCanvasBoardQuery` rejects every membership-only key.
 - **Shared validator:** `isRemoteCanvasBoardQuery` in a new `shared/remote-canvas-board-page.ts`, composed into `isRemoteInventoryQuery` (`shared/remote-inventory-page.ts:25`). Host, client and route share one rule set.
-- **Sources:** the board source is offered only where Canvas membership is (`inventorySources`, `remote-agent-details.ts:99`; non-Dispatcher). Otherwise `400 unsupported_inventory_page`.
+- **Not advertised (QA B-1, mixed versions):**
+  - The host must **not** add `selected-canvas-board` to `inventorySources` (`remote-agent-details.ts:99`).
+  - Older clients' `isRemoteAgentDetails` requires every advertised source to be in their own `REMOTE_INVENTORY_SOURCES` (`shared/remote-agent-details.ts:96`). One unknown source would make them reject the **whole overview**.
+  - The host admits a board query exactly when the computed `inventorySources` includes `selected-canvas-memberships` (non-Dispatcher). Otherwise `400 unsupported_inventory_page`. The admission check at `remote-agent-details.ts:101` (`inventorySources.includes(query.source)`) gains this board-only case. It's unchanged for every other source.
+  - Clients discover support by probing: a 400 to the board query means `unavailable` (an older host).
+- **Explicit source dispatch:**
+  - `readRemoteAgentDetails` (`:100-106`) dispatches by exact source: membership to `readSelectedCanvasMembershipPage`, board to `readSelectedCanvasBoardPage`.
+  - Any other `canvases` source is 400.
+  - The current two-way `query.card === 'canvases' ? membership : managed` fallthrough must not route a board query to the membership or managed readers.
 
 ## Host read (one passive observation)
 
@@ -47,7 +59,11 @@ New `main/services/selected-canvas-board-page.ts`. It factors the store walk out
    - inventory receipts (`409 inventory_evidence_changed`);
    - the run check (`409 agent_run_changed`);
    - authorization (403);
-   - the M1 budget, never truncated: over budget is `500 details_read_failed`.
+   - the M1 budget, never truncated.
+6. **Premeasured budget (QA B-1).**
+   - The board reader is given the remaining M1 budget: the producer's `budget` less the serialized bytes of the page-only envelope with `inventoryPage: null`.
+   - If the serialized board page would exceed it, the reader returns `unavailable: 'limit'`, even with 500 or fewer views (long labels), instead of letting `remote-agent-details.ts:119` throw `inventory_page_limit` (`500 details_read_failed`).
+   - The outer throw stays as defense in depth only.
 
 ## DTO
 
@@ -75,11 +91,15 @@ type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'a
 
 `shared/remote-agent-details.ts:97-98,123` map both canvas sources to the `canvases` card.
 
+- **Board validator bound to the membership source (QA B-1).** In `isRemoteAgentDetails` (`:97`), an `inventoryPage` of source `selected-canvas-board` is admitted only when `inventorySources` includes `selected-canvas-memberships`, not the board source itself (which is never advertised), and its `agentId` equals the Details `agentId`.
+- **Explicit `isRemoteInventoryPage` branch** (`shared/remote-inventory-page.ts:51-54`). Add `source === 'selected-canvas-board'` → `isRemoteCanvasBoardPage`, **before** the managed fallback, so a board page can never be judged by `isRemoteManagedInventoryPage`.
+- **Shared source list.** `selected-canvas-board` is added to the query union, but **not** to `REMOTE_INVENTORY_SOURCES` (`:8`). That list stays the advertisable set, and old and new hosts advertise identical lists.
+
 ## Redaction and bounds
 
 - **Label:**
   - the member view (the selected agent's own view) is labelled with the selected agent's name, already in this Details body;
-  - every **other agent view** is labelled `Agent`, with no name, `displayName` or `title`. No existing permitted Details projection exports other agents' board labels, so this read invents no such exposure;
+  - every **other agent view** is labelled `Agent`, with no name, `displayName` or `title`. No existing permitted Details projection exports other agents' board labels, so this read invents no such exposure. What the snapshot shows the same desktop is a **separate question and isn't relied on** for labels;
   - for other types, `displayName` or `title`, and for anchors, `label`;
   - all through `display(v, 240)` (secret redaction and control replacement).
 - **Not exported:**
@@ -92,7 +112,7 @@ type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'a
 - **Bounds:**
   - more than 500 views gives `unavailable: 'limit'`;
   - the membership walk keeps `REMOTE_CANVAS_MEMBERSHIP_MAX_ITEMS` (4096 visits);
-  - the body stays within the M1 budget;
+  - the page is premeasured against the remaining M1 budget, giving `unavailable: 'limit'` and never a 500 (see host step 6);
   - removed view types are skipped, as membership does (`:73`).
 
 ## Client
@@ -143,8 +163,11 @@ type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'a
 This is kept so the objective isn't replaced by the preview. Each step needs its own contract and review after this one.
 
 1. **Read-only canvas origin.** Add a third `dataOrigin` (`'selected-read'`) beside `'local' | 'remote'` (`canvas-store.ts:56`), with its own hydrate entry point. Don't reuse `hydrateFromRemote` (`:85`), which feeds an editable remote surface.
-2. **Write paths closed by origin.** In the canvas view (`main.ts`), every mutation path is guarded so `'selected-read'` neither applies nor forwards:
-   - `remoteForward` (`:515-517`) and every call site (a rough grep finds about 40 candidate `useCallback`, `remoteForward(` and `removeCanvas` lines; an exact inventory is part of that contract);
+2. **Write paths closed by origin.** Every mutation path is guarded so `'selected-read'` neither **applies locally** nor forwards. The exact writer inventory must cover:
+   - **local store mutations**: every canvas-store action that changes state, as declared at `canvas-store.ts:105-151` and implemented from `:1144` (for example `addCanvas`, `removeCanvas`, `renameCanvas`, `addView`, `removeView`, `moveView`, `resizeView`, `updateView`, `updateViewMetadata`, `moveViews`), plus undo and redo, paste and drop, and keyboard shortcuts;
+   - **local autosave and persistence** (`main.ts:367-376` and every save or flush);
+   - `remoteForward` (`main.ts:515-517`) and every call site.
+   - A rough grep isn't an inventory. The exact list is part of that contract. **This path is unapproved.**
    - autosave (`:367-376`);
    - add, remove and rename of canvases;
    - drag, resize, edit, wire and pop-out.
@@ -173,7 +196,16 @@ Hunk ownership would include the canvas plugin (`canvas-store.ts`, `main.ts` and
   - A corrupt primary with a backup present gives `unreadable`, and the backup is never opened (spy).
   - A missing primary with a recovery key present gives `unreadable`.
   - Dispatcher or disposed gives `unsupported`. Authorization is checked before parse and after awaits. No sticky or plugin content leaves the host.
-- **Route:** mixed or extra keys and raw ids give 400 before lookup. A refused peer gets the gate's refusal first.
+- **Route:** mixed or extra keys and raw ids give 400 before lookup. A refused peer gets the gate's refusal first. `member` is refused on membership queries, and `offset`/`projectOffset` on board queries.
+- **Mixed versions (QA B-1):**
+  - A **frozen old-client overview fixture**: a test-only copy of the `be0091d16` validators (`isRemoteAgentDetails` with its inventory validators, with the source blob sha256 recorded) must accept the new host's overview for a non-Dispatcher agent, a managed agent and a Dispatcher.
+  - The new host's `inventorySources` equal the `be0091d16` list for each case.
+  - A board query to a host without the reader (simulated older host) returns 400, and the client maps it to `unavailable`.
+- **Dispatch and validators:**
+  - source dispatch sends membership and board to their own readers, and other `canvases` sources give 400;
+  - `isRemoteInventoryPage` judges a board page only by the board validator, never the managed one;
+  - a board page in an overview without the membership source is rejected.
+- **Premeasure:** 500 or fewer views with long labels that overflow the remaining budget give `unavailable: 'limit'` (200 with a page-only body), never `500`.
 - **Client:**
   - the URL shape;
   - the agent, member and selection binding;
