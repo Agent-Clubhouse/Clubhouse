@@ -1,0 +1,4 @@
+src/renderer/features/agents/details/RemoteAgentDetailsView.test.tsx
+src/renderer/features/agents/details/RemoteAgentDetailsView.tsx
+src/renderer/features/agents/details/RemoteHelpersCard.test.tsx
+src/renderer/features/agents/details/RemoteHelpersCard.tsx
