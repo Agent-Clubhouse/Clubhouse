@@ -70,3 +70,7 @@ See `mutations-run1.txt` and `mutations-run2.txt`. The scripts are saved as `.py
 - **Source identity:** in both logs, the pre-mutation sha256 of every mutated product file equals its blob at `e92eed445`.
 - **Test state:** run 1 ran before the two read-once getter tests were added to `annex-client.test.ts` and `services/selected-dispatcher-details.test.ts`. Run 2 and the full suite ran with them, matching `e92eed445`.
 - The raw logs, scripts and full-suite record are unchanged. Only this README's digest changes in `SHA256SUMS`, and the original manifest stays readable at `e92eed445`.
+
+### E-1 qualification (docs-only successor after `8530a956f`)
+
+`full-suite.txt` and the tsc/lint lines in it are owner claims, recorded before the commit. They are not sealed exact-head proof, and they stay unchanged. The exact-head proof is `exact-8530-proof/`: one bounded, risk-targeted run on `8530a956f` with clean before-and-after state, raw outputs, argv, exit codes, source hashes equal to the `8530` blobs, and an importer map. Only this README's digest changes in `SHA256SUMS`.

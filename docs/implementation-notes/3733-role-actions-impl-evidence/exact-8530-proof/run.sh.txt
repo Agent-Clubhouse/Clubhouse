@@ -1,0 +1,16 @@
+#!/bin/zsh
+set -u
+P=/tmp/dlc-proof-8530; cd <worktree>
+PRODUCT=(src/main/ipc/annex-client-handlers.ts src/main/services/annex-client.ts src/main/services/annex-server.ts src/main/services/selected-dispatcher-details.ts src/preload/annexClient.ts src/renderer/features/dispatcher/RemoteDispatcherActionsPages.tsx src/renderer/features/dispatcher/RemoteDispatcherRoleDetails.tsx src/shared/selected-dispatcher-details.ts)
+TESTS=(src/shared/selected-dispatcher-details.test.ts src/main/services/selected-dispatcher-details.test.ts src/main/services/remote-agent-details.test.ts src/main/services/annex-server.test.ts src/main/services/annex-client.test.ts src/main/ipc/annex-client-handlers.test.ts src/preload/index.test.ts src/main/services/group-project-person-author-boundary.test.ts src/renderer/plugins/builtin/group-project/GroupProjectCanvasWidget.test.ts src/renderer/features/dispatcher src/renderer/chrome/ChromeSidebar.test.tsx src/renderer/chrome/ChromeBody.test.tsx)
+state() { echo "date $(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "head $(git rev-parse HEAD)"; echo "tree $(git rev-parse 'HEAD^{tree}')"; echo "branch $(git rev-parse --abbrev-ref HEAD)"; echo "status-lines $(git status --porcelain --untracked-files=all | wc -l | tr -d ' ')"; git status --porcelain --untracked-files=all; echo "load $(uptime | sed 's/.*load averages: //')"; }
+hashes() { for f in $PRODUCT; do echo "$(shasum -a 256 $f | cut -c1-64) $(git show "HEAD:$f" | shasum -a 256 | cut -c1-64) $f"; done; for f in ${TESTS[1,9]} src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx; do echo "$(shasum -a 256 $f | cut -c1-64) $(git show "HEAD:$f" | shasum -a 256 | cut -c1-64) $f"; done; }
+state > $P/state-before.txt; hashes > $P/hashes-before.txt
+T=$(mktemp -d "${TMPDIR%/}/dlc-fresh.XXXX")
+echo "TMPDIR=$T npx vitest run --no-cache --maxWorkers=4 ${TESTS[*]}" > $P/argv-vitest.txt
+TMPDIR=$T npx vitest run --no-cache --maxWorkers=4 ${TESTS[@]} > $P/vitest-raw.txt 2>&1; echo "vitest exit=$?" > $P/exits.txt
+echo "npx tsc --noEmit" > $P/argv-tsc.txt
+npx tsc --noEmit > $P/tsc-raw.txt 2>&1; echo "tsc exit=$?" >> $P/exits.txt
+echo "npx eslint ${PRODUCT[*]} ${TESTS[1,6]} src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx" > $P/argv-eslint.txt
+npx eslint ${PRODUCT[@]} ${TESTS[1,6]} src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx > $P/eslint-raw.txt 2>&1; echo "eslint exit=$?" >> $P/exits.txt
+state > $P/state-after.txt; hashes > $P/hashes-after.txt
