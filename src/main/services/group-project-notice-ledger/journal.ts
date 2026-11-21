@@ -3,6 +3,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import { applyNoticeDelta, noticeRecipientKey, validateNoticeState, type NoticeDelta, type NoticeRecipient, type SequencedNoticeState } from './state';
+import { NoticeDirectoryFlusher } from './durability';
 
 export const NOTICE_DELTA_BYTES = 64 * 1024;
 export const NOTICE_SEGMENT_TARGET = 256 * 1024;
@@ -61,10 +62,6 @@ function decodeRecord(body: Buffer, revision: number, previousDigest: string): R
   if (value.revision !== revision || value.previousDigest !== previousDigest || !object(value.delta)) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Notice journal chain mismatch');
   return value as unknown as RecordEnvelope;
 }
-async function syncDirectory(directory: string): Promise<void> {
-  const handle = await fs.open(directory, 'r');
-  try { await handle.sync(); } finally { await handle.close(); }
-}
 async function missing(error: unknown): Promise<boolean> { return (error as NodeJS.ErrnoException).code === 'ENOENT'; }
 
 /**
@@ -90,6 +87,7 @@ export class SequencedNoticeJournal {
   private readonly liveHandoffs = new WeakMap<NoticeLiveHandoff, LiveHandoffRecord>();
   /** Entry is irreversible even after a runtime drops/releases its callback handle. */
   private readonly enteredAttempts = new Set<string>();
+  private readonly directoryFlusher = new NoticeDirectoryFlusher();
 
   private constructor(options: NoticeJournalOptions) {
     this.directory = options.directory;
@@ -108,6 +106,7 @@ export class SequencedNoticeJournal {
   get committedRevision(): number { return this.revision; }
   get healthy(): boolean { return !this.poisoned; }
   get retainedEntryCount(): number { return this.enteredAttempts.size; }
+  get directoryDurability() { return this.directoryFlusher.observation; }
   /** Main receipt sink only: cannot capture a restarted/recovered attempt. */
   captureLiveHandoff(attemptId: string): NoticeLiveHandoff {
     const attempt = this.state?.attempts.find((a) => a.attemptId === attemptId);
@@ -149,7 +148,7 @@ export class SequencedNoticeJournal {
     try { await handle.writeFile(body); await handle.sync(); } finally { await handle.close(); }
     await this.failure?.('beforeManifest');
     await fs.rename(temporary, path.join(this.directory, 'manifest.json'));
-    await syncDirectory(this.directory);
+    await this.directoryFlusher.flush(this.directory);
     await this.failure?.('afterManifest');
     this.manifest = manifest; this.manifestHash = hash(body);
   }
@@ -218,7 +217,7 @@ export class SequencedNoticeJournal {
     const preserved = path.join(this.directory, `incomplete-tail-${randomUUID()}.bin`);
     const handle = await fs.open(preserved, 'wx', 0o600);
     try { await handle.writeFile(body); await handle.sync(); } finally { await handle.close(); }
-    await syncDirectory(this.directory);
+    await this.directoryFlusher.flush(this.directory);
     const journal = await fs.open(this.location(this.segment), 'r+');
     try { await journal.truncate(offset); await journal.sync(); } finally { await journal.close(); }
   }
@@ -268,7 +267,7 @@ export class SequencedNoticeJournal {
           await this.failure?.('afterAppendBeforeSync');
           await handle.sync();
         } finally { await handle.close(); }
-        await syncDirectory(this.directory);
+        await this.directoryFlusher.flush(this.directory);
         await this.failure?.('afterSync');
         this.revision = envelope.revision; this.digest = digest; this.state = candidate;
         if (delta.kind === 'settle' && delta.outcome === 'accepted') this.enteredAttempts.delete(delta.attemptId);
@@ -355,7 +354,7 @@ export class SequencedNoticeJournal {
       level = parents;
     }
     const root = await this.putPage({ kind: 'index', children: level });
-    await syncDirectory(this.directory);
+    await this.directoryFlusher.flush(this.directory);
     await this.failure?.('afterPages');
     const firstSegment = this.segment + 1;
     await this.atomicManifest({ ...this.manifest, checkpointRevision: this.revision, checkpointDigest: this.digest, checkpointRoot: root, firstSegment });
@@ -369,6 +368,6 @@ export class SequencedNoticeJournal {
         await fs.unlink(path.join(this.directory, name));
       }
     }
-    await syncDirectory(this.directory);
+    await this.directoryFlusher.flush(this.directory);
   }
 }

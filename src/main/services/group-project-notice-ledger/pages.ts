@@ -2,6 +2,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
+import { NoticeDirectoryFlusher } from './durability';
 
 export type NoticeJson = null | boolean | number | string | NoticeJson[] | { [key: string]: NoticeJson };
 export interface NoticePageEntry { key: string; value: NoticeJson }
@@ -70,6 +71,7 @@ export class NoticePageIndex {
   private readonly dirtyDirectories = new Set<string>();
   private reads = 0;
   private peakLeafEntries = 0;
+  private readonly directoryFlusher = new NoticeDirectoryFlusher();
   private constructor(private readonly directory: string) {}
   static async open(directory: string): Promise<NoticePageIndex> {
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
@@ -82,6 +84,7 @@ export class NoticePageIndex {
     return { leafPages: this.leaves.size, indexPages: this.branches.size,
       leafEntries: [...this.leaves.values()].reduce((sum, p) => sum + p.entries.length, 0), peakLeafEntries: this.peakLeafEntries, diskReads: this.reads };
   }
+  get directoryDurability() { return this.directoryFlusher.observation; }
   clearCache(): void { this.leaves.clear(); this.branches.clear(); }
   private cache(hash: string, page: Page): void {
     if (page.kind === 'leaf') {
@@ -182,8 +185,7 @@ export class NoticePageIndex {
   /** Must succeed before an activating journal/root record; no root is activated here. */
   async flush(): Promise<void> {
     for (const directory of [...this.dirtyDirectories].sort((a, b) => b.length - a.length)) {
-      const handle = await fs.open(directory, 'r');
-      try { await handle.sync(); } finally { await handle.close(); }
+      await this.directoryFlusher.flush(directory);
       this.dirtyDirectories.delete(directory);
     }
   }
