@@ -1,0 +1,23 @@
+--- a/src/main/services/annex-client.ts
++++ b/src/main/services/annex-client.ts
+@@ -643,9 +643,10 @@
+ }
+ 
+ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection {
++  const alias = annexPeers.peekPeerAlias(s.fingerprint) || s.alias;
+   return {
+     id: s.id,
+-    alias: s.alias,
++    alias,
+     icon: s.icon,
+     color: s.color,
+     fingerprint: s.fingerprint,
+@@ -659,7 +660,7 @@
+     lastError: s.lastError,
+     ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
+     ...(s.needsPairing && { needsPairing: true }),
+-    ...(s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, s.alias, { ...s.problem, host: s.host }) }),
++    ...(s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, alias, { ...s.problem, host: s.host }) }),
+   };
+ }
+ 

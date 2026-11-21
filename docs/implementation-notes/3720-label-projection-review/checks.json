@@ -1,0 +1,29 @@
+{
+  "head": "c43ffb37d20650c542e449a8a04a9fd84e65b655",
+  "at": "2026-11-21T22:49:12.856352+00:00",
+  "kind": "static applicability only; patches unapplied",
+  "checks": [
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--check",
+        "docs/implementation-notes/3720-label-projection-review/client-alias.review.patch"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--check",
+        "docs/implementation-notes/3720-label-projection-review/handler-labels.review.patch"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ]
+}

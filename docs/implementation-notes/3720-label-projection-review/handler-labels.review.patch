@@ -1,0 +1,22 @@
+--- a/src/main/ipc/annex-handlers.ts
++++ b/src/main/ipc/annex-handlers.ts
+@@ -152,7 +152,18 @@
+       broadcastPeersChanged();
+     },
+   });
+-  onDevicesChanged(() => broadcastToAllWindows(IPC.ANNEX.DEVICES_CHANGED, annexDevices.listDevices()));
++  let publishedNameKey: string | undefined;
++  onDevicesChanged(() => {
++    broadcastToAllWindows(IPC.ANNEX.DEVICES_CHANGED, annexDevices.listDevices());
++    const satellites = annexClient.getSatellites();
++    const labels = satellites.map((sat) => JSON.stringify([sat.fingerprint, sat.alias]));
++    labels.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
++    const key = JSON.stringify(labels);
++    if (key === publishedNameKey) return;
++    publishedNameKey = key;
++    // Direct publication only; do not call the client's recursive device signal helper.
++    broadcastToAllWindows(IPC.ANNEX_CLIENT.SATELLITES_CHANGED, satellites);
++  });
+ 
+   ipcMain.handle(IPC.ANNEX.LIST_DEVICES, () => annexDevices.listDevices());
+ 

@@ -1,0 +1,30 @@
+{
+  "base": "c43ffb37d20650c542e449a8a04a9fd84e65b655",
+  "files": {
+    "src/main/services/annex-client.ts": {
+      "blob": "5ee86d1c066f7aac8911c773bca283d0f7616df9",
+      "sha256": "f19f6d5308c851f325e3f2feb1f3aceb5feaec4c9105a3a060e0b9c835e43a60"
+    },
+    "src/main/ipc/annex-handlers.ts": {
+      "blob": "4213cb7848e6371334024e713f5b9b6714acc5b6",
+      "sha256": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b"
+    },
+    "src/main/services/annex-peers.ts": {
+      "blob": "b85f7eece758f9d1bf400d6ab85bf1b51bbd764d",
+      "sha256": "92c62decad2d6da566065abef20611dbed75529b9f20a2230db35cc65cb8b503"
+    },
+    "src/main/services/annex-device-signal.ts": {
+      "blob": "9b23750124ddfc79612a0bc87216b001fa995e81",
+      "sha256": "31e25abf98c78e7ce5721c9c9391e0d657ff9e670b9ac0939e9e0001f5cd04bf"
+    },
+    "src/renderer/stores/annexClientStore.ts": {
+      "blob": "1b23a911f50ccbe99c599293ac07c4a2b2bfd48a",
+      "sha256": "ad3c60004d10f1a12404312004a9802d8f03854cf90102a421597861d5bce6d0"
+    },
+    "src/renderer/stores/annexClientStore.hydration.test.ts": {
+      "blob": "124a73e4b89a572a04bb33fd401db440da32ed6f",
+      "sha256": "0eaa82243cde42e16fe674636106770bddabc8c7904e32b75b78dee0f3951db4"
+    }
+  },
+  "status": "unapplied mapping; renderer side-effect matrix unexecuted"
+}

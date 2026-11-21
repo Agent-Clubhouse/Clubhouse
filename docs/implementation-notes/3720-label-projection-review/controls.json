@@ -1,0 +1,33 @@
+{
+  "status": "unexecuted-required-controls",
+  "main": [
+    "getSatellite and getSatellites use same loaded alias and problem label without loading peers",
+    "unloaded/ambiguous/empty cache retains s.alias",
+    "live rename with no other socket traffic updates existing renderer labels",
+    "no ws construction, fetch, dial, control revision, snapshot/lease/epoch mutation",
+    "unchanged labels and reordered tuples suppress observer only",
+    "host receipt/generation/state-only notifications still publish normally",
+    "first callback empty/new topology and rename in first coalesced burst",
+    "paused/unavailable/re-pair/disconnected public receipt remains ineligible",
+    "no recursion through devicesChanged or presence refresh"
+  ],
+  "realRendererStores": [
+    "alias updates on same connection with identical snapshot/receipt/generation identities",
+    "no applySnapshot/applyCachedSnapshot or hydration read caused by label notification",
+    "settled permission remains settled and retired/sleeping agent stream stays retired",
+    "visibility removal/hideAll/deferred catalog cannot be undone",
+    "absent positive receipt cannot be restored by name event",
+    "late initial GET/manual GET cannot overwrite newer name or revive removed satellite",
+    "label during startup before first catalog cannot grant hydration authority",
+    "cleanup/old listener and replacement generations cannot restore stale row",
+    "new topology and first observer notification do not masquerade as a fresh snapshot"
+  ],
+  "mutations": [
+    "loaded alias ignored",
+    "getPeer replaces no-IO peek",
+    "label change rewrites s.alias or advances epoch/receipt",
+    "name dedupe filters host genuine transport notification",
+    "notification calls recursive device signal helper",
+    "renderer treats cached label event as new snapshot authority"
+  ]
+}
