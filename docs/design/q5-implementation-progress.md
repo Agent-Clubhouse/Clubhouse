@@ -73,6 +73,14 @@ Five actual child-exit stages plus repeated envelope→active interruption and
 ambiguity/version controls are planned proof. This is installation recovery
 only, not a member generation, legacy migration or R1 activation record.
 
+M1 algorithm/compatibility review16cf4fe approved f58 with required M1-L temp
+cleanup. The successor cleans only its just-exclusive-created metadata temp in
+finally, retains the first failure as private non-enumerable cause, and leaves
+actual process-crash/failed-cleanup residue fail-closed without arbitrary cleanup.
+New fault controls target all three metadata purposes plus actual rename failure,
+temp-opened child exit, phase/version/UUID/dir/symlink negatives. These checks
+and exact successor QA are required before claiming M1 closure.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.

@@ -16,7 +16,11 @@ interface InstallationMetadata {
   [extra: string]: unknown;
 }
 export class NoticeInstallationError extends Error {
-  constructor(public readonly code: 'notice_installation_incomplete' | 'notice_installation_corrupt' | 'notice_installation_version' | 'notice_installation_changed' | 'notice_installation_unavailable', message: string) { super(message); }
+  declare readonly cause?: unknown;
+  constructor(public readonly code: 'notice_installation_incomplete' | 'notice_installation_corrupt' | 'notice_installation_version' | 'notice_installation_changed' | 'notice_installation_unavailable', message: string, cause?: unknown) {
+    super(message);
+    if (cause !== undefined) Object.defineProperty(this, 'cause', { value: cause, configurable: true });
+  }
 }
 export interface NoticeInstallation {
   installationId: string;
@@ -27,8 +31,11 @@ export interface NoticeInstallation {
   directoryDurability: NoticeDirectoryDurability;
 }
 export type NoticeInstallationStage = 'markerSynced' | 'directoryCreated' | 'envelopeSynced' | 'beforeMarkerActive' | 'markerActive';
+export type NoticeMetadataPurpose = 'markerCreate' | 'envelopeCreate' | 'markerActivate';
+export type NoticeMetadataPoint = 'tempOpened' | 'beforeWrite' | 'beforeSync' | 'beforeRename' | 'beforeCleanup';
 export interface NoticeInstallationOptions {
   testFailure?: (stage: NoticeInstallationStage) => void | Promise<void>;
+  testMetadataFailure?: (point: NoticeMetadataPoint, purpose: NoticeMetadataPurpose) => void | Promise<void>;
   directoryFlusher?: NoticeDirectoryFlusher;
 }
 const opening = new Map<string, Promise<NoticeInstallation>>();
@@ -69,19 +76,60 @@ async function readMetadata(location: string, role: 'marker' | 'envelope', finge
   if (fingerprint) fingerprint.digest = createHash('sha256').update(body).digest('hex');
   return { ...value, schemaVersion: 1, minWriterVersion: value.minWriterVersion as 1 | 2, installationId: value.installationId };
 }
-async function activateMarker(location: string, expected: InstallationMetadata, flusher: NoticeDirectoryFlusher): Promise<void> {
+/** Cleanup only this exclusive-create path, and never let cleanup mask its original failure. */
+async function withMetadataTemp(
+  location: string, body: string, purpose: NoticeMetadataPurpose, options: NoticeInstallationOptions,
+  publish: (temporary: string) => Promise<void>,
+): Promise<void> {
+  const temporary = `${location}.${randomUUID()}.tmp`;
+  let handle: import('fs/promises').FileHandle | undefined;
+  let created = false;
+  let identity: import('fs').BigIntStats | undefined;
+  let failed = false; let original: unknown;
+  try {
+    handle = await fs.open(temporary, 'wx', 0o600); created = true;
+    identity = await handle.stat({ bigint: true });
+    await options.testMetadataFailure?.('tempOpened', purpose);
+    await options.testMetadataFailure?.('beforeWrite', purpose);
+    await handle.writeFile(body);
+    await options.testMetadataFailure?.('beforeSync', purpose);
+    await handle.sync();
+    await handle.close(); handle = undefined; // Windows rename must not retain the open writer.
+    await publish(temporary);
+  } catch (error) {
+    // telemetry-exempt: propagated below after best-effort own-temp cleanup
+    failed = true; original = error;
+  } finally {
+    if (handle) {
+      try { await handle.close(); }
+      catch (error) {
+        // telemetry-exempt: preserve first failure over secondary close error
+        if (!failed) { failed = true; original = error; }
+      }
+    }
+    if (created) {
+      try {
+        await options.testMetadataFailure?.('beforeCleanup', purpose);
+        const named = await fs.lstat(temporary, { bigint: true });
+        if (named.isFile() && (!identity || named.dev === identity.dev && named.ino === identity.ino)) await fs.unlink(temporary);
+      } catch { /* telemetry-exempt: best effort only; do not mask original error or remove an ambiguous replacement; residue remains fail-closed */ }
+    }
+  }
+  if (failed) throw original;
+}
+async function activateMarker(location: string, expected: InstallationMetadata, flusher: NoticeDirectoryFlusher, options: NoticeInstallationOptions): Promise<void> {
   const expectedBytes: { digest?: string } = {};
   const current = await readMetadata(location, 'marker', expectedBytes);
   if (!current || current.minWriterVersion !== 2 || current.phase !== 'bootstrapping' || current.installationId !== expected.installationId) throw new NoticeInstallationError('notice_installation_changed', 'Notice bootstrap marker is no longer current');
-  const temporary = `${location}.${randomUUID()}.tmp`;
-  const handle = await fs.open(temporary, 'wx', 0o600);
-  try { await handle.writeFile(JSON.stringify({ ...current, phase: 'active' })); await handle.sync(); } finally { await handle.close(); }
-  const actualBytes: { digest?: string } = {};
-  await readMetadata(location, 'marker', actualBytes);
-  if (actualBytes.digest !== expectedBytes.digest) throw new NoticeInstallationError('notice_installation_changed', 'Notice bootstrap marker changed before activation');
-  // Single-instance + single-flight premise; this is not interprocess compare-and-swap.
-  await fs.rename(temporary, location);
-  await flusher.flush(path.dirname(location));
+  await withMetadataTemp(location, JSON.stringify({ ...current, phase: 'active' }), 'markerActivate', options, async (temporary) => {
+    const actualBytes: { digest?: string } = {};
+    await readMetadata(location, 'marker', actualBytes);
+    if (actualBytes.digest !== expectedBytes.digest) throw new NoticeInstallationError('notice_installation_changed', 'Notice bootstrap marker changed before activation');
+    await options.testMetadataFailure?.('beforeRename', 'markerActivate');
+    // Single-instance + single-flight premise; this is not interprocess compare-and-swap.
+    await fs.rename(temporary, location);
+    await flusher.flush(path.dirname(location));
+  });
 }
 async function pristineBootstrap(directory: string, marker: InstallationMetadata): Promise<InstallationMetadata | undefined> {
   for await (const entry of await fs.opendir(directory)) {
@@ -91,15 +139,15 @@ async function pristineBootstrap(directory: string, marker: InstallationMetadata
   if (envelope && (envelope.installationId !== marker.installationId || envelope.minWriterVersion !== 2 || envelope.phase !== 'prepared')) throw new NoticeInstallationError('notice_installation_changed', 'Notice bootstrap envelope is not the prepared identity');
   return envelope;
 }
-async function writeNewMetadata(location: string, value: InstallationMetadata, flusher: NoticeDirectoryFlusher): Promise<void> {
-  const temporary = `${location}.${randomUUID()}.tmp`;
-  const handle = await fs.open(temporary, 'wx', 0o600);
-  try { await handle.writeFile(JSON.stringify(value)); await handle.sync(); } finally { await handle.close(); }
-  // Metadata initialization is owned by the single main instance. Never overwrite a discovered file.
-  try { await fs.lstat(location); throw new NoticeInstallationError('notice_installation_changed', 'Notice installation metadata appeared during creation'); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; } // telemetry-exempt: unexpected writer conflict refuses activation
-  await fs.rename(temporary, location);
-  await flusher.flush(path.dirname(location));
+async function writeNewMetadata(location: string, value: InstallationMetadata, flusher: NoticeDirectoryFlusher, options: NoticeInstallationOptions, purpose: NoticeMetadataPurpose): Promise<void> {
+  await withMetadataTemp(location, JSON.stringify(value), purpose, options, async (temporary) => {
+    // Metadata initialization is owned by the single main instance. Never overwrite a discovered file.
+    try { await fs.lstat(location); throw new NoticeInstallationError('notice_installation_changed', 'Notice installation metadata appeared during creation'); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; } // telemetry-exempt: unexpected writer conflict refuses activation
+    await options.testMetadataFailure?.('beforeRename', purpose);
+    await fs.rename(temporary, location);
+    await flusher.flush(path.dirname(location));
+  });
 }
 
 /** userData comes from trusted main app ownership, never renderer/Annex input. */
@@ -138,7 +186,7 @@ async function openOwnedInstallation(userData: string, options: NoticeInstallati
       if (directoryExists) throw new NoticeInstallationError('notice_installation_incomplete', 'Notice ledger exists without its required marker');
       await fs.mkdir(userData, { recursive: true });
       marker = { schemaVersion: 1, minWriterVersion: 2, installationId: randomUUID(), phase: 'bootstrapping' };
-      await writeNewMetadata(markerPath, marker, flusher);
+      await writeNewMetadata(markerPath, marker, flusher, options, 'markerCreate');
       await options.testFailure?.('markerSynced');
     }
     if (!directoryExists) {
@@ -148,16 +196,16 @@ async function openOwnedInstallation(userData: string, options: NoticeInstallati
     }
     const envelope = await pristineBootstrap(directory, marker);
     if (!envelope) {
-      await writeNewMetadata(envelopePath, { schemaVersion: 1, minWriterVersion: 2, installationId: marker.installationId, phase: 'prepared' }, flusher);
+      await writeNewMetadata(envelopePath, { schemaVersion: 1, minWriterVersion: 2, installationId: marker.installationId, phase: 'prepared' }, flusher, options, 'envelopeCreate');
       await options.testFailure?.('envelopeSynced');
     }
     await pristineBootstrap(directory, marker);
     await options.testFailure?.('beforeMarkerActive');
-    await activateMarker(markerPath, marker, flusher);
+    await activateMarker(markerPath, marker, flusher, options);
     await options.testFailure?.('markerActive');
     return { installationId: marker.installationId, directory, created: !resumedBootstrap, resumedBootstrap, directoryDurability: flusher.observation };
   } catch (error) {
     if (error instanceof NoticeInstallationError) throw error;
-    throw new NoticeInstallationError('notice_installation_unavailable', 'Local notice installation is unavailable'); // telemetry-exempt: never rebaseline on IO/fault; stable code omits local paths/raw errors
+    throw new NoticeInstallationError('notice_installation_unavailable', 'Local notice installation is unavailable', error); // telemetry-exempt: preserve private cause; stable message/code omit local paths/raw errors
   }
 }

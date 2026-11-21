@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { NoticeDirectoryFlusher } from './durability';
-import { NOTICE_INSTALLATION_DIRECTORY, NOTICE_INSTALLATION_MARKER, openNoticeInstallation } from './installation';
+import { NOTICE_INSTALLATION_DIRECTORY, NOTICE_INSTALLATION_MARKER, openNoticeInstallation, type NoticeMetadataPoint, type NoticeMetadataPurpose } from './installation';
 
 const homes: string[] = [];
 async function home() { const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'q5-installation-')); homes.push(directory); return directory; }
@@ -148,5 +148,113 @@ describe('local notice installation marker', () => {
     expect(await fs.readFile(path.join(owned, 'installation.json'), 'utf8')).toBe(raw);
     await fs.writeFile(markerPath, JSON.stringify({ ...legacy, phase: 'bootstrapping' }));
     await expect(openNoticeInstallation(directory)).rejects.toMatchObject({ code: 'notice_installation_version' });
+  });
+
+  it.each(['markerCreate', 'envelopeCreate', 'markerActivate'] as NoticeMetadataPurpose[])('cleans only its own %s temp after injected ENOSPC and then reopens', async (purpose) => {
+    const directory = await home();
+    const failure = Object.assign(new Error('synthetic-ENOSPC'), { code: 'ENOSPC', path: '/synthetic/private-path' });
+    const error = await openNoticeInstallation(directory, { testMetadataFailure: (point, operation) => { if (point === 'beforeSync' && operation === purpose) throw failure; } }).then(() => undefined, (value) => value);
+    expect(error).toMatchObject({ code: 'notice_installation_unavailable' });
+    expect(error.cause).toBe(failure);
+    expect(JSON.stringify(error)).not.toContain('/synthetic/private-path');
+    expect((await fs.readdir(directory)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+    const owned = path.join(directory, NOTICE_INSTALLATION_DIRECTORY);
+    if (purpose !== 'markerCreate') expect((await fs.readdir(owned)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+    const marker = purpose === 'markerCreate' ? undefined : JSON.parse(await fs.readFile(path.join(directory, NOTICE_INSTALLATION_MARKER), 'utf8'));
+    const recovered = await openNoticeInstallation(directory);
+    if (marker) expect(recovered.installationId).toBe(marker.installationId);
+    expect(recovered.created).toBe(purpose === 'markerCreate');
+    expect(recovered.resumedBootstrap).toBe(purpose !== 'markerCreate');
+  });
+
+  it.each(['beforeWrite', 'beforeRename'] as NoticeMetadataPoint[])('cleans a failed envelope temp at %s and keeps the bootstrap resumable', async (point) => {
+    const directory = await home();
+    const failure = Object.assign(new Error('synthetic-EIO'), { code: 'EIO' });
+    const error = await openNoticeInstallation(directory, { testMetadataFailure: (at, operation) => { if (at === point && operation === 'envelopeCreate') throw failure; } }).then(() => undefined, (value) => value);
+    expect(error.cause).toBe(failure);
+    expect(await fs.readdir(path.join(directory, NOTICE_INSTALLATION_DIRECTORY))).toEqual([]);
+    expect((await openNoticeInstallation(directory)).resumedBootstrap).toBe(true);
+  });
+
+  it('preserves the primary ENOSPC when best-effort cleanup also fails, then refuses its residue', async () => {
+    const directory = await home();
+    const original = Object.assign(new Error('synthetic-original'), { code: 'ENOSPC' });
+    const cleanup = Object.assign(new Error('synthetic-cleanup'), { code: 'EACCES' });
+    const error = await openNoticeInstallation(directory, { testMetadataFailure: (point, operation) => {
+      if (operation !== 'envelopeCreate') return;
+      if (point === 'beforeSync') throw original;
+      if (point === 'beforeCleanup') throw cleanup;
+    } }).then(() => undefined, (value) => value);
+    expect(error.cause).toBe(original);
+    expect((await fs.readdir(path.join(directory, NOTICE_INSTALLATION_DIRECTORY))).some((name) => name.endsWith('.tmp'))).toBe(true);
+    await expect(openNoticeInstallation(directory)).rejects.toMatchObject({ code: 'notice_installation_incomplete' });
+  });
+
+  it('cleans the own temp on an actual rename failure without deleting the conflicting directory', async () => {
+    const directory = await home();
+    const envelope = path.join(directory, NOTICE_INSTALLATION_DIRECTORY, 'installation.json');
+    const error = await openNoticeInstallation(directory, { testMetadataFailure: async (point, operation) => {
+      if (point === 'beforeRename' && operation === 'envelopeCreate') await fs.mkdir(envelope);
+    } }).then(() => undefined, (value) => value);
+    expect(error).toMatchObject({ code: 'notice_installation_unavailable' });
+    expect(error.cause?.code).toBeTruthy();
+    expect((await fs.stat(envelope)).isDirectory()).toBe(true);
+    expect(await fs.readdir(path.dirname(envelope))).toEqual(['installation.json']);
+    await expect(openNoticeInstallation(directory)).rejects.toMatchObject({ code: 'notice_installation_corrupt' });
+  });
+
+  it('fails closed on an actual process exit after envelope temp creation, retaining all bytes', async () => {
+    const directory = await home();
+    await expect(promisify(execFile)(process.execPath, ['test/research/q5-installation-process.cjs', directory, 'envelopeTempOpened'], { cwd: process.cwd() })).rejects.toMatchObject({ code: 77 });
+    const markerPath = path.join(directory, NOTICE_INSTALLATION_MARKER);
+    const marker = await fs.readFile(markerPath);
+    const owned = path.join(directory, NOTICE_INSTALLATION_DIRECTORY);
+    const names = await fs.readdir(owned);
+    expect(names).toHaveLength(1);
+    expect(names[0]).toMatch(/^installation\.json\.[a-f0-9-]+\.tmp$/);
+    const temporary = path.join(owned, names[0]);
+    const bytes = await fs.readFile(temporary);
+    await expect(openNoticeInstallation(directory)).rejects.toMatchObject({ code: 'notice_installation_incomplete' });
+    expect(await fs.readFile(markerPath)).toEqual(marker);
+    expect(await fs.readFile(temporary)).toEqual(bytes);
+    expect(await fs.readdir(owned)).toEqual(names);
+  }, 15000);
+
+  it.each([
+    { markerVersion: 2, markerPhase: 'prepared', envelopeVersion: 2, envelopePhase: 'prepared', wrongId: false },
+    { markerVersion: 2, markerPhase: 'bootstrapping', envelopeVersion: 2, envelopePhase: 'bootstrapping', wrongId: false },
+    { markerVersion: 2, markerPhase: 'bootstrapping', envelopeVersion: 2, envelopePhase: 'active', wrongId: false },
+    { markerVersion: 2, markerPhase: 'active', envelopeVersion: 1, envelopePhase: undefined, wrongId: false },
+    { markerVersion: 1, markerPhase: undefined, envelopeVersion: 2, envelopePhase: 'prepared', wrongId: false },
+    { markerVersion: 2, markerPhase: 'bootstrapping', envelopeVersion: 2, envelopePhase: 'prepared', wrongId: true },
+  ])('refuses invalid phase/version/UUID pairing %j', async (row) => {
+    const directory = await home();
+    const installationId = randomUUID();
+    const marker = JSON.stringify({ schemaVersion: 1, minWriterVersion: row.markerVersion, phase: row.markerPhase, installationId });
+    const envelope = JSON.stringify({ schemaVersion: 1, minWriterVersion: row.envelopeVersion, phase: row.envelopePhase, installationId: row.wrongId ? randomUUID() : installationId });
+    const owned = path.join(directory, NOTICE_INSTALLATION_DIRECTORY); await fs.mkdir(owned);
+    await fs.writeFile(path.join(directory, NOTICE_INSTALLATION_MARKER), marker); await fs.writeFile(path.join(owned, 'installation.json'), envelope);
+    await expect(openNoticeInstallation(directory)).rejects.toThrow();
+    expect(await fs.readFile(path.join(directory, NOTICE_INSTALLATION_MARKER), 'utf8')).toBe(marker);
+    expect(await fs.readFile(path.join(owned, 'installation.json'), 'utf8')).toBe(envelope);
+    expect(await fs.readdir(owned)).toEqual(['installation.json']);
+  });
+
+  it('refuses a bootstrap envelope symlink without following or rewriting its target', async (context) => {
+    const directory = await home();
+    const owned = path.join(directory, NOTICE_INSTALLATION_DIRECTORY); await fs.mkdir(owned);
+    const installationId = randomUUID();
+    await fs.writeFile(path.join(directory, NOTICE_INSTALLATION_MARKER), JSON.stringify({ schemaVersion: 1, minWriterVersion: 2, installationId, phase: 'bootstrapping' }));
+    const target = path.join(directory, 'synthetic-target.json');
+    const bytes = JSON.stringify({ schemaVersion: 1, minWriterVersion: 2, installationId, phase: 'prepared' });
+    await fs.writeFile(target, bytes);
+    try { await fs.symlink(target, path.join(owned, 'installation.json'), 'file'); }
+    catch (error) {
+      if (process.platform === 'win32' && ['EPERM', 'ENOTSUP', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) { context.skip(); return; }
+      throw error; // telemetry-exempt: native fixture capability refusal is explicit; other errors fail the control
+    }
+    await expect(openNoticeInstallation(directory)).rejects.toMatchObject({ code: 'notice_installation_corrupt' });
+    expect(await fs.readFile(target, 'utf8')).toBe(bytes);
+    expect((await fs.lstat(path.join(owned, 'installation.json'))).isSymbolicLink()).toBe(true);
   });
 });

@@ -605,6 +605,18 @@ interprocess atomic compare-and-swap and does not prove resistance to arbitrary
 external filesystem rewrites. Prepared pages/marker phases are not runtime
 generations or a replacement for shared lifecycle admission.
 
+M1-L: metadata writers best-effort clean only the temporary path they just
+exclusive-created, checking file identity when available. Close/cleanup errors
+must not mask the first write/sync/rename error; retain its private,
+non-enumerable cause while returning stable local failure codes. A transient
+envelope ENOSPC with successful cleanup is resumable with the same UUID.
+Process death cannot run finally: a crashed envelope temp remains ambiguous and
+is **not** automatically removed by name/prefix. Preserve it and refuse bootstrap
+until separately inspected repair. Actual temp-created/pre-rename process exit,
+cleanup failure, original-error retention and failed-rename controls are required.
+This explicitly admits crash-residue liveness limits; it is not a claim that all
+interrupted filesystem states recover automatically or a grant to delete files.
+
 **Older binaries are not ledger-aware.** A sidecar does not make their delivery
 writer fail closed. Do not mirror a scan frontier or uncertain coverage into
 their `notified` cursor and call it successful notification. Supported ordinary
