@@ -3,6 +3,8 @@ import { execFile } from 'child_process';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import nodeFs from 'fs';
+import { syncBuiltinESMExports } from 'module';
 import type { AgentConfigTarget } from './agent-config-reader';
 import { HELPER_TRANSFORM_UNAVAILABLE, readOnlyHelperWork } from './read-only-helper-work';
 import * as repository from './read-only-repository-changes';
@@ -150,6 +152,23 @@ describe('passive direct helper work', () => {
     await fs.writeFile(path.join(project, 'ordinary'), 'one\r\n');
     expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 0 });
   });
+  it('admits a root whose JS and native realpaths differ in form, and still refuses a different native root', async () => {
+    // Windows 8.3 names (RUNNER~1) are expanded by the native realpath but not by the JS walk. Model the same folder
+    // reported in two forms: the JS realpath adds a trailing separator; the native realpath is untouched.
+    await fs.writeFile(path.join(project, 'ordinary'), 'two\n');
+    const js = nodeFs.realpathSync, native = nodeFs.realpathSync.native;
+    const variant = Object.assign((p: nodeFs.PathLike, options?: never) => { const real = js(p, options) as string; return real.startsWith(project) ? real + path.sep : real; }, { native });
+    vi.spyOn(nodeFs, 'realpathSync').mockImplementation(variant as never); syncBuiltinESMExports();
+    try {
+      expect(await readOnlyHelperWork(parent, entry, () => true)).toEqual({ dirty: 1, unpushed: 0, unmerged: null });
+      // A native root that is actually different is still refused at the final fence.
+      const other = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-other-root-'));
+      Object.assign(nodeFs.realpathSync, { native: (p: nodeFs.PathLike, options?: never) => String(p) === project ? other : native(p, options) }); syncBuiltinESMExports();
+      expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 0, unpushed: 0, unmerged: null, error: expect.any(String) });
+      await fs.rm(other, { recursive: true, force: true });
+    } finally { vi.mocked(nodeFs.realpathSync).mockRestore(); syncBuiltinESMExports(); }
+  });
+
   it('refuses an unrelated helper before Git or file-content reads', async () => {
     entry.config.parentAgentId = 'other';
     await fs.writeFile(inventory, JSON.stringify([parent.agent, entry.config]));
