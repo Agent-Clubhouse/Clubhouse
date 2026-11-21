@@ -1,0 +1,1 @@
+npx eslint src/main/services/actions/selected-details-page.ts src/main/services/actions/selected-details-page.test.ts
