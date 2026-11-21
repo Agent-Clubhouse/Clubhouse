@@ -39,8 +39,9 @@ if (!mode) {
       if (mode === 'queued-only-hold') {
         source = replaceOnce(source,
           '    if (settling) this.settlingAttempts.set(settling, (this.settlingAttempts.get(settling) ?? 0) + 1);\n    if (recovery) this.pendingRecoveries++;', '');
-        source = replaceOnce(source, '    const next = this.work.catch(() => {}).then(async () => {',
-          "    const next = this.work.catch(() => {}).then(async () => {\n      if (input.kind === 'settle' && input.outcome !== 'accepted') this.settlingAttempts.set(input.attemptId, (this.settlingAttempts.get(input.attemptId) ?? 0) + 1);\n      if (input.kind === 'recover') this.pendingRecoveries++;");
+        const enqueue = '  private enqueue(input: NoticeDelta, liveProof?: LiveHandoffRecord): Promise<SequencedNoticeState> {\n    const next = this.work.catch(() => {}).then(async () => {';
+        source = replaceOnce(source, enqueue,
+          enqueue + "\n      if (input.kind === 'settle' && input.outcome !== 'accepted') this.settlingAttempts.set(input.attemptId, (this.settlingAttempts.get(input.attemptId) ?? 0) + 1);\n      if (input.kind === 'recover') this.pendingRecoveries++;");
       }
       if (mode === 'remove-attempt-entry-check') source = replaceOnce(source, ' || this.enteredAttempts.has(proof.attemptId)', '');
       console.log(JSON.stringify({ mode, originalJournalSha256: sourceBefore, compiledJournalSha256: sha(source) }));
