@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "readOnlyMain": "c43ffb37d20650c542e449a8a04a9fd84e65b655",
+  "composed": false,
+  "files": [
+    {
+      "path": "src/shared/chat/runtime.ts",
+      "blob": "ea135b72bdd58fdd1360b981d73bc473faef8e8c",
+      "sha256": "3d30b01c5a256a3f7d7b2735e1506ea18922c8c2bb0e55ab60a446aa4104bb32"
+    },
+    {
+      "path": "src/main/services/agent-runtime/runtime-coordinator.ts",
+      "blob": "95a8533a3100ebe074877f182ab5e7e71c3b7400",
+      "sha256": "9107c5a2d55363479fc64f46becf8538a028dacb33a7fe1ca166cd19e8c065f0"
+    }
+  ],
+  "interveningPaths": [
+    "docs/evidence/q5-runtime-p1/README.md",
+    "docs/evidence/q5-runtime-p1/eslint-final-original.txt",
+    "docs/evidence/q5-runtime-p1/fixture-tsc-attempt-01-original.txt",
+    "docs/evidence/q5-runtime-p1/fixture-tsc-final-original.txt",
+    "docs/evidence/q5-runtime-p1/fixture-tsconfig.json",
+    "docs/evidence/q5-runtime-p1/gate-vitest-attempt-01-original.txt",
+    "docs/evidence/q5-runtime-p1/hosted-44942563638-linux-failure-excerpt.txt",
+    "docs/evidence/q5-runtime-p1/hosted-44942563638-windows-failure-excerpt.txt",
+    "docs/evidence/q5-runtime-p1/hosted-44942563638.json",
+    "docs/evidence/q5-runtime-p1/mutant-expiry-reopens-original.txt",
+    "docs/evidence/q5-runtime-p1/mutant-fabricated-ack-original.txt",
+    "docs/evidence/q5-runtime-p1/mutant-marker-rejected-original.txt",
+    "docs/evidence/q5-runtime-p1/mutant-repeated-loss-original.txt",
+    "docs/evidence/q5-runtime-p1/mutant-unchecked-brands-original.txt",
+    "docs/evidence/q5-runtime-p1/npm-ci-attempt-01-original.txt",
+    "docs/evidence/q5-runtime-p1/q5-runtime-p1-diagnostics-eslint-01-original.txt",
+    "docs/evidence/q5-runtime-p1/q5-runtime-p1-diagnostics-eslint-01-receipt.json",
+    "docs/evidence/q5-runtime-p1/q5-runtime-p1-diagnostics-fixture-tsc-01-original.txt",
+    "docs/evidence/q5-runtime-p1/q5-runtime-p1-diagnostics-fixture-tsc-01-receipt.json",
+    "docs/evidence/q5-runtime-p1/q5-runtime-p1-diagnostics-prod-tsc-01-original.txt",
+    "docs/evidence/q5-runtime-p1/q5-runtime-p1-diagnostics-prod-tsc-01-receipt.json",
+    "docs/evidence/q5-runtime-p1/q5-runtime-p1-diagnostics-tests-01-original.txt",
+    "docs/evidence/q5-runtime-p1/q5-runtime-p1-diagnostics-tests-01-receipt.json",
+    "docs/evidence/q5-runtime-p1/tsc-attempt-01-original.txt",
+    "docs/evidence/q5-runtime-p1/tsc-final-original.txt",
+    "docs/evidence/q5-runtime-p1/vitest-final-original.txt",
+    "docs/evidence/q5-runtime-p1/vitest-restored-original.txt",
+    "src/main/services/agent-runtime/runtime-coordinator.test.ts",
+    "src/main/services/agent-runtime/runtime-coordinator.ts",
+    "src/shared/chat/runtime.ts"
+  ]
+}

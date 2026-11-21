@@ -25,10 +25,12 @@ async function readPages(pages: NoticePhysicalPages, root: string, visiting = ne
   visiting.delete(root); return result;
 }
 
-export function legacyNoticeCodec(recipient: NoticeRecipient): NoticePhysicalCodec<SequencedNoticeState, NoticeDelta, NoticeDelta> {
+export function legacyNoticeCodec(recipientInput: NoticeRecipient): NoticePhysicalCodec<SequencedNoticeState, NoticeDelta, NoticeDelta> {
+  const recipient = structuredClone(recipientInput);
   const recipientKey = noticeRecipientKey(recipient);
   const validate = (state: SequencedNoticeState) => {
-    if (noticeRecipientKey(state.recipient) !== recipientKey) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Notice recipient does not match storage');
+    if (noticeRecipientKey(state.recipient) !== recipientKey || state.recipient.groupId !== recipient.groupId
+      || state.recipient.host !== recipient.host || state.recipient.agentId !== recipient.agentId || state.recipient.generation !== recipient.generation) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Notice recipient does not match storage');
   };
   return {
     minWriterVersion: 1,

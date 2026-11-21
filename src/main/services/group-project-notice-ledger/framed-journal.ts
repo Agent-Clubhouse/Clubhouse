@@ -65,6 +65,12 @@ export interface NoticePhysicalExpectation {
   revision: number;
   digest: string;
 }
+export interface NoticePhysicalCommit<S> {
+  readonly state: S | undefined;
+  readonly revision: number;
+  readonly digest: string;
+  readonly changed: boolean;
+}
 export interface NoticePhysicalOptions<S, D, R> {
   directory: string;
   recipientKey: string;
@@ -73,7 +79,7 @@ export interface NoticePhysicalOptions<S, D, R> {
   codec: NoticePhysicalCodec<S, D, R>;
   testFailure?: (point: NoticePhysicalFailurePoint) => void | Promise<void>;
   /** Internal synchronous anchor update only; no UI/driver callback or await. */
-  published?: (state: S, record: R) => void;
+  published?: (state: S, record: R, input: D) => void;
 }
 
 // Keyed by real directory after mkdir: aliases cannot open a second owner here.
@@ -317,18 +323,35 @@ export class NoticeFramedJournal<S, D, R> {
   }
   /** Validation/preparation refusal has no journal effect and does not poison. */
   append(input: D, expected?: NoticePhysicalExpectation): Promise<S | undefined> {
+    const owned = structuredClone(input);
+    return this.appendFrom(() => owned, expected);
+  }
+  /**
+   * Sealed main journal operation only: build bounded transaction data from the
+   * latest view INSIDE the sole queue. No IPC/driver callback or second queue.
+   */
+  appendFrom(makeInput: (state: S | undefined) => D | Promise<D>, expected?: NoticePhysicalExpectation): Promise<S | undefined> {
+    return this.commitFrom(makeInput, expected).then((result) => result.state);
+  }
+  /** Exact transaction result, distinct from whatever a later snapshot contains. */
+  commitFrom(makeInput: (state: S | undefined) => D | Promise<D>, expected?: NoticePhysicalExpectation): Promise<NoticePhysicalCommit<S>> {
     if (this.closing) return Promise.reject(new NoticeLedgerStorageError('notice_ledger_unavailable', 'Notice storage is closing'));
-    const owned = structuredClone(input); const expectation = expected && { ...expected };
+    const expectation = expected && { ...expected };
     const next = this.work.catch(() => {}).then(async () => {
       this.assertHealthy(); this.expectation(expectation);
+      let owned: D;
       let prepared: { state: S; record: R } | undefined;
-      try { prepared = await this.options.codec.prepare(this.state, owned); }
+      try {
+        owned = structuredClone(await makeInput(this.state));
+        this.assertHealthy(); this.expectation(expectation);
+        prepared = await this.options.codec.prepare(this.state, owned);
+      }
       catch (error) {
         if (!(error instanceof NoticeLedgerValidationError)) this.poisoned = true;
         throw error; // telemetry-exempt: only explicitly no-effect validation can release producer ownership
       }
       this.assertHealthy(); this.expectation(expectation);
-      if (!prepared) return this.state;
+      if (!prepared) return Object.freeze({ state: this.state, revision: this.revision, digest: this.digest, changed: false });
       this.options.codec.validate(prepared.state);
       const envelope: RecordEnvelope<R> = { schemaVersion: 1, minWriterVersion: this.options.codec.minWriterVersion,
         revision: this.revision + 1, previousDigest: this.digest, delta: prepared.record };
@@ -363,9 +386,25 @@ export class NoticeFramedJournal<S, D, R> {
         // One non-yielding phase: metadata/state/hash and internal anchor invalidation.
         this.revision = envelope.revision; this.digest = digest; this.state = prepared.state;
         this.segment = targetSegment; this.segmentBytes = targetBytes + frame.length; this.currentFileHash = fileHash;
-        this.options.published?.(prepared.state, prepared.record);
+        this.options.published?.(prepared.state, prepared.record, owned);
       } catch (error) { this.poisoned = true; throw error; } // telemetry-exempt: ambiguous physical IO requires owner reconciliation
-      return this.state;
+      return Object.freeze({ state: this.state, revision: this.revision, digest: this.digest, changed: true });
+    });
+    this.work = next; return next;
+  }
+  /** Bounded internal lookup/capability minting is serialized with all commits. */
+  inspect<T>(read: (state: S | undefined) => T | Promise<T>): Promise<T> {
+    if (this.closing) return Promise.reject(new NoticeLedgerStorageError('notice_ledger_unavailable', 'Notice storage is closing'));
+    const next = this.work.catch(() => {}).then(async () => {
+      this.assertHealthy();
+      try {
+        const value = await read(this.state);
+        this.assertHealthy();
+        return value;
+      } catch (error) {
+        if (!(error instanceof NoticeLedgerValidationError)) this.poisoned = true;
+        throw error; // telemetry-exempt: unknown lookup IO/invariant failure requires owner reconciliation
+      }
     });
     this.work = next; return next;
   }

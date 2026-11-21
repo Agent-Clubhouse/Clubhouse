@@ -50,6 +50,12 @@ export class PreparedNoticeState {
   private async attempt(attemptId: string): Promise<NoticeAttempt | undefined> {
     return await this.index.get(this.header.roots.attempts, attemptId) as unknown as NoticeAttempt | undefined;
   }
+  /** Bounded main-journal detail lookup. This creates no live receipt authority. */
+  async lookupAttempt(attemptId: string): Promise<NoticeAttempt | undefined> {
+    id(attemptId);
+    const attempt = await this.attempt(attemptId);
+    return attempt === undefined ? undefined : copy(attempt);
+  }
   /** Only new frontier spans or single accepted positions may be covered. */
   private async cover(header: PreparedNoticeRoots, lo: number, hi = lo): Promise<void> {
     let root = header.roots.terminal;
