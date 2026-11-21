@@ -56,7 +56,7 @@ it('keeps a complete small card available above large Notes, with bounded descri
   put(); const file = page(undefined, 'PRIVATE_NOTES'.repeat(200000)); const before = disk(); let bytes = 0;
   const open = fs.promises.open.bind(fs.promises);
   vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
-    const handle = await open(...args); if (String(args[0]) === file) {
+    const handle = await open(...args); if (path.relative(path.resolve(String(args[0])), path.resolve(file)) === '') { // same file, whatever case/separators Windows reports
       const read = handle.read.bind(handle); vi.spyOn(handle, 'read').mockImplementation(async (...args: Parameters<typeof read>) => { const result = await Reflect.apply(read, handle, args); bytes += result.bytesRead; return result; });
     } return handle;
   });

@@ -283,7 +283,9 @@ describe('Quick template passive selected metadata composition', () => {
 });
 
 async function quickRepository() {
-  const git = (...args: string[]) => new Promise<string>((resolve, reject) => execFile('git', args, { cwd: project, env: { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' } }, (error, out) => error ? reject(error) : resolve(out.trim())));
+  const git = (...args: string[]) => new Promise<string>((resolve, reject) => execFile('git', args, { cwd: project, env: { ...process.env, GIT_CONFIG_GLOBAL: path.join(root, 'empty-gitconfig'), GIT_CONFIG_NOSYSTEM: '1' } }, (error, out) => error ? reject(error) : resolve(out.trim())));
+  // An empty file, not os.devNull: Git for Windows cannot open \\.\nul as a config file.
+  await fs.writeFile(path.join(root, 'empty-gitconfig'), '');
   await git('init', '-b', 'main'); await git('config', 'user.name', 'Fixture'); await git('config', 'user.email', 'fixture@invalid');
   await fs.writeFile(path.join(project, '.gitattributes'), '* -filter -ident -text\n'); await fs.writeFile(path.join(project, 'source.txt'), 'before\n');
   await git('add', '.'); await git('commit', '-m', 'base'); await git('switch', '-c', 'feature');

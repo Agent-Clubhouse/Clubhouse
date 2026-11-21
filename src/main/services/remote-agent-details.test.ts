@@ -570,7 +570,7 @@ describe('host selected-agent Details projections', () => {
       Object.defineProperty(process, 'platform', { value: 'darwin' }); shell.invalidateShellEnvironmentCache();
       vi.mocked(execSync).mockReturnValue(`CLAUDE_CONFIG_DIR=${root}\n`); shell.getShellEnvironment(); vi.mocked(execSync).mockClear();
       m.envCached.mockImplementation(shell.isShellEnvironmentCached);
-      const folder = path.join(root, 'projects', '-host-selected'); await fs.mkdir(folder, { recursive: true });
+      const folder = path.join(root, 'projects', path.resolve('/host/selected').replace(/[^a-zA-Z0-9]/g, '-')); /* drive-prefixed on Windows */ await fs.mkdir(folder, { recursive: true });
       const file = path.join(folder, 'selected-last.jsonl');
       const result = (duration_ms: number, total_cost_usd: number) => JSON.stringify({ type: 'result', duration_ms, total_cost_usd, timestamp: '2026-11-19T02:00:00Z' });
       const filler = JSON.stringify({ type: 'user', message: 'PRIVATE_HISTORY_TEXT'.repeat(512) });

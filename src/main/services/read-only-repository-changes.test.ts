@@ -354,7 +354,8 @@ describe('passive repository comparison', () => {
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-not-repo-'));
     try { expect(await readOnlyRepositoryRoot(outside)).toBeNull(); } finally { await fs.rm(outside, { recursive: true, force: true }); }
   });
-  it('preserves executable-mode changes and honors the repository’s core.fileMode setting without updating it', async () => {
+  // Windows has no executable bit and Git for Windows defaults core.fileMode to false, so no mode change exists to read.
+  it.skipIf(process.platform === 'win32')('preserves executable-mode changes and honors the repository’s core.fileMode setting without updating it', async () => {
     await fs.writeFile(path.join(root, 'script'), 'echo ready\n', { mode: 0o644 });
     await git('add', '.');
     const from = await tree();

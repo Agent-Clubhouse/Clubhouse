@@ -11,7 +11,7 @@ vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: m.target }));
 let root: string, project: string, parent: AgentConfigTarget, entry: Parameters<typeof readOnlyHelperWork>[1], inventory: string;
 function git(...args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => execFile('git', args, { cwd: project, env: { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' } }, (error, out) => error ? reject(error) : resolve(out.trim())));
+  return new Promise((resolve, reject) => execFile('git', args, { cwd: project, env: { ...process.env, GIT_CONFIG_GLOBAL: path.join(root, 'empty-gitconfig'), GIT_CONFIG_NOSYSTEM: '1' } }, (error, out) => error ? reject(error) : resolve(out.trim())));
 }
 async function snapshot(folder: string, prefix = ''): Promise<Record<string, string>> {
   const result: Record<string, string> = {};
@@ -26,6 +26,8 @@ beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-passive-helper-'));
   m.base = path.join(root, 'profile'); project = path.join(root, 'project');
   await fs.mkdir(m.base); await fs.mkdir(path.join(project, '.clubhouse'), { recursive: true });
+  // An empty file, not os.devNull: Git for Windows cannot open \\.\nul as a config file.
+  await fs.writeFile(path.join(root, 'empty-gitconfig'), '');
   await git('init', '-b', 'main'); await git('config', 'user.name', 'Fixture'); await git('config', 'user.email', 'fixture@invalid');
   await fs.writeFile(path.join(project, '.git', 'info', 'exclude'), '.clubhouse/\n');
   await fs.writeFile(path.join(project, 'ordinary'), 'one\n'); await git('add', '.'); await git('commit', '-m', 'base'); await git('switch', '-c', 'helper');

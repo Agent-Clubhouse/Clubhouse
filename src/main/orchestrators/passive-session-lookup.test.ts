@@ -14,6 +14,8 @@ import { CopilotCliProvider } from './copilot-cli-provider';
 let root: string;
 const selected = '11111111-1111-4111-8111-111111111111';
 const cwd = '/host/selected';
+// Claude's folder name for the resolved cwd: '-host-selected' on POSIX, drive-prefixed on Windows.
+const claudeFolder = path.resolve(cwd).replace(/[^a-zA-Z0-9]/g, '-');
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-passive-native-')); m.closed = 0;
   m.env = { CLAUDE_CONFIG_DIR: path.join(root, 'claude'), CODEX_HOME: path.join(root, 'codex'), COPILOT_HOME: path.join(root, 'copilot') };
@@ -51,7 +53,7 @@ describe('display-only bounded native lookup', () => {
     await provider.readSessionTranscript(selected, cwd, { maxBytes: 8192 }); expect(fs.readdir).toHaveBeenCalled();
   });
   it.each(['claude', 'copilot'] as const)('bounds %s selected-session fallback without materializing a directory array', async (kind) => {
-    const directory = kind === 'claude' ? path.join(m.env.CLAUDE_CONFIG_DIR, 'projects', '-host-selected', selected) : path.join(m.env.COPILOT_HOME, 'session-state', selected);
+    const directory = kind === 'claude' ? path.join(m.env.CLAUDE_CONFIG_DIR, 'projects', claudeFolder, selected) : path.join(m.env.COPILOT_HOME, 'session-state', selected);
     await many(directory, 'entries');
     const provider = kind === 'claude' ? new ClaudeCodeProvider() : new CopilotCliProvider(); const stats: TranscriptReadStats = {};
     expect(await provider.readSessionTranscript(selected, cwd, { maxBytes: 8192, stats, passiveLookup: true })).toBeNull();
@@ -60,7 +62,7 @@ describe('display-only bounded native lookup', () => {
     await provider.readSessionTranscript(selected, cwd, { maxBytes: 8192 }); expect(fs.readdir).toHaveBeenCalledWith(directory);
   });
   it.each(['claude', 'codex', 'copilot'] as const)('reads only the selected %s native file under the passive option and preserves ordinary success', async (kind) => {
-    const directory = kind === 'claude' ? path.join(m.env.CLAUDE_CONFIG_DIR, 'projects', '-host-selected', selected) : kind === 'codex' ? path.join(m.env.CODEX_HOME, 'sessions') : path.join(m.env.COPILOT_HOME, 'session-state', selected);
+    const directory = kind === 'claude' ? path.join(m.env.CLAUDE_CONFIG_DIR, 'projects', claudeFolder, selected) : kind === 'codex' ? path.join(m.env.CODEX_HOME, 'sessions') : path.join(m.env.COPILOT_HOME, 'session-state', selected);
     await fs.mkdir(directory, { recursive: true });
     const fileName = kind === 'codex' ? `rollout-2026-11-19T00-00-00-${selected}.jsonl` : 'record.jsonl';
     const file = path.join(directory, fileName); await fs.writeFile(file, raw(0)); const before = await fs.stat(file);
