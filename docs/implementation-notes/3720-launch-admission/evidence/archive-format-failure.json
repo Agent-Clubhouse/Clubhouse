@@ -1,0 +1,14 @@
+{
+  "headAtExecution": "377b70c6246193b9eb6c8d7a8cfeedca3c27d112",
+  "argv": [
+    "git",
+    "diff",
+    "--check",
+    "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+    "377b70c6246193b9eb6c8d7a8cfeedca3c27d112"
+  ],
+  "actualExitCode": 2,
+  "stdout": "docs/implementation-notes/3720-launch-admission/evidence/02-baseline-red.txt:142: new blank line at EOF.\ndocs/implementation-notes/3720-launch-admission/evidence/04-no-close-rotation.txt:161: new blank line at EOF.\ndocs/implementation-notes/3720-launch-admission/evidence/05-reset-on-reopen.txt:161: new blank line at EOF.\ndocs/implementation-notes/3720-launch-admission/evidence/06-missing-open-latch.txt:40: new blank line at EOF.\n",
+  "stderr": "",
+  "scope": "Actual evidence packaging whitespace failure, not product test failure; original commit retained"
+}

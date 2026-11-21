@@ -1,3 +1,4 @@
+DERIVATIVE VIEW: exact original bytes are in 02-baseline-red.raw.json; only terminal blank lines normalized below.
 HEAD: c2746d5744449612123d49c5e63925cd0515cf57
 Command argv: ["node", "node_modules/vitest/vitest.mjs", "run", "--config", ".cache/3720-launch/vitest.config.ts", "--configLoader", "runner", "--project", "main", "--maxWorkers", "1", "--no-file-parallelism", "src/main/services/launch-gate.test.ts", "src/main/services/app-shutdown.test.ts"]
 Start UTC: 2026-11-21T11:56:26.955300+00:00
@@ -139,4 +140,3 @@ TypeError: captureLaunchAdmission is not a function
     109|     expect(agentWorkOpen()).toBe(false);
 
 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/11]⎯
-

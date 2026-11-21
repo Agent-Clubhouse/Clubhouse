@@ -1,0 +1,37 @@
+{
+  "status": "Original receipt objects unchanged; original raw bytes retained in JSON and original377b70 commit. display.txt files are labeled derivatives, not raw proof.",
+  "files": [
+    {
+      "receipt": "02-baseline-red.json",
+      "originalFile": "02-baseline-red.txt",
+      "carrier": "02-baseline-red.raw.json",
+      "originalSHA256": "4bb5e5c53e3675f8840ce5787886c9196e9305c6d0ec72890ada3e7b4005aaa4",
+      "displayDerivative": "02-baseline-red.display.txt",
+      "displaySHA256": "52ce1a77788065c4e42d7942b3822f2d4c61c28e75faa491020a266184a62fdb"
+    },
+    {
+      "receipt": "04-no-close-rotation.json",
+      "originalFile": "04-no-close-rotation.txt",
+      "carrier": "04-no-close-rotation.raw.json",
+      "originalSHA256": "e97dcb2baecb4d491107295fca4191d77f4d54a1b7364dfa9991a95e7b85e158",
+      "displayDerivative": "04-no-close-rotation.display.txt",
+      "displaySHA256": "6af4a1b509be06d053a36136ca67a6e6445241e21955dd4d775b61b597e22caa"
+    },
+    {
+      "receipt": "05-reset-on-reopen.json",
+      "originalFile": "05-reset-on-reopen.txt",
+      "carrier": "05-reset-on-reopen.raw.json",
+      "originalSHA256": "c5dee1a6e5169eb2165a4ff7f16e182b9037ec7c5fe64361a8a2bb75bd77d5d3",
+      "displayDerivative": "05-reset-on-reopen.display.txt",
+      "displaySHA256": "148279d4cd2e441c494286f180ab423433b95c0eba5d5703edf6bd22d98dc92d"
+    },
+    {
+      "receipt": "06-missing-open-latch.json",
+      "originalFile": "06-missing-open-latch.txt",
+      "carrier": "06-missing-open-latch.raw.json",
+      "originalSHA256": "7dfa0e6d9908f9b529f09617db82150fc180cf1c9fdb5b53e537fd28ad02331f",
+      "displayDerivative": "06-missing-open-latch.display.txt",
+      "displaySHA256": "3dd1a9aaed6a466f06b247203baa047e770413334c2201b53b5617dfc0cbd108"
+    }
+  ]
+}

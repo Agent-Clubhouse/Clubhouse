@@ -1,3 +1,4 @@
+DERIVATIVE VIEW: exact original bytes are in 06-missing-open-latch.raw.json; only terminal blank lines normalized below.
 HEAD: 4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b
 Command argv: ["node", "node_modules/vitest/vitest.mjs", "run", "--config", ".cache/3720-launch/vitest.config.ts", "--configLoader", "runner", "--project", "main", "--maxWorkers", "1", "--no-file-parallelism", "src/main/services/launch-gate.test.ts", "src/main/services/app-shutdown.test.ts"]
 Start UTC: 2026-11-21T11:57:46.494363+00:00
@@ -37,4 +38,3 @@ AssertionError: expected true to be false // Object.is equality
      48|   });
 
 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
-

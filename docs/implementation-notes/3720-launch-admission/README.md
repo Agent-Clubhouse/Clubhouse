@@ -6,7 +6,7 @@ The only production change is 10 additive lines in launch-gate.ts: an opaque gen
 
 ## Observed proof
 
-All commands, HEADs, source hashes/diffs, actual exits and full outputs are in `evidence/`. The code head above was tested unchanged; mutated runs record their actual dirty source separately.
+All commands, HEADs, source hashes/diffs, actual exits and full outputs are in `evidence/`. Four raw failure outputs with terminal blank lines are preserved byte-for-byte in `.raw.json` carriers and original archive commit `377b70c6246193b9eb6c8d7a8cfeedca3c27d112`; `.display.txt` files are explicitly labeled derivatives. Original command receipts/hashes are unchanged. `raw-transports.json` maps names and `verify-evidence.py` checks the original bytes against both receipt hashes and retained git objects. The actual archive-format diff-check failure is retained; it was packaging, not a product test. Candidate diff-check is exit0. The code head above was tested unchanged; mutated runs record their actual dirty source separately.
 
 | Check | Observed result |
 | --- | --- |
@@ -22,7 +22,7 @@ The coordinator is real `runAppShutdown`; agent drivers/flushing side effects ar
 
 Admission was remeasured:16 CPUs, load2.66 before tests and2.15 before sequential type/lint, with ample free memory. Cached lock SHA256 `bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d` matches and all1176 non-optional installed package versions match. No install or shared dependency-cache write. Vitest uses one worker, no file parallelism, runner config loading, task-local `.cache/3720-launch` and disabled Node compile cache. Original output paths are preserved; commands/config generation are checkout-relative.
 
-To reproduce with the already-matched dependencies, run `python3 docs/implementation-notes/3720-launch-admission/prepare-local-config.py`, then use the exact argv in the receipts. `run-proof.py` preserves actual outputs; `run-mutants.py` mutates only the task source file and restores its exact bytes in finally. The captured config text matches the hash in receipts. No live CLI/agent/app restart, install, grant/link/power change, release or Mini probe occurred.
+Use a fresh checkout of the candidate code branch to reproduce; the proof branch archives immutable outputs. Do not overwrite archived labels. To reproduce with the already-matched dependencies, run `python3 docs/implementation-notes/3720-launch-admission/prepare-local-config.py`, then use the exact argv in the receipts. `run-proof.py` preserves actual outputs; `run-mutants.py` mutates only the task source file and restores its exact bytes in finally. The captured config text matches the hash in receipts. No live CLI/agent/app restart, install, grant/link/power change, release or Mini probe occurred.
 
 ## Remaining implementation controls
 

@@ -1,12 +1,13 @@
+DERIVATIVE VIEW: exact original bytes are in 04-no-close-rotation.raw.json; only terminal blank lines normalized below.
 HEAD: 4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b
 Command argv: ["node", "node_modules/vitest/vitest.mjs", "run", "--config", ".cache/3720-launch/vitest.config.ts", "--configLoader", "runner", "--project", "main", "--maxWorkers", "1", "--no-file-parallelism", "src/main/services/launch-gate.test.ts", "src/main/services/app-shutdown.test.ts"]
-Start UTC: 2026-11-21T11:57:45.385397+00:00
+Start UTC: 2026-11-21T11:57:44.263705+00:00
 Exit code: 1
 STDOUT:
 
  RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness
 
- ❯ |main| src/main/services/app-shutdown.test.ts (11 tests | 2 failed) 390ms
+ ❯ |main| src/main/services/app-shutdown.test.ts (11 tests | 2 failed) 389ms
      × refuses an old success effect after a real guarded update fails and reopens 9ms
      × refuses an old failure effect after a real guarded update fails and reopens 7ms
  ❯ |main| src/main/services/launch-gate.test.ts (9 tests | 4 failed) 6ms
@@ -17,8 +18,8 @@ STDOUT:
 
  Test Files  2 failed (2)
       Tests  6 failed | 14 passed (20)
-   Start at  06:57:45
-   Duration  848ms (transform 232ms, setup 7ms, import 292ms, tests 395ms, environment 0ms)
+   Start at  06:57:44
+   Duration  858ms (transform 242ms, setup 6ms, import 304ms, tests 395ms, environment 0ms)
 
 
 STDERR:
@@ -158,4 +159,3 @@ Number of calls: 1
      85|     if (fresh()) effect('fresh explicit request');
 
 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
-

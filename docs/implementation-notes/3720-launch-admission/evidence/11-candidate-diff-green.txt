@@ -1,0 +1,7 @@
+HEAD: 377b70c6246193b9eb6c8d7a8cfeedca3c27d112
+Command argv: ["git", "diff", "--check", "be0091d1676764b0e3300898ab0ad1f135f88a46", "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b"]
+Start UTC: 2026-11-21T12:06:06.561632+00:00
+Exit code: 0
+STDOUT:
+
+STDERR:

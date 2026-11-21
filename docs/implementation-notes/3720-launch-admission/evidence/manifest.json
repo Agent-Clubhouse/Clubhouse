@@ -92,6 +92,14 @@
       "expectedExitCode": 0,
       "receipt": "10-lint.json",
       "sha256": "1831f48d6322b99d8acd1359a1b39309d7ac113ecce2e67b300bc026356ca617"
+    },
+    {
+      "label": "11-candidate-diff-green",
+      "headAtExecution": "377b70c6246193b9eb6c8d7a8cfeedca3c27d112",
+      "actualExitCode": 0,
+      "expectedExitCode": 0,
+      "receipt": "11-candidate-diff-green.json",
+      "sha256": "bd7dfc86330a3ae379bb89c1b33745fef0c4ea85b9fe16be6fa357b320b9b60c"
     }
   ],
   "limitations": [
@@ -100,5 +108,8 @@
     "driver effects mocked in real app shutdown coordinator tests",
     "every-close rotation unconditional in reviewed source; repeated-close black-box tests assert observable invalidation",
     "mixed-version naming, IPC/schema/store/readiness and hosted CI not run in this piece"
-  ]
+  ],
+  "rawOutputTransport": "raw-transports.json; original bytes for four failure outputs in UTF-8 JSON carriers, displays explicitly derivative",
+  "originalRawArchiveCommit": "377b70c6246193b9eb6c8d7a8cfeedca3c27d112",
+  "archiveFormatFailure": "archive-format-failure.json (actual diff-check exit2 from terminal blank lines); packaging corrected, original bytes preserved"
 }
