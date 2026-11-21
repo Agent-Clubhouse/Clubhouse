@@ -1,6 +1,7 @@
 # Q5 sequenced persistence foundation evidence
 
-Latest bounded slice: [markers-8142a812a.md](markers-8142a812a.md).
+Latest bounded slice: [M1-f58bf00d3.md](M1-f58bf00d3.md).
+Previous approved boundary: [markers-8142a812a.md](markers-8142a812a.md).
 Earlier successors: [streaming181](streaming-181046cde.md),
 [lazy index773](pages-77327b52a.md), [G1c504](G1-c504cce7d.md),
 [F1–F4 at0d](F1-F4-0d0fd511f.md). The original36/922 scope and results
