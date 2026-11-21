@@ -1,4 +1,4 @@
-# Desktop reverse-control routes and readiness (#3613 P2/P7)
+# Desktop reverse-control routes and readiness (#3613 P2/P7/P7w)
 
 ## Route and reconnect slice (P2)
 
@@ -103,3 +103,33 @@ P7 results are not evidence for this current-source successor.
 
 The same fixture tsconfig also checks the complete current control, device-list
 and Settings test files for P7, in addition to the P2 route/reconnect fixtures.
+
+## Controller conversation reads (bounded P7w)
+
+Only the read-only controller conversation page/history and sessions adapters
+opt into the existing request selector. A connected direct route keeps its
+existing pinned HTTPS implementation and wins over reverse control. Otherwise,
+an already-authorized accepted control link can carry the existing GET routes.
+There is no dial, transport fallback or operation retry after selection.
+
+Reverse reads require the client to be running and enabled, active pinned
+desktop network membership, current pairing authority and no manual pause or
+pairing/pin/clock halt. Each read owns a cancellation/trust lease. Revocation,
+trust changes, explicit disconnect, stop, forget and host replacement retire
+that lease; a normal main-socket drop does not. Explicit Connect or Retry can
+lift a manual pause. Responses from a retired lease are never published.
+
+The receive limit remains exactly 8 MiB and the request timeout remains 30
+seconds. The local limit is checked against decoded inline bytes and before
+bulk credit/allocation, without new wire fields or changes to existing target
+limits, P5/P6 authority, deadlines or retry policy. Existing controller
+404/405, 401/403 and 429 states remain unavailable, forbidden and rate-limited.
+
+The existing read-only renderer consumes device readiness transitions to
+reload after reverse loss/recovery and suppress stale results. It keeps its
+polling, history selection and command-free UI. Global satellite connectivity,
+Settings/Details reads, writes, other adapters and subscriptions are unchanged.
+This is not full P7w/P8, terminal/transfer/federation or phone parity acceptance.
+Current-main integration, deterministic negative controls, complete changed
+fixture typing and independent exact-head review are required before delivery;
+historical P7w results and P7's prior 845-test execution do not transfer.

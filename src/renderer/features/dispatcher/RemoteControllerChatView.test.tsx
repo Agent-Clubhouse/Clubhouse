@@ -16,11 +16,17 @@ const read = () => vi.mocked(window.clubhouse.annexClient.controllerChatPage);
 beforeEach(() => {
   useAnnexClientStore.setState({ satellites: [] });
   useAnnexStore.setState({ devices: [] });
-  vi.mocked(window.clubhouse.annex.getDevices).mockResolvedValue([]);
+  vi.spyOn(window.clubhouse.annex, 'listDevices').mockResolvedValue([]);
+  vi.spyOn(window.clubhouse.annex, 'onDevicesChanged').mockReturnValue(() => {});
   read().mockResolvedValue(page());
   vi.mocked(window.clubhouse.annexClient.controllerChatSessions).mockResolvedValue({ status: 'ok', value: { sessions: [] } });
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => {
+  cleanup();
+  vi.mocked(window.clubhouse.annex.listDevices).mockRestore();
+  vi.mocked(window.clubhouse.annex.onDevicesChanged).mockRestore();
+  vi.useRealTimers();
+});
 
 describe('remote controller desktop chat', () => {
   it('reloads the readonly controller after reverse outbound readiness recovers without a main connection', async () => {
@@ -46,7 +52,7 @@ describe('remote controller desktop chat', () => {
       reach: { outbound: { state: 'up', via: 'reverse' }, inbound: { state: 'down' } },
     };
     let finish!: (result: ReturnType<typeof page>) => void;
-    vi.mocked(window.clubhouse.annex.getDevices).mockResolvedValue([device]);
+    vi.mocked(window.clubhouse.annex.listDevices).mockResolvedValue([device]);
     useAnnexStore.setState({ devices: [device] });
     read().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
       .mockResolvedValue({ status: 'offline' });

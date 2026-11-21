@@ -169,7 +169,8 @@ describe('controller caller receive bound', () => {
     handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(CONTROL_FRAME_MAX_BYTES + 1) });
     const { requesterWs } = await connected(['request', 'bulk']);
     await expect(control.request(TARGET, { method: 'GET', path: '/api/v1/network/dispatcher/controller/chat' },
-      { maxResponseBytes: CONTROL_FRAME_MAX_BYTES })).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+      { maxResponseBytes: CONTROL_FRAME_MAX_BYTES }).then((result) => ({ status: result.status, bytes: result.body.length })))
+      .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
     expect(requesterWs.sent.some((frame) => frame.type === 'bulk' && frame.op === 'credit')).toBe(false);
     expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(true);
   });

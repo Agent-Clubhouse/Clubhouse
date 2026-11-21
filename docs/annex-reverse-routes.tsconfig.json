@@ -9,8 +9,10 @@
     "../src/main/services/annex-routes.test.ts",
     "../src/main/services/annex-control-reconnect.test.ts",
     "../src/main/services/annex-control.test.ts",
+    "../src/main/services/annex-client.test.ts",
     "../src/main/services/annex-devices.test.ts",
     "../src/renderer/features/settings/AnnexDeviceList.test.tsx",
-    "../src/renderer/features/settings/AnnexNetworkSettingsView.test.tsx"
+    "../src/renderer/features/settings/AnnexNetworkSettingsView.test.tsx",
+    "../src/renderer/features/dispatcher/RemoteControllerChatView.test.tsx"
   ]
 }
