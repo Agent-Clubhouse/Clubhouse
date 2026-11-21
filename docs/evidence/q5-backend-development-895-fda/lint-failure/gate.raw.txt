@@ -1,0 +1,12 @@
+2026-11-21T20:09:08Z START q5-ledger idle=85% unused=8396M avail=32621M freepct=87 comp=911M swap=3889M pid=34692 cmd=python3 /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-private-backend-dev-seal.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/895caf876-lint-attempt1 -- ./node_modules/.bin/eslint src/main/services/group-project-notice-ledger/framed-journal.ts src/main/services/group-project-notice-ledger/legacy-codec.ts src/main/services/group-project-notice-ledger/pages.ts src/main/services/group-project-notice-ledger/pages.test.ts
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/src/main/services/group-project-notice-ledger/framed-journal.ts
+  171:7   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  173:38  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  177:98  error    Unsafe usage of ThrowStatement                                                                                                                         no-unsafe-finally
+  179:11  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+
+✖ 4 problems (1 error, 3 warnings)
+
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/895caf876-lint-attempt1/receipt.json", "exitCode": 1, "sealEqual": true}
+2026-11-21T20:09:09Z END q5-ledger rc=1

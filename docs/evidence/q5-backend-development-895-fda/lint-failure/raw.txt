@@ -1,0 +1,9 @@
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/src/main/services/group-project-notice-ledger/framed-journal.ts
+  171:7   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  173:38  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  177:98  error    Unsafe usage of ThrowStatement                                                                                                                         no-unsafe-finally
+  179:11  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+
+✖ 4 problems (1 error, 3 warnings)
+

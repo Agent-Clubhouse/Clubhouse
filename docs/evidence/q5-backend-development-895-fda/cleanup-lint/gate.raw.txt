@@ -1,0 +1,3 @@
+2026-11-21T20:10:08Z START q5-ledger idle=91% unused=8298M avail=32527M freepct=87 comp=911M swap=3889M pid=35281 cmd=python3 /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-private-backend-dev-seal.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/fda9167e2-cleanup-lint-attempt1 -- ./node_modules/.bin/eslint src/main/services/group-project-notice-ledger/framed-journal.ts
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/fda9167e2-cleanup-lint-attempt1/receipt.json", "exitCode": 0, "sealEqual": true}
+2026-11-21T20:10:08Z END q5-ledger rc=0

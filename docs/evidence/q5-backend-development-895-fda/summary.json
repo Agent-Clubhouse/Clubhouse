@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "scope": "incomplete private candidate development only; no backend behavior/root codec/receipt/recovery/platform proof",
+  "checks": {
+    "barrier-tests": {
+      "sourceHead": "895caf876bf2624b8c791d750692fef6fa177fda",
+      "sourceTree": "9f60f02b16e4d369e932e5a10f8fe28657c9dcfa",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/group-project-notice-ledger/pages.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "whole-root barrier"
+      ],
+      "childWallSeconds": 0.630363,
+      "selectedSourceCount": 35
+    },
+    "types": {
+      "sourceHead": "895caf876bf2624b8c791d750692fef6fa177fda",
+      "sourceTree": "9f60f02b16e4d369e932e5a10f8fe28657c9dcfa",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/tsc",
+        "--noEmit",
+        "-p",
+        "tsconfig.json"
+      ],
+      "childWallSeconds": 9.142327,
+      "selectedSourceCount": 35
+    },
+    "lint-failure": {
+      "sourceHead": "895caf876bf2624b8c791d750692fef6fa177fda",
+      "sourceTree": "9f60f02b16e4d369e932e5a10f8fe28657c9dcfa",
+      "exit": 1,
+      "argv": [
+        "./node_modules/.bin/eslint",
+        "src/main/services/group-project-notice-ledger/framed-journal.ts",
+        "src/main/services/group-project-notice-ledger/legacy-codec.ts",
+        "src/main/services/group-project-notice-ledger/pages.ts",
+        "src/main/services/group-project-notice-ledger/pages.test.ts"
+      ],
+      "childWallSeconds": 0.725809,
+      "selectedSourceCount": 35
+    },
+    "cleanup-lint": {
+      "sourceHead": "fda9167e29a525206edb08599d232d35640c3a03",
+      "sourceTree": "e82cb8be5ad9d0aaf8168432ce4e9f151f16b411",
+      "exit": 0,
+      "argv": [
+        "./node_modules/.bin/eslint",
+        "src/main/services/group-project-notice-ledger/framed-journal.ts"
+      ],
+      "childWallSeconds": 0.266338,
+      "selectedSourceCount": 35
+    }
+  },
+  "sourceBridge": {
+    "from": "895caf876bf2624b8c791d750692fef6fa177fda",
+    "to": "fda9167e29a525206edb08599d232d35640c3a03",
+    "changed": [
+      "src/main/services/group-project-notice-ledger/framed-journal.ts"
+    ]
+  },
+  "dependenciesRestored": true
+}

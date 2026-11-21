@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "q5-ledger",
+    "4",
+    "--",
+    "python3",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-private-backend-dev-seal.py",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/895caf876-lint-attempt1",
+    "--",
+    "./node_modules/.bin/eslint",
+    "src/main/services/group-project-notice-ledger/framed-journal.ts",
+    "src/main/services/group-project-notice-ledger/legacy-codec.ts",
+    "src/main/services/group-project-notice-ledger/pages.ts",
+    "src/main/services/group-project-notice-ledger/pages.test.ts"
+  ],
+  "startedAt": "2026-11-21T20:09:07.975808+00:00",
+  "finishedAt": "2026-11-21T20:09:09.543685+00:00",
+  "exitCode": 1
+}

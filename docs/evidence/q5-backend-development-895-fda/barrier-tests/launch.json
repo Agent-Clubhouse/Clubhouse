@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "q5-ledger",
+    "4",
+    "--",
+    "python3",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-private-backend-dev-seal.py",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/895caf876-barrier-tests-attempt1",
+    "--",
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/group-project-notice-ledger/pages.test.ts",
+    "--maxWorkers=2",
+    "-t",
+    "whole-root barrier"
+  ],
+  "startedAt": "2026-11-21T20:08:45.453803+00:00",
+  "finishedAt": "2026-11-21T20:08:46.977419+00:00",
+  "exitCode": 0
+}

@@ -1,0 +1,15 @@
+2026-11-21T20:08:46Z START q5-ledger idle=89% unused=8506M avail=32626M freepct=87 comp=911M swap=3889M pid=34347 cmd=python3 /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-private-backend-dev-seal.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/895caf876-barrier-tests-attempt1 -- ./node_modules/.bin/vitest run --project main src/main/services/group-project-notice-ledger/pages.test.ts --maxWorkers=2 -t whole-root barrier
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed | 39 skipped (43)
+   Start at  15:08:46
+   Duration  264ms (transform 22ms, setup 4ms, import 28ms, tests 151ms, environment 0ms)
+
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/895caf876-barrier-tests-attempt1/receipt.json", "exitCode": 0, "sealEqual": true}
+2026-11-21T20:08:46Z END q5-ledger rc=0
