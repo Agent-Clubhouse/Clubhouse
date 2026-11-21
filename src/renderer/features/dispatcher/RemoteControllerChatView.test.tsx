@@ -6,6 +6,7 @@ import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useAnnexStore } from '../../stores/annexStore';
 import type { AnnexDevice } from '../../../shared/types';
 import { mergeControllerEvents, RemoteControllerChatView } from './RemoteControllerChatView';
+import { devicesChanged, onDevicesChanged, resetDeviceSignalForTests } from '../../../main/services/annex-device-signal';
 
 const message = (seq: number, text: string, sessionId = 's'): Extract<ChatEvent, { type: 'agent_message' }> =>
   ({ v: 2, agentId: 'work', sessionId, seq, ts: seq, type: 'agent_message', data: { messageId: `m${seq}`, text } });
@@ -26,6 +27,7 @@ afterEach(() => {
   cleanup();
   vi.mocked(window.clubhouse.annex.listDevices).mockRestore();
   vi.mocked(window.clubhouse.annex.onDevicesChanged).mockRestore();
+  resetDeviceSignalForTests();
   vi.useRealTimers();
 });
 
@@ -102,6 +104,39 @@ describe('remote controller desktop chat', () => {
       useAnnexStore.setState({ devices: [{ ...device, reach: updatedReach }, { ...device, fingerprint: 'other' }] });
     });
     expect(read()).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers after accepted withdrawal and recovery coalesce into one actual device notification burst', async () => {
+    vi.useFakeTimers();
+    const reach: NonNullable<AnnexDevice['reach']> & { acceptedControlRevision: number } = {
+      outbound: { state: 'up', via: 'reverse' }, inbound: { state: 'up' },
+      acceptedControl: true, acceptedControlRevision: 1,
+    };
+    let device: AnnexDevice = {
+      fingerprint: 'peer', alias: 'Peer', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop',
+      state: 'connected', pairedAt: '', lastSeen: '', problem: null, reach,
+    };
+    vi.mocked(window.clubhouse.annex.listDevices).mockResolvedValue([device]);
+    useAnnexStore.setState({ devices: [device] });
+    let finish!: (result: ControllerReadResult<ControllerChatPage>) => void;
+    read().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+      .mockResolvedValue(page([message(1, 'Coalesced recovery')]));
+    const published: AnnexDevice[] = [];
+    onDevicesChanged(() => { published.push(device); useAnnexStore.setState({ devices: [device] }); });
+    await act(async () => { render(<RemoteControllerChatView machine="peer" />); });
+    await act(async () => {
+      device = { ...device, reach: { ...reach, acceptedControl: false, acceptedControlRevision: 2 } };
+      devicesChanged();
+      device = { ...device, reach: { ...reach, acceptedControlRevision: 3 } };
+      devicesChanged();
+      finish({ status: 'offline' });
+    });
+    expect(screen.getByText(/That computer is offline/)).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(published).toHaveLength(1);
+    expect(published[0].reach?.acceptedControl).toBe(true);
+    expect(screen.getByText('Coalesced recovery')).toBeInTheDocument();
+    expect(read()).toHaveBeenCalledTimes(2);
   });
 
   it('renders full conversation messages read-only and fetches earlier pages lazily', async () => {
