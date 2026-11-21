@@ -1,0 +1,137 @@
+{
+  "status": "PROPOSED_V2_DOCS_ONLY_SECURITY_REVIEW_PENDING_NO_IMPLEMENTATION_OR_ADVERTISEMENT",
+  "proposalVersion": 2,
+  "proposedWireVersion": 1,
+  "hostIssue": "Agent-Clubhouse/Clubhouse#3760",
+  "goIssue": "Agent-Clubhouse/Clubhouse-Go#626",
+  "branch": "feat/phone-controller-recovery-contract",
+  "sourceBase": "d8c7247a4dccc1ebff01f0f28f8e61279bdf5437",
+  "implementationBase": "Resolve actual current main again before any authorized implementation; source citations are immutable inspected-base evidence.",
+  "preservedOriginals": {
+    "commit": "ef636998ef3c73803f8861b15555f3b0c3928e87",
+    "v1Sha256": "5fba06856f4fe5b3f159c60d9eafa54166de8c4d385678dab8dd75b8fc7f2c9e",
+    "q5AddendumSha256": "10109dbe5681833fa33f4e7d10c877d51a935fe62f7a4ea54e9f16d7a4252d49",
+    "reviewer": "2c2d08f8-cb3b-457f-b587-d205773c9ebd",
+    "verdict": "HOLD implementation and capability advertisement"
+  },
+  "independentGates": {
+    "read": [
+      "Explicit existing paired-human hidden-transcript privacy predicate and applicable Off/Ask decision accepted by product/security; unresolved means no capability or private response.",
+      "Exact incarnation/phone-surface/pin/role/policy and controller/session ownership admission.",
+      "Host-side generic mobile live/held-frame/replay isolation and complete-message/index projection.",
+      "Exact revised contract review, actual implementation proof and real versioned redacted fixtures."
+    ],
+    "recovery": [
+      "Its own paired-human operation authority and action/choice-bound confirmation accepted; read permission does not imply recovery permission.",
+      "One coordinated runtime/session generation and sink-level admission shared by phone, desktop clear/fresh and automatic recovery.",
+      "Actual Q5 before-entry/UNKNOWN/late-ACK semantics and exhaustive consumers, not merely a documented promise.",
+      "Redacted observed/partial/unknown stage receipts, no implicit clear/replay and exact independent implementation review."
+    ],
+    "noCoupling": "Read does not depend on Q5 recovery delivery or recovery capability. Recovery is withheld independently even if read is eventually safe and accepted."
+  },
+  "humanPolicyDecision": {
+    "status": "UNRESOLVED_ESCALATED_CAPABILITY_AND_PRIVATE_RESPONSES_WITHHELD",
+    "executableFinding": "Current authorize/reauthorize establishes pinned paired controlling role, not hidden-history privacy. Human grant-answer authority does not name a hidden-history read predicate. Existing controllerChatAllowed uses verified desktop federation agent.read; MCP callerGrants is agent-scoped.",
+    "offAsk": "No existing human hidden-transcript Off/Ask predicate was established in the scoped path. Do not invent one, silently allow, or assume agent rules apply or do not apply. Every applicable restriction must be named and checked once an explicit authorized mapping exists; Off/Ask cannot produce private read content.",
+    "alternatives": [
+      "A: explicit product/security interpretation of existing paired-human authority covering this previously hidden projection, with precise applicable human privacy/Off/Ask rules.",
+      "B: explicitly approve a new human transcript privacy control; this changes product/permission scope and is not presently authorized.",
+      "C: defer hidden-read capability and responses until an authorized mapping exists."
+    ],
+    "currentDecision": "No implicit policy; continue specification work with read withheld."
+  },
+  "phoneAuthorityLease": {
+    "hostOnly": true,
+    "capture": ["non-reusable pairing incarnation", "fingerprint", "public key", "presented and stored pin", "role", "networkPending", "kind", "controllerSurface", "persistent-or-session-only owner", "pairingId when present", "pairedAt", "host/mobile epoch", "accepted human policy revision"],
+    "incarnationOwner": "Existing host pairing-authority mutation lifecycle, not display projection. A real pairing admission gets a fresh local incarnation; spent-PIN idempotent reply does not mint another. Retire on revoke, forget, re-pair, session expiry, server stop or authority replacement, even if identity/pin/timestamp are reused.",
+    "notProof": "Fingerprint, pairedAt, optional network pairingId, display receipt, alias, getPeer object identity or a fresh stillAuthorized result alone cannot prove the same authority incarnation.",
+    "recheck": "Direct pinned mTLS plus captured incarnation/trust/surface/policy and exact work controller/session after every awaited read or preparation and synchronously before publishing private data or entering an effect.",
+    "cache": "No private body survives revocation into a new pairing. Future recovery receipt lookup is incarnation-scoped and checked before cached publication; do not treat current fingerprint-only MobileCommandService caching as sufficient.",
+    "forbidden": ["fabricated agent caller", "authenticatedDispatcherRead=true for a phone", "new grant or link", "phone reverse-control eligibility", "alias-based authority or read revision", "caller-selected physical target"]
+  },
+  "readCapabilities": {
+    "controllerChat": {"version": 1, "readOnly": true, "path": "/api/v1/mobile/dispatcher/controller/chat", "sessionsPath": "/api/v1/mobile/dispatcher/controller/chat/sessions", "eventProfile": "phone-controller-readonly-v1", "maximumBytes": 8388608, "maximumEvents": 2000, "defaultLimit": 500},
+    "availability": "Only after the independent read gates. Omit if unauthorized, unsupported, Dispatcher off/unavailable or no exact owner. No GET wake/create. Go sends nothing without advertised supported version; no fallback/probing."
+  },
+  "genericMobileIsolation": {
+    "classification": "Host classifies captured hidden-controller identity before generic serialization, size omission, held-frame insertion or replay insertion. New readonly DTOs never become ChatEvent envelopes.",
+    "storage": "No hidden-controller body, identity, status, permission/question, error, raw recovery notice, Q5 action/receipt/control or derived frame:omitted enters a mobile-eligible generic replay/held buffer. If non-mobile replay preserves permitted desktop behavior, keep a host-enforced audience partition; never label hidden data as mobile eligible.",
+    "allEgress": "Apply the mobile audience guard to live broadcasts, pending snapshot-held frames, mobile:replay AND legacy replay from a mobile principal, snapshot/status/hook derivatives and replay-gap/omission metadata. Client ignoring or a message-type name is not authorization.",
+    "legacyBuffers": "Never replay old hidden entries to phones after enabling the new behavior. Mobile replay remains contiguous in its own projected cursor/epoch domain or reports the existing bounded gap and takes a fresh snapshot; no hole masking, repeated reconnect loop or hidden tombstone identity.",
+    "preservation": "Local desktop event bus/transcripts and current authorized desktop-only controller GETs remain unchanged. Visible Dispatcher chat notices use their own visible identity and fixed sanitized observed-stage text; no controller id, provider reason or Q5 retry/adoption payload.",
+    "genericTargets": "Do not expose controller through activeDispatcher, findMobileAgent, generic agents/chat/events/attachments/commands, other generic lookup aliases or arbitrary target/path adapters."
+  },
+  "readQuery": {
+    "allowlist": ["sessionId", "beforeSeq", "afterSeq", "limit"],
+    "validation": "Unknown/duplicate keys, conflicting before/after, noncanonical noninteger/unsafe/negative numbers or out-of-range limits reject400. before>=1, after>=0; limit1..2000/default500. Opaque nonempty sessionId<=256 is looked up only in the captured controller's host-selected index; never used as a caller-supplied filesystem/provider path.",
+    "sourceWindow": "Sample an authorized stable session head, select at most limit source records, then independently project. Final messages use their final source sequence, not any preceding chunk sequence. Cursors advance through scanned source records including filtered/incomplete ones.",
+    "forward": "After is exclusive; nextAfterSeq is last scanned source seq when more of the sampled head remains, else null. Follow non-null nextAfterSeq before adopting lastSeq (sampled head) as the poll cursor. An all-filtered page still advances.",
+    "backward": "Before is exclusive; nextBeforeSeq is oldest scanned source seq when older records remain, else null. Returned logical messages are ascending. History cursor updates never overwrite the separate forward poll cursor.",
+    "noCursor": "Current session's latest bounded source window; lastSeq is sampled head. A later final event after an incomplete stream is above this head and appears in a later forward page without reconstructing an earlier partial prefix."
+  },
+  "readonlyProjection": {
+    "completeMessages": "Only final agent_message text without subagentId, allowed plain user-authored user_message text, and separately whitelisted fixed notices. Never publish agent_message_chunk, synthesize final text at a page boundary, or treat turn/session end as a missing final message. Non-user mission/MCP/group/action/system routed instructions are omitted rather than copied from raw content.",
+    "redaction": "Project allowed text first, apply existing whole-text known-secret redaction and known-host identifier/path redaction before any display cut. Withhold a message whose recognized secret assignment remains unterminated/ambiguous; never leak a prefix hoping a later page will retract it. No content truncation or partial preview fallback.",
+    "limits": "Best-effort known patterns/known host values only, not arbitrary-secret DLP. Unknown freeform sensitive text cannot be promised detectable; this limit is part of the unresolved human privacy decision. No structured provider/native/path metadata, media bytes or fetch capability.",
+    "dtoKeys": ["version", "readOnly", "role", "sessionId", "currentSessionId", "events", "lastSeq", "nextBeforeSeq", "nextAfterSeq", "filteredEventCount"],
+    "eventKeys": ["seq", "ts", "sessionId", "type", "text"],
+    "forbidden": ["physical controller agent id", "native session id", "sender agent id", "raw tool/thought/plan/subagent", "permissions/questions", "grant or Q5 receipt", "retry/adoption/control fields", "command/confirmation token", "provider config", "attachments"],
+    "index": "Independent allowlist: version/readOnly/role plus sessions with opaque sessionId, startedAt, lastActiveAt, allowed complete-message count and fixed title 'Controller session'. Never copy or redact-and-cut the existing raw first-message title; never spread index/provider/native fields.",
+    "encodedBound": "UTF-8 JSON including all keys/envelope <=8388608 bytes accepted; bound+1 refused413. A single indivisible allowed message/index that cannot fit is explicitly refused, not truncated. Principal budget reuses existing burst20/refill1-per-second/max128 buckets/60-second idle cleanup, incarnation-scoped and retired with authority; no polling/retry/deadline expansion."
+  },
+  "recoveryCapability": {
+    "version": 1,
+    "command": "dispatcher.recover",
+    "settingsPath": "/api/v1/mobile/dispatcher/settings",
+    "defaultResetChat": false,
+    "availability": "Withheld until all independent recovery gates, including actual coordinated Q5 backend semantics. No hidden native/controller identity in settings.",
+    "envelope": ["version", "commandId", "epoch", "type", "expectedState", "resetChat"],
+    "input": "Absent/false resetChat means work-only. Only boolean true with its separate explicit-reset token requests both. Malformed choice/unknown keys reject before any effect.",
+    "confirmation": "Bind action, choice, phone incarnation/fingerprint/pin/role/surface, host/mobile epoch, Dispatcher switch, captured work runtime/session/generation and, for true reset, captured visible-chat runtime/session/generation. Tokens are opaque, separate and retired on authority or ownership change.",
+    "default": "Preserve visible chat and transcript history; replace/quarantine only the captured work native session. Recovery never implicitly clears visible chat, edits memory/agents/connections/Actions/settings, starts delegated work or replays uncertain intent."
+  },
+  "sharedGeneration": {
+    "type": "RuntimeSessionGeneration = readonly { hostEpoch: string; sequence: number }; RuntimeSessionLease is a host-private live-or-dormant union specified in annex-phone-controller-recovery-v2.md.",
+    "oneOwner": "Recovery/runtime-session lifecycle owns ONE generation authority per runtime/session resource, covering live and sleeping ownership. Q5 consumes its synchronous current-generation test; no second Q5 recovery coordinator, generation allocator or delivery ledger.",
+    "claim": "Phone, desktop clear/fresh and automatic recovery use the same owner. After preparation, atomically compare/retire all captured affected resources before any destructive entry and issue one host-private winner ticket; one winner for overlapping work/both/clear claims. Admission remains closed while retiring: no recapture of the old session under a new sequence can send. Sinks validate the same ticket and captured old owners, not a renewed old lease. Publish fresh ready ownership only after the replacement stage is established. Default work-only does not retire the visible-chat resource or its queue.",
+    "sinks": "Recheck exact captured runtime/session/generation/durable resume owner after every await and after runAgentWork admission; immediately before quarantine/forget write, old-session close, context replacement, visible reset and final notice/publication. No work-stage await may redirect true reset to a replacement chat.",
+    "q5Send": "After each awaited provenance/admission/pre-prompt step, check captured session+generation+exact queue item. Final synchronous check and provider-entry classification immediately before session.send, with no await between them and entry.",
+    "settlement": "Lost generation before proven provider entry may settle exact known-held unsubmitted items dropped. After entry, loss/discard/rejection without genuine ACK is UNKNOWN and preserves intent. No delivered inference from dispatch success.",
+    "lateAck": "Only exact historical Q5 ledger attempt, even retired. No publication into replacement chat/generation, current-member coverage change, clearing newer attempt or ACK of a rejoined member.",
+    "discard": "Discard/removal takes back only exact known-held pre-entry items. Release runtime hook references on terminal paths; genuine late ACK uses historical attempt identity, not a retained replacement-runtime callback.",
+    "noticeTarget": "Capture visible-chat ownership separately for notice publication even for work-only. It is not claimed/reset by work-only; a replaced target withholds the old notice and is reported, never dynamically retargeted.",
+    "implementation": "Proposed interface/ownership only. Winner ticket is an operation identity referencing the sole generation authority, not another generation allocator/coordinator/ledger. Q5 actual contract re-review and concrete runtime/type/Group/Actions hunk coordination remain required; current dropped-only code does not satisfy this."
+  },
+  "recoveryReceipts": {
+    "envelope": "Reuse current mobile completed/rejected/failed status vocabulary and commandId/epoch, with a version1 type-specific recovery result. No new global status or uncertainty replay.",
+    "stageKeys": ["workQuarantine", "workContext", "visibleChat", "notice"],
+    "stageValues": {
+      "workQuarantine": ["not_required", "not_attempted", "observed", "failed", "unknown"],
+      "workContext": ["not_attempted", "observed", "scheduled_next_start", "failed", "unknown"],
+      "visibleChat": ["not_requested", "not_attempted", "observed", "scheduled_next_start", "failed", "unknown"],
+      "notice": ["not_attempted", "observed", "scheduled_next_start", "failed", "unknown"]
+    },
+    "meaning": "Stage-specific permitted subset only. Keep-chat visibleChat is not_requested, never observed-clear. Completed only when every requested stage has observed or scheduled-next-start evidence; quarantine alone is not context replacement. Known partial/failed/unknown effect returns failed plus bounded recovery stage evidence, not a success-shaped fallback.",
+    "privacy": "Fixed whitelisted codes/text only, no session/path/provider reason/physical id/ledger attempt or delivery outcome. Reauthorize before cached/live receipt publication; revoked phone gets no private stage body.",
+    "notices": "Only actual observed stage facts may be rendered into fixed visible-chat notices. Notice failure does not undo work or silently fabricate notice success. Existing generic recovery strings/notice hooks are not accepted as new privacy or Q5 proof.",
+    "replay": "Cancel before send sends nothing. Uncertain transport reply has unknown client outcome and no automatic resubmission; explicit future user retry is not provided by this read-only/Q5 interface."
+  },
+  "negativeControls": {
+    "authority": ["A1 missing/unresolved human policy: no cap/body", "A2 each applicable Off/Ask denial", "A3 wrong pin/key/role/kind/surface/pending", "A4 expired session-only pairing/server stop", "A5 forget/re-pair same fingerprint+pin+timestamp retires old lease/token/cache", "A6 revoke/target/session/policy replacement during every awaited read", "A7 alias/display-only update does not revise authority or send", "A8 projected peer copies retain the same raw authority incarnation without trusting object identity"],
+    "isolation": ["I1 hidden controller rejected by every generic mobile target/command", "I2 no hidden body/identity/action/Q5 field in live/status/hook/snapshot", "I3 no hidden entry in mobile replay/held storage", "I4 mobile:replay and legacy replay same guard, including prechange buffers/omitted/gap metadata", "I5 local desktop and visible notices preserved, no replay-hole reconnect loop"],
+    "projection": ["P1 split secret across chunks/page boundary withheld until final and redacted", "P2 unterminated recognized secret assignment withheld", "P3 secret crossing title cut cannot leak: fixed titles", "P4 thoughts/tools/permissions/questions/routed instructions/subagents/media/provider/native/index extras omitted", "P5 all-filtered and incomplete-only pages make source cursor progress; later final not lost", "P6 duplicate/unknown/conflicting/malformed/unsafe query rejected", "P7 cross-controller/native/path session rejected", "P8 exact UTF-8 envelope bound accepted, bound+1/indivisible oversize refused"],
+    "recovery": ["R1 absent/false preserves chat and history; malformed reset rejects", "R2 true requires distinct matching choice/action/phone/incarnation/epoch/ownership token", "R3 mobile/desktop/automatic overlapping claims have one winner", "R4 replacement/revocation after prep/queue wait and at each destructive sink prevents stale effects; no new-chat reset", "R5 observed first stage plus failed/unattempted/unknown later stage reports honest partial", "R6 sleeping recovery captures exact resume owner and schedules, never creates/wakes by GET", "R7 pre-entry known-held drop versus post-entry UNKNOWN/preserved intent", "R8 generation/item changes during provenance or pre-prompt await prevent final send", "R9 genuine late ACK historical exact attempt only, no newer/rejoined acknowledgement", "R10 no automatic transport retry/uncertainty replay; callback refs released", "R11 retiring winner ticket closes new admissions until replacement, no old-session recapture/send", "R12 awaited recovery notice cannot publish into replacement visible chat/generation"],
+    "mixedVersion": ["M1 absent/unsupported caps sends no new route/command or fallback; legacy phone behavior unchanged"],
+    "proof": "These are planned failing controls, NOT executed tests or fixtures. Each implemented fix needs a pre-correction negative failure plus exact-head focused gated proof; no full local suite/E2E."
+  },
+  "writerReservations": {
+    "3720ActualRef": "afefa41b2c8e1998979d44d383467a21c454e51e contract section7",
+    "3720": "Readonly server thisMachine.name/getStatus.alias, peers getPeer/listPeers alias projection/provider, client toPublicConnection alias+isolated name-snapshot helper, local USE_LOCAL_ALIAS/SAVE_SETTINGS transaction and Alias/RenameEditor UI. Earlier zero-server expectation was provisional; no mobile/auth/REST/command/capability/lifecycle sites.",
+    "p7w": "Merged #3757 as78092f9b213d80698f758e709a23feac60374380 independently; preserve serialized SAVE_SETTINGS181-195 and network-disable abort-before-notification32-61, control read leases/revisions, Details receipts/generations. Naming's authorized queued order is reserve, persist, settingsChanged, applyNetworkSettings/lease retirement, activate; concrete shared patch/race review remains required. Phone successor has no settings/client/device/renderer lifecycle edits.",
+    "phoneRead": "Future dedicated DTO/projection and tests; narrow mobile controller GET/sessions/capability adapter plus MOBILE audience insertion/held/live/all-replay/snapshot derivative guards. No naming display/pairing invitation field edit or desktop grant widening.",
+    "phoneRecovery": "Future scoped mobile parser/confirmation/dispatcher command adapter and common destructive-sink admission, only after authority decisions/re-review. Concrete runtime/session/quarantine/forget hooks require owner coordination before code.",
+    "Q5": "Sole queue deliverMessage/deliverQueuedMessage/settleQueued/discardQueue provider-entry classification, final synchronous send admission, hook release, RuntimeActionQueue/ActionQueueSettlement UNKNOWN and exhaustive Group/Actions consumers. One shared generation interface; no duplicate ledger.",
+    "remaining": "Reservations are concrete disjoint/joint-boundary proposals, not clearance to overwrite unpublished work. Recheck actual main and owner heads before any product edit."
+  },
+  "delivery": "Docs-only proposed contract and finding references; preserve V1/Q5/review originals. No production, capability, accepted fixture, Go edit, grant/link, restart, merge or release. Parent/Navi relay only; read and recovery require separate exact re-review and implementation acceptance."
+}
