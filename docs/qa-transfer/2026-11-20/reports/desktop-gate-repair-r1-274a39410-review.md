@@ -48,3 +48,12 @@ Reviewer: qa-details-local-composition, November 21, 2026.
   - If anything fails, it comes back for review.
 - **Activation:** follow the procedure from my `ad85eff9` report, steps 1 to 8, using the candidate sha `d45cbfb0…a9a7d3`. Step 2 confirms the live gate is still `61797476…`, records the `SWAPBASE` bytes, sha and mtime, and confirms no slot and no child. Step 5 reads back `d45cbfb0…`. Step 6 is the dry-run check that the baseline is unchanged.
 - No admission, waiver, root or P1 proof is inferred.
+
+## Addendum: precondition receipts accepted by hash readback (`b2086475d`, tree `7ab712bff`)
+
+- **Location:** `origin/auto-reset-policy-design/desktop-gate-activation-evidence`, under `docs/evidence/desktop-gate-activation/preconditions/`. All 10 manifest entries match their committed blobs.
+- **`full23`:** head `274a39410`, candidate `d45cbfb0…`. **Ran 23 tests in 168.659 s, OK**, exit 0.
+- **`original3`:** at the same head. All three mutants are **killed** with exit 1 and `FAILED (failures=1)`: remove non-increasing, relax spread from 32 to 33, and relax tolerance from 128 to 129. The driver exited 0.
+- **`floor`:** the floor-pressure MiB mutant is **killed** with exit 1 and `FAILED (failures=5)`. The driver exited 0.
+- **All receipts:** `sourceSealEqual`, `liveGateUnchanged` and `liveBaselineUnchanged` are all **true**.
+- **The precondition is MET.** Activation may proceed under the conditional authorization, following the `ad85eff9` procedure with candidate `d45cbfb0…a9a7d3`. Any mismatch stops for review.
