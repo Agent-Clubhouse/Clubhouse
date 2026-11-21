@@ -96,6 +96,19 @@ journal-local controls, not the shared runtime-generation coordinator. Exact
 successor validation and independent review remain required; no provider or
 runtime execution incident was observed by these synthetic tests.
 
+Prepared-root reader successor is separate from the old full-array journal:
+its sequenced-sparse-v1 header contains only metadata and six immutable roots
+(terminal, pending, ready, attempts, active, postIds). Opening verifies every
+page and streams coverage/cross-index ownership without collecting all rows.
+Reads return at most50 attempts/posts with root-local lexical cursors; status
+pagination does not imply post-ID chronological order. This is prepared state,
+not authenticated committed state or a migration path. No root is activated,
+nonce consumed, recovery/send permitted, or provider session touched.
+The page cache retains its fixed limits, but combined transient rows, attempt
+post vectors and total process heap are not yet a proven product hot-detail
+budget. Authoritative incremental updates, journal codec/activation, index GC,
+R1 post-ID mode and integrated performance remain separate work.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.
