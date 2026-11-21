@@ -4073,8 +4073,8 @@ describe('annex-client', () => {
       });
       it('pages role Connections bound to the first page\'s role agent, with older hosts unavailable', async () => {
         const query = { card: 'connections' as const, source: 'incoming' as const, offset: 25, projectOffset: 0 };
-        const page = (agentId = 'role1', source = 'incoming') => { const value = response(); value.agentId = agentId; Object.assign(value.details, { agentId, connectionPageEnvelope: 1, connectionPageOnly: true, connectionPages: 1 });
-          value.details.cards = value.details.cards.map((c) => c.id === 'connections' ? { ...c, connectionPage: { source, offset: 25, projectOffset: 0, next: null, known: 0, complete: true } } : { ...c, requested: false }) as never; return value; };
+        const page = (agentId = 'role1', source: NonNullable<RemoteDetailsCard['connectionPage']>['source'] = 'incoming') => { const value = response(); value.agentId = agentId; Object.assign(value.details, { agentId, connectionPageEnvelope: 1, connectionPageOnly: true, connectionPages: 1 });
+          value.details.cards = value.details.cards.map((c): RemoteDetailsCard => c.id === 'connections' ? { ...c, connectionPage: { source, offset: 25, projectOffset: 0, next: null, known: 0, complete: true } } : { ...c, requested: false }); return value; };
         const value = page(); answers.push({ status: 200, body: value });
         expect(await annexClient.requestDispatcherDetails(FP, query, 'role1')).toEqual({ status: 'ok', value });
         expect(requests.at(-1)!.url).toContain('/api/v1/dispatcher/details?card=connections&source=incoming&offset=25&projectOffset=0');

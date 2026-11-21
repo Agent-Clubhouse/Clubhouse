@@ -176,6 +176,11 @@ The next `5a44c556d40c8892d0f8e1aa86bfb3de69efd035` composition on
 `d991a39e790f02b7da2b9385d2c32aeec0111ba9` ran 939 targeted tests and
 production types successfully, but exposed 84 additional integrated fixture
 diagnostics (83 TS7018, one TS2353) and two further reviewed race conditions.
+Exact source-line blame attributes all 84 to ancestors of that base, not new
+P7w test bodies. Explicit card/Changes contracts and malformed-payload contexts
+resolve them without changing their values or assertions. Incorporating the
+landed Connections paging source exposed one further legacy TS7018 in its
+role-page `next` fixture; a typed card callback replaces the existing cast.
 Regression-only fixtures separately reproduced coalesced ready-state recovery
 and a failed-first/successful-second optimistic save as two genuine failures.
 Those originals remain separate from the earlier red/green runs; neither
