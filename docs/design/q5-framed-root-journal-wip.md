@@ -71,3 +71,27 @@ checks, project typecheck and scoped lint against its own frozen head. Such
 checks do not establish physical-backend behavior: it still has no journal
 consumer/root codec/typed receipt manager or PB1–5 execution package. No whole
 candidate or platform review is requested until that coherent scope is complete.
+
+
+## Root-codec source continuation (initially unvalidated)
+
+Source1ee4a1afd introduces the fixed root codec and six development controls.
+It binds prior-header digest/full recipient and the physical new-profile
+installation/version, uses the instance/root/epoch barrier before append, replays
+strict bounded root headers and verifies the final committed tree once before
+open returns. It does not recover attempts or expose a receipt/handoff API.
+Pure sparse input refusals now use a separate no-effect validation class; unknown
+IO/invariant errors remain poisoning candidates. Reader header validation is
+factored into a shared strict metadata decoder, with explicit page-reference
+shape checks. These are changed sources requiring fresh proof; old224 receipts
+do not transfer. Root records protect local persistence under the single-writer
+assumption, not a cryptographic signature or provider-processing receipt.
+
+The initial barrier traverses/syncs ALL roots on each new commit; no authenticated
+prior-ancestry optimization or measured throughput is claimed. Root GC and
+obsolete-version retention remain open. Six tests define root/checkpoint reopen,
+stale expectation, process duplicate open/close, held-bookkeeping zero new state,
+no-effect validation versus ambiguous sync, and fixed identity/missing-page
+refusal. Capability-zero, ACK/loss registry, active-anchor release, progress-guarded
+recovery, byte bridge, mutants and platform acceptance still need the single
+shared journal consumer and coherent final proof. No partial PR/review promotion.
