@@ -56,7 +56,8 @@ Extracting the options type adds no persisted/wire/mobile fields.
 Entry detaches a local patch by invoking the already shipped strict parser.
 Original authority belongs to the supplied entry-captured Admission, never origin,
 request ID, revision, witness, hash or timestamp. Its precondition must be bounded,
-idempotent and non-mutating. It preserves existing grant checks and the original
+idempotent and non-mutating. It is authority-only, not the old expected_state equality check.
+It preserves existing grant checks and the original
 main WebContents/frame/document incarnation, original installed tool host, launch
 and emergency admission. Those actual capture bodies remain consumer work.
 
@@ -83,7 +84,10 @@ rename or report refused. Postcommit authority loss is committed_unconfirmed and
 confers no runtime/name/ACK authority. WeakMap receipts bind the exact committed
 loopback field version and its private prior presence/value; restoration cannot
 overwrite a newer loopback writer, including ABA. Unrelated field writes rebase.
-Only a receipt from the accepted local intent write can retire that exact witness.
+MCP forward also requires its original expected_state check at entry/turn and every
+pre-rename check. That is a separate callback from original authority: it is NOT
+repeated after the owned commit or on restoration, which uses its owned field
+receipt instead. Only a receipt from the accepted local intent write can retire that exact witness.
 Non-name writes preserve it; disable/purge clear it.
 
 This is **process-level** publication using the existing file fsync + rename.

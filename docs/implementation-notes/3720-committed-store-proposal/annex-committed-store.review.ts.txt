@@ -48,7 +48,7 @@ export interface AnnexStoreIo {
 type Ownership = { scope: string; loopback: number; witness?: IntentWitness; beforePresent: boolean; beforeValue?: boolean; restoreAllowed: boolean };
 type Command =
   | { kind: 'local'; patch: LocalSettingsPatch; witness?: IntentWitness }
-  | { kind: 'loopback'; value: boolean; fieldVersion: number }
+  | { kind: 'loopback'; value: boolean; fieldVersion: number; checkOriginalState: () => void }
   | { kind: 'restore-loopback'; ownership: object }
   | { kind: 'disable' | 'purge' }
   | { kind: 'retire-intent'; ownership: object };
@@ -60,7 +60,6 @@ const zeroFields = (): Record<EditableKey, number> => ({
   icon: 0, color: 0, autoReconnect: 0, reachableAs: 0, networkEnabled: 0, acceptHandoffs: 0,
 });
 const refused = (reason: Refusal): CommitResult => ({ kind: 'refused', reason });
-const uuid = (s: string) => s.length === 36 && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(s);
 
 // The raw source here is JSON from trusted fixed-path readers, not an IPC object.
 // JSON round-trip preserves unknown private keys, legacy strings, and absent fields.
@@ -219,10 +218,10 @@ export class CommittedAnnexStore {
     catch { return Promise.resolve(refused('schema_invalid')); }
     return this.#submit({ kind: 'local', patch, witness: savedWitness }, admission);
   }
-  setLoopback(value: boolean, expected: { epoch: string; fieldVersion: number }, admission: Admission): Promise<CommitResult> {
+  setLoopback(value: boolean, expected: { epoch: string; fieldVersion: number }, admission: Admission, checkOriginalState: () => void): Promise<CommitResult> {
     if (typeof value !== 'boolean' || expected.epoch !== this.#scope || !Number.isSafeInteger(expected.fieldVersion)
       || expected.fieldVersion < 0) return Promise.resolve(refused('conflict'));
-    return this.#submit({ kind: 'loopback', value, fieldVersion: expected.fieldVersion }, admission);
+    return this.#submit({ kind: 'loopback', value, fieldVersion: expected.fieldVersion, checkOriginalState }, admission);
   }
   restoreLoopback(ownership: object, admission: Admission): Promise<CommitResult> {
     // Exact prior field presence/value is private in the owned receipt, never caller supplied.
@@ -239,11 +238,18 @@ export class CommittedAnnexStore {
 
   #submit(command: Command, admission: Admission): Promise<CommitResult> {
     const scope = this.#scope, path = this.#path;
-    try { this.#check(scope, path, admission); } catch { return Promise.resolve(refused('superseded')); }
+    const checkBeforePrimary = () => {
+      this.#check(scope, path, admission);
+      if (command.kind === 'loopback') command.checkOriginalState();
+    };
+    const prepareBeforePrimary = async () => {
+      checkBeforePrimary(); await admission.precondition.prepare(); checkBeforePrimary();
+    };
+    try { checkBeforePrimary(); } catch { return Promise.resolve(refused('superseded')); }
     let primary: 'none' | 'known' | 'unknown' = 'none';
     // Every return, including unexpected queue/IO errors, is a typed result (N3).
     return this.io.enqueue(async (): Promise<CommitResult> => {
-      try { await this.#prepare(scope, path, admission); } catch { return refused('superseded'); }
+      try { await prepareBeforePrimary(); } catch { return refused('superseded'); }
       const emergency = command.kind === 'disable' || command.kind === 'purge';
       if (!emergency && (this.#degraded || !this.#public)) return refused('degraded');
       let base = this.#base;
@@ -324,8 +330,8 @@ export class CommittedAnnexStore {
         const fixed = new Error('precondition'); guardErrors.add(fixed); throw fixed;
       };
       const precondition: SettingsCommitPrecondition = {
-        prepare: async () => { try { await this.#prepare(scope, path, admission); } catch { marked(); } },
-        check: () => { try { this.#check(scope, path, admission); } catch { marked(); } },
+        prepare: async () => { try { await prepareBeforePrimary(); } catch { marked(); } },
+        check: () => { try { checkBeforePrimary(); } catch { marked(); } },
       };
       try { await this.io.replace(path, serialized, precondition); primary = 'known'; }
       catch (e) {
@@ -348,6 +354,9 @@ export class CommittedAnnexStore {
         this.#fail('publication_failed', false);
         return { kind: 'committed_unconfirmed', primary: 'known' };
       }
+      // Only original AUTHORITY is rechecked after commit, not old expected_state.
+      // Forward expected_state is checked at every pre-primary boundary above;
+      // restoration binds the owned loopback receipt/version instead.
       // Postcommit authority loss is committed/unconfirmed, NEVER a settings rollback.
       try { this.#check(scope, path, admission); }
       catch { return { kind: 'committed_unconfirmed', primary: 'known' }; }

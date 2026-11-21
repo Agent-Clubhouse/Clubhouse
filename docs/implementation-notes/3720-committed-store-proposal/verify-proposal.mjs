@@ -1,0 +1,66 @@
+// Source/packaging checks only. Does not import or execute product modules.
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import cp from 'node:child_process';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const ts = require('typescript');
+const root = cp.execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+const dir = path.join(root, 'docs/implementation-notes/3720-committed-store-proposal');
+const original = fs.readFileSync(path.join(root, 'src/main/services/settings-store.ts'), 'utf8');
+const proposal = fs.readFileSync(path.join(dir, 'settings-store.proposed.ts.txt'), 'utf8');
+const parse = text => ts.createSourceFile('settings-store.ts', text, ts.ScriptTarget.Latest, true);
+const a = parse(original), b = parse(proposal);
+const declarations = tree => tree.statements.filter(ts.isFunctionDeclaration).filter(n => n.body);
+const factory = tree => declarations(tree).find(n => n.name?.text === 'createSettingsStore');
+const checks = {};
+function compare(name, first, second) {
+  checks[name] = typeof first === 'string' && first === second;
+  if (!checks[name]) throw new Error(`source equality failed: ${name}`);
+}
+for (const node of declarations(a)) {
+  if (node.name?.text === 'createSettingsStore') continue;
+  const peer = declarations(b).find(n => n.name?.text === node.name?.text);
+  compare(`global:${node.name.text}`, node.getText(a), peer?.getText(b));
+}
+const af = factory(a), bf = factory(b);
+for (const node of af.body.statements.filter(ts.isFunctionDeclaration)) {
+  const peer = bf.body.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === node.name?.text);
+  let text = peer?.getText(b);
+  if (node.name.text === 'notifyLoad') text = text.replace("\n    if (options?.committedAnnex) annexInitialSource = 'raw' in result ? parsePeeked(result.raw) : readErrorKind(result.error);", '');
+  compare(`default-function:${node.name.text}`, node.getText(a), text);
+}
+function variables(node) {
+  return node.body.statements.filter(ts.isVariableStatement).flatMap(n => [...n.declarationList.declarations]);
+}
+for (const node of variables(af)) {
+  const peer = variables(bf).find(n => n.name.getText(b) === node.name.getText(a));
+  compare(`default-variable:${node.name.getText(a)}`, node.getText(a), peer?.getText(b));
+}
+const oldOptions = af.parameters.find(p => p.name.getText(a) === 'options').type.members;
+const newOptions = b.statements.find(n => ts.isInterfaceDeclaration(n) && n.name.text === 'SettingsStoreOptions').members;
+compare('default-options-members', oldOptions.map(n => n.getText(a)).join('\n'), newOptions.map(n => n.getText(b)).join('\n'));
+const oldReset = af.body.statements.filter(ts.isExpressionStatement).at(-1);
+const newReset = bf.body.statements.filter(ts.isExpressionStatement).at(-1);
+compare('default-reset', oldReset.getText(a), newReset.getText(b));
+cp.execFileSync('git', ['apply', '--check', path.join(dir, 'settings-store.review.patch')], { cwd: root });
+checks.patchAppliesToActualSource = true;
+cp.execFileSync('python3', ['-c', 'import difflib,pathlib,sys; a,b,p=map(pathlib.Path,sys.argv[1:]); expected="".join(difflib.unified_diff(a.read_text().splitlines(True),b.read_text().splitlines(True),fromfile="a/src/main/services/settings-store.ts",tofile="b/src/main/services/settings-store.ts")); assert p.read_text()==expected',
+  path.join(root, 'src/main/services/settings-store.ts'), path.join(dir, 'settings-store.proposed.ts.txt'), path.join(dir, 'settings-store.review.patch')]);
+checks.patchExactlyEncodesFullProposedSource = true;
+const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const source = {};
+for (const name of ['src/main/services/settings-store.ts', 'src/main/services/annex-settings.ts',
+  'src/main/ipc/annex-handlers.ts', 'src/main/services/clubhouse-mcp/tools/annex-network-tools.ts',
+  'src/shared/annex-settings-ipc.ts', 'src/shared/annex-member-names.ts']) {
+  if (fs.existsSync(path.join(root, name))) source[name] = hash(path.join(root, name));
+  else throw new Error(`Inventory path absent: ${name}`);
+}
+const productDiff = cp.execFileSync('git', ['diff', 'f19eceee25effd264276d70a419bebfe58924876', 'HEAD', '--', 'src'], { cwd: root, encoding: 'utf8' });
+if (productDiff) throw new Error('Unexpected product changes');
+const result = { kind: 'static-unapplied-proposal-only',
+  head: cp.execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+  checks, source, productDiff,
+  proofLimits: ['AST statement text equality, not execution', 'No runtime compatibility or mutation results'] };
+process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
