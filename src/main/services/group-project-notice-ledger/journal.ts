@@ -92,6 +92,8 @@ export class NoticeJournalOwner<S, D, R, V> {
   get healthy(): boolean { return this.backend.healthy; }
   get admitting(): boolean { return this.ready && !this.retired && !this.recovering && this.backend.healthy; }
   get committedRevision(): number { return this.backend.committedRevision; }
+  get committedDigest(): string { return this.backend.committedDigest; }
+  get committedPosition() { return this.backend.committedPosition; }
   /** Active anchors plus pending producers; weak historical capabilities are caller-lived. */
   get retention() { return { activeAnchors: this.anchors.size, pendingClaims: this.claims.size }; }
   snapshot(): V | undefined { return this.backend.current ? this.strategy.view(this.backend.current) : undefined; }

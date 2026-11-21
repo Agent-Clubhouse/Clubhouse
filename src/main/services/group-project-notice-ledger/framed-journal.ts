@@ -118,6 +118,8 @@ export class NoticeFramedJournal<S, D, R> {
   get current(): S | undefined { return this.state; }
   get committedRevision(): number { return this.revision; }
   get committedDigest(): string { return this.digest; }
+  /** Internal fixed-shape publication diagnostics; no IO, identities or content. */
+  get committedPosition() { return Object.freeze({ segment: this.segment, segmentBytes: this.segmentBytes, fileHash: this.currentFileHash }); }
   get healthy(): boolean { return !this.poisoned && !this.closing; }
   get directoryDurability() { return this.directoryFlusher.observation; }
   /** Typed reconciliation refusal is also an irreversible admission fence. */
