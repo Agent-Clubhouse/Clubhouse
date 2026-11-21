@@ -781,6 +781,31 @@ describe('real-chat Dispatcher private Other machines admission', () => {
     expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
   });
 
+  it('shows positive-receipt peers when an older host lacks the Details read, and withholds them on revocation', async () => {
+    read.mockResolvedValue({ status: 'unavailable' });
+    const snap = privateSnapshot();
+    satellite({ snapshot: snap, snapshotReceipt: 'positive-a', connectionGeneration: 1 });
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(read).toHaveBeenCalled()); openPeers();
+    await screen.findByTestId('other-machine-PRIVATE_OLD_PEER');
+    act(() => satellite({ snapshot: snap, snapshotReceipt: undefined, connectionGeneration: 1 }));
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld');
+    act(() => satellite({ snapshot: snap, snapshotReceipt: undefined, connectionGeneration: 2 }));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 190)); });
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+  });
+
+  it.each(['forbidden', 'error', 'offline', 'rate_limited'] as const)('withholds positive-receipt peers when the Details read is %s', async (status) => {
+    read.mockResolvedValue({ status, retryAfterMs: 1000 });
+    satellite({ snapshot: privateSnapshot(), snapshotReceipt: 'positive-a', connectionGeneration: 1 });
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(read).toHaveBeenCalled()); openPeers();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 190)); });
+    expect(screen.queryByTestId('other-machine-PRIVATE_OLD_PEER')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Earlier private peers are withheld');
+  });
+
   it('follows receipt and epoch, not snapshot identity, when equal-value snapshots keep their object', async () => {
     // Cached catalog reconciliation keeps a value-equal snapshot object, so only receipt/generation mark admission changes.
     const snap = privateSnapshot();

@@ -179,7 +179,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round(ctx.used / ctx.size * 100)) : null;
   const limits = session?.capabilities?.limits ? session.usage.limits : [];
   const skillReport = reportedSkillsFor(agent, session, details ? { orchestrator: details.providerId } : undefined);
-  const otherMachines = dispatcher && result.status === 'ok' && connected && !satellite?.needsPairing && !snapshotUnavailable
+  // An older host without the Details read (404/405, unavailable) still shares its snapshot under the same receipt; denials stay withheld.
+  const otherMachines = dispatcher && (result.status === 'ok' || result.status === 'unavailable') && connected && !satellite?.needsPairing && !snapshotUnavailable
     && satellite?.snapshotReceipt && !snapshot?.sessionPaused ? snapshot?.dispatcherPresence?.remotes : undefined;
   if (!readEnabled) return null;
   if (helpersOnly) {
