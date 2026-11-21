@@ -180,6 +180,8 @@ interface SatelliteConnectionInternal {
   /** The classified reason behind `lastError`. */
   problem?: { code: AnnexProblemCode; status?: number; port?: number } | null;
   ws: WebSocket | null;
+  /** Owns deferred upgrade-refusal work even after that socket has been detached. */
+  connectionAttempt?: symbol;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
   /** Refused as not (or no longer) paired: no automatic reconnects until it's paired again. */
@@ -747,6 +749,7 @@ function satelliteUrl(sat: SatelliteConnectionInternal, urlPath: string, scheme:
  * pairing again; `clock` only waits for the person to retry.
  */
 function haltSatellite(sat: SatelliteConnectionInternal, kind: 'pairing' | 'mismatch' | 'clock', message: string, problem: AnnexProblemCode): void {
+  sat.connectionAttempt = undefined;
   sat.halt = kind;
   sat.needsPairing = kind !== 'clock';
   stopHeartbeat(sat);
@@ -911,6 +914,8 @@ async function identifyService(service: RemoteService, signal: AbortSignal): Pro
 }
 
 async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<void> {
+  const attempt = Symbol('satellite connection');
+  sat.connectionAttempt = attempt;
   sat.snapshotUnavailable = false;
   const peer = annexPeers.getPeer(sat.fingerprint);
   if (!peer || annexPeers.peerNeedsPairing(peer)) {
@@ -954,8 +959,9 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       void readSmallBody(res).then((text) => {
         try { req.destroy(); } catch { /* telemetry-exempt: closing a refused upgrade */ }
         try { ws.terminate(); } catch { /* telemetry-exempt: closing a refused upgrade */ }
-        // Stopped or forgotten while the body arrived: this record is gone, so nothing more to do.
-        if (satellites.get(sat.fingerprint) !== sat) return;
+        // Cleanup above belongs only to the refused socket. A later attempt (or
+        // disconnect/stop) owns the record now, even when the record is reused.
+        if (satellites.get(sat.fingerprint) !== sat || sat.connectionAttempt !== attempt) return;
         let code: unknown;
         try { code = (JSON.parse(text) as { error?: unknown }).error; } catch { /* telemetry-exempt: a refusal without a JSON body is handled as a plain one */ }
         const refusal = needsPairingRefusalFor(code);
@@ -1533,6 +1539,7 @@ function restorePairedSatellites(): void {
 }
 
 function disconnectSatellite(sat: SatelliteConnectionInternal): void {
+  sat.connectionAttempt = undefined;
   appLog('core:annex-client', 'info', 'Disconnecting satellite', {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias, previousState: sat.state },
   });
@@ -3034,8 +3041,9 @@ export function resumeAllConnections(): void {
   for (const sat of satellites.values()) {
     // An address announced before sleep may be another network's.
     sat.discovered = null;
-    // Waking does not resolve a refusal, a changed pin or a certificate/clock stop.
-    if (sat.halt || sat.needsPairing) continue;
+    // Pairing/pin stops need an explicit repair. A clock stop retains the
+    // existing single pinned retry on wake; TLS must accept it before open.
+    if (sat.needsPairing || (sat.halt && sat.halt !== 'clock')) continue;
     if (sat.state === 'disconnected' || sat.state === 'connected' || sat.state === 'connecting') {
       // A pre-sleep socket (including an unfinished upgrade) is not proof of
       // reachability on the network we woke onto. Retire it before dialing.

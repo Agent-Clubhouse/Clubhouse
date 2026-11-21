@@ -1,46 +1,49 @@
 # Annex resume readiness proof
 
-Scope: deterministic current-source proof from main `69ef383cefec405d811f1c199f25c10cdc0395b6`, compared with `v0.43.0-beta.7`. No live device or mobile behavior is asserted.
+Scope: deterministic desktop source behavior from main `69ef383cefec405d811f1c199f25c10cdc0395b6`, compared with `v0.43.0-beta.7`. No live device or mobile behavior is asserted. Branch `annex-wake-readiness/resume-freshness` remains frozen at `a31e81dbf`; this correction is on `annex-wake-readiness/resume-callback-successor`.
 
-## Source comparison
+## Historical baseline and correction
 
-The beta7 and baseline `resumeAllConnections` implementations are identical. The Electron resume hook still calls that function; index changes since beta7 concern durable initialization, not power handling. Other Annex changes include saved-route verification and listener collision handling, membership/approval snapshots, and remote-buffer seeding; they do not invalidate connected/connecting sockets on resume. This patch preserves those changes and does not edit the asynchronous refusal-body path being worked on for #3733.
+The beta7 and main-baseline `resumeAllConnections` implementations are identical. The Electron resume hook still calls that function; index changes since beta7 concern durable initialization, not power handling. Other Annex saved-route, membership, approval and buffer changes do not invalidate connected/connecting sockets on resume.
 
-## Discriminating baseline
+The original regression-only commit `b9fbe1b71` records 9 failures and 2 passing controls in `baseline.txt`. The subsequent heartbeat cleanup regression is preserved in `review-regression.txt`. These original failure artifacts are unchanged. One original expectation, keeping a clock stop halted across wake, is superseded by the existing clock-recovery contract below; its old failure must not be counted as a product defect.
 
-`annex-client.test.ts` / `pinned satellite connections` / `resume freshness` uses mocked discovery, pinned TLS, sockets, captured socket handlers, captured heartbeat callbacks and a fake clock. `setSystemTime` advances 109s or 101s without running JS timers, modeling a sleep interval without asserting host clock equivalence.
+Resume retires pre-sleep connected/connecting sockets, cancels their heartbeat/backoff timers and starts one fresh attempt through the existing pinned/authenticated path. Readiness stays false until the replacement opens. Discovery still discards the pre-sleep announcement and restarts through the existing profile gate. Pong and heartbeat callbacks require their owning socket. Current-socket close/error stops its heartbeat; close/terminate detaches the socket before callbacks can run. No request timeout or retry backoff changes.
 
-On the unchanged baseline: **9 fail, 2 pass** (see `baseline.txt`).
+Independent QA requested changes at `a31e81dbf` / `92ad84430`: W1 identified a concrete deferred upgrade-refusal body race, W2 identified the changed clock-stop wake behavior, and E1 identified missing raw final-pass evidence. Earlier notes incorrectly attributed W1 to #3733. That task's O1 fix concerns Details/role denial receipts and does not touch this upgrade-refusal path. This successor owns W1.
 
-- A connected socket remains `isMachineConnected() === true` after resume: stale positive readiness.
-- An in-flight handshake is not replaced by resume. This proves the lack of an immediate fresh attempt; it does not prove an indefinite real-socket stall.
-- An old socket pong cancels a replacement socket's 10s heartbeat timeout.
-- Explicitly invoking a captured obsolete heartbeat interval/deadline affects a replacement socket. These model already-dispatched callbacks; they do not assert how often the OS queues them.
-- Resume also redials stopped certificate/clock/pin and removed-pairing states. Preservation tests expose that existing behavior.
-- Client-off and the current socket's pong pass as controls.
+## W1: a refusal belongs to its connection attempt
 
-## Reproduction
+Every `connectToSatellite` invocation creates a unique in-memory attempt token before changing connection state. Disconnect and halt invalidate that token. The deferred `readSmallBody(...).then(...)` always retires only its captured refused request/socket. It checks both record identity and attempt ownership before parsing or applying the body, changing state, marking pairing, or scheduling a reconnect.
 
-With dependencies matching the committed package lock:
+A stale `needs_pairing` or `peer_not_paired` body is **not treated as a timeless peer revocation**. It reports the old attempt's authentication result and cannot overwrite a newer attempt's result or a manual disconnect. The newer attempt still goes through the existing pinned TLS and stored-pairing checks and must accept its own current refusal. This preserves current pairing/authentication authority; it does not waive those checks.
+
+The test-only successor commit records 8 failures and 3 passing current-refusal controls on frozen a31 production code (`evidence/successor-baseline.txt`). Six cases resolve an old 503, `needs_pairing`, or `peer_not_paired` body after resume with a replacement connecting or connected. Another resolves it after manual disconnect retains the same record. The clock case below supplies the eighth failure. Current 503 and both pairing refusals remain three positive controls. After correction, all 23 freshness cases pass: old resources alone are retired, replacement sockets/channels remain usable, no extra reconnect is scheduled, and manual disconnect remains disconnected without a timer.
+
+## W2: preserve the existing clock-recovery contract
+
+Main/beta7 retried disconnected `CERT_NOT_YET_VALID` records on wake. The existing clock stop suppresses automatic scheduled reconnects between explicit retry/wake attempts, and `retry()` remains available. The successor preserves one pinned attempt per wake for `halt === 'clock'`. If TLS still reports `CERT_NOT_YET_VALID`, it stops again without an automatic retry loop. A later wake or manual retry can try through the same pinned path again. Readiness requires that path's `open`; no clock/certificate validation is bypassed.
+
+Pin mismatch, expired-certificate/pairing and removed-pairing stops remain stopped across wake. Client-off still starts neither discovery nor a connection. This restores existing clock wake behavior while preserving explicit pin/pairing stops; it introduces no permanent clock-halt product policy.
+
+## E1: original outputs and new sealed validation
+
+`evidence/historical-92ad84430/` contains surviving original 311-test, typecheck and lint outputs, copied byte for byte from the earlier run. Its SHA256 manifest was created during successor work and labels the source-head association as historical attribution from the earlier transcript. The old outputs contain no embedded head/exit-code receipts. An empty historical typecheck file alone proves no success. No standalone old diff output or exit-code receipt survives, and none was reconstructed. Earlier green/diff assertions remain historical claims with these explicit limits.
+
+For a fresh seal, run from a clean tracked checkout with dependencies matching the committed lock:
 
 ```sh
-node node_modules/vitest/vitest.mjs run --project main src/main/services/annex-client.test.ts -t 'resume freshness' --maxWorkers 1 --no-file-parallelism
+node scripts/annex-resume-readiness-proof.mjs --out /path/to/new-output-directory
 ```
 
-The regression commit contains only tests and this evidence; the next commit contains the narrow correction. To reproduce red without changing a shared checkout, apply the test-only commit to an isolated checkout of the baseline. On the fixed head, run the same command for green.
+The runner captures the actual starting/ending HEAD, source/scripts tree IDs, commands, timestamps, exit codes, signals, unmodified combined stdout/stderr, byte counts and SHA256 hashes. It emits `.txt` payloads plus `manifest.json` and `SHA256SUMS.txt`. The output directory must be new. A following evidence-only commit can preserve the receipt; it must not be described as having run at that later commit. Exact code identity is checked by the manifest's source/scripts tree IDs. Independent review must inspect both the exact successor head and these bindings.
 
-For this run, the existing dependency cache's `package-lock.json` matched SHA256 `bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d`; all nonoptional package versions/integrities matched its installed metadata. No installation or cache write was used. A local temporary Vitest config copies the committed config, substitutes `import.meta.dirname` for `__dirname` for the runner loader, sets every project's `cacheDir` to a workspace-local directory, and disables test caching. `--configLoader runner` avoids bundle writes into shared `node_modules`; runs use one worker with file parallelism off.
+The runner uses one test worker without file parallelism; typecheck and lint follow sequentially. It copies the committed Vitest config to a temporary workspace-local file for the runner loader, disables test caching and places any caches in the chosen output directory. Shared `node_modules` remains untouched. Raw outputs retain terminal whitespace, so diff-check excludes only the evidence payload directory; SHA256 checks protect those original bytes. Every other PR path is whitespace-checked.
 
-## Evidence boundary
+The existing dependency cache matches package-lock SHA256 `bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d`; nonoptional installed version/integrity metadata was verified. No installation is used. Resource admission is remeasured before running the full successor seal.
 
-The Mini trace crossed OS sleep. All 122 watchdog stalls overlap sleep; the residual 34s after wake remains UNKNOWN. Historical authenticated OS sleep receipts are context supplied by the parent, not locally verified proof. This patch neither explains that residual delay nor claims a mobile fix. No keepawake, power policy, retry/deadline increase, blanket request cancellation, settings, restart, install, release, merge or live probe is included.
+## Evidence boundary and acceptance
 
-## Correction and acceptance
+Fake wall time advances across sleep without running JS timers, and captured socket/timer callbacks exercise ownership. These tests do not assert OS callback frequency or cross-host clock equivalence. The Mini trace crossed OS sleep; all 122 watchdog stalls overlap sleep and the residual 34 seconds after wake remains UNKNOWN. Historical OS sleep receipts are supplied context, not locally verified proof. There is no inferred mobile fix, keepawake, power-policy change, deadline increase, blanket request cancellation, settings change, restart, installation, release, merge or live probe.
 
-Resume retires any connected/connecting pre-sleep socket and cancels its heartbeat/backoff timers before starting one fresh attempt through the existing pinned/authenticated path. Readiness stays false until that new socket opens. Refusal, pairing, pin and clock stops remain stopped. Discovered addresses are still discarded and discovery still restarts through the existing profile gate. Heartbeat interval/deadline and the entire pong handler now require their owning socket; closing/terminating detaches it before callbacks can run. No request timeout, retry policy or authentication/grant check changes.
-
-Risk-targeted validation observed on this patch: all **311 tests** across `annex-client.test.ts`, `annex-client-buffer.test.ts` and `annex-client-handlers.test.ts` pass, including all 13 new freshness cases. `tsc --noEmit --incremental false` passes. ESLint for the changed source/test files passes with 0 errors and 158 existing warnings. `git diff --check` passes. Admission was remeasured at 16 CPUs / load 3.23 before the three-file one-worker test run, 3.10 before typecheck, and 4.13 after fixture-cleanup validation. No shared cache writes or device probes were used.
-
-The async refusal-body callback is deliberately unchanged: #3733's separately owned late-denial fix must be reviewed/integrated on its own. It can still finish after a new connection starts on this baseline. This is a known deferred cross-generation acceptance boundary, not evidence that the reproduced resume readiness defect is absent.
-
-Independent review of `2cbdad6f9` found a timer cleanup regression in the new callback fence: a normal current-socket close/error set `sat.ws` to null, so its interval would return forever with reconnect off. Two fake-clock regressions reproduced the leak (`review-regression.txt`), then current-socket close/error handlers were changed to stop their heartbeat before proceeding. Both cleanup cases and the complete three-file suite pass after this correction. Independent exact-head re-review is required before opening a PR. No merge or release is authorized by this task.
+W1/W2/E1 successor acceptance requires independent exact-head review of source and sealed evidence before any new PR. The original draft PR #3747 remains frozen; no merge or release is authorized.
