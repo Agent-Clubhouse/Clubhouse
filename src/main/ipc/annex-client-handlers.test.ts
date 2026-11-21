@@ -172,6 +172,11 @@ describe('annex-client-handlers', () => {
   it('delegates only the fixed selected-host Dispatcher read, without caller role/id/query arguments', async () => {
     await handlers.get(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS)!({}, 'FP:HOST');
     expect(annexClient.requestDispatcherDetails).toHaveBeenCalledExactlyOnceWith('FP:HOST');
+    const query = { card: 'connections', source: 'incoming', offset: 25, projectOffset: 0 };
+    await handlers.get(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS)!({}, 'FP:HOST', query, 'role1');
+    expect(annexClient.requestDispatcherDetails).toHaveBeenLastCalledWith('FP:HOST', query, 'role1');
+    expect(() => handlers.get(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS)!({}, 'FP:HOST', 'not-an-object', 'role1')).toThrow();
+    expect(() => handlers.get(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS)!({}, 'FP:HOST', query, 7)).toThrow();
     expect(() => handlers.get(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS)!({}, '')).toThrow();
     expect(() => handlers.get(IPC.ANNEX_CLIENT.DISPATCHER_DETAILS)!({}, 'x'.repeat(241))).toThrow();
   });

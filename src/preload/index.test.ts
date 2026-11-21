@@ -109,9 +109,11 @@ describe('preload IPC bridge', () => {
     }
   });
 
-  it('forwards only the selected machine to the fixed Dispatcher role read channel', async () => {
+  it('forwards the selected machine, and only a role Connections page with its role agent, to the fixed Dispatcher role read channel', async () => {
     await expect(api.annexClient.dispatcherDetails('pinned-host')).resolves.toBe('bridge-result');
     expect(invoke).toHaveBeenCalledExactlyOnceWith('annex-client:dispatcher-details', 'pinned-host');
+    await expect(api.annexClient.dispatcherDetails('pinned-host', { card: 'connections', source: 'incoming', offset: 25, projectOffset: 0 }, 'role1')).resolves.toBe('bridge-result');
+    expect(invoke).toHaveBeenLastCalledWith('annex-client:dispatcher-details', 'pinned-host', { card: 'connections', source: 'incoming', offset: 25, projectOffset: 0 }, 'role1');
   });
 
   describe('pty', () => {
