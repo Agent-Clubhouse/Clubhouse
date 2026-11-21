@@ -25,3 +25,11 @@ A thrown lookup returns without saving, so `started: false` stays and the next r
 ## Dependency isolation used for these runs
 
 `node_modules` in this worktree is a real directory of per-entry symlinks into the shared dependency store, with `.cache` and `.vite` excluded. Writes to `node_modules/.cache` or `.vite` stay in the worktree. The store's `.cache` modification time and entry count were identical before and after the RED run (`store-cache-*.txt`). The store itself was not modified.
+
+## Scope: creation answer versus start completion
+
+These are two separate things:
+- The **creation answer** (`status: 'created'`, `groupProjectId`) is what the requesting computer receives.
+- The **start** is the host's one-time `afterCreate`: membership auto-join and the created notice.
+
+The fix changes only start completion. A failed lookup leaves the start pending and retryable. The creation answer is unchanged: it is saved and returned as `created` exactly as before, including on the request whose start lookup failed. A gone group still settles its start without `afterCreate`; it is not counted as a successful start.
