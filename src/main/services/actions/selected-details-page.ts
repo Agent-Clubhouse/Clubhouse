@@ -75,7 +75,8 @@ export function readSelectedActionRelationshipPage(engine: Pick<ActionsEngine, '
       }
     } });
     return { version: 1, source: REMOTE_ACTION_PAGE_SOURCE, state: 'recorded', offset, ...value, next: offset + REMOTE_ACTION_PAGE_SIZE < value.totalRelationships ? offset + REMOTE_ACTION_PAGE_SIZE : null,
-      observedAt: Date.now(), notes: ['Relationship rows are grouped by owner, target and trigger, ordered by saved creation time and stable identity. One Action may appear in multiple groups.',
+      observedAt: Date.now(), notes: [subject.dispatcher ? 'Relationship rows list Actions made by the Dispatcher, ordered by saved creation time and stable identity.'
+        : 'Relationship rows are grouped by owner, target and trigger, ordered by saved creation time and stable identity. One Action may appear in multiple groups.',
         'Descriptions and last-run outcome/time use recorded host display fields. They do not confirm execution, delivery or current tool authority.'] };
   } catch { // telemetry-exempt: no raw Action definitions or engine errors cross this display boundary.
     return unavailable('unreadable');
