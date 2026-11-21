@@ -505,6 +505,36 @@ describe('annex-client', () => {
       expect(fixture.dispatch).toHaveBeenCalledOnce();
       expect(replacement.sent).toContainEqual(expect.objectContaining({ type: 'response', id: 'replacement-route-read', status: 200 }));
     });
+
+    it('ignores an old main refusal after Retry while independently authenticated control stays usable', async () => {
+      const fixture = setup();
+      fixture.openControl();
+      fixture.main.close(1006);
+      annexClient.retry(fixture.fingerprint);
+      const firstRetry = fixture.sockets.filter((socket) => socket.url.includes('/ws?client=desktop'))[1];
+      if (!firstRetry) throw new Error('Expected the first main retry');
+      const request = { destroy: vi.fn() };
+      const response = Object.assign(new EventEmitter(), { statusCode: 401 });
+      firstRetry.emit('unexpected-response', request, response);
+      firstRetry.close(1006);
+      annexClient.retry(fixture.fingerprint);
+      const replacement = fixture.sockets.filter((socket) => socket.url.includes('/ws?client=desktop'))[2];
+      if (!replacement) throw new Error('Expected a replacement main connection');
+      replacement.readyState = 1;
+      replacement.emit('open');
+      response.emit('data', Buffer.from('{"error":"peer_not_paired"}'));
+      response.emit('end');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(annexClient.getSatellite(fixture.fingerprint)?.state).toBe('connected');
+      expect(annexClient.getSatellite(fixture.fingerprint)?.needsPairing).not.toBe(true);
+      expect(fixture.control.readyState).toBe(1);
+      fixture.control.emit('message', Buffer.from(JSON.stringify({
+        v: 1, type: 'request', id: 'after-stale-main-refusal', method: 'GET', path: '/api/v1/mobile/capabilities',
+      })), false);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.dispatch).toHaveBeenCalledOnce();
+      expect(fixture.control.sent).toContainEqual(expect.objectContaining({ type: 'response', id: 'after-stale-main-refusal', status: 200 }));
+    });
   });
 
   // ---- startClient / stopClient ----
