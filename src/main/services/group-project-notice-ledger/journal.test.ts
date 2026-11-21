@@ -18,6 +18,11 @@ async function initialized(directory: string) {
 }
 const post = (seq: number) => ({ seq, postId: `synthetic-post-${seq}` });
 const intent = (seq: number): NoticeDelta => ({ kind: 'intent', attemptId: `attempt-${seq}`, posts: [post(seq)], startedAt: 1 });
+async function acknowledge(journal: SequencedNoticeJournal, attemptId: string) {
+  const handle = journal.captureLiveHandoff(attemptId);
+  journal.markHandoffEntered(handle);
+  return journal.acknowledgeLiveHandoff(handle);
+}
 afterEach(async () => { await Promise.all(homes.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true }))); });
 
 describe('sequenced notice journal persistence', () => {
@@ -27,7 +32,8 @@ describe('sequenced notice journal persistence', () => {
     for (const seq of [1, 2]) {
       await journal.append({ kind: 'scan', through: seq, eligible: [post(seq)] });
       await journal.append(intent(seq));
-      await journal.append({ kind: 'settle', attemptId: `attempt-${seq}`, outcome: seq === 1 ? 'uncertain' : 'accepted' });
+      if (seq === 1) await journal.append({ kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' });
+      else await acknowledge(journal, `attempt-${seq}`);
     }
     const revision = journal.committedRevision;
     journal = await open(directory);
@@ -140,7 +146,7 @@ describe('sequenced notice journal persistence', () => {
     expect(journal.snapshot()?.attempts[0]).toMatchObject({ attemptId: 'attempt-1', status: 'uncertain' });
     await journal.append({ kind: 'scan', through: 258, eligible: [post(258)] });
     await journal.append(intent(258));
-    await journal.append({ kind: 'settle', attemptId: 'attempt-258', outcome: 'accepted' });
+    await acknowledge(journal, 'attempt-258');
     journal = await open(directory);
     expect(journal.snapshot()?.attempts).toHaveLength(257);
     expect(journal.snapshot()?.terminal).toEqual([[258, 258]]);
@@ -153,7 +159,7 @@ describe('sequenced notice journal persistence', () => {
       const posts = Array.from({ length: 50 }, (_, index) => ({ seq: burst * 50 + index + 1, postId: `${String(burst * 50 + index + 1).padStart(10, '0')}-${'x'.repeat(230)}` }));
       await journal.append({ kind: 'scan', through: posts[49].seq, eligible: posts });
       await journal.append({ kind: 'intent', attemptId: `burst-${burst}`, posts, startedAt: 1 });
-      await journal.append({ kind: 'settle', attemptId: `burst-${burst}`, outcome: 'accepted' });
+      await acknowledge(journal, `burst-${burst}`);
     }
     const manifest = JSON.parse(await fs.readFile(path.join(directory, 'manifest.json'), 'utf8'));
     expect(manifest.checkpointRevision).toBeGreaterThan(0);
@@ -165,6 +171,47 @@ describe('sequenced notice journal persistence', () => {
     expect(journal.snapshot()?.acceptedCount).toBe(2000);
     expect(journal.snapshot()?.attempts).toEqual([]);
   }, 30000);
+
+  it('requires entered same-process capability for a late ACK; reopen cannot mint one for recovered uncertainty', async () => {
+    const directory = await home();
+    const journal = await initialized(directory);
+    await journal.append({ kind: 'scan', through: 1, eligible: [post(1)] });
+    await journal.append(intent(1));
+    const handle = journal.captureLiveHandoff('attempt-1');
+    await expect(journal.acknowledgeLiveHandoff(handle)).rejects.toThrow('entered');
+    journal.markHandoffEntered(handle);
+    expect(() => journal.markHandoffEntered(handle)).toThrow('no longer current');
+    await journal.append({ kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' });
+    await expect(journal.append({ kind: 'settle', attemptId: 'attempt-1', outcome: 'accepted' })).rejects.toThrow('capability');
+    await journal.acknowledgeLiveHandoff(handle);
+    await journal.acknowledgeLiveHandoff(handle);
+    expect(journal.snapshot()?.lateAcknowledgementCount).toBe(1);
+    expect(journal.snapshot()?.acceptedCount).toBe(1);
+
+    await journal.append({ kind: 'scan', through: 2, eligible: [post(2)] });
+    await journal.append(intent(2));
+    const oldHandle = journal.captureLiveHandoff('attempt-2');
+    journal.markHandoffEntered(oldHandle);
+    const recovered = await open(directory);
+    expect(recovered.snapshot()?.attempts[0]).toMatchObject({ attemptId: 'attempt-2', reason: 'recovered' });
+    expect(() => recovered.captureLiveHandoff('attempt-2')).toThrow('No exact');
+    await expect(recovered.acknowledgeLiveHandoff(oldHandle)).rejects.toThrow('live entered');
+    await expect(recovered.append({ kind: 'settle', attemptId: 'attempt-2', outcome: 'accepted' })).rejects.toThrow('capability');
+    expect(recovered.snapshot()?.attempts[0].status).toBe('uncertain');
+  });
+
+  it('refuses zero-filled final extension without trimming a possibly committed frame', async () => {
+    const directory = await home();
+    const journal = await initialized(directory);
+    await journal.append({ kind: 'scan', through: 1, eligible: [post(1)] });
+    await journal.append(intent(1));
+    const location = path.join(directory, 'journal-0000000000.log');
+    await fs.appendFile(location, Buffer.alloc(64));
+    const bytes = await fs.readFile(location);
+    await expect(open(directory)).rejects.toThrow('frame length');
+    expect(await fs.readFile(location)).toEqual(bytes);
+    expect((await fs.readdir(directory)).some((n) => n.startsWith('incomplete-tail'))).toBe(false);
+  });
 
   it.each(['beforeAppend', 'afterAppendBeforeSync', 'afterSync', 'partial-tail', 'afterPages', 'afterManifest'] as Array<NoticeJournalFailurePoint | 'partial-tail'>)('recovers an actual synthetic child-process exit at %s', async (point) => {
     const directory = await home();

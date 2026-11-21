@@ -12,6 +12,17 @@ journal, immutable paged checkpoints and synthetic child-process crash fixtures.
 There is no app import, notification routing change or capability advertisement.
 Initial validation is pending; no feature acceptance is claimed.
 
+Frozen foundation36 and portable evidence02cc are preserved. Its actual36-test,
+root typecheck and scoped lint pass is bounded foundation proof, with earlier922
+lint failure retained. Independent source audit129082916 identified F1–F4.
+The successor adds exact entered same-process receipt capabilities, refusal to
+accept recovered uncertainty, visible late-ACK anomaly count, explicit complete
+cap50 frontier enforcement, and truthful `excludedSequenceCount` naming. Invalid
+complete/zero-filled tails remain refused with unchanged bytes; conservative
+invalid-tail repair is deferred pending proof, with the liveness cost documented.
+These changes and the F1/F2 contract clarifications await exact successor checks
+and independent re-review; no integration acceptance is inferred.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.

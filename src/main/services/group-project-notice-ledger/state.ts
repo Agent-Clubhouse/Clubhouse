@@ -16,6 +16,8 @@ export interface NoticeAttempt {
   posts: NoticePost[];
   startedAt: number;
   status: 'intent' | 'queued' | 'uncertain';
+  /** Writer process that retained the original live handoff; not a runtime generation. */
+  handoffProcess: string;
   reason?: 'recovered' | 'handoff_unknown';
   messageId?: string;
 }
@@ -29,18 +31,25 @@ export interface SequencedNoticeState {
   pending: PendingNoticePost[];
   attempts: NoticeAttempt[];
   acceptedCount: number;
-  excludedCount: number;
+  /** Counts sequence positions, including non-post board changes; never message count. */
+  excludedSequenceCount: number;
+  lateAcknowledgementCount: number;
+}
+export interface NoticeAcknowledgement {
+  kind: 'same-process-exact-handoff';
+  handoffProcess: string;
+  coverageDigest: string;
 }
 export type NoticeDelta =
   | { kind: 'initialize'; recipient: NoticeRecipient; baseline: number }
   | { kind: 'scan'; through: number; eligible: NoticePost[] }
-  | { kind: 'intent'; attemptId: string; posts: NoticePost[]; startedAt: number }
+  | { kind: 'intent'; attemptId: string; posts: NoticePost[]; startedAt: number; handoffProcess?: string }
   | { kind: 'queued'; attemptId: string; messageId?: string }
-  | { kind: 'settle'; attemptId: string; outcome: 'accepted' | 'uncertain' | 'unsubmitted' }
+  | { kind: 'settle'; attemptId: string; outcome: 'accepted' | 'uncertain' | 'unsubmitted'; acknowledgement?: NoticeAcknowledgement }
   | { kind: 'recover' };
 
 function boundedId(value: unknown): asserts value is string {
-  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 256 || [...value].some((char) => char.charCodeAt(0) < 32)) throw new Error('Invalid notice identity');
+  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 256 || [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) throw new Error('Invalid notice identity');
 }
 function recipientIdentity(recipient: NoticeRecipient): NoticeRecipient {
   boundedId(recipient.groupId); boundedId(recipient.agentId); boundedId(recipient.generation);
@@ -61,7 +70,7 @@ export function noticeRecipientKey(recipient: NoticeRecipient): string {
 function initial(recipient: NoticeRecipient, baseline: number): SequencedNoticeState {
   noticeSequence(baseline);
   return { schemaVersion: 1, minWriterVersion: 1, recipient: recipientIdentity(recipient), baselineThrough: baseline,
-    scannedThrough: baseline, terminal: [], pending: [], attempts: [], acceptedCount: 0, excludedCount: 0 };
+    scannedThrough: baseline, terminal: [], pending: [], attempts: [], acceptedCount: 0, excludedSequenceCount: 0, lateAcknowledgementCount: 0 };
 }
 
 /** Internal pure reducer. No app lookup, runtime, dispatch, nonce or settings authority. */
@@ -77,6 +86,7 @@ export function applyNoticeDelta(current: SequencedNoticeState | undefined, delt
       const through = noticeSequence(delta.through);
       if (delta.eligible.length > NOTICE_BATCH_LIMIT) throw new Error('Notice discovery batch too large');
       const eligible = delta.eligible.map(postIdentity).sort((a, b) => a.seq - b.seq);
+      if (eligible.length === NOTICE_BATCH_LIMIT && through !== eligible[eligible.length - 1].seq) throw new Error('Capped notice scan cannot over-advance its frontier');
       const seqs = new Set<number>(); const ids = new Set<string>();
       for (const post of eligible) {
         if (post.seq > through || seqs.has(post.seq) || ids.has(post.postId)) throw new Error('Conflicting notice scan');
@@ -89,20 +99,21 @@ export function applyNoticeDelta(current: SequencedNoticeState | undefined, delt
       for (const post of eligible.filter((p) => p.seq > state.scannedThrough)) {
         if (next < post.seq) {
           state.terminal = coverNoticeInterval(state.terminal, next, post.seq - 1);
-          state.excludedCount += post.seq - next;
+          state.excludedSequenceCount += post.seq - next;
         }
         state.pending.push(post);
         next = post.seq + 1;
       }
       if (next <= through) {
         state.terminal = coverNoticeInterval(state.terminal, next, through);
-        state.excludedCount += through - next + 1;
+        state.excludedSequenceCount += through - next + 1;
       }
       state.scannedThrough = through;
       return state;
     }
     case 'intent': {
       boundedId(delta.attemptId);
+      boundedId(delta.handoffProcess);
       if (!Number.isFinite(delta.startedAt) || delta.startedAt < 0 || !delta.posts.length || delta.posts.length > NOTICE_BATCH_LIMIT) throw new Error('Invalid notice attempt');
       const posts = delta.posts.map(postIdentity).sort((a, b) => a.seq - b.seq);
       if (new Set(posts.map((p) => p.seq)).size !== posts.length) throw new Error('Duplicate attempt coverage');
@@ -117,7 +128,7 @@ export function applyNoticeDelta(current: SequencedNoticeState | undefined, delt
         if (!pending || pending.attemptId || noticeCovered(state.terminal, post.seq)) throw new Error('Notice coverage is not ready');
         pending.attemptId = delta.attemptId;
       }
-      state.attempts.push({ attemptId: delta.attemptId, coverageDigest: digest, posts, startedAt: delta.startedAt, status: 'intent' });
+      state.attempts.push({ attemptId: delta.attemptId, coverageDigest: digest, posts, startedAt: delta.startedAt, handoffProcess: delta.handoffProcess, status: 'intent' });
       return state;
     }
     case 'queued': {
@@ -140,6 +151,12 @@ export function applyNoticeDelta(current: SequencedNoticeState | undefined, delt
         return state;
       }
       if (delta.outcome === 'unsubmitted' && attempt.status === 'uncertain') throw new Error('Uncertainty cannot become proven unsubmitted');
+      if (delta.outcome === 'accepted') {
+        const proof = delta.acknowledgement;
+        if (attempt.reason === 'recovered') throw new Error('Recovered notice cannot accept a live acknowledgement');
+        if (!proof || proof.kind !== 'same-process-exact-handoff' || proof.handoffProcess !== attempt.handoffProcess || proof.coverageDigest !== attempt.coverageDigest) throw new Error('Notice acceptance requires exact live handoff provenance');
+        if (attempt.status === 'uncertain') state.lateAcknowledgementCount++;
+      }
       state.attempts = state.attempts.filter((a) => a !== attempt);
       if (delta.outcome === 'accepted') {
         const seqs = new Set(attempt.posts.map((p) => p.seq));
@@ -190,7 +207,7 @@ export function validateNoticeState(value: unknown): SequencedNoticeState {
   if (contiguousNoticeFloor(all, state.baselineThrough) !== state.scannedThrough) throw new Error('Notice checkpoint has an unrecorded gap');
   const attempts = new Set<string>();
   for (const attempt of state.attempts) {
-    boundedId(attempt.attemptId);
+    boundedId(attempt.attemptId); boundedId(attempt.handoffProcess);
     if (attempts.has(attempt.attemptId) || !['intent', 'queued', 'uncertain'].includes(attempt.status) || !Array.isArray(attempt.posts)
       || !attempt.posts.length || attempt.posts.length > NOTICE_BATCH_LIMIT || !Number.isFinite(attempt.startedAt) || attempt.startedAt < 0) throw new Error('Invalid checkpoint attempt');
     attempts.add(attempt.attemptId);
@@ -205,8 +222,8 @@ export function validateNoticeState(value: unknown): SequencedNoticeState {
     if (state.pending.filter((p) => p.attemptId === attempt.attemptId).length !== covered.size) throw new Error('Checkpoint attempt coverage incomplete');
   }
   if (state.pending.some((p) => p.attemptId !== undefined && !attempts.has(p.attemptId))) throw new Error('Checkpoint attempt is missing');
-  noticeSequence(state.acceptedCount); noticeSequence(state.excludedCount);
+  noticeSequence(state.acceptedCount); noticeSequence(state.excludedSequenceCount); noticeSequence(state.lateAcknowledgementCount);
   const terminalCount = terminal.reduce((sum, [lo, hi]) => sum + (hi - lo + 1), 0);
-  if (state.acceptedCount + state.excludedCount !== terminalCount) throw new Error('Checkpoint terminal count mismatch');
+  if (state.acceptedCount + state.excludedSequenceCount !== terminalCount) throw new Error('Checkpoint terminal count mismatch');
   return { ...state, recipient: { ...state.recipient }, terminal, pending: state.pending.map((p) => ({ ...p })), attempts: state.attempts.map((a) => ({ ...a, posts: a.posts.map((p) => ({ ...p })) })) };
 }
