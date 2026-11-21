@@ -1,0 +1,2 @@
+node_modules/.bin/tsc --noEmit -p .  15.63s user 0.51s system 169% cpu 9.505 total
+tsc exit=0

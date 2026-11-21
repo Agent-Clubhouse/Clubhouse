@@ -1,0 +1,41 @@
+running '/tmp/dlc2/bisect.sh'
+Bisecting: 28 revisions left to test after this (roughly 5 steps)
+[37d642a869ed8631a7c94d114b51b39659b9c3f1] Record bounded Actions source validation and stable display controls
+running '/tmp/dlc2/bisect.sh'
+Bisecting: 14 revisions left to test after this (roughly 4 steps)
+[c6096bfa26e76b8a86abd07c2433f7c6f99a217f] Add bounded read-only rename display to Changes
+running '/tmp/dlc2/bisect.sh'
+Bisecting: 5 revisions left to test after this (roughly 3 steps)
+[bc7eff9710a6e43a976665f4fa05e1f449e066e0] Group read-only Skills and MCP evidence by source
+running '/tmp/dlc2/bisect.sh'
+Bisecting: 2 revisions left to test after this (roughly 2 steps)
+[cf60564f16444420fe924b7c11e69214eb0c2446] Combine selected outgoing Wires evidence with remote Details cards
+running '/tmp/dlc2/bisect.sh'
+Bisecting: 0 revisions left to test after this (roughly 1 step)
+[57ca9a504d8b656858c1b22b49099e0488577274] Document safe reader fallback and existing lint limitation
+running '/tmp/dlc2/bisect.sh'
+Bisecting: 0 revisions left to test after this (roughly 0 steps)
+[9f2354d0dd873ea27e0c69d4880c4bc8224f9f96] Expose scoped outgoing wire records and manual restriction evidence
+running '/tmp/dlc2/bisect.sh'
+9f2354d0dd873ea27e0c69d4880c4bc8224f9f96 is the first bad commit
+commit 9f2354d0dd873ea27e0c69d4880c4bc8224f9f96
+Author: Mason Allen <<author-email>>
+Date:   Fri Nov 20 04:07:56 2026 -0800
+
+    Expose scoped outgoing wire records and manual restriction evidence
+
+ docs/evidence/3733-connections-current/README.txt  | 87 ++++++++++++++++++++++
+ src/main/services/remote-agent-details.test.ts     | 16 +++-
+ src/main/services/remote-agent-details.ts          |  3 +
+ src/main/services/remote-connection-card.test.ts   | 20 +++++
+ src/main/services/remote-connection-card.ts        |  5 +-
+ src/main/services/remote-details-presentation.ts   |  1 +
+ .../selected-connection-page-envelope.test.ts      |  7 ++
+ .../selected-outgoing-wires-display.test.ts        | 58 +++++++++++++++
+ .../services/selected-outgoing-wires-display.ts    | 24 ++++++
+ src/shared/remote-agent-details.ts                 | 20 +++++
+ 10 files changed, 237 insertions(+), 4 deletions(-)
+ create mode 100644 docs/evidence/3733-connections-current/README.txt
+ create mode 100644 src/main/services/selected-outgoing-wires-display.test.ts
+ create mode 100644 src/main/services/selected-outgoing-wires-display.ts
+bisect found first bad commit
