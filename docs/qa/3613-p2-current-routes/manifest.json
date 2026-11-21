@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "scope": "New isolated desktop P2 route/reconnect successor; not broader full-duplex, federation or release acceptance",
+  "base": "c0cf2f1974b98a9418f1682284c6535d1a1e396b",
+  "baselineTests": "61b4662a9e875601d82567c5ad5550b21f485192",
+  "sourceHead": "5d59ba0c0191f08ea4a85ca3f5700e4d51962bfd",
+  "sourceTree": "0fca30e28f06129a27cd6a278f8ddeb089b3f13e",
+  "historicalSemanticsOnly": [
+    "038dc9635835ea62f26b930a0188a228c3c192f2",
+    "82ad73a3a929880a9f021f5c56bb238152ea7ccd"
+  ],
+  "noHistoricalAncestryImport": true,
+  "counts": {
+    "currentFocusedPass": 647,
+    "currentFocusedFiles": 8,
+    "currentReadWriteRefusalPass": 65,
+    "currentReadWriteRefusalFiles": 2,
+    "currentReadWriteRefusalSelectorSkips": 562,
+    "totalCurrentSourcePass": 712
+  },
+  "typing": {
+    "production": "PASS",
+    "completeNewRouteAndReconnectFixtures": "PASS",
+    "config": "docs/annex-reverse-routes.tsconfig.json"
+  },
+  "lint": {
+    "candidateFiles": 8,
+    "baselineFiles": 5,
+    "errors": 0,
+    "warnings": 162,
+    "baselineWarnings": 162,
+    "sameRelativeFileRuleSeverityMessageMultiset": true,
+    "multisetSha256": "08ad7500a318fb67ae8e7ad0af3a22632dac9313b7d9d2bd93eba14dece6ccd1"
+  },
+  "wakeComposition": {
+    "approvedSource": "9e46702fa1c9d9d9f3203c6282a637fcf61efe42",
+    "temporaryHead": "858ba52a8803fea959ce165c2f2df2dd1bb56f11",
+    "temporaryTree": "101b181d3a68eb8d2fbd7cb1440b6ff596349057",
+    "files": [
+      "src/main/services/annex-client.ts",
+      "src/main/services/annex-client.test.ts"
+    ],
+    "method": "git diff c0cf..approvedSource -- namedClientFiles; git apply --3way --index onto sourceHead in isolated proof branch",
+    "approvedWakeCasesPass": 23,
+    "newP2LifecycleAndEpochCasesPass": 13,
+    "totalPass": 36,
+    "selectorSkips": 226,
+    "productionTyping": "PASS",
+    "importedIntoDeliverySource": false
+  },
+  "privacyNegative": {
+    "negativeOnlyHead": "5d4e0a7736222bf16cf1d6ecc113aa0a688fe2f9",
+    "negativeOnlyTree": "97667ae591ed756ebf879a7e5b3f4ff2e3591167",
+    "mutation": "routeAllowed returns true",
+    "fail": 1,
+    "selectorSkips": 60,
+    "actualForbiddenDialPorts": [7666, 7777],
+    "importedIntoDeliverySource": false
+  },
+  "phoneFixtures": {
+    "count": 103,
+    "bytes": 1529301,
+    "worktreeAndCommittedByteIdentical": true,
+    "sha256": "93027e7e0cd104ec5f9f1664c7965b54e37156c60dffec23ef8ef9f503c4fbbf",
+    "algorithm": "SHA256 of sorted relativePath NUL byteLength NUL originalBytes",
+    "fullRendererComparatorExecuted": false
+  },
+  "unchanged": [
+    "src/main/services/annex-server.ts",
+    "src/main/services/agent-config.ts",
+    "src/shared/annex-control-protocol.ts",
+    "docs/annex-route-contract-3611.md",
+    "package.json",
+    "package-lock.json"
+  ],
+  "originals": [
+    {"name": "p2-c0cf-settings-baseline-attempt-01-original.log", "bytes": 7057, "sha256": "dd18768349d63c7560e22117921489c1403b636a5a8cb9e155474acf07bb6f38"},
+    {"name": "p2-current-client-wiring-negative-original.log", "bytes": 43087, "sha256": "70fd5fb259646bb3788693602a37a20ec5aaf4e674a0a9415a5f6b4886171299"},
+    {"name": "p2-current-fixture-tsc-attempt-01-original.log", "bytes": 332, "sha256": "010b767f5a416810fc659ce06da2fad030c304cedab8c4ce7245b047d530e039"},
+    {"name": "p2-privacy-negative-attempt-01-original.log", "bytes": 11364, "sha256": "7ee5228f681b7125607ae4fb287d092c07afffc6c5e858bda2bc3c195ba52353"},
+    {"name": "p2-5d59-final-gate-original.log", "bytes": 2665, "sha256": "06b09e454819537bb754b9dc6c44008d73f6f886cb89cbfbc2909767fa517d44"},
+    {"name": "p2-5d59-final-focused-vitest-original.log", "bytes": 1932, "sha256": "6b877e6edbce7b712b9389ca9ac04c05369d8881818b07bf2707cc0b6bf08faf"},
+    {"name": "p2-5d59-final-current-read-write-refusal-vitest-original.log", "bytes": 1344, "sha256": "21f86f01b1a117dc8acc7d9a6bf13762aad245687d0f5aeac0aa4fbf7d4b435d"},
+    {"name": "p2-5d59-final-production-tsc-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    {"name": "p2-5d59-final-fixture-tsc-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    {"name": "p2-5d59-final-eslint-json-original.log", "bytes": 535021, "sha256": "0c28bc584fea11d42358583b5fa22d96f92dceca7ee793556e107cd45c744469"},
+    {"name": "p2-c0cf-baseline-eslint-json-original.log", "bytes": 506727, "sha256": "74f7b1081183f2815777ee2560f480d4a5e6de563e8700b0f300ee56d29a6006"},
+    {"name": "p2-wake-858b-composition-gate-attempt-01-original.log", "bytes": 1146, "sha256": "2a1ac85e0573a084370d4f398782c91b7c04ef545736819c43c2300dcf17460c"},
+    {"name": "p2-wake-858b-composition-vitest-attempt-01-original.log", "bytes": 47468, "sha256": "efd42d89a5946b823ffe8ffe525cba399a95ce1168c78e47a0b9046d56f282dc"},
+    {"name": "p2-wake-858b-composition-tsc-attempt-01-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+  ],
+  "acceptanceBoundaries": [
+    "Current independent P2 delta review is required before PR; no historical review or CI transfer",
+    "Separate wake delivery/current base must be rechecked at integration",
+    "No P7/P7w/P8/full-surface acceptance",
+    "Frozen233a and private originals untouched",
+    "Specifically refused966a production review remains without verdict and was not replayed",
+    "No held-draft merge, live calibration, native/process-tree run, permission change or release"
+  ]
+}
