@@ -1,4 +1,5 @@
 import { REMOTE_DETAILS_CARD_IDS, type RemoteAgentDetails, type RemoteDetailsCard } from '../../shared/remote-agent-details';
+import type { RemoteAgentChanges } from '../../shared/remote-agent-changes';
 import type { SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
 /**
  * Tests for the Annex V2 Client — discovery, pairing, and connection management.
@@ -2803,7 +2804,7 @@ describe('annex-client', () => {
       const publicBroadcast = () => vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).at(-1)![1] as Array<{ snapshotReceipt?: string }>;
 
       const metadata = (): RemoteAgentDetails => ({ version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) });
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) });
       const roleResponse = (): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: metadata() });
       const broadcasts = () => vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).length;
       function answer(status: number, body: object, hold = false) {
@@ -4042,7 +4043,7 @@ describe('annex-client', () => {
 
     describe('selected Dispatcher role transport', () => {
       const response = (): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: { version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null,
-        sessionId: null, nativeSessionId: null, settings: null, cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) } });
+        sessionId: null, nativeSessionId: null, settings: null, cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) } });
       beforeEach(() => { vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as never); });
       it('uses only the selected pinned host and fixed metadata GET, retaining no role response on satellites', async () => {
         const value = response(); answers.push({ status: 200, body: value });
@@ -4490,7 +4491,7 @@ describe('annex-client', () => {
       const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
       const query = { card: 'connections' as const, source: 'helpers' as const, offset: 8, projectOffset: 16 };
       const value: RemoteAgentDetails = { version: 1, connectionPages: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id === 'connections' && { connectionPage: { source: 'helpers', offset: 8, projectOffset: 16, known: 9, complete: true, next: null } }) })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id === 'connections' && { connectionPage: { source: 'helpers', offset: 8, projectOffset: 16, known: 9, complete: true, next: null } } satisfies Pick<RemoteDetailsCard, 'connectionPage'>) })) };
       answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0]).toMatchObject({ method: 'GET' }); expect(requests[0].url).toContain('/agents/a1/details?card=connections&source=helpers&offset=8&projectOffset=16');
@@ -4514,7 +4515,7 @@ describe('annex-client', () => {
       const selection = 'a'.repeat(64), query = { card: 'skills-mcp' as const, source: 'selected-managed-skills' as const, offset: 100, selection };
       const value: RemoteAgentDetails = { version: 1, inventoryPages: 1, inventorySources: ['selected-managed-skills'], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
         inventoryPage: { version: 1, source: query.source, offset: 100, observedAt: 1, notes: [], state: 'recorded', selection, total: 101, next: null, rows: [{ key: 'b'.repeat(64), kind: 'skill', state: 'recorded', name: 'Last selected skill', revision: 1, builtin: false }] },
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'skills-mcp' && { requested: false }) })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'skills-mcp' && { requested: false }) })) };
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain(`card=skills-mcp&source=selected-managed-skills&offset=100&selection=${selection}`); expect(requests[0].url).not.toContain('projectOffset');
@@ -4532,7 +4533,7 @@ describe('annex-client', () => {
       const query = { card: 'orchestrate' as const, source: 'helpers' as const, offset: 8 };
       const value: RemoteAgentDetails = { version: 1, helperPages: 1, helperPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
         helperPage: { version: 1, source: 'selected-direct-helpers', state: 'ok', offset: 8, next: null, total: 9, liveCount: 9, disposedCount: 0, pendingCount: 0, rows: [{ key: 'last', name: 'Last helper', projectName: null, status: 'unknown', statusSource: 'unknown', branch: null, failure: 'unknown', disposedAt: null, work: { state: 'unavailable', reason: 'identity' } }], pending: [], notes: [] },
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'orchestrate' && { requested: false }) })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'orchestrate' && { requested: false }) })) };
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain('card=orchestrate&source=helpers&offset=8&projectOffset=0');
       answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
@@ -4547,11 +4548,11 @@ describe('annex-client', () => {
       const selection = 'a'.repeat(64), query = { card: 'actions' as const, source: 'selected-action-relationships' as const, offset: 25, selection };
       const value: RemoteAgentDetails = { version: 1, inventoryPages: 1, inventorySources: [query.source], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
         inventoryPage: { version: 1, source: query.source, offset: 25, observedAt: 1, notes: [], state: 'recorded', selection, totalRelationships: 26, uniqueActions: 13, next: null, rows: [{ key: 'b'.repeat(64), group: 'triggered-by', enabled: false, description: 'Message Selected', name: 'Last relationship' }] },
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'actions' && { requested: false }) })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'actions' && { requested: false }) })) };
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain(`card=actions&source=selected-action-relationships&offset=25&selection=${selection}`);
-      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }] satisfies Array<Record<string, unknown>>) {
+      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }] satisfies Array<{ selection?: string; inventoryPageOnly?: true; settings?: Record<string, boolean> }>) {
         const body = 'selection' in patch ? { ...value, inventoryPage: { ...value.inventoryPage, selection: patch.selection } } : { ...value, ...patch };
         answers.push({ status: 200, body }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
       }
@@ -4568,11 +4569,11 @@ describe('annex-client', () => {
       const selection = 'a'.repeat(64), query = { card: 'canvases' as const, source: 'selected-canvas-memberships' as const, offset: 25, selection };
       const value: RemoteAgentDetails = { version: 1, inventoryPages: 1, inventorySources: [query.source], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
         inventoryPage: { version: 1, source: query.source, offset: 25, observedAt: 1, notes: [], agentId: 'a1', projectId: 'p1', state: 'recorded', selection, total: 26, next: null, rows: [{ key: 'b'.repeat(64), scope: 'project', canvasId: 'board', viewId: 'view', name: 'Last membership' }] },
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'canvases' && { requested: false }) })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'canvases' && { requested: false }) })) };
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain(`card=canvases&source=selected-canvas-memberships&offset=25&selection=${selection}`);
-      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }] satisfies Array<Record<string, unknown>>) {
+      for (const patch of [{ selection: 'c'.repeat(64) }, { inventoryPageOnly: undefined }, { settings: { PRIVATE: true } }] satisfies Array<{ selection?: string; inventoryPageOnly?: true; settings?: Record<string, boolean> }>) {
         const body = 'selection' in patch ? { ...value, inventoryPage: { ...value.inventoryPage, selection: patch.selection } } : { ...value, ...patch };
         answers.push({ status: 200, body }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
       }
@@ -4587,7 +4588,7 @@ describe('annex-client', () => {
     it('reads bounded exact-agent Details and treats old/refused/malformed contracts explicitly', async () => {
       const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
       const value: RemoteAgentDetails = { version: 1, agentId: 'a?/#', readOnly: true, readAt: 1, providerId: 'codex-cli', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
       answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentDetails(FP, 'a?/#')).toEqual({ status: 'ok', value });
       expect(requests[0]).toMatchObject({ method: 'GET' });
@@ -4604,7 +4605,7 @@ describe('annex-client', () => {
     it('withholds a schema-valid prior Details snapshot after the same record reconnects', async () => {
       const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
       const value: RemoteAgentDetails = { version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
-        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: 'PRIVATE_PRIOR_EPOCH', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: 'PRIVATE_PRIOR_EPOCH', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
       expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
       let finish!: () => void;
       vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
@@ -4625,7 +4626,7 @@ describe('annex-client', () => {
       expect.soft(result).toEqual({ status: 'offline' }); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_PRIOR_EPOCH');
     });
     it('reads only an exact selected-agent Changes scope/page/key and rejects old/refused/malformed responses', async () => {
-      const value: Record<string, unknown> = { version: 1, readOnly: true, agentId: 'a?/#', observedAt: 1, scope: 'branch', state: 'ok', branch: 'feature', base: 'main', sessionId: null, turnId: null, live: true, shared: false, files: [], totalFiles: 0, offset: 0, nextOffset: null, uncompared: 0, skippedLarge: [], skippedRepos: [], skippedOmitted: 0 };
+      const value: RemoteAgentChanges = { version: 1, readOnly: true, agentId: 'a?/#', observedAt: 1, scope: 'branch', state: 'ok', branch: 'feature', base: 'main', sessionId: null, turnId: null, live: true, shared: false, files: [], totalFiles: 0, offset: 0, nextOffset: null, uncompared: 0, skippedLarge: [], skippedRepos: [], skippedOmitted: 0 };
       answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentChanges(FP, 'a?/#', { scope: 'branch' })).toEqual({ status: 'ok', value });
       expect(requests[0].url).toContain('/agents/a%3F%2F%23/changes?scope=branch');
@@ -4634,7 +4635,7 @@ describe('annex-client', () => {
         answers.push({ status, body: { private: 'PRIVATE_ERROR' } });
         expect((await annexClient.requestAgentChanges(FP, 'a1', { scope: 'branch' })).status).toBe(status === 429 ? 'rate_limited' : status === 404 || status === 405 ? 'unavailable' : 'forbidden');
       }
-      for (const patch of [{ agentId: 'other' }, { scope: 'turn' }, { version: 2 }, { files: [null] }, { nextOffset: -1 }] satisfies Array<Record<string, unknown>>) {
+      for (const patch of [{ agentId: 'other' }, { scope: 'turn' }, { version: 2 }, { files: [null] }, { nextOffset: -1 }] satisfies Array<{ agentId?: string; scope?: string; version?: number; files?: unknown[]; nextOffset?: number }>) {
         answers.push({ status: 200, body: { ...value, ...patch } });
         expect(await annexClient.requestAgentChanges(FP, 'a?/#', { scope: 'branch' })).toEqual({ status: 'error' });
       }
