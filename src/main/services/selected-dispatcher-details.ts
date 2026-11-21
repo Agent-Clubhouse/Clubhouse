@@ -4,16 +4,18 @@ import type { DisplayReceipt } from './display-settings';
 import { dispatcherControllerForDisplay } from './remote-dispatcher-card';
 import { readRemoteAgentDetails } from './remote-agent-details';
 
-import type { SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
+import { isSelectedDispatcherConnectionPage, isSelectedDispatcherConnectionsQuery, type SelectedDispatcherConnectionsQuery, type SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
 export type { SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
 
 /**
  * The pinned desktop adapter must supply the SAME desktopDetailsAuthorized
  * callback as ordinary agent Details, before and after this call. No caller-
  * supplied id, address, role, path or controller/mobile grant is accepted here.
+ * An optional Connections page query pages the same host-selected role only.
  */
-export async function readSelectedDispatcherDetails(authorized?: () => boolean): Promise<{ status: number; body: unknown; receipt?: DisplayReceipt }> {
+export async function readSelectedDispatcherDetails(authorized?: () => boolean, query?: SelectedDispatcherConnectionsQuery): Promise<{ status: number; body: unknown; receipt?: DisplayReceipt }> {
   const allowed = authorized ?? (() => false);
+  if (query !== undefined && !isSelectedDispatcherConnectionsQuery(query)) return { status: 400, body: { error: 'invalid_dispatcher_details_query' } };
   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });
   const changed = () => ({ status: 409, body: { error: 'dispatcher_role_changed' } });
   if (!allowed()) return refused();
@@ -27,16 +29,17 @@ export async function readSelectedDispatcherDetails(authorized?: () => boolean):
     if (!current()) return changed();
     // Unbound/unreadable is unavailable, not verified never-created or asleep.
     if (!target) return { status: 404, body: { error: 'dispatcher_role_unavailable' } };
-    const result = await readRemoteAgentDetails(target.agent.id, allowed);
+    const result = query ? await readRemoteAgentDetails(target.agent.id, allowed, { ...query }) : await readRemoteAgentDetails(target.agent.id, allowed);
     if (!allowed()) return refused();
     if (!current()) return changed();
     if (result.status !== 200) return result;
-    if (!isRemoteAgentDetails(result.body, target.agent.id) || result.body.connectionPageOnly === true
+    if (!isRemoteAgentDetails(result.body, target.agent.id)) return { status: 500, body: { error: 'dispatcher_details_invalid' } };
+    const body: SelectedDispatcherDetails = { version: 1, role: 'dispatcher', agentId: target.agent.id, details: result.body };
+    if (query ? !isSelectedDispatcherConnectionPage(body, query) : result.body.connectionPageOnly === true
       || ('helperPageOnly' in result.body && result.body.helperPageOnly === true)
       || ('inventoryPageOnly' in result.body && result.body.inventoryPageOnly === true)) {
       return { status: 500, body: { error: 'dispatcher_details_invalid' } };
     }
-    const body: SelectedDispatcherDetails = { version: 1, role: 'dispatcher', agentId: target.agent.id, details: result.body };
     if (Buffer.byteLength(JSON.stringify(body)) > REMOTE_DETAILS_MAX_BYTES) {
       return { status: 500, body: { error: 'dispatcher_details_limit' } };
     }
