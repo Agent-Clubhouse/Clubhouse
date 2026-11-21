@@ -1,0 +1,47 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design
+
+ ❯ |main| src/main/services/group-project-notice-ledger/pages.test.ts (38 tests | 5 failed | 33 skipped) 15ms
+     × D1 schema: refuses unknown leaf fields without propagation or new writes 6ms
+     × D1 schema: refuses unknown index fields without propagation or new writes 2ms
+     × D1 schema: refuses unknown entry fields without propagation or new writes 2ms
+     × D1 schema: refuses unknown child-reference fields without propagation or new writes 3ms
+     × D1 schema: refuses unknown root-reference fields without propagation or new writes 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/group-project-notice-ledger/pages.test.ts > lazy immutable notice index > D1 schema: refuses unknown leaf fields without propagation or new writes
+ FAIL  |main| src/main/services/group-project-notice-ledger/pages.test.ts > lazy immutable notice index > D1 schema: refuses unknown index fields without propagation or new writes
+ FAIL  |main| src/main/services/group-project-notice-ledger/pages.test.ts > lazy immutable notice index > D1 schema: refuses unknown entry fields without propagation or new writes
+ FAIL  |main| src/main/services/group-project-notice-ledger/pages.test.ts > lazy immutable notice index > D1 schema: refuses unknown child-reference fields without propagation or new writes
+ FAIL  |main| src/main/services/group-project-notice-ledger/pages.test.ts > lazy immutable notice index > D1 schema: refuses unknown root-reference fields without propagation or new writes
+AssertionError: promise resolved "{ payload: true }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "payload": true,
+  }
+
+ ❯ src/main/services/group-project-notice-ledger/pages.test.ts:435:42
+    433|       }
+    434|       const before = await immutableFiles(directory);
+    435|       await expect(index.get(root, 'id')).rejects.toThrow();
+       |                                          ^
+    436|       await expect(index.set(root, 'later-id', true)).rejects.toThrow(…
+    437|       expect(await immutableFiles(directory)).toEqual(before);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 33 skipped (38)
+   Start at  08:07:35
+   Duration  120ms (transform 21ms, setup 4ms, import 26ms, tests 15ms, environment 0ms)
+

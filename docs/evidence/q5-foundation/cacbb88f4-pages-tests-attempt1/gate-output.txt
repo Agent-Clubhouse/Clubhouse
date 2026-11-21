@@ -1,0 +1,16 @@
+2026-11-21T13:08:54Z START q5-ledger idle=91% unused=16G avail=33802M freepct=75 comp=8376M swap=1812M pid=69913 cmd=python3 test/research/q5-seal-implementation.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/cacbb88f4-pages-tests-attempt1 -- ./node_modules/.bin/vitest run --project main src/main/services/group-project-notice-ledger/pages.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design
+
+
+ Test Files  1 passed (1)
+      Tests  38 passed | 1 skipped (39)
+   Start at  08:08:54
+   Duration  17.18s (transform 22ms, setup 5ms, import 27ms, tests 17.08s, environment 0ms)
+
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/cacbb88f4-pages-tests-attempt1/receipt.json", "exitCode": 0, "sealEqual": true}
+2026-11-21T13:09:11Z END q5-ledger rc=0
+

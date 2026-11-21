@@ -1,6 +1,7 @@
 # Q5 sequenced persistence foundation evidence
 
-Latest test/docs slice: [no-follow-8dcbf4245.md](no-follow-8dcbf4245.md).
+Latest schema correction: [D1-cacbb88f4.md](D1-cacbb88f4.md).
+Previous test/docs slice: [no-follow-8dcbf4245.md](no-follow-8dcbf4245.md).
 Previous approved W1 source/policy: [W1-73c16d41c.md](W1-73c16d41c.md).
 Previous approved POSIX boundary: [reuse-barriers-28348cc4a.md](reuse-barriers-28348cc4a.md).
 Previous approved bounded reads: [bounded-page-reads-0826faa44.md](bounded-page-reads-0826faa44.md).
