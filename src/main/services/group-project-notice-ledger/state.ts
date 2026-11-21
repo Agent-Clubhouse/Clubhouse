@@ -40,7 +40,7 @@ export type NoticeDelta =
   | { kind: 'recover' };
 
 function boundedId(value: unknown): asserts value is string {
-  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 256 || /[\u0000-\u001f]/u.test(value)) throw new Error('Invalid notice identity');
+  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 256 || [...value].some((char) => char.charCodeAt(0) < 32)) throw new Error('Invalid notice identity');
 }
 function recipientIdentity(recipient: NoticeRecipient): NoticeRecipient {
   boundedId(recipient.groupId); boundedId(recipient.agentId); boundedId(recipient.generation);

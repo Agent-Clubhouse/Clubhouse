@@ -120,6 +120,52 @@ describe('sequenced notice journal persistence', () => {
     expect(journal.healthy).toBe(true);
   });
 
+  it('retains more than256 uncertain attempts in bounded pages while later work continues', async () => {
+    const directory = await home();
+    let journal = await initialized(directory);
+    for (let seq = 1; seq <= 257; seq++) {
+      await journal.append({ kind: 'scan', through: seq, eligible: [post(seq)] });
+      await journal.append(intent(seq));
+      await journal.append({ kind: 'settle', attemptId: `attempt-${seq}`, outcome: 'uncertain' });
+    }
+    await journal.checkpoint();
+    let attemptPages = 0;
+    for (const name of await fs.readdir(directory)) if (/^page-[a-f0-9]{64}\.json$/.test(name)) {
+      const page = JSON.parse(await fs.readFile(path.join(directory, name), 'utf8'));
+      if (page.kind === 'attempts') { attemptPages++; expect(page.items.length).toBeLessThanOrEqual(256); }
+      expect((await fs.stat(path.join(directory, name))).size).toBeLessThanOrEqual(NOTICE_PAGE_BYTES);
+    }
+    expect(attemptPages).toBeGreaterThanOrEqual(2);
+    journal = await open(directory);
+    expect(journal.snapshot()?.attempts[0]).toMatchObject({ attemptId: 'attempt-1', status: 'uncertain' });
+    await journal.append({ kind: 'scan', through: 258, eligible: [post(258)] });
+    await journal.append(intent(258));
+    await journal.append({ kind: 'settle', attemptId: 'attempt-258', outcome: 'accepted' });
+    journal = await open(directory);
+    expect(journal.snapshot()?.attempts).toHaveLength(257);
+    expect(journal.snapshot()?.terminal).toEqual([[258, 258]]);
+  }, 30000);
+
+  it('rolls bounded segments through atomic compact checkpoints instead of stopping on later traffic', async () => {
+    const directory = await home();
+    let journal = await initialized(directory);
+    for (let burst = 0; burst < 40; burst++) {
+      const posts = Array.from({ length: 50 }, (_, index) => ({ seq: burst * 50 + index + 1, postId: `${String(burst * 50 + index + 1).padStart(10, '0')}-${'x'.repeat(230)}` }));
+      await journal.append({ kind: 'scan', through: posts[49].seq, eligible: posts });
+      await journal.append({ kind: 'intent', attemptId: `burst-${burst}`, posts, startedAt: 1 });
+      await journal.append({ kind: 'settle', attemptId: `burst-${burst}`, outcome: 'accepted' });
+    }
+    const manifest = JSON.parse(await fs.readFile(path.join(directory, 'manifest.json'), 'utf8'));
+    expect(manifest.checkpointRevision).toBeGreaterThan(0);
+    const segments = (await fs.readdir(directory)).filter((n) => /^journal-\d+\.log$/.test(n));
+    expect(segments.length).toBeLessThanOrEqual(4);
+    for (const name of segments) expect((await fs.stat(path.join(directory, name))).size).toBeLessThanOrEqual(NOTICE_PAGE_BYTES);
+    journal = await open(directory);
+    expect(journal.snapshot()?.terminal).toEqual([[1, 2000]]);
+    expect(journal.snapshot()?.acceptedCount).toBe(2000);
+    expect(journal.snapshot()?.attempts).toEqual([]);
+  }, 30000);
+
   it.each(['beforeAppend', 'afterAppendBeforeSync', 'afterSync', 'partial-tail', 'afterPages', 'afterManifest'] as Array<NoticeJournalFailurePoint | 'partial-tail'>)('recovers an actual synthetic child-process exit at %s', async (point) => {
     const directory = await home();
     await expect(promisify(execFile)(process.execPath, ['test/research/q5-journal-process.cjs', directory, point], { cwd: process.cwd() })).rejects.toMatchObject({ code: 77 });
