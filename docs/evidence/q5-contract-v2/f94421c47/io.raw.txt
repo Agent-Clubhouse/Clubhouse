@@ -1,0 +1,124 @@
+{
+  "kind": "isolated-contract-byte-envelope-research",
+  "scope": "synthetic append/checkpoint IO samples and illustrative JSON model; NOT product ledger, restart, compaction, latency SLA or power-loss proof",
+  "environment": {
+    "node": "v24.22.1",
+    "platform": "darwin",
+    "arch": "arm64",
+    "osRelease": "25.5.0",
+    "filesystem": "default os.tmpdir filesystem; filesystem type not measured",
+    "directoryFlush": "supported in this run"
+  },
+  "assumptions": {
+    "maxDeltaBytes": 65536,
+    "segmentBytes": 524288,
+    "pageBytes": [
+      262144,
+      524288
+    ],
+    "samplesAppend": 32,
+    "samplesPerPageSize": 12,
+    "coldCacheControlled": false,
+    "concurrentLoadControlled": false
+  },
+  "representation": {
+    "oneUncertainThenMillionTerminal": {
+      "bytes": 91,
+      "holes": 1,
+      "intervals": 1
+    },
+    "illustrative257Holes": {
+      "hot": 256,
+      "archived": 1,
+      "firstHoleRetained": true,
+      "encodedBytes": 10691
+    }
+  },
+  "samples": {
+    "append64KiBFileSync": {
+      "count": 32,
+      "minMs": 3.642458,
+      "medianMs": 4.189583,
+      "p95Ms": 4.640041,
+      "maxMs": 5.024125,
+      "allMs": [
+        5.024125,
+        4.174875,
+        4.626875,
+        4.018125,
+        4.085583,
+        4.232209,
+        3.650916,
+        3.936791,
+        4.221292,
+        3.751458,
+        3.747875,
+        4.189583,
+        4.272833,
+        4.586042,
+        3.950959,
+        4.193666,
+        4.640041,
+        3.905958,
+        4.13625,
+        4.264542,
+        4.568333,
+        4.057125,
+        4.106709,
+        4.261542,
+        3.642458,
+        4.163584,
+        4.268125,
+        4.572541,
+        3.96175,
+        4.218625,
+        4.2,
+        4.6325
+      ]
+    },
+    "checkpoint256KiBRenameDirectorySync": {
+      "count": 12,
+      "minMs": 8.212375,
+      "medianMs": 9.730666,
+      "p95Ms": 13.776917,
+      "maxMs": 13.776917,
+      "allMs": [
+        8.425583,
+        9.912666,
+        10.01875,
+        9.81775,
+        9.148333,
+        12.765917,
+        8.505208,
+        13.776917,
+        9.730666,
+        8.212375,
+        9.87225,
+        9.1
+      ]
+    },
+    "checkpoint512KiBRenameDirectorySync": {
+      "count": 12,
+      "minMs": 8.372916,
+      "medianMs": 10.444458,
+      "p95Ms": 11.288041,
+      "maxMs": 11.288041,
+      "allMs": [
+        8.372916,
+        10.34875,
+        8.605709,
+        10.444708,
+        9.497541,
+        10.484,
+        9.513083,
+        10.467333,
+        10.663916,
+        11.288041,
+        10.510917,
+        10.444458
+      ]
+    }
+  },
+  "artifactsDirectory": "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/q5-contract-storage-yLydq9",
+  "artifactsRetained": true
+}

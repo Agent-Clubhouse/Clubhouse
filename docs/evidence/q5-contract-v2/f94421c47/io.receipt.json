@@ -1,0 +1,35 @@
+{
+  "scope": "isolated contract research IO only; not product proof",
+  "startedAt": "2026-11-21T09:36:58.260839+00:00",
+  "finishedAt": "2026-11-21T09:36:58.690423+00:00",
+  "cwd": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design",
+  "argv": [
+    "node",
+    "test/research/q5-storage-envelope.mjs"
+  ],
+  "exitCode": 0,
+  "before": {
+    "head": "f94421c47bda49e59319df1bb82ab9be0036de30",
+    "tree": "c02340fd50264982e61088bb01e44b423f5ce513",
+    "status": "",
+    "sha256": {
+      "docs/design/q5-durable-notice-ledger.md": "d9fcd3fae3d1895da3a28ae3cb0bbcc3b07ba605854aa5b01bdda5c20884fcac",
+      "docs/design/q5-issue-publication-draft.json": "ba1e37fe92d12255796946254e82788fcbd70a39041da46ce22ba24042048c69",
+      "test/research/q5-storage-envelope.mjs": "5554192dea2f8af4f5b3785e992db0b237d84b4d80ca085aea09c272c16d3e0b",
+      "test/research/q5-seal-contract-io.py": "a9ad00207fbd744f8314cc99da81994cf01edef04ec38e841b48a810589860ef"
+    }
+  },
+  "after": {
+    "head": "f94421c47bda49e59319df1bb82ab9be0036de30",
+    "tree": "c02340fd50264982e61088bb01e44b423f5ce513",
+    "status": "",
+    "sha256": {
+      "docs/design/q5-durable-notice-ledger.md": "d9fcd3fae3d1895da3a28ae3cb0bbcc3b07ba605854aa5b01bdda5c20884fcac",
+      "docs/design/q5-issue-publication-draft.json": "ba1e37fe92d12255796946254e82788fcbd70a39041da46ce22ba24042048c69",
+      "test/research/q5-storage-envelope.mjs": "5554192dea2f8af4f5b3785e992db0b237d84b4d80ca085aea09c272c16d3e0b",
+      "test/research/q5-seal-contract-io.py": "a9ad00207fbd744f8314cc99da81994cf01edef04ec38e841b48a810589860ef"
+    }
+  },
+  "sealEqual": true,
+  "rawSha256": "d4056564778d5313f21ab136a33076710c114ae9c68b4adf2a66d3298e968561"
+}
