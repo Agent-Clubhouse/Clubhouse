@@ -1,0 +1,1 @@
+npx eslint <the 25 files changed from e6fc>
