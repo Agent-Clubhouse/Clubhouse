@@ -1,0 +1,47 @@
+{
+  "label": "mutant-reuse-logical-stamp",
+  "headAtExecution": "13844778782e87f33608fcf86619a217d6803f8c",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-names/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/shared/annex-member-names.test.ts"
+  ],
+  "expectedExit": 1,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T13:23:50.086776+00:00",
+  "endedAtUTC": "2026-11-21T13:23:50.430959+00:00",
+  "inputSHA256": {
+    "src/shared/annex-member-names.ts": "92e8ba3a7a9e09908c43aad36b11720abe2e8a3f0762a018d9fc89c094e8c40d",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-names/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-member-names.ts": "92e8ba3a7a9e09908c43aad36b11720abe2e8a3f0762a018d9fc89c094e8c40d",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-names/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/shared/annex-member-names.ts b/src/shared/annex-member-names.ts\nindex 55a75fcd0..07dcd7a85 100644\n--- a/src/shared/annex-member-names.ts\n+++ b/src/shared/annex-member-names.ts\n@@ -153,7 +153,7 @@ export function nextMemberNameStamp(now: number, maximum: number): number {\n   if (!dateInteger(now) || !Number.isInteger(maximum) || maximum < 0 || maximum > MAX_STAMP) {\n     throw new RangeError('Member name clock out of range.');\n   }\n-  const next = Math.max(now, maximum + 1);\n+  const next = Math.max(now, maximum);\n   if (!stamp(next)) throw new RangeError('Member name clock out of range.');\n   return next;\n }\n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |shared| src/shared/annex-member-names.test.ts (126 tests | 4 failed) 12ms\n       \u00d7 advances under frozen/backwards clocks without reading wall time 2ms\n       \u00d7 refuses invalid/overflow local clock 1 253402300799999 0ms\n       \u00d7 accepts exactly24h and exposes the ratchet/slow-peer limit without clamping 0ms\n       \u00d7 does not invalidate old accepted history or turn a skipped value into a clock update 0ms\n\n Test Files  1 failed (1)\n      Tests  4 failed | 122 passed (126)\n   Start at  08:23:50\n   Duration  102ms (transform 11ms, setup 0ms, import 21ms, tests 12ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 4 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > explicit logical time and future-skew decisions > advances under frozen/backwards clocks without reading wall time\nAssertionError: expected 100 to be 101 // Object.is equality\n\n- Expected\n+ Received\n\n- 101\n+ 100\n\n \u276f src/shared/annex-member-names.test.ts:214:47\n    212|       try {\n    213|         expect(nextMemberNameStamp(100, 0)).toBe(100);\n    214|         expect(nextMemberNameStamp(100, 100)).toBe(101);\n       |                                               ^\n    215|         expect(nextMemberNameStamp(1, 101)).toBe(102);\n    216|         expect(nextMemberNameStamp(-1, 0)).toBe(1);\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/4]\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > explicit logical time and future-skew decisions > refuses invalid/overflow local clock 1 253402300799999\nAssertionError: expected [Function] to throw an error\n\n- Expected:\nnull\n\n+ Received:\nundefined\n\n \u276f src/shared/annex-member-names.test.ts:220:55\n    218|     });\n    219|     it.each([[0, -1], [0, NaN], [NaN, 0], [Infinity, 0], [1.5, 0], [25\u2026\n    220|       expect(() => nextMemberNameStamp(now, maximum)).toThrow('Member \u2026\n       |                                                       ^\n    221|     });\n    222|     it('accepts exactly24h and exposes the ratchet/slow-peer limit wit\u2026\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/4]\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > explicit logical time and future-skew decisions > accepts exactly24h and exposes the ratchet/slow-peer limit without clamping\nAssertionError: expected 1770086400000 to be 1770086400001 // Object.is equality\n\n- Expected\n+ Received\n\n- 1770086400001\n+ 1770086400000\n\n \u276f src/shared/annex-member-names.test.ts:227:20\n    225|       expect(remoteMemberNameStampAllowed(incoming + 1, now)).toBe(fal\u2026\n    226|       const next = nextMemberNameStamp(now, incoming);\n    227|       expect(next).toBe(incoming + 1);\n       |                    ^\n    228|       expect(remoteMemberNameStampAllowed(next, now - 3600000)).toBe(f\u2026\n    229|       expect(remoteMemberNameStampAllowed(now, now - 3600000)).toBe(tr\u2026\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[3/4]\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > explicit logical time and future-skew decisions > does not invalidate old accepted history or turn a skipped value into a clock update\nAssertionError: expected 200 to be 201 // Object.is equality\n\n- Expected\n+ Received\n\n- 201\n+ 200\n\n \u276f src/shared/annex-member-names.test.ts:234:45\n    232|     it('does not invalidate old accepted history or turn a skipped val\u2026\n    233|       expect(remoteMemberNameStampAllowed(1, 1770000000000)).toBe(true\u2026\n    234|       expect(nextMemberNameStamp(100, 200)).toBe(201);\n       |                                             ^\n    235|       // This pure decision does not mutate a durable floor or invalid\u2026\n    236|       expect(remoteMemberNameStampAllowed(1000000000, 1)).toBe(false);\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[4/4]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "bf065e995d622c1f066b69a6caa9b4e24a6aad3aa3d64bb8aeb79b8dbacebe9a"
+}

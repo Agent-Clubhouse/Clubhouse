@@ -1,0 +1,47 @@
+{
+  "label": "mutant-allow-unpaired-surrogates",
+  "headAtExecution": "13844778782e87f33608fcf86619a217d6803f8c",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-names/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/shared/annex-member-names.test.ts"
+  ],
+  "expectedExit": 1,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T13:23:51.918848+00:00",
+  "endedAtUTC": "2026-11-21T13:23:52.264181+00:00",
+  "inputSHA256": {
+    "src/shared/annex-member-names.ts": "7649a1f3609a45209f1a4d68d86695ae4de9523fa4f7fdd4a392a00bb06f2109",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-names/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-member-names.ts": "7649a1f3609a45209f1a4d68d86695ae4de9523fa4f7fdd4a392a00bb06f2109",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-names/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/shared/annex-member-names.ts b/src/shared/annex-member-names.ts\nindex 55a75fcd0..7ff28fad9 100644\n--- a/src/shared/annex-member-names.ts\n+++ b/src/shared/annex-member-names.ts\n@@ -84,14 +84,14 @@ function trimName(value: string): string {\n \n /** Local intent preparation only: fixed trim, no truncation or Unicode normalization. */\n export function normalizeLocalMemberName(value: unknown): string | null {\n-  if (typeof value !== 'string' || !wellFormed(value)) return null;\n+  if (typeof value !== 'string') return null;\n   const name = trimName(value);\n   return name.length >= 1 && name.length <= 200 ? name : null;\n }\n /** A received modern name must already satisfy the fixed trim rule. */\n export function isMemberName(value: unknown): value is string {\n   return typeof value === 'string' && value.length >= 1 && value.length <= 200\n-    && wellFormed(value) && trimName(value) === value;\n+    && trimName(value) === value;\n }\n \n /** Read a strict payload, not a whole record/frame. No ID/hash or sender is verified. */\n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |shared| src/shared/annex-member-names.test.ts (126 tests | 4 failed) 12ms\n       \u00d7 'T07-legacy-split-surrogate' 2ms\n       \u00d7 'T10-lone-low-surrogate' 0ms\n       \u00d7 validates original UTF-16 and refuses truncation/replacement/normalization 0ms\n       \u00d7 never silently normalizes a receiver name 3 1ms\n\n Test Files  1 failed (1)\n      Tests  4 failed | 122 passed (126)\n   Start at  08:23:52\n   Duration  100ms (transform 12ms, setup 0ms, import 21ms, tests 12ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 4 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > fixed local trim and receiver validity > 'T07-legacy-split-surrogate'\nAssertionError: expected 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\u2026' to be null // Object.is equality\n\n- Expected:\nnull\n\n+ Received:\n\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ufffd\"\n\n \u276f src/shared/annex-member-names.test.ts:25:52\n     23|   describe('fixed local trim and receiver validity', () => {\n     24|     it.each(vectors.stringCases)('$id', test => {\n     25|       expect(normalizeLocalMemberName(test.input)).toBe('writerResult'\u2026\n       |                                                    ^\n     26|       expect(isMemberName(test.input)).toBe(test.modernReceiverAccepts\u2026\n     27|     });\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/4]\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > fixed local trim and receiver validity > 'T10-lone-low-surrogate'\nAssertionError: expected '\ufffd' to be null // Object.is equality\n\n- Expected:\nnull\n\n+ Received:\n\"\ufffd\"\n\n \u276f src/shared/annex-member-names.test.ts:25:52\n     23|   describe('fixed local trim and receiver validity', () => {\n     24|     it.each(vectors.stringCases)('$id', test => {\n     25|       expect(normalizeLocalMemberName(test.input)).toBe('writerResult'\u2026\n       |                                                    ^\n     26|       expect(isMemberName(test.input)).toBe(test.modernReceiverAccepts\u2026\n     27|     });\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/4]\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > fixed local trim and receiver validity > validates original UTF-16 and refuses truncation/replacement/normalization\nAssertionError: expected '\ufffd' to be null\n\n- Expected:\nnull\n\n+ Received:\n\"\ufffd\"\n\n \u276f src/shared/annex-member-names.test.ts:45:48\n     43|     it('validates original UTF-16 and refuses truncation/replacement/n\u2026\n     44|       for (const name of ['\\ud800', '\\udc00', ' \\ud800 ', 'a'.repeat(1\u2026\n     45|         expect(normalizeLocalMemberName(name)).toBeNull(); expect(isMe\u2026\n       |                                                ^\n     46|       }\n     47|       expect(normalizeLocalMemberName(' ' + '\ud83d\ude80'.repeat(100) + ' ')).t\u2026\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[3/4]\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > explicit canonical UTF-8 payload bytes > never silently normalizes a receiver name 3\nAssertionError: expected { \u2026(6) } to be null\n\n- Expected:\nnull\n\n+ Received:\n{\n  \"at\": 1770000000000,\n  \"by\": \"bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb\",\n  \"fingerprint\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n  \"joinedAt\": 1760000000000,\n  \"name\": \"\ufffd\",\n  \"pairingId\": \"pairing-123\",\n}\n\n \u276f src/shared/annex-member-names.test.ts:136:61\n    134|     });\n    135|     it.each([' Studio', 'Studio ', '', '\\ud800', 'a'.repeat(201)])('ne\u2026\n    136|       expect(readMemberNamePayload({ ...payload(), name })).toBeNull();\n       |                                                             ^\n    137|     });\n    138|     it.each(['hidden', 'symbol', 'accessor', 'prototype', 'array'])('r\u2026\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[4/4]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "bf065e995d622c1f066b69a6caa9b4e24a6aad3aa3d64bb8aeb79b8dbacebe9a"
+}

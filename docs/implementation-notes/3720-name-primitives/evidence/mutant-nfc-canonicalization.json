@@ -1,0 +1,47 @@
+{
+  "label": "mutant-nfc-canonicalization",
+  "headAtExecution": "13844778782e87f33608fcf86619a217d6803f8c",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-names/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/shared/annex-member-names.test.ts"
+  ],
+  "expectedExit": 1,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T13:23:48.254029+00:00",
+  "endedAtUTC": "2026-11-21T13:23:48.599342+00:00",
+  "inputSHA256": {
+    "src/shared/annex-member-names.ts": "067673bb06b04f73751cafc2c044ad6c0955c03e075fb836cad34fd0eee999e8",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-names/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-member-names.ts": "067673bb06b04f73751cafc2c044ad6c0955c03e075fb836cad34fd0eee999e8",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-names/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/shared/annex-member-names.ts b/src/shared/annex-member-names.ts\nindex 55a75fcd0..3255cf891 100644\n--- a/src/shared/annex-member-names.ts\n+++ b/src/shared/annex-member-names.ts\n@@ -114,7 +114,7 @@ export function encodeMemberNamePayload(raw: MemberNamePayload): Uint8Array {\n   const encoder = new TextEncoder();\n   const chunks = [encoder.encode(DOMAIN)];\n   for (const value of [payload.fingerprint, String(payload.joinedAt), payload.pairingId ?? '',\n-    payload.name, String(payload.at), payload.by]) {\n+    payload.name.normalize('NFC'), String(payload.at), payload.by]) {\n     const bytes = encoder.encode(value);\n     chunks.push(encoder.encode(String(bytes.length) + ':'), bytes);\n   }\n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |shared| src/shared/annex-member-names.test.ts (126 tests | 1 failed) 12ms\n       \u00d7 encodes exact decomposed Unicode bytes without NFC or case folding 3ms\n\n Test Files  1 failed (1)\n      Tests  1 failed | 125 passed (126)\n   Start at  08:23:48\n   Duration  99ms (transform 12ms, setup 0ms, import 21ms, tests 12ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > explicit canonical UTF-8 payload bytes > encodes exact decomposed Unicode bytes without NFC or case folding\nAssertionError: expected '436c7562686f7573652f6d656d6265722d6e6\u2026' to contain '333a65cc81'\n\nExpected: \"333a65cc81\"\nReceived: \"436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303031313a70616972696e672d313233323ac3a931333a3137373030303030303030303034373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262\"\n\n \u276f src/shared/annex-member-names.test.ts:96:42\n     94|     it('encodes exact decomposed Unicode bytes without NFC or case fol\u2026\n     95|       const decomposed = Buffer.from(encodeMemberNamePayload({ ...payl\u2026\n     96|       expect(decomposed.toString('hex')).toContain('333a65cc81'); // A\u2026\n       |                                          ^\n     97|       expect(decomposed).not.toEqual(Buffer.from(encodeMemberNamePaylo\u2026\n     98|       expect(encodeMemberNamePayload({ ...payload(), name: 'Studio' })\u2026\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "bf065e995d622c1f066b69a6caa9b4e24a6aad3aa3d64bb8aeb79b8dbacebe9a"
+}

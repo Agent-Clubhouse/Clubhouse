@@ -1,0 +1,86 @@
+{
+  "head": "13844778782e87f33608fcf86619a217d6803f8c",
+  "originalSourceSHA256": "d1c421a06a1c6d16ad8fa71fa20059ed55dd3e21b1d5159e973753237f6b804d",
+  "restoredSourceSHA256": "d1c421a06a1c6d16ad8fa71fa20059ed55dd3e21b1d5159e973753237f6b804d",
+  "runnerSHA256": "ed2dc49f7f4d03dae084be2732e6cc82521ac40ebefc113139547ae3c786bef3",
+  "mutants": [
+    {
+      "label": "utf16-length-prefix",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "911ae70510050317ee09f7da3ea9b3b23c05d55c3f17505508853b7d769a37fd"
+    },
+    {
+      "label": "wrong-domain-newline",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "e6b2202f357dcefbe61c65700ff77ca293c5580e71d9e2bfe5026ec819405c7c"
+    },
+    {
+      "label": "nfc-canonicalization",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "067673bb06b04f73751cafc2c044ad6c0955c03e075fb836cad34fd0eee999e8"
+    },
+    {
+      "label": "ignore-writer-order",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "ef3353854aaa8e8b79efc55a779b1c464e341be5c4d15297b25c956e8376d0a3"
+    },
+    {
+      "label": "ignore-id-order",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "ce057a69ab24555b3f496388e2db6df0de44407b49ccbc5d0f82a48b2077d450"
+    },
+    {
+      "label": "ignore-pairing-epoch",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "724cae4403de14d0b58ddf89dbebec41c276cfb6ba6c89502919f0069c627d8b"
+    },
+    {
+      "label": "ignore-joined-epoch",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "7981ecd4481bffccfa0f8366cac6d524a1e73ee259accdb2d43864af2cf11c01"
+    },
+    {
+      "label": "reuse-logical-stamp",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "92e8ba3a7a9e09908c43aad36b11720abe2e8a3f0762a018d9fc89c094e8c40d"
+    },
+    {
+      "label": "reject-exact-skew-boundary",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "f04c168232ea0a6f34dfa6486c437c9ed4e346b8af2b7bf195be474193a745aa"
+    },
+    {
+      "label": "broad-go-whitespace",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "cf2d84ff3ee16bc8de596e9f2b8ecae5dcded0b0450e795c4ce76976f097843d"
+    },
+    {
+      "label": "enumerable-only-keys",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "1c14cfe334aa9d824c0bf1faa7468e584d15e3358924ceb0351b1b7898e90c70"
+    },
+    {
+      "label": "raw-property-read",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "2f66fe7905407dd231f103defbdf175c7c182c557440b3f4b6d160ee5d7f089e"
+    },
+    {
+      "label": "allow-unpaired-surrogates",
+      "actualExit": 1,
+      "assertionFailure": true,
+      "mutatedSourceSHA256": "7649a1f3609a45209f1a4d68d86695ae4de9523fa4f7fdd4a392a00bb06f2109"
+    }
+  ]
+}

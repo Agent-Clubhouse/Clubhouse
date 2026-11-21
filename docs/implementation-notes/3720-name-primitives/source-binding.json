@@ -1,0 +1,20 @@
+{
+  "candidateHead": "13844778782e87f33608fcf86619a217d6803f8c",
+  "base": "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+  "contract": "38cbdaa9fff26aa28630ad14b5db9c13359d39f1",
+  "observedAt": "2026-11-21T13:26:33.564897+00:00",
+  "candidateSHA256": {
+    "src/shared/annex-member-names.ts": "d1c421a06a1c6d16ad8fa71fa20059ed55dd3e21b1d5159e973753237f6b804d",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+  },
+  "unchangedContextSHA256": {
+    "src/shared/annex-network-protocol.ts": "b89ed3f087488c9de03fea6ec764eff0d1ba55e0655caf88c78f1dcb524c523e",
+    "src/main/services/annex-network-membership.ts": "313b1aa6ae0cd889112bfbfc67de51d378918e05324a651577db2beafbbc5c55",
+    "src/main/services/annex-network-channel.ts": "a57bf637c67c04654c494431259c9a7715d4fc4cfec6ad20a7fae91396e1f684"
+  },
+  "unwiredImportSearch": "src/shared/annex-member-names.test.ts:3:import vectorText from './fixtures/annex-member-names-v1.json?raw';\nsrc/shared/annex-member-names.test.ts:4:import type { MemberNamePayload } from './annex-member-names';\nsrc/shared/annex-member-names.test.ts:8:} from './annex-member-names';\n"
+}

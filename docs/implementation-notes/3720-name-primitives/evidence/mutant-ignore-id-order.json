@@ -1,0 +1,47 @@
+{
+  "label": "mutant-ignore-id-order",
+  "headAtExecution": "13844778782e87f33608fcf86619a217d6803f8c",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-names/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/shared/annex-member-names.test.ts"
+  ],
+  "expectedExit": 1,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T13:23:48.987903+00:00",
+  "endedAtUTC": "2026-11-21T13:23:49.338236+00:00",
+  "inputSHA256": {
+    "src/shared/annex-member-names.ts": "ce057a69ab24555b3f496388e2db6df0de44407b49ccbc5d0f82a48b2077d450",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-names/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-member-names.ts": "ce057a69ab24555b3f496388e2db6df0de44407b49ccbc5d0f82a48b2077d450",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-names/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/shared/annex-member-names.ts b/src/shared/annex-member-names.ts\nindex 55a75fcd0..cf6beb121 100644\n--- a/src/shared/annex-member-names.ts\n+++ b/src/shared/annex-member-names.ts\n@@ -145,7 +145,7 @@ export function compareMemberNameOrder(left: MemberNameOrder, right: MemberNameO\n   const a = read(left), b = read(right);\n   if (a.at !== b.at) return a.at < b.at ? -1 : 1;\n   if (a.by !== b.by) return a.by < b.by ? -1 : 1;\n-  return a.id === b.id ? 0 : a.id < b.id ? -1 : 1;\n+  return 0;\n }\n \n /** Pure reservation arithmetic: caller supplies wall time and durable maximum; nothing is persisted. */\n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |shared| src/shared/annex-member-names.test.ts (126 tests | 2 failed) 12ms\n       \u00d7 compares numeric stamp then ordinal writer then ordinal content ID 3ms\n       \u00d7 is antisymmetric/transitive across an independently declared tuple order 0ms\n\n Test Files  1 failed (1)\n      Tests  2 failed | 124 passed (126)\n   Start at  08:23:49\n   Duration  101ms (transform 11ms, setup 0ms, import 21ms, tests 12ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 2 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > epoch and order are values, not authorization > compares numeric stamp then ordinal writer then ordinal content ID\nAssertionError: expected +0 to be -1 // Object.is equality\n\n- Expected\n+ Received\n\n- -1\n+ 0\n\n \u276f src/shared/annex-member-names.test.ts:170:50\n    168|       expect(compareMemberNameOrder(a, { ...a })).toBe(0);\n    169|       for (const newer of [{ ...a, at: a.at + 1 }, { ...a, by: Array(1\u2026\n    170|         expect(compareMemberNameOrder(a, newer)).toBe(-1);\n       |                                                  ^\n    171|         expect(compareMemberNameOrder(newer, a)).toBe(1);\n    172|       }\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/2]\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > epoch and order are values, not authorization > is antisymmetric/transitive across an independently declared tuple order\nAssertionError: expected +0 to be -1 // Object.is equality\n\n- Expected\n+ Received\n\n- -1\n+ 0\n\n \u276f src/shared/annex-member-names.test.ts:193:62\n    191|       ];\n    192|       for (let i = 0; i < sorted.length; i++) for (let j = 0; j < sort\u2026\n    193|         expect(compareMemberNameOrder(sorted[i], sorted[j])).toBe(i ==\u2026\n       |                                                              ^\n    194|       }\n    195|     });\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/2]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "bf065e995d622c1f066b69a6caa9b4e24a6aad3aa3d64bb8aeb79b8dbacebe9a"
+}

@@ -1,0 +1,47 @@
+{
+  "label": "mutant-enumerable-only-keys",
+  "headAtExecution": "13844778782e87f33608fcf86619a217d6803f8c",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-names/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/shared/annex-member-names.test.ts"
+  ],
+  "expectedExit": 1,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T13:23:51.187962+00:00",
+  "endedAtUTC": "2026-11-21T13:23:51.534669+00:00",
+  "inputSHA256": {
+    "src/shared/annex-member-names.ts": "1c14cfe334aa9d824c0bf1faa7468e584d15e3358924ceb0351b1b7898e90c70",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-names/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/shared/annex-member-names.ts": "1c14cfe334aa9d824c0bf1faa7468e584d15e3358924ceb0351b1b7898e90c70",
+    "src/shared/annex-member-names.test.ts": "8759831b0980c0e65fd09ad7ea47c89ba0598d1d8b54d0880d46c388215b14dd",
+    "src/shared/fixtures/annex-member-names-v1.json": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-names/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/shared/annex-member-names.ts b/src/shared/annex-member-names.ts\nindex 55a75fcd0..b7e614c65 100644\n--- a/src/shared/annex-member-names.ts\n+++ b/src/shared/annex-member-names.ts\n@@ -30,7 +30,7 @@ function fields(raw: unknown, required: readonly string[], optional: readonly st\n     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;\n     const proto = Object.getPrototypeOf(raw);\n     if (proto !== Object.prototype && proto !== null) return null;\n-    const keys = exact ? Reflect.ownKeys(raw) : [...required, ...optional];\n+    const keys = exact ? Object.keys(raw) : [...required, ...optional];\n     if (exact && (keys.length < required.length || keys.length > required.length + optional.length)) return null;\n     const captured: Record<string, unknown> = Object.create(null);\n     for (const key of keys) {\n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |shared| src/shared/annex-member-names.test.ts (126 tests | 3 failed) 12ms\n       \u00d7 captures each descriptor once and never reads raw properties 3ms\n       \u00d7 refuses non-data shape hidden without raw getter reads 0ms\n       \u00d7 refuses non-data shape symbol without raw getter reads 0ms\n\n Test Files  1 failed (1)\n      Tests  3 failed | 123 passed (126)\n   Start at  08:23:51\n   Duration  106ms (transform 12ms, setup 0ms, import 23ms, tests 12ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 3 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > explicit canonical UTF-8 payload bytes > captures each descriptor once and never reads raw properties\nAssertionError: expected { \u2026(6) } to deeply equal { \u2026(6) }\n\n- Expected\n+ Received\n\n  {\n    \"at\": 1770000000000,\n    \"by\": \"bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb\",\n    \"fingerprint\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n    \"joinedAt\": 1760000000000,\n-   \"name\": \"Studio\",\n+   \"name\": \"changed\",\n    \"pairingId\": \"pairing-123\",\n  }\n\n \u276f src/shared/annex-member-names.test.ts:85:42\n     83|         },\n     84|       });\n     85|       expect(readMemberNamePayload(raw)).toEqual(payload());\n       |                                          ^\n     86|       expect([...counts.values()]).toEqual([1, 1, 1, 1, 1, 1]);\n     87|     });\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/3]\u23af\n\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > explicit canonical UTF-8 payload bytes > refuses non-data shape hidden without raw getter reads\n FAIL  |shared| src/shared/annex-member-names.test.ts > member-name primitives (unwired) > explicit canonical UTF-8 payload bytes > refuses non-data shape symbol without raw getter reads\nAssertionError: expected { \u2026(6) } to be null\n\n- Expected:\nnull\n\n+ Received:\n{\n  \"at\": 1770000000000,\n  \"by\": \"bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb\",\n  \"fingerprint\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n  \"joinedAt\": 1760000000000,\n  \"name\": \"Studio\",\n  \"pairingId\": \"pairing-123\",\n}\n\n \u276f src/shared/annex-member-names.test.ts:144:68\n    142|       if (flavor === 'accessor') Object.defineProperty(raw, 'name', { \u2026\n    143|       if (flavor === 'prototype') Object.setPrototypeOf(raw, { inherit\u2026\n    144|       expect(readMemberNamePayload(flavor === 'array' ? [] : raw)).toB\u2026\n       |                                                                    ^\n    145|       expect(getter).not.toHaveBeenCalled();\n    146|     });\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/3]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "bf065e995d622c1f066b69a6caa9b4e24a6aad3aa3d64bb8aeb79b8dbacebe9a"
+}
