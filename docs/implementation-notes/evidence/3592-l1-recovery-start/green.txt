@@ -1,0 +1,112 @@
+$ vitest run --no-cache --maxWorkers=2 --reporter=verbose src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts src/main/services/group-project-remote-create.sim.test.ts src/main/services/managed-agents/group-project-guidance-catalog.test.ts 
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > preview_group_project_create enforces Deny, Ask, approval and Allow through callTool 58ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > create_group_project enforces Deny, Ask, approval and Allow through callTool 49ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > get_group_project_management enforces Deny, Ask, approval and Allow through callTool 42ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > update_group_project enforces Deny, Ask, approval and Allow through callTool 30ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a person's request waits for approval on the host, never created on the request alone, and Allow creates it once 936ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > preview_group_project_scope enforces Deny, Ask, approval and Allow through callTool 42ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > set_group_project_scope enforces Deny, Ask, approval and Allow through callTool 34ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > add_group_project_member enforces Deny, Ask, approval and Allow through callTool 44ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > Decline creates nothing, and a retry with the same id is told so 152ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > exclude_group_project_member enforces Deny, Ask, approval and Allow through callTool 29ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > set_group_project_automatic_membership enforces Deny, Ask, approval and Allow through callTool 32ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > answer_group_project_auto_join_offer enforces Deny, Ask, approval and Allow through callTool 41ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > an approval nobody answers expires, and creates nothing 101ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > confirm_group_project_unlinked_members enforces Deny, Ask, approval and Allow through callTool 27ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > set_group_project_role enforces Deny, Ask, approval and Allow through callTool 35ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > set_group_project_own_grant enforces Deny, Ask, approval and Allow through callTool 33ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a host restart before an answer ends the request: approvals live in memory 89ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > set_group_project_default_tools enforces Deny, Ask, approval and Allow through callTool 48ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > set_group_project_member_settings enforces Deny, Ask, approval and Allow through callTool 48ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a retry after a lost answer returns the same group, never a second one 202ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > set_group_project_topic_protection enforces Deny, Ask, approval and Allow through callTool 48ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > preview_group_project_retention enforces Deny, Ask, approval and Allow through callTool 48ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > set_group_project_retention enforces Deny, Ask, approval and Allow through callTool 29ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > clear_group_project_board enforces Deny, Ask, approval and Allow through callTool 37ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > dismiss_group_project_refusals enforces Deny, Ask, approval and Allow through callTool 28ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > preview_delete_group_project enforces Deny, Ask, approval and Allow through callTool 35ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a first send whose answer is lost is found again by its id, not asked twice 72ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > delete_group_project enforces Deny, Ask, approval and Allow through callTool 49ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > keeps management in the controller and preserves chat acting handoff 16ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > uses existing Dispatcher admin Ask default, without introducing a new default grant 26ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > lists a tool for a single-group grant but checks the selected id on each call 41ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > management grants and catalog (#3617) > ordinary agents and orchestrators use the same explicit grants, without Canvas or membership 31ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > get_group_project_management never resolves its granted group name again 17ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > update_group_project never resolves its granted group name again 16ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > preview_group_project_scope never resolves its granted group name again 16ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a group made before a crash lost its answer is found by its mark 226ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > set_group_project_scope never resolves its granted group name again 31ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > add_group_project_member never resolves its granted group name again 31ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > exclude_group_project_member never resolves its granted group name again 26ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > set_group_project_automatic_membership never resolves its granted group name again 21ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > answer_group_project_auto_join_offer never resolves its granted group name again 31ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > confirm_group_project_unlinked_members never resolves its granted group name again 37ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > set_group_project_role never resolves its granted group name again 25ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > set_group_project_own_grant never resolves its granted group name again 33ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > set_group_project_default_tools never resolves its granted group name again 16ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > set_group_project_member_settings never resolves its granted group name again 17ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > set_group_project_topic_protection never resolves its granted group name again 22ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > preview_group_project_retention never resolves its granted group name again 29ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a crash after the create but before its answer was saved still answers created after a restart (QA #3569) 286ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > set_group_project_retention never resolves its granted group name again 31ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > clear_group_project_board never resolves its granted group name again 21ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > dismiss_group_project_refusals never resolves its granted group name again 30ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > preview_delete_group_project never resolves its granted group name again 21ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > delete_group_project never resolves its granted group name again 17ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > refuses ambiguous names before checking grants or writing 11ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > prefers an exact id even when another group has that id as its name 11ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > one concrete group target before grant approval > asks for the concrete id and cannot spend approval after the name moves 31ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > returns available choices and refuses guessed Dispatcher defaults 21ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > applies explicit scope/reach/membership { level: 'app', reach: 'local' } 12ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > applies explicit scope/reach/membership { level: 'project', …(2) } 13ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > applies explicit scope/reach/membership { level: 'project', …(2) } 13ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a failed lookup during the recovery start (#3592 L1) > stays pending after a thrown lookup, then the next request starts it exactly once 432ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > allows exactly one concurrent create to claim a single-use review on 'this' 117ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > allows exactly one concurrent create to claim a single-use review on 'remote' 113ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > keeps the review consumed after revalidation fails and asks for a new review 12ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > keeps the review consumed after a create error and requires checking the result before review 21ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > rejects changed choices, inventory and caller identity before create 19ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > normalizes exclusions before preview so creation uses the reviewed membership 12ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > creation review and destination approval > uses destination approval and exact saved retry without local creation 11ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > shared operation semantics > carries the MCP agent author on every forwardable mutation 12ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > shared operation semantics > ignores claimed identities in arguments and uses the authenticated MCP caller 12ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > shared operation semantics > preserves queued diagnostics instead of claiming a copy changed 16ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > shared operation semantics > passes role changes to this computer’s role service and returns authoritative roster separately 27ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > shared operation semantics > requires unchanged trim review and explicit board clear confirmation 15ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > shared operation semantics > shares delete preview/confirm and scopes tokens to the MCP caller 16ms
+ ✓ |main| src/main/services/clubhouse-mcp/tools/group-project-management-tools.test.ts > keeps every Group Project UI IPC capability mapped or explicitly excluded, and descriptions discoverable 16ms
+ ✓ |main| src/main/services/managed-agents/group-project-guidance-catalog.test.ts > Group Project guidance against the shipped management catalog (#3618) > keeps the full management reference in the Dispatcher and actual roles in the catalog 2ms
+ ✓ |main| src/main/services/managed-agents/group-project-guidance-catalog.test.ts > Group Project guidance against the shipped management catalog (#3618) > rejects invented or renamed management tool references in parts, instructions and skills 0ms
+ ✓ |main| src/main/services/managed-agents/group-project-guidance-catalog.test.ts > Group Project guidance against the shipped management catalog (#3618) > keeps creation preview and saved custom-instruction review requirements discoverable 0ms
+ ✓ |main| src/main/services/managed-agents/group-project-guidance-catalog.test.ts > Group Project guidance against the shipped management catalog (#3618) > warns that clearing a board includes protected topics, unlike ordinary topic curation 0ms
+ ✓ |main| src/main/services/managed-agents/group-project-guidance-catalog.test.ts > Group Project guidance against the shipped management catalog (#3618) > keeps host-role and delivery limits in guidance and tool descriptions 0ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a failed lookup during the recovery start (#3592 L1) > stays pending after a thrown lookup, then a restart recovers it exactly once 358ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a failed lookup during the recovery start (#3592 L1) > settles a group that is gone without starting it, and never asks again 272ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a stale answer is never given over the group its request made 172ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a failed save after the create records no refusal; the retry finds the group by its mark 168ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > an Allow stays an Allow when the Dispatcher's permissions change right after it 121ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > the mark can't be written by an update, here or from another computer, so it can't forge a created answer 106ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > an unreachable host gets nothing: nothing is created or queued, and Retry is safe later 50ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a retry sends the saved request exactly, whatever the form says now 45ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > the host checks the scope again: an unlinked project is refused, a linked one becomes the host's own 125ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a link removed after asking makes Allow refuse instead of creating 106ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a bad scope never reaches a host: this computer refuses a local one, the host refuses a malformed one 39ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > the same request id with a different body is refused 48ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > a host whose Dispatcher is off can't show the approval, so it refuses; Retry works once it is on 45ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > one computer can't flood the host's Needs you 383ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > an older computer is listed as needing an update, and a create sent to it says so 48ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > three desktops: one asks another to host, the third gets the copy, and the asker can't see its own approval 186ms
+ ✓ |main| src/main/services/group-project-remote-create.sim.test.ts > creating a group project on another computer (#3547) > existing groups are left alone 185ms
+
+ Test Files  3 passed (3)
+      Tests  98 passed (98)
+   Start at  02:43:38
+   Duration  5.13s (transform 1.22s, setup 12ms, import 957ms, tests 6.96s, environment 0ms)
+
+vitest exit=0
