@@ -1,0 +1,18 @@
+{
+  "source_head": "c0a278d6e96484394cda8b595a90e32da2af9a12",
+  "baseline": "0723c341045212306c3966f6b8951b626d95e10f",
+  "assertions_retained_verbatim": [
+    "const firstArgs = { message: 'durable first input', task_id: 'durable-first', idempotency_key: 'durable-first' };",
+    "const secondArgs = { message: 'durable second input', task_id: 'durable-second', idempotency_key: 'durable-second' };",
+    "expect(duplicate.isError).toBe(false);",
+    "expect(createHash('sha256').update(JSON.stringify(duplicate.result)).digest('hex')).toBe(boundary.resultHash);",
+    "expect(await mcp.call(fileTool!, fileArgs)).toEqual(fileResult);",
+    "expect(await fs.promises.readFile(filePath)).toEqual(Buffer.from(content));",
+    "expect(ids.slice(0, 3)).toEqual([firstId, firstId, secondId]);",
+    "expect(ids.filter((id) => id === firstId)).toHaveLength(2);",
+    "expect(persistedReceipt.inbox.find((row) => row.key === receipt!.key)).toEqual(receipt);"
+  ],
+  "production_src_tree_before": "54e56106f565282025036ba38f7e8d75e9cefeb9",
+  "production_src_tree_after": "54e56106f565282025036ba38f7e8d75e9cefeb9",
+  "no_local_e2e": true
+}

@@ -1,0 +1,2 @@
+2026-11-21T07:08:34Z START mcp-stable-binding-name idle=89% unused=2975M avail=27982M freepct=82 comp=4011M swap=1820M pid=61899 cmd=node node_modules/typescript/bin/tsc --noEmit -p /Users/masonallen/.clubhouse/orch/evidence/mcp-stable-binding-name-3738-e2e-successor/tsconfig.e2e.json
+2026-11-21T07:08:35Z END mcp-stable-binding-name rc=0

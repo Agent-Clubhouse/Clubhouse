@@ -1,0 +1,27 @@
+{
+  "head_before": "c0a278d6e96484394cda8b595a90e32da2af9a12",
+  "head_after": "c0a278d6e96484394cda8b595a90e32da2af9a12",
+  "command": [
+    "node",
+    "node_modules/typescript/bin/tsc",
+    "--noEmit",
+    "-p",
+    "/Users/masonallen/.clubhouse/orch/evidence/mcp-stable-binding-name-3738-e2e-successor/tsconfig.e2e.json"
+  ],
+  "exit": 2,
+  "sha256_before": {
+    "e2e/annex-v2/agents-across-machines.spec.ts": "86207cd84b93d4de75af11c67729768faf36cebb6d3050fe3a52ff96e342bc4a",
+    "e2e/dispatcher.spec.ts": "0dfc990e4ea1617c004e2d68707fe53051e1ec1ed328fd0199018d2d4a61e420",
+    "e2e/mcp-agent.ts": "1341e726dbbbe53b4d5e3d9fa6f04398eaca47f4a40f1b4af8a31183cbd9767c",
+    "test/mcp-target-tools.test.ts": "a956e0c907b190878e87dae6043afe080d91e662ecbd36ce90c235120a4c4fc2",
+    "test/mcp-target-tools.ts": "82e6ee931cb2f4461944fe904d3ea2dc8bac96ca3b83a17bd4fd4359b6dbb491"
+  },
+  "sha256_after": {
+    "e2e/annex-v2/agents-across-machines.spec.ts": "86207cd84b93d4de75af11c67729768faf36cebb6d3050fe3a52ff96e342bc4a",
+    "e2e/dispatcher.spec.ts": "0dfc990e4ea1617c004e2d68707fe53051e1ec1ed328fd0199018d2d4a61e420",
+    "e2e/mcp-agent.ts": "1341e726dbbbe53b4d5e3d9fa6f04398eaca47f4a40f1b4af8a31183cbd9767c",
+    "test/mcp-target-tools.test.ts": "a956e0c907b190878e87dae6043afe080d91e662ecbd36ce90c235120a4c4fc2",
+    "test/mcp-target-tools.ts": "82e6ee931cb2f4461944fe904d3ea2dc8bac96ca3b83a17bd4fd4359b6dbb491"
+  },
+  "config_sha256": "0973ea3045193c27987ddf5556b1defffced93cbbce9743edd8a8c792b5341e7"
+}

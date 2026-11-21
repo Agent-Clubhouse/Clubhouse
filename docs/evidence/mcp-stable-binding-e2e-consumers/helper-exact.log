@@ -1,0 +1,14 @@
+2026-11-21T07:07:23Z START mcp-stable-binding-name idle=85% unused=2961M avail=27933M freepct=82 comp=4011M swap=1820M pid=60953 cmd=node node_modules/vitest/vitest.mjs run test/mcp-target-tools.test.ts --maxWorkers=1
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name
+
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  02:07:24
+   Duration  83ms (transform 6ms, setup 0ms, import 11ms, tests 3ms, environment 0ms)
+
+2026-11-21T07:07:24Z END mcp-stable-binding-name rc=0

@@ -1,0 +1,75 @@
+{
+  "source_head": "c0a278d6e96484394cda8b595a90e32da2af9a12",
+  "source_branch": "fix/3738-e2e-callable-consumers",
+  "parent_source": "0723c341045212306c3966f6b8951b626d95e10f",
+  "parent_evidence": "e8a55d50b7b1b1fc1651f712595b5e30be162e03",
+  "original_source": "807360c543a28848e9359564b7917d0bac425e91",
+  "original_evidence": "7e362e2cc1f0ea153a5569dad86ec5cfedc00a0d",
+  "delta_files": [
+    "e2e/annex-v2/agents-across-machines.spec.ts",
+    "e2e/dispatcher.spec.ts",
+    "e2e/mcp-agent.ts",
+    "test/mcp-target-tools.test.ts",
+    "test/mcp-target-tools.ts"
+  ],
+  "source_sha256": {
+    "e2e/annex-v2/agents-across-machines.spec.ts": "86207cd84b93d4de75af11c67729768faf36cebb6d3050fe3a52ff96e342bc4a",
+    "e2e/dispatcher.spec.ts": "0dfc990e4ea1617c004e2d68707fe53051e1ec1ed328fd0199018d2d4a61e420",
+    "e2e/mcp-agent.ts": "1341e726dbbbe53b4d5e3d9fa6f04398eaca47f4a40f1b4af8a31183cbd9767c",
+    "test/mcp-target-tools.test.ts": "a956e0c907b190878e87dae6043afe080d91e662ecbd36ce90c235120a4c4fc2",
+    "test/mcp-target-tools.ts": "82e6ee931cb2f4461944fe904d3ea2dc8bac96ca3b83a17bd4fd4359b6dbb491"
+  },
+  "package_lock_sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+  "raw_hosted_logs": [
+    {
+      "file": "hosted-44876043424-windows-2.log.gz",
+      "original_bytes": 1555583,
+      "original_sha256": "73e843c8fe70c6ca29d53eb89987ff5719001025acfcf28d28339c579d92dc99"
+    },
+    {
+      "file": "hosted-44876043424-annex-windows-1.log.gz",
+      "original_bytes": 90833,
+      "original_sha256": "6e51471b822b6cd74780836a2e4d9563f9252df6441ff38ca6f5119197f7e3fb"
+    }
+  ],
+  "exact_hosted_artifacts": [
+    {
+      "file": "hosted-44876043424-windows-2-junit.zip",
+      "artifact_id": 14696766675,
+      "api_digest": "sha256:4bc12ac311229d1c8a6ccf2d02f1b29d465c1622c974567f45b95d5d9dae94f5",
+      "download_sha256": "4bc12ac311229d1c8a6ccf2d02f1b29d465c1622c974567f45b95d5d9dae94f5",
+      "junit_entry": "test-results.xml",
+      "junit_bytes": 15615710,
+      "junit_sha256": "e6d8f56c80c580e93aa3b01613675f01833738217736c870c8bf981ef7d05487"
+    },
+    {
+      "file": "hosted-44876043424-annex-windows-1-traces.zip",
+      "artifact_id": 14696516899,
+      "api_digest": "sha256:b8523d183f9c9ec1738bac06a3e48fd28c2ed1068c34889949831886ad3e3c74",
+      "download_sha256": "b8523d183f9c9ec1738bac06a3e48fd28c2ed1068c34889949831886ad3e3c74",
+      "junit_entry": "junit.xml",
+      "junit_bytes": 50977,
+      "junit_sha256": "42d92cdfab725c87d33d45fce73fff4cf1d8f1de0694b7579f68b63bbd26fb52"
+    }
+  ],
+  "unresolved_timeout": {
+    "file": "src/main/services/managed-agents/restart.test.ts",
+    "case": "built-in skill status (#3517) > exposes current applicability and only a successful current running delivery",
+    "timeout_ms": 5000,
+    "shard_elapsed_seconds": 1122.68,
+    "observed_stage": "Timeout stack identifies test definition line91; body begins dynamic imports, exact pending await unproven",
+    "source_hash_comparison": {
+      "807360c543a28848e9359564b7917d0bac425e91": "e51e4f8274975797d52bb94b237951b118e5f9a419047249dbe242052d2147eb",
+      "c0cf2f1974b98a9418f1682284c6535d1a1e396b": "e51e4f8274975797d52bb94b237951b118e5f9a419047249dbe242052d2147eb"
+    },
+    "root_cause": "unproven; neither waived nor modified"
+  },
+  "expected_exits": {
+    "helper-exact": 0,
+    "e2e-types-initial": 2,
+    "e2e-types-es2020-baseline": 2,
+    "e2e-types-exact": 0,
+    "lint-exact": 0
+  },
+  "runtime_e2e": "NOT RUN locally; hosted-only, remains required after independent QA and single PR update"
+}

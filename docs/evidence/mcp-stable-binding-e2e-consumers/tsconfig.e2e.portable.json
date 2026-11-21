@@ -1,0 +1,23 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": [
+      "ES2022",
+      "DOM"
+    ]
+  },
+  "files": [
+    "../../../e2e/annex-v2/agents-across-machines.spec.ts",
+    "../../../e2e/dispatcher.spec.ts",
+    "../../../e2e/mcp-agent.ts",
+    "../../../test/mcp-target-tools.test.ts",
+    "../../../test/mcp-target-tools.ts",
+    "../../../src/picomatch.d.ts",
+    "../../../src/md.d.ts",
+    "../../../src/renderer/types/global.d.ts",
+    "../../../src/renderer/plugins/native-import.d.ts"
+  ],
+  "include": [],
+  "exclude": []
+}

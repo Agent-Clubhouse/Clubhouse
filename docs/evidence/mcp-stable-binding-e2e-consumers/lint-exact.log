@@ -1,0 +1,13 @@
+2026-11-21T07:08:36Z START mcp-stable-binding-name idle=88% unused=2961M avail=27972M freepct=82 comp=4011M swap=1820M pid=61950 cmd=node node_modules/eslint/bin/eslint.js e2e/annex-v2/agents-across-machines.spec.ts e2e/dispatcher.spec.ts e2e/mcp-agent.ts test/mcp-target-tools.test.ts test/mcp-target-tools.ts
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/e2e/annex-v2/agents-across-machines.spec.ts
+  225:39   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  268:89   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  272:55   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  276:110  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  282:63   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  286:142  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 6 problems (0 errors, 6 warnings)
+
+2026-11-21T07:08:36Z END mcp-stable-binding-name rc=0

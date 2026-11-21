@@ -1,0 +1,6 @@
+2026-11-21T07:07:25Z START mcp-stable-binding-name idle=85% unused=2914M avail=27960M freepct=82 comp=4011M swap=1820M pid=61086 cmd=node node_modules/typescript/bin/tsc --noEmit -p /Users/masonallen/.clubhouse/orch/evidence/mcp-stable-binding-name-3738-e2e-successor/tsconfig.e2e.json
+e2e/annex-v2/agents-across-machines.spec.ts(91,32): error TS2304: Cannot find name 'AggregateError'.
+e2e/annex-v2/agents-across-machines.spec.ts(147,32): error TS2304: Cannot find name 'AggregateError'.
+e2e/launch.ts(123,19): error TS2304: Cannot find name 'AggregateError'.
+e2e/launch.ts(236,111): error TS2554: Expected 0-1 arguments, but got 2.
+2026-11-21T07:07:26Z END mcp-stable-binding-name rc=2

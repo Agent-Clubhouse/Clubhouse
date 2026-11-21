@@ -1,0 +1,19 @@
+{
+  "extends": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "files": [
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/e2e/annex-v2/agents-across-machines.spec.ts",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/e2e/dispatcher.spec.ts",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/e2e/mcp-agent.ts",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/test/mcp-target-tools.test.ts",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/test/mcp-target-tools.ts",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/src/picomatch.d.ts",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/src/md.d.ts",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/src/renderer/types/global.d.ts",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name/src/renderer/plugins/native-import.d.ts"
+  ],
+  "include": [],
+  "exclude": []
+}
