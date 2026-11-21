@@ -66,3 +66,20 @@ Method: I read the contract and fixtures. **I independently recomputed the canon
 ## Not authorized here
 
 No product code, hunk clearance, release, install, activation, link or grant change, live probe or mobile adoption. Implementation needs a deterministic baseline, green on the exact source with a manifest, independent exact-source review, and hosted CI.
+
+## Addendum: integration concerns against current main `be29c82a5` (source inspection; the draft is unchanged)
+
+**I-1: SAVE_SETTINGS transaction ordering (P7w).**
+- Current main serializes Annex settings saves through `settingsWrites` (`src/main/ipc/annex-handlers.ts:181-193`). The contract's pending local Alias intent must run **inside that existing queued clone and apply transaction**: reserve the intent, persist settings, emit settingsChanged, apply the network settings and retire the read lease, then activate the intent.
+- It must not run in a second queue or outside the chain. Otherwise a concurrent P7w save could interleave between the intent and the Alias write, or apply network settings before the intent exists.
+- §5 and the §7 reservation for `annex-handlers.ts` need restating against `be29`, with P7w owner confirmation.
+
+**I-2: a getter-only overlay misses existing display seams.**
+- §6 and §7 project names through `getPeer`/`listPeers`. But `annex-peers.ts` also exposes `peekPeerAlias` (:100) and `capturePeerPairingForDisplay` (:200), which read cached peer data directly for display and Details receipts.
+- If they keep reading the raw stored alias, Details and other labels would show stale names, and any name-version or receipt currentness would diverge from the projection.
+- **Required:** an explicit, no-IO, loaded-cache projection seam that **every** display reader uses, including these peeks, with a currentness or version token that Details receipts can include.
+- Settle the exact seam with the Details owner before code (the parent has asked). Add a control: a remote rename updates every display path, including Details pairing display and peeks, without reconnecting and without changing pins, pairings or receipts.
+
+**Hash vectors:** the parent reports that the five cross-language vectors matched in Node and Python. My independent offline Python recomputation also matched all 5, plus the 8 embedded records. This is a documentation and encoding consistency check, **not runtime or compatibility proof**.
+
+**Updated verdict:** approval of the contract design stands, now with **5 required items before code**: R-a, R-b and R-c, plus I-1 and I-2.
