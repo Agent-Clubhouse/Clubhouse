@@ -1,0 +1,70 @@
+{
+  "startedAt": "2026-11-21T12:18:27.197967+00:00",
+  "finishedAt": "2026-11-21T12:18:27.973840+00:00",
+  "cwd": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design",
+  "argv": [
+    "node",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/corrected-q5-entry-arbitration-mutation.cjs"
+  ],
+  "exitCode": 0,
+  "before": {
+    "head": "71bd4d632e58161400d086fa2305ce45580cad60",
+    "tree": "95d0c8e07d3ca08d7b0626942b9a498118dd0d28",
+    "status": "",
+    "sources": {
+      "docs/design/q5-durable-notice-ledger.md": "dbe3628d7b10605ca70edeaa34e42a32e5efa94376135618a349dc8be9531f94",
+      "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "src/main/services/group-project-notice-ledger/durability.test.ts": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903",
+      "src/main/services/group-project-notice-ledger/durability.ts": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9",
+      "src/main/services/group-project-notice-ledger/installation.test.ts": "18f94481b900b231893a3e63cd3ab36a8eb7416a0c7aefccda17edc646cc0815",
+      "src/main/services/group-project-notice-ledger/installation.ts": "95e4ee63d4cbbf4f29fd08ce2ef7eec486b698654584e42f9badbbfe635e7fea",
+      "src/main/services/group-project-notice-ledger/intervals.test.ts": "cc464c9a5cde0412e8b2b6c5d987fcfa5efd7c81050559ff88c35377159d00c7",
+      "src/main/services/group-project-notice-ledger/intervals.ts": "6dad2906b7b8db5671047d75dd98b3817bd06eb2882f206469b75180ef61650a",
+      "src/main/services/group-project-notice-ledger/journal.test.ts": "c79e8b9dbf96a6422ff56948f94253ea28833ce31dfb4972e3b8327451be67a3",
+      "src/main/services/group-project-notice-ledger/journal.ts": "e0be83586d17de93b1a4274c428bf19072ed618d4b48df84cccdf59ebfc26ec7",
+      "src/main/services/group-project-notice-ledger/pages.test.ts": "716d20c0308ea555398a8a9e11fcab17405ca49a52dfa262954aeb0ffdc2c344",
+      "src/main/services/group-project-notice-ledger/pages.ts": "275702f11734c47cd67c0d1fafebcce7f54929d344d6d875ace64befdd46e673",
+      "src/main/services/group-project-notice-ledger/state.test.ts": "aa1ffdbe7bd7affa0901f6318f700930e4d3af68a5a7fc1f209cd06ba97e6336",
+      "src/main/services/group-project-notice-ledger/state.ts": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8",
+      "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "test/research/q5-entered-mutation.cjs": "0b701deb66d9a8decaa3b67cd1ccf5817804a7dd1e5b87191f852c05872428fa",
+      "test/research/q5-installation-process.cjs": "1c87732f7e0456d0ac0e5f710bed46a723e36b3b00bff86ca00215ec3ca362e9",
+      "test/research/q5-journal-process.cjs": "27aa412cc0dcf07db08b0a321faed4085557985040e17eb9a764b6a69b29e661",
+      "test/research/q5-seal-implementation.py": "325061025e06916704d8fa5fa4631bdd51ecf8ddaff732bd6eb883e0cb68672f",
+      "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    }
+  },
+  "after": {
+    "head": "71bd4d632e58161400d086fa2305ce45580cad60",
+    "tree": "95d0c8e07d3ca08d7b0626942b9a498118dd0d28",
+    "status": "",
+    "sources": {
+      "docs/design/q5-durable-notice-ledger.md": "dbe3628d7b10605ca70edeaa34e42a32e5efa94376135618a349dc8be9531f94",
+      "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "src/main/services/group-project-notice-ledger/durability.test.ts": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903",
+      "src/main/services/group-project-notice-ledger/durability.ts": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9",
+      "src/main/services/group-project-notice-ledger/installation.test.ts": "18f94481b900b231893a3e63cd3ab36a8eb7416a0c7aefccda17edc646cc0815",
+      "src/main/services/group-project-notice-ledger/installation.ts": "95e4ee63d4cbbf4f29fd08ce2ef7eec486b698654584e42f9badbbfe635e7fea",
+      "src/main/services/group-project-notice-ledger/intervals.test.ts": "cc464c9a5cde0412e8b2b6c5d987fcfa5efd7c81050559ff88c35377159d00c7",
+      "src/main/services/group-project-notice-ledger/intervals.ts": "6dad2906b7b8db5671047d75dd98b3817bd06eb2882f206469b75180ef61650a",
+      "src/main/services/group-project-notice-ledger/journal.test.ts": "c79e8b9dbf96a6422ff56948f94253ea28833ce31dfb4972e3b8327451be67a3",
+      "src/main/services/group-project-notice-ledger/journal.ts": "e0be83586d17de93b1a4274c428bf19072ed618d4b48df84cccdf59ebfc26ec7",
+      "src/main/services/group-project-notice-ledger/pages.test.ts": "716d20c0308ea555398a8a9e11fcab17405ca49a52dfa262954aeb0ffdc2c344",
+      "src/main/services/group-project-notice-ledger/pages.ts": "275702f11734c47cd67c0d1fafebcce7f54929d344d6d875ace64befdd46e673",
+      "src/main/services/group-project-notice-ledger/state.test.ts": "aa1ffdbe7bd7affa0901f6318f700930e4d3af68a5a7fc1f209cd06ba97e6336",
+      "src/main/services/group-project-notice-ledger/state.ts": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8",
+      "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "test/research/q5-entered-mutation.cjs": "0b701deb66d9a8decaa3b67cd1ccf5817804a7dd1e5b87191f852c05872428fa",
+      "test/research/q5-installation-process.cjs": "1c87732f7e0456d0ac0e5f710bed46a723e36b3b00bff86ca00215ec3ca362e9",
+      "test/research/q5-journal-process.cjs": "27aa412cc0dcf07db08b0a321faed4085557985040e17eb9a764b6a69b29e661",
+      "test/research/q5-seal-implementation.py": "325061025e06916704d8fa5fa4631bdd51ecf8ddaff732bd6eb883e0cb68672f",
+      "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    }
+  },
+  "sealEqual": true,
+  "rawSha256": "406b8b65d772baad02f9ac4588bed516156998a6b7cb6c7eebd7f21c2d731c80"
+}

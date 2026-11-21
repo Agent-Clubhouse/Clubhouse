@@ -324,6 +324,24 @@
       "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "receiptSha256": "cc740e3a94f290c8a80abdf86730b71cacf967188777c2f5bd2cfcedee011cdc",
       "sealEqual": true
+    },
+    {
+      "path": "71bd4d632-entry-mutations-attempt1",
+      "head": "71bd4d632e58161400d086fa2305ce45580cad60",
+      "tree": "95d0c8e07d3ca08d7b0626942b9a498118dd0d28",
+      "exitCode": 1,
+      "rawSha256": "1addc8d8a5ff93915f69f180506820b93c6a1a060d7c5d16839b686198a792fb",
+      "receiptSha256": "cfc19926006e655fcf34c5c1648cd5eba8717c666638e955d41a55743602e379",
+      "sealEqual": true
+    },
+    {
+      "path": "71bd4d632-entry-mutations-attempt2",
+      "head": "71bd4d632e58161400d086fa2305ce45580cad60",
+      "tree": "95d0c8e07d3ca08d7b0626942b9a498118dd0d28",
+      "exitCode": 0,
+      "rawSha256": "406b8b65d772baad02f9ac4588bed516156998a6b7cb6c7eebd7f21c2d731c80",
+      "receiptSha256": "622ce33a692129a9881b9626867a3c0d2e5533ddafd9505bb247f53cfd78ce81",
+      "sealEqual": true
     }
   ]
 }
