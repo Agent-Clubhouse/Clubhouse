@@ -468,6 +468,24 @@
       "rawSha256": "9c215a6b27ad74efaba7536623a73bf3df73877663b97f39ed7c08c81ecb48fa",
       "receiptSha256": "104d89b35501f48d3e61089de22011d8c8b639ab9479f95341a670cf51c3ac0d",
       "sealEqual": true
+    },
+    {
+      "path": "8dcbf4245-no-follow-test-attempt1",
+      "head": "8dcbf42455123014b2bba4a03973afb786a153b5",
+      "tree": "3cdf3fb0607d2e99099ac4e3ebe23d2a2eee2513",
+      "exitCode": 0,
+      "rawSha256": "7bb9eee81cde29e3defa5f2163ea87b06e5abef62519cc6a51148c95511e09e8",
+      "receiptSha256": "8c8720772ee9af3c45bf368d29aae1acc7432eabf324746faaf18fef2b8ea04d",
+      "sealEqual": true
+    },
+    {
+      "path": "8dcbf4245-lint-attempt1",
+      "head": "8dcbf42455123014b2bba4a03973afb786a153b5",
+      "tree": "3cdf3fb0607d2e99099ac4e3ebe23d2a2eee2513",
+      "exitCode": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "receiptSha256": "4e232436c1898794a9ab48a6abe78e8a5f8fb4ac0d184ac044c85fd0e7375ca1",
+      "sealEqual": true
     }
   ]
 }

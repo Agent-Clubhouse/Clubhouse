@@ -1,0 +1,51 @@
+{
+  "scope": "Static source identity bridge only; no transfer of old test/compiler results",
+  "approvedSource": "73c16d41c8fde03aa42f6e045f2d54d593650549",
+  "approvedTree": "efdae84744c475a80057017edfb1cb15230540ee",
+  "successorSource": "8dcbf42455123014b2bba4a03973afb786a153b5",
+  "successorTree": "3cdf3fb0607d2e99099ac4e3ebe23d2a2eee2513",
+  "byteEqualSources": {
+    "docs/design/q5-durable-notice-ledger.md": "dbe3628d7b10605ca70edeaa34e42a32e5efa94376135618a349dc8be9531f94",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "src/main/services/group-project-notice-ledger/durability.test.ts": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903",
+    "src/main/services/group-project-notice-ledger/durability.ts": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9",
+    "src/main/services/group-project-notice-ledger/installation.test.ts": "18f94481b900b231893a3e63cd3ab36a8eb7416a0c7aefccda17edc646cc0815",
+    "src/main/services/group-project-notice-ledger/installation.ts": "95e4ee63d4cbbf4f29fd08ce2ef7eec486b698654584e42f9badbbfe635e7fea",
+    "src/main/services/group-project-notice-ledger/intervals.test.ts": "cc464c9a5cde0412e8b2b6c5d987fcfa5efd7c81050559ff88c35377159d00c7",
+    "src/main/services/group-project-notice-ledger/intervals.ts": "6dad2906b7b8db5671047d75dd98b3817bd06eb2882f206469b75180ef61650a",
+    "src/main/services/group-project-notice-ledger/journal.test.ts": "c79e8b9dbf96a6422ff56948f94253ea28833ce31dfb4972e3b8327451be67a3",
+    "src/main/services/group-project-notice-ledger/journal.ts": "e0be83586d17de93b1a4274c428bf19072ed618d4b48df84cccdf59ebfc26ec7",
+    "src/main/services/group-project-notice-ledger/pages.ts": "c1502f01eee480b29a885cbe2bed551233f8e9f0baaa726244d0e5de5f777ca8",
+    "src/main/services/group-project-notice-ledger/sparse-reader.test.ts": "4de164800e66b5934ffdfb4a3f46838f3975c70154511b8c8816eac2ce56c761",
+    "src/main/services/group-project-notice-ledger/sparse-reader.ts": "c9e165ce23ed73ac68c293930d547935ad2a90068b2e8116198c05472b9ef4e0",
+    "src/main/services/group-project-notice-ledger/state.test.ts": "aa1ffdbe7bd7affa0901f6318f700930e4d3af68a5a7fc1f209cd06ba97e6336",
+    "src/main/services/group-project-notice-ledger/state.ts": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8",
+    "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+    "test/research/q5-entered-mutation.cjs": "0b701deb66d9a8decaa3b67cd1ccf5817804a7dd1e5b87191f852c05872428fa",
+    "test/research/q5-index-process.cjs": "f5f22a04236fd812a99be1257bca10fa7ea843dc56baa4c473a2ced2466bac8c",
+    "test/research/q5-installation-process.cjs": "1c87732f7e0456d0ac0e5f710bed46a723e36b3b00bff86ca00215ec3ca362e9",
+    "test/research/q5-journal-process.cjs": "27aa412cc0dcf07db08b0a321faed4085557985040e17eb9a764b6a69b29e661",
+    "test/research/q5-seal-implementation.py": "3c0938e029ce1a376015e4566f7ee3809c0a4994eed638ae828ace042f1e474a",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+    "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+  },
+  "changedSources": {
+    "src/main/services/group-project-notice-ledger/pages.test.ts": {
+      "before": "52c9ca6095b18a4e0d1868a098c3744078012e91c2b44d4cb40a46b5599d2635",
+      "after": "2c3953040e149f166849140c7e60170e71981301d0db5c10fe895efa1e5b2e1d"
+    }
+  },
+  "actualChangedPaths": [
+    "docs/design/q5-native-index-validation.md",
+    "src/main/services/group-project-notice-ledger/pages.test.ts"
+  ],
+  "nativePlanInspectedMain": "e8e178c4bf462bcf443bfb1b91cbfbcd1f35d1c2",
+  "nativePlanUnchangedSources": {
+    ".github/workflows/validate.yml": "2612b8fd22c3ded25f53b95495aed6c49c62f404763d3173f52bf760c7f55963",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "package.json": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "scripts/ci/classify-changes.mjs": "050bb76f206e2468940e5735b2cb96bc64231d59b12774a9c8c5fafff22858e3"
+  }
+}
