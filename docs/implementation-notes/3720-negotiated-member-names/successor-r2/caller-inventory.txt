@@ -1,0 +1,25 @@
+Source: 50cb77ab6ccf9f383a39e59db308f4f8336051ea
+Command argv: ["git", "grep", "-n", "saveSettings\\|getSettings\\|onSave", "50cb77ab6ccf9f383a39e59db308f4f8336051ea", "--", "src/preload/annex.ts", "src/renderer/stores/annexStore.ts", "src/renderer/features/settings/AnnexNetworkSettingsView.tsx", "src/renderer/features/settings/AnnexIdentitySection.tsx", "src/renderer/features/command-palette/use-command-source.ts"]
+Exit code: 0
+STDOUT:
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/preload/annex.ts:8:  getSettings: () =>
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/preload/annex.ts:10:  saveSettings: (settings: { enableServer: boolean; enableClient: boolean; deviceName: string; alias: string; icon: string; color: string; autoReconnect: boolean; enabled?: boolean }) =>
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/command-palette/use-command-source.ts:485:        useAnnexStore.getState().saveSettings({ ...annexSettings, enableServer: !annexSettings.enableServer });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/command-palette/use-command-source.ts:494:        useAnnexStore.getState().saveSettings({ ...annexSettings, enableClient: !annexSettings.enableClient });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexIdentitySection.tsx:8:  onSave: (settings: AnnexSettings) => void;
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexIdentitySection.tsx:11:export function AnnexIdentitySection({ settings, status, onSave }: Props) {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexIdentitySection.tsx:19:          onChange={(e) => onSave({ ...settings, alias: e.target.value })}
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexIdentitySection.tsx:35:                onClick={() => onSave({ ...settings, color: color.id })}
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexNetworkSettingsView.tsx:22:  const saveSettings = useAnnexStore((s) => s.saveSettings);
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexNetworkSettingsView.tsx:80:      current = await window.clubhouse.annex.getSettings();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexNetworkSettingsView.tsx:88:    await saveSettings({ ...current, ...changes });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexNetworkSettingsView.tsx:221:              onChange={(e) => saveSettings({ ...settings, deviceName: e.target.value })}
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexNetworkSettingsView.tsx:263:              onChange={(e) => saveSettings({ ...settings, reachableAs: e.target.value })}
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexNetworkSettingsView.tsx:280:          <AnnexIdentitySection settings={settings} status={status} onSave={saveSettings} />
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/stores/annexStore.ts:30:  saveSettings: (settings: AnnexSettings) => Promise<void>;
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/stores/annexStore.ts:59:        window.clubhouse.annex.getSettings(),
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/stores/annexStore.ts:71:  saveSettings: async (settings: AnnexSettings) => {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/stores/annexStore.ts:74:      await window.clubhouse.annex.saveSettings(settings);
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/stores/annexStore.ts:114:      const settings = await window.clubhouse.annex.getSettings();
+
+STDERR:

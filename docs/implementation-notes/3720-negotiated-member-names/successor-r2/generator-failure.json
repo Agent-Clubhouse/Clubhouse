@@ -1,0 +1,11 @@
+{
+  "headAtExecution": "379ebdca083d28634e497279ad9e4e0fd08bd3e1",
+  "command": [
+    "python3",
+    "docs/implementation-notes/3720-negotiated-member-names/successor-r2/make-boundary-patch.py"
+  ],
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"/Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness/docs/implementation-notes/3720-negotiated-member-names/successor-r2/make-boundary-patch.py\", line 57, in <module>\n    assert old_call in s\n           ^^^^^^^^^^^^^\nAssertionError\n",
+  "scope": "Actual docs-artifact generation failure; no product execution"
+}

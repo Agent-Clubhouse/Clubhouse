@@ -1,0 +1,185 @@
+{
+  "status": "PROPOSED expected outcomes; no product/model/codec/race execution",
+  "source": "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+  "epochExamples": [
+    "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222"
+  ],
+  "validPatch": {
+    "v": 1,
+    "requestId": "33333333-3333-4333-8333-333333333333",
+    "origin": "identity",
+    "base": {
+      "epoch": "11111111-1111-4111-8111-111111111111",
+      "revision": 0,
+      "fields": {
+        "color": 0
+      }
+    },
+    "changes": {
+      "color": "indigo"
+    },
+    "unset": []
+  },
+  "optionalTransitionVersions": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "cases": [
+    {
+      "id": "F01-refused-Alias-color",
+      "expected": "refused B stays draft; identity/color request touches only color; primary Alias A survives"
+    },
+    {
+      "id": "F02-refused-Alias-palette",
+      "expected": "both command toggles omit Alias and use committed current switch at invocation; refused B never carried"
+    },
+    {
+      "id": "F03-stale-A-body",
+      "expected": "old full body with A is schema-invalid; stale color-only patch cannot change accepted B"
+    },
+    {
+      "id": "F04-explicit-stale-A",
+      "expected": "Alias version0 cannot overwrite B at version1; reject whole compound patch"
+    },
+    {
+      "id": "F05-late-replies",
+      "expected": "save/load/error generation+request+revision filters keep newer accepted C and latest unsaved draft"
+    },
+    {
+      "id": "F06-purge-mid-edit",
+      "expected": "new random epoch at reset; same counters cannot authorize old patch; late replies ignored"
+    },
+    {
+      "id": "V01-absent-set",
+      "expected": "absent optional0 -> set true => present true/version1"
+    },
+    {
+      "id": "V02-set-equal",
+      "expected": "present true/version1 -> set true => present true/version2"
+    },
+    {
+      "id": "V03-set-change",
+      "expected": "present true/version2 -> set false => present false/version3"
+    },
+    {
+      "id": "V04-set-unset",
+      "expected": "present false/version3 -> unset => absent/version4"
+    },
+    {
+      "id": "V05-absent-unset",
+      "expected": "absent/version4 -> unset => absent/version5"
+    },
+    {
+      "id": "V06-failure",
+      "expected": "refused/pre-primary failure increments neither revision nor touched versions"
+    },
+    {
+      "id": "V07-value-ABA",
+      "expected": "A0 -> B1 -> A2; held token0 refuses even equal A"
+    },
+    {
+      "id": "V08-epoch-ABA",
+      "expected": "equal counters with different random epoch rejects BEFORE versions"
+    },
+    {
+      "id": "V09-MCP-noop",
+      "expected": "equal-loopback fresh invocation returns changed:false; no Ask/write/version"
+    },
+    {
+      "id": "A01-tool-queue-Ask",
+      "expected": "original installed host+settings/emergency/launch admission before queue/Ask; no recapture"
+    },
+    {
+      "id": "A02-old-restore-stop",
+      "expected": "owned version checks fence forward/restore/start/scan/status and late catch STOP after emergency or replacement"
+    },
+    {
+      "id": "A03-pre-rename",
+      "expected": "every existing atomic retry checks original admission/current authority; publisher never in retry catch"
+    },
+    {
+      "id": "A04-post-primary",
+      "expected": "committed_unconfirmed; no fake rollback/stale runtime/name activation; durable emergency composes actual new base"
+    },
+    {
+      "id": "L01-close-reopen",
+      "expected": "open token invalid after close/reopen; fresh invocation valid"
+    },
+    {
+      "id": "L02-closed-capture",
+      "expected": "captured closed token remains false after reopen"
+    },
+    {
+      "id": "L03-repeated-close",
+      "expected": "every close rotates, even already closed; no reset on reopen"
+    },
+    {
+      "id": "L04-quit",
+      "expected": "existing close-before-stop prevents pending commit/effects; no old success/failure stopping replacement"
+    },
+    {
+      "id": "L05-failed-update",
+      "expected": "cancel/reopen does not revive old token; existing policies/work waiters unchanged"
+    },
+    {
+      "id": "P01-EPERM",
+      "expected": "modeled rename EPERM then success publishes exactly once outside retry; direct/default behavior same"
+    },
+    {
+      "id": "P02-publisher-fault",
+      "expected": "primary B committed; public tuple unavailable/refused patches; emergency later persists B+off from actual base"
+    },
+    {
+      "id": "P03-reentrant-read",
+      "expected": "before logical publication old complete tuple allowed; after it new complete tuple; never mixed values/versions"
+    },
+    {
+      "id": "P04-invalid-publisher",
+      "expected": "async/throwing/reentrant caller publication plans refused; injected private publication fault is committed/degraded, never retried/rolled back"
+    },
+    {
+      "id": "P05-default-display",
+      "expected": "non-opted optimistic accepted-save peek timing/deep freeze and identity-only rollback unchanged"
+    },
+    {
+      "id": "R01-read-only-disk",
+      "expected": "explicit recovery validates bytes/provenance, new epoch/local state only; no runtime/name/migration save"
+    },
+    {
+      "id": "R02-invalid-source",
+      "expected": "missing/unreadable/malformed/changed source stays degraded; bytes preserved, no default fallback"
+    },
+    {
+      "id": "R03-recovery-emergency",
+      "expected": "entry/queue/after-read/prepublish supersession refuses old recovery; emergency base/live stop preserved"
+    },
+    {
+      "id": "R04-duplicate-lost-reply",
+      "expected": "same recovery request joins/returns record; no second read/epoch rotation; stale result cannot overwrite newer scope"
+    },
+    {
+      "id": "R05-healthy-get",
+      "expected": "GET/display never heal/init/emit; healthy recovery returns not_degraded"
+    }
+  ],
+  "mutationsThatMustFailNegatives": [
+    "restore optimistic frontend settings publication",
+    "fullbody fallback",
+    "compare value rather than field version",
+    "ignore random epoch",
+    "recapture tool admission after Ask",
+    "no close rotation",
+    "reset launch generation on reopen",
+    "omit captured-open latch",
+    "publisher in filesystem retrycatch",
+    "postcommit failure through legacy rollback",
+    "emergency composes stale public tuple",
+    "reload uses legacy default loader",
+    "reload invokes runtime apply or name activation"
+  ]
+}

@@ -1,0 +1,59 @@
+Source: 50cb77ab6ccf9f383a39e59db308f4f8336051ea
+Command argv: ["git", "grep", "-n", "-E", "import.*replaceFile|createSettingsStore[<(]", "50cb77ab6ccf9f383a39e59db308f4f8336051ea", "--", "src/main", ":!*.test.ts"]
+Exit code: 0
+STDOUT:
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/settings-handlers.ts:12: * 4. Create a renderer store with createSettingsStore() in the renderer
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/actions/actions-store.ts:127:const actionsStore = createSettingsStore<StoredActions>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/actions/actions-store.ts:261:const historyStore = createSettingsStore<StoredHistory>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/agent-grants-store.ts:26:const store = createSettingsStore<AgentGrantsFile>('agent-grants.json', { agents: {} }, undefined, { displaySnapshot: true, audit: { key: 'agent_grants' } });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/agent-runtime/chat-version-policy.ts:146:const remoteStore = createSettingsStore<{ entries: CliDenylistEntry[] }>('chat-cli-denylist.json', { entries: [] });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/agent-settings-service.ts:12:import { backupUnreadableFile, replaceFile } from './settings-store';
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-agent-calls.ts:851:const names = createSettingsStore<{ version: number; names: Record<string, string> }>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-delivery-store.ts:97:  const store = createSettingsStore<DeliveryFile>(filename, empty(), (raw) => {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-network-membership.ts:64:const store = createSettingsStore<MembershipState>('annex-network.json', EMPTY, undefined, { mode: 0o600 });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-settings.ts:5:const store = createSettingsStore<AnnexSettings>('annex-settings.json', {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-settings.ts:64:const portsStore = createSettingsStore<AnnexLastPorts>('annex-ports.json', {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/badge-settings.ts:4:const store = createSettingsStore<BadgeSettings>('badge-settings.json', {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/chat-runtime-settings.ts:25:const store = createSettingsStore<ChatRuntimeSettings>('chat-runtime-settings.json', {}, undefined, {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/connection-card.ts:27:const store = createSettingsStore<CardFile>('connection-card.json', { version: 1, memberships: [], peers: {} }, undefined,
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/connection-grants-store.ts:52:const store = createSettingsStore<ConnectionGrantsFile>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/connection-guidance.ts:27:const store = createSettingsStore<GuidanceFile>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/dispatcher-federation-lead.ts:46:const store = createSettingsStore<LeadFile>('dispatcher-lead.json', { record: NO_LEAD, heard: {} }, undefined, { atomic: true, audit: { key: 'dispatcher_lead' } });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/dispatcher-federation-local-work.ts:66:  const settings = createSettingsStore<LocalWorkFile>(filename, { version: 1, records: [], current: {} }, (raw) => {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/dispatcher-federation-requests.ts:73:  const store = createSettingsStore<FederationRequestFile>(filename, empty(), (raw) => {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/dispatcher-federation.ts:31:const controllers = createSettingsStore<{ controllers: Record<string, FederationController> }>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/dispatcher-lead-outbox.ts:37:const store = createSettingsStore<OutboxFile>('dispatcher-lead-outbox.json', { items: [], expired: 0, failed: null }, undefined, { atomic: true });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/dispatcher/dispatcher-settings.ts:37:const store = createSettingsStore<DispatcherSettings>('dispatcher-settings.json', {}, undefined, { displaySnapshot: true, audit: { key: 'dispatcher' } });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/experimental-settings.ts:42:const store = createSettingsStore<ExperimentalSettings>(FILENAME, {}, migrateExperimentalSettings, {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/finished-quick-agents-store.ts:32:const store = createSettingsStore<StoredFinishedQuickAgents>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/free-agent-settings.ts:22:const store = createSettingsStore<FreeAgentSettings>('free-agent-settings.json', {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/group-project-bulletin.ts:15:import { replaceFile } from './settings-store';
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/group-project-json-file.ts:9:import { replaceFile } from './settings-store';
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/group-project-notification-store.ts:6:import { replaceFile } from './settings-store';
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/group-project-registry.ts:12:import { replaceFile } from './settings-store';
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/handoff-command-store.ts:39:    this.disk = createSettingsStore('handoff-commands.json', { v: 1, commands: [], notices: [] }, parseFile, {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/handoff-preparations.ts:45:    this.disk = createSettingsStore<Catalog>('handoff-preparations.json', { v: 1, entries: [] }, parse, {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/handoff-project-links.ts:23:  return disk ??= createSettingsStore<{ groups: string[][] }>('handoff-project-links.json', { groups: [] }, (value) => ({ groups: parse(value.groups) }), {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/handoff-secret-settings.ts:40:    this.disk = createSettingsStore<PolicyFile>('handoff-secret-settings.json', { v: 1, projects: {} }, parseFile, {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/handoff-store.ts:59:    this.disk = createSettingsStore<HandoffFile>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/handoff-transfer-settings.ts:25:    this.disk = createSettingsStore<TransferSettings>('handoff-transfer-settings.json', { v: 1, projects: {} } as TransferSettings, parse, {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/headless-settings.ts:36:const store = createSettingsStore<HeadlessSettings>('headless-settings.json', {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/helper-auto-state.ts:49:const rotationStore = createSettingsStore<RotationFile>('helper-auto-rotation.json', { version: 1, cursors: {} }, (raw) => {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/helper-model-catalog.ts:46:const store = createSettingsStore<CatalogFile>('helper-model-catalogs.json', { version: 1, providers: {} }, (raw) => {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/linked-project-state-store.ts:109:  const disk = createSettingsStore<Saved>('network-linked-project-state.json', { version: 1, records: [] }, parseSaved, {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/log-settings.ts:4:const store = createSettingsStore<LoggingSettings>('logging-settings.json', {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/managed-settings.ts:82:  const store = options?.store ?? createSettingsStore<T>(definition.filename, defaults, options?.migrate, { ...(options?.mode != null && { mode: options.mode }), ...(options?.displaySnapshot && { displaySnapshot: true }), audit: { key: definition.key } });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/marketplace-service.ts:33:const marketplaceSettingsStore = createSettingsStore<MarketplaceSettings>('marketplace-settings.json', {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/notification-service.ts:27:const store = createSettingsStore<NotificationSettings>('notification-settings.json', {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/orchestration-settings.ts:71:const store = createSettingsStore<OrchestrationSettings>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/orchestrator-settings.ts:27:const store = createSettingsStore<OrchestratorSettings>(SETTINGS_FILENAME, {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/project-links-store.ts:123:  const disk = createSettingsStore<Saved>('network-project-links.json', { version: 1, records: [], migrated: [] }, parseSaved, {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/project-state-store.ts:30:const store = createSettingsStore<StoredProjectState>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/session-settings.ts:10:const store = createSettingsStore<SessionSettings>('session-settings.json', {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/settings-store.ts:348:export function createSettingsStore<T>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/sound-service.ts:86:const store = createSettingsStore<SoundSettings>('sound-settings.json', defaultSettings, migrateSettings, { audit: { key: 'sound' } });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/source-control-settings.ts:19:export const sourceControlSettingsStore = createSettingsStore<SourceControlSettings>(
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/theme-service.ts:8:const store = createSettingsStore<ThemeSettings>('theme-settings.json', {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/update-settings.ts:9:const settingsStore = createSettingsStore<UpdateSettings>('update-settings.json', {
+
+STDERR:

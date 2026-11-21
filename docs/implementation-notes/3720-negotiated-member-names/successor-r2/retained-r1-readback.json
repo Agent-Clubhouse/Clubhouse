@@ -1,0 +1,7 @@
+{
+  "retainedCommit": "379ebdca083d28634e497279ad9e4e0fd08bd3e1",
+  "path": "docs/implementation-notes/3720-negotiated-member-names/successor-r1/SHA256SUMS.txt",
+  "sha256": "b6681f0cb67700c7bfe17eafc828bff42a58a78f715fd3ba87dfeab396362e59",
+  "remoteReadbackBeforeR2Push": "379ebdca083d28634e497279ad9e4e0fd08bd3e1\trefs/heads/annex-wake-readiness/3720-rename-ordering\n",
+  "scope": "Actual git-object/remote readback; old validation not reconstructed"
+}

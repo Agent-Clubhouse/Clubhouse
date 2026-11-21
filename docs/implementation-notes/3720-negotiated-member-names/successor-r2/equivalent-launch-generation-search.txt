@@ -1,0 +1,6 @@
+Source: 50cb77ab6ccf9f383a39e59db308f4f8336051ea
+Command argv: ["git", "grep", "-n", "-E", "launch.*(epoch|generation|receipt)|(generation|epoch).*launch", "50cb77ab6ccf9f383a39e59db308f4f8336051ea", "--", "src/main/services/launch-gate.ts", "src/main/services/app-shutdown.ts", "src/main/shutdown-guard.ts"]
+Exit code: 1
+STDOUT:
+
+STDERR:

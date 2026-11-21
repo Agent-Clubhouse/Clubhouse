@@ -1,0 +1,15 @@
+--- a/src/main/services/launch-gate.ts
++++ b/src/main/services/launch-gate.ts
+@@ -6,0 +7,2 @@
++// REVIEW ONLY: additive observation for opted-in Annex callers.
++let admissionGeneration = Symbol();
+@@ -18,0 +21 @@
++  admissionGeneration = Symbol(); // rotate on EVERY close, including already closed
+@@ -31,0 +35,7 @@
++}
++
++/** Observation only; no cancellation, drain, grant or launch authority. */
++export function captureLaunchAdmission(): () => boolean {
++  const generation = admissionGeneration;
++  const wasOpen = launchesOpen();
++  return () => wasOpen && generation === admissionGeneration && launchesOpen();

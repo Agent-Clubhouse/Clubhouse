@@ -1,0 +1,33 @@
+Source: 50cb77ab6ccf9f383a39e59db308f4f8336051ea
+Command argv: ["git", "grep", "-n", "-E", "retry\\(|retryControl\\(|startClient\\(|stopClient\\(|resumeAllConnections\\(|DISABLE_AND_DISCONNECT|PURGE_SERVER_CONFIG|enableClient", "50cb77ab6ccf9f383a39e59db308f4f8336051ea", "--", "src/main/services/annex-client.ts", "src/main/ipc/annex-handlers.ts", "src/main/services/clubhouse-mcp/tools/device-tools.ts"]
+Exit code: 0
+STDOUT:
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:50:  if (settings.enableClient && !previous.enableClient) {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:51:    annexClient.startClient();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:53:  } else if (!settings.enableClient && previous.enableClient) {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:54:    annexClient.stopClient();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:56:  } else if (settings.enableClient && bindingChanged) {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:90:        if (settings.enableClient) annexClient.scan();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:109:          if (restored.enableClient) annexClient.scan();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:131:    reconnect: (fingerprint) => annexClient.retry(fingerprint),
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:143:    canConnect: () => !!annexSettings.getSettings().enableClient,
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:249:  ipcMain.handle(IPC.ANNEX.DISABLE_AND_DISCONNECT, async () => {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:251:    annexClient.stopClient();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:252:    await annexSettings.saveSettings({ ...annexSettings.getSettings(), enableServer: false, enableClient: false });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:257:  ipcMain.handle(IPC.ANNEX.PURGE_SERVER_CONFIG, async () => {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:262:    annexClient.stopClient();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:272:      enableClient: false,
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:292:    meta: { enableServer: settings.enableServer, enableClient: settings.enableClient, deviceName: settings.deviceName },
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:307:/** Conditionally start the Annex Bonjour client if enableClient is on. Annex is now a stable feature. */
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:310:  if (!settings.enableClient) return;
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:313:    annexClient.startClient();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-client.ts:187:  return controllerReadsRunning && settings.enableClient && annexSettings.networkEnabled(settings)
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-client.ts:1963:  if (!annexSettings.getSettings().enableClient) { broadcastSatellitesChanged(); return { ok: true }; }
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-client.ts:2019:export function retry(fingerprint: string): void {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-client.ts:3285:export function resumeAllConnections(): void {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-client.ts:3287:  if (!annexSettings.getSettings().enableClient) return;
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-client.ts:3318:      if (!settings.enableClient || !annexSettings.networkEnabled(settings) || !identity) return [];
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-client.ts:3345:export function startClient(): void {
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/services/annex-client.ts:3356:export function stopClient(): void {
+
+STDERR:

@@ -1,0 +1,10 @@
+Source: 50cb77ab6ccf9f383a39e59db308f4f8336051ea
+Command argv: ["git", "grep", "-n", "-E", "annex\\.saveSettings|useAnnexStore.*saveSettings", "50cb77ab6ccf9f383a39e59db308f4f8336051ea", "--", "src", ":!*.test.ts", ":!*.test.tsx"]
+Exit code: 0
+STDOUT:
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/command-palette/use-command-source.ts:485:        useAnnexStore.getState().saveSettings({ ...annexSettings, enableServer: !annexSettings.enableServer });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/command-palette/use-command-source.ts:494:        useAnnexStore.getState().saveSettings({ ...annexSettings, enableClient: !annexSettings.enableClient });
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/features/settings/AnnexNetworkSettingsView.tsx:22:  const saveSettings = useAnnexStore((s) => s.saveSettings);
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/renderer/stores/annexStore.ts:74:      await window.clubhouse.annex.saveSettings(settings);
+
+STDERR:

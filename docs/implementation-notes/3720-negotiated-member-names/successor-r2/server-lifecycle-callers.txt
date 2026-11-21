@@ -1,0 +1,18 @@
+Source: 50cb77ab6ccf9f383a39e59db308f4f8336051ea
+Command argv: ["git", "grep", "-n", "-E", "annexServer\\.(start|startVerified|stop)\\(", "50cb77ab6ccf9f383a39e59db308f4f8336051ea", "--", "src/main", ":!*.test.ts"]
+Exit code: 0
+STDOUT:
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/index.ts:530:  annexServer.stop();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:39:    if (previous.enableServer) annexServer.stop();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:41:      annexServer.start();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:47:    annexServer.stop();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:87:          annexServer.stop();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:88:          await annexServer.startVerified();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:99:        if (!(err instanceof annexServer.AnnexStartFailure) && deliveryHash(annexSettings.getSettings()) === deliveryHash(settings)) annexServer.stop();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:108:          if (restored.enableServer) await annexServer.startVerified();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:115:          if (!concurrent && restored && !(restoreError instanceof annexServer.AnnexStartFailure)) annexServer.stop();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:250:    annexServer.stop();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:261:    annexServer.stop();
+50cb77ab6ccf9f383a39e59db308f4f8336051ea:src/main/ipc/annex-handlers.ts:297:      annexServer.start();
+
+STDERR:

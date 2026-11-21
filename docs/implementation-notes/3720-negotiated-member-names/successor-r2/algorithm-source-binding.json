@@ -1,0 +1,13 @@
+{
+  "sourceCommit": "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+  "scope": "Read-only algorithm/source inspection binding; none of these files edited or executed",
+  "sha256": {
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/app-shutdown.ts": "965ab9849ec08fa82163e9b29e816cf0ad6b792aec372393e032a2b90014148c",
+    "src/main/shutdown-guard.ts": "a5dbfd865ddcb5c136030253c6088ea33739760a3ef85e812d3db3c70225519b",
+    "src/main/services/update-restart-service.ts": "005f71d29005136a741a45dbc580ebba57199e785a2eacf9e421e16f32a6438f"
+  },
+  "filesystemPlacement": "No renameOver/replaceFile changes proposed; opted-in publication after replaceFile resolves",
+  "durability": "process-level only, no directory-sync/power-loss guarantee"
+}

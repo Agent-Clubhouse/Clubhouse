@@ -1,0 +1,130 @@
+{
+  "source": "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+  "scope": "Source searches only; not product execution or proof migration is implemented",
+  "queries": [
+    {
+      "label": "caller-inventory",
+      "command": [
+        "git",
+        "grep",
+        "-n",
+        "saveSettings\\|getSettings\\|onSave",
+        "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+        "--",
+        "src/preload/annex.ts",
+        "src/renderer/stores/annexStore.ts",
+        "src/renderer/features/settings/AnnexNetworkSettingsView.tsx",
+        "src/renderer/features/settings/AnnexIdentitySection.tsx",
+        "src/renderer/features/command-palette/use-command-source.ts"
+      ],
+      "exitCode": 0,
+      "file": "caller-inventory.txt",
+      "sha256": "fda8de12973c4c88bf7dfaaa1c1868a599ef14fe54d15746434b1c39a36f22d9"
+    },
+    {
+      "label": "all-local-save-callers",
+      "command": [
+        "git",
+        "grep",
+        "-n",
+        "-E",
+        "annex\\.saveSettings|useAnnexStore.*saveSettings",
+        "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+        "--",
+        "src",
+        ":!*.test.ts",
+        ":!*.test.tsx"
+      ],
+      "exitCode": 0,
+      "file": "all-local-save-callers.txt",
+      "sha256": "158be58167fff0a540f9e38c20eafdd1290f195dd4b03fbbee273cafa6e4010b"
+    },
+    {
+      "label": "launch-callers",
+      "command": [
+        "git",
+        "grep",
+        "-n",
+        "-E",
+        "(closeLaunches|reopenLaunches|launchesOpen|assertLaunchesOpen|closeAgentWork|agentWorkOpen|assertAgentWorkOpen|whenAgentWorkOpen|runAgentWork|runAppShutdown|cancelAppShutdown|stopClient|retryControl)\\(",
+        "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+        "--",
+        "src/main",
+        ":!*.test.ts"
+      ],
+      "exitCode": 0,
+      "file": "launch-callers.txt",
+      "sha256": "45eb3294a0c2ecbe01847b1f6436cf9f32ddce6b14aa7b9a16df54b7a3f242eb"
+    },
+    {
+      "label": "equivalent-launch-generation-search",
+      "command": [
+        "git",
+        "grep",
+        "-n",
+        "-E",
+        "launch.*(epoch|generation|receipt)|(generation|epoch).*launch",
+        "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+        "--",
+        "src/main/services/launch-gate.ts",
+        "src/main/services/app-shutdown.ts",
+        "src/main/shutdown-guard.ts"
+      ],
+      "exitCode": 1,
+      "file": "equivalent-launch-generation-search.txt",
+      "sha256": "87b2079781d9f5a990cbc87bc686321c6171db874e275d4088e25ea0ff957f03"
+    },
+    {
+      "label": "store-compatibility-importers",
+      "command": [
+        "git",
+        "grep",
+        "-n",
+        "-E",
+        "import.*replaceFile|createSettingsStore[<(]",
+        "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+        "--",
+        "src/main",
+        ":!*.test.ts"
+      ],
+      "exitCode": 0,
+      "file": "store-compatibility-importers.txt",
+      "sha256": "66d79bd6a5640b73ada619b7728210e749cdc55c20892165417f74de0e9147f8"
+    },
+    {
+      "label": "manual-disabled-paths",
+      "command": [
+        "git",
+        "grep",
+        "-n",
+        "-E",
+        "retry\\(|retryControl\\(|startClient\\(|stopClient\\(|resumeAllConnections\\(|DISABLE_AND_DISCONNECT|PURGE_SERVER_CONFIG|enableClient",
+        "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+        "--",
+        "src/main/services/annex-client.ts",
+        "src/main/ipc/annex-handlers.ts",
+        "src/main/services/clubhouse-mcp/tools/device-tools.ts"
+      ],
+      "exitCode": 0,
+      "file": "manual-disabled-paths.txt",
+      "sha256": "2d841604b57361a67abce8fc57d0c539f570ee50490b9e35428047d82246be6e"
+    },
+    {
+      "label": "server-lifecycle-callers",
+      "command": [
+        "git",
+        "grep",
+        "-n",
+        "-E",
+        "annexServer\\.(start|startVerified|stop)\\(",
+        "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+        "--",
+        "src/main",
+        ":!*.test.ts"
+      ],
+      "exitCode": 0,
+      "file": "server-lifecycle-callers.txt",
+      "sha256": "38395100c35aaa7b4eec39a4f05c4fc1d5e7579cd2d5217c01e86254da3c1f30"
+    }
+  ]
+}
