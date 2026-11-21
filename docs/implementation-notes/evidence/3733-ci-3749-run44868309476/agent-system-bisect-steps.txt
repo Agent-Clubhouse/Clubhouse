@@ -1,0 +1,22 @@
+# bad: [b458b4c89fb478d0f605553d85c0e821c389bf23] Integrate reviewed Canvas membership page modules
+# good: [ae56577af786b0db79f21d137d0b334a5f7847dc] Annex: per-direction reach, verified saved routes and forward diagnostics (Part of #3608) (#3611)
+git bisect start 'b458b4c89' 'ae56577af'
+# bad: [f11833c829dacfc754c377dbb753b186352e4ed7] Mark oversized connection names with explicit display-limit evidence
+git bisect bad f11833c829dacfc754c377dbb753b186352e4ed7
+# bad: [d7fe01e0776fa13ea5423c6901be33551cb2bf41] Discriminate cold initialization and malformed switch fallback
+git bisect bad d7fe01e0776fa13ea5423c6901be33551cb2bf41
+# bad: [8597dbb909611b9c0ccc0ce5d2c2edf4eb3c8f79] test(remote): verify bounded historical file reads on supported TypeScript target
+git bisect bad 8597dbb909611b9c0ccc0ce5d2c2edf4eb3c8f79
+# good: [62f184d48f6cebb81b80d6f30671c30e1ebde0b3] feat: show bounded host helper work and shared helper counters
+git bisect good 62f184d48f6cebb81b80d6f30671c30e1ebde0b3
+# bad: [c6164d28ccea09019f804815a712adc28a65f833] merge: preserve provider platform guards alongside remote details observers
+git bisect bad c6164d28ccea09019f804815a712adc28a65f833
+# good: [e284a832d3a105af362f0703c7382f239e66f28f] test: exercise real strict helper receipts through complete Details assembly
+git bisect good e284a832d3a105af362f0703c7382f239e66f28f
+# good: [cc4e0b812779bc28c385ea84e6d041f7293342a7] fix: preserve staged and mode changes in helper config work counts
+git bisect good cc4e0b812779bc28c385ea84e6d041f7293342a7
+# bad: [9350abb3020b04b625bc0da81d8fc510e825f514] feat(remote): retain bounded current-run provider display evidence
+git bisect bad 9350abb3020b04b625bc0da81d8fc510e825f514
+# bad: [dab72fdbf1e2b115f4839a6bdf06c733ac649a44] feat: project scoped quick Details and cached network connections
+git bisect bad dab72fdbf1e2b115f4839a6bdf06c733ac649a44
+# first bad commit: [dab72fdbf1e2b115f4839a6bdf06c733ac649a44] feat: project scoped quick Details and cached network connections

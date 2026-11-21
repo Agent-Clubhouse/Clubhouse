@@ -1,0 +1,22 @@
+# raw sha256 (host-local)
+045859a5bee82b888d5b92f9c6435a0de8a0d67aafe56cc7c2a37da5518e52ec  /tmp/dlc7/ci-ubuntu-2.log
+d4b1b2e159fe1edac0e697b1c09ec07906ea300ec522503ce33a54761131ba6e  /tmp/dlc8/ci-win-136736957624.log
+6131cd24f2839115e28ab2c6d5c944d0952eddc6baea7746e76e47e98af5db6b  /tmp/dlc8/ci-win-136736957566.log
+c9450689a4c753e858aec7925f2bf64435cfa5321046d35d3b1c6d79cc4398bd  /tmp/dlc7/repro-fresh.log
+0daf14c25c9bf5f79b48a84dcc530ebcb8f87de6a822c7d29c50eafbfcf96486  /tmp/dlc7/bisect-fresh.log
+386eaae7e9e44587c20baedaea700c812a2c2daa94f3bf95604ea4e324a90254  /tmp/dlc7/bisect-fresh-steps.log
+074c84f2e7878ccbbe17851b0756144272be7e79fbe92baf0a3f91c425dd702d  /tmp/dlc8/after-fresh.log
+813dc6d2db1343d529c24ffbfba50691cbc24a1824c20bb4ee4050416419302d  /tmp/dlc8/full-fresh.log
+# committed copies
+386eaae7e9e44587c20baedaea700c812a2c2daa94f3bf95604ea4e324a90254  agent-system-bisect-steps.txt
+0daf14c25c9bf5f79b48a84dcc530ebcb8f87de6a822c7d29c50eafbfcf96486  agent-system-bisect.txt
+ec4475e3edff4c9082073a4d46a78b7c9fff66c384fe7a20ec23c0859f3b5776  agent-system-fresh-tmpdir-ead945230.txt
+f10c5bdd09f71aaf1fbba5028cadc35ec0a9f03f675d834dbedd6ffc7cc2ba6d  agent-system-fresh-tmpdir-fix.txt
+cfbbc77b223f88fbd9d7e7b1c271e20257fd588413d21468d7f373aff2c1a340  ci-ubuntu-unit-2of2.failures.txt
+ed0edbce79b897ca064673f20a711f764a8744a3534b849673752f795d5b2124  ci-windows-unit-1of2.failures.txt
+247481350c0fda29731fbc70c499105e4eb5100dcb309b7dcd5e63dd759862a3  ci-windows-unit-2of2.failures.txt
+92cf20e8a256aca3fe7f7a556eb1ac0f5c0321cc5dae7822b8c58509eefff821  full-suite-fresh-tmpdir-d1a2171c6.txt
+238eaacfdd4f7e9e9be4cb72830dc20f2db1f6f9b7d80ff4e7207c53d23a5b54  full-suite-load-before.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  full-suite-post-status.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  full-suite-pre-status.txt
+738f842e60a9f82b319ba7ee080ba00bcca63486e67f4257d7351d02dcdcefd9  full-suite-validated-head.txt

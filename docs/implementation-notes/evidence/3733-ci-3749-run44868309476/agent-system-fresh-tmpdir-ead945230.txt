@@ -1,0 +1,1007 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+stderr | src/main/services/agent-system.test.ts > agent-system > spawnAgent > registers a terminal mission after old-session teardown and chat fallback
+[settings-store] Write to dispatcher-federation-local-work.json failed — cache may diverge from disk: ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'
+
+stdout | src/main/services/agent-system.test.ts > agent-system > spawnAgent > QA3686 dispatcher: verifies corrupt primary before a launch prelude can recover backup
+QA3686 dispatcher receipt {"result":"Error: ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'","preludeCalled":0,"recovered":false,"spawned":0}
+
+ ❯ |main| src/main/services/agent-system.test.ts (315 tests | 219 failed) 234ms
+       × registers a terminal mission after old-session teardown and chat fallback 4ms
+       × redacts planted mission/system prompts in the durable PTY spawn log (#1919) 0ms
+       × redacts planted mission/system prompts in the quick PTY spawn log (#1919) 0ms
+       × rechecks the strict creation guard after the PTY preparation await 5ms
+       × starts under its own transition reservation while refusing a competing activity 0ms
+       × a spawn already past the entry check doesn't start its terminal once shutdown closed launches (darwin) 2ms
+       × never starts a disposed helper (#2224) 0ms
+       × QA3686 dispatcher: verifies corrupt primary before a launch prelude can recover backup 1ms
+       × tracks agent project path 0ms
+         × says so when the choice is refused, and passes no flag 0ms
+         × says so when the choice is unknown, and passes no flag 0ms
+         × says nothing when the choice applies 0ms
+         × passes both when the choice applies 0ms
+         × still passes the effort when the launch doesn't use the choice 0ms
+       × tracks agent orchestrator when specified 0ms
+       × tracks resolved orchestrator even when not explicitly specified 0ms
+       × tracks the project-level orchestrator from the project list 0ms
+       × repairs version-only Copilot hooks before terminal launch with hook server false 0ms
+       × repairs version-only Copilot hooks before terminal launch with hook server true 0ms
+       × refuses an ambiguous Copilot hook document before launch with hook server false 0ms
+       × refuses an ambiguous Copilot hook document before launch with hook server true 0ms
+       × writes hooks config with base URL (no agentId) 0ms
+       × does NOT write hooks config when the orchestrator hook server is disabled 0ms
+       × generates and tracks a nonce per spawn 0ms
+       × passes CLUBHOUSE_AGENT_ID and CLUBHOUSE_HOOK_NONCE env vars to pty 0ms
+       × starts on the provider's own environment when old settings still name a profile (#2749) 0ms
+       × uses quick default permissions when kind is quick and no allowedTools 0ms
+       × pre-allows only reading tools for a quick agent below Auto-accept edits (#3007) 0ms
+         × reaches the provider on a start and on a resume 0ms
+         × passes none without one 0ms
+         × never passes a hand-edited value that can't be a level 0ms
+       × uses provided allowedTools over defaults 0ms
+       × asks the provider for an interactive session only for durable agents 0ms
+       × asks the provider for an interactive session only for quick agents 0ms
+       × asks for an interactive session for a quick agent someone follows (#3002) 0ms
+       × starts the Dispatcher without the CLI's desktop control, in chat and the terminal (#3185) 0ms
+         × is asked for the Dispatcher's coordinator 0ms
+         × is asked for the Dispatcher's chat 0ms
+         × is not asked for an ordinary agent 0ms
+         × is not asked for a quick agent in the coordinator's folder 0ms
+         × is not asked for a quick agent in the chat's folder 0ms
+         × skip the CLI's permission check for the chat alone: exactly start_work and tell_user, in chat and the terminal 0ms
+         × are not given to the Dispatcher's coordinator 0ms
+         × are not given to an ordinary agent 0ms
+         × are not given to a quick agent in the chat's folder 0ms
+         × are not given to another durable agent in the chat's folder 0ms
+         × are pre-approved only on Claude Code; another CLI's terminal gets no Claude rule 0ms
+       × throws with descriptive error when pre-flight check fails 0ms
+       × counts a failed pre-flight as a spawn with error.type preflight_failed 0ms
+       × records a cancelled chat start as a cancelled chat.start span, and opens nothing (#2304) 0ms
+       × passes commandPrefix from project settings to ptyManager.spawn 0ms
+       × passes undefined commandPrefix when not configured 0ms
+       × cleans up tracking maps when PTY spawn fails 0ms
+       × propagates the original error after cleanup on spawn failure 1ms
+       × broadcasts AGENT_AWOKE after a successful PTY spawn 0ms
+       × does not broadcast AGENT_AWOKE when spawn fails 0ms
+       × claude-code PTY: the nonce is in the spawn env, not in the config or argv 0ms
+       × codex-cli PTY: the nonce is in the spawn env, not in the config or argv 0ms
+       × PTY: removed when there is no bridge 0ms
+       × PTY: the bridge's port wins when there is one 0ms
+       × inserts buildMcpArgs output before trailingArgs so a positional mission stays last 0ms
+       × passes Codex hooks as launch flags before trailingArgs, with no hook file snapshotted (#1728) 0ms
+       × cleans up what an older Clubhouse left in .codex before a chat start, hooks off (#1728) 0ms
+       × cleans up what an older Clubhouse left in .codex before a terminal start, hooks off (#1728) 0ms
+       × appends nothing extra when the provider has no trailingArgs 0ms
+       × gives a plain agent the bridge and its project servers 0ms
+       × gives a helper the bridge and its project servers 0ms
+       × gives an agent with a saved mcpOverride false from before the bridge and its project servers 0ms
+       × tells the person through the setup notice when project MCP servers were left out (D10) 0ms
+       × tells the person through the setup notice when Codex launch flags left MCP env variables out (#2932) 0ms
+       × gives a managed agent its own MCP servers and the bridge, a saved mcpOverride from before ignored (#2896) 0ms
+         × puts the template's instructions first in the system prompt and its servers in the launch flags, in place of the project's 0ms
+         × always gets the bridge, which its hooks share the nonce with 0ms
+         × leaves a quick agent without a template as it was 0ms
+       × does not start a helper the bridge cannot serve, and says why 0ms
+       × does not start a helper whose MCP config could not be written 0ms
+       × still starts a plain agent whose bridge couldn't start, without the bridge 0ms
+       × a quick agent asks for the bridge again 0ms
+       × a durable agent asks for the bridge again 0ms
+       × a quick agent doesn't wait for or fail on a bridge that is still down 0ms
+         × resolves only after the PTY exited and its session id was persisted 0ms
+         × also waits for the capture when the exit callback runs after the broadcast (SIGKILL path) 0ms
+         × ignores exits of other agents 0ms
+         × gives up after the timeout so a lost exit cannot wedge the switch 0ms
+         × rejects an unconfirmed exit when the caller must not delete or acknowledge 0ms
+       × uses orchestrator from agentOrchestratorMap set at spawn time 0ms
+       × uses tracked orchestrator from spawn rather than caller-provided 0ms
+       × uses tracked project-level orchestrator when spawned from settings 0ms
+         × a failed resume followed by a retry does not loop on made-up ids 0ms
+         × a resume that exits non-zero at once without a message saves nothing and clears the id 0ms
+         × a successful run saves the id the CLI printed 0ms
+         × a failed resume followed by a retry does not loop on made-up ids 0ms
+         × a resume that exits non-zero at once without a message saves nothing and clears the id 0ms
+         × a successful run saves the id the CLI printed 0ms
+         × starts fresh instead of asking the new CLI, even one with no store to check 0ms
+         × still resumes its own 0ms
+       × a resumed run that exits cleanly without printing an id keeps the resumed id 0ms
+       × a killed resume keeps its id even when it exits non-zero right away 0ms
+       × a resume that ran for a while before exiting non-zero keeps its id 0ms
+       × ignores a "not found" message far back in a long session that exited cleanly 0ms
+       × opens the terminal fresh when chat could not resume because the session is gone 0ms
+       × keeps resuming in the terminal when chat failed for another reason 0ms
+       × never resumes a quarantined session, whichever wake asked, and says so (#3240) 0ms
+         × saves the session the CLI recorded for this run 0ms
+         × passes the resumed id, and skips the lookup when the resume failed 0ms
+         × saves nothing when the store has no session for the run 0ms
+         × starts fresh when the saved id has no rollout, and clears it 0ms
+         × keeps resuming when the rollout exists or the store can't be read 0ms
+         × drops a scraped id the store does not have and uses the run's real session 0ms
+         × does not save the resumed id on a clean exit when the store does not have it 0ms
+         × drops a scraped id that is a real session from another cwd (#2172) 0ms
+         × keeps a scraped id when the cwd check can't tell 0ms
+         × saves the id the provider assigned a fresh session without searching for it 0ms
+         × falls back to the store when the assigned id was never created 0ms
+         × keeps a scraped id when the store can't tell 0ms
+       × does not clear an id that a newer run has replaced 0ms
+         × a fresh run that printed its id: captured from the output, no resume outcome 0ms
+         × a resume the CLI has no session for: resume_failed_no_session, cleared exit_not_found, failed_not_found 0ms
+         × a resume that quits at once: resume_failed_early_exit, cleared exit_early, failed_early_exit 0ms
+         × no stale-clear event when a newer run already replaced the id 0ms
+         × a killed resume: kept_previous, and the resume counts as resumed 0ms
+         × a clean resumed exit with no printed id: captured from the resumed id 0ms
+           × captured from the CLI's run files 0ms
+           × captured from the id Clubhouse assigned the run 0ms
+           × an assigned id the CLI never created is not a rejected id 0ms
+           × a made-up scraped id and nothing else: ignored_not_in_store (#2086) 0ms
+           × a scraped id from another cwd and nothing else: ignored_foreign 0ms
+           × a rejected id followed by a real one is still captured 0ms
+           × persist_failed when the session entry can't be written 0ms
+           × capture_failed when the lookup throws 0ms
+           × a saved id only a removed provider profile's store has: fresh, kept, nothing cleared (#2749) 0ms
+           × a saved id the store lacks at wake: cleared store_missing, fresh_not_found 0ms
+         × guided resume refuses a missing native session without falling back fresh 0ms
+         × chat could not resume a gone session: cleared chat_not_found, fresh_not_found in the terminal 0ms
+         × chat could not resume a gone session: retries a fresh chat before the terminal 0ms
+         × a wake the user started fresh although a session exists: fresh_user 0ms
+         × records nothing with telemetry off 0ms
+       × refuses to start an agent that is still being created 0ms
+       × refuses to start an agent whose creation failed, with the reason 0ms
+       × drops the last sleep's reason when the agent wakes again 0ms
+       × records a Stop as the user, and sleep_agent with the caller 0ms
+       × records a CLI that exited on its own, by exit code 0ms
+       × records nothing for Clubhouse's own kill (quitting), and forgets a kill that found nothing running 0ms
+       × removes agent from all maps including nonce 0ms
+       × calls snapshotFile before writeHooksConfig 0ms
+       × passes onExit callback to pty spawn that calls restoreForAgent 0ms
+       × PTY onExit callback calls untrackAgent to clean up tracking state 0ms
+       × PTY onExit never invents a session id when the CLI reported none (#2086) 0ms
+       × PTY onExit uses provider extractSessionId when available 0ms
+       × PTY onExit does NOT record session entry for quick agents 0ms
+       × skips the hooks snapshot when provider does not support hooks, and still snapshots the MCP file 0ms
+       × does not spawn headless for an interactive quick agent (started from a phone) 0ms
+       × does not spawn headless for durable agents 0ms
+       × falls back to PTY when buildHeadlessCommand returns null 0ms
+       × falls back to PTY when provider lacks buildHeadlessCommand 0ms
+       × QA3731 valid marked terminal resume reaches PTY after provenance verification 1ms
+       × QA3731 marked quarantined strict resume must refuse rather than create fresh 0ms
+       × strict chat resume still refuses a terminal fallback without clearing native history 0ms
+       × refuses an invalid durable transition before cleanup, managed delivery or runtime creation 0ms
+       × never routes an unprepared strict v2 managed start into legacy delivery 0ms
+       × uses read-only admission on ordinary wake and reaches the actual creation fence without native delivery writes 0ms
+       × refuses Windows marked inner start resume=false before probing or any launch effects 0ms
+       × refuses Windows marked inner start resume=true before probing or any launch effects 0ms
+       × delivers a managed setup before the start 0ms
+       × keeps starting when delivery fails, and says why 0ms
+       × delivers to an agent from the start after it switches to managed (#2901) 0ms
+       × switches a legacy-configured agent to managed before anything is written, and starts it as managed (D59) 1ms
+       × starts the agent on the files in its folder when the switch fails or does not apply (D59, #2901) 0ms
+       × never asks to switch a quick agent 0ms
+       × does nothing for an agent that is not managed 0ms
+       × calls cleanupStaleJsonInTomlConfigs for TOML-format providers before spawn 0ms
+       × does not call cleanupStaleJsonInTomlConfigs for JSON-format providers 0ms
+       × continues spawn even if cleanup fails 0ms
+       × threads agentFile and agentSource from durable config to buildSpawnCommand 0ms
+       × does not override caller-provided agentFile with durable config 0ms
+       × does not set agentFile/agentSource when durable config has none 0ms
+       × expands tilde in agentSource before passing to buildSpawnCommand (PTY path) 0ms
+       × does not apply agentFile/agentSource fallback for kind: "quick" 0ms
+       × applies wrapper and merges wrapperConfig.env when validation passes (PTY) 0ms
+       × skips wrapping and omits wrapper env when validation fails (PTY) 0ms
+       × passes mcpConfigs to applyLaunchWrapper (PTY) 0ms
+     × a helper woken with no mode gets its Auto orchestrator's level, not the project's skip-all 0ms
+     × a helper saved at Auto-accept edits starts at Ask first under a standard ceiling (#2761) 0ms
+     × a durable agent starts at its saved level, with the legacy pair derived and the mode at auto (#2761) 0ms
+     × an agent saved before #2761 starts exactly as before, with the old mode below Free Agent Mode 0ms
+     × a helper of an orchestrator at Plan starts at Plan, whatever it was saved at (#3000) 0ms
+     × a helper saved at Plan stays at Plan when its ceiling lowers the legacy pair 0ms
+     × a helper whose orchestrator is in another project gets the orchestrator's ceiling from there 0ms
+     × starts at standard when the orchestrator can't be found in any project 0ms
+     × also lowers an explicit skip-all a caller passes 0ms
+     × starts at standard when the orchestrator isn't running 0ms
+     × starts at standard when the orchestrator can't be read 0ms
+     × holds the helper to the lower access start_helper asked for 0ms
+     × keeps a lower level the caller passed 0ms
+     × a Copilot helper under an Auto orchestrator never gets --yolo 0ms
+     × a Copilot helper with its orchestrator asleep starts at standard 0ms
+     × QA3686 control: refuses unreadable saved config when caller carries the restriction 0ms
+     × QA3686 adversarial: must fail closed on unreadable saved policy when normal wake omits it 0ms
+     × resumes the latest saved policy rather than a broader stale restart snapshot (#3686) 0ms
+     × refuses a wake/resume=false when the saved read-only record becomes unreadable (#3686) 0ms
+     × refuses a wake/resume=true when the saved read-only record becomes unreadable (#3686) 0ms
+     × refuses unparseable saved policy {"sandbox":"unknown"} even when the caller overrides it (#3686) 0ms
+     × refuses unparseable saved policy {"sandbox":null} even when the caller overrides it (#3686) 0ms
+     × refuses unparseable saved policy {"approvalPolicy":7} even when the caller overrides it (#3686) 0ms
+     × refuses unparseable saved policy {"approvalPolicy":null} even when the caller overrides it (#3686) 0ms
+     × hands the chat runtime the capped values 0ms
+     × leaves a durable agent that isn't a helper at the project setting 0ms
+     × leaves quick agents alone 0ms
+     × an agent reads open when its nonce arrives, a helper and a saved mcpOverride false from before included 0ms
+     × goes before the chat runtime, which sets its nonce inside 0ms
+     × refuses an unreadable config before a nonce or any runtime can start 0ms
+     × a readable legacy row with no policies keeps the existing open gate 0ms
+     × passes only private file paths, preserves launch settings and skips legacy writes/restoration/chat 0ms
+     × refuses before runtime when final capability/file validation fails 0ms
+     × keeps live registry through the legacy catches when receipt fails and cleanup refuses another identity 0ms
+     × keeps the identity-bearing error and registry when requesting cleanup throws 0ms
+     × marks no process created after a pre-creation spawn error and retains materialized snapshot ownership 0ms
+     × records known shutdown rejection after intent, preserving original error when notCreated fails=false 0ms
+     × records known shutdown rejection after intent, preserving original error when notCreated fails=true 0ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 219 ⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > registers a terminal mission after old-session teardown and chat fallback
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > redacts planted mission/system prompts in the durable PTY spawn log (#1919)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > redacts planted mission/system prompts in the quick PTY spawn log (#1919)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > starts under its own transition reservation while refusing a competing activity
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > tracks agent project path
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > a saved context choice in a terminal (#2660) > says so when the choice is refused, and passes no flag
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > a saved context choice in a terminal (#2660) > says so when the choice is unknown, and passes no flag
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > a saved context choice in a terminal (#2660) > says nothing when the choice applies
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > a saved effort next to a saved context choice (#2671) > passes both when the choice applies
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > a saved effort next to a saved context choice (#2671) > still passes the effort when the launch doesn't use the choice
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > tracks agent orchestrator when specified
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > tracks resolved orchestrator even when not explicitly specified
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > tracks the project-level orchestrator from the project list
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > repairs version-only Copilot hooks before terminal launch with hook server false
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > repairs version-only Copilot hooks before terminal launch with hook server true
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > writes hooks config with base URL (no agentId)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > does NOT write hooks config when the orchestrator hook server is disabled
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > generates and tracks a nonce per spawn
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > passes CLUBHOUSE_AGENT_ID and CLUBHOUSE_HOOK_NONCE env vars to pty
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > starts on the provider's own environment when old settings still name a profile (#2749)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > uses quick default permissions when kind is quick and no allowedTools
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > pre-allows only reading tools for a quick agent below Auto-accept edits (#3007)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > a saved effort (#2671) > reaches the provider on a start and on a resume
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > a saved effort (#2671) > passes none without one
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > a saved effort (#2671) > never passes a hand-edited value that can't be a level
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > uses provided allowedTools over defaults
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > asks the provider for an interactive session only for durable agents
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > asks the provider for an interactive session only for quick agents
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > asks for an interactive session for a quick agent someone follows (#3002)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > starts the Dispatcher without the CLI's desktop control, in chat and the terminal (#3185)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > every tool up front, never behind tool search (#3615) > is asked for the Dispatcher's coordinator
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > every tool up front, never behind tool search (#3615) > is asked for the Dispatcher's chat
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > every tool up front, never behind tool search (#3615) > is not asked for an ordinary agent
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > every tool up front, never behind tool search (#3615) > is not asked for a quick agent in the coordinator's folder
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > every tool up front, never behind tool search (#3615) > is not asked for a quick agent in the chat's folder
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > the Dispatcher chat's own tools (#3578) > skip the CLI's permission check for the chat alone: exactly start_work and tell_user, in chat and the terminal
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > the Dispatcher chat's own tools (#3578) > are not given to the Dispatcher's coordinator
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > the Dispatcher chat's own tools (#3578) > are not given to an ordinary agent
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > the Dispatcher chat's own tools (#3578) > are not given to a quick agent in the chat's folder
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > the Dispatcher chat's own tools (#3578) > are not given to another durable agent in the chat's folder
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > the Dispatcher chat's own tools (#3578) > are pre-approved only on Claude Code; another CLI's terminal gets no Claude rule
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > records a cancelled chat start as a cancelled chat.start span, and opens nothing (#2304)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > passes commandPrefix from project settings to ptyManager.spawn
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > passes undefined commandPrefix when not configured
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > broadcasts AGENT_AWOKE after a successful PTY spawn
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > MCP nonce stays in the CLI env (#2222) > claude-code PTY: the nonce is in the spawn env, not in the config or argv
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > MCP nonce stays in the CLI env (#2222) > codex-cli PTY: the nonce is in the spawn env, not in the config or argv
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > CLUBHOUSE_MCP_PORT follows this bridge, not the base env (#2620) > PTY: removed when there is no bridge
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > CLUBHOUSE_MCP_PORT follows this bridge, not the base env (#2620) > PTY: the bridge's port wins when there is one
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > MCP arg injection ordering (spawnPtyAgent) > inserts buildMcpArgs output before trailingArgs so a positional mission stays last
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > MCP arg injection ordering (spawnPtyAgent) > passes Codex hooks as launch flags before trailingArgs, with no hook file snapshotted (#1728)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > MCP arg injection ordering (spawnPtyAgent) > cleans up what an older Clubhouse left in .codex before a chat start, hooks off (#1728)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > MCP arg injection ordering (spawnPtyAgent) > cleans up what an older Clubhouse left in .codex before a terminal start, hooks off (#1728)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > MCP arg injection ordering (spawnPtyAgent) > appends nothing extra when the provider has no trailingArgs
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > gives a plain agent the bridge and its project servers
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > gives a helper the bridge and its project servers
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > gives an agent with a saved mcpOverride false from before the bridge and its project servers
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > tells the person through the setup notice when project MCP servers were left out (D10)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > tells the person through the setup notice when Codex launch flags left MCP env variables out (#2932)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > gives a managed agent its own MCP servers and the bridge, a saved mcpOverride from before ignored (#2896)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > a quick agent started from a template (D25) > puts the template's instructions first in the system prompt and its servers in the launch flags, in place of the project's
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > a quick agent started from a template (D25) > always gets the bridge, which its hooks share the nonce with
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > a quick agent started from a template (D25) > leaves a quick agent without a template as it was
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > still starts a plain agent whose bridge couldn't start, without the bridge
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > a bridge that failed at app start is retried for every spawn > a quick agent asks for the bridge again
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > a bridge that failed at app start is retried for every spawn > a durable agent asks for the bridge again
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > a bridge that failed at app start is retried for every spawn > a quick agent doesn't wait for or fail on a bridge that is still down
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > killAgent > waitForExit (restart with resume) > resolves only after the PTY exited and its session id was persisted
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > killAgent > waitForExit (restart with resume) > also waits for the capture when the exit callback runs after the broadcast (SIGKILL path)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > killAgent > waitForExit (restart with resume) > ignores exits of other agents
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > killAgent > waitForExit (restart with resume) > gives up after the timeout so a lost exit cannot wedge the switch
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > killAgent > waitForExit (restart with resume) > rejects an unconfirmed exit when the caller must not delete or acknowledge
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > killAgent > uses orchestrator from agentOrchestratorMap set at spawn time
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > killAgent > uses tracked orchestrator from spawn rather than caller-provided
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > killAgent > uses tracked project-level orchestrator when spawned from settings
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > claude-code > a failed resume followed by a retry does not loop on made-up ids
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > claude-code > a resume that exits non-zero at once without a message saves nothing and clears the id
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > claude-code > a successful run saves the id the CLI printed
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > codex-cli > a failed resume followed by a retry does not loop on made-up ids
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > codex-cli > a resume that exits non-zero at once without a message saves nothing and clears the id
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > codex-cli > a successful run saves the id the CLI printed
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > a session another CLI made (#2593) > starts fresh instead of asking the new CLI, even one with no store to check
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > a session another CLI made (#2593) > still resumes its own
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > a resumed run that exits cleanly without printing an id keeps the resumed id
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > a killed resume keeps its id even when it exits non-zero right away
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > a resume that ran for a while before exiting non-zero keeps its id
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > ignores a "not found" message far back in a long session that exited cleanly
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > opens the terminal fresh when chat could not resume because the session is gone
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > keeps resuming in the terminal when chat failed for another reason
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > never resumes a quarantined session, whichever wake asked, and says so (#3240)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > Codex runs that print no id (#2132) > saves the session the CLI recorded for this run
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > Codex runs that print no id (#2132) > passes the resumed id, and skips the lookup when the resume failed
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > Codex runs that print no id (#2132) > saves nothing when the store has no session for the run
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > Codex runs that print no id (#2132) > starts fresh when the saved id has no rollout, and clears it
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > Codex runs that print no id (#2132) > keeps resuming when the rollout exists or the store can't be read
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > never saving an id the CLI store lacks (#2156) > drops a scraped id the store does not have and uses the run's real session
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > never saving an id the CLI store lacks (#2156) > does not save the resumed id on a clean exit when the store does not have it
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > never saving an id the CLI store lacks (#2156) > drops a scraped id that is a real session from another cwd (#2172)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > never saving an id the CLI store lacks (#2156) > keeps a scraped id when the cwd check can't tell
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > never saving an id the CLI store lacks (#2156) > saves the id the provider assigned a fresh session without searching for it
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > never saving an id the CLI store lacks (#2156) > falls back to the store when the assigned id was never created
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > never saving an id the CLI store lacks (#2156) > keeps a scraped id when the store can't tell
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > does not clear an id that a newer run has replaced
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > a fresh run that printed its id: captured from the output, no resume outcome
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > a resume the CLI has no session for: resume_failed_no_session, cleared exit_not_found, failed_not_found
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > a resume that quits at once: resume_failed_early_exit, cleared exit_early, failed_early_exit
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > no stale-clear event when a newer run already replaced the id
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > a killed resume: kept_previous, and the resume counts as resumed
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > a clean resumed exit with no printed id: captured from the resumed id
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > Codex and assigned ids > captured from the CLI's run files
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > Codex and assigned ids > captured from the id Clubhouse assigned the run
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > Codex and assigned ids > an assigned id the CLI never created is not a rejected id
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > Codex and assigned ids > a made-up scraped id and nothing else: ignored_not_in_store (#2086)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > Codex and assigned ids > a scraped id from another cwd and nothing else: ignored_foreign
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > Codex and assigned ids > a rejected id followed by a real one is still captured
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > Codex and assigned ids > persist_failed when the session entry can't be written
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > Codex and assigned ids > capture_failed when the lookup throws
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > Codex and assigned ids > a saved id only a removed provider profile's store has: fresh, kept, nothing cleared (#2749)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > Codex and assigned ids > a saved id the store lacks at wake: cleared store_missing, fresh_not_found
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > chat could not resume a gone session: cleared chat_not_found, fresh_not_found in the terminal
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > chat could not resume a gone session: retries a fresh chat before the terminal
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > a wake the user started fresh although a session exists: fresh_user
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > records nothing with telemetry off
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > sleep reason on PTY exit (#2104) > drops the last sleep's reason when the agent wakes again
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > sleep reason on PTY exit (#2104) > records a Stop as the user, and sleep_agent with the caller
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > sleep reason on PTY exit (#2104) > records a CLI that exited on its own, by exit code
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > sleep reason on PTY exit (#2104) > records nothing for Clubhouse's own kill (quitting), and forgets a kill that found nothing running
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > untrackAgent > removes agent from all maps including nonce
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > config pipeline integration > calls snapshotFile before writeHooksConfig
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > config pipeline integration > passes onExit callback to pty spawn that calls restoreForAgent
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > config pipeline integration > PTY onExit callback calls untrackAgent to clean up tracking state
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > config pipeline integration > PTY onExit never invents a session id when the CLI reported none (#2086)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > config pipeline integration > PTY onExit uses provider extractSessionId when available
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > config pipeline integration > PTY onExit does NOT record session entry for quick agents
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > config pipeline integration > skips the hooks snapshot when provider does not support hooks, and still snapshots the MCP file
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > headless spawn path > does not spawn headless for an interactive quick agent (started from a phone)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > headless spawn path > does not spawn headless for durable agents
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > headless spawn path > falls back to PTY when buildHeadlessCommand returns null
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > headless spawn path > falls back to PTY when provider lacks buildHeadlessCommand
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > uses read-only admission on ordinary wake and reaches the actual creation fence without native delivery writes
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > delivers a managed setup before the start
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > keeps starting when delivery fails, and says why
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > delivers to an agent from the start after it switches to managed (#2901)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > switches a legacy-configured agent to managed before anything is written, and starts it as managed (D59)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > starts the agent on the files in its folder when the switch fails or does not apply (D59, #2901)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > never asks to switch a quick agent
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > does nothing for an agent that is not managed
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > TOML config cleanup > calls cleanupStaleJsonInTomlConfigs for TOML-format providers before spawn
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > TOML config cleanup > does not call cleanupStaleJsonInTomlConfigs for JSON-format providers
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > TOML config cleanup > continues spawn even if cleanup fails
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > durable config fallback for agentFile / agentSource > threads agentFile and agentSource from durable config to buildSpawnCommand
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > durable config fallback for agentFile / agentSource > does not override caller-provided agentFile with durable config
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > durable config fallback for agentFile / agentSource > does not set agentFile/agentSource when durable config has none
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > durable config fallback for agentFile / agentSource > expands tilde in agentSource before passing to buildSpawnCommand (PTY path)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > durable config fallback for agentFile / agentSource > does not apply agentFile/agentSource fallback for kind: "quick"
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > launch wrapper validation > applies wrapper and merges wrapperConfig.env when validation passes (PTY)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > launch wrapper validation > skips wrapping and omits wrapper env when validation fails (PTY)
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > launch wrapper validation > passes mcpConfigs to applyLaunchWrapper (PTY)
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > a helper woken with no mode gets its Auto orchestrator's level, not the project's skip-all
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > a helper saved at Auto-accept edits starts at Ask first under a standard ceiling (#2761)
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > a durable agent starts at its saved level, with the legacy pair derived and the mode at auto (#2761)
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > an agent saved before #2761 starts exactly as before, with the old mode below Free Agent Mode
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > a helper of an orchestrator at Plan starts at Plan, whatever it was saved at (#3000)
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > a helper saved at Plan stays at Plan when its ceiling lowers the legacy pair
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > a helper whose orchestrator is in another project gets the orchestrator's ceiling from there
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > starts at standard when the orchestrator can't be found in any project
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > also lowers an explicit skip-all a caller passes
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > starts at standard when the orchestrator isn't running
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > starts at standard when the orchestrator can't be read
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > holds the helper to the lower access start_helper asked for
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > keeps a lower level the caller passed
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > a Copilot helper under an Auto orchestrator never gets --yolo
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > a Copilot helper with its orchestrator asleep starts at standard
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > resumes the latest saved policy rather than a broader stale restart snapshot (#3686)
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > hands the chat runtime the capped values
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > leaves a durable agent that isn't a helper at the project setting
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > leaves quick agents alone
+ FAIL  |main| src/main/services/agent-system.test.ts > the MCP call gate is set before anything can call a tool > an agent reads open when its nonce arrives, a helper and a saved mcpOverride false from before included
+ FAIL  |main| src/main/services/agent-system.test.ts > the MCP call gate is set before anything can call a tool > goes before the chat runtime, which sets its nonce inside
+ FAIL  |main| src/main/services/agent-system.test.ts > the MCP call gate is set before anything can call a tool > a readable legacy row with no policies keeps the existing open gate
+ FAIL  |main| src/main/services/agent-system.test.ts > managed instructions in the real terminal launch seam > passes only private file paths, preserves launch settings and skips legacy writes/restoration/chat
+Error: ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'
+ ❯ replaceFile src/main/services/settings-store.ts:301:20
+    299|   try {
+    300|     if (precondition) { await precondition.prepare(); precondition.che…
+    301|     const handle = await fs.promises.open(tmp, 'w', keep ?? 0o666);
+       |                    ^
+    302|     try {
+    303|       await handle.writeFile(body, 'utf-8');
+ ❯ src/main/services/settings-store.ts:462:9
+ ❯ Object.timed src/shared/telemetry/persist-signals.ts:33:24
+ ❯ persist src/main/services/dispatcher-federation-local-work.ts:81:5
+ ❯ src/main/services/dispatcher-federation-local-work.ts:127:15
+ ❯ activateLocalCausalInput src/main/services/dispatcher-federation-local-work.ts:226:5
+ ❯ spawnPtyAgent src/main/services/agent-system.ts:1287:26
+ ❯ spawnAgentInner src/main/services/agent-system.ts:1004:5
+ ❯ tel.flow.classify.facts.noPid.error src/main/services/agent-system.ts:372:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > rechecks the strict creation guard after the PTY preparation await
+AssertionError: expected [Function] to throw error including 'restart authority changed' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "restart authority changed"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:539:10
+    537|         agentId: 'agent-1', projectPath: '/project', cwd: '/project', …
+    538|         beforeCreate: () => { if (!permitted) throw new Error('restart…
+    539|       })).rejects.toThrow('restart authority changed');
+       |          ^
+    540|       expect(effect).not.toHaveBeenCalled();
+    541|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > a spawn already past the entry check doesn't start its terminal once shutdown closed launches (darwin)
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/main/services/agent-system.test.ts:593:25
+    591|         closeLaunches('quitting');
+    592|         await new Promise((r) => setTimeout(r, 0));
+    593|         expect(settled).toBe(false);
+       |                         ^
+    594|         release();
+    595|         await expect(spawn).rejects.toBeInstanceOf(LaunchesClosedError…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > never starts a disposed helper (#2224)
+AssertionError: expected [Function] to throw error matching /disposed/ but got 'ENOENT: no such file or directory, op…'
+
+- Expected:
+/disposed/
+
++ Received:
+"ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:641:120
+    639|         id: 'agent-1', name: 'gone', color: 'blue', createdAt: 'x', di…
+    640|       })) as never);
+    641|       await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/my/…
+       |                                                                                                                        ^
+    642|         .rejects.toThrow(/disposed/);
+    643|       expect(mockPtySpawn).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > QA3686 dispatcher: verifies corrupt primary before a launch prelude can recover backup
+AssertionError: expected 'Error: ENOENT: no such file or direct…' to contain 'Cannot verify the saved execution pol…'
+
+Expected: "Cannot verify the saved execution policy"
+Received: "Error: ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:666:24
+    664|           .then(() => 'LAUNCHED', (e) => String(e));
+    665|         console.log('QA3686 dispatcher receipt', JSON.stringify({ resu…
+    666|         expect(result).toContain('Cannot verify the saved execution po…
+       |                        ^
+    667|         expect(prepare).not.toHaveBeenCalled();
+    668|         expect(mockPtySpawn).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > refuses an ambiguous Copilot hook document before launch with hook server false
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > refuses an ambiguous Copilot hook document before launch with hook server true
+AssertionError: expected [Function] to throw error matching /repair.*restart/i but got 'ENOENT: no such file or directory, op…'
+
+- Expected:
+/repair.*restart/i
+
++ Received:
+"ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:812:145
+    810|       });
+    811|       try {
+    812|         await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/p…
+       |                                                                                                                                                 ^
+    813|           .rejects.toThrow(/repair.*restart/i);
+    814|         expect(mockReadFile).toHaveBeenCalledWith(hookFile, 'utf-8');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > throws with descriptive error when pre-flight check fails
+AssertionError: expected [Function] to throw error including 'OPENAI_API_KEY is not set' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "OPENAI_API_KEY is not set"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:1063:8
+    1061|           kind: 'durable',
+    1062|         })
+    1063|       ).rejects.toThrowError('OPENAI_API_KEY is not set');
+       |        ^
+    1064|     });
+    1065|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > counts a failed pre-flight as a spawn with error.type preflight_failed
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'clubhouse.agent.spawns', 1, …(1) ]
+
+Number of calls: 0
+
+ ❯ src/main/services/agent-system.test.ts:1077:23
+    1075|         mockProvider.checkAvailability.mockResolvedValueOnce({ availab…
+    1076|         await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/p…
+    1077|         expect(count).toHaveBeenCalledWith('clubhouse.agent.spawns', 1…
+       |                       ^
+    1078|           // No runtime yet: the spawn failed before choosing one.
+    1079|           ATTR.agentKind('quick'), ATTR.orchestrator('claude-code'),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > cleans up tracking maps when PTY spawn fails
+AssertionError: expected [Function] to throw error including 'spawn failed' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "spawn failed"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:1189:8
+    1187|           kind: 'durable',
+    1188|         })
+    1189|       ).rejects.toThrow('spawn failed');
+       |        ^
+    1190|
+    1191|       expect(getAgentProjectPath('agent-1')).toBeUndefined();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > propagates the original error after cleanup on spawn failure
+AssertionError: expected a thrown error to be Error: specific spawn error
+
+- Expected
++ Received
+
+  Error {
+-   "message": "specific spawn error",
++   "message": "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'",
++   "errno": -2,
++   "code": "ENOENT",
++   "syscall": "open",
++   "path": "<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1",
+  }
+
+ ❯ src/main/services/agent-system.test.ts:1288:8
+    1286|           kind: 'durable',
+    1287|         })
+    1288|       ).rejects.toThrow(originalError);
+       |        ^
+    1289|     });
+    1290|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > spawnAgent > does not broadcast AGENT_AWOKE when spawn fails
+AssertionError: expected [Function] to throw error including 'boom' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "boom"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:1317:8
+    1315|           kind: 'durable',
+    1316|         })
+    1317|       ).rejects.toThrow('boom');
+       |        ^
+    1318|       expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('agen…
+    1319|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > does not start a helper the bridge cannot serve, and says why
+AssertionError: expected [Function] to throw error matching /needs Clubhouse MCP to report to its …/ but got 'ENOENT: no such file or directory, op…'
+
+- Expected:
+/needs Clubhouse MCP to report to its orchestrator.*port in use/
+
++ Received:
+"ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:1694:28
+    1692|       mockMcpWaitReady.mockReset();
+    1693|       mockMcpWaitReady.mockImplementation(() => Promise.reject(new Err…
+    1694|       await expect(spawn()).rejects.toThrow(/needs Clubhouse MCP to re…
+       |                            ^
+    1695|       expect(mockPtySpawn).not.toHaveBeenCalled();
+    1696|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > the Clubhouse MCP for every agent (#2610) > does not start a helper whose MCP config could not be written
+AssertionError: expected [Function] to throw error matching /needs Clubhouse MCP.*EACCES/ but got 'ENOENT: no such file or directory, op…'
+
+- Expected:
+/needs Clubhouse MCP.*EACCES/
+
++ Received:
+"ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:1701:114
+    1699|       withConfig({ parentAgentId: 'orch-1' });
+    1700|       mockInjectClubhouseMcp.mockRejectedValueOnce(new Error('EACCES')…
+    1701|       await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/pro…
+       |                                                                                                                  ^
+    1702|       expect(mockPtySpawn).not.toHaveBeenCalled();
+    1703|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > session capture on PTY exit (#2086) > telemetry (#2305) > guided resume refuses a missing native session without falling back fresh
+AssertionError: expected [Function] to throw error including 'resume_unverified' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "resume_unverified"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:2635:194
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > unfinished creation (#2226) > refuses to start an agent that is still being created
+AssertionError: expected [Function] to throw error matching /still being created/ but got 'ENOENT: no such file or directory, op…'
+
+- Expected:
+/still being created/
+
++ Received:
+"ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:2710:114
+    2708|     it('refuses to start an agent that is still being created', async …
+    2709|       mockGetDurableConfig.mockImplementation((async () => ({ id: 'age…
+    2710|       await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/pro…
+       |                                                                                                                  ^
+    2711|       expect(mockPtySpawn).not.toHaveBeenCalled();
+    2712|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > unfinished creation (#2226) > refuses to start an agent whose creation failed, with the reason
+AssertionError: expected [Function] to throw error matching /could not be created: git said no\./ but got 'ENOENT: no such file or directory, op…'
+
+- Expected:
+/could not be created: git said no\./
+
++ Received:
+"ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:2716:114
+    2714|     it('refuses to start an agent whose creation failed, with the reas…
+    2715|       mockGetDurableConfig.mockImplementation((async () => ({ id: 'age…
+    2716|       await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/pro…
+       |                                                                                                                  ^
+    2717|       expect(mockPtySpawn).not.toHaveBeenCalled();
+    2718|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > QA3731 valid marked terminal resume reaches PTY after provenance verification
+AssertionError: promise rejected "Error: ENOENT: no such file or directory,… { …(4) }" instead of resolving
+ ❯ src/main/services/agent-system.test.ts:3277:52
+    3275|       mockMcpWaitReady.mockResolvedValueOnce(23456);
+    3276|       await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/pro…
+    3277|         resume: true, sessionId: 'valid-native' })).resolves.toBeUndef…
+       |                                                    ^
+    3278|       expect(mockPtySpawn).toHaveBeenCalled();
+    3279|     });
+
+Caused by: Error: ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'
+ ❯ replaceFile src/main/services/settings-store.ts:301:20
+ ❯ src/main/services/settings-store.ts:462:9
+ ❯ Object.timed src/shared/telemetry/persist-signals.ts:33:24
+ ❯ persist src/main/services/dispatcher-federation-local-work.ts:81:5
+ ❯ src/main/services/dispatcher-federation-local-work.ts:127:15
+ ❯ activateLocalCausalInput src/main/services/dispatcher-federation-local-work.ts:226:5
+ ❯ spawnPtyAgent src/main/services/agent-system.ts:1287:26
+ ❯ spawnAgentInner src/main/services/agent-system.ts:1004:5
+ ❯ tel.flow.classify.facts.noPid.error src/main/services/agent-system.ts:372:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -2, code: 'ENOENT', syscall: 'open', path: '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > QA3731 marked quarantined strict resume must refuse rather than create fresh
+AssertionError: expected [Function] to throw error including 'resume_unverified' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "resume_unverified"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:3288:78
+    3286|       mockMcpWaitReady.mockResolvedValueOnce(23456);
+    3287|       await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/pro…
+    3288|         resume: true, strictResume: true, sessionId: 'quarantined-nati…
+       |                                                                              ^
+    3289|       expect(mockPtySpawn).not.toHaveBeenCalled();
+    3290|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > strict chat resume still refuses a terminal fallback without clearing native history
+AssertionError: expected [Function] to throw error including 'resume_failed' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "resume_failed"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:3303:198
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > refuses an invalid durable transition before cleanup, managed delivery or runtime creation
+AssertionError: expected [Function] to throw error including 'managed_transition_stale' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "managed_transition_stale"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:3313:146
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > never routes an unprepared strict v2 managed start into legacy delivery
+AssertionError: expected [Function] to throw error including 'managed_delivery_unsupported' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "managed_delivery_unsupported"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:3320:143
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > refuses Windows marked inner start resume=false before probing or any launch effects
+ FAIL  |main| src/main/services/agent-system.test.ts > agent-system > managed agent delivery (#2896) > refuses Windows marked inner start resume=true before probing or any launch effects
+AssertionError: expected Error: ENOENT: no such file or directory,… { …(4) } to match object { Object (code) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "managed_platform_unsupported",
++ Error {
++   "code": "ENOENT",
+  }
+
+ ❯ src/main/services/agent-system.test.ts:3345:199
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > QA3686 control: refuses unreadable saved config when caller carries the restriction
+AssertionError: expected [Function] to throw error including 'Cannot verify the saved execution pol…' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "Cannot verify the saved execution policy"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:4148:76
+    4146|   it('QA3686 control: refuses unreadable saved config when caller carr…
+    4147|     mockGetDurableConfig.mockImplementation((async () => { throw new E…
+    4148|     await expect(wake({ orchestrator: 'codex-cli', sandbox: 'read-only…
+       |                                                                            ^
+    4149|     expect(mockPtySpawn).not.toHaveBeenCalled();
+    4150|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > QA3686 adversarial: must fail closed on unreadable saved policy when normal wake omits it
+AssertionError: expected { …(3) } to match object { result: StringContaining{…}, …(1) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "result": StringContaining "Cannot verify the saved execution policy",
++   "result": "Error: ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'",
+    "spawned": 0,
+  }
+
+ ❯ src/main/services/agent-system.test.ts:4155:86
+    4153|     mockGetDurableConfig.mockImplementation((async () => { throw new E…
+    4154|     const result = await wake({ orchestrator: 'codex-cli', resume: tru…
+    4155|     expect({ result, spawned: mockPtySpawn.mock.calls.length, launch: …
+       |                                                                                      ^
+    4156|       result: expect.stringContaining('Cannot verify the saved executi…
+    4157|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > refuses a wake/resume=false when the saved read-only record becomes unreadable (#3686)
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > refuses a wake/resume=true when the saved read-only record becomes unreadable (#3686)
+AssertionError: expected [Function] to throw error including 'Cannot verify the saved execution pol…' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "Cannot verify the saved execution policy"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:4171:62
+    4169|     mockGetDurableConfig.mockImplementationOnce((async () => saved) as…
+    4170|     mockGetDurableConfig.mockImplementation((async () => { throw new E…
+    4171|     await expect(wake({ orchestrator: 'codex-cli', resume })).rejects.…
+       |                                                              ^
+    4172|     expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+    4173|     expect(mockPtySpawn).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > refuses unparseable saved policy {"sandbox":"unknown"} even when the caller overrides it (#3686)
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > refuses unparseable saved policy {"sandbox":null} even when the caller overrides it (#3686)
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > refuses unparseable saved policy {"approvalPolicy":7} even when the caller overrides it (#3686)
+ FAIL  |main| src/main/services/agent-system.test.ts > helper launch ceiling on the normal spawn path > refuses unparseable saved policy {"approvalPolicy":null} even when the caller overrides it (#3686)
+AssertionError: expected [Function] to throw error including 'Cannot verify the saved execution pol…' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "Cannot verify the saved execution policy"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:4181:105
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > the MCP call gate is set before anything can call a tool > refuses an unreadable config before a nonce or any runtime can start
+AssertionError: expected [Function] to throw error including 'Cannot verify the saved execution pol…' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "Cannot verify the saved execution policy"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:4275:26
+    4273|   it('refuses an unreadable config before a nonce or any runtime can s…
+    4274|     mockGetDurableConfig.mockImplementation((async () => { throw new E…
+    4275|     await expect(start()).rejects.toThrow('Cannot verify the saved exe…
+       |                          ^
+    4276|     expect(mockSetMcpCaller).not.toHaveBeenCalled();
+    4277|     expect(atNonce).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > managed instructions in the real terminal launch seam > refuses before runtime when final capability/file validation fails
+AssertionError: expected [Function] to throw error including 'stale capability' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "stale capability"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:4325:26
+    4323|   it('refuses before runtime when final capability/file validation fai…
+    4324|     vi.mocked(lease.beforeStart).mockRejectedValue(new Error('stale ca…
+    4325|     await expect(start()).rejects.toThrow('stale capability');
+       |                          ^
+    4326|     expect(mockPtySpawn).not.toHaveBeenCalled(); expect(agentRegistry.…
+    4327|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > managed instructions in the real terminal launch seam > keeps live registry through the legacy catches when receipt fails and cleanup refuses another identity
+AssertionError: expected Error: ENOENT: no such file or directory,… { …(4) } to be Error: process_started_receipt_failed { …(5) } // Object.is equality
+
+- Expected
++ Received
+
+- ProcessStartedReceiptError {
+-   "message": "process_started_receipt_failed",
+-   "attemptId": "attempt-fixture",
+-   "runtimeIdentity": "pty:fixture:123",
+-   "code": "process_started_receipt_failed",
+-   "cleanupRequested": false,
+-   "cleanupConfirmed": false,
++ Error {
++   "message": "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'",
++   "errno": -2,
++   "code": "ENOENT",
++   "syscall": "open",
++   "path": "<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1",
+  }
+
+ ❯ src/main/services/agent-system.test.ts:4331:26
+    4329|     const error = new ProcessStartedReceiptError('attempt-fixture', 'p…
+    4330|     vi.mocked(lease.started).mockRejectedValue(error); mockStopCreated…
+    4331|     await expect(start()).rejects.toBe(error);
+       |                          ^
+    4332|     expect(error).toMatchObject({ cleanupRequested: false, cleanupConf…
+    4333|     expect(agentRegistry.get('managed-launch')?.runtime).toBe('pty');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > managed instructions in the real terminal launch seam > keeps the identity-bearing error and registry when requesting cleanup throws
+AssertionError: expected Error: ENOENT: no such file or directory,… { …(4) } to be Error: process_started_receipt_failed { …(5) } // Object.is equality
+
+- Expected
++ Received
+
+- ProcessStartedReceiptError {
+-   "message": "process_started_receipt_failed",
+-   "attemptId": "attempt-fixture",
+-   "runtimeIdentity": "pty:fixture:123",
+-   "code": "process_started_receipt_failed",
+-   "cleanupRequested": false,
+-   "cleanupConfirmed": false,
++ Error {
++   "message": "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'",
++   "errno": -2,
++   "code": "ENOENT",
++   "syscall": "open",
++   "path": "<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1",
+  }
+
+ ❯ src/main/services/agent-system.test.ts:4339:26
+    4337|     const error = new ProcessStartedReceiptError('attempt-fixture', 'p…
+    4338|     vi.mocked(lease.started).mockRejectedValue(error); mockStopCreated…
+    4339|     await expect(start()).rejects.toBe(error);
+       |                          ^
+    4340|     expect(error.cleanupFailure).toBe('request_failed'); expect(agentR…
+    4341|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > managed instructions in the real terminal launch seam > marks no process created after a pre-creation spawn error and retains materialized snapshot ownership
+AssertionError: expected [Function] to throw error including 'spawn failed' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "spawn failed"
+Received: "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'"
+
+ ❯ src/main/services/agent-system.test.ts:4344:26
+    4342|   it('marks no process created after a pre-creation spawn error and re…
+    4343|     mockPtySpawn.mockRejectedValue(new Error('spawn failed'));
+    4344|     await expect(start()).rejects.toThrow('spawn failed');
+       |                          ^
+    4345|     expect(lease.notCreated).toHaveBeenCalled(); expect(lease.started)…
+    4346|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/219]⎯
+
+ FAIL  |main| src/main/services/agent-system.test.ts > managed instructions in the real terminal launch seam > records known shutdown rejection after intent, preserving original error when notCreated fails=false
+ FAIL  |main| src/main/services/agent-system.test.ts > managed instructions in the real terminal launch seam > records known shutdown rejection after intent, preserving original error when notCreated fails=true
+AssertionError: expected Error: ENOENT: no such file or directory,… { …(4) } to match object { name: 'LaunchesClosedError' }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "name": "LaunchesClosedError",
++ Error {
++   "message": "ENOENT: no such file or directory, open '<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1'",
++   "errno": -2,
++   "code": "ENOENT",
++   "syscall": "open",
++   "path": "<fresh-tmp>/clubhouse-test-userData/.dispatcher-federation-local-work.json.tmp-21625-1",
+  }
+
+ ❯ src/main/services/agent-system.test.ts:4352:28
+    4350|     if (failReceipt) vi.mocked(lease.notCreated).mockRejectedValue(new…
+    4351|     try {
+    4352|       await expect(start()).rejects.toMatchObject({ name: 'LaunchesClo…
+       |                            ^
+    4353|       expect(lease.notCreated).toHaveBeenCalledOnce(); expect(mockPtyS…
+    4354|       expect(agentRegistry.get('managed-launch')).toBeUndefined();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/219]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  219 failed | 96 passed (315)
+   Start at  00:01:58
+   Duration  1.26s (transform 680ms, setup 4ms, import 839ms, tests 234ms, environment 0ms)
+

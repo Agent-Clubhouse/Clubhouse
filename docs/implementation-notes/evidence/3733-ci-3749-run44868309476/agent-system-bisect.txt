@@ -1,0 +1,64 @@
+running '/tmp/dlc7/bisect-fresh.sh'
+Bisecting: 73 revisions left to test after this (roughly 6 steps)
+[d7fe01e0776fa13ea5423c6901be33551cb2bf41] Discriminate cold initialization and malformed switch fallback
+running '/tmp/dlc7/bisect-fresh.sh'
+Bisecting: 36 revisions left to test after this (roughly 5 steps)
+[8597dbb909611b9c0ccc0ce5d2c2edf4eb3c8f79] test(remote): verify bounded historical file reads on supported TypeScript target
+running '/tmp/dlc7/bisect-fresh.sh'
+Bisecting: 17 revisions left to test after this (roughly 4 steps)
+[62f184d48f6cebb81b80d6f30671c30e1ebde0b3] feat: show bounded host helper work and shared helper counters
+running '/tmp/dlc7/bisect-fresh.sh'
+Bisecting: 8 revisions left to test after this (roughly 3 steps)
+[c6164d28ccea09019f804815a712adc28a65f833] merge: preserve provider platform guards alongside remote details observers
+running '/tmp/dlc7/bisect-fresh.sh'
+Bisecting: 4 revisions left to test after this (roughly 2 steps)
+[e284a832d3a105af362f0703c7382f239e66f28f] test: exercise real strict helper receipts through complete Details assembly
+running '/tmp/dlc7/bisect-fresh.sh'
+Bisecting: 2 revisions left to test after this (roughly 1 step)
+[cc4e0b812779bc28c385ea84e6d041f7293342a7] fix: preserve staged and mode changes in helper config work counts
+running '/tmp/dlc7/bisect-fresh.sh'
+Bisecting: 0 revisions left to test after this (roughly 1 step)
+[9350abb3020b04b625bc0da81d8fc510e825f514] feat(remote): retain bounded current-run provider display evidence
+running '/tmp/dlc7/bisect-fresh.sh'
+Bisecting: 0 revisions left to test after this (roughly 0 steps)
+[dab72fdbf1e2b115f4839a6bdf06c733ac649a44] feat: project scoped quick Details and cached network connections
+running '/tmp/dlc7/bisect-fresh.sh'
+dab72fdbf1e2b115f4839a6bdf06c733ac649a44 is the first bad commit
+commit dab72fdbf1e2b115f4839a6bdf06c733ac649a44
+Author: Mason Allen <me@mason-allen.com>
+Date:   Thu Nov 19 04:56:10 2026 -0800
+
+    feat: project scoped quick Details and cached network connections
+
+ src/main/services/agent-runtime/chat-spawn.test.ts |  17 ++
+ src/main/services/agent-runtime/chat-spawn.ts      |   4 +
+ src/main/services/agent-system.test.ts             |  37 +++-
+ src/main/services/agent-system.ts                  |  25 ++-
+ src/main/services/headless-manager.test.ts         |  20 +++
+ src/main/services/headless-manager.ts              |   4 +
+ src/main/services/pty-manager.test.ts              |  17 ++
+ src/main/services/pty-manager.ts                   |   4 +-
+ src/main/services/quick-agent-events.test.ts       |  44 ++++-
+ src/main/services/quick-agent-events.ts            |  30 ++++
+ src/main/services/remote-agent-changes.ts          |  35 ++--
+ src/main/services/remote-agent-details.test.ts     |  33 +++-
+ src/main/services/remote-agent-details.ts          |  90 ++--------
+ src/main/services/remote-details-cards.ts          |  95 ++++++++++
+ src/main/services/remote-details-presentation.ts   |  24 +++
+ src/main/services/remote-quick-details.test.ts     | 200 +++++++++++++++++++++
+ src/main/services/remote-quick-details.ts          | 114 ++++++++++++
+ .../agents/details/RemoteAgentDetailsView.test.tsx |  27 +++
+ .../agents/details/RemoteAgentDetailsView.tsx      |  19 +-
+ .../agents/details/RemoteDetailsEvidence.tsx       |  13 ++
+ .../agents/details/RemoteQuickSettingsCard.tsx     |  27 +++
+ .../features/agents/helpers/RemoteConnections.tsx  |  27 +--
+ src/shared/remote-connections.ts                   |  29 +++
+ 23 files changed, 796 insertions(+), 139 deletions(-)
+ create mode 100644 src/main/services/remote-details-cards.ts
+ create mode 100644 src/main/services/remote-details-presentation.ts
+ create mode 100644 src/main/services/remote-quick-details.test.ts
+ create mode 100644 src/main/services/remote-quick-details.ts
+ create mode 100644 src/renderer/features/agents/details/RemoteDetailsEvidence.tsx
+ create mode 100644 src/renderer/features/agents/details/RemoteQuickSettingsCard.tsx
+ create mode 100644 src/shared/remote-connections.ts
+bisect found first bad commit

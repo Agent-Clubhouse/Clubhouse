@@ -1,0 +1,125 @@
+# Excerpt from line 55763 to the end of the sanitized job log ( 4047511 bytes, sha256 d4b1b2e159fe1edac0e697b1c09ec07906ea300ec522503ce33a54761131ba6e). Full raw log: GitHub job URL in README.
+2026-11-21T05:04:49.7554281Z ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+2026-11-21T05:04:49.7554532Z 
+2026-11-21T05:04:49.7557226Z  FAIL   main  src/main/services/read-only-repository-changes.test.ts > passive repository comparison > preserves executable-mode changes and honors the repository’s core.fileMode setting without updating it
+2026-11-21T05:04:49.7565776Z AssertionError: expected [] to have a length of 1 but got +0
+2026-11-21T05:04:49.7566042Z 
+2026-11-21T05:04:49.7566152Z - Expected
+2026-11-21T05:04:49.7566349Z + Received
+2026-11-21T05:04:49.7566450Z 
+2026-11-21T05:04:49.7566532Z - 1
+2026-11-21T05:04:49.7567954Z + 0
+2026-11-21T05:04:49.7568047Z 
+2026-11-21T05:04:49.7568461Z  ❯ src/main/services/read-only-repository-changes.test.ts:364:27
+2026-11-21T05:04:49.7700273Z     362|     const comparison = { root, from, identity: 'run' };
+2026-11-21T05:04:49.7701658Z     363|     const changed = await readOnlyRepositoryChanges(comparison, { scop…
+2026-11-21T05:04:49.7703158Z     364|     expect(changed.files).toHaveLength(1);
+2026-11-21T05:04:49.7704584Z        |                           ^
+2026-11-21T05:04:49.7705393Z     365|     expect(changed.files[0]).toMatchObject({ additions: 0, deletions: …
+2026-11-21T05:04:49.7706320Z     366|     const patch = await readOnlyRepositoryChanges(comparison, { scope:…
+2026-11-21T05:04:49.7706973Z 
+2026-11-21T05:04:49.7707382Z ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+2026-11-21T05:04:49.7707768Z 
+2026-11-21T05:04:49.7709450Z  FAIL   main  src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > reads historical native provider file with real byte bound and unchanged storage: small
+2026-11-21T05:04:49.7711265Z AssertionError: expected undefined to be 180 // Object.is equality
+2026-11-21T05:04:49.7711804Z 
+2026-11-21T05:04:49.7712085Z - Expected:
+2026-11-21T05:04:49.7712473Z 180
+2026-11-21T05:04:49.7712708Z 
+2026-11-21T05:04:49.7712979Z + Received:
+2026-11-21T05:04:49.7713483Z undefined
+2026-11-21T05:04:49.7713728Z 
+2026-11-21T05:04:49.7714323Z  ❯ src/main/services/remote-agent-details.test.ts:589:80
+2026-11-21T05:04:49.7722842Z     587|       expect(execSync).not.toHaveBeenCalled(); expect(shell.isShellEnv…
+2026-11-21T05:04:49.7723845Z     588|       expect(nativeRead).toHaveBeenCalledTimes(1); const options = nat…
+2026-11-21T05:04:49.7724825Z     589|       expect(options.maxBytes).toBe(2097152); expect(options.stats?.fi…
+2026-11-21T05:04:49.7725740Z        |                                                                                ^
+2026-11-21T05:04:49.7726602Z     590|       expect(options.stats?.bytesRead).toBeLessThanOrEqual(2097152);
+2026-11-21T05:04:49.7727525Z     591|       expect(c.notes.join(' ')).toContain(mode === 'truncated' ? 'trun…
+2026-11-21T05:04:49.7728106Z 
+2026-11-21T05:04:49.7728509Z ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+2026-11-21T05:04:49.7728891Z 
+2026-11-21T05:04:49.7730484Z  FAIL   main  src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > reads historical native provider file with real byte bound and unchanged storage: truncated
+2026-11-21T05:04:49.7732292Z AssertionError: expected undefined to be 4107780 // Object.is equality
+2026-11-21T05:04:49.7732887Z 
+2026-11-21T05:04:49.7733163Z - Expected:
+2026-11-21T05:04:49.7733553Z 4107780
+2026-11-21T05:04:49.7733793Z 
+2026-11-21T05:04:49.7734051Z + Received:
+2026-11-21T05:04:49.7734428Z undefined
+2026-11-21T05:04:49.7734662Z 
+2026-11-21T05:04:49.7735255Z  ❯ src/main/services/remote-agent-details.test.ts:589:80
+2026-11-21T05:04:49.7737224Z     587|       expect(execSync).not.toHaveBeenCalled(); expect(shell.isShellEnv…
+2026-11-21T05:04:49.7738200Z     588|       expect(nativeRead).toHaveBeenCalledTimes(1); const options = nat…
+2026-11-21T05:04:49.7739148Z     589|       expect(options.maxBytes).toBe(2097152); expect(options.stats?.fi…
+2026-11-21T05:04:49.7740046Z        |                                                                                ^
+2026-11-21T05:04:49.7740933Z     590|       expect(options.stats?.bytesRead).toBeLessThanOrEqual(2097152);
+2026-11-21T05:04:49.7741674Z     591|       expect(c.notes.join(' ')).toContain(mode === 'truncated' ? 'trun…
+2026-11-21T05:04:49.7742045Z 
+2026-11-21T05:04:49.7742635Z ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+2026-11-21T05:04:49.7742882Z 
+2026-11-21T05:04:49.7745872Z 
+2026-11-21T05:04:49.7810403Z  Test Files  2 failed | 729 passed | 7 skipped (738)
+2026-11-21T05:04:49.7984265Z       Tests  3 failed | 18894 passed | 92 skipped (18989)
+2026-11-21T05:04:49.7984866Z    Start at  04:56:14
+2026-11-21T05:04:49.7995693Z    Duration  515.34s (transform 49.86s, setup 62.10s, import 182.35s, tests 840.59s, environment 297.95s)
+2026-11-21T05:04:49.7998188Z 
+2026-11-21T05:04:52.9020533Z JUNIT report written to D:/a/Clubhouse/Clubhouse/test-results.xml
+2026-11-21T05:04:53.6714181Z ##[error]Process completed with exit code 1.
+2026-11-21T05:04:53.6908656Z ##[group]Run actions/upload-artifact@v7
+2026-11-21T05:04:53.6908927Z with:
+2026-11-21T05:04:53.6909094Z   name: test-results-windows-latest-1
+2026-11-21T05:04:53.6909311Z   path: test-results.xml
+2026-11-21T05:04:53.6909503Z   if-no-files-found: warn
+2026-11-21T05:04:53.6909677Z   compression-level: 6
+2026-11-21T05:04:53.6909833Z   overwrite: false
+2026-11-21T05:04:53.6909994Z   include-hidden-files: false
+2026-11-21T05:04:53.6910183Z   archive: true
+2026-11-21T05:04:53.6910321Z env:
+2026-11-21T05:04:53.6910459Z   ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+2026-11-21T05:04:53.6910644Z ##[endgroup]
+2026-11-21T05:04:53.8350531Z With the provided path, there will be 1 file uploaded
+2026-11-21T05:04:53.8354205Z Artifact name is valid!
+2026-11-21T05:04:53.8355258Z Root directory input is valid!
+2026-11-21T05:04:54.1502500Z Uploading artifact: test-results-windows-latest-1.zip
+2026-11-21T05:04:54.1535044Z Beginning upload of artifact content to blob storage
+2026-11-21T05:04:54.8801331Z Uploaded bytes 599285
+2026-11-21T05:04:54.9426522Z Finished uploading artifact content to blob storage!
+2026-11-21T05:04:54.9427310Z SHA256 digest of uploaded artifact is 2cbfaeb54fea4f9cef64e4bd82ec840eb194bb64fad91793efe856f3102e1ec5
+2026-11-21T05:04:54.9427766Z Finalizing artifact upload
+2026-11-21T05:04:55.4019784Z Artifact test-results-windows-latest-1 successfully finalized. Artifact ID 14693595309
+2026-11-21T05:04:55.4020698Z Artifact test-results-windows-latest-1 has been successfully uploaded! Final size is 599285 bytes. Artifact ID is 14693595309
+2026-11-21T05:04:55.4027798Z Artifact download URL: https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44868309476/artifacts/14693595309
+2026-11-21T05:04:55.4331965Z Post job cleanup.
+2026-11-21T05:04:55.5717240Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-11-21T05:04:55.6009965Z git version 2.56.1.windows.1
+2026-11-21T05:04:55.6068556Z Temporarily overriding HOME='D:\a\_temp\c3df19a4-bdff-4b2e-ab24-45c0eab0beaf' before making global git config changes
+2026-11-21T05:04:55.6069600Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-21T05:04:55.6077321Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\Clubhouse\Clubhouse
+2026-11-21T05:04:55.6419623Z Removing SSH command configuration
+2026-11-21T05:04:55.6433398Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-11-21T05:04:55.6800574Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-11-21T05:04:56.1632597Z Removing HTTP extra header
+2026-11-21T05:04:56.1641868Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-21T05:04:56.1954110Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-11-21T05:04:56.6584088Z Removing includeIf entries pointing to credentials config files
+2026-11-21T05:04:56.6594084Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-21T05:04:56.6877337Z includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git.path
+2026-11-21T05:04:56.6877935Z includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git/worktrees/*.path
+2026-11-21T05:04:56.6878287Z includeif.gitdir:/github/workspace/.git.path
+2026-11-21T05:04:56.6878658Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-21T05:04:56.6915188Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git.path
+2026-11-21T05:04:56.7201840Z D:\a\_temp\git-credentials-029d5048-7bf5-4200-a494-d6d5d959f211.config
+2026-11-21T05:04:56.7239339Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git.path D\:\\a\\_temp\\git\-credentials\-029d5048\-7bf5\-4200\-a494\-d6d5d959f211\.config
+2026-11-21T05:04:56.7602178Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git/worktrees/*.path
+2026-11-21T05:04:56.7878357Z D:\a\_temp\git-credentials-029d5048-7bf5-4200-a494-d6d5d959f211.config
+2026-11-21T05:04:56.7912552Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:D:/a/Clubhouse/Clubhouse/.git/worktrees/*.path D\:\\a\\_temp\\git\-credentials\-029d5048\-7bf5\-4200\-a494\-d6d5d959f211\.config
+2026-11-21T05:04:56.8211506Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-11-21T05:04:56.8473594Z /github/runner_temp/git-credentials-029d5048-7bf5-4200-a494-d6d5d959f211.config
+2026-11-21T05:04:56.8506873Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-029d5048\-7bf5\-4200\-a494\-d6d5d959f211\.config
+2026-11-21T05:04:56.8802415Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-21T05:04:56.9062718Z /github/runner_temp/git-credentials-029d5048-7bf5-4200-a494-d6d5d959f211.config
+2026-11-21T05:04:56.9095011Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-029d5048\-7bf5\-4200\-a494\-d6d5d959f211\.config
+2026-11-21T05:04:56.9392403Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-11-21T05:04:57.4165129Z Removing credentials config 'D:\a\_temp\git-credentials-029d5048-7bf5-4200-a494-d6d5d959f211.config'
+2026-11-21T05:04:57.4344587Z Cleaning up orphan processes

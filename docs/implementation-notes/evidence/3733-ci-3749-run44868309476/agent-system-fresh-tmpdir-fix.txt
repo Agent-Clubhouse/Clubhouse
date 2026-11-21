@@ -1,0 +1,15 @@
+# head d1a2171c6090010d823e32acc7fb8af9e7bad36a; TMPDIR=<fresh-tmp>/ (fresh, empty)
+$ TMPDIR=<fresh> vitest run --no-cache --maxWorkers=1 src/main/services/agent-system.test.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+
+ Test Files  1 passed (1)
+      Tests  315 passed (315)
+   Start at  00:04:22
+   Duration  3.44s (transform 713ms, setup 5ms, import 894ms, tests 2.46s, environment 0ms)
+
+vitest exit=0
