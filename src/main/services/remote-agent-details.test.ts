@@ -1291,3 +1291,54 @@ it.each(['all-pages', 'home-source', 'project-source', 'target', 'registration',
     } finally { publication.mockRestore(); }
   } finally { homeSpy.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
 });
+
+describe('Details byte budget for wrapping callers (M1)', () => {
+  const bytes = (body: unknown) => Buffer.byteLength(JSON.stringify(body));
+  const rows = (body: RemoteAgentDetails) => body.cards.reduce((n, c) => n + c.rows.length, 0);
+  const omitted = (body: RemoteAgentDetails) => body.cards.reduce((n, c) => n + c.omitted, 0);
+  async function pressured<T>(run: () => Promise<T>): Promise<T> {
+    const presentation = await import('./remote-details-presentation'), actualSection = presentation.section;
+    const pressure = vi.spyOn(presentation, 'section').mockImplementation(async (c, read) => { await actualSection(c, read); if (c.id === 'skills-mcp' || c.id === 'session') c.rows = Array.from({ length: 30 }, (_, i) => ({ label: `Row ${i}`, value: '😀'.repeat(300) + 'x'.repeat(600) })); });
+    try { return await run(); } finally { pressure.mockRestore(); }
+  }
+
+  it('keeps the ordinary omitted-budget path at the 256 KiB cap', async () => {
+    const body = await read();
+    expect(bytes(body)).toBeLessThanOrEqual(256 * 1024);
+    const explicit = await readRemoteAgentDetails('a1', () => true, undefined, { maxBytes: 256 * 1024 });
+    expect(explicit.status).toBe(200); expect(rows(explicit.body as RemoteAgentDetails)).toBe(rows(body));
+    // A budget above the cap is clamped to it.
+    const above = await readRemoteAgentDetails('a1', () => true, undefined, { maxBytes: 1024 * 1024 });
+    expect(above.status).toBe(200); expect(rows(above.body as RemoteAgentDetails)).toBe(rows(body));
+  });
+
+  it('passes a body exactly at the budget untouched and trims one byte under it, staying valid', async () => {
+    const natural = await pressured(() => readRemoteAgentDetails('a1', () => true));
+    expect(natural.status).toBe(200);
+    const size = bytes(natural.body), base = natural.body as RemoteAgentDetails;
+    const exact = await pressured(() => readRemoteAgentDetails('a1', () => true, undefined, { maxBytes: size }));
+    expect(exact.status).toBe(200); expect(rows(exact.body as RemoteAgentDetails)).toBe(rows(base)); expect(omitted(exact.body as RemoteAgentDetails)).toBe(omitted(base));
+    const under = await pressured(() => readRemoteAgentDetails('a1', () => true, undefined, { maxBytes: size - 1 }));
+    expect(under.status).toBe(200); expect(isRemoteAgentDetails(under.body, 'a1')).toBe(true);
+    expect(bytes(under.body)).toBeLessThanOrEqual(size - 1);
+    expect(rows(under.body as RemoteAgentDetails)).toBe(rows(base) - 1); expect(omitted(under.body as RemoteAgentDetails)).toBe(omitted(base) + 1);
+  });
+
+  it('fails closed when no trimming can fit the budget', async () => {
+    expect(await readRemoteAgentDetails('a1', () => true, undefined, { maxBytes: 64 })).toEqual({ status: 500, body: { error: 'details_read_failed' } });
+  });
+
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('refuses an invalid budget %s after authorization', async (maxBytes) => {
+    expect(await readRemoteAgentDetails('a1', () => true, undefined, { maxBytes })).toEqual({ status: 500, body: { error: 'details_budget_invalid' } });
+    expect(await readRemoteAgentDetails('a1', () => false, undefined, { maxBytes })).toEqual({ status: 403, body: { error: 'details_read_refused' } });
+  });
+
+  it('applies the budget to a Connections page: exact size passes, an irreducible budget fails closed', async () => {
+    const query = { card: 'connections' as const, source: 'outgoing' as const };
+    const page = await readRemoteAgentDetails('a1', () => true, query);
+    expect(page.status).toBe(200);
+    const exact = await readRemoteAgentDetails('a1', () => true, query, { maxBytes: bytes(page.body) });
+    expect(exact.status).toBe(200); expect(bytes(exact.body)).toBe(bytes(page.body));
+    expect((await readRemoteAgentDetails('a1', () => true, query, { maxBytes: 64 })).status).toBe(500);
+  });
+});

@@ -29,7 +29,9 @@ export async function readSelectedDispatcherDetails(authorized?: () => boolean, 
     if (!current()) return changed();
     // Unbound/unreadable is unavailable, not verified never-created or asleep.
     if (!target) return { status: 404, body: { error: 'dispatcher_role_unavailable' } };
-    const result = query ? await readRemoteAgentDetails(target.agent.id, allowed, { ...query }) : await readRemoteAgentDetails(target.agent.id, allowed);
+    // The wrapper adds bytes around the inner body; trim the inner body to what remains so the whole response fits.
+    const overhead = Buffer.byteLength(JSON.stringify({ version: 1, role: 'dispatcher', agentId: target.agent.id, details: null })) - Buffer.byteLength('null');
+    const result = await readRemoteAgentDetails(target.agent.id, allowed, query && { ...query }, { maxBytes: REMOTE_DETAILS_MAX_BYTES - overhead });
     if (!allowed()) return refused();
     if (!current()) return changed();
     if (result.status !== 200) return result;

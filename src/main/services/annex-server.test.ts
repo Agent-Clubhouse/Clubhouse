@@ -705,7 +705,7 @@ describe('annex-server', () => {
       expect(JSON.parse(result.body)).toEqual({ version: 1, role: 'dispatcher', agentId: id, details: body() });
       expect(headers).toHaveBeenCalledWith('Cache-Control', 'no-store');
       expect(agentConfigReader.resolveAgentConfigTarget).toHaveBeenCalledExactlyOnceWith(id, undefined, { strict: true });
-      expect(readRemoteAgentDetails).toHaveBeenCalledExactlyOnceWith(id, expect.any(Function));
+      expect(readRemoteAgentDetails).toHaveBeenCalledExactlyOnceWith(id, expect.any(Function), undefined, { maxBytes: expect.any(Number) });
       expect(await fsp.readFile(primary, 'utf8')).toBe(before);
     });
 
@@ -758,7 +758,7 @@ describe('annex-server', () => {
       const result = await request(port, 'GET', `${route}?card=connections&source=incoming&offset=25&projectOffset=0`);
       expect(result.status).toBe(200);
       expect(JSON.parse(result.body)).toEqual({ version: 1, role: 'dispatcher', agentId: id, details: page });
-      expect(readRemoteAgentDetails).toHaveBeenCalledExactlyOnceWith(id, expect.any(Function), { card: 'connections', source: 'incoming', offset: 25, projectOffset: 0 });
+      expect(readRemoteAgentDetails).toHaveBeenCalledExactlyOnceWith(id, expect.any(Function), { card: 'connections', source: 'incoming', offset: 25, projectOffset: 0 }, { maxBytes: expect.any(Number) });
       vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' });
       expect((await request(port, 'GET', `${route}?card=connections&source=incoming`)).status).toBe(403);
       expect(readRemoteAgentDetails).toHaveBeenCalledTimes(1);

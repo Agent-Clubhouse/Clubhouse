@@ -47,9 +47,12 @@ import { readAgentConnectionCacheForDisplay } from './agent-config';
 import { readSelectedOutgoingWiresForDisplay } from './selected-outgoing-wires-display';
 
 /** No caller-supplied paths, store objects, instructions, action prompts or MCP definitions leave here. */
-export async function readRemoteAgentDetails(agentId: string, authorized: () => boolean, query?: RemoteDetailsQuery): Promise<{ status: number; body: unknown }> {
+export async function readRemoteAgentDetails(agentId: string, authorized: () => boolean, query?: RemoteDetailsQuery, options: { maxBytes?: number } = {}): Promise<{ status: number; body: unknown }> {
   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });
+  // A caller that wraps this body (the role read) passes a smaller budget so its whole response still fits.
+  const budget = Math.min(options.maxBytes ?? REMOTE_DETAILS_MAX_BYTES, REMOTE_DETAILS_MAX_BYTES);
   if (!authorized()) return refused();
+  if (options.maxBytes !== undefined && !(Number.isSafeInteger(options.maxBytes) && options.maxBytes > 0)) return { status: 500, body: { error: 'details_budget_invalid' } };
   if (query !== undefined && !isRemoteDetailsQuery(query)) return { status: 400, body: { error: 'invalid_details_query' } };
   query = query && { ...query };
   try {
@@ -113,7 +116,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       delete result.connectionPages; delete result.connectionPageEnvelope; delete result.connectionPageSources;
       for (const c of cards) { c.rows = []; c.notes = []; c.omitted = 0; c.summary = c.id === query.card ? 'Selected recorded inventory page' : 'Not included in this selected inventory page'; if (c.id !== query.card) c.requested = false; }
       if (!authorized()) return refused();
-      if (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) throw new Error('inventory_page_limit');
+      if (Buffer.byteLength(JSON.stringify(result)) > budget) throw new Error('inventory_page_limit');
       return { status: 200, body: result };
     }
     const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });
@@ -306,7 +309,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       delete result.inventoryPages; delete result.inventorySources;
       for (const c of cards) if (c.id !== 'orchestrate') { c.requested = false; c.omitted = 0; c.rows = []; c.notes = []; delete c.connectionPage; c.summary = 'Not included in this selected helper page'; }
     }
-    while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) {
+    while (Buffer.byteLength(JSON.stringify(result)) > budget) {
       const largest = cards.filter((c) => c.rows.length).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];
       if (!largest) throw new Error('details_limit');
       largest.rows.pop(); largest.omitted++;

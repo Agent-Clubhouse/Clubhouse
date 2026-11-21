@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { REMOTE_DETAILS_CARD_IDS, type RemoteAgentDetails } from '../../shared/remote-agent-details';
+import { REMOTE_DETAILS_CARD_IDS, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { readSelectedDispatcherDetails } from './selected-dispatcher-details';
 
@@ -35,6 +35,26 @@ afterEach(async () => {
   await fs.rm(m.root, { recursive: true, force: true });
 });
 
+// The usable inner budget: the cap less the serialized UTF-8 bytes the role wrapper adds around `details`.
+const budgetFor = (agentId: string) => REMOTE_DETAILS_MAX_BYTES - (Buffer.byteLength(JSON.stringify({ version: 1, role: 'dispatcher', agentId, details: null })) - Buffer.byteLength('null'));
+// A valid Details body padded to exactly `bytes` serialized UTF-8 bytes (rows stay within the validator's limits).
+const sized = (agentId: string, bytes: number): RemoteAgentDetails => {
+  const body: RemoteAgentDetails = { ...details(), agentId };
+  const size = () => Buffer.byteLength(JSON.stringify(body));
+  const fillable = body.cards.filter((c) => c.id !== 'settings');
+  outer: for (const card of fillable) {
+    while (card.rows.length < 100) {
+      const room = bytes - size() - Buffer.byteLength(JSON.stringify({ label: 'pad', value: '' })) - (card.rows.length ? 1 : 0);
+      if (room <= 0) break outer;
+      card.rows.push({ label: 'pad', value: 'x'.repeat(Math.min(2000, room)) });
+    }
+  }
+  const gap = bytes - size();
+  if (gap < 0) throw new Error('fixture overshoot');
+  if (gap > 0) { const last = fillable.flatMap((c) => c.rows).at(-1)!; last.value += 'x'.repeat(gap); if (last.value.length > 2048) throw new Error('fixture row too long'); }
+  if (size() !== bytes) throw new Error(`fixture size ${size()} != ${bytes}`);
+  return body;
+};
 describe('staged selected-host Dispatcher Details', () => {
   it('refuses an anonymous call or a refused desktop gate before role or ordinary Details reads', async () => {
     expect(await readSelectedDispatcherDetails()).toEqual({ status: 403, body: { error: 'details_read_refused' } });
@@ -52,7 +72,7 @@ describe('staged selected-host Dispatcher Details', () => {
     expect(result.receipt?.current()).toBe(true);
     expect(JSON.stringify(result.body)).not.toMatch(/receipt|current|dispatcher-chat/);
     expect(m.resolve).toHaveBeenCalledExactlyOnceWith('role1', undefined, { strict: true });
-    expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', allowed);
+    expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', allowed, undefined, { maxBytes: budgetFor('role1') });
     expect(await fs.readFile(primary, 'utf8')).toBe(before);
   });
 
@@ -64,7 +84,7 @@ describe('staged selected-host Dispatcher Details', () => {
     m.details.mockResolvedValue({ status: 200, body: pageBody() });
     const result = await readSelectedDispatcherDetails(allowed, query);
     expect(result.status).toBe(200); expect(result.body).toEqual({ version: 1, role: 'dispatcher', agentId: 'role1', details: pageBody() });
-    expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', allowed, query);
+    expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', allowed, query, { maxBytes: budgetFor('role1') });
     for (const wrong of [pageBody('incoming'), pageBody('outgoing', 25), details()]) {
       m.details.mockResolvedValue({ status: 200, body: wrong });
       expect(await readSelectedDispatcherDetails(allowed, query)).toEqual({ status: 500, body: { error: 'dispatcher_details_invalid' } });
@@ -78,6 +98,40 @@ describe('staged selected-host Dispatcher Details', () => {
     // A page body is never accepted as the whole role read.
     m.details.mockResolvedValue({ status: 200, body: pageBody() });
     expect(await readSelectedDispatcherDetails(allowed)).toEqual({ status: 500, body: { error: 'dispatcher_details_invalid' } });
+  });
+
+  describe('role wrapper byte budget (M1)', () => {
+    // A producer that fills whatever budget it is given, as readRemoteAgentDetails trims up to it.
+    const filling = (id: string) => m.details.mockImplementation(async (_id: string, _allowed: unknown, _query: unknown, options?: { maxBytes?: number }) => ({ status: 200, body: sized(id, options?.maxBytes ?? REMOTE_DETAILS_MAX_BYTES) }));
+
+    it.each(['role1', 'rôle "quoted" \\ 名前'])('fits a producer-filled inner body exactly inside the cap for agent id %j', async (id) => {
+      m.roleId = id; m.resolve.mockResolvedValue({ agent: { ...agent, id }, project: { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: path.dirname(path.dirname(primary)) } });
+      await fs.writeFile(primary, JSON.stringify([{ ...agent, id }]));
+      filling(id);
+      const result = await readSelectedDispatcherDetails(() => true);
+      expect(result.status).toBe(200);
+      expect(Buffer.byteLength(JSON.stringify(result.body))).toBe(REMOTE_DETAILS_MAX_BYTES);
+      expect(m.details).toHaveBeenCalledWith(id, expect.any(Function), undefined, { maxBytes: budgetFor(id) });
+    });
+
+    it('passes the same budget for a role Connections page', async () => {
+      const query = { card: 'connections' as const, source: 'outgoing' as const, offset: 0, projectOffset: 0 };
+      m.details.mockResolvedValue({ status: 200, body: details() });
+      await readSelectedDispatcherDetails(() => true, query);
+      expect(m.details).toHaveBeenCalledExactlyOnceWith('role1', expect.any(Function), query, { maxBytes: budgetFor('role1') });
+    });
+
+    it('keeps the outer cap: an inner body one byte over the budget is refused, not sent', async () => {
+      m.details.mockResolvedValue({ status: 200, body: sized('role1', budgetFor('role1') + 1) });
+      expect(await readSelectedDispatcherDetails(() => true)).toEqual({ status: 500, body: { error: 'dispatcher_details_limit' } });
+      m.details.mockResolvedValue({ status: 200, body: sized('role1', budgetFor('role1')) });
+      expect((await readSelectedDispatcherDetails(() => true)).status).toBe(200);
+    });
+
+    it('passes a producer refusal through unchanged', async () => {
+      m.details.mockResolvedValue({ status: 500, body: { error: 'details_limit' } });
+      expect(await readSelectedDispatcherDetails(() => true)).toEqual({ status: 500, body: { error: 'details_limit' } });
+    });
   });
 
   it('keeps an unbound canonical role unavailable without lookup, fallback, enablement or creation', async () => {
