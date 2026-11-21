@@ -2632,27 +2632,34 @@ describe('annex-client', () => {
       });
 
       it.each(['interval', 'deadline'] as const)('ignores a captured heartbeat %s callback belonging to a replaced socket', async (kind) => {
-        const intervals = vi.spyOn(globalThis, 'setInterval');
-        const timeouts = vi.spyOn(globalThis, 'setTimeout');
-        await discover();
-        sockets[0].handlers.open();
-        const tick = intervals.mock.calls.find(([, delay]) => delay === 30_000)![0];
-        await vi.advanceTimersByTimeAsync(30_000);
-        const expire = timeouts.mock.calls.find(([, delay]) => delay === 10_000)![0];
-        annexClient.disconnect(FP);
-        annexClient.retry(FP);
-        const current = sockets[1];
-        current.handlers.open();
-        const callback = kind === 'interval' ? tick : expire;
-        if (typeof callback !== 'function') throw new Error('Expected a heartbeat callback');
-        callback();
-        expect(current.ping).not.toHaveBeenCalled();
-        expect(current.terminate).not.toHaveBeenCalled();
-        expect(annexClient.isMachineConnected(FP)).toBe(true);
-        // The current generation still owns its normal timeout.
-        await vi.advanceTimersByTimeAsync(40_000);
-        expect(current.ping).toHaveBeenCalledOnce();
-        expect(current.terminate).toHaveBeenCalledOnce();
+        const intervals = vi.fn(globalThis.setInterval);
+        const timeouts = vi.fn(globalThis.setTimeout);
+        vi.stubGlobal('setInterval', intervals);
+        vi.stubGlobal('setTimeout', timeouts);
+        try {
+          await discover();
+          sockets[0].handlers.open();
+          const tick = intervals.mock.calls.find(([, delay]) => delay === 30_000)![0];
+          await vi.advanceTimersByTimeAsync(30_000);
+          const expire = timeouts.mock.calls.find(([, delay]) => delay === 10_000)![0];
+          annexClient.disconnect(FP);
+          annexClient.retry(FP);
+          const current = sockets[1];
+          current.handlers.open();
+          const callback = kind === 'interval' ? tick : expire;
+          if (typeof callback !== 'function') throw new Error('Expected a heartbeat callback');
+          callback();
+          expect(current.ping).not.toHaveBeenCalled();
+          expect(current.terminate).not.toHaveBeenCalled();
+          expect(annexClient.isMachineConnected(FP)).toBe(true);
+          // The current generation still owns its normal timeout.
+          await vi.advanceTimersByTimeAsync(40_000);
+          expect(current.ping).toHaveBeenCalledOnce();
+          expect(current.terminate).toHaveBeenCalledOnce();
+        } finally {
+          // Restore wrappers before the outer cleanup restores real timers.
+          vi.unstubAllGlobals();
+        }
       });
     });
 

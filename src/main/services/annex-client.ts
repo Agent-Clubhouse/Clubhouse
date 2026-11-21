@@ -992,7 +992,8 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     });
 
     ws.on('pong', () => {
-      if (sat.ws === ws) confirmConnectivity(sat);
+      if (sat.ws !== ws) return;
+      confirmConnectivity(sat);
       const sentAt = pingSentAt.get(sat);
       if (sentAt !== undefined) {
         pingSentAt.delete(sat);
@@ -1361,15 +1362,19 @@ async function fetchNewProjectCanvases(sat: SatelliteConnectionInternal, ws: Web
 
 function startHeartbeat(sat: SatelliteConnectionInternal): void {
   stopHeartbeat(sat);
+  const ws = sat.ws;
+  if (!ws) return;
   sat.heartbeatInterval = setInterval(() => {
-    if (!sat.ws || sat.ws.readyState !== WebSocket.OPEN) {
+    // A cleared timer may already be queued when resume replaces its socket.
+    if (sat.ws !== ws) return;
+    if (ws.readyState !== WebSocket.OPEN) {
       stopHeartbeat(sat);
       return;
     }
     // Send ping
     try {
       pingSentAt.set(sat, Date.now());
-      sat.ws.ping();
+      ws.ping();
     } catch {
       stopHeartbeat(sat);
       setState(sat, 'disconnected', 'Heartbeat ping failed', { code: 'stopped-answering' });
@@ -1378,17 +1383,16 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
     }
     // Set pong timeout
     sat.pongTimeout = setTimeout(() => {
+      if (sat.ws !== ws) return;
       appLog('core:annex-client', 'warn', 'Heartbeat pong timeout — closing connection', {
         meta: { fingerprint: sat.fingerprint },
         telemetry: { event: 'clubhouse.annex.heartbeat_timeout' },
       });
-      if (sat.ws) {
-        try { sat.ws.terminate(); } catch (err) {
-          appLog('core:annex-client', 'debug', 'Failed to terminate WebSocket on heartbeat timeout', {
-            meta: { fingerprint: sat.fingerprint, error: err instanceof Error ? err.message : String(err) },
-          });
-        }
-        sat.ws = null;
+      sat.ws = null;
+      try { ws.terminate(); } catch (err) {
+        appLog('core:annex-client', 'debug', 'Failed to terminate WebSocket on heartbeat timeout', {
+          meta: { fingerprint: sat.fingerprint, error: err instanceof Error ? err.message : String(err) },
+        });
       }
       setState(sat, 'disconnected', 'Heartbeat timeout', { code: 'stopped-answering' });
       stopHeartbeat(sat);
@@ -1398,6 +1402,7 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
 }
 
 function stopHeartbeat(sat: SatelliteConnectionInternal): void {
+  pingSentAt.delete(sat);
   if (sat.heartbeatInterval) {
     clearInterval(sat.heartbeatInterval);
     sat.heartbeatInterval = null;
@@ -1535,12 +1540,13 @@ function disconnectSatellite(sat: SatelliteConnectionInternal): void {
     sat.reconnectTimer = null;
   }
   if (sat.ws) {
-    try { sat.ws.close(); } catch (err) {
+    const ws = sat.ws;
+    sat.ws = null;
+    try { ws.close(); } catch (err) {
       appLog('core:annex-client', 'debug', 'Failed to close WebSocket during disconnect', {
         meta: { fingerprint: sat.fingerprint, error: err instanceof Error ? err.message : String(err) },
       });
     }
-    sat.ws = null;
   }
   setState(sat, 'disconnected');
 }
@@ -3018,7 +3024,7 @@ export function scan(): void {
 }
 
 /**
- * Resume all disconnected satellites (e.g., after power resume).
+ * Revalidate satellite connections after power resume.
  */
 export function resumeAllConnections(): void {
   // Waking never starts the client: with Connect to satellites off there's nothing to resume.
@@ -3026,7 +3032,12 @@ export function resumeAllConnections(): void {
   for (const sat of satellites.values()) {
     // An address announced before sleep may be another network's.
     sat.discovered = null;
-    if (sat.state === 'disconnected') {
+    // Waking does not resolve a refusal, a changed pin or a certificate/clock stop.
+    if (sat.halt || sat.needsPairing) continue;
+    if (sat.state === 'disconnected' || sat.state === 'connected' || sat.state === 'connecting') {
+      // A pre-sleep socket (including an unfinished upgrade) is not proof of
+      // reachability on the network we woke onto. Retire it before dialing.
+      disconnectSatellite(sat);
       sat.reconnectAttempt = 0; // Reset backoff on resume
       sat.candidateIndex = 0;
       useCandidate(sat, candidatesFor(sat));

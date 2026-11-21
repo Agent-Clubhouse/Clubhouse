@@ -34,3 +34,13 @@ For this run, the existing dependency cache's `package-lock.json` matched SHA256
 ## Evidence boundary
 
 The Mini trace crossed OS sleep. All 122 watchdog stalls overlap sleep; the residual 34s after wake remains UNKNOWN. Historical authenticated OS sleep receipts are context supplied by the parent, not locally verified proof. This patch neither explains that residual delay nor claims a mobile fix. No keepawake, power policy, retry/deadline increase, blanket request cancellation, settings, restart, install, release, merge or live probe is included.
+
+## Correction and acceptance
+
+Resume retires any connected/connecting pre-sleep socket and cancels its heartbeat/backoff timers before starting one fresh attempt through the existing pinned/authenticated path. Readiness stays false until that new socket opens. Refusal, pairing, pin and clock stops remain stopped. Discovered addresses are still discarded and discovery still restarts through the existing profile gate. Heartbeat interval/deadline and the entire pong handler now require their owning socket; closing/terminating detaches it before callbacks can run. No request timeout, retry policy or authentication/grant check changes.
+
+Risk-targeted validation observed on this patch: all **309 tests** across `annex-client.test.ts`, `annex-client-buffer.test.ts` and `annex-client-handlers.test.ts` pass, including all 11 new freshness cases. `tsc --noEmit --incremental false` passes. ESLint for the changed source/test files passes with 0 errors and 158 existing warnings. `git diff --check` passes. Admission was remeasured at 16 CPUs / load 3.23 before the three-file one-worker test run, 3.10 before typecheck, and 4.13 after fixture-cleanup validation. No shared cache writes or device probes were used.
+
+The async refusal-body callback is deliberately unchanged: #3733's separately owned late-denial fix must be reviewed/integrated on its own. It can still finish after a new connection starts on this baseline. This is a known deferred cross-generation acceptance boundary, not evidence that the reproduced resume readiness defect is absent.
+
+Independent exact-head review is required before opening a PR. No merge or release is authorized by this task.
