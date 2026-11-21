@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "scope": "New #3715 product fix only; portable derived evidence, not historical full-duplex or calibration acceptance",
+  "branch": "feat/3715-authoritative-upload-lease",
+  "base": "69ef383cefec405d811f1c199f25c10cdc0395b6",
+  "baseline": "60111c6af58f7e345184d954888e47e092b1c519",
+  "source": "d9aa898ac2711b99ec6b74e8e3f8807b6769218a",
+  "sourceTree": "107d518c46a58afc22920e0b0f215cca37336fc6",
+  "gate": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- <command>",
+  "versions": {
+    "node": "24.22.1",
+    "vitest": "4.1.12",
+    "typescript": "5.9.3",
+    "eslint": "9.39.5",
+    "platform": "darwin-arm64"
+  },
+  "baselineResult": {
+    "startUtc": "2026-11-21T05:26:33Z",
+    "endUtc": "2026-11-21T05:26:36Z",
+    "command": "env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/services/annex-attachment-registration.test.ts --maxWorkers=1 --reporter=verbose",
+    "exitCode": 1,
+    "failed": 2,
+    "files": 1,
+    "failure": "Actual pinned HTTPS returned404 agent_not_found for cold cache and after real fs.watch newline eviction; warm pre-edit upload succeeds.",
+    "portableOutput": "baseline.txt"
+  },
+  "sourceResult": {
+    "startUtc": "2026-11-21T05:28:47Z",
+    "endUtc": "2026-11-21T05:29:15Z",
+    "command": "env -u COPILOT_CONNECTION_TOKEN ./node_modules/.bin/vitest run --project main src/main/services/annex-attachment-registration.test.ts src/main/services/annex-server.test.ts src/main/services/annex-mobile-contract.test.ts -t 'authoritative attachment registration|uploads phone images over pinned|P6 attachment .* during real staging|P6 bulk reaches real attachment staging|attachments$' --maxWorkers=1 --reporter=dot",
+    "exitCode": 0,
+    "passed": 46,
+    "selectorSkipped": 619,
+    "filesPassed": 3,
+    "breakdown": {
+      "newDirectPinnedHttps": 38,
+      "existingUploadAndP6": 7,
+      "canonicalAttachment": 1
+    },
+    "portableOutput": "green.txt",
+    "admission": {
+      "idlePercent": 84,
+      "availableMiB": 27752,
+      "freePercent": 82,
+      "compressorMiB": 4078,
+      "swapMiB": 1820
+    }
+  },
+  "typing": [
+    {"command": "./node_modules/.bin/tsc --noEmit", "exitCode": 0, "stdoutBytes": 0},
+    {"command": "./node_modules/.bin/tsc -p docs/annex-attachment-registration.tsconfig.json", "exitCode": 0, "stdoutBytes": 0, "scope": "Production plus the complete new fixture"}
+  ],
+  "lint": {
+    "command": "./node_modules/.bin/eslint src/main/services/agent-config.ts src/main/services/annex-server.ts src/main/services/annex-attachment-registration.test.ts src/main/services/annex-server.test.ts src/main/services/annex-mobile-contract.test.ts",
+    "baselineExitCode": 0,
+    "sourceExitCode": 0,
+    "errors": 0,
+    "baselineWarnings": 390,
+    "sourceWarnings": 390,
+    "comparison": "Per-file diagnostic-message/rule multisets exactly equal, not merely equal scalar counts. No warnings in new code hunks."
+  },
+  "phoneFixtures": {
+    "base": "69ef383cefec405d811f1c199f25c10cdc0395b6",
+    "directory": "test/fixtures/annex-mobile",
+    "files": 103,
+    "bytes": 1529301,
+    "exactWorkingBytesEqualToBase": true,
+    "orderedRowsSha256": "331bd554b82e3b93b95d73597500e369bdcde25cc0c4ae55c14ba95d840ac479",
+    "algorithm": "Base git ls-tree -rz --name-only order; compare each git-show base:path Buffer to working bytes; SHA256(JSON.stringify([{file,bytes,sha256},...]))",
+    "qualification": "Byte equality only; the full phone fixture renderer/comparator was not executed."
+  },
+  "independentReview": {
+    "reviewer": "qa-3715-upload-lease",
+    "base": "69ef383cefec405d811f1c199f25c10cdc0395b6",
+    "source": "d9aa898ac2711b99ec6b74e8e3f8807b6769218a",
+    "verdict": "NO HIGH-CONFIDENCE FINDINGS",
+    "scope": "Static-only authorized #3715 delta and necessary adjacent helpers; supplied runs not independently reproduced.",
+    "record": "independent-review.txt"
+  },
+  "originalRecords": [
+    {"name": "3715-exact-baseline-60111-original.log", "bytes": 3273, "sha256": "15b22802a8efe4468d3ec7102ba379671b5d3bb2089894261ec99914f2f61668"},
+    {"name": "3715-exact-baseline-gate-original.log", "bytes": 1134, "sha256": "d61dbac7e7a88025acafbd084fbd6e59291bf92f60dda7877226b401f4f420fe"},
+    {"name": "3715-exact-baseline-eslint-original.log", "bytes": 60951, "sha256": "91dc7594dddf64da851ca9c7688d794918e021b4bbe62af4a750ca56fd623b4f"},
+    {"name": "3715-exact-d9aa-gate-original.log", "bytes": 1838, "sha256": "dda47aacf5a24063b1313addbefaf1e5c6f5b4a6413d8a18e010b581672d6907"},
+    {"name": "3715-exact-d9aa-vitest-original.log", "bytes": 1361, "sha256": "cceb162c30113d98b3dcc2a29e24a377c7af090cd235b2f2994a485adb4daf1c"},
+    {"name": "3715-exact-d9aa-production-tsc-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    {"name": "3715-exact-d9aa-fixture-tsc-original.log", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    {"name": "3715-exact-d9aa-eslint-original.log", "bytes": 60951, "sha256": "1b75f8be9102c01d970cbc0073047b5a1f14acca5f3f830f4bd8a3133f795563"},
+    {"name": "3715-metadata-lease-negative-original.log", "bytes": 8647, "sha256": "9286db8172f8e558dea2dc93617b8ac27bb7b139b545378bb3bd1bc3997ae4ca", "scope": "Earlier uncommitted metadata-only prototype; genuine falsifier, not exact-base or final-source proof"},
+    {"name": "3715-whole-file-lease-benign-negative-original.log", "bytes": 11177, "sha256": "61fdea96e6b531a708b3d8552228e0f17f207f3557f0af82d8c14229a6910877", "scope": "Earlier uncommitted whole-file-version prototype; genuine3-failure falsifier, not final-source proof"}
+  ],
+  "custody": "Unchanged original new-fix logs/refusals/failures remain with the source owner outside Git. baseline.txt and green.txt replace the absolute worktree root with $WORKTREE and remove one terminal blank line; all other characters are unchanged. These public copies are explicitly derived, not original-byte custody receipts.",
+  "excluded": [
+    "Historical private144/raw233a calibration inputs and all omitted originals",
+    "Historical/broader production/federation/control/route or full-P8 review; no historical refusal replacement",
+    "Full suite, localE2E, full phone fixture renderer/comparator",
+    "Any merging, release, permission, real app restart or implementation takeover authorization"
+  ]
+}
