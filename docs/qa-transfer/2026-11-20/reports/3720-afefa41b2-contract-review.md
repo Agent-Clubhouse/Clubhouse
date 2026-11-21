@@ -83,3 +83,8 @@ No product code, hunk clearance, release, install, activation, link or grant cha
 **Hash vectors:** the parent reports that the five cross-language vectors matched in Node and Python. My independent offline Python recomputation also matched all 5, plus the 8 embedded records. This is a documentation and encoding consistency check, **not runtime or compatibility proof**.
 
 **Updated verdict:** approval of the contract design stands, now with **5 required items before code**: R-a, R-b and R-c, plus I-1 and I-2.
+
+**I-2 wording clarification (requested by the parent):**
+- A remote rename **should** advance the **name display-currentness token**, the name version that display readers and Details include, so labels refresh.
+- It must **not** change pairing authority (pin, pairing ID, roles, routes, notes or pairing display receipts as authority), and it must not change the #3733 `snapshotReceipt` or `connectionGeneration` semantics.
+- My earlier phrase "without changing pins or receipts" means those authority and #3733 receipts, not the name-currentness token.
