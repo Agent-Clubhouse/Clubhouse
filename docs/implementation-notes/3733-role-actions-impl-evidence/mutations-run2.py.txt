@@ -1,0 +1,24 @@
+import subprocess, hashlib, sys, os, tempfile, json
+M=[
+ ("M6 client URL from caller object","src/main/services/annex-client.ts","{ card: page.card, source: page.source, offset: String(page.offset ?? 0), ...(page.selection !== undefined && { selection: page.selection }) }","{ card: page.card, source: page.source, offset: String((query as typeof page).offset ?? 0), ...((query as typeof page).selection !== undefined && { selection: (query as typeof page).selection }) }",["src/main/services/annex-client.test.ts"]),
+ ("M13 service validates caller object, copies after","src/main/services/selected-dispatcher-details.ts","""  try { page = query === undefined ? undefined : Object.freeze({ ...query }); }
+  catch { return invalid(); /* telemetry-exempt: an unreadable caller query is invalid, never partially used. */ }
+  if (page !== undefined && !isSelectedDispatcherPageQuery(page)) return invalid();""","""  if (query !== undefined && !isSelectedDispatcherPageQuery(query)) return invalid();
+  try { page = query === undefined ? undefined : Object.freeze({ ...query }); }
+  catch { return invalid(); /* telemetry-exempt: an unreadable caller query is invalid, never partially used. */ }""",["src/main/services/selected-dispatcher-details.test.ts"]),
+ ("M14 client validates caller object, copies after","src/main/services/annex-client.ts","valid = copy === undefined ? undefined : isSelectedDispatcherPageQuery(copy) ? copy : null;","valid = copy === undefined ? undefined : isSelectedDispatcherPageQuery(query) ? { ...query } : null;",["src/main/services/annex-client.test.ts"]),
+]
+out=[]
+for name,f,a,b,tests in M:
+    src=open(f,'rb').read(); h=hashlib.sha256(src).hexdigest(); t=src.decode('utf-8')
+    if t.count(a)!=1: out.append(f"{name}: SKIPPED anchor count {t.count(a)}"); continue
+    open(f,'w',encoding='utf-8').write(t.replace(a,b))
+    try:
+        d=tempfile.mkdtemp(prefix='dlc-fresh.', dir=os.environ.get('TMPDIR','/tmp'))
+        r=subprocess.run(['npx','vitest','run','--no-cache','--maxWorkers=1',*tests],capture_output=True,text=True,env={**os.environ,'TMPDIR':d})
+        lines=[l.strip() for l in r.stdout.splitlines() if l.strip().startswith('×') or l.strip().startswith('Tests ')]
+    finally:
+        open(f,'wb').write(src)
+    ok=hashlib.sha256(open(f,'rb').read()).hexdigest()==h
+    out.append(f"{name} [{f}] exit={r.returncode} restore={'byte-identical' if ok else 'MISMATCH'} sha256={h}\n  "+"\n  ".join(lines))
+print("\n".join(out))

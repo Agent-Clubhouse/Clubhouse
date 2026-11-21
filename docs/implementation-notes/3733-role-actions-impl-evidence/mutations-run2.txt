@@ -1,0 +1,10 @@
+# Discriminating mutations, run 2 (after adding the read-once getter controls).
+M6 client URL from caller object [src/main/services/annex-client.ts] exit=1 restore=byte-identical sha256=f19f6d5308c851f325e3f2feb1f3aceb5feaec4c9105a3a060e0b9c835e43a60
+  × reads each caller query field once: a getter changing on a later read cannot desynchronize validation, URL and response binding 4ms
+  Tests  1 failed | 345 passed (346)
+M13 service validates caller object, copies after [src/main/services/selected-dispatcher-details.ts] exit=1 restore=byte-identical sha256=e6b7f5eeb5b104277781dabcdfe09145ae2d63c5b5ab91e510c41c3d8144013e
+  × reads each caller query field once: a getter changing on a later read cannot desynchronize validation and the producer read 3ms
+  Tests  1 failed | 31 passed (32)
+M14 client validates caller object, copies after [src/main/services/annex-client.ts] exit=1 restore=byte-identical sha256=f19f6d5308c851f325e3f2feb1f3aceb5feaec4c9105a3a060e0b9c835e43a60
+  × reads each caller query field once: a getter changing on a later read cannot desynchronize validation, URL and response binding 6ms
+  Tests  1 failed | 345 passed (346)

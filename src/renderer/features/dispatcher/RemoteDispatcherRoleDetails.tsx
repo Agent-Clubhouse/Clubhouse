@@ -8,6 +8,8 @@ import { Evidence } from '../agents/details/RemoteDetailsEvidence';
 import { RemoteActionsEvidence } from '../agents/details/RemoteActionsEvidence';
 import { OtherMachinesList, otherMachinesSummary } from './OtherMachinesList';
 import { RemoteDispatcherConnectionPages } from './RemoteDispatcherConnectionPages';
+import { RemoteDispatcherActionsPages } from './RemoteDispatcherActionsPages';
+import { REMOTE_ACTION_PAGE_SOURCE } from '../../../shared/remote-action-page';
 
 type Result = ControllerReadResult<SelectedDispatcherDetails> | { status: 'loading' };
 const message = (status: Result['status']) => status === 'loading' ? 'Reading Dispatcher details from the selected host…'
@@ -103,7 +105,12 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
         : <CardNote>{!value && !snapshotOnly ? note : !sat?.snapshotReceipt ? 'Waiting for a confirmed host snapshot. Earlier private fields are withheld.' : omitted('dispatcherPresence') ? 'Other machines were omitted from this host snapshot.' : 'The selected host has not shared its Other machines list. An absent list is not an empty network.'}</CardNote>}
     </DetailsCard>
     <DetailsCard embedded id="actions" title="Actions" summary={card('actions')?.summary || 'unavailable'} open onToggle={() => {}}>
-      {card('actions') ? <RemoteActionsEvidence card={card('actions')!} agentName={dispatcherName} /> : <CardNote>{note}</CardNote>}
+      {value && eligible && value.details.inventoryPages === 1 && value.details.inventorySources?.includes(REMOTE_ACTION_PAGE_SOURCE)
+        ? <RemoteDispatcherActionsPages machine={machine} roleAgentId={value.agentId} dispatcherName={dispatcherName} contextKey={key}>
+          {card('actions') ? <RemoteActionsEvidence card={card('actions')!} agentName={dispatcherName} /> : <CardNote>{note}</CardNote>}
+        </RemoteDispatcherActionsPages>
+        : card('actions') ? <RemoteActionsEvidence card={card('actions')!} agentName={dispatcherName} /> : <CardNote>{note}</CardNote>}
+      {value && eligible && !(value.details.inventoryPages === 1 && value.details.inventorySources?.includes(REMOTE_ACTION_PAGE_SOURCE)) && <CardNote>This host shares the Dispatcher Actions summary only. Relationship pages need a host update.</CardNote>}
     </DetailsCard>
   </aside>;
 }

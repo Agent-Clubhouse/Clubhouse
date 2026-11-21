@@ -1,0 +1,31 @@
+import subprocess, hashlib, sys, os, tempfile, json
+M=[
+ ("M1 shared selection binding","src/shared/selected-dispatcher-details.ts","|| page.state === 'recorded' && query.selection !== undefined && page.selection !== query.selection) return false;",") return false;",["src/shared/selected-dispatcher-details.test.ts","src/main/services/selected-dispatcher-details.test.ts"]),
+ ("M2 shared page byte bound","src/shared/selected-dispatcher-details.ts","""    || page.state === 'recorded' && query.selection !== undefined && page.selection !== query.selection) return false;
+  try { return new TextEncoder().encode(JSON.stringify(v)).byteLength <= REMOTE_DETAILS_MAX_BYTES; }""","""    || page.state === 'recorded' && query.selection !== undefined && page.selection !== query.selection) return false;
+  try { return new TextEncoder().encode(JSON.stringify(v)).byteLength >= 0; }""",["src/shared/selected-dispatcher-details.test.ts","src/main/services/selected-dispatcher-details.test.ts"]),
+ ("M3 route Actions key set admits projectOffset","src/main/services/annex-server.ts","actions ? ['card', 'source', 'offset', 'selection'] :","actions ? ['card', 'source', 'offset', 'selection', 'projectOffset'] :",["src/main/services/annex-server.test.ts"]),
+ ("M4 route repeated keys","src/main/services/annex-server.ts","!allowedKeys.includes(key) || params.getAll(key).length !== 1)","!allowedKeys.includes(key))",["src/main/services/annex-server.test.ts"]),
+ ("M5 client expectedAgentId binding","src/main/services/annex-client.ts","isSelectedDispatcherPage(body, page) && body.agentId === expected ?","isSelectedDispatcherPage(body, page) ?",["src/main/services/annex-client.test.ts"]),
+ ("M6 client URL from caller object","src/main/services/annex-client.ts","{ card: page.card, source: page.source, offset: String(page.offset ?? 0), ...(page.selection !== undefined && { selection: page.selection }) }","{ card: page.card, source: page.source, offset: String((query as typeof page).offset ?? 0), ...((query as typeof page).selection !== undefined && { selection: (query as typeof page).selection }) }",["src/main/services/annex-client.test.ts"]),
+ ("M7 client response check from caller object","src/main/services/annex-client.ts","isSelectedDispatcherPage(body, page) && body.agentId","isSelectedDispatcherPage(body, query as typeof page) && body.agentId",["src/main/services/annex-client.test.ts"]),
+ ("M8 service producer query from caller object","src/main/services/selected-dispatcher-details.ts","readRemoteAgentDetails(target.agent.id, allowed, page && { ...page }, {","readRemoteAgentDetails(target.agent.id, allowed, query && { ...query }, {",["src/main/services/selected-dispatcher-details.test.ts"]),
+ ("M9 service page check from caller object","src/main/services/selected-dispatcher-details.ts","if (page ? !isSelectedDispatcherPage(body, page) :","if (page ? !isSelectedDispatcherPage(body, query!) :",["src/main/services/selected-dispatcher-details.test.ts"]),
+ ("M10 renderer role-agent binding","src/renderer/features/dispatcher/RemoteDispatcherActionsPages.tsx","result.status === 'ok' && result.value.agentId === roleAgentId && isSelectedDispatcherActionsPage","result.status === 'ok' && isSelectedDispatcherActionsPage",["src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx"]),
+ ("M11 renderer drops selection token","src/renderer/features/dispatcher/RemoteDispatcherActionsPages.tsx","status={status} agentName={dispatcherName} onPage={select} />","status={status} agentName={dispatcherName} onPage={(offset) => select(offset)} />",["src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx"]),
+ ("M12 renderer no role-context reset","src/renderer/features/dispatcher/RemoteDispatcherActionsPages.tsx","const query = navigation?.identity === identity ? navigation.query : undefined;","const query = navigation ? navigation.query : undefined;",["src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx"]),
+]
+out=[]
+for name,f,a,b,tests in M:
+    src=open(f,'rb').read(); h=hashlib.sha256(src).hexdigest(); t=src.decode('utf-8')
+    if t.count(a)!=1: out.append(f"{name}: SKIPPED anchor count {t.count(a)}"); continue
+    open(f,'w',encoding='utf-8').write(t.replace(a,b))
+    try:
+        d=tempfile.mkdtemp(prefix='dlc-fresh.', dir=os.environ.get('TMPDIR','/tmp'))
+        r=subprocess.run(['npx','vitest','run','--no-cache','--maxWorkers=1',*tests],capture_output=True,text=True,env={**os.environ,'TMPDIR':d})
+        lines=[l.strip() for l in r.stdout.splitlines() if l.strip().startswith('×') or l.strip().startswith('Tests ')]
+    finally:
+        open(f,'wb').write(src)
+    ok=hashlib.sha256(open(f,'rb').read()).hexdigest()==h
+    out.append(f"{name} [{f}] exit={r.returncode} restore={'byte-identical' if ok else 'MISMATCH'} sha256={h}\n  "+"\n  ".join(lines))
+print("\n".join(out))

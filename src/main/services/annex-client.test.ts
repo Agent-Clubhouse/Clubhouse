@@ -2849,25 +2849,27 @@ describe('annex-client', () => {
         expect(current().snapshotReceipt).toEqual(expect.any(String)); expect(current().snapshotReceipt).not.toBe(oldReceipt);
       });
 
-      it.each(['agent', 'canvas', 'role-page'] as const)('a late same-epoch %s denial read under an older receipt keeps the newer receipt', async (kind) => {
+      it.each(['agent', 'canvas', 'role-page', 'role-actions-page'] as const)('a late same-epoch %s denial read under an older receipt keeps the newer receipt', async (kind) => {
         await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
         const oldReceipt = current().snapshotReceipt, generation = current().connectionGeneration;
         const finish = answer(403, {}, true);
         const pending = kind === 'role-page' ? annexClient.requestDispatcherDetails(FP, { card: 'connections', source: 'incoming', offset: 0, projectOffset: 0 }, 'role1')
+          : kind === 'role-actions-page' ? annexClient.requestDispatcherDetails(FP, { card: 'actions', source: 'selected-action-relationships', offset: 25, selection: 'd'.repeat(64) }, 'role1')
           : annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
         send(0, 'snapshot', payload(2));
         const newReceipt = current().snapshotReceipt;
         expect(newReceipt).toEqual(expect.any(String)); expect(newReceipt).not.toBe(oldReceipt); expect(current().connectionGeneration).toBe(generation);
         const count = broadcasts(); finish();
         // The role read also fences a changed receipt, so its late reply is offline; either way the newer receipt stays.
-        expect(await pending).toEqual({ status: kind === 'role-page' ? 'offline' : 'forbidden' });
+        expect(await pending).toEqual({ status: kind === 'role-page' || kind === 'role-actions-page' ? 'offline' : 'forbidden' });
         expect(current().snapshotReceipt).toBe(newReceipt); expect(broadcasts()).toBe(count);
       });
 
-      it.each(['agent', 'canvas', 'role-page'] as const)('a late %s denial still revokes the receipt it was read under', async (kind) => {
+      it.each(['agent', 'canvas', 'role-page', 'role-actions-page'] as const)('a late %s denial still revokes the receipt it was read under', async (kind) => {
         await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
         const finish = answer(401, {}, true);
         const pending = kind === 'role-page' ? annexClient.requestDispatcherDetails(FP, { card: 'connections', source: 'incoming', offset: 0, projectOffset: 0 }, 'role1')
+          : kind === 'role-actions-page' ? annexClient.requestDispatcherDetails(FP, { card: 'actions', source: 'selected-action-relationships', offset: 25, selection: 'd'.repeat(64) }, 'role1')
           : annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
         const count = broadcasts(); finish();
         expect(await pending).toEqual({ status: 'forbidden' });
@@ -4090,6 +4092,58 @@ describe('annex-client', () => {
         expect(requests).toHaveLength(before);
         // A whole read keeps 400 as an error; only a page query maps it to unavailable.
         answers.push({ status: 400, body: {} }); expect(await annexClient.requestDispatcherDetails(FP)).toEqual({ status: 'error' });
+      });
+
+      it('pages role Actions relationships bound to the role agent and the requested page, with older hosts unavailable (#14)', async () => {
+        const selection = 'e'.repeat(64), query = { card: 'actions' as const, source: 'selected-action-relationships' as const, offset: 25, selection };
+        const page = (agentId = 'role1', patch: Record<string, unknown> = {}) => { const value = response(); value.agentId = agentId;
+          Object.assign(value.details, { agentId, inventoryPages: 1, inventorySources: ['selected-action-relationships'], inventoryPageOnly: true,
+            inventoryPage: { version: 1, source: 'selected-action-relationships', state: 'unavailable', offset: 25, reason: 'changed', observedAt: 1, notes: [], ...patch } });
+          value.details.cards = value.details.cards.map((c): RemoteDetailsCard => c.id === 'actions' ? c : { ...c, requested: false }); return value; };
+        const value = page(); answers.push({ status: 200, body: value });
+        expect(await annexClient.requestDispatcherDetails(FP, query, 'role1')).toEqual({ status: 'ok', value });
+        expect(requests.at(-1)!.url).toContain(`/api/v1/dispatcher/details?card=actions&source=selected-action-relationships&offset=25&selection=${selection}`);
+        // Another role agent, another page or a whole read is an error, never admitted.
+        for (const body of [page('role2'), page('role1', { offset: 0 }), response()]) {
+          answers.push({ status: 200, body }); expect(await annexClient.requestDispatcherDetails(FP, query, 'role1')).toEqual({ status: 'error' });
+        }
+        answers.push({ status: 400, body: { error: 'invalid_dispatcher_details_query' } });
+        expect(await annexClient.requestDispatcherDetails(FP, query, 'role1')).toEqual({ status: 'unavailable' });
+        const before = requests.length;
+        expect(await annexClient.requestDispatcherDetails(FP, query)).toEqual({ status: 'error' });
+        for (const bad of [{ ...query, selection: undefined }, { ...query, offset: 30 }, { ...query, projectOffset: 0 }, { card: 'actions', source: 'selected-managed-skills' }]) {
+          expect(await annexClient.requestDispatcherDetails(FP, bad as never, 'role1')).toEqual({ status: 'error' });
+        }
+        expect(requests).toHaveLength(before);
+      });
+
+      it.each(['connections', 'actions'] as const)('captures the %s page query before any await: later caller mutation changes neither the URL nor the response binding', async (card) => {
+        const selection = 'f'.repeat(64);
+        const query: Record<string, unknown> = card === 'actions' ? { card, source: 'selected-action-relationships', offset: 25, selection } : { card, source: 'incoming', offset: 25, projectOffset: 0 };
+        const value = response();
+        if (card === 'actions') {
+          Object.assign(value.details, { inventoryPages: 1, inventorySources: ['selected-action-relationships'], inventoryPageOnly: true, inventoryPage: { version: 1, source: 'selected-action-relationships', state: 'unavailable', offset: 25, reason: 'changed', observedAt: 1, notes: [] } });
+          value.details.cards = value.details.cards.map((c): RemoteDetailsCard => c.id === 'actions' ? c : { ...c, requested: false });
+        } else {
+          Object.assign(value.details, { connectionPageEnvelope: 1, connectionPageOnly: true, connectionPages: 1 });
+          value.details.cards = value.details.cards.map((c): RemoteDetailsCard => c.id === 'connections' ? { ...c, connectionPage: { source: 'incoming', offset: 25, projectOffset: 0, next: null, known: 0, complete: true } } : { ...c, requested: false });
+        }
+        answers.push({ status: 200, body: value });
+        const pending = annexClient.requestDispatcherDetails(FP, query as never, 'role1');
+        Object.assign(query, card === 'actions' ? { offset: 50, selection: 'a'.repeat(64) } : { source: 'outgoing', offset: 0 });
+        expect(await pending).toEqual({ status: 'ok', value });
+        expect(requests.at(-1)!.url).toContain(card === 'actions' ? `card=actions&source=selected-action-relationships&offset=25&selection=${selection}` : 'card=connections&source=incoming&offset=25&projectOffset=0');
+      });
+
+      it('reads each caller query field once: a getter changing on a later read cannot desynchronize validation, URL and response binding', async () => {
+        const selection = 'f'.repeat(64); let reads = 0;
+        const query = { card: 'actions', source: 'selected-action-relationships', selection, get offset() { reads += 1; return reads === 1 ? 25 : 50; } };
+        const value = response();
+        Object.assign(value.details, { inventoryPages: 1, inventorySources: ['selected-action-relationships'], inventoryPageOnly: true, inventoryPage: { version: 1, source: 'selected-action-relationships', state: 'unavailable', offset: 25, reason: 'changed', observedAt: 1, notes: [] } });
+        value.details.cards = value.details.cards.map((c): RemoteDetailsCard => c.id === 'actions' ? c : { ...c, requested: false });
+        answers.push({ status: 200, body: value });
+        expect(await annexClient.requestDispatcherDetails(FP, query as never, 'role1')).toEqual({ status: 'ok', value });
+        expect(reads).toBe(1); expect(requests.at(-1)!.url).toContain(`offset=25&selection=${selection}`);
       });
 
       it.each(['pin', 'kind', 'role', 'pending', 'removed'] as const)('fences an in-flight response after peer %s changes, including in-place peer mutation', async (mode) => {
