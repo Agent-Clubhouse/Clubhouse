@@ -516,10 +516,13 @@ describe('annex-client', () => {
       const request = { destroy: vi.fn() };
       const response = Object.assign(new EventEmitter(), { statusCode: 401 });
       firstRetry.emit('unexpected-response', request, response);
-      firstRetry.close(1006);
+      annexClient.disconnect(fixture.fingerprint);
       annexClient.retry(fixture.fingerprint);
       const replacement = fixture.sockets.filter((socket) => socket.url.includes('/ws?client=desktop'))[2];
       if (!replacement) throw new Error('Expected a replacement main connection');
+      const replacementControl = fixture.sockets.filter((socket) => socket.url.endsWith('/control'))[1];
+      if (!replacementControl) throw new Error('Expected a replacement control connection');
+      fixture.openControl(replacementControl);
       replacement.readyState = 1;
       replacement.emit('open');
       response.emit('data', Buffer.from('{"error":"peer_not_paired"}'));
@@ -527,13 +530,13 @@ describe('annex-client', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(annexClient.getSatellite(fixture.fingerprint)?.state).toBe('connected');
       expect(annexClient.getSatellite(fixture.fingerprint)?.needsPairing).not.toBe(true);
-      expect(fixture.control.readyState).toBe(1);
-      fixture.control.emit('message', Buffer.from(JSON.stringify({
+      expect(replacementControl.readyState).toBe(1);
+      replacementControl.emit('message', Buffer.from(JSON.stringify({
         v: 1, type: 'request', id: 'after-stale-main-refusal', method: 'GET', path: '/api/v1/mobile/capabilities',
       })), false);
       await vi.advanceTimersByTimeAsync(0);
       expect(fixture.dispatch).toHaveBeenCalledOnce();
-      expect(fixture.control.sent).toContainEqual(expect.objectContaining({ type: 'response', id: 'after-stale-main-refusal', status: 200 }));
+      expect(replacementControl.sent).toContainEqual(expect.objectContaining({ type: 'response', id: 'after-stale-main-refusal', status: 200 }));
     });
   });
 
