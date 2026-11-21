@@ -1,0 +1,14 @@
+# #3720 successor-r1 contract and shared-hunk review checkpoint
+
+**Docs-only frozen review candidate; not product clearance.** Original `afefa41b2c8e1998979d44d383467a21c454e51e` remains unchanged. Source-contract draft commit: `4f7203724334172ba65ccb1448df07d931ba9480`. The final evidence-only successor adds this index, captured documentation checks and hashes; it does not apply the patch. Canonical [issue #3720](https://github.com/Agent-Clubhouse/Clubhouse/issues/3720).
+
+- Read `clarifications.md` for R-a/R-b/R-c and the agreed Details display-token/degradation seam. Frozen afefa transport rules remain in force wherever not explicitly superseded.
+- Read `committed-composition.md` for the actual five-writer audit, optimistic-cache escape, proposed committed composition, accepted-intent witness and emergency supersession. P7w/QA review of these shared hunks is required before code.
+- `committed-composition.review.patch` is an **unapplied, unexecuted zero-context review sketch** bound to five actual source files at main `50cb77ab6ccf9f383a39e59db308f4f8336051ea`; `source-binding.json` records their hashes. Its new membership/UI APIs are proposed and not implemented. `make-review-patch.py` regenerates only this docs artifact from git objects, never product files. Patch-context checking needs `--unidiff-zero` and disposable bound source copies.
+- `unsafe-precondition-only.review.patch.json` preserves exact rejected draft bytes and their hash; do not apply it. Precondition passthrough alone does not prevent uncommitted Alias inheritance.
+- `fixtures.json` adds absent-pairing-id, exact200/supplementary, whitespace/surrogate vectors and required race/security/currentness inventory. These are proposed cases, not passing product tests.
+- `verification-manifest.json` binds actual commands/exits/raw output to `4f7203724334172ba65ccb1448df07d931ba9480`. The Node vector check and temporary-copy patch-context check passed; frozen originals are byte-equal. No product code, type/lint, race or mixed-version endpoint ran. The earlier actual patch-context-whitespace staging failure is retained in `staging-whitespace-failure.json`; zero-context output and the exact-byte JSON wrapper corrected that artifact-format problem.
+
+Outstanding before product edits: independent required-item review and exact shared-store/Annex settings/writer/emergency/witness/MCP/main-window hunk clearance. Owner-facing degradation status is persistent text in Alias settings and device Rename area; Details/device label text remains unchanged, with a distinct degraded currentness token. No Details pairing evidence, raw authority APIs, controller read revisions or client lifecycle edits are proposed.
+
+The new store/witness/generation path remains a proposal requiring executed discriminators after approval. No claim that the settings race is solved, no product proof transfer from main/other branches, and no release/install/activation or live/mobile claim.

@@ -1,0 +1,82 @@
+{
+  "status": "Documentation consistency/context verification only. NOT product implementation, type/lint, race or mixed-version runtime proof.",
+  "executedAtUTC": "2026-11-21T10:21:04.966951+00:00",
+  "headAtExecution": "4f7203724334172ba65ccb1448df07d931ba9480",
+  "sourceReference": "50cb77ab6ccf9f383a39e59db308f4f8336051ea",
+  "frozenOriginal": "afefa41b2c8e1998979d44d383467a21c454e51e",
+  "originalFilesVerifiedUnchanged": [
+    "contract.md",
+    "fixtures.json",
+    "SHA256SUMS.txt"
+  ],
+  "checks": [
+    {
+      "label": "hash-and-string-vectors",
+      "argv": [
+        "node",
+        "docs/implementation-notes/3720-negotiated-member-names/successor-r1/verify-documentation.mjs"
+      ],
+      "exitCode": 0,
+      "rawOutput": "hash-and-string-vectors.txt",
+      "sha256": "3b3a69d9a350fd2d2371e8424630ef5f0dbb0c24c7d3283f08333f31bd2f0472"
+    },
+    {
+      "label": "source-hashes-patch-context",
+      "argv": [
+        "python3",
+        "docs/implementation-notes/3720-negotiated-member-names/successor-r1/check-review-artifact.py"
+      ],
+      "exitCode": 0,
+      "rawOutput": "source-hashes-patch-context.txt",
+      "sha256": "8895264aa24e7fcb6cb2db32410de3052271b72454a3b8225bca051ddeb537d0"
+    },
+    {
+      "label": "committed-diff-whitespace",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "afefa41b2c8e1998979d44d383467a21c454e51e",
+        "4f7203724334172ba65ccb1448df07d931ba9480"
+      ],
+      "exitCode": 0,
+      "rawOutput": "committed-diff-whitespace.txt",
+      "sha256": "be8fb8b922131cecf802f6bfe1c31fc4f7aeab5b61be4e3d9d626a440f6dd725"
+    },
+    {
+      "label": "changed-paths",
+      "argv": [
+        "git",
+        "diff",
+        "--name-only",
+        "afefa41b2c8e1998979d44d383467a21c454e51e",
+        "4f7203724334172ba65ccb1448df07d931ba9480"
+      ],
+      "exitCode": 0,
+      "rawOutput": "changed-paths.txt",
+      "sha256": "b736171cfb1f0f657d6c0ef7fc814789fa9f3313736644fe19bbc76644743dd9"
+    }
+  ],
+  "verificationInputHashes": {
+    "unsafe-precondition-only.review.patch.json": "350ea1ff0180bde19afdd4a0a95c292e55ea9a7d661d6a404308fced6395e101",
+    "source-binding.json": "be8e5c486407fa95e91b88c91cd3b0aa0cc1cf235e6950635cf2dba393203bf6",
+    "staging-whitespace-failure.json": "2c31acc22171ec73c4b7c477c5bef038e3528b136a8a6fa8b261b3e1aed5bd1c",
+    "committed-composition.review.patch": "68641c1ffa48d65f16e8295e8e7f748a7bf36cb7bda24bdf5f6decbbf1bb9451",
+    "check-review-artifact.py": "dce9e53bfb7cfea07c8c7d7f4059805066a5e15a3362fc3638dc123186e64cba",
+    "make-review-patch.py": "be0b687af578fd1bf17d86c683cd6afea3c6898ee78f6384d0ebd0b1ea36755e",
+    "fixtures.json": "ff6d2c4b2ce98849f3363836c3f9a7546187fa5dee5530030839a0bbe3544103",
+    "verify-documentation.mjs": "711b130c0d10e26b88fbb817e391fc627a906844fce9ed0cf1ca22d8a7d7860f"
+  },
+  "requiredUnexecuted": [
+    "product baseline red/green",
+    "default-store compatibility",
+    "settings and emergency races",
+    "UI/main caller authority",
+    "old/new endpoint negotiation",
+    "name store/crash/recovery",
+    "display currentness",
+    "product type/lint",
+    "independent source review",
+    "hosted current-head CI"
+  ]
+}

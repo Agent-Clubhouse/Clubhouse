@@ -1,0 +1,8 @@
+HEAD: 4f7203724334172ba65ccb1448df07d931ba9480
+Command argv: ["python3", "docs/implementation-notes/3720-negotiated-member-names/successor-r1/check-review-artifact.py"]
+Exit code: 0
+STDOUT:
+PASS documentation patch-context check only: 5 exact50cb source hashes, be29 equality, git apply --check --unidiff-zero against disposable copies.
+Patch NOT applied. No product type, lint, test, runtime or race execution. Proposed APIs are not implemented.
+
+STDERR:

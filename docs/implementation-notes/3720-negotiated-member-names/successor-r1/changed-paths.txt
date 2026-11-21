@@ -1,0 +1,17 @@
+HEAD: 4f7203724334172ba65ccb1448df07d931ba9480
+Command argv: ["git", "diff", "--name-only", "afefa41b2c8e1998979d44d383467a21c454e51e", "4f7203724334172ba65ccb1448df07d931ba9480"]
+Exit code: 0
+STDOUT:
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/SHA256SUMS.txt
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/check-review-artifact.py
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/clarifications.md
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/committed-composition.md
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/committed-composition.review.patch
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/fixtures.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/make-review-patch.py
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/source-binding.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/staging-whitespace-failure.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/unsafe-precondition-only.review.patch.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r1/verify-documentation.mjs
+
+STDERR:

@@ -1,0 +1,8 @@
+HEAD: 4f7203724334172ba65ccb1448df07d931ba9480
+Command argv: ["node", "docs/implementation-notes/3720-negotiated-member-names/successor-r1/verify-documentation.mjs"]
+Exit code: 0
+STDOUT:
+PASS documentation consistency only: 5 frozen + 6 successor canonical hash vectors; 10 Unicode/trim inventory cases; skew arithmetic.
+No product codec, IPC, store, socket, mixed-version endpoint, race, UI, type or lint execution.
+
+STDERR:
