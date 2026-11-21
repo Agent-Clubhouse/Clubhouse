@@ -3,12 +3,27 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import { NOTICE_INDEX_PAGE_BYTES, NoticePageIndex, type NoticePageRoot } from './pages';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { NOTICE_INDEX_PAGE_BYTES, NoticePageIndex, type NoticePageRoot, type NoticePageFailurePoint } from './pages';
 
 const homes: string[] = [];
 async function home() { const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'q5-pages-')); homes.push(directory); return directory; }
 afterEach(async () => { await Promise.all(homes.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true }))); });
 const key = (index: number) => `synthetic-${String(index).padStart(8, '0')}`;
+async function temps(directory: string) {
+  const result: string[] = [];
+  for (const prefix of await fs.readdir(directory)) for (const name of await fs.readdir(path.join(directory, prefix))) {
+    if (name.endsWith('.tmp')) result.push(path.join(directory, prefix, name));
+  }
+  return result.sort();
+}
+async function child(directory: string, mode: string) {
+  return promisify(execFile)(process.execPath, ['test/research/q5-index-process.cjs', directory, mode], { cwd: process.cwd() }).then(
+    (value) => ({ code: 0, stdout: value.stdout, stderr: value.stderr }),
+    (error: Error & { code: number; stdout: string; stderr: string }) => ({ code: error.code, stdout: error.stdout, stderr: error.stderr }),
+  );
+}
 
 describe('lazy immutable notice index', () => {
   it('keeps >64KiB of exact ID data paged and bounds detail cache to256 rows on write and cold reads', async () => {
@@ -16,6 +31,7 @@ describe('lazy immutable notice index', () => {
     let index = await NoticePageIndex.open(directory);
     let root: NoticePageRoot | undefined;
     for (let n = 0; n < 1024; n++) root = await index.set(root, key(n), { postId: `${key(n)}-${'x'.repeat(180)}`, status: 'uncertain' });
+    expect(index.cacheStats.pendingDirectoryCount).toBeLessThanOrEqual(258);
     await index.flush();
     expect(root?.count).toBe(1024);
     expect(index.cacheStats.peakLeafEntries).toBeLessThanOrEqual(256);
@@ -123,6 +139,117 @@ describe('lazy immutable notice index', () => {
     expect((await fs.lstat(file)).isSymbolicLink()).toBe(true);
     expect(await fs.readlink(file)).toBe(saved);
   });
+
+  it('earns reused file/prefix barriers across an actual unflushed-process exit and kills the skip-dirty mutant', async () => {
+    const guarded = await child(await home(), 'reuse-guarded');
+    console.info('Q5 reused-page guarded control', JSON.stringify(guarded));
+    expect(guarded).toMatchObject({ code: 0, stdout: expect.stringContaining('PASS: reused orphan earned file and prefix barriers') });
+    const mutant = await child(await home(), 'skip-reuse-dirty');
+    console.info('Q5 skipped-reuse-dirty mutant', JSON.stringify(mutant));
+    expect(mutant).toMatchObject({ code: 2, stdout: expect.stringContaining('SAFETY ASSERTION FAILED: reused orphan prefix barrier missing') });
+  }, 15000);
+
+  it('refuses failed reused-file sync and retains a failed prefix flush for retry', async () => {
+    const directory = await home();
+    const initial = await NoticePageIndex.open(directory);
+    const root = await initial.set(undefined, 'stable-id', true); // intentionally no flush
+    const file = path.join(directory, root.digest.slice(0, 2), `${root.digest}.json`);
+    const before = await fs.readFile(file);
+    const original = Object.assign(new Error('synthetic-reused-sync'), { code: 'EIO' });
+    const refused = await NoticePageIndex.open(directory, { testFailure: (point) => { if (point === 'beforeReusedSync') throw original; } });
+    await expect(refused.set(undefined, 'stable-id', true)).rejects.toBe(original);
+    const events: string[] = []; let failPrefix = true;
+    const prefix = path.dirname(file);
+    const retry = await NoticePageIndex.open(directory, { testFailure: (point, location) => {
+      if (point === 'reusedPageSynced') events.push('file-synced');
+      if (point === 'beforeDirectoryFlush' && location === prefix) {
+        events.push('prefix-requested');
+        if (failPrefix) throw original;
+      }
+    } });
+    expect(await retry.set(undefined, 'stable-id', true)).toEqual(root);
+    await expect(retry.flush()).rejects.toBe(original);
+    expect(retry.cacheStats.pendingDirectoryCount).toBe(3);
+    expect(events).toEqual(['file-synced', 'prefix-requested']);
+    failPrefix = false; await retry.flush();
+    expect(retry.cacheStats.pendingDirectoryCount).toBe(0);
+    expect(events).toEqual(['file-synced', 'prefix-requested', 'prefix-requested']);
+    expect(await fs.readFile(file)).toEqual(before);
+  });
+
+  it.each(['beforePageWrite', 'beforePageSync', 'beforePageRename'] as NoticePageFailurePoint[])('cleans only current-own temp after %s failure and then prepares successfully', async (point) => {
+    const directory = await home();
+    const original = Object.assign(new Error('synthetic-page-ENOSPC'), { code: 'ENOSPC' });
+    const failed = await NoticePageIndex.open(directory, { testFailure: (seen) => { if (seen === point) throw original; } });
+    await expect(failed.set(undefined, 'stable-id', true)).rejects.toBe(original);
+    expect(await temps(directory)).toEqual([]);
+    const reopened = await NoticePageIndex.open(directory);
+    const root = await reopened.set(undefined, 'stable-id', true); await reopened.flush();
+    expect(await reopened.get(root, 'stable-id')).toBe(true);
+  });
+
+  it('preserves primary failure when cleanup fails and never deletes that earlier residue on reopen', async () => {
+    const directory = await home();
+    const original = Object.assign(new Error('synthetic-original-page-ENOSPC'), { code: 'ENOSPC' });
+    const failed = await NoticePageIndex.open(directory, { testFailure: (point) => {
+      if (point === 'beforePageWrite') throw original;
+      if (point === 'beforeTempCleanup') throw new Error('synthetic-secondary-cleanup');
+    } });
+    await expect(failed.set(undefined, 'stable-id', true)).rejects.toBe(original);
+    const residue = await temps(directory); expect(residue).toHaveLength(1);
+    const before = await fs.readFile(residue[0]);
+    const reopened = await NoticePageIndex.open(directory); await reopened.set(undefined, 'stable-id', true);
+    expect(await temps(directory)).toEqual(residue);
+    expect(await fs.readFile(residue[0])).toEqual(before);
+  });
+
+  it('preserves an ambiguous replacement of its own temp and the original error', async () => {
+    const directory = await home(); let replacement!: string;
+    const original = new Error('synthetic-after-temp-replacement');
+    const index = await NoticePageIndex.open(directory, { testFailure: async (point, location) => {
+      if (point === 'beforePageRename') {
+        await fs.rename(location, location + '.owned-backup');
+        await fs.writeFile(location, 'foreign-replacement'); replacement = location;
+        throw original;
+      }
+    } });
+    await expect(index.set(undefined, 'stable-id', true)).rejects.toBe(original);
+    expect(await fs.readFile(replacement, 'utf8')).toBe('foreign-replacement');
+    const reopened = await NoticePageIndex.open(directory); await reopened.set(undefined, 'stable-id', true);
+    expect(await fs.readFile(replacement, 'utf8')).toBe('foreign-replacement');
+  });
+
+  it('cleans its current temp after actual rename refusal while preserving the conflicting directory', async () => {
+    const directory = await home(); let conflicting!: string;
+    const index = await NoticePageIndex.open(directory, { testFailure: async (point, location) => {
+      if (point === 'beforePageRename') {
+        conflicting = path.join(path.dirname(location), path.basename(location).slice(0, 64) + '.json');
+        await fs.mkdir(conflicting);
+      }
+    } });
+    await expect(index.set(undefined, 'stable-id', true)).rejects.toThrow();
+    expect((await fs.lstat(conflicting)).isDirectory()).toBe(true);
+    expect(await temps(directory)).toEqual([]);
+  });
+
+  it('retains prior-process temp after an actual temp-opened exit without granting it root authority', async () => {
+    const directory = await home();
+    expect(await child(directory, 'temp-opened')).toMatchObject({ code: 77 });
+    const residue = await temps(directory); expect(residue).toHaveLength(1);
+    const before = await fs.readFile(residue[0]);
+    const reopened = await NoticePageIndex.open(directory);
+    const root = await reopened.set(undefined, 'stable-id', true); await reopened.flush();
+    expect(await reopened.get(root, 'stable-id')).toBe(true);
+    expect(await temps(directory)).toEqual(residue);
+    expect(await fs.readFile(residue[0])).toEqual(before);
+    expect((await fs.readdir(directory)).includes('manifest.json')).toBe(false);
+  }, 15000);
+
+  it.skipIf(process.platform === 'win32')('refuses an actual regular-file to FIFO swap without a blocking open', async () => {
+    const result = await child(await home(), 'fifo-swap');
+    console.info('Q5 FIFO-swap nonblocking control', JSON.stringify(result));
+    expect(result).toMatchObject({ code: 0, stdout: expect.stringContaining('PASS: swapped FIFO refused without blocking') });
+  }, 15000);
 
   it('rejects a future page writer version even with a correct content hash', async () => {
     const directory = await home();

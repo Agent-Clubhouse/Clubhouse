@@ -116,6 +116,19 @@ before and after capped reads. This addresses damaged page input, not a global
 heap bound or hostile interprocess CAS/directory-traversal guarantee. Journal
 legacy checkpoint reads and root activation remain separate work.
 
+Index-publication successor to approved0826 syncs a validated reused file through
+its checked read descriptor, then marks its hash-prefix and index directory
+dirty. Bookkeeping is bounded by256 prefixes plus index/parent, not page count.
+Flush failure remains refusal with the relevant barrier pending. Opens are
+read-only/nonblocking/no-follow where supported, then recheck actual file type
+and identity; swapped FIFOs cannot become blocking reads. Private temp writes
+use current-exclusive-owner identity, first-error preservation and best-effort
+finally cleanup. Prior-process/foreign residues remain inert and untouched.
+Planned focused proof includes actual unflushed preparation/reopen/reuse with
+skip-dirty mutation, actual FIFO swap/temp-opened process controls, injected
+IO/cleanup failures and actual rename refusal. No activation, native Windows,
+interprocess CAS or physical power-loss credit follows from these controls.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.
