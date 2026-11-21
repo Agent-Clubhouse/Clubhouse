@@ -174,6 +174,11 @@ vi.mock('./agent-config', () => {
   listDurable,
   peekDurableConfigs: async (projectPath: string) => listDurable(projectPath),
   peekCachedDurableConfig: (_projectPath: string, id: string) => listDurable(_projectPath).find((config: { id: string }) => config.id === id) ?? null,
+  readDurableRegistrationLease: async (projectPath: string, id: string, createdAt: string) => ({
+    isCurrent: () => listDurable(projectPath).some((config: { id: string; createdAt: string; disposedAt?: string }) =>
+      config.id === id && config.createdAt === createdAt && !config.disposedAt),
+    close: async () => {},
+  }),
   readAgentIconData: vi.fn().mockReturnValue(null),
   agentIconFilePath: vi.fn(),
   createDurable: vi.fn().mockResolvedValue({ id: 'durable_new', name: 'test-agent', color: 'indigo', createdAt: '2025-01-01' }),
