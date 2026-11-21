@@ -1,0 +1,1303 @@
+diff --git a/docs/design/q5-root-state-batch.md b/docs/design/q5-root-state-batch.md
+new file mode 100644
+index 000000000..d4b4063d4
+--- /dev/null
++++ b/docs/design/q5-root-state-batch.md
+@@ -0,0 +1,43 @@
++# Q5 root/backend state batch — unintegrated work in progress
++
++Canonical issue3758. This task branch starts from actual fetched main
++5bbabde2d9f6dcb4db248d0976681fc331f5611e after isolated index PR3768.
++No app caller, runtime/type/recovery/driver hunk, settings or permission changes.
++The five landed index/durability/fixture files remain unchanged. Prior research
++refs and accepted receipts remain frozen; source copying transfers NO test run
++or whole-branch acceptance to this branch.
++
++First dependency is incremental root state. PreparedNoticeState applies bounded
++scan/intent/queued/settlement/recovery selections to six immutable indexes,
++retaining prior roots and selected input ownership. Recovery is explicit
++at-most50 attempt IDs; the future owner must walk the active index and commit
++all necessary recovery batches before sending. Uncertain holes never become
++ready; later selected work stays independent. Header/recipient unknown fields
++refuse before verification; there is no best-effort schema stripping.
++
++These are PREPARED root transitions, not committed state. An accepted-shaped
++delta is reducer data, NOT a live ACK capability. The future one physical journal
++queue must enforce the reviewed71bd receipt/entry/settlement arbitration, bind
++full identity/expected revision, validate every newly authoritative reference,
++earn page/file/directory barriers, append/sync one bounded root transaction, and
++publish only its committed root. Preparation or flush alone cannot activate,
++consume a nonce, authorize a handoff or establish a generation. No second
++receipt manager, runtime coordinator or independent catalog commit queue.
++
++The array state reducer/intervals/prepared reader are copied from frozen
++cacbb88f4d69b58a45e80a4781e72bb904e669b8 only as private dependencies/oracle.
++Their historical review scope stays separate; sparse-reader header key
++strictness and sparse-state are new. Imported-source-bridge.json identifies
++exact bytes. Journal extraction, authoritative incremental codec, catalog/R1,
++migration, UI/revocation/runtime binding and combined memory proof remain
++unimplemented. No PR is proposed for this small slice; combine coherent
++dependencies and exact proof/review before any future integration PR.
++
++Tests use a bounded independent full-array oracle, >256 old uncertain details,
++new-work liveness, cold prepared reopen, old-root preservation, recovery batches,
++cap50 completeness, MAX_SAFE_INTEGER arithmetic, unknown fields and failed
++preparation. They do not prove hardware crash/powerloss, committed activation,
++whole-process heap or real provider delivery. The directory/cache bookkeeping
++retains the previously stated per-index cache bound only.
++
++Status at initial commit: UNVALIDATED; no earlier test counts transferred.
+diff --git a/docs/design/q5-root-state-imported-source-bridge.json b/docs/design/q5-root-state-imported-source-bridge.json
+new file mode 100644
+index 000000000..7b2dd8e4d
+--- /dev/null
++++ b/docs/design/q5-root-state-imported-source-bridge.json
+@@ -0,0 +1,43 @@
++{
++  "base": "5bbabde2d9f6dcb4db248d0976681fc331f5611e",
++  "research": "cacbb88f4d69b58a45e80a4781e72bb904e669b8",
++  "scope": "Static source provenance only, no execution transfer",
++  "files": [
++    {
++      "path": "src/main/services/group-project-notice-ledger/state.ts",
++      "researchSha256": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8",
++      "currentSha256": "943dda22df6e6864335ee3c68ac481be4fa4a75f8793466ea65d9a6ac79c1fa8",
++      "changed": false
++    },
++    {
++      "path": "src/main/services/group-project-notice-ledger/state.test.ts",
++      "researchSha256": "aa1ffdbe7bd7affa0901f6318f700930e4d3af68a5a7fc1f209cd06ba97e6336",
++      "currentSha256": "aa1ffdbe7bd7affa0901f6318f700930e4d3af68a5a7fc1f209cd06ba97e6336",
++      "changed": false
++    },
++    {
++      "path": "src/main/services/group-project-notice-ledger/intervals.ts",
++      "researchSha256": "6dad2906b7b8db5671047d75dd98b3817bd06eb2882f206469b75180ef61650a",
++      "currentSha256": "6dad2906b7b8db5671047d75dd98b3817bd06eb2882f206469b75180ef61650a",
++      "changed": false
++    },
++    {
++      "path": "src/main/services/group-project-notice-ledger/intervals.test.ts",
++      "researchSha256": "cc464c9a5cde0412e8b2b6c5d987fcfa5efd7c81050559ff88c35377159d00c7",
++      "currentSha256": "cc464c9a5cde0412e8b2b6c5d987fcfa5efd7c81050559ff88c35377159d00c7",
++      "changed": false
++    },
++    {
++      "path": "src/main/services/group-project-notice-ledger/sparse-reader.ts",
++      "researchSha256": "c9e165ce23ed73ac68c293930d547935ad2a90068b2e8116198c05472b9ef4e0",
++      "currentSha256": "cd6d2efa04052d02ecac5572b02a88870b4d824a6dd4816369adb4d9f4b963e3",
++      "changed": true
++    },
++    {
++      "path": "src/main/services/group-project-notice-ledger/sparse-reader.test.ts",
++      "researchSha256": "4de164800e66b5934ffdfb4a3f46838f3975c70154511b8c8816eac2ce56c761",
++      "currentSha256": "4de164800e66b5934ffdfb4a3f46838f3975c70154511b8c8816eac2ce56c761",
++      "changed": false
++    }
++  ]
++}
+diff --git a/src/main/services/group-project-notice-ledger/intervals.test.ts b/src/main/services/group-project-notice-ledger/intervals.test.ts
+new file mode 100644
+index 000000000..faf8e6560
+--- /dev/null
++++ b/src/main/services/group-project-notice-ledger/intervals.test.ts
+@@ -0,0 +1,47 @@
++import { describe, expect, it } from 'vitest';
++import { contiguousNoticeFloor, coverNoticeInterval, noticeCovered, validateNoticeIntervals } from './intervals';
++
++describe('terminal notice coverage', () => {
++  it('compacts a million later terminal posts without erasing the first uncertain hole', () => {
++    const ranges = coverNoticeInterval([], 2, 1_000_001);
++    expect(ranges).toEqual([[2, 1_000_001]]);
++    expect(contiguousNoticeFloor(ranges, 0)).toBe(0);
++    expect(noticeCovered(ranges, 1)).toBe(false);
++    expect(noticeCovered(ranges, 1_000_001)).toBe(true);
++    expect(coverNoticeInterval(ranges, 1)).toEqual([[1, 1_000_001]]);
++  });
++
++  it('bridges multiple holes without mutating the saved input', () => {
++    const saved = [[2, 3], [7, 9], [11, 15]] as const;
++    expect(coverNoticeInterval(saved, 4, 11)).toEqual([[2, 15]]);
++    expect(saved).toEqual([[2, 3], [7, 9], [11, 15]]);
++    expect(contiguousNoticeFloor(saved, 1)).toBe(3);
++    expect(contiguousNoticeFloor(saved, 6)).toBe(9);
++  });
++
++  it('preserves disjoint holes and idempotently covers an existing interior', () => {
++    const saved = [[2, 3], [7, 9]] as const;
++    expect(coverNoticeInterval(saved, 5)).toEqual([[2, 3], [5, 5], [7, 9]]);
++    expect(coverNoticeInterval(saved, 8)).toEqual(saved);
++    expect(noticeCovered(saved, 4)).toBe(false);
++    expect(noticeCovered(saved, 10)).toBe(false);
++  });
++
++  it('keeps safe integer boundaries without adding past MAX_SAFE_INTEGER', () => {
++    const max = Number.MAX_SAFE_INTEGER;
++    const ranges = coverNoticeInterval([[max - 2, max - 1]], max);
++    expect(ranges).toEqual([[max - 2, max]]);
++    expect(contiguousNoticeFloor(ranges, max - 3)).toBe(max);
++    expect(noticeCovered(ranges, max)).toBe(true);
++  });
++
++  it.each([null, {}, [[1]], [[2, 1]], [[1, 2], [3, 4]], [[2, 3], [1, 1]], [[-1, 2]], [[1.5, 2]], [[0, Number.MAX_SAFE_INTEGER + 1]]])('rejects corrupt persisted intervals %j', (value) => {
++    expect(() => validateNoticeIntervals(value)).toThrow();
++  });
++
++  it('validates the persisted canonical form without treating gaps as covered', () => {
++    expect(validateNoticeIntervals([[0, 2], [4, 8]])).toEqual([[0, 2], [4, 8]]);
++    expect(() => coverNoticeInterval([], 9, 8)).toThrow();
++    expect(() => noticeCovered([], NaN)).toThrow();
++  });
++});
+diff --git a/src/main/services/group-project-notice-ledger/intervals.ts b/src/main/services/group-project-notice-ledger/intervals.ts
+new file mode 100644
+index 000000000..dbf1984d8
+--- /dev/null
++++ b/src/main/services/group-project-notice-ledger/intervals.ts
+@@ -0,0 +1,67 @@
++/** Closed terminal-coverage ranges. Covered means accepted OR scan-time excluded. */
++export type NoticeInterval = readonly [number, number];
++
++export function noticeSequence(value: number): number {
++  if (!Number.isSafeInteger(value) || value < 0) throw new Error('Invalid notice sequence');
++  return value;
++}
++
++/** Validate the canonical persisted form, rather than silently repairing corrupt state. */
++export function validateNoticeIntervals(value: unknown): NoticeInterval[] {
++  if (!Array.isArray(value)) throw new Error('Invalid notice coverage');
++  const result: NoticeInterval[] = [];
++  for (const range of value) {
++    if (!Array.isArray(range) || range.length !== 2) throw new Error('Invalid notice interval');
++    const lo = noticeSequence(range[0]);
++    const hi = noticeSequence(range[1]);
++    const prior = result[result.length - 1];
++    if (lo > hi || (prior && lo - prior[1] <= 1)) throw new Error('Noncanonical notice intervals');
++    result.push([lo, hi]);
++  }
++  return result;
++}
++
++export function noticeCovered(ranges: readonly NoticeInterval[], seq: number): boolean {
++  noticeSequence(seq);
++  let low = 0;
++  let high = ranges.length - 1;
++  while (low <= high) {
++    const mid = low + Math.floor((high - low) / 2);
++    const [start, end] = ranges[mid];
++    if (seq < start) high = mid - 1;
++    else if (seq > end) low = mid + 1;
++    else return true;
++  }
++  return false;
++}
++
++/** Merge even ABOVE an uncertain hole; no per-post retained terminal rows. */
++export function coverNoticeInterval(ranges: readonly NoticeInterval[], start: number, end = start): NoticeInterval[] {
++  noticeSequence(start); noticeSequence(end);
++  if (end < start) throw new Error('Reversed notice interval');
++  const result: NoticeInterval[] = [];
++  let inserted = false;
++  for (const [lo, hi] of ranges) {
++    if (hi < start && start - hi > 1) result.push([lo, hi]);
++    else if (end < lo && lo - end > 1) {
++      if (!inserted) { result.push([start, end]); inserted = true; }
++      result.push([lo, hi]);
++    } else {
++      start = Math.min(start, lo);
++      end = Math.max(end, hi);
++    }
++  }
++  if (!inserted) result.push([start, end]);
++  return result;
++}
++
++/** Baseline is inherited coverage, not a newly observed delivery receipt. */
++export function contiguousNoticeFloor(ranges: readonly NoticeInterval[], baseline: number): number {
++  noticeSequence(baseline);
++  let floor = baseline;
++  for (const [lo, hi] of ranges) {
++    if (lo > floor && lo - floor > 1) break;
++    floor = Math.max(floor, hi);
++  }
++  return floor;
++}
+diff --git a/src/main/services/group-project-notice-ledger/sparse-reader.test.ts b/src/main/services/group-project-notice-ledger/sparse-reader.test.ts
+new file mode 100644
+index 000000000..6637de4d0
+--- /dev/null
++++ b/src/main/services/group-project-notice-ledger/sparse-reader.test.ts
+@@ -0,0 +1,132 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import * as fs from 'fs/promises';
++import * as os from 'os';
++import * as path from 'path';
++import { NoticePageIndex, type NoticeJson } from './pages';
++import { noticeCoverageDigest } from './state';
++import { noticeSequenceKey, PreparedNoticeReader, type PreparedNoticeRoots } from './sparse-reader';
++
++const homes: string[] = [];
++async function home() { const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'q5-sparse-reader-')); homes.push(directory); return directory; }
++afterEach(async () => { await Promise.all(homes.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true }))); });
++const recipient = { groupId: 'synthetic-group', host: null, agentId: 'synthetic-member', generation: 'generation-one' };
++const postId = (n: number) => `post-${String(n).padStart(6, '0')}`;
++const attemptId = (n: number) => `attempt-${String(n).padStart(6, '0')}`;
++const post = (n: number) => ({ seq: n * 2 + 1, postId: postId(n) });
++function attempt(n: number, count: number) {
++  const posts = [post(n)];
++  return { attemptId: attemptId(n), coverageDigest: noticeCoverageDigest(posts), posts, startedAt: 1,
++    status: n === count - 2 ? 'queued' : 'uncertain', handoffProcess: 'synthetic-process',
++    ...(n === count - 2 ? { messageId: 'synthetic-queued-message' } : { reason: 'handoff_unknown' }) };
++}
++async function fixture(directory: string, count = 3) {
++  const index = await NoticePageIndex.open(directory);
++  const build = async (size: number, row: (n: number) => { key: string; value: NoticeJson }) => {
++    function* entries() { for (let n = 0; n < size; n++) yield row(n); }
++    return index.build(entries());
++  };
++  const roots: PreparedNoticeRoots['roots'] = {
++    terminal: await build(count, (n) => ({ key: noticeSequenceKey(n * 2 + 2), value: [n * 2 + 2, n * 2 + 2] })),
++    pending: await build(count, (n) => ({ key: noticeSequenceKey(post(n).seq), value: { ...post(n), ...(n === count - 1 ? {} : { attemptId: attemptId(n) }) } })),
++    ready: await index.set(undefined, noticeSequenceKey(post(count - 1).seq), postId(count - 1)),
++    attempts: await build(count - 1, (n) => ({ key: attemptId(n), value: attempt(n, count) })),
++    active: await index.set(undefined, attemptId(count - 2), true),
++    postIds: await build(count, (n) => ({ key: postId(n), value: post(n).seq })),
++  };
++  await index.flush();
++  const header: PreparedNoticeRoots = { schemaVersion: 1, minWriterVersion: 2, profile: 'sequenced-sparse-v1', recipient,
++    baselineThrough: 0, scannedThrough: count * 2, acceptedCount: count, excludedSequenceCount: 0, lateAcknowledgementCount: 0, roots };
++  return { index, header };
++}
++
++describe('prepared sparse notice reader, no activation authority', () => {
++  it('cold-verifies >256 uncertainty rows and pages later ready/active work without an all-record snapshot', async () => {
++    const directory = await home();
++    const { header } = await fixture(directory, 513);
++    const cold = await NoticePageIndex.open(directory);
++    const reader = await PreparedNoticeReader.openPrepared(cold, header);
++    expect(cold.cacheStats.peakLeafEntries).toBeLessThanOrEqual(256);
++    expect(cold.cacheStats.leafPages).toBeLessThanOrEqual(4);
++    expect(cold.cacheStats.indexPages).toBeLessThanOrEqual(16);
++    expect(Buffer.byteLength(JSON.stringify(reader.preparedHeader))).toBeLessThan(4096);
++    expect(await reader.legacyFloor()).toBe(0);
++    expect((await reader.attempt(attemptId(0)))?.status).toBe('uncertain');
++    expect((await reader.listReady({ limit: 50 })).posts).toEqual([post(512)]);
++    expect((await reader.listAttempts({ limit: 50, activeOnly: true })).attempts.map((a) => a.attemptId)).toEqual([attemptId(511)]);
++    let count = 0; let after: string | undefined;
++    do {
++      const page = await reader.listAttempts({ limit: 50, after });
++      expect(page.attempts.length).toBeLessThanOrEqual(50);
++      for (const value of page.attempts) expect(value.attemptId).toBe(attemptId(count++));
++      after = page.nextAfter;
++    } while (after);
++    expect(count).toBe(512);
++    expect(cold.cacheStats.peakLeafEntries).toBeLessThanOrEqual(256);
++    expect((await fs.readdir(directory)).includes('manifest.json')).toBe(false);
++  }, 30000);
++
++  it('copies header and returned rows, supports empty baseline and truthful contiguous floor', async () => {
++    const { index, header } = await fixture(await home());
++    const reader = await PreparedNoticeReader.openPrepared(index, header);
++    header.scannedThrough = 999;
++    reader.preparedHeader.recipient.generation = 'mutated';
++    const row = (await reader.attempt(attemptId(0)))!; row.posts[0].postId = 'mutated';
++    expect((await reader.attempt(attemptId(0)))?.posts[0].postId).toBe(postId(0));
++    expect(reader.preparedHeader.scannedThrough).toBe(6);
++    const empty = { ...reader.preparedHeader, baselineThrough: 7, scannedThrough: 7, acceptedCount: 0, roots: {} };
++    expect(await (await PreparedNoticeReader.openPrepared(index, empty)).legacyFloor()).toBe(7);
++    const terminal = await index.set(undefined, noticeSequenceKey(8), [8, 1000000000000]);
++    const excluded = { ...empty, scannedThrough: 1000000000000, excludedSequenceCount: 1000000000000 - 7, roots: { terminal } };
++    expect(await (await PreparedNoticeReader.openPrepared(index, excluded)).legacyFloor()).toBe(1000000000000);
++  });
++
++  it.each(['ready-missing', 'ready-owned', 'post-id-missing', 'post-id-orphan', 'duplicate-post-id', 'attempt-missing', 'attempt-extra-post', 'attempt-digest', 'active-missing', 'active-uncertain'])(
++    'refuses cross-index damage: %s', async (kind) => {
++      const { index, header } = await fixture(await home());
++      const r = header.roots;
++      if (kind === 'ready-missing') r.ready = undefined;
++      if (kind === 'ready-owned') r.ready = await index.set(r.ready, noticeSequenceKey(1), postId(0));
++      if (kind === 'post-id-missing') r.postIds = await index.delete(r.postIds, postId(0));
++      if (kind === 'post-id-orphan') r.postIds = await index.set(r.postIds, 'orphan', 1);
++      if (kind === 'duplicate-post-id') r.pending = await index.set(r.pending, noticeSequenceKey(3), { ...post(1), postId: postId(0), attemptId: attemptId(1) });
++      if (kind === 'attempt-missing') r.attempts = await index.delete(r.attempts, attemptId(0));
++      if (kind === 'attempt-digest') r.attempts = await index.set(r.attempts, attemptId(0), { ...attempt(0, 3), coverageDigest: '0'.repeat(64) });
++      if (kind === 'attempt-extra-post') {
++        const posts = [post(0), post(2)];
++        r.attempts = await index.set(r.attempts, attemptId(0), { ...attempt(0, 3), posts, coverageDigest: noticeCoverageDigest(posts) });
++      }
++      if (kind === 'active-missing') r.active = undefined;
++      if (kind === 'active-uncertain') r.active = await index.set(r.active, attemptId(0), true);
++      await expect(PreparedNoticeReader.openPrepared(index, header)).rejects.toThrow();
++    });
++
++  it.each(['gap', 'overlap', 'adjacent-terminal', 'counter', 'terminal-key', 'noncanonical-seq'])(
++    'refuses incomplete/noncanonical coverage: %s', async (kind) => {
++      const { index, header } = await fixture(await home());
++      if (kind === 'gap') header.roots.terminal = await index.delete(header.roots.terminal, noticeSequenceKey(2));
++      if (kind === 'overlap') header.roots.terminal = await index.set(header.roots.terminal, noticeSequenceKey(2), [2, 3]);
++      if (kind === 'adjacent-terminal') {
++        header.roots = { terminal: await index.build([{ key: noticeSequenceKey(1), value: [1, 1] }, { key: noticeSequenceKey(2), value: [2, 2] }]) };
++        header.scannedThrough = 2; header.acceptedCount = 2;
++      }
++      if (kind === 'counter') header.acceptedCount++;
++      if (kind === 'terminal-key') header.roots.terminal = await index.set(header.roots.terminal, noticeSequenceKey(2), [1, 2]);
++      if (kind === 'noncanonical-seq') header.roots.pending = await index.set(header.roots.pending, '01', post(0));
++      await expect(PreparedNoticeReader.openPrepared(index, header)).rejects.toThrow();
++    });
++
++  it('refuses future/ambiguous schema, malformed rows, missing pages and invalid read limits', async () => {
++    const directory = await home(); const { index, header } = await fixture(directory);
++    await expect(PreparedNoticeReader.openPrepared(index, { ...header, minWriterVersion: 3 })).rejects.toThrow('header');
++    await expect(PreparedNoticeReader.openPrepared(index, { ...header, roots: { ...header.roots, unknown: header.roots.ready } })).rejects.toThrow('roots');
++    const reader = await PreparedNoticeReader.openPrepared(index, header);
++    await expect(reader.listReady({ limit: 51 })).rejects.toThrow('limit');
++    await expect(reader.listAttempts({ limit: 0 })).rejects.toThrow('limit');
++    const bad = await index.set(header.roots.attempts, attemptId(0), { ...attempt(0, 3), reason: 'made-up' });
++    await expect(PreparedNoticeReader.openPrepared(index, { ...header, roots: { ...header.roots, attempts: bad } })).rejects.toThrow('reason');
++    const root = header.roots.pending!;
++    await fs.unlink(path.join(directory, root.digest.slice(0, 2), `${root.digest}.json`));
++    index.clearCache();
++    await expect(PreparedNoticeReader.openPrepared(index, header)).rejects.toThrow();
++  });
++});
+diff --git a/src/main/services/group-project-notice-ledger/sparse-reader.ts b/src/main/services/group-project-notice-ledger/sparse-reader.ts
+new file mode 100644
+index 000000000..81f9aa035
+--- /dev/null
++++ b/src/main/services/group-project-notice-ledger/sparse-reader.ts
+@@ -0,0 +1,197 @@
++/** Prepared immutable sequenced roots only: no journal commit or send authority. */
++import { NoticePageIndex, type NoticePageEntry, type NoticePageRoot } from './pages';
++import { noticeSequence, type NoticeInterval } from './intervals';
++import { NOTICE_BATCH_LIMIT, noticeCoverageDigest, noticeRecipientKey, type NoticeAttempt, type NoticeRecipient, type PendingNoticePost } from './state';
++
++export interface PreparedNoticeRoots {
++  schemaVersion: 1;
++  minWriterVersion: 2;
++  profile: 'sequenced-sparse-v1';
++  recipient: NoticeRecipient;
++  baselineThrough: number;
++  scannedThrough: number;
++  acceptedCount: number;
++  excludedSequenceCount: number;
++  lateAcknowledgementCount: number;
++  roots: Partial<Record<'terminal' | 'pending' | 'ready' | 'attempts' | 'active' | 'postIds', NoticePageRoot>>;
++}
++const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
++const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
++const rootNames = ['terminal', 'pending', 'ready', 'attempts', 'active', 'postIds'] as const;
++function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
++  return Object.keys(value).length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
++}
++function id(value: unknown): asserts value is string {
++  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 256 || [...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new Error('Invalid sparse notice identity');
++}
++/** Numeric sequence ordering only; never used to infer ordering from post IDs. */
++export function noticeSequenceKey(value: number): string { return String(noticeSequence(value)).padStart(16, '0'); }
++function sequenceKey(key: string): number {
++  const value = Number(key);
++  if (noticeSequenceKey(value) !== key) throw new Error('Noncanonical sparse notice sequence key');
++  return value;
++}
++function pendingRow(entry: NoticePageEntry): PendingNoticePost {
++  const value = entry.value;
++  if (!object(value) || value.seq !== sequenceKey(entry.key)) throw new Error('Sparse notice pending key mismatch');
++  id(value.postId);
++  if (value.attemptId !== undefined) id(value.attemptId);
++  return clone(value) as unknown as PendingNoticePost;
++}
++function attemptRow(entry: NoticePageEntry): NoticeAttempt {
++  const value = entry.value;
++  if (!object(value) || value.attemptId !== entry.key || !['intent', 'queued', 'uncertain'].includes(value.status as string)
++    || !Array.isArray(value.posts) || !value.posts.length || value.posts.length > NOTICE_BATCH_LIMIT
++    || typeof value.startedAt !== 'number' || !Number.isFinite(value.startedAt) || value.startedAt < 0) throw new Error('Invalid sparse notice attempt');
++  id(value.attemptId); id(value.handoffProcess);
++  if (value.messageId !== undefined) id(value.messageId);
++  if (value.reason !== undefined && (value.status !== 'uncertain' || !['recovered', 'handoff_unknown'].includes(value.reason as string))) throw new Error('Invalid sparse notice uncertainty reason');
++  const seqs = new Set<number>(); const ids = new Set<string>();
++  for (const post of value.posts) {
++    if (!object(post)) throw new Error('Invalid sparse notice attempt post');
++    const seq = noticeSequence(post.seq as number); id(post.postId);
++    if (seqs.has(seq) || ids.has(post.postId)) throw new Error('Duplicate sparse notice attempt coverage');
++    seqs.add(seq); ids.add(post.postId);
++  }
++  if (noticeCoverageDigest(value.posts as unknown as NoticeAttempt['posts']) !== value.coverageDigest) throw new Error('Sparse notice attempt digest mismatch');
++  return clone(value) as unknown as NoticeAttempt;
++}
++
++/**
++ * Read-only prepared snapshot. Even successful verification does not authenticate
++ * a root as committed, migrate a generation, consume a nonce, or permit a send.
++ * The future journal/catalog owner must supply that independent authority.
++ */
++export class PreparedNoticeReader {
++  private constructor(private readonly index: NoticePageIndex, private readonly header: PreparedNoticeRoots) {}
++  static async openPrepared(index: NoticePageIndex, value: unknown): Promise<PreparedNoticeReader> {
++    if (!object(value) || value.schemaVersion !== 1 || value.minWriterVersion !== 2 || value.profile !== 'sequenced-sparse-v1'
++      || !exactKeys(value, ['schemaVersion', 'minWriterVersion', 'profile', 'recipient', 'baselineThrough', 'scannedThrough', 'acceptedCount', 'excludedSequenceCount', 'lateAcknowledgementCount', 'roots'])
++      || !object(value.recipient) || !exactKeys(value.recipient, ['groupId', 'host', 'agentId', 'generation'])
++      || !object(value.roots) || Buffer.byteLength(JSON.stringify(value)) > 16 * 1024) throw new Error('Unsupported sparse notice header');
++    noticeRecipientKey(value.recipient as unknown as NoticeRecipient);
++    for (const field of ['baselineThrough', 'scannedThrough', 'acceptedCount', 'excludedSequenceCount', 'lateAcknowledgementCount']) noticeSequence(value[field] as number);
++    if ((value.baselineThrough as number) > (value.scannedThrough as number) || Object.keys(value.roots).some((name) => !rootNames.includes(name as typeof rootNames[number]))) throw new Error('Invalid sparse notice frontier or roots');
++    const reader = new PreparedNoticeReader(index, clone(value) as unknown as PreparedNoticeRoots);
++    await reader.verify();
++    return reader;
++  }
++  get preparedHeader(): PreparedNoticeRoots { return clone(this.header); }
++  /** Bounded batches, not an all-record snapshot. Cursors belong to this root. */
++  private async *rows(root: NoticePageRoot | undefined): AsyncGenerator<NoticePageEntry> {
++    let after: string | undefined;
++    while (true) {
++      const page = await this.index.list(root, { after, limit: 16 });
++      for (const row of page.entries) yield row;
++      if (!page.nextAfter) return;
++      after = page.nextAfter;
++    }
++  }
++  private async pending(seq: number): Promise<PendingNoticePost | undefined> {
++    const key = noticeSequenceKey(seq);
++    const value = await this.index.get(this.header.roots.pending, key);
++    return value === undefined ? undefined : pendingRow({ key, value });
++  }
++  async attempt(attemptId: string): Promise<NoticeAttempt | undefined> {
++    id(attemptId);
++    const value = await this.index.get(this.header.roots.attempts, attemptId);
++    return value === undefined ? undefined : attemptRow({ key: attemptId, value });
++  }
++  async listReady(options: { after?: string; limit: number }): Promise<{ posts: PendingNoticePost[]; nextAfter?: string }> {
++    this.limit(options.limit);
++    const page = await this.index.list(this.header.roots.ready, options);
++    const posts: PendingNoticePost[] = [];
++    for (const row of page.entries) {
++      const pending = await this.pending(sequenceKey(row.key));
++      if (!pending || pending.attemptId !== undefined || pending.postId !== row.value) throw new Error('Sparse notice ready reference mismatch');
++      posts.push(pending);
++    }
++    return { posts, ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}) };
++  }
++  async listAttempts(options: { after?: string; limit: number; activeOnly?: boolean }): Promise<{ attempts: NoticeAttempt[]; nextAfter?: string }> {
++    this.limit(options.limit);
++    const page = await this.index.list(options.activeOnly ? this.header.roots.active : this.header.roots.attempts, options);
++    const attempts: NoticeAttempt[] = [];
++    for (const row of page.entries) {
++      const attempt = options.activeOnly ? await this.attempt(row.key) : attemptRow(row);
++      if (!attempt || options.activeOnly && (row.value !== true || attempt.status === 'uncertain')) throw new Error('Sparse notice active reference mismatch');
++      attempts.push(attempt);
++    }
++    return { attempts, ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}) };
++  }
++  async legacyFloor(): Promise<number> {
++    if (this.header.baselineThrough === this.header.scannedThrough) return this.header.baselineThrough;
++    const first = this.header.baselineThrough + 1;
++    const row = await this.index.atOrBefore(this.header.roots.terminal, noticeSequenceKey(first));
++    if (!row) return this.header.baselineThrough;
++    const range = this.range(row);
++    return range[0] <= first && range[1] >= first ? range[1] : this.header.baselineThrough;
++  }
++  private limit(value: number): void {
++    if (!Number.isSafeInteger(value) || value < 1 || value > NOTICE_BATCH_LIMIT) throw new Error('Invalid sparse notice read limit');
++  }
++  private range(row: NoticePageEntry): NoticeInterval {
++    if (!Array.isArray(row.value) || row.value.length !== 2) throw new Error('Invalid sparse notice terminal interval');
++    const lo = noticeSequence(row.value[0] as number); const hi = noticeSequence(row.value[1] as number);
++    if (lo !== sequenceKey(row.key) || hi < lo) throw new Error('Sparse notice terminal key mismatch');
++    return [lo, hi];
++  }
++  private async verify(): Promise<void> {
++    const { roots } = this.header;
++    for (const name of rootNames) await this.index.verify(roots[name]);
++    const terminal = this.rows(roots.terminal); const pending = this.rows(roots.pending);
++    let t = await terminal.next(); let p = await pending.next();
++    let floor = this.header.baselineThrough; let terminalCount = 0; let priorTerminalEnd: number | undefined;
++    // Merge coverage spans, not every position in a large excluded range.
++    while (!t.done || !p.done) {
++      const range = t.done ? undefined : this.range(t.value);
++      const post = p.done ? undefined : pendingRow(p.value);
++      let lo: number; let hi: number;
++      if (range && (!post || range[0] <= post.seq)) {
++        [lo, hi] = range;
++        if (priorTerminalEnd !== undefined && lo - priorTerminalEnd <= 1) throw new Error('Noncanonical sparse notice intervals');
++        priorTerminalEnd = hi; terminalCount += hi - lo + 1;
++        t = await terminal.next();
++      } else {
++        lo = hi = post!.seq;
++        await this.verifyPending(post!);
++        p = await pending.next();
++      }
++      if (lo - floor !== 1 || hi > this.header.scannedThrough) throw new Error('Sparse notice coverage gap or overlap');
++      floor = hi;
++    }
++    if (floor !== this.header.scannedThrough || this.header.acceptedCount + this.header.excludedSequenceCount !== terminalCount) throw new Error('Sparse notice coverage or terminal count mismatch');
++    for await (const row of this.rows(roots.ready)) {
++      const post = await this.pending(sequenceKey(row.key));
++      if (!post || post.attemptId !== undefined || post.postId !== row.value) throw new Error('Orphan sparse notice ready row');
++    }
++    for await (const row of this.rows(roots.postIds)) {
++      id(row.key); const post = await this.pending(noticeSequence(row.value as number));
++      if (!post || post.postId !== row.key) throw new Error('Orphan sparse notice post ID');
++    }
++    for await (const row of this.rows(roots.attempts)) {
++      const attempt = attemptRow(row);
++      for (const covered of attempt.posts) {
++        const post = await this.pending(covered.seq);
++        if (!post || post.postId !== covered.postId || post.attemptId !== attempt.attemptId) throw new Error('Sparse notice attempt coverage mismatch');
++      }
++      const active = await this.index.get(roots.active, attempt.attemptId);
++      if (attempt.status === 'uncertain' ? active !== undefined : active !== true) throw new Error('Sparse notice active coverage mismatch');
++    }
++    for await (const row of this.rows(roots.active)) {
++      const attempt = await this.attempt(row.key);
++      if (row.value !== true || !attempt || attempt.status === 'uncertain') throw new Error('Orphan sparse notice active attempt');
++    }
++  }
++  private async verifyPending(post: PendingNoticePost): Promise<void> {
++    const { roots } = this.header;
++    if (await this.index.get(roots.postIds, post.postId) !== post.seq) throw new Error('Sparse notice post ID reference mismatch');
++    const ready = await this.index.get(roots.ready, noticeSequenceKey(post.seq));
++    if (post.attemptId === undefined) {
++      if (ready !== post.postId) throw new Error('Sparse notice ready reference mismatch');
++    } else {
++      const attempt = await this.attempt(post.attemptId);
++      if (ready !== undefined || !attempt?.posts.some((p) => p.seq === post.seq && p.postId === post.postId)) throw new Error('Sparse notice pending ownership mismatch');
++    }
++  }
++}
+diff --git a/src/main/services/group-project-notice-ledger/sparse-state.test.ts b/src/main/services/group-project-notice-ledger/sparse-state.test.ts
+new file mode 100644
+index 000000000..417289039
+--- /dev/null
++++ b/src/main/services/group-project-notice-ledger/sparse-state.test.ts
+@@ -0,0 +1,165 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import * as fs from 'fs/promises';
++import * as os from 'os';
++import * as path from 'path';
++import { NoticePageIndex, type NoticeJson, type NoticePageRoot } from './pages';
++import { PreparedNoticeReader, noticeSequenceKey, type PreparedNoticeRoots } from './sparse-reader';
++import { PreparedNoticeState, type SparseNoticeDelta } from './sparse-state';
++import { applyNoticeDelta, noticeCoverageDigest, type NoticeDelta, type SequencedNoticeState } from './state';
++
++const homes: string[] = [];
++async function home() { const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'q5-root-state-')); homes.push(dir); return dir; }
++afterEach(async () => { await Promise.all(homes.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))); });
++const recipient = { groupId: 'synthetic-group', host: null, agentId: 'synthetic-agent', generation: 'member-generation' };
++const post = (seq: number) => ({ seq, postId: `post-${String(seq).padStart(6, '0')}` });
++const scan = (seq: number): SparseNoticeDelta => ({ kind: 'scan', through: seq, eligible: [post(seq)] });
++const intent = (seq: number): SparseNoticeDelta => ({ kind: 'intent', attemptId: `attempt-${seq}`, posts: [post(seq)], handoffProcess: 'process-one', startedAt: 1 });
++const ack = (seq: number): SparseNoticeDelta => ({ kind: 'settle', attemptId: `attempt-${seq}`, outcome: 'accepted', acknowledgement: { kind: 'same-process-exact-handoff', handoffProcess: 'process-one', coverageDigest: noticeCoverageDigest([post(seq)]) } });
++const initial = () => applyNoticeDelta(undefined, { kind: 'initialize', recipient, baseline: 0 });
++async function all(index: NoticePageIndex, root: NoticePageRoot | undefined) {
++  const values: { key: string; value: NoticeJson }[] = [];
++  let after: string | undefined;
++  do {
++    const page = await index.list(root, { after, limit: 50 }); values.push(...page.entries); after = page.nextAfter;
++  } while (after);
++  return values;
++}
++/** Bounded test oracle only; never used by the production root transitions. */
++async function assertOracle(index: NoticePageIndex, state: PreparedNoticeState, model: SequencedNoticeState) {
++  const h = state.preparedHeader;
++  await PreparedNoticeReader.openPrepared(index, h);
++  const { roots: _roots, profile, ...metadata } = h;
++  const { terminal: _terminal, pending: _pending, attempts: _attempts, ...expected } = model;
++  expect(profile).toBe('sequenced-sparse-v1');
++  expect({ ...metadata, minWriterVersion: 1 }).toEqual(expected);
++  expect((await all(index, h.roots.terminal)).map((v) => v.value)).toEqual(model.terminal);
++  expect((await all(index, h.roots.pending)).map((v) => v.value)).toEqual([...model.pending].sort((a, b) => a.seq - b.seq));
++  expect((await all(index, h.roots.attempts)).map((v) => v.value)).toEqual([...model.attempts].sort((a, b) => a.attemptId < b.attemptId ? -1 : a.attemptId > b.attemptId ? 1 : 0));
++}
++async function seed(index: NoticePageIndex, model: SequencedNoticeState) {
++  const build = async (entries: { key: string; value: unknown }[]) => index.build(entries.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0) as { key: string; value: NoticeJson }[]);
++  const roots: PreparedNoticeRoots['roots'] = {
++    terminal: await build(model.terminal.map((r) => ({ key: noticeSequenceKey(r[0]), value: r }))),
++    pending: await build(model.pending.map((p) => ({ key: noticeSequenceKey(p.seq), value: p }))),
++    ready: await build(model.pending.filter((p) => p.attemptId === undefined).map((p) => ({ key: noticeSequenceKey(p.seq), value: p.postId }))),
++    attempts: await build(model.attempts.map((a) => ({ key: a.attemptId, value: a }))),
++    active: await build(model.attempts.filter((a) => a.status !== 'uncertain').map((a) => ({ key: a.attemptId, value: true }))),
++    postIds: await build(model.pending.map((p) => ({ key: p.postId, value: p.seq }))),
++  };
++  const { terminal: _terminal, pending: _pending, attempts: _attempts, ...metadata } = model;
++  return PreparedNoticeState.openPrepared(index, { ...metadata, minWriterVersion: 2, profile: 'sequenced-sparse-v1', roots });
++}
++
++describe('prepared root transitions, no journal/activation/receipt authority', () => {
++  it('matches the independent full-array reducer through uncertainty, later acceptance, exclusion and genuine late ACK', async () => {
++    const index = await NoticePageIndex.open(await home());
++    let state = PreparedNoticeState.initialize(index, recipient, 0); let model = initial();
++    const deltas: SparseNoticeDelta[] = [scan(1), intent(1), { kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' },
++      scan(3), intent(3), { kind: 'queued', attemptId: 'attempt-3', messageId: 'runtime-item' }, ack(3),
++      scan(2), scan(4), intent(4), { kind: 'settle', attemptId: 'attempt-4', outcome: 'unsubmitted' }, intent(4), ack(4), ack(1), ack(1),
++      { kind: 'queued', attemptId: 'attempt-1', messageId: 'late-result' }];
++    for (const delta of deltas) {
++      const prior = state; const before = prior.preparedHeader;
++      state = await state.prepare(delta); model = applyNoticeDelta(model, delta as NoticeDelta);
++      expect(prior.preparedHeader).toEqual(before); await assertOracle(index, state, model);
++    }
++    expect(state.preparedHeader.lateAcknowledgementCount).toBe(1);
++    expect(await (await PreparedNoticeReader.openPrepared(index, state.preparedHeader)).legacyFloor()).toBe(4);
++  });
++
++  it('keeps >256 old uncertainty rows accessible while incrementally accepting later work and merging a million-position span', async () => {
++    const directory = await home(); const index = await NoticePageIndex.open(directory); let model = initial();
++    for (let n = 1; n <= 257; n++) for (const d of [scan(n), intent(n), { kind: 'settle', attemptId: `attempt-${n}`, outcome: 'uncertain' }] as NoticeDelta[]) model = applyNoticeDelta(model, d);
++    let state = await seed(index, model); const old = state.preparedHeader;
++    for (const delta of [scan(1_000_001), intent(1_000_001), ack(1_000_001)]) { state = await state.prepare(delta); model = applyNoticeDelta(model, delta as NoticeDelta); }
++    expect(state.preparedHeader.roots.terminal?.count).toBe(1);
++    expect(state.preparedHeader.roots.pending?.count).toBe(257);
++    expect(state.preparedHeader.roots.attempts?.count).toBe(257);
++    expect((await state.listReady({ limit: 50 })).posts).toEqual([]);
++    await index.flush(); const cold = await NoticePageIndex.open(directory); const reopened = await PreparedNoticeState.openPrepared(cold, state.preparedHeader);
++    await assertOracle(cold, reopened, model);
++    const reader = await PreparedNoticeReader.openPrepared(cold, reopened.preparedHeader);
++    expect((await reader.attempt('attempt-1'))?.status).toBe('uncertain'); expect(await reader.legacyFloor()).toBe(0);
++    expect((await PreparedNoticeReader.openPrepared(cold, old)).preparedHeader.scannedThrough).toBe(257);
++    expect(cold.cacheStats.leafPages).toBeLessThanOrEqual(4); expect(cold.cacheStats.indexPages).toBeLessThanOrEqual(16);
++    expect(cold.cacheStats.peakLeafEntries).toBeLessThanOrEqual(256);
++    expect((await fs.readdir(directory)).includes('manifest.json')).toBe(false);
++  }, 60000);
++
++  it('recovers only explicitly selected at-most50 active attempts per transition; recovered attempts never gain ACK or retry authority', async () => {
++    const index = await NoticePageIndex.open(await home()); let model = initial();
++    for (let n = 1; n <= 51; n++) for (const d of [scan(n), intent(n), { kind: 'queued', attemptId: `attempt-${n}` }] as NoticeDelta[]) model = applyNoticeDelta(model, d);
++    let state = await seed(index, model);
++    const first = await state.listActive({ limit: 50 }); expect(first.attemptIds).toHaveLength(50);
++    state = await state.prepare({ kind: 'recover', attemptIds: first.attemptIds });
++    expect(state.preparedHeader.roots.active?.count).toBe(1);
++    await expect(state.prepare({ kind: 'recover', attemptIds: model.attempts.map((a) => a.attemptId) })).rejects.toThrow('batch');
++    const remaining = await state.listActive({ limit: 50 }); state = await state.prepare({ kind: 'recover', attemptIds: remaining.attemptIds });
++    model = applyNoticeDelta(model, { kind: 'recover' }); await assertOracle(index, state, model);
++    expect(await state.prepare({ kind: 'recover', attemptIds: first.attemptIds })).toBe(state);
++    await expect(state.prepare(ack(1))).rejects.toThrow('Recovered');
++    await expect(state.prepare({ kind: 'settle', attemptId: 'attempt-1', outcome: 'unsubmitted' })).rejects.toThrow('Uncertainty');
++    await expect(state.prepare({ ...intent(1), attemptId: 'blind-retry' })).rejects.toThrow('not ready');
++    state = await state.prepare(scan(52)); expect((await state.listReady({ limit: 50 })).posts).toEqual([post(52)]);
++  }, 30000);
++
++  it('owns input before an await and failed preparation cannot alter old roots or confer committed authority', async () => {
++    const directory = await home(); let fail = false;
++    const index = await NoticePageIndex.open(directory, { testFailure: (point) => { if (fail && point === 'beforePageWrite') throw new Error('synthetic-write-failure'); } });
++    const initial = PreparedNoticeState.initialize(index, recipient, 0);
++    const input = { kind: 'scan' as const, through: 1, eligible: [post(1)] };
++    const pending = initial.prepare(input); input.through = 999; input.eligible[0].postId = 'mutated-after-call';
++    const state = await pending; expect((await state.listReady({ limit: 50 })).posts).toEqual([post(1)]);
++    const snapshot = state.preparedHeader; state.preparedHeader.recipient.agentId = 'mutated-copy'; fail = true;
++    await expect(state.prepare(scan(2))).rejects.toThrow('synthetic-write-failure'); expect(state.preparedHeader).toEqual(snapshot);
++    fail = false; const good = await state.prepare(scan(3));
++    await PreparedNoticeState.openPrepared(index, good.preparedHeader);
++    expect(state.preparedHeader).toEqual(snapshot); expect(initial.preparedHeader.roots).toEqual({});
++    expect((await fs.readdir(directory)).some((n) => /manifest|journal/.test(n))).toBe(false);
++  });
++
++  it('admits cap50 equality, rejects truncated scan frontier/conflicting identities and preserves scan-time exclusions', async () => {
++    const index = await NoticePageIndex.open(await home()); const state = PreparedNoticeState.initialize(index, recipient, 0);
++    const eligible = Array.from({ length: 50 }, (_, n) => post(n + 1));
++    await expect(state.prepare({ kind: 'scan', through: 100, eligible })).rejects.toThrow('Capped');
++    const full = await state.prepare({ kind: 'scan', through: 50, eligible }); expect((await full.listReady({ limit: 50 })).posts).toEqual(eligible);
++    await expect(full.prepare({ kind: 'scan', through: 51, eligible: [{ seq: 1, postId: 'wrong' }] })).rejects.toThrow('identity');
++    await expect(full.prepare({ kind: 'scan', through: 51, eligible: [{ seq: 51, postId: post(1).postId }] })).rejects.toThrow('identity');
++    const excluded = await full.prepare({ kind: 'scan', through: 100, eligible: [] });
++    expect(await excluded.prepare(scan(75))).toBe(excluded);
++    expect(excluded.preparedHeader.excludedSequenceCount).toBe(50);
++    await expect(full.listReady({ limit: 51 })).rejects.toThrow('limit');
++  });
++
++  it('matches multiple bounded scan/intent/settlement combinations and coalesces terminal neighbours without skipping holes', async () => {
++    const index = await NoticePageIndex.open(await home()); let state = PreparedNoticeState.initialize(index, recipient, 0); let model = initial();
++    for (let n = 1; n <= 24; n++) {
++      const seq = n * 3;
++      const outcome = n % 4 === 0 ? 'unsubmitted' : n % 3 === 0 ? 'uncertain' : 'accepted';
++      for (const delta of [scan(seq), intent(seq), outcome === 'accepted' ? ack(seq) : { kind: 'settle', attemptId: `attempt-${seq}`, outcome }] as SparseNoticeDelta[]) {
++        state = await state.prepare(delta); model = applyNoticeDelta(model, delta as NoticeDelta);
++      }
++      if (n % 6 === 0) await assertOracle(index, state, model);
++    }
++    await assertOracle(index, state, model);
++  }, 30000);
++
++  it('keeps sequence/counters exact near MAX_SAFE_INTEGER without unsafe add-then-subtract intermediates', async () => {
++    const index = await NoticePageIndex.open(await home()); const max = Number.MAX_SAFE_INTEGER;
++    let state = PreparedNoticeState.initialize(index, recipient, 0); let model = initial();
++    for (const d of [{ kind: 'scan', through: max - 3, eligible: [] }, scan(max - 1), intent(max - 1), ack(max - 1), { kind: 'scan', through: max, eligible: [] }] as SparseNoticeDelta[]) {
++      state = await state.prepare(d); model = applyNoticeDelta(model, d as NoticeDelta);
++    }
++    await assertOracle(index, state, model); expect(state.preparedHeader.acceptedCount).toBe(1); expect(state.preparedHeader.excludedSequenceCount).toBe(max - 1);
++  });
++
++  it('refuses unknown structural fields at header/recipient/transition boundaries without stripping or publishing them', async () => {
++    const index = await NoticePageIndex.open(await home()); const state = PreparedNoticeState.initialize(index, recipient, 0); const header = state.preparedHeader;
++    await expect(PreparedNoticeState.openPrepared(index, { ...header, future: true })).rejects.toThrow('header');
++    await expect(PreparedNoticeState.openPrepared(index, { ...header, recipient: { ...recipient, future: true } })).rejects.toThrow('header');
++    await expect(state.prepare({ ...scan(1), future: true } as SparseNoticeDelta)).rejects.toThrow('fields');
++    await expect(state.prepare({ ...scan(1), future: undefined } as SparseNoticeDelta)).rejects.toThrow('fields');
++    await expect(state.prepare({ kind: 'scan', through: 1, eligible: [{ ...post(1), body: 'must-not-be-stored' }] } as SparseNoticeDelta)).rejects.toThrow('fields');
++    expect(state.preparedHeader).toEqual(header);
++  });
++});
+diff --git a/src/main/services/group-project-notice-ledger/sparse-state.ts b/src/main/services/group-project-notice-ledger/sparse-state.ts
+new file mode 100644
+index 000000000..cb50912fd
+--- /dev/null
++++ b/src/main/services/group-project-notice-ledger/sparse-state.ts
+@@ -0,0 +1,215 @@
++/** Prepared root transitions only. No committed revision, receipt or send authority. */
++import { NoticePageIndex, type NoticeJson, type NoticePageEntry } from './pages';
++import { noticeSequence } from './intervals';
++import { noticeSequenceKey, PreparedNoticeReader, type PreparedNoticeRoots } from './sparse-reader';
++import { NOTICE_BATCH_LIMIT, noticeCoverageDigest, noticeRecipientKey, type NoticeAttempt, type NoticeDelta, type NoticePost, type NoticeRecipient, type PendingNoticePost } from './state';
++
++/** Recovery must be walked/committed in bounded batches by the future journal owner. */
++export type SparseNoticeDelta = Exclude<NoticeDelta, { kind: 'initialize' } | { kind: 'recover' }>
++  | { kind: 'recover'; attemptIds: string[] };
++const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
++function id(value: unknown): asserts value is string {
++  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 256 || [...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new Error('Invalid sparse notice identity');
++}
++function keys(value: object, required: string[], optional: string[] = []): void {
++  if (required.some((k) => !Object.prototype.hasOwnProperty.call(value, k)) || Object.keys(value).some((k) => !required.includes(k) && !optional.includes(k))) throw new Error('Unsupported sparse notice fields');
++}
++function post(value: NoticePost): NoticePost {
++  keys(value, ['seq', 'postId']); noticeSequence(value.seq); id(value.postId);
++  return { seq: value.seq, postId: value.postId };
++}
++function json(value: object): NoticeJson { return copy(value) as unknown as NoticeJson; }
++function boundedList(values: readonly unknown[]): void {
++  if (!Array.isArray(values) || values.length > NOTICE_BATCH_LIMIT) throw new Error('Sparse notice batch too large');
++}
++
++/**
++ * An immutable, uncommitted root set. prepare() owns its input before yielding,
++ * writes only copy-on-write orphan pages, and never publishes over this object.
++ * The future single journal queue must bind expected revision/recipient, earn
++ * all authoritative root barriers, append/sync, and only then expose a result.
++ * This reducer does not replace the reviewed live receipt/entry arbitration.
++ */
++export class PreparedNoticeState {
++  private constructor(private readonly index: NoticePageIndex, private readonly header: PreparedNoticeRoots) {}
++  static initialize(index: NoticePageIndex, recipient: NoticeRecipient, baseline: number): PreparedNoticeState {
++    keys(recipient, ['groupId', 'host', 'agentId', 'generation']); noticeRecipientKey(recipient); noticeSequence(baseline);
++    return new PreparedNoticeState(index, { schemaVersion: 1, minWriterVersion: 2, profile: 'sequenced-sparse-v1', recipient: copy(recipient),
++      baselineThrough: baseline, scannedThrough: baseline, acceptedCount: 0, excludedSequenceCount: 0, lateAcknowledgementCount: 0, roots: {} });
++  }
++  /** Full streaming consistency verification at an untrusted storage boundary. */
++  static async openPrepared(index: NoticePageIndex, value: unknown): Promise<PreparedNoticeState> {
++    const reader = await PreparedNoticeReader.openPrepared(index, value);
++    return new PreparedNoticeState(index, reader.preparedHeader);
++  }
++  get preparedHeader(): PreparedNoticeRoots { return copy(this.header); }
++  private async pending(seq: number): Promise<PendingNoticePost | undefined> {
++    return await this.index.get(this.header.roots.pending, noticeSequenceKey(seq)) as unknown as PendingNoticePost | undefined;
++  }
++  private async attempt(attemptId: string): Promise<NoticeAttempt | undefined> {
++    return await this.index.get(this.header.roots.attempts, attemptId) as unknown as NoticeAttempt | undefined;
++  }
++  /** Only new frontier spans or single accepted positions may be covered. */
++  private async cover(header: PreparedNoticeRoots, lo: number, hi = lo): Promise<void> {
++    let root = header.roots.terminal;
++    const previous = await this.index.atOrBefore(root, noticeSequenceKey(lo));
++    if (previous) {
++      const range = previous.value as number[];
++      if (lo - range[1] <= 1) { lo = range[0]; hi = Math.max(hi, range[1]); root = await this.index.delete(root, previous.key); }
++    }
++    // A canonical existing interval set has at most one successor adjoining a
++    // single accepted position. A new scan range lies beyond the old frontier.
++    const next = (await this.index.list(root, { after: noticeSequenceKey(lo), limit: 1 })).entries[0];
++    if (next) {
++      const range = next.value as number[];
++      if (range[0] - hi <= 1) { hi = Math.max(hi, range[1]); root = await this.index.delete(root, next.key); }
++    }
++    header.roots.terminal = await this.index.set(root, noticeSequenceKey(lo), [lo, hi]);
++  }
++  private async putAttempt(header: PreparedNoticeRoots, attempt: NoticeAttempt): Promise<void> {
++    header.roots.attempts = await this.index.set(header.roots.attempts, attempt.attemptId, json(attempt));
++  }
++  async prepare(input: SparseNoticeDelta): Promise<PreparedNoticeState> {
++    // Synchronous ownership before the first index operation/await. In particular
++    // a caller cannot change coverage/settlement while preparation is suspended.
++    const delta = structuredClone(input);
++    const header = this.preparedHeader;
++    switch (delta.kind) {
++      case 'scan': {
++        keys(delta, ['kind', 'through', 'eligible']); const through = noticeSequence(delta.through);
++        boundedList(delta.eligible);
++        const eligible = delta.eligible.map(post).sort((a, b) => a.seq - b.seq);
++        if (eligible.length === NOTICE_BATCH_LIMIT && through !== eligible[eligible.length - 1].seq) throw new Error('Capped notice scan cannot over-advance its frontier');
++        const seqs = new Set<number>(); const ids = new Set<string>();
++        for (const p of eligible) {
++          if (p.seq > through || seqs.has(p.seq) || ids.has(p.postId)) throw new Error('Conflicting notice scan');
++          seqs.add(p.seq); ids.add(p.postId);
++          const old = await this.pending(p.seq); const oldSeq = await this.index.get(header.roots.postIds, p.postId);
++          if (old && old.postId !== p.postId || oldSeq !== undefined && oldSeq !== p.seq) throw new Error('Conflicting notice post identity');
++        }
++        if (through <= header.scannedThrough) return this;
++        let cursor = header.scannedThrough;
++        for (const p of eligible) if (p.seq > this.header.scannedThrough) {
++          if (p.seq - cursor > 1) {
++            await this.cover(header, cursor + 1, p.seq - 1);
++            header.excludedSequenceCount = noticeSequence(header.excludedSequenceCount + (p.seq - cursor - 1));
++          }
++          header.roots.pending = await this.index.set(header.roots.pending, noticeSequenceKey(p.seq), json(p));
++          header.roots.ready = await this.index.set(header.roots.ready, noticeSequenceKey(p.seq), p.postId);
++          header.roots.postIds = await this.index.set(header.roots.postIds, p.postId, p.seq);
++          cursor = p.seq;
++        }
++        if (cursor < through) {
++          await this.cover(header, cursor + 1, through);
++          header.excludedSequenceCount = noticeSequence(header.excludedSequenceCount + (through - cursor));
++        }
++        header.scannedThrough = through;
++        break;
++      }
++      case 'intent': {
++        keys(delta, ['kind', 'attemptId', 'posts', 'startedAt', 'handoffProcess']); id(delta.attemptId); id(delta.handoffProcess);
++        boundedList(delta.posts);
++        if (!delta.posts.length || !Number.isFinite(delta.startedAt) || delta.startedAt < 0) throw new Error('Invalid notice attempt');
++        const posts = delta.posts.map(post).sort((a, b) => a.seq - b.seq);
++        if (new Set(posts.map((p) => p.seq)).size !== posts.length || new Set(posts.map((p) => p.postId)).size !== posts.length) throw new Error('Duplicate attempt coverage');
++        const coverageDigest = noticeCoverageDigest(posts); const existing = await this.attempt(delta.attemptId);
++        if (existing) {
++          if (existing.coverageDigest !== coverageDigest) throw new Error('Notice attempt key conflict');
++          return this;
++        }
++        for (const p of posts) {
++          const old = await this.pending(p.seq);
++          if (!old || old.postId !== p.postId || old.attemptId !== undefined || await this.index.get(header.roots.ready, noticeSequenceKey(p.seq)) !== p.postId) throw new Error('Notice coverage is not ready');
++        }
++        for (const p of posts) {
++          header.roots.pending = await this.index.set(header.roots.pending, noticeSequenceKey(p.seq), json({ ...p, attemptId: delta.attemptId }));
++          header.roots.ready = await this.index.delete(header.roots.ready, noticeSequenceKey(p.seq));
++        }
++        await this.putAttempt(header, { attemptId: delta.attemptId, posts, coverageDigest, startedAt: delta.startedAt, handoffProcess: delta.handoffProcess, status: 'intent' });
++        header.roots.active = await this.index.set(header.roots.active, delta.attemptId, true);
++        break;
++      }
++      case 'queued': {
++        keys(delta, ['kind', 'attemptId'], ['messageId']); id(delta.attemptId);
++        if (delta.messageId !== undefined) id(delta.messageId);
++        const old = await this.attempt(delta.attemptId);
++        if (!old || old.status === 'uncertain') return this;
++        if (old.messageId && delta.messageId && old.messageId !== delta.messageId) throw new Error('Notice runtime message conflict');
++        if (old.status === 'queued' && old.messageId === delta.messageId) return this;
++        await this.putAttempt(header, { ...old, status: 'queued', ...(delta.messageId !== undefined ? { messageId: delta.messageId } : {}) });
++        break;
++      }
++      case 'settle': {
++        keys(delta, ['kind', 'attemptId', 'outcome'], ['acknowledgement']); id(delta.attemptId);
++        if (!['accepted', 'uncertain', 'unsubmitted'].includes(delta.outcome)) throw new Error('Unsupported notice settlement');
++        const old = await this.attempt(delta.attemptId);
++        if (!old) return this;
++        if (delta.outcome === 'uncertain') {
++          if (old.status === 'uncertain') return this;
++          await this.putAttempt(header, { ...old, status: 'uncertain', reason: 'handoff_unknown' });
++          header.roots.active = await this.index.delete(header.roots.active, old.attemptId);
++          break;
++        }
++        if (delta.outcome === 'unsubmitted' && old.status === 'uncertain') throw new Error('Uncertainty cannot become proven unsubmitted');
++        if (delta.outcome === 'accepted') {
++          const proof = delta.acknowledgement;
++          if (old.reason === 'recovered') throw new Error('Recovered notice cannot accept a live acknowledgement');
++          if (!proof || proof.kind !== 'same-process-exact-handoff' || proof.handoffProcess !== old.handoffProcess || proof.coverageDigest !== old.coverageDigest) throw new Error('Notice acceptance requires exact live handoff provenance');
++          keys(proof, ['kind', 'handoffProcess', 'coverageDigest']);
++        }
++        for (const p of old.posts) {
++          const pending = await this.pending(p.seq);
++          if (!pending || pending.postId !== p.postId || pending.attemptId !== old.attemptId) throw new Error('Notice attempt ownership changed');
++          if (delta.outcome === 'accepted') {
++            header.roots.pending = await this.index.delete(header.roots.pending, noticeSequenceKey(p.seq));
++            header.roots.postIds = await this.index.delete(header.roots.postIds, p.postId);
++            await this.cover(header, p.seq);
++          } else {
++            header.roots.pending = await this.index.set(header.roots.pending, noticeSequenceKey(p.seq), json(p));
++            header.roots.ready = await this.index.set(header.roots.ready, noticeSequenceKey(p.seq), p.postId);
++          }
++        }
++        header.roots.attempts = await this.index.delete(header.roots.attempts, old.attemptId);
++        header.roots.active = await this.index.delete(header.roots.active, old.attemptId);
++        if (delta.outcome === 'accepted') {
++          header.acceptedCount = noticeSequence(header.acceptedCount + old.posts.length);
++          if (old.status === 'uncertain') header.lateAcknowledgementCount = noticeSequence(header.lateAcknowledgementCount + 1);
++        }
++        break;
++      }
++      case 'recover': {
++        keys(delta, ['kind', 'attemptIds']); boundedList(delta.attemptIds);
++        if (new Set(delta.attemptIds).size !== delta.attemptIds.length) throw new Error('Duplicate recovery attempt');
++        let changed = false;
++        for (const attemptId of delta.attemptIds) {
++          id(attemptId); const old = await this.attempt(attemptId);
++          if (old && old.status !== 'uncertain') {
++            await this.putAttempt(header, { ...old, status: 'uncertain', reason: 'recovered' });
++            header.roots.active = await this.index.delete(header.roots.active, attemptId); changed = true;
++          }
++        }
++        if (!changed) return this;
++        break;
++      }
++      default: throw new Error('Unsupported sparse notice transition');
++    }
++    return new PreparedNoticeState(this.index, header);
++  }
++  /** Bounded read selection, never automatic handoff or a global ready snapshot. */
++  async listReady(options: { after?: string; limit: number }): Promise<{ posts: PendingNoticePost[]; nextAfter?: string }> {
++    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > NOTICE_BATCH_LIMIT) throw new Error('Invalid sparse notice read limit');
++    const page = await this.index.list(this.header.roots.ready, options);
++    const posts: PendingNoticePost[] = [];
++    for (const entry of page.entries) {
++      const p = await this.pending(Number(entry.key));
++      if (!p || p.attemptId !== undefined || p.postId !== entry.value) throw new Error('Sparse notice ready reference mismatch');
++      posts.push(p);
++    }
++    return { posts, ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}) };
++  }
++  async listActive(options: { after?: string; limit: number }): Promise<{ attemptIds: string[]; nextAfter?: string }> {
++    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > NOTICE_BATCH_LIMIT) throw new Error('Invalid sparse notice read limit');
++    const page = await this.index.list(this.header.roots.active, options);
++    return { attemptIds: page.entries.map((row: NoticePageEntry) => row.key), ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}) };
++  }
++}
+diff --git a/src/main/services/group-project-notice-ledger/state.test.ts b/src/main/services/group-project-notice-ledger/state.test.ts
+new file mode 100644
+index 000000000..a0dcd638f
+--- /dev/null
++++ b/src/main/services/group-project-notice-ledger/state.test.ts
+@@ -0,0 +1,105 @@
++import { describe, expect, it } from 'vitest';
++import { applyNoticeDelta, noticeCoverageDigest, noticeLegacyFloor, validateNoticeState, type NoticeDelta, type SequencedNoticeState } from './state';
++
++const recipient = { groupId: 'synthetic-group', host: null, agentId: 'synthetic-member', generation: 'generation-one' };
++function initialize(): SequencedNoticeState { return applyNoticeDelta(undefined, { kind: 'initialize', recipient, baseline: 0 }); }
++const scan = (seq: number): NoticeDelta => ({ kind: 'scan', through: seq, eligible: [{ seq, postId: `synthetic-post-${seq}` }] });
++const intent = (seq: number): NoticeDelta => ({ kind: 'intent', attemptId: `attempt-${seq}`, posts: [{ seq, postId: `synthetic-post-${seq}` }], startedAt: 1, handoffProcess: 'synthetic-process' });
++const accepted = (seq: number): NoticeDelta => ({ kind: 'settle', attemptId: `attempt-${seq}`, outcome: 'accepted', acknowledgement: { kind: 'same-process-exact-handoff', handoffProcess: 'synthetic-process', coverageDigest: noticeCoverageDigest([{ seq, postId: `synthetic-post-${seq}` }]) } });
++
++describe('sequenced notice state', () => {
++  it('keeps A uncertain, records B success, permits C and does not revive scan-time exclusions', () => {
++    let state = initialize();
++    for (const delta of [scan(1), intent(1), { kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' }, scan(3), intent(3), accepted(3)] as NoticeDelta[]) state = applyNoticeDelta(state, delta);
++    expect(state.pending).toEqual([{ seq: 1, postId: 'synthetic-post-1', attemptId: 'attempt-1' }]);
++    expect(state.terminal).toEqual([[2, 3]]);
++    expect(noticeLegacyFloor(state)).toBe(0);
++    expect(applyNoticeDelta(state, scan(2))).toBe(state);
++    state = applyNoticeDelta(state, scan(4));
++    state = applyNoticeDelta(state, intent(4));
++    expect(state.attempts.map((a) => a.attemptId)).toEqual(['attempt-1', 'attempt-4']);
++    expect(validateNoticeState(JSON.parse(JSON.stringify(state)))).toEqual(state);
++  });
++
++  it('bounds million-post terminal coverage independently of an early hole', () => {
++    let state = applyNoticeDelta(initialize(), scan(1));
++    state = applyNoticeDelta(state, intent(1));
++    state = applyNoticeDelta(state, { kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' });
++    state = applyNoticeDelta(state, { kind: 'scan', through: 1_000_001, eligible: [] });
++    expect(state.terminal).toEqual([[2, 1_000_001]]);
++    expect(state.pending).toHaveLength(1);
++    expect(state.attempts).toHaveLength(1);
++    expect(JSON.stringify(state).length).toBeLessThan(1024);
++    expect(validateNoticeState(state)).toEqual(state);
++  });
++
++  it('recovery is uncertainty, never zero or a safe-to-retry hint', () => {
++    let state = applyNoticeDelta(initialize(), scan(1));
++    state = applyNoticeDelta(state, intent(1));
++    state = applyNoticeDelta(state, { kind: 'queued', attemptId: 'attempt-1', messageId: 'runtime-item' });
++    const recovered = applyNoticeDelta(state, { kind: 'recover' });
++    expect(recovered.attempts[0]).toMatchObject({ status: 'uncertain', reason: 'recovered' });
++    expect(applyNoticeDelta(recovered, { kind: 'recover' })).toBe(recovered);
++    expect(() => applyNoticeDelta(recovered, { kind: 'settle', attemptId: 'attempt-1', outcome: 'unsubmitted' })).toThrow('Uncertainty');
++    expect(() => applyNoticeDelta(recovered, { ...intent(1), attemptId: 'blind-retry' })).toThrow('not ready');
++    expect(() => applyNoticeDelta(recovered, accepted(1))).toThrow('Recovered');
++  });
++
++  it('handles settlement before queued return and repeated callbacks without recreating coverage', () => {
++    let state = applyNoticeDelta(applyNoticeDelta(initialize(), scan(1)), intent(1));
++    state = applyNoticeDelta(state, accepted(1));
++    expect(applyNoticeDelta(state, { kind: 'queued', attemptId: 'attempt-1', messageId: 'late-return' })).toBe(state);
++    expect(applyNoticeDelta(state, { kind: 'settle', attemptId: 'attempt-1', outcome: 'accepted' })).toBe(state);
++    expect(state.acceptedCount).toBe(1);
++    expect(noticeLegacyFloor(state)).toBe(1);
++  });
++
++  it('permits proven unsubmitted recovery without clearing unrelated uncertainty', () => {
++    let state = applyNoticeDelta(applyNoticeDelta(initialize(), scan(1)), intent(1));
++    state = applyNoticeDelta(state, { kind: 'settle', attemptId: 'attempt-1', outcome: 'unsubmitted' });
++    expect(state.pending[0].attemptId).toBeUndefined();
++    expect(state.acceptedCount).toBe(0);
++    state = applyNoticeDelta(state, { ...intent(1), attemptId: 'fresh-attempt' });
++    expect(state.attempts[0].attemptId).toBe('fresh-attempt');
++  });
++
++  it('rejects reused keys, conflicting source IDs and oversized candidate batches', () => {
++    const state = applyNoticeDelta(applyNoticeDelta(initialize(), scan(1)), intent(1));
++    expect(applyNoticeDelta(state, intent(1))).toBe(state);
++    expect(() => applyNoticeDelta(state, { ...intent(1), posts: [{ seq: 2, postId: 'other' }] })).toThrow('key conflict');
++    expect(() => applyNoticeDelta(state, { kind: 'scan', through: 2, eligible: [{ seq: 1, postId: 'wrong' }] })).toThrow('identity');
++    expect(() => applyNoticeDelta(state, { kind: 'scan', through: 51, eligible: Array.from({ length: 51 }, (_, seq) => ({ seq, postId: `p${seq}` })) })).toThrow('too large');
++    expect(() => applyNoticeDelta(state, { kind: 'settle', attemptId: 'attempt-1', outcome: 'future' } as unknown as NoticeDelta)).toThrow('Unsupported');
++  });
++
++  it('refuses corrupt snapshots rather than silently baselining away uncertainty', () => {
++    const state = applyNoticeDelta(applyNoticeDelta(initialize(), scan(1)), intent(1));
++    for (const bad of [{ ...state, pending: [] }, { ...state, terminal: [[1, 1]] }, { ...state, attempts: [] }, { ...state, acceptedCount: 1 }, { ...state, schemaVersion: 2 }]) {
++      expect(() => validateNoticeState(bad)).toThrow();
++    }
++    const future = { ...state, futureOptional: { keep: true } };
++    expect(validateNoticeState(future)).toMatchObject({ futureOptional: { keep: true } });
++  });
++
++  it('permits only exact same-process late acknowledgement and records an anomaly count', () => {
++    let state = applyNoticeDelta(applyNoticeDelta(initialize(), scan(1)), intent(1));
++    state = applyNoticeDelta(state, { kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' });
++    expect(() => applyNoticeDelta(state, { kind: 'settle', attemptId: 'attempt-1', outcome: 'accepted' })).toThrow('provenance');
++    const wrong = accepted(1) as Extract<NoticeDelta, { kind: 'settle' }>;
++    expect(() => applyNoticeDelta(state, { ...wrong, acknowledgement: { ...wrong.acknowledgement!, handoffProcess: 'other-process' } })).toThrow('provenance');
++    state = applyNoticeDelta(state, accepted(1));
++    expect(state.lateAcknowledgementCount).toBe(1);
++    expect(state.pending).toEqual([]);
++    expect(state.terminal).toEqual([[1, 1]]);
++  });
++
++  it('rejects a cap50 scan with an unproved trailing frontier and names nonpost coverage honestly', () => {
++    const state = initialize();
++    const eligible = Array.from({ length: 50 }, (_, index) => ({ seq: index + 1, postId: `p${index}` }));
++    expect(() => applyNoticeDelta(state, { kind: 'scan', through: 100, eligible })).toThrow('Capped');
++    expect(applyNoticeDelta(state, { kind: 'scan', through: 50, eligible }).scannedThrough).toBe(50);
++    const nonpostChanges = applyNoticeDelta(state, { kind: 'scan', through: 100, eligible: [] });
++    expect(nonpostChanges.excludedSequenceCount).toBe(100);
++    expect(nonpostChanges.acceptedCount).toBe(0);
++  });
++});
+diff --git a/src/main/services/group-project-notice-ledger/state.ts b/src/main/services/group-project-notice-ledger/state.ts
+new file mode 100644
+index 000000000..d5a8ebc44
+--- /dev/null
++++ b/src/main/services/group-project-notice-ledger/state.ts
+@@ -0,0 +1,229 @@
++import { createHash } from 'crypto';
++import { contiguousNoticeFloor, coverNoticeInterval, noticeCovered, noticeSequence, validateNoticeIntervals, type NoticeInterval } from './intervals';
++
++export const NOTICE_BATCH_LIMIT = 50;
++export interface NoticeRecipient {
++  groupId: string;
++  host: string | null;
++  agentId: string;
++  generation: string;
++}
++export interface NoticePost { seq: number; postId: string }
++export interface PendingNoticePost extends NoticePost { attemptId?: string }
++export interface NoticeAttempt {
++  attemptId: string;
++  coverageDigest: string;
++  posts: NoticePost[];
++  startedAt: number;
++  status: 'intent' | 'queued' | 'uncertain';
++  /** Writer process that retained the original live handoff; not a runtime generation. */
++  handoffProcess: string;
++  reason?: 'recovered' | 'handoff_unknown';
++  messageId?: string;
++}
++export interface SequencedNoticeState {
++  schemaVersion: 1;
++  minWriterVersion: 1;
++  recipient: NoticeRecipient;
++  baselineThrough: number;
++  scannedThrough: number;
++  terminal: NoticeInterval[];
++  pending: PendingNoticePost[];
++  attempts: NoticeAttempt[];
++  acceptedCount: number;
++  /** Counts sequence positions, including non-post board changes; never message count. */
++  excludedSequenceCount: number;
++  lateAcknowledgementCount: number;
++}
++export interface NoticeAcknowledgement {
++  kind: 'same-process-exact-handoff';
++  handoffProcess: string;
++  coverageDigest: string;
++}
++export type NoticeDelta =
++  | { kind: 'initialize'; recipient: NoticeRecipient; baseline: number }
++  | { kind: 'scan'; through: number; eligible: NoticePost[] }
++  | { kind: 'intent'; attemptId: string; posts: NoticePost[]; startedAt: number; handoffProcess?: string }
++  | { kind: 'queued'; attemptId: string; messageId?: string }
++  | { kind: 'settle'; attemptId: string; outcome: 'accepted' | 'uncertain' | 'unsubmitted'; acknowledgement?: NoticeAcknowledgement }
++  | { kind: 'recover' };
++
++function boundedId(value: unknown): asserts value is string {
++  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 256 || [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) throw new Error('Invalid notice identity');
++}
++function recipientIdentity(recipient: NoticeRecipient): NoticeRecipient {
++  boundedId(recipient.groupId); boundedId(recipient.agentId); boundedId(recipient.generation);
++  if (recipient.host !== null) boundedId(recipient.host);
++  return { ...recipient };
++}
++function postIdentity(post: NoticePost): NoticePost {
++  noticeSequence(post.seq); boundedId(post.postId);
++  return { ...post };
++}
++export function noticeCoverageDigest(posts: readonly NoticePost[]): string {
++  return createHash('sha256').update(JSON.stringify([...posts].sort((a, b) => a.seq - b.seq).map((p) => [p.seq, p.postId]))).digest('hex');
++}
++export function noticeRecipientKey(recipient: NoticeRecipient): string {
++  recipientIdentity(recipient);
++  return createHash('sha256').update(JSON.stringify([recipient.groupId, recipient.host, recipient.agentId, recipient.generation])).digest('hex');
++}
++function initial(recipient: NoticeRecipient, baseline: number): SequencedNoticeState {
++  noticeSequence(baseline);
++  return { schemaVersion: 1, minWriterVersion: 1, recipient: recipientIdentity(recipient), baselineThrough: baseline,
++    scannedThrough: baseline, terminal: [], pending: [], attempts: [], acceptedCount: 0, excludedSequenceCount: 0, lateAcknowledgementCount: 0 };
++}
++
++/** Internal pure reducer. No app lookup, runtime, dispatch, nonce or settings authority. */
++export function applyNoticeDelta(current: SequencedNoticeState | undefined, delta: NoticeDelta): SequencedNoticeState {
++  if (delta.kind === 'initialize') {
++    if (current) throw new Error('Notice generation already initialized');
++    return initial(delta.recipient, delta.baseline);
++  }
++  if (!current) throw new Error('Notice generation not initialized');
++  const state: SequencedNoticeState = { ...current, terminal: [...current.terminal], pending: current.pending.map((p) => ({ ...p })), attempts: current.attempts.map((a) => ({ ...a, posts: a.posts.map((p) => ({ ...p })) })) };
++  switch (delta.kind) {
++    case 'scan': {
++      const through = noticeSequence(delta.through);
++      if (delta.eligible.length > NOTICE_BATCH_LIMIT) throw new Error('Notice discovery batch too large');
++      const eligible = delta.eligible.map(postIdentity).sort((a, b) => a.seq - b.seq);
++      if (eligible.length === NOTICE_BATCH_LIMIT && through !== eligible[eligible.length - 1].seq) throw new Error('Capped notice scan cannot over-advance its frontier');
++      const seqs = new Set<number>(); const ids = new Set<string>();
++      for (const post of eligible) {
++        if (post.seq > through || seqs.has(post.seq) || ids.has(post.postId)) throw new Error('Conflicting notice scan');
++        seqs.add(post.seq); ids.add(post.postId);
++        const prior = state.pending.find((p) => p.seq === post.seq || p.postId === post.postId);
++        if (prior && (prior.seq !== post.seq || prior.postId !== post.postId)) throw new Error('Conflicting notice post identity');
++      }
++      if (through <= state.scannedThrough) return current;
++      let next = state.scannedThrough + 1;
++      for (const post of eligible.filter((p) => p.seq > state.scannedThrough)) {
++        if (next < post.seq) {
++          state.terminal = coverNoticeInterval(state.terminal, next, post.seq - 1);
++          state.excludedSequenceCount += post.seq - next;
++        }
++        state.pending.push(post);
++        next = post.seq + 1;
++      }
++      if (next <= through) {
++        state.terminal = coverNoticeInterval(state.terminal, next, through);
++        state.excludedSequenceCount += through - next + 1;
++      }
++      state.scannedThrough = through;
++      return state;
++    }
++    case 'intent': {
++      boundedId(delta.attemptId);
++      boundedId(delta.handoffProcess);
++      if (!Number.isFinite(delta.startedAt) || delta.startedAt < 0 || !delta.posts.length || delta.posts.length > NOTICE_BATCH_LIMIT) throw new Error('Invalid notice attempt');
++      const posts = delta.posts.map(postIdentity).sort((a, b) => a.seq - b.seq);
++      if (new Set(posts.map((p) => p.seq)).size !== posts.length) throw new Error('Duplicate attempt coverage');
++      const digest = noticeCoverageDigest(posts);
++      const existing = state.attempts.find((a) => a.attemptId === delta.attemptId);
++      if (existing) {
++        if (existing.coverageDigest !== digest) throw new Error('Notice attempt key conflict');
++        return current;
++      }
++      for (const post of posts) {
++        const pending = state.pending.find((p) => p.seq === post.seq && p.postId === post.postId);
++        if (!pending || pending.attemptId || noticeCovered(state.terminal, post.seq)) throw new Error('Notice coverage is not ready');
++        pending.attemptId = delta.attemptId;
++      }
++      state.attempts.push({ attemptId: delta.attemptId, coverageDigest: digest, posts, startedAt: delta.startedAt, handoffProcess: delta.handoffProcess, status: 'intent' });
++      return state;
++    }
++    case 'queued': {
++      if (delta.messageId !== undefined) boundedId(delta.messageId);
++      const attempt = state.attempts.find((a) => a.attemptId === delta.attemptId);
++      if (!attempt || attempt.status === 'uncertain') return current;
++      if (attempt.messageId && delta.messageId && attempt.messageId !== delta.messageId) throw new Error('Notice runtime message conflict');
++      if (attempt.status === 'queued' && attempt.messageId === delta.messageId) return current;
++      attempt.status = 'queued';
++      if (delta.messageId !== undefined) attempt.messageId = delta.messageId;
++      return state;
++    }
++    case 'settle': {
++      if (!['accepted', 'uncertain', 'unsubmitted'].includes(delta.outcome)) throw new Error('Unsupported notice settlement');
++      const attempt = state.attempts.find((a) => a.attemptId === delta.attemptId);
++      if (!attempt) return current; // stale callback cannot recreate retired/accepted coverage
++      if (delta.outcome === 'uncertain') {
++        if (attempt.status === 'uncertain') return current;
++        attempt.status = 'uncertain'; attempt.reason = 'handoff_unknown';
++        return state;
++      }
++      if (delta.outcome === 'unsubmitted' && attempt.status === 'uncertain') throw new Error('Uncertainty cannot become proven unsubmitted');
++      if (delta.outcome === 'accepted') {
++        const proof = delta.acknowledgement;
++        if (attempt.reason === 'recovered') throw new Error('Recovered notice cannot accept a live acknowledgement');
++        if (!proof || proof.kind !== 'same-process-exact-handoff' || proof.handoffProcess !== attempt.handoffProcess || proof.coverageDigest !== attempt.coverageDigest) throw new Error('Notice acceptance requires exact live handoff provenance');
++        if (attempt.status === 'uncertain') state.lateAcknowledgementCount++;
++      }
++      state.attempts = state.attempts.filter((a) => a !== attempt);
++      if (delta.outcome === 'accepted') {
++        const seqs = new Set(attempt.posts.map((p) => p.seq));
++        state.pending = state.pending.filter((p) => !seqs.has(p.seq));
++        for (const seq of seqs) state.terminal = coverNoticeInterval(state.terminal, seq);
++        state.acceptedCount += seqs.size;
++      } else {
++        for (const post of state.pending) if (post.attemptId === attempt.attemptId) delete post.attemptId;
++      }
++      return state;
++    }
++    case 'recover': {
++      let changed = false;
++      for (const attempt of state.attempts) if (attempt.status !== 'uncertain') {
++        attempt.status = 'uncertain'; attempt.reason = 'recovered'; changed = true;
++      }
++      return changed ? state : current;
++    }
++    default: {
++      const unknown: never = delta;
++      throw new Error(`Unsupported notice delta: ${String((unknown as { kind?: unknown }).kind)}`);
++    }
++  }
++}
++
++export function noticeLegacyFloor(state: SequencedNoticeState): number {
++  return contiguousNoticeFloor(state.terminal, state.baselineThrough);
++}
++
++/** Checkpoint input is untrusted storage, not permission to silently repair a gap. */
++export function validateNoticeState(value: unknown): SequencedNoticeState {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid notice checkpoint');
++  const state = value as SequencedNoticeState;
++  if (state.schemaVersion !== 1 || state.minWriterVersion !== 1 || !state.recipient || typeof state.recipient !== 'object') throw new Error('Unsupported notice checkpoint');
++  recipientIdentity(state.recipient);
++  noticeSequence(state.baselineThrough); noticeSequence(state.scannedThrough);
++  if (state.baselineThrough > state.scannedThrough || !Array.isArray(state.pending) || !Array.isArray(state.attempts)) throw new Error('Invalid notice checkpoint frontier');
++  const terminal = validateNoticeIntervals(state.terminal);
++  if (terminal.some(([lo, hi]) => lo <= state.baselineThrough || hi > state.scannedThrough)) throw new Error('Notice checkpoint coverage outside scan');
++  const seqs = new Set<number>(); const ids = new Set<string>();
++  let all = [...terminal];
++  for (const post of state.pending) {
++    postIdentity(post);
++    if (post.seq <= state.baselineThrough || post.seq > state.scannedThrough || seqs.has(post.seq) || ids.has(post.postId) || noticeCovered(terminal, post.seq)) throw new Error('Invalid sparse notice checkpoint');
++    if (post.attemptId !== undefined) boundedId(post.attemptId);
++    seqs.add(post.seq); ids.add(post.postId); all = coverNoticeInterval(all, post.seq);
++  }
++  if (contiguousNoticeFloor(all, state.baselineThrough) !== state.scannedThrough) throw new Error('Notice checkpoint has an unrecorded gap');
++  const attempts = new Set<string>();
++  for (const attempt of state.attempts) {
++    boundedId(attempt.attemptId); boundedId(attempt.handoffProcess);
++    if (attempts.has(attempt.attemptId) || !['intent', 'queued', 'uncertain'].includes(attempt.status) || !Array.isArray(attempt.posts)
++      || !attempt.posts.length || attempt.posts.length > NOTICE_BATCH_LIMIT || !Number.isFinite(attempt.startedAt) || attempt.startedAt < 0) throw new Error('Invalid checkpoint attempt');
++    attempts.add(attempt.attemptId);
++    if (attempt.messageId !== undefined) boundedId(attempt.messageId);
++    const covered = new Set<number>();
++    for (const post of attempt.posts) {
++      postIdentity(post);
++      if (covered.has(post.seq) || !state.pending.some((p) => p.seq === post.seq && p.postId === post.postId && p.attemptId === attempt.attemptId)) throw new Error('Checkpoint attempt coverage mismatch');
++      covered.add(post.seq);
++    }
++    if (noticeCoverageDigest(attempt.posts) !== attempt.coverageDigest) throw new Error('Checkpoint attempt digest mismatch');
++    if (state.pending.filter((p) => p.attemptId === attempt.attemptId).length !== covered.size) throw new Error('Checkpoint attempt coverage incomplete');
++  }
++  if (state.pending.some((p) => p.attemptId !== undefined && !attempts.has(p.attemptId))) throw new Error('Checkpoint attempt is missing');
++  noticeSequence(state.acceptedCount); noticeSequence(state.excludedSequenceCount); noticeSequence(state.lateAcknowledgementCount);
++  const terminalCount = terminal.reduce((sum, [lo, hi]) => sum + (hi - lo + 1), 0);
++  if (state.acceptedCount + state.excludedSequenceCount !== terminalCount) throw new Error('Checkpoint terminal count mismatch');
++  return { ...state, recipient: { ...state.recipient }, terminal, pending: state.pending.map((p) => ({ ...p })), attempts: state.attempts.map((a) => ({ ...a, posts: a.posts.map((p) => ({ ...p })) })) };
++}

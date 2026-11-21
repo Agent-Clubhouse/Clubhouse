@@ -1,0 +1,19 @@
+{
+  "scope": "Exact224e prepared-root review package only",
+  "files": {
+    "imports.txt": "c1511c452caebe6c71d3e8074197bc4cd0b5ebfaa8d38b12903e0c96c6625258",
+    "summary.json": "1d6b52d9b3458dbff06338022f97b5dec7cf5c81da108e1fef8ed67921b0f2df",
+    "seal.py": "806f6f0e49bf35a167fc1311bc96ba40671fc861e46afeb6b6e2dbacf7a13de9",
+    "source-diff.patch": "df3b49f463f96f44bf533b06cb45bc0143a3550f59c1b87f23c2915ec688ff69",
+    "REVIEW.md": "3041b451f43bfd204a4b7770a86aaabb46b8c53f81e5217bf2b7c02af841b338",
+    "lint/raw.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "lint/receipt.json": "c3773e2a60d20619cfdf5732f3aff37bea388760ba4509fa1a989ab6305b22d7",
+    "lint/gate.raw.txt": "27bb8e5797e0c3dd79e4e1bc2a92efca492cdd8111707d44f249c6f5f467cc5b",
+    "types/raw.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "types/receipt.json": "ac1254d54940479869da6a2b11c545aff2d6d9971d4fe2dade81ca1510f76e25",
+    "types/gate.raw.txt": "6b21eab673c5f01b2868390877f0aa3a2036fbd8d4bf9859606a615cafbb1d8a",
+    "tests/raw.txt": "14796e7b40a5836c8963c3a590488fe8c870f25fdb4366a944f6f672a616246c",
+    "tests/receipt.json": "bef6358b9a6ab99ae145d607cc39fb77237659912d9e64c396630bffbd1b387d",
+    "tests/gate.raw.txt": "4f83c803d8b683bf32ffb7404660926d88d1fd1876048482baa00db1ee26c01c"
+  }
+}

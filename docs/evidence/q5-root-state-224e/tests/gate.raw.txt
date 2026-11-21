@@ -1,0 +1,16 @@
+2026-11-21T19:21:34Z SWAP_REPAIR q5-ledger old=1812 new=3929 age_s=21764 pageouts_delta=0 swapouts_delta=0 sample1(used=3929.44,free=1190.56,pageouts=12909965,swapouts=17975900,idle=87,available=33454,freepct=87,compressor=1098) sample2(used=3929.44,free=1190.56,pageouts=12909965,swapouts=17975900,idle=91,available=33376,freepct=87,compressor=1098) sample3(used=3929.44,free=1190.56,pageouts=12909965,swapouts=17975900,idle=90,available=33371,freepct=87,compressor=1098)
+2026-11-21T19:21:35Z START q5-ledger idle=91% unused=9452M avail=33381M freepct=87 comp=1098M swap=3929M pid=6257 cmd=python3 /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-root-state-seal.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/224e0797d-root-state-first-admission-d45 -- ./node_modules/.bin/vitest run --project main src/main/services/group-project-notice-ledger/sparse-state.test.ts src/main/services/group-project-notice-ledger/sparse-reader.test.ts src/main/services/group-project-notice-ledger/state.test.ts src/main/services/group-project-notice-ledger/intervals.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design
+
+
+ Test Files  4 passed (4)
+      Tests  50 passed (50)
+   Start at  14:21:35
+   Duration  5.71s (transform 61ms, setup 12ms, import 85ms, tests 9.11s, environment 0ms)
+
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/224e0797d-root-state-first-admission-d45/receipt.json", "exitCode": 0, "sealEqual": true}
+2026-11-21T19:21:41Z END q5-ledger rc=0
