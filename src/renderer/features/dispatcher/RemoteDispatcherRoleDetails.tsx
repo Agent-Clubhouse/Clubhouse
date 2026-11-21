@@ -7,6 +7,7 @@ import { CardNote, CardRow, DetailsCard } from '../agents/details/DetailsCard';
 import { Evidence } from '../agents/details/RemoteDetailsEvidence';
 import { RemoteActionsEvidence } from '../agents/details/RemoteActionsEvidence';
 import { OtherMachinesList, otherMachinesSummary } from './OtherMachinesList';
+import { RemoteDispatcherConnectionPages } from './RemoteDispatcherConnectionPages';
 
 type Result = ControllerReadResult<SelectedDispatcherDetails> | { status: 'loading' };
 const message = (status: Result['status']) => status === 'loading' ? 'Reading Dispatcher details from the selected host…'
@@ -90,7 +91,12 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
     </DetailsCard>
     <DetailsCard embedded id="connections" title="Connections" summary={card('connections')?.summary || 'unavailable'} open onToggle={() => {}}>
       {publishedLink && <><CardRow label="Link from here" labelWidth="wide">{publishedLink}</CardRow><CardNote>This computer’s published controller-link observation. It is not the selected host’s connection inventory.</CardNote></>}
-      {card('connections') ? <Evidence card={card('connections')!} /> : <CardNote>{note}</CardNote>}
+      {value && eligible && value.details.connectionPages === 1
+        ? <RemoteDispatcherConnectionPages machine={machine} roleAgentId={value.agentId} sources={value.details.connectionPageSources} contextKey={key}>
+          {card('connections') ? <Evidence card={card('connections')!} /> : <CardNote>{note}</CardNote>}
+        </RemoteDispatcherConnectionPages>
+        : card('connections') ? <Evidence card={card('connections')!} /> : <CardNote>{note}</CardNote>}
+      {value && eligible && value.details.connectionPages !== 1 && <CardNote>This host shares the Dispatcher Connections summary only. Source pages need a host update.</CardNote>}
     </DetailsCard>
     <DetailsCard embedded id="other-machines" title="Other machines" summary={peers ? otherMachinesSummary(peers) : 'unavailable'} open onToggle={() => {}}>
       {peers ? <><OtherMachinesList compact remotes={peers} /><CardNote>From the selected host’s confirmed shared snapshot; role metadata is read separately.</CardNote></>

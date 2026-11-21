@@ -1,4 +1,4 @@
-import type { SelectedDispatcherDetails } from '../shared/selected-dispatcher-details';
+import type { SelectedDispatcherConnectionsQuery, SelectedDispatcherDetails } from '../shared/selected-dispatcher-details';
 import type { RemoteDetailsQuery } from '../shared/remote-details-query';
 import { ipcRenderer } from 'electron';
 import type { RemoteAgentSettings } from '../shared/remote-agent-settings';

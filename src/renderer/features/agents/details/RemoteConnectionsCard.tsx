@@ -9,8 +9,8 @@ import { DetailsCard, CardNote } from './DetailsCard';
 import { Evidence } from './RemoteDetailsEvidence';
 
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
-const label: Record<RemoteConnectionPageSource, string> = { outgoing: 'Outgoing bindings', incoming: 'Incoming bindings', directions: 'Saved switches', sources: 'Retained sources', 'manual-dispatcher': 'Saved Dispatcher links', helpers: 'Helper relationships', 'dispatcher-auto': 'Automatic agent links', 'tool-records': 'Saved tool links', 'canvas-records': 'Saved Canvas wires', 'zone-records': 'Saved zone wires', 'helper-parent': 'Saved parent link', 'group-records': 'Saved group membership' };
-const message = (status: Result['status']) => status === 'offline' ? 'Host offline. Reconnect to read connection pages.'
+export const connectionSourceLabel: Record<RemoteConnectionPageSource, string> = { outgoing: 'Outgoing bindings', incoming: 'Incoming bindings', directions: 'Saved switches', sources: 'Retained sources', 'manual-dispatcher': 'Saved Dispatcher links', helpers: 'Helper relationships', 'dispatcher-auto': 'Automatic agent links', 'tool-records': 'Saved tool links', 'canvas-records': 'Saved Canvas wires', 'zone-records': 'Saved zone wires', 'helper-parent': 'Saved parent link', 'group-records': 'Saved group membership' };
+export const connectionPageMessage = (status: Result['status']) => status === 'offline' ? 'Host offline. Reconnect to read connection pages.'
   : status === 'forbidden' ? 'The host does not allow this Details read.' : status === 'unavailable' ? 'This host does not share this connection page. It may need an update.'
     : status === 'error' ? 'Couldn’t read this connection page from the host. Refresh to try again.' : status === 'rate_limited' ? 'The host is busy. Try again shortly.' : 'Loading connections from the host…';
 
@@ -50,13 +50,13 @@ export function RemoteConnectionsCard({ agent, details, status, freshnessKey, di
   const sources = details?.connectionPageSources ?? candidates;
   const select = (source: RemoteConnectionPageSource) => setNavigation({ identity, query: { card: 'connections', source, offset: 0, projectOffset: 0 }, previous: [] });
   const overviewStatus = !address ? 'unavailable' : !connected ? 'offline' : status;
-  const overviewMessage = overviewStatus === 'unavailable' ? 'This host does not share these details, or this agent is no longer available. The host may need an update.' : message(overviewStatus);
-  return <DetailsCard id="connections" title="Connections" summary={card?.summary || (query ? message(result.status) : overviewMessage)} open={open} onToggle={onToggle}>
+  const overviewMessage = overviewStatus === 'unavailable' ? 'This host does not share these details, or this agent is no longer available. The host may need an update.' : connectionPageMessage(overviewStatus);
+  return <DetailsCard id="connections" title="Connections" summary={card?.summary || (query ? connectionPageMessage(result.status) : overviewMessage)} open={open} onToggle={onToggle}>
     {eligible && details?.connectionPages === 1 && <div className="flex flex-wrap gap-3 pl-[33px] pr-3.5 pb-2 text-xs" aria-label="Connection inventories">
       <button type="button" aria-pressed={!query} onClick={() => setNavigation(null)}>Overview</button>
-      {sources.map((source) => <button type="button" key={source} aria-pressed={query?.source === source} onClick={() => select(source)}>{label[source]}</button>)}
+      {sources.map((source) => <button type="button" key={source} aria-pressed={query?.source === source} onClick={() => select(source)}>{connectionSourceLabel[source]}</button>)}
     </div>}
-    {card ? <Evidence card={card} /> : <CardNote>{query && result.status === 'ok' ? 'The host did not return the selected source page.' : query ? message(result.status) : overviewMessage}</CardNote>}
+    {card ? <Evidence card={card} /> : <CardNote>{query && result.status === 'ok' ? 'The host did not return the selected source page.' : query ? connectionPageMessage(result.status) : overviewMessage}</CardNote>}
     {eligible && details?.connectionPages !== 1 && <CardNote>This host shares the summary only. Selected source continuation needs a host update.</CardNote>}
     {query && current && result.status === 'ok' && result.value.connectionPageEnvelope !== 1 && <CardNote>This host uses an older shared Details envelope; other card limits may omit source fields. Update the host for independent source pages.</CardNote>}
     {query && current && page && <>
