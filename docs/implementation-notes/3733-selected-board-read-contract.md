@@ -73,17 +73,24 @@ The Details body is page-only (`inventoryPageOnly: true`, the `canvases` card re
 type RemoteCanvasBoardPage = { version: 1; source: 'selected-canvas-board'; agentId: string; projectId: string;
   member: string; selection: string; observedAt: number; notes: string[] } & (
   | { state: 'unavailable'; reason: 'changed' | 'invalid' | 'unreadable' | 'limit' | 'unsupported' }
-  | { state: 'recorded'; scope: 'app' | 'project'; board: string /* hash([scope, canvasId]) */; name: string;
+  | { state: 'recorded'; scope: 'app' | 'project'; canvasId: string; viewId: string; name: string;
       views: RemoteCanvasBoardView[]; total: number });
-type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'agent' | 'anchor' | 'plugin' | 'sticky-note' | 'zone';
+type RemoteCanvasBoardView = { key: string; type: 'agent' | 'anchor' | 'plugin' | 'sticky-note' | 'zone';
   label: string; member: boolean; x: number; y: number; w: number; h: number; z: number };
 ```
 
-`isRemoteCanvasBoardPage(value)` checks:
+**Mechanically bindable keys (lane finding).** Before this change, the client couldn't check the page against what it asked for: a `member` hash over host-local ids, and view keys over a board hash, couldn't be re-derived without raw ids. The page now carries values the client already holds:
+
+- **Board context.** A recorded page echoes the member row's `scope`, `canvasId` and `viewId`. The membership page row already exports exactly these to this desktop (`RemoteCanvasMembershipRow`, `shared/remote-canvas-membership-page.ts:6`, rendered at `SelectedCanvasMembershipPage.tsx:61`), so this adds no exposure.
+- **The member view's `key` is the membership row key itself**, the same opaque hash the client sent as `member`. Non-member view keys are opaque `hash([agentId, projectId, scope, canvasId, viewId])` values, unique within the page. The client never derives or decodes them.
+- **Ownership seam.** The client keeps the requested context from the membership page: `{agentId: address.agentId, projectId: project.agentId, scope, canvasId, viewId, member: row.key, selection: page.selection}`. It admits a board page only if every field matches. This is the same `agentId`/`projectId` binding the membership page uses (`SelectedCanvasMembershipPage.tsx:45-46`).
+
+`isRemoteCanvasBoardPage(value, context)` checks:
 - own keys only;
-- `agentId` equals the Details `agentId` (as the membership `:97` binding does);
-- `member` and `selection` match the query;
-- exactly one `member: true` view, whose key derives from the row;
+- `agentId` and `projectId` equal the context (and `agentId` equals the Details `agentId`, as in the `:97` binding);
+- `member` and `selection` equal the context;
+- for a recorded page, `scope`, `canvasId` and `viewId` equal the context's;
+- exactly one view has `member: true`, and its `key === member`;
 - `views.length === total ≤ 500`;
 - finite geometry;
 - unique keys;
@@ -119,17 +126,35 @@ type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'a
 
 `requestAgentDetails` (`annex-client.ts:2683-2721`):
 - **Capture:** copy the query once before any await, validate the copy, then build a frozen page. The URL params are `card`, `source`, `member`, `selection`.
-- **Response:** must pass `isRemoteAgentDetails(body, agentId)` and be page-only with an `inventoryPage` that passes `isRemoteCanvasBoardPage`, with equal `member`, `selection` and `agentId`. Otherwise `error`.
+- **Response:** must pass `isRemoteAgentDetails(body, agentId)` and be page-only with an `inventoryPage` that passes `isRemoteCanvasBoardPage(page, context)`, with `context` captured from the frozen query (`member`, `selection`) and the caller. Otherwise `error`. The renderer re-checks the full ownership context.
 - **Status mapping:**
   - 400 to this page query from an older host gives `unavailable`;
   - 404/405/409 give `unavailable` as today;
-  - 401/403 revoke only the receipt the read ran under (O1, `invalidateSnapshotAdmission(sat, receipt)`), with the epoch and receipt `current()` fence unchanged.
+  - 401/403 revoke only the receipt the read ran under (O1, `invalidateSnapshotAdmission(sat, receipt)`).
+- **Currentness, stated accurately.**
+  - `requestAgentDetails`' `current()` (`annex-client.ts:2692`) checks satellite identity, connected state and connection epoch only. It does **not** compare `snapshotReceipt`.
+  - The receipt captured at `:2691` is used only as the O1 revocation target for a late 401/403 (`:2697`).
+  - This contract adds **no** new receipt fence to the client. Freshness against later snapshots is a renderer obligation (below).
 - No cache, retry loop or snapshot write.
 
 ## Renderer and focus behavior
 
 - **Navigation unchanged.** `remoteCanvasJumpUnavailable` and `jumpToRemoteCanvas` (`agent-canvases.ts:120-200`) don't change. A board absent from the current snapshot still can't be opened in the canvas tab. The canvas tab is read-write for remote boards (`main.ts:515-517` forwards mutations), so a fetched board must never enter it.
-- **New read-only preview.** A `RemoteCanvasBoardPreview` sits inside `SelectedCanvasMembershipPage` (`:61`).
+- **Kept out of the generic row pager (lane finding).**
+  - `useSelectedInventoryPage` (`useSelectedInventoryPage.ts:10-50`) assumes offset and rows pages, and its `cardFor` (`:10`) maps any unrecognised source to `skills-mcp`. The board read must never pass through it.
+  - Shared types are split. The existing union becomes `RemoteRowPagedInventoryQuery` and `RemoteRowPagedInventorySource`, with guards `isRemoteRowPagedInventoryQuery` and `isRemoteRowPagedInventoryPage`, unchanged in members: managed, Actions and membership.
+  - The hook and its `cardFor`, `select` and page check are typed against the row-paged set only. `cardFor` becomes an exhaustive switch with no default, so a new source fails to compile.
+  - `RemoteCanvasBoardQuery` joins `RemoteDetailsQuery` only, the transport union.
+  - **Preserved, with tests:**
+    - `RemoteCanvasesCard` membership eligibility (`RemoteCanvasesCard.tsx:26`);
+    - quick-agent Details rejecting every inventory card (`remote-quick-details.ts:23`), including the board;
+    - the Dispatcher role path accepting only Connections and Actions page queries (`isSelectedDispatcherPageQuery`), so the board is refused;
+    - the managed subset (`REMOTE_MANAGED_INVENTORY_SOURCES`) unchanged.
+- **New read-only preview.** A `RemoteCanvasBoardPreview` sits inside `SelectedCanvasMembershipPage` (`:61`). It has its own transport, not the hook.
+- **`CanvasMembershipList` prop change (disclosed).**
+  - It gains one optional `secondary?: (hit: CanvasHit, index: number) => ReactNode`, rendered after a row's reason text.
+  - Local Details and `RemoteCanvasesCard` don't pass it, so their output is unchanged (tested).
+  - `SelectedCanvasMembershipPage` passes the row index to look up the page row (`key`, `scope`, `canvasId`, `viewId`). `CanvasHit` is unchanged.
   - Rows whose jump is refused because of omission or absence get "Preview board (read-only)".
   - It reads through `agentDetails(machine, agentId, query)` with the row's `key` and the page's `selection`.
 - **What it shows:**
@@ -141,10 +166,17 @@ type RemoteCanvasBoardView = { key: string /* hash([board, viewId]) */; type: 'a
   - The preview action is offered only while `remoteCanvasJumpUnavailable(agent, hit)` returns the omission or "not in the host's current shared snapshot" reason.
     - If it returns null (navigable), the row shows the existing Open action only.
     - If it returns a host or reconnect reason, neither action is offered.
-  - It's re-evaluated on every Annex client store change, as the jump subscription already does.
+  - **Explicit subscription.** The preview subscribes to the Annex client store for its host. The existing jump listener only covers a pending navigation, so it can't be reused. On every change, the preview re-evaluates host presence, `connected`, `snapshotUnavailable`, the membership page fence (`SelectedCanvasMembershipPage.tsx:28-30`, keyed by `freshnessKey` plus snapshot identity) and `remoteCanvasJumpUnavailable(agent, hit)`.
+  - **Not identity-only.** A backfilled snapshot (`annex-client.ts:1408-1411` and the refetches) can change board presence. The recheck evaluates navigability on every notification, whether the snapshot object identity changed or not.
   - If an open preview's row becomes navigable (a later full snapshot contains the board), the preview closes and the row switches to Open. It isn't kept as a second copy.
   - If navigation becomes refused again, nothing reopens automatically; the user can request a fresh preview read.
-  - A preview read that's still pending when the row becomes navigable is discarded on arrival.
+  - **Settlement recheck.** When a preview read settles, it's admitted only if all of the following still hold:
+    - the membership fence object is the one captured at request time;
+    - the host is still connected and the snapshot available;
+    - the row is still refused for omission or absence (not navigable);
+    - the page passes the full ownership context.
+    Otherwise it's discarded, including a read still pending when the row becomes navigable.
+  - The preview never mutates `sat.snapshot`, `snapshotReceipt`, the epoch or any store. Freshness is enforced by discarding only.
 - **Fallback:** an `unavailable` page (changed, invalid, unreadable, limit, unsupported), an older host (400) or a transport status shows the row's existing refusal reason, plus one line naming the preview status. No retained preview is shown.
 - **Freshness:**
   - state is keyed to the card's `freshnessKey` (generation, receipt, pause, retry), the membership `selection` and the row `key`; any change discards it;
@@ -206,6 +238,23 @@ Hunk ownership would include the canvas plugin (`canvas-store.ts`, `main.ts` and
   - `isRemoteInventoryPage` judges a board page only by the board validator, never the managed one;
   - a board page in an overview without the membership source is rejected.
 - **Premeasure:** 500 or fewer views with long labels that overflow the remaining budget give `unavailable: 'limit'` (200 with a page-only body), never `500`.
+- **Binding mutations (lane finding):**
+  - **wrong focus:** a page whose `member: true` view key differs from `member`, or which has two member views, is rejected. A mutation dropping the `key === member` check must fail a test;
+  - **wrong board:** a page with another `canvasId`, `scope` or `viewId`, or another `agentId` or `projectId`, is rejected. A mutation dropping the board-context equality must fail a test;
+  - focus lands on the view whose key equals the row key, not the first agent view.
+- **Pager exclusion:**
+  - type-level and runtime tests that the row-paged guards reject the board query and page;
+  - the hook never issues a board query;
+  - the `cardFor` exhaustiveness is a compile-time check;
+  - membership, Actions and managed paging are unchanged;
+  - quick and Dispatcher refusals of the board are tested.
+- **Preview freshness:**
+  - a store notification that makes the row navigable closes the preview;
+  - a read settling after that is discarded;
+  - a backfill notification with an unchanged snapshot identity still triggers the navigability recheck;
+  - a new fence, disconnect or `snapshotUnavailable` discards;
+  - no store or snapshot setter is called (spies).
+- **List prop:** local and `RemoteCanvasesCard` membership lists render identically without `secondary`.
 - **Client:**
   - the URL shape;
   - the agent, member and selection binding;
@@ -237,7 +286,10 @@ Hunk ownership would include the canvas plugin (`canvas-store.ts`, `main.ts` and
 | `src/main/services/remote-agent-details.ts` | `inventorySources` `:99`, dispatch `:106` | #3733 |
 | `src/main/services/annex-server.ts` | `handleAgentSettingsDetailsRoute` query parse `:4094-4097` (adds the `member` key for the board source only) | **lane3613: please confirm no overlap** |
 | `src/main/services/annex-client.ts` | `requestAgentDetails` `:2683-2721` (params and response binding) | **lane3613: please confirm no overlap** |
-| `src/renderer/features/agents/details/SelectedCanvasMembershipPage.tsx` | the row action at `:61` | #3733 |
+| `src/renderer/features/agents/details/SelectedCanvasMembershipPage.tsx` | the row action at `:61` (passes `secondary`, keeps the row context) | #3733 |
+| `src/renderer/features/agents/details/CanvasMembershipList.tsx` | an optional `secondary` prop (`:5`, `:18-19`) | #3733, disclosed |
+| `src/renderer/features/agents/details/useSelectedInventoryPage.ts` | narrowed to row-paged types, exhaustive `cardFor` (`:6`, `:10`, `:24`, `:41`, `:44-47`) | #3733 |
+| `src/shared/remote-details-query.ts` | `RemoteDetailsQuery` union adds the board query (`:6`) | #3733 |
 | `src/renderer/features/agents/details/RemoteCanvasBoardPreview.tsx` | new | #3733 |
 | Tests | the matching tests | #3733 |
 
