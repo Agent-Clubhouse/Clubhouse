@@ -1,0 +1,62 @@
+2026-11-20T05:46:53Z START auto-reset-policy-design idle=81% unused=11G avail=30388M freepct=76 comp=7573M swap=1892M pid=53493 cmd=node /Users/masonallen/source/Clubhouse/node_modules/vitest/vitest.mjs run --project main src/main/services/helper-reset-replay.test.ts src/main/services/helper-auto-replay.test.ts src/main/services/helper-burn-pressure.test.ts --maxWorkers=2 --disableConsoleIntercept --reporter=verbose
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design
+
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > is byte-for-byte identical with shadow forecasts off across bursts, resets and outside use 2ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > serial starts from zero on equal plans share evenly, and never settle on the first provider 1ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > Stage 3 chronological calibration replay > reports zero held-out error per exact provider/model/effort/revision key on stationary fixtures 2ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > Stage 3 chronological calibration replay > reports outside bursts as proxy error, not attributed helper consumption, with no future leakage 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > Stage 3 chronological calibration replay > a delayed quota sample cannot train a decision already made, and sparse or changed mappings stay unknown 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > Stage 3 chronological calibration replay > does not leak delayed evidence into a decision at the same availability timestamp, regardless of event order 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > Stage 3 chronological calibration replay > reports resets and incomplete usage as excluded intervals without inventing calibration errors 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > equal ties differ by at most one across every complete rotation 1ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > unequal plans balance their own percent used, not helper counts 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > lower measured use wins: a plan that starts ahead waits until the other catches up 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > staggered resets > the reset schedule uses the sooner-resetting plan first, leaving less unused at its reset, and keeps the low-mark reserve 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > a burst on stale, equal readings spreads by load 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > a burst on unequal readings goes to the lower one: helper count never outweighs measured use 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > an unreadable plan gets nothing while a measured one has headroom, then takes over at the low mark 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > use from outside Clubhouse shifts new helpers to the other plan 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > keeps Copilot last through headroom and low readings, then falls back at near-limit 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > a temporarily unreadable provider stays ahead of Copilot, and Copilot takes over while it is unavailable 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > a provider that leaves and comes back rejoins the rotation, and nothing starves 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > with every plan out, it refuses rather than picking one 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > restarts that lost the rotation, whatever they restored, leave ties within R + 1 0ms
+ ✓ |main| src/main/services/helper-auto-replay.test.ts > Auto replay > with two tied, a restart that kept the rotation continues it, and one that lost it starts from the first 0ms
+ ✓ |main| src/main/services/helper-burn-pressure.test.ts > qualified aggregate remaining burn > chronologically qualifies exact group/model/profile means and intervals without counting past burn twice 5ms
+ ✓ |main| src/main/services/helper-burn-pressure.test.ts > qualified aggregate remaining burn > uses qualified mean for balancing and upper bounds for short-window admission 0ms
+ ✓ |main| src/main/services/helper-burn-pressure.test.ts > qualified aggregate remaining burn > falls back entirely when any applicable supported window lacks valid baseline/reset coverage 1ms
+ ✓ |main| src/main/services/helper-burn-pressure.test.ts > qualified aggregate remaining burn > requalifies after definitively unstarted settled helpers without forgetting pending/unknown or actual runs 2ms
+ ✓ |main| src/main/services/helper-burn-pressure.test.ts > qualified aggregate remaining burn > includes an atomic pending start with confirmed identity once, and never invents a missing reservation identity 0ms
+ ✓ |main| src/main/services/helper-burn-pressure.test.ts > qualified aggregate remaining burn > demonstrates recency weighting improves chronological replay of changing observed demand 2ms
+ ✓ |main| src/main/services/helper-burn-pressure.test.ts > qualified aggregate remaining burn > keeps future and delayed labels out, and rolls back immediately on outside bursts/drift 5ms
+ ✓ |main| src/main/services/helper-burn-pressure.test.ts > qualified aggregate remaining burn > fails cold on affected generations, effort/profile/model changes, missing identity and unsupported load 1ms
+ ✓ |main| src/main/services/helper-burn-pressure.test.ts > qualified aggregate remaining burn > excludes reset crossings, extra starts, failed/cancelled/partial sessions and incomplete observations 0ms
+ ✓ |main| src/main/services/helper-burn-pressure.test.ts > qualified aggregate remaining burn > reports separate exact-provider cohorts and retains closed, bounded immutable receipts 3ms
+RESET_REPLAY_REPORT=[{"demand":"high","policy":"weekly_used","requested":24,"accepted":24,"refused":0,"picks":{"A":12,"B":12},"unusedA":30,"minHeadroom":30},{"demand":"high","policy":"reset_schedule","requested":24,"accepted":24,"refused":0,"picks":{"A":16,"B":8},"unusedA":20,"minHeadroom":20},{"demand":"high","policy":"cycle_legacy_tiers","requested":24,"accepted":24,"refused":0,"picks":{"A":16,"B":8},"unusedA":20,"minHeadroom":20},{"demand":"high","policy":"pace_deficit","requested":24,"accepted":24,"refused":0,"picks":{"A":20,"B":4},"unusedA":10,"minHeadroom":10},{"demand":"high","policy":"bounded_urgency","requested":24,"accepted":24,"refused":0,"picks":{"A":20,"B":4},"unusedA":10,"minHeadroom":10},{"demand":"high","policy":"bounded_relax_24h","requested":24,"accepted":24,"refused":0,"picks":{"A":22,"B":2},"unusedA":5,"minHeadroom":5},{"demand":"low","policy":"weekly_used","requested":4,"accepted":4,"refused":0,"picks":{"A":2,"B":2},"unusedA":55,"minHeadroom":55},{"demand":"low","policy":"reset_schedule","requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"cycle_legacy_tiers","requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"pace_deficit","requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"bounded_urgency","requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"low","policy":"bounded_relax_24h","requested":4,"accepted":4,"refused":0,"picks":{"A":4,"B":0},"unusedA":50,"minHeadroom":50},{"demand":"absent","policy":"weekly_used","requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"reset_schedule","requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"cycle_legacy_tiers","requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"pace_deficit","requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"bounded_urgency","requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60},{"demand":"absent","policy":"bounded_relax_24h","requested":0,"accepted":0,"refused":0,"picks":{"A":0,"B":0},"unusedA":60,"minHeadroom":60}]
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > exposes the tier barrier, then promotes useful low-tier work without crossing its reserve 1ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 23.99999972222222 hours 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 24 hours 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 24.00000027777778 hours 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 47.99999972222222 hours 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 48 hours 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > uses inclusive 24/48h boundaries at 48.00000027777778 hours 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > makes relaxation explicit, weekly-only, bounded and expired at reset 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > keeps provider exhaustion and short/model window constraints ahead of urgency and relaxation 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > does not turn missing reset, missing usage, stale, future or unreadable evidence into urgency 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > distinguishes unknown pace from a reported zero, and suppresses urgency when whole-login burn is already sufficient 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > shows why raw pace deficit and bounded calendar urgency express different product preferences 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > applies a supplied aggregate upper bound and exposes cold-forecast concurrency overshoot 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > keeps unknown Copilot last, respects its opt-out, and refuses if nothing is eligible 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > derives a past-only whole-login rate, invalidating resets, identity changes, decreases and sparse evidence 0ms
+ ✓ |main| src/main/services/helper-reset-replay.test.ts > reset-aware Auto proposal (isolated) > compares identical staggered-reset workloads with high, low and absent useful demand 3ms
+
+ Test Files  3 passed (3)
+      Tests  47 passed (47)
+   Start at  21:46:54
+   Duration  221ms (transform 84ms, setup 24ms, import 90ms, tests 40ms, environment 0ms)
+
+2026-11-20T05:46:54Z END auto-reset-policy-design rc=0

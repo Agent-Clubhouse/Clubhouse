@@ -1,0 +1,2 @@
+2026-11-20T05:58:40Z START auto-reset-policy-design idle=81% unused=7489M avail=28328M freepct=76 comp=7540M swap=1892M pid=67632 cmd=node /Users/masonallen/source/Clubhouse/node_modules/typescript/bin/tsc --project docs/evidence/helper-reset-policy/ar1/tsconfig.scoped.json
+2026-11-20T05:58:40Z END auto-reset-policy-design rc=0

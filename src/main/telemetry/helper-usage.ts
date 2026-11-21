@@ -161,6 +161,15 @@ function candidateAttrs(decisionId: string, c: DecisionCandidate): Array<TelAttr
     c.score?.cyclePhaseBp !== undefined && ATTR.helperScoreCyclePhaseBp(c.score.cyclePhaseBp),
     c.score?.targetBp !== undefined && ATTR.helperScoreTargetBp(c.score.targetBp),
     c.score?.pressureBp !== undefined && ATTR.helperScorePressureBp(c.score.pressureBp),
+    ...(c.autoBudget ? [
+      ATTR.helperBudgetMode(c.autoBudget.mode),
+      c.autoBudget.retainedPercent !== undefined && ATTR.helperBudgetRetainedPercent(c.autoBudget.retainedPercent),
+      c.autoBudget.ceilingBp !== undefined && ATTR.helperBudgetCeilingBp(c.autoBudget.ceilingBp),
+      c.autoBudget.usableBp !== undefined && ATTR.helperBudgetUsableBp(c.autoBudget.usableBp),
+      c.autoBudget.resetsAtMs !== undefined && ATTR.helperBudgetResetsAtMs(c.autoBudget.resetsAtMs),
+      ATTR.helperBudgetUrgency(c.autoBudget.urgency), ATTR.helperBudgetForecast(c.autoBudget.forecast),
+      ATTR.helperBudgetBlock(c.autoBudget.block ?? 'none'),
+    ] : []),
     ...(c.quota ? quotaAttrs(c.quota) : []),
   ];
 }
@@ -250,6 +259,7 @@ export function recordHelperDecision(rec: HelperDecisionRecord): void {
       ATTR.helperCandidateCount(rec.candidates.length),
       ATTR.helperEligibleCount(rec.candidates.filter((c) => c.eligible).length),
       rec.settings && ATTR.helperAutoEnabled(rec.settings.autoEnabled),
+      rec.settings?.autoBudgetMode && ATTR.helperAutoBudgetMode(rec.settings.autoBudgetMode),
       rec.settings && ATTR.helperEnabledProviders(count(rec.settings.enabledProviders) ?? 0),
       t?.quotaLowBp !== undefined && ATTR.helperThresholdQuotaLowBp(t.quotaLowBp),
       t?.quotaNearLimitBp !== undefined && ATTR.helperThresholdQuotaNearBp(t.quotaNearLimitBp),

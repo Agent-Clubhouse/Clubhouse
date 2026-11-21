@@ -1,3 +1,4 @@
+import type { AutoBudgetPolicy, AutoBudgetReceipt } from './helper-auto-budget';
 import type { QuotaCalibrationPlan } from './helper-burn-pressure';
 /**
  * Helper routing (#2671, docs/helper-auto-routing.md): what an orchestrator can
@@ -51,7 +52,7 @@ export function isAutoBoundLevel(value: unknown): value is AutoBoundLevel {
 }
 
 /** Recorded on each decision, so telemetry can tell which values produced it. */
-export const HELPER_ROUTING_POLICY_VERSION = 3;
+export const HELPER_ROUTING_POLICY_VERSION = 4;
 
 /**
  * The providers with an Auto mapping: presets for every level, which
@@ -145,11 +146,11 @@ export function normalizeSavedPresets(raw: unknown): SavedPresets {
 
 export type HelperRoutingMode = 'explicit' | 'preset' | 'auto';
 /** `sticky` and `default_order` are policy 1's, and `persona_pinned` is from before personas were retired (#2901), kept so an older saved decision still reads. */
-export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'preset_on_cli' | 'only_candidate' | 'lower_pressure' | 'lower_load' | 'fair_rotation' | 'better_quota_tier' | 'unknown_fallback' | 'last_resort_unmeasured' | 'sticky' | 'default_order';
+export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'preset_on_cli' | 'only_candidate' | 'lower_pressure' | 'lower_load' | 'fair_rotation' | 'better_quota_tier' | 'unknown_fallback' | 'last_resort_unmeasured' | 'sticky' | 'default_order' | 'reset_urgency';
 export type HelperRoutingFallback = 'none' | 'builtin_preset' | 'candidate_skipped' | 'model_unverified';
 /** `persona` is from before personas were retired (#2901), kept so an older saved decision still reads. */
 export type HelperRoutingFieldSource = 'request' | 'persona' | 'orchestrator' | 'auto' | 'custom_mapping' | 'builtin_mapping' | 'cli_default';
-export type HelperRoutingSkip = 'cli_disabled' | 'cli_unavailable' | 'auto_disabled' | 'auto_not_supported' | 'no_valid_mapping' | 'mapping_changed' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
+export type HelperRoutingSkip = 'cli_disabled' | 'cli_unavailable' | 'auto_disabled' | 'auto_not_supported' | 'no_valid_mapping' | 'mapping_changed' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted' | 'auto_reserve' | 'quota_incomplete' | 'auto_budget_invalid';
 export type { HelperAutoOffReason, HelperAutoSource } from './orchestration-policy';
 export type PresetCellState = 'valid' | 'unverified' | 'stale';
 export type PresetStaleReason = 'model_unavailable' | 'effort_unavailable';
@@ -157,9 +158,9 @@ export type HelperContextStatus = 'none' | 'applied' | 'reset' | 'not_applied';
 
 /** What the desktop advertises at this stage. A client keys on these, so nothing is listed before it works. */
 export const HELPER_ROUTING_MODES: readonly HelperRoutingMode[] = ['explicit', 'preset', 'auto'];
-export const HELPER_ROUTING_REASONS: readonly HelperRoutingReason[] = ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_pressure', 'lower_load', 'fair_rotation', 'better_quota_tier', 'unknown_fallback', 'last_resort_unmeasured', 'sticky', 'default_order'];
+export const HELPER_ROUTING_REASONS: readonly HelperRoutingReason[] = ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_pressure', 'lower_load', 'fair_rotation', 'better_quota_tier', 'unknown_fallback', 'last_resort_unmeasured', 'sticky', 'default_order', 'reset_urgency'];
 export const HELPER_ROUTING_FALLBACKS: readonly HelperRoutingFallback[] = ['none', 'builtin_preset', 'candidate_skipped', 'model_unverified'];
-export const HELPER_ROUTING_SKIPS: readonly HelperRoutingSkip[] = ['cli_disabled', 'cli_unavailable', 'auto_disabled', 'auto_not_supported', 'no_valid_mapping', 'mapping_changed', 'cooling_down', 'quota_near_limit', 'quota_exhausted'];
+export const HELPER_ROUTING_SKIPS: readonly HelperRoutingSkip[] = ['cli_disabled', 'cli_unavailable', 'auto_disabled', 'auto_not_supported', 'no_valid_mapping', 'mapping_changed', 'cooling_down', 'quota_near_limit', 'quota_exhausted', 'auto_reserve', 'quota_incomplete', 'auto_budget_invalid'];
 export const HELPER_AUTO_OFF_REASONS: readonly HelperAutoOffReason[] = ['not_enabled', 'project_off', 'orchestration_off', 'mcp_off', 'dispatcher_locked'];
 export const PRESET_CELL_STATES: readonly PresetCellState[] = ['valid', 'unverified', 'stale'];
 
@@ -172,6 +173,7 @@ export const HELPER_ROUTING_LABELS = {
     explicit_request: 'You or the orchestrator chose this',
     persona_pinned: 'Set by the persona',
     preset_on_cli: 'From the helper settings for this difficulty',
+    reset_urgency: 'Preferred usable weekly budget before its reset',
     only_candidate: 'The only provider available',
     lower_pressure: 'Less of this provider’s weekly limit is used',
     lower_load: 'Fewer helpers running on this provider',
@@ -199,6 +201,9 @@ export const HELPER_ROUTING_LABELS = {
     cooling_down: 'It failed to start recently',
     quota_near_limit: 'Close to its limit',
     quota_exhausted: 'The provider reports its limit reached',
+    auto_reserve: 'Auto’s configured reserve would be reached',
+    quota_incomplete: 'Fresh, complete usage is needed to check the Auto reserve',
+    auto_budget_invalid: 'The saved Auto budget policy needs to be repaired in Settings',
   },
   quota: {
     known: 'Limit available',
@@ -277,6 +282,8 @@ export interface HelperRouting {
   quotaBasis?: 'known' | 'unknown_fallback' | 'unknown_scored_as_healthy';
   /** The decision's id, for an Auto choice. It names the decision and its reservation, never the helper. */
   decisionId?: string;
+  /** Decision-time reserve/urgency snapshot; running or outside work may still use more. */
+  autoBudget?: AutoBudgetReceipt;
   skipped?: Record<string, HelperRoutingSkip>;
 }
 
@@ -310,7 +317,9 @@ export function routingLabel(family: keyof typeof HELPER_ROUTING_LABELS, code: s
 export function describeRouting(routing: HelperRouting): string {
   const { resolved, reason } = routing;
   const what = [resolved.model ?? 'its default model', resolved.effort && `${resolved.effort} effort`].filter(Boolean).join(', ');
-  return `${what}. ${routingLabel('reason', reason)}.`;
+  const reserve = routing.autoBudget?.retainedPercent;
+  const budget = reserve === undefined ? '' : ` Auto admission reserve: ${reserve}%. Running or outside work may still use more. Burn pace was not measured.`;
+  return `${what}. ${routingLabel('reason', reason)}.${budget}`;
 }
 
 // ── The settings ─────────────────────────────────────────────────────────
@@ -372,6 +381,8 @@ export interface HelperRoutingSettings {
   providers: Record<string, ProviderRoutingView>;
   /** Allow Copilot as Auto's last resort. Absent on older desktops; defaults to true. */
   copilotAuto?: boolean;
+  /** Capability absent on older desktops. Policy edits are app-wide only. */
+  autoBudget?: { policy: AutoBudgetPolicy | null; invalid: boolean; editable: boolean };
   /** With an agent in the request: whether it can use presets, and why not. */
   agent?: { usable: boolean; reason?: 'dispatcher_locked' | 'orchestration_off' };
   auto: HelperAutoView;
@@ -408,6 +419,8 @@ export interface HelperRoutingUpdate {
   auto?: boolean | 'off' | null;
   /** App-wide only. Allow Copilot as Auto's last resort without enabling Auto itself. */
   copilotAuto?: boolean;
+  /** Explicit, versioned opt-in/off with selected provider reserves. Omission preserves the saved policy. */
+  autoBudgetPolicy?: AutoBudgetPolicy;
 }
 
 export type HelperRoutingUpdateResult =
@@ -474,6 +487,8 @@ export interface QuotaView {
   modelWindows?: Array<QuotaWindowView & { name: string }>;
   /** Windows that exist but couldn't be read, so the others decided. */
   unreadableWindows?: QuotaWindowName[];
+  /** Known applicable windows omitted because stale, expired or invalid. Never a new zero-usage reading. */
+  incompleteWindows?: QuotaWindowName[];
   /** How long a fetch would return this same reading. */
   refreshAfterSeconds?: number;
 }
@@ -509,7 +524,11 @@ export function classifyQuota(windows: readonly QuotaWindow[], now: number, opti
   const counts = (w: QuotaWindow) => !isModelWindow(w.name) || (!!options.model && wireName(w.name).toLowerCase() === `model:${options.model.toLowerCase()}`);
   const readable = current.filter((w) => counts(w) && (w.usedPercent !== undefined || w.limitReached));
   const unreadable = current.filter((w) => counts(w) && w.usedPercent === undefined && !w.limitReached).map((w) => wireName(w.name));
+  const incomplete = windows.filter((w) => counts(w) && (!Number.isFinite(w.asOf) || w.asOf > now || now - w.asOf > QUOTA_STALE_MS
+    || (w.resetsAt !== undefined && (!Number.isFinite(w.resetsAt) || w.resetsAt <= now))
+    || (w.usedPercent !== undefined && (!Number.isFinite(w.usedPercent) || w.usedPercent < 0 || w.usedPercent > 100)))).map((w) => wireName(w.name));
   const listed = {
+    ...(incomplete.length > 0 && { incompleteWindows: incomplete }),
     weekly: windowView(current.find((w) => w.name === 'week')),
     fiveHour: windowView(current.find((w) => w.name === '5h')),
     ...(current.some((w) => wireName(w.name) === 'other') && {

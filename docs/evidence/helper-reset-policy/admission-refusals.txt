@@ -1,0 +1,8 @@
+2026-11-20T05:41Z lint admission, min4GB; gate exit75. Original output:
+REFUSED: idle=0%<40
+
+2026-11-20T05:44Z final replay admission, min4GB; gate exit75. Original output:
+REFUSED: slot held by lane-fed
+
+2026-11-20T05:45Z final replay retry after >60s, min4GB; gate exit75. Original output:
+REFUSED: slot held by full-details

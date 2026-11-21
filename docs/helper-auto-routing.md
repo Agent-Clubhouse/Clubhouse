@@ -1,5 +1,7 @@
 # Helper Auto routing
 
+An opt-in reset-aware policy with retained provider reserves is implemented for review on a task branch; see [behavior, persistence, limits and validation](helper-auto-reset-implementation.md). It is not a default migration or live activation. The legacy behavior described below continues when that preference is absent or off. The new version deliberately defers burn-rate measurement and offers no automatic reserve relaxation.
+
 **Status: built (#2671):** an explicit `effort` on `start_helper`, presets by `difficulty`, read-only quota, `cli: "auto"`, and the settings audit. Clubhouse Go has locked the stage 2 phone wire in [Phone contract](#phone-contract), which is presets only. Later stages are not locked.
 
 An orchestrator can ask for a helper by difficulty instead of naming a model, and can opt in to letting Clubhouse pick the provider from load and quota. The choice is deterministic, explained, and made once.

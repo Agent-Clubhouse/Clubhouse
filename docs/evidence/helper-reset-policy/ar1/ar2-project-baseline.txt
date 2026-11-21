@@ -1,0 +1,108 @@
+2026-11-20T05:54:37Z START auto-reset-policy-design idle=76% unused=8201M avail=29207M freepct=76 comp=7551M swap=1892M pid=64501 cmd=node /Users/masonallen/source/Clubhouse/node_modules/typescript/bin/tsc --noEmit --project tsconfig.json --typeRoots /Users/masonallen/source/Clubhouse/node_modules/@types
+src/main/chat/copilot/driver.ts(6,243): error TS2307: Cannot find module '@microsoft/copilot-sdk' or its corresponding type declarations.
+src/main/chat/copilot/driver.ts(40,91): error TS2339: Property 'reasoningEffort' does not exist on type '{}'.
+src/main/chat/copilot/driver.ts(220,125): error TS7006: Parameter 'a' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(336,44): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(353,34): error TS7006: Parameter 'request' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(355,30): error TS7006: Parameter 'request' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(356,33): error TS7006: Parameter 'request' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(357,32): error TS7006: Parameter 'context' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(376,71): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(423,10): error TS2339: Property 'commands' does not exist on type '{}'.
+src/main/chat/copilot/driver.ts(459,34): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(582,59): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(669,31): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(779,59): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/main/chat/copilot/driver.ts(1120,49): error TS7006: Parameter 'm' implicitly has an 'any' type.
+src/main/chat/copilot/elicitation.ts(1,60): error TS2307: Cannot find module '@microsoft/copilot-sdk' or its corresponding type declarations.
+src/main/chat/copilot/elicitation.ts(16,51): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/main/chat/copilot/elicitation.ts(17,49): error TS7006: Parameter 'v' implicitly has an 'any' type.
+src/main/chat/copilot/elicitation.ts(17,52): error TS7006: Parameter 'i' implicitly has an 'any' type.
+src/main/chat/copilot/elicitation.ts(21,63): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/main/chat/copilot/elicitation.ts(22,34): error TS7006: Parameter 'v' implicitly has an 'any' type.
+src/main/chat/copilot/elicitation.ts(36,28): error TS2339: Property 'default' does not exist on type 'unknown'.
+src/main/chat/copilot/elicitation.ts(36,79): error TS2339: Property 'default' does not exist on type 'unknown'.
+src/main/chat/copilot/elicitation.ts(41,24): error TS2339: Property 'title' does not exist on type 'unknown'.
+src/main/chat/copilot/elicitation.ts(41,64): error TS2339: Property 'description' does not exist on type 'unknown'.
+src/main/chat/copilot/elicitation.ts(41,89): error TS2339: Property 'description' does not exist on type 'unknown'.
+src/main/chat/copilot/elicitation.ts(42,17): error TS2339: Property 'title' does not exist on type 'unknown'.
+src/main/chat/copilot/elicitation.ts(42,42): error TS2339: Property 'title' does not exist on type 'unknown'.
+src/main/chat/copilot/elicitation.ts(44,26): error TS2339: Property 'type' does not exist on type 'unknown'.
+src/main/chat/copilot/elicitation.ts(85,56): error TS2339: Property 'title' does not exist on type 'unknown'.
+src/main/chat/copilot/normalizer.ts(2,107): error TS2307: Cannot find module '@microsoft/copilot-sdk' or its corresponding type declarations.
+src/main/services/__fixtures__/helper-reset-replay.ts(19,38): error TS2550: Property 'at' does not exist on type 'RateSample[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.
+src/main/telemetry/destinations/azure.ts(29,38): error TS2307: Cannot find module '../../../../node_modules/@azure/monitor-opentelemetry-exporter/dist/commonjs/_configuration/configurationManager.js' or its corresponding type declarations.
+src/renderer/features/agents/chat/Composer.tsx(18,33): error TS2307: Cannot find module 'prosemirror-view' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-codec.ts(2,45): error TS2307: Cannot find module 'prosemirror-model' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-codec.ts(3,51): error TS2307: Cannot find module 'prosemirror-schema-list' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-codec.ts(149,19): error TS7006: Parameter 'child' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(149,26): error TS7006: Parameter 'offset' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(150,40): error TS7006: Parameter 'bits' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(150,46): error TS7006: Parameter 'mark' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(191,44): error TS7006: Parameter 'bits' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(191,50): error TS7006: Parameter 'mark' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(192,52): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(220,19): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(220,25): error TS7006: Parameter 'offset' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(225,21): error TS7006: Parameter 'child' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(225,28): error TS7006: Parameter 'childOffset' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(234,16): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(234,22): error TS7006: Parameter 'pos' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(246,20): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-codec.ts(246,26): error TS7006: Parameter 'pos' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.testing.ts(2,31): error TS2307: Cannot find module 'prosemirror-state' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-editor.ts(1,54): error TS2307: Cannot find module 'prosemirror-inputrules' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-editor.ts(2,51): error TS2307: Cannot find module 'prosemirror-history' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-editor.ts(3,138): error TS2307: Cannot find module 'prosemirror-commands' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-editor.ts(4,59): error TS2307: Cannot find module 'prosemirror-schema-list' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-editor.ts(5,110): error TS2307: Cannot find module 'prosemirror-state' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-editor.ts(6,39): error TS2307: Cannot find module 'prosemirror-transform' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-editor.ts(7,55): error TS2307: Cannot find module 'prosemirror-model' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-editor.ts(8,24): error TS2307: Cannot find module 'prosemirror-keymap' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-editor.ts(9,33): error TS2307: Cannot find module 'prosemirror-view' or its corresponding type declarations.
+src/renderer/features/agents/chat/prompt-editor.ts(24,23): error TS7006: Parameter 'trs' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(24,28): error TS7006: Parameter '_old' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(24,34): error TS7006: Parameter 'state' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(24,54): error TS7006: Parameter 'tr' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(35,32): error TS7006: Parameter 'state' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(35,39): error TS7006: Parameter 'm' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(35,42): error TS7006: Parameter 'start' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(35,49): error TS7006: Parameter 'end' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(57,6): error TS7006: Parameter 'state' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(57,13): error TS7006: Parameter 'match' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(57,20): error TS7006: Parameter 'start' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(57,27): error TS7006: Parameter 'end' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(83,77): error TS7006: Parameter 'tr' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(84,81): error TS7006: Parameter 'tr' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(106,11): error TS7006: Parameter 'state' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(106,18): error TS7006: Parameter 'dispatch' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(106,28): error TS7006: Parameter 'view' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(106,66): error TS7006: Parameter 'tr' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(119,27): error TS7006: Parameter 'joined' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(132,37): error TS7006: Parameter 'state' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(132,44): error TS7006: Parameter 'dispatch' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(168,46): error TS7006: Parameter 'rules' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(219,23): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/renderer/features/agents/chat/prompt-editor.ts(219,29): error TS7006: Parameter 'pos' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(2,28): error TS2307: Cannot find module 'prosemirror-view' or its corresponding type declarations.
+src/renderer/features/agents/chat/PromptEditor.tsx(3,31): error TS2307: Cannot find module 'prosemirror-state' or its corresponding type declarations.
+src/renderer/features/agents/chat/PromptEditor.tsx(101,27): error TS7006: Parameter 'tr' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(127,19): error TS7006: Parameter 'editor' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(127,27): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(128,17): error TS7006: Parameter '_editor' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(128,26): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(130,23): error TS7006: Parameter 'editor' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(130,31): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(131,19): error TS7006: Parameter 'editor' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(131,27): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(144,18): error TS7006: Parameter 'editor' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(144,26): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(144,33): error TS7006: Parameter '_slice' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptEditor.tsx(144,41): error TS7006: Parameter 'moved' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptMarkdown.tsx(2,37): error TS2307: Cannot find module 'prosemirror-model' or its corresponding type declarations.
+src/renderer/features/agents/chat/PromptMarkdown.tsx(16,19): error TS7006: Parameter 'child' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptMarkdown.tsx(16,26): error TS7006: Parameter 'offset' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptMarkdown.tsx(28,16): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptMarkdown.tsx(28,22): error TS7006: Parameter 'offset' implicitly has an 'any' type.
+src/renderer/features/agents/chat/PromptMarkdown.tsx(28,30): error TS7006: Parameter 'index' implicitly has an 'any' type.
+2026-11-20T05:54:46Z END auto-reset-policy-design rc=2

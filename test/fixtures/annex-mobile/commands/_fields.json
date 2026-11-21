@@ -326,7 +326,8 @@
         "cells",
         "reset",
         "auto",
-        "copilotAuto"
+        "copilotAuto",
+        "autoBudgetPolicy"
       ],
       "required": [
         "revision",

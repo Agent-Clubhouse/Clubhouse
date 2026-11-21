@@ -14,7 +14,8 @@
  * about equal absolute capacity.
  */
 
-import { QUOTA_NEAR_LIMIT_PERCENT, type HelperRoutingReason, type QuotaState, type QuotaUnknownReason } from '../../shared/helper-routing';
+import { QUOTA_LOW_PERCENT, QUOTA_NEAR_LIMIT_PERCENT, QUOTA_STALE_MS, type HelperRoutingReason, type QuotaState, type QuotaUnknownReason } from '../../shared/helper-routing';
+import { isRetainedPercent, AUTO_RESERVE_PROVIDERS, type AutoBudgetQuota, type AutoBudgetReceipt, type AutoBudgetRules } from '../../shared/helper-auto-budget';
 
 export const AUTO_COOLDOWN_AUTH_MS = 10 * 60_000;
 export const AUTO_COOLDOWN_QUOTA_MS = 30 * 60_000;
@@ -46,6 +47,8 @@ export interface AutoPolicyOptions {
   basis?: AutoScoreBasis;
   tieBandBp?: number;
   useBurnForecasts?: boolean;
+  /** Absent is byte-for-byte legacy behavior. Pending restrictions can enforce admission without enabling urgency. */
+  budget?: AutoBudgetRules;
 }
 
 export type AutoSkipReason = 'cli_disabled' | 'cli_unavailable' | 'auto_disabled' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
@@ -81,7 +84,8 @@ export interface AutoCandidate {
   /** Qualified mean remaining pressure for this subscription group, including the proposed start. */
   expectedBurnBp?: number;
   /** One calibrated aggregate for active work plus this start, strictly beyond the quota sample. */
-  remainingPressure?: Array<{ usedBp: number; upperBp: number }>;
+  remainingPressure?: Array<{ name?: AutoBudgetQuota['windows'][number]['name']; resetsAtMs?: number; usedBp: number; upperBp: number }>;
+  budgetQuota?: AutoBudgetQuota;
 }
 
 export interface AutoPolicyInput {
@@ -104,7 +108,8 @@ export interface AutoScore {
 export interface AutoEvaluation {
   key: string;
   provider: string;
-  excluded?: Extract<AutoSkipReason, 'quota_exhausted' | 'quota_near_limit'>;
+  excluded?: 'quota_exhausted' | 'quota_near_limit' | 'auto_reserve' | 'quota_incomplete' | 'auto_budget_invalid';
+  budget?: AutoBudgetReceipt;
   tier?: AutoTier;
   verified: boolean;
   load: number;
@@ -175,6 +180,10 @@ function scoreOf(c: AutoCandidate, now: number, basis: AutoScoreBasis, useForeca
  * same set chose last, in sorted order.
  */
 export function decideAutoProvider(input: AutoPolicyInput): AutoDecision {
+  return input.options?.budget ? decideBudgetAutoProvider(input, input.options.budget) : decideLegacyAutoProvider(input);
+}
+
+function decideLegacyAutoProvider(input: AutoPolicyInput): AutoDecision {
   const { now, candidates, cursors } = input;
   const useForecasts = input.options?.useBurnForecasts ?? AUTO_USE_BURN_FORECASTS;
   const bandBp = Math.max(0, input.options?.tieBandBp ?? AUTO_TIE_BAND_BP);
@@ -230,4 +239,89 @@ export function decideAutoProvider(input: AutoPolicyInput): AutoDecision {
           : group.length > tied.length ? 'lower_pressure'
             : 'better_quota_tier';
   return { ok: true, key: chosen.key, provider: chosen.provider, reason, basis, tier: chosen.tier!, evaluations, tie };
+}
+
+/** Calendar-based opt-in. No historical rate collection, fabricated forecast or extra provider read. */
+function decideBudgetAutoProvider(input: AutoPolicyInput, rules: AutoBudgetRules): AutoDecision {
+  const validBp = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 10_000;
+  const enabledForecasts = input.options?.useBurnForecasts ?? AUTO_USE_BURN_FORECASTS;
+  const invalid = rules.mode === 'invalid' || AUTO_RESERVE_PROVIDERS.some((p) => !isRetainedPercent(rules.reserves[p]));
+  const evaluations: AutoEvaluation[] = [];
+  const admitted: AutoCandidate[] = [];
+  for (const c of input.candidates) {
+    const e: AutoEvaluation = { key: c.key, provider: c.provider, verified: c.verified, load: c.load,
+      score: scoreOf(c, input.now, 'weekly_used', false) };
+    evaluations.push(e);
+    if (invalid) {
+      e.excluded = 'auto_budget_invalid';
+      e.budget = { mode: 'invalid', urgency: 'none', forecast: 'unavailable', block: 'invalid_policy' };
+      continue;
+    }
+    const quota = c.budgetQuota;
+    if (c.quotaState === 'exhausted' || quota?.windows.some((w) => w.limitReached)) { e.excluded = 'quota_exhausted'; continue; }
+    // Copilot has no quota reader. Preserve its distinct, unscored last-resort status and saved allowance.
+    if (c.provider === 'copilot-cli' && c.quotaState === 'unknown' && c.quotaUnknownReason === 'not_supported') {
+      e.tier = 'last_resort'; e.score = { basis: 'unmeasured' }; admitted.push(c); continue;
+    }
+    const provider = AUTO_RESERVE_PROVIDERS.find((p) => p === c.provider);
+    const retained = provider ? rules.reserves[provider] : undefined;
+    e.budget = { mode: rules.mode, ...(retained !== undefined && { retainedPercent: retained, ceilingBp: 10_000 - retained * 100 }),
+      urgency: 'none', forecast: 'unavailable' };
+    if (!provider || !quota || !quota.complete || c.quotaState === 'unknown'
+      || !Number.isFinite(quota.asOfMs) || quota.asOfMs! > input.now || input.now - quota.asOfMs! > QUOTA_STALE_MS
+      || !quota.windows.length || quota.windows.some((w) => !validBp(w.usedBp)
+        || (w.resetsAtMs !== undefined && (!Number.isFinite(w.resetsAtMs) || w.resetsAtMs <= input.now)))) {
+      e.excluded = 'quota_incomplete'; e.budget.block = 'incomplete_quota'; continue;
+    }
+    const ceiling = e.budget.ceilingBp!;
+    if (quota.windows.some((w) => w.usedBp! >= ceiling)) {
+      e.excluded = 'auto_reserve'; e.budget.block = 'observed_reserve'; continue;
+    }
+    // A single aggregate beyond this exact sample must cover EVERY applicable window. Unknown is not zero.
+    const bounds = c.remainingPressure;
+    const qualified = enabledForecasts && !!bounds?.length && quota.windows.every((w) =>
+      bounds.some((b) => b.name === w.name && b.usedBp === w.usedBp && w.resetsAtMs !== undefined && b.resetsAtMs === w.resetsAtMs && validBp(b.upperBp)));
+    if (qualified) {
+      e.budget.forecast = 'qualified';
+      if (quota.windows.some((w) => w.usedBp! + bounds!.find((b) => b.name === w.name && b.usedBp === w.usedBp && b.resetsAtMs === w.resetsAtMs)!.upperBp >= ceiling)) {
+        e.excluded = 'auto_reserve'; e.budget.block = 'predicted_reserve'; continue;
+      }
+    }
+    const weekly = quota.windows.find((w) => w.name === 'weekly');
+    const left = weekly?.resetsAtMs === undefined ? undefined : weekly.resetsAtMs - input.now;
+    if (weekly) e.budget.usableBp = Math.max(0, ceiling - weekly.usedBp!);
+    if (left !== undefined && left > 0 && left <= AUTO_WEEK_MS) {
+      e.budget.resetsAtMs = weekly!.resetsAtMs;
+      if (rules.mode === 'reset_aware' && c.verified && e.budget.usableBp! > 0) {
+        e.budget.urgency = left <= 24 * 60 * 60_000 ? 'within_24h' : left <= 48 * 60 * 60_000 ? 'within_48h' : 'none';
+      }
+    }
+    const low = quota.windows.some((w) => w.usedBp! >= QUOTA_LOW_PERCENT * 100);
+    const measured = weekly !== undefined && weeklyUsed(c) !== undefined;
+    e.tier = low ? 'low' : measured ? 'headroom' : 'unmeasured';
+    admitted.push({ ...c, quotaState: low ? 'low' : 'known',
+      // Admission has already enforced the user's configured reserve. Do not reapply legacy's different 95% reserve.
+      remainingPressure: undefined, expectedBurnBp: qualified ? c.expectedBurnBp : undefined });
+  }
+
+  const urgency = (e: AutoEvaluation) => e.budget?.urgency === 'within_24h' ? 2 : e.budget?.urgency === 'within_48h' ? 1 : 0;
+  const eligible = evaluations.filter((e) => !e.excluded);
+  const band = Math.max(0, ...eligible.map(urgency));
+  let peers = admitted;
+  if (band > 0) {
+    const urgent = eligible.filter((e) => urgency(e) === band);
+    const reset = Math.min(...urgent.map((e) => e.budget!.resetsAtMs!));
+    const keys = new Set(urgent.filter((e) => e.budget!.resetsAtMs === reset).map((e) => e.key));
+    peers = admitted.filter((c) => keys.has(c.key)).map((c) => ({ ...c, quotaState: 'known' }));
+  }
+  const decision = decideLegacyAutoProvider({ ...input, candidates: peers,
+    options: { ...input.options, basis: 'weekly_used' } });
+  for (const comparison of decision.evaluations) {
+    const original = evaluations.find((e) => e.key === comparison.key)!;
+    original.score = comparison.score;
+    if (comparison.rank !== undefined) original.rank = comparison.rank;
+  }
+  if (!decision.ok) return { ...decision, evaluations };
+  return { ...decision, evaluations, tier: evaluations.find((e) => e.key === decision.key)!.tier!,
+    reason: band > 0 ? 'reset_urgency' : decision.reason };
 }

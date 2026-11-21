@@ -139,6 +139,18 @@ async function savedPreview(target: DisposableProfile): Promise<boolean> {
   return JSON.parse(await readText(path.join(target.userDataDir, 'update-settings.json'))).previewChannel;
 }
 
+async function expectSavedPreview(target: DisposableProfile, enabled: boolean): Promise<void> {
+  await expect.poll(async () => {
+    try {
+      return await savedPreview(target);
+    } catch (error) {
+      // On a fresh profile the first atomic save may still be pending.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
+  }).toBe(enabled);
+}
+
 function dispatcherFolder(target: DisposableProfile): string {
   return path.join(target.userDataDir, '.clubhouse-dev', 'dispatcher');
 }
@@ -197,14 +209,14 @@ test('Preview off, fresh install: the new layout, and turning Preview on is the 
   await expect(settingsNav(w, 'Experimental')).toBeVisible({ timeout: 10_000 });
   await expect(settingsNav(w, 'Annex Network')).toBeVisible();
   expect(await eligible(w)).toBe(true);
-  await expect.poll(() => savedPreview(profile!)).toBe(true);
+  await expectSavedPreview(profile, true);
 
   await preview.click();
   await expect(preview).toHaveAttribute('aria-checked', 'false');
   await expect(settingsNav(w, 'Experimental')).toHaveCount(0, { timeout: 10_000 });
   await expect(settingsNav(w, 'Annex Network')).toBeVisible();
   expect(await eligible(w)).toBe(false);
-  await expect.poll(() => savedPreview(profile!)).toBe(false);
+  await expectSavedPreview(profile, false);
 });
 
 test('Preview off, saved beta state with Chat off: the new layout, a terminal, and nothing saved changes', async () => {
