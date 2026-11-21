@@ -6,7 +6,7 @@ import { createHash } from 'crypto';
 import { constants } from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { NOTICE_INDEX_PAGE_BYTES, NoticePageIndex, type NoticePageRoot, type NoticePageFailurePoint } from './pages';
+import { NOTICE_INDEX_PAGE_BYTES, NoticePageIndex, type NoticePageRoot, type NoticePageFailurePoint, type NoticeRootBarrier } from './pages';
 
 const homes: string[] = [];
 async function home() { const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'q5-pages-')); homes.push(directory); return directory; }
@@ -34,6 +34,71 @@ async function child(directory: string, mode: string) {
 }
 
 describe('lazy immutable notice index', () => {
+  it('whole-root barrier freshly syncs every reachable orphan page even after cache verification', async () => {
+    const directory = await home();
+    const producer = await NoticePageIndex.open(directory);
+    const root = await producer.build(Array.from({ length: 130 }, (_, n) => ({ key: key(n), value: n })));
+    const events: Array<{ point: string; location: string }> = [];
+    const index = await NoticePageIndex.open(directory, { testFailure: (point, location) => { events.push({ point, location }); } });
+    const reachable = await index.verify(root);
+    expect(reachable.pages).toBeGreaterThan(1);
+    events.length = 0;
+    const barrier = await index.prepareRootBarrier([root]);
+    expect(() => index.assertRootBarrier(barrier, [root])).not.toThrow();
+    const synced = events.filter((e) => e.point === 'reusedPageSynced').map((e) => e.location);
+    expect(new Set(synced).size).toBe(reachable.pages);
+    expect(events.findIndex((e) => e.point === 'beforeDirectoryFlush')).toBeGreaterThan(events.map((e) => e.point).lastIndexOf('reusedPageSynced'));
+    expect(index.cacheStats.pendingDirectoryCount).toBe(0);
+    expect((await fs.readdir(directory)).includes('manifest.json')).toBe(false);
+  });
+
+  it('whole-root barrier rejects cloned/cross-instance/wrong-root and post-preparation tokens', async () => {
+    const directory = await home();
+    const index = await NoticePageIndex.open(directory);
+    const root = await index.set(undefined, 'first', true);
+    const barrier = await index.prepareRootBarrier([root]);
+    expect(() => index.assertRootBarrier({ ...barrier } as NoticeRootBarrier, [root])).toThrow('exact');
+    expect(() => index.assertRootBarrier(barrier, [])).toThrow('exact');
+    const other = await NoticePageIndex.open(directory);
+    expect(() => other.assertRootBarrier(barrier, [root])).toThrow('exact');
+    await index.set(undefined, 'second', true);
+    expect(() => index.assertRootBarrier(barrier, [root])).toThrow('exact');
+    const fresh = await index.prepareRootBarrier([root]);
+    expect(() => index.assertRootBarrier(fresh, [root])).not.toThrow();
+    await expect(index.prepareRootBarrier(Array.from({ length: 7 }, () => root))).rejects.toThrow('forest');
+  });
+
+  it('whole-root barrier refuses cold file sync failure and warmed-cache page damage', async () => {
+    const directory = await home();
+    const producer = await NoticePageIndex.open(directory);
+    const root = await producer.set(undefined, 'first', true);
+    const failing = await NoticePageIndex.open(directory, { testFailure: (point) => {
+      if (point === 'beforeReusedSync') throw Object.assign(new Error('synthetic-sync-denied'), { code: 'EACCES' });
+    } });
+    await expect(failing.prepareRootBarrier([root])).rejects.toThrow('synthetic-sync-denied');
+    const index = await NoticePageIndex.open(directory);
+    await index.verify(root); // A previously valid cached page supplies no barrier credit.
+    await fs.writeFile(path.join(directory, root.digest.slice(0, 2), `${root.digest}.json`), 'damaged');
+    await expect(index.prepareRootBarrier([root])).rejects.toThrow('checksum');
+  });
+
+  it('whole-root barrier refuses preparation that overlaps an awaited page sync', async () => {
+    const directory = await home();
+    const producer = await NoticePageIndex.open(directory);
+    const root = await producer.set(undefined, 'first', true);
+    let arrived!: () => void; let release!: () => void;
+    const held = new Promise<void>((resolve) => { arrived = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const index = await NoticePageIndex.open(directory, { testFailure: async (point) => {
+      if (point === 'beforeReusedSync') { arrived(); await released; }
+    } });
+    const barrier = index.prepareRootBarrier([root]);
+    await held;
+    await index.set(undefined, 'concurrent', true);
+    release();
+    await expect(barrier).rejects.toThrow('changed during root barrier');
+  });
+
   it('keeps >64KiB of exact ID data paged and bounds detail cache to256 rows on write and cold reads', async () => {
     const directory = await home();
     let index = await NoticePageIndex.open(directory);

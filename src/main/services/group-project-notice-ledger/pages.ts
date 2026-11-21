@@ -8,6 +8,9 @@ import { NoticeDirectoryFlusher } from './durability';
 export type NoticeJson = null | boolean | number | string | NoticeJson[] | { [key: string]: NoticeJson };
 export interface NoticePageEntry { key: string; value: NoticeJson }
 export interface NoticePageRoot { digest: string; first: string; last: string; count: number; depth: number }
+const rootBarrierBrand = Symbol('notice-root-barrier');
+/** Main-only instance capability, never a serialized/header-provided durability fact. */
+export interface NoticeRootBarrier { readonly [rootBarrierBrand]: true }
 interface LeafPage { schemaVersion: 1; minWriterVersion: 1; kind: 'leaf'; entries: NoticePageEntry[] }
 interface IndexPage { schemaVersion: 1; minWriterVersion: 1; kind: 'index'; children: NoticePageRoot[] }
 type Page = LeafPage | IndexPage;
@@ -89,6 +92,8 @@ export class NoticePageIndex {
   private readonly leaves = new Map<string, LeafPage>();
   private readonly branches = new Map<string, IndexPage>();
   private readonly dirtyDirectories = new Map<string, symbol>();
+  private mutationSerial = 0;
+  private readonly rootBarriers = new WeakMap<NoticeRootBarrier, { serial: number; roots: string }>();
   private reads = 0;
   private pageReadBytes = 0;
   private maxPageReadBytes = 0;
@@ -177,6 +182,10 @@ export class NoticePageIndex {
     return page;
   }
   private async put(page: Page, retainInCache = true): Promise<NoticePageRoot> {
+    // Invalidate an earlier capability before the first possible filesystem await.
+    // Even a failed preparation conservatively requires a fresh barrier.
+    if (!Number.isSafeInteger(this.mutationSerial + 1)) throw new Error('Notice preparation epoch exhausted');
+    this.mutationSerial++;
     const body = Buffer.from(JSON.stringify(page));
     decode(body); // byte/fanout/order/version checks before any filesystem publication
     const hash = digest(body);
@@ -238,6 +247,45 @@ export class NoticePageIndex {
     if (failed) throw original;
   }
   async validateRoot(root: NoticePageRoot): Promise<void> { await this.load(root); }
+  private barrierRoots(roots: readonly (NoticePageRoot | undefined)[]): { owned: Array<NoticePageRoot | undefined>; key: string } {
+    // The fixed sequenced header has six roots. Catalog/root profiles need their
+    // own reviewed wider authority contract rather than an unbounded forest.
+    if (!Array.isArray(roots) || roots.length > 6) throw new Error('Notice root barrier forest exceeds fixed profile');
+    const owned = roots.map((root) => { if (root !== undefined) rootValid(root); return root === undefined ? undefined : copy(root); });
+    return { owned, key: JSON.stringify(owned) };
+  }
+  /**
+   * Freshly validate/sync EVERY referenced page, including reopened orphan trees.
+   * This confers only page durability, never committed root or send authority.
+   * No GC exists here; future deletion must protect this capability's references.
+   */
+  async prepareRootBarrier(roots: readonly (NoticePageRoot | undefined)[]): Promise<NoticeRootBarrier> {
+    const { owned, key } = this.barrierRoots(roots); const serial = this.mutationSerial;
+    const visit = async (root: NoticePageRoot, ancestors: Set<string>): Promise<void> => {
+      rootValid(root);
+      if (ancestors.has(root.digest) || ancestors.size > 32) throw new Error('Invalid notice barrier reference cycle/depth');
+      ancestors.add(root.digest);
+      const location = this.location(root.digest);
+      // Avoid cache-supplied credit and use the validated exact descriptor for sync.
+      const page = decode(await this.readPage(location, root.digest, true));
+      const actual = reference(page, root.digest);
+      if (actual.first !== root.first || actual.last !== root.last || actual.count !== root.count || actual.depth !== root.depth) throw new Error('Notice barrier reference metadata mismatch');
+      this.markPageDirectories(location);
+      if (page.kind === 'index') for (const child of page.children) await visit(child, ancestors);
+      ancestors.delete(root.digest);
+    };
+    for (const root of owned) if (root) await visit(root, new Set());
+    await this.flush();
+    if (this.mutationSerial !== serial) throw new Error('Notice pages changed during root barrier');
+    const token: NoticeRootBarrier = Object.freeze({ [rootBarrierBrand]: true as const });
+    this.rootBarriers.set(token, { serial, roots: key });
+    return token;
+  }
+  /** Synchronous exact-instance/root/epoch check before an authoritative append. */
+  assertRootBarrier(token: NoticeRootBarrier, roots: readonly (NoticePageRoot | undefined)[]): void {
+    const record = this.rootBarriers.get(token); const { key } = this.barrierRoots(roots);
+    if (!record || record.serial !== this.mutationSerial || record.roots !== key || this.dirtyDirectories.size) throw new Error('No current exact notice root barrier');
+  }
   /** Full verification streams pages through bounded caches; never returns all rows. */
   async verify(root: NoticePageRoot | undefined): Promise<{ rows: number; pages: number }> {
     if (!root) return { rows: 0, pages: 0 };
