@@ -187,8 +187,8 @@ class RuntimeCoordinator {
   }
 
   private newFrame(agentId: string, owner: RuntimeOwnerIdentity): Frame {
-    const generation: RuntimeGeneration = Object.freeze({ [generationBrand]: true });
-    const dormant: RuntimeDormantLease = Object.freeze({ [leaseBrand]: true, kind: 'dormant', generation });
+    const generation = Object.freeze<RuntimeGeneration>({ [generationBrand]: true });
+    const dormant = Object.freeze<RuntimeDormantLease>({ [leaseBrand]: true, kind: 'dormant', generation });
     const frame: Frame = {
       agentId, owner, generation, dormant, phase: 'dormant', revoked: false, handoffs: new Set(),
     };
@@ -220,7 +220,7 @@ class RuntimeCoordinator {
     old.resource = undefined;
     const frame = this.newFrame(old.agentId, old.owner);
     frame.phase = 'retiring';
-    const transition: RuntimeTransition = Object.freeze({ [transitionBrand]: true, generation: frame.generation });
+    const transition = Object.freeze<RuntimeTransition>({ [transitionBrand]: true, generation: frame.generation });
     this.transitions.set(transition, frame);
     for (const record of pending) this.retire(record);
     return { kind: 'applied', transition };
@@ -236,7 +236,7 @@ class RuntimeCoordinator {
     if (!this.current(frame)) return { kind: 'superseded' };
     if (frame.phase !== 'dormant' && frame.phase !== 'retiring') return refused('start_already_claimed');
     frame.phase = 'claimed';
-    const start: RuntimeStartClaim = Object.freeze({ [startBrand]: true, generation: frame.generation });
+    const start = Object.freeze<RuntimeStartClaim>({ [startBrand]: true, generation: frame.generation });
     this.starts.set(start, frame);
     return { kind: 'applied', start };
   }
@@ -251,9 +251,9 @@ class RuntimeCoordinator {
     const previous = this.nativeInstances.get(instance);
     if (previous && (this.current(previous.frame) || previous.frame.owner !== frame.owner
       || previous.frame.agentId !== frame.agentId)) return refused('resource_owned');
-    const id: RuntimeResourceId = Object.freeze({ [runtimeResourceIdBrand]: true });
+    const id = Object.freeze<RuntimeResourceId>({ [runtimeResourceIdBrand]: true });
     const resource: ResourceRecord = { id, frame, witness: Object.freeze({ kind, instance }) };
-    const live: RuntimeLiveLease = Object.freeze({ [leaseBrand]: true, kind: 'live', generation: frame.generation, resource: id });
+    const live = Object.freeze<RuntimeLiveLease>({ [leaseBrand]: true, kind: 'live', generation: frame.generation, resource: id });
     frame.resource = resource;
     frame.live = live;
     frame.phase = 'live';
@@ -282,7 +282,7 @@ class RuntimeCoordinator {
   }
 
   private newAdmission(scope: ScopeRecord): RuntimeAdmissionLease {
-    const admission: RuntimeAdmissionLease = Object.freeze({ [admissionLeaseBrand]: true });
+    const admission = Object.freeze<RuntimeAdmissionLease>({ [admissionLeaseBrand]: true });
     const record: AdmissionRecord = { scope, revision: scope.revision, open: true, handoffs: new Set() };
     scope.admissions.add(record);
     this.admissions.set(admission, record);
@@ -322,7 +322,7 @@ class RuntimeCoordinator {
     if (!Number.isFinite(deadline) || delay <= 0 || delay > MAX_TIMER_DELAY) reject('invalid_hold_deadline');
     const scope = this.scope(key);
     const pending = this.closeScope(scope);
-    const hold: RuntimeAdmissionHold = Object.freeze({ [holdBrand]: true });
+    const hold = Object.freeze<RuntimeAdmissionHold>({ [holdBrand]: true });
     const record: HoldRecord = {
       scope, key, revision: scope.revision, deadline, status: { state: 'pending' },
     };
@@ -418,7 +418,7 @@ class RuntimeCoordinator {
       frame, admission: admitted, marker: markEntered, lossHook: onLoss, entry: 'pending',
       retired: false, disposition: 'unsubmitted', lossPhase: 'none', receiptBinding, tickets: new Set(),
     };
-    const handoff: RuntimeHandoff = Object.freeze({
+    const handoff = Object.freeze<RuntimeHandoff>({
       [runtimeHandoffBrand]: true,
       dispatchId,
       tryEnter: () => this.tryEnter(record),
@@ -487,7 +487,7 @@ class RuntimeCoordinator {
     if (record.retired || !this.live(record) || record.receiptBinding.resource !== resource) reject('transport_resource_not_current');
     if (typeof WeakRef !== 'function') reject('weak_reference_unavailable');
     const state: TicketState = { open: record.entry === 'entered' };
-    const ticket: RuntimeTransportAdmission = Object.freeze({
+    const ticket = Object.freeze<RuntimeTransportAdmission>({
       [runtimeAdmissionBrand]: true,
       dispatchId: handoff.dispatchId,
       resource,

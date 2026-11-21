@@ -1,11 +1,15 @@
 # Q5 runtime P1: unverified, unwired work in progress
 
-**NOT ACCEPTED.** Source and fake-hook controls are preserved; no test runner,
-compiler or linter has executed. The original resource refusal is not a test
-failure or a pass. No PR, runtime binding, phone acceptance or journal acceptance
-is claimed.
+**NOT ACCEPTED.** Normal admission subsequently executed the frozen `c616`
+candidate: 39 targeted tests and scoped lint passed, but production TypeScript
+failed. This successor contextually types the ten frozen brand constructors;
+its execution proof is still pending. The original refusal and compiler failure
+are preserved, not converted into passes. No PR, runtime binding, phone
+acceptance or journal acceptance is claimed.
 
-This is a corrected static successor to preserved
+This successor also preserves the prior static candidate
+`c61665ca1d6ccf3285efbac80cac96e0e20c1e8e`, tree
+`e42bfa8fa9ca529210ffbd556a71192e7b8370c0`, and the original
 `9c85103c3a6e50e55d272b3e147ca8106ff5b9bc`, tree
 `e8d62626833afc91eff2927f32661735c9f50453`. Its independent static review was
 **NOT APPROVED**, with zero execution credit. The original commit and its
@@ -35,6 +39,12 @@ fingerprints remain available unchanged in history.
   `docs/qa-transfer/2026-11-20/reports/q5-runtime-p1-9c85103c3-static-review.md`,
   SHA256 `1a5d9a76fa497ef9204d504b0848f3ae1ebabfbf8280bb2905b4797a57e7041f`.
   The complete 93-line report was read; it does not approve this successor.
+- Static successor review: `fe1d4dc7d745abc525267eb6e5e40baae769f084`,
+  tree `32411940c0dfcf11da869d36b43a50e3b87e707c`,
+  `docs/qa-transfer/2026-11-20/reports/q5-runtime-p1-c61665ca1-static-review.md`,
+  SHA256 `4f5b35b22e2cc8a911354451c4e1465f509fcecd1a79127ae9ef06a5b3a5d0db`.
+  P1-a through P1-e and WeakRef lifetime were accepted statically, with no
+  execution or PR approval.
 
 ## Preserved source identity
 
@@ -44,7 +54,7 @@ the exact candidate source in this evidence commit; they are not execution proof
 | File | SHA256 |
 | --- | --- |
 | `src/shared/chat/runtime.ts` | `3d30b01c5a256a3f7d7b2735e1506ea18922c8c2bb0e55ab60a446aa4104bb32` |
-| `src/main/services/agent-runtime/runtime-coordinator.ts` | `34fac2866e31f5c18d756944ca124ad6aba0000cc01048da7851798bea61080b` |
+| `src/main/services/agent-runtime/runtime-coordinator.ts` | `695423ea0ba6ecb91961b9420b0c64f316e3e26229271b0a12afd3e1360ee9c0` |
 | `src/main/services/agent-runtime/runtime-coordinator.test.ts` | `d58f04aaea8beb6acc9ce7bccd155dcb260b32407cf2f626b7222d8d9eec8c09` |
 
 P1 adds unused main-issued brands/types and one unwired singleton with private
@@ -133,12 +143,42 @@ repository ignores `*.log`.
 | Unchecked-brand mutant / negative execution | NOTRUN |
 | Independent exact-source QA | `9c` NOT APPROVED at `f337`; successor re-review pending |
 
-Static corrections occurred after the refusal. The fingerprinted candidate has
-no execution proof. The P1-a through P1-e corrections also occurred afterward.
-No dependency failure occurred; no install, baseline reset,
+Static corrections occurred after the refusal. At that blocked stage the
+candidate had no execution proof. The P1-a through P1-e corrections also occurred
+afterward. No dependency failure had occurred, and no install, baseline reset,
 guard edit, periodic retry, alternative runner, full suite or local E2E was used.
-Wait for the independently reviewed gate repair to be applied and normal
-admission to pass before retrying any gated command.
+No attempt occurred until the reviewed gate was installed and its owner-reported
+normal root run released the slot.
+
+## First normal proof and compiler-fix attribution
+
+The installed gate SHA256 was verified as
+`d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3`
+before the first normal P1 run. Source/HEAD seals matched exact `c61665ca1`.
+The original swap refusal remains in history; it gives no execution credit.
+
+| Exact `c616` command, ordinary gate | Observed outcome |
+| --- | --- |
+| min 4: targeted Vitest command above | 39 tests, 1 file PASS; END `19:23:22Z`, rc 0 |
+| min 4: `npm run typecheck` | FAIL 11 diagnostics; END `19:23:48Z`, rc 2 |
+| min 4: `npm exec -- eslint src/shared/chat/runtime.ts src/main/services/agent-runtime/runtime-coordinator.ts src/main/services/agent-runtime/runtime-coordinator.test.ts --max-warnings=0` | PASS, zero errors/warnings; END `19:24:05Z`, rc 0 |
+
+`tsc-attempt-01-original.txt` preserves the byte-identical failure, SHA256
+`dfa286bf5f57d8ba8a74054d8bc556dd8121166621ca482485f3a70de3f75cf7`.
+Ten TS2322 diagnostics were literal brand widening through `Object.freeze`;
+the successor supplies the exact interface as the generic contextual type,
+without a cast, weaker brand or runtime change. One TS2307 was the absent
+worktree-local Azure exporter configuration. Only after that observed dependency
+failure, ordinary min-6 `npm ci` restored dependencies (1,275 packages; END
+`19:24:56Z`, rc 0). Dependency manifests and script approvals were unchanged.
+
+The module-local WeakRef declaration produced no observed TypeScript or lint
+diagnostic, so it was not changed and no lint/lib rule was relaxed.
+`fixture-tsconfig.json` minimally extends the repository config to include this
+test file; production TypeScript excludes tests. Its distinct gated check is
+`npm exec -- tsc --noEmit --project docs/evidence/q5-runtime-p1/fixture-tsconfig.json`.
+Successor tests, production/fixture types, lint, mutants and exact-source
+re-review remain pending. Earlier `c616` passes are not successor proof.
 
 ## Deliberately deferred
 
