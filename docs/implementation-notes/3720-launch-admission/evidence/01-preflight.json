@@ -1,0 +1,44 @@
+{
+  "label": "01-preflight",
+  "headAtExecution": "c2746d5744449612123d49c5e63925cd0515cf57",
+  "startedAtUTC": "2026-11-21T11:56:19.175910+00:00",
+  "endedAtUTC": "2026-11-21T11:56:19.241283+00:00",
+  "argv": [
+    "python3",
+    "docs/implementation-notes/3720-launch-admission/preflight.py"
+  ],
+  "expectedExitCode": 0,
+  "actualExitCode": 0,
+  "inputSHA256": {
+    "src/main/services/launch-gate.ts": "d9b34a8f171b7e70818db119cbef2d9ae16e6df6c5e77ef62b457617fd753a28",
+    "src/main/services/launch-gate.test.ts": "6444d3da346cd636c065a195f57b7350be48809f5aa1261ee1d2f23660bcba47",
+    "src/main/services/app-shutdown.ts": "965ab9849ec08fa82163e9b29e816cf0ad6b792aec372393e032a2b90014148c",
+    "src/main/services/app-shutdown.test.ts": "5795c9f50ab993103bf81d02872c7a128e78fefd0f940b01ad83c943c4a17c4e",
+    "src/main/shutdown-guard.ts": "a5dbfd865ddcb5c136030253c6088ea33739760a3ef85e812d3db3c70225519b",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    ".cache/3720-launch/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "",
+  "rawOutput": "01-preflight.txt",
+  "rawSHA256": "5c31246bea144d439b238f20904be480490750ed709c814941b861ab9b12d6f7",
+  "inputSHA256After": {
+    "src/main/services/launch-gate.ts": "d9b34a8f171b7e70818db119cbef2d9ae16e6df6c5e77ef62b457617fd753a28",
+    "src/main/services/launch-gate.test.ts": "6444d3da346cd636c065a195f57b7350be48809f5aa1261ee1d2f23660bcba47",
+    "src/main/services/app-shutdown.ts": "965ab9849ec08fa82163e9b29e816cf0ad6b792aec372393e032a2b90014148c",
+    "src/main/services/app-shutdown.test.ts": "5795c9f50ab993103bf81d02872c7a128e78fefd0f940b01ad83c943c4a17c4e",
+    "src/main/shutdown-guard.ts": "a5dbfd865ddcb5c136030253c6088ea33739760a3ef85e812d3db3c70225519b",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    ".cache/3720-launch/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "runnerSHA256": "daeadc19e20dec7167eb9c666848bc5cd4d6332b40fe2dba6dd1f540c5ce52ea",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  }
+}

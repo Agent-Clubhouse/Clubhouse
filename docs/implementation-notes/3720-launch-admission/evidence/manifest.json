@@ -1,0 +1,104 @@
+{
+  "sourceHead": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+  "testOnlyRedHead": "c2746d5744449612123d49c5e63925cd0515cf57",
+  "base": "be0091d1676764b0e3300898ab0ad1f135f88a46",
+  "contractFreeze": "38cbdaa9fff26aa28630ad14b5db9c13359d39f1",
+  "contractReview": "a3bd96ac4f3218b1bcb764fdb0e1b298e6185fa9",
+  "scope": "Additive launch receipt utility + actual shutdown coordinator with mocked drivers. No Annex consumer/runtime-readiness/name integration implemented.",
+  "sourceSHA256": {
+    "src/main/services/launch-gate.ts": "64d09e8e3074d27702014117575f62eda55fa62c11790b18e039eb07eda28290",
+    "src/main/services/launch-gate.test.ts": "6444d3da346cd636c065a195f57b7350be48809f5aa1261ee1d2f23660bcba47",
+    "src/main/services/app-shutdown.test.ts": "5795c9f50ab993103bf81d02872c7a128e78fefd0f940b01ad83c943c4a17c4e"
+  },
+  "sourceTreeAtExecution": "cd3ef156a74193e9a666556c50366a431b05f8a6",
+  "productionDiff": "launch-gate.ts only,10 additive lines; other production files/package/lock unchanged",
+  "checks": [
+    {
+      "label": "01-preflight",
+      "headAtExecution": "c2746d5744449612123d49c5e63925cd0515cf57",
+      "actualExitCode": 0,
+      "expectedExitCode": 0,
+      "receipt": "01-preflight.json",
+      "sha256": "d6d72fdb7e4477e3a1e86b3dc29ea875a014dc36cdecadd517a822c4b129220c"
+    },
+    {
+      "label": "02-baseline-red",
+      "headAtExecution": "c2746d5744449612123d49c5e63925cd0515cf57",
+      "actualExitCode": 1,
+      "expectedExitCode": 1,
+      "receipt": "02-baseline-red.json",
+      "sha256": "c61a8d8c4d38cd70be3ce74c7f503f6b6941ce57f2d9a93dc2fc9c57d2dbc761"
+    },
+    {
+      "label": "03-source-green",
+      "headAtExecution": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+      "actualExitCode": 0,
+      "expectedExitCode": 0,
+      "receipt": "03-source-green.json",
+      "sha256": "c7f5aaef7a2fdd7541f45c73676af226c2b7a52a1db6221d44531e013aeb57fd"
+    },
+    {
+      "label": "04-no-close-rotation",
+      "headAtExecution": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+      "actualExitCode": 1,
+      "expectedExitCode": 1,
+      "receipt": "04-no-close-rotation.json",
+      "sha256": "117c0bcd95b373805cdda470d3536d29fe8939825efeba1f03af405621693982"
+    },
+    {
+      "label": "05-reset-on-reopen",
+      "headAtExecution": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+      "actualExitCode": 1,
+      "expectedExitCode": 1,
+      "receipt": "05-reset-on-reopen.json",
+      "sha256": "92d75083ea2dc25d0046d1679a0519d9a3517dc8142068167a4481aaf87ac5a0"
+    },
+    {
+      "label": "06-missing-open-latch",
+      "headAtExecution": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+      "actualExitCode": 1,
+      "expectedExitCode": 1,
+      "receipt": "06-missing-open-latch.json",
+      "sha256": "44698c92b68bfe96f57966dbcae6f5382d06b1a43dd1c0ce016ce20d3cd620fc"
+    },
+    {
+      "label": "07-restored-green",
+      "headAtExecution": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+      "actualExitCode": 0,
+      "expectedExitCode": 0,
+      "receipt": "07-restored-green.json",
+      "sha256": "f154fc61414f5598f261ee8f04aef508d9cbb9e5d13bf9fc87160002c73666f8"
+    },
+    {
+      "label": "08-type-lint-admission",
+      "headAtExecution": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+      "actualExitCode": 0,
+      "expectedExitCode": 0,
+      "receipt": "08-type-lint-admission.json",
+      "sha256": "825d925e920b18d00727c60937ba6d51b5b7b0cd934b7a6a72c9ae84cef72849"
+    },
+    {
+      "label": "09-typecheck",
+      "headAtExecution": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+      "actualExitCode": 0,
+      "expectedExitCode": 0,
+      "receipt": "09-typecheck.json",
+      "sha256": "f9df6d63ae173a1bb7b3ad3d58223ce0ff7f365b4a8cbbc8eea25f203ffae748"
+    },
+    {
+      "label": "10-lint",
+      "headAtExecution": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+      "actualExitCode": 0,
+      "expectedExitCode": 0,
+      "receipt": "10-lint.json",
+      "sha256": "1831f48d6322b99d8acd1359a1b39309d7ac113ecce2e67b300bc026356ca617"
+    }
+  ],
+  "limitations": [
+    "red proves missing opt-in API, not existing Annex bug",
+    "held effect stubs are not actual Annex start/stop/admission integration",
+    "driver effects mocked in real app shutdown coordinator tests",
+    "every-close rotation unconditional in reviewed source; repeated-close black-box tests assert observable invalidation",
+    "mixed-version naming, IPC/schema/store/readiness and hosted CI not run in this piece"
+  ]
+}

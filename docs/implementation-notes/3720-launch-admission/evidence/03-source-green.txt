@@ -1,0 +1,16 @@
+HEAD: 4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b
+Command argv: ["node", "node_modules/vitest/vitest.mjs", "run", "--config", ".cache/3720-launch/vitest.config.ts", "--configLoader", "runner", "--project", "main", "--maxWorkers", "1", "--no-file-parallelism", "src/main/services/launch-gate.test.ts", "src/main/services/app-shutdown.test.ts"]
+Start UTC: 2026-11-21T11:56:43.456563+00:00
+Exit code: 0
+STDOUT:
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness
+
+
+ Test Files  2 passed (2)
+      Tests  20 passed (20)
+   Start at  06:56:43
+   Duration  807ms (transform 234ms, setup 7ms, import 294ms, tests 387ms, environment 0ms)
+
+
+STDERR:

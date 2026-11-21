@@ -1,0 +1,32 @@
+HEAD: 4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b
+Command argv: ["python3", "-c", "import os,json,subprocess; print(json.dumps({\"loadAverage\":os.getloadavg(),\"cpuCount\":os.cpu_count(),\"workers\":1,\"typeAndLint\":\"sequential\"})); print(subprocess.check_output([\"vm_stat\"],text=True))"]
+Start UTC: 2026-11-21T11:58:27.892285+00:00
+Exit code: 0
+STDOUT:
+{"loadAverage": [2.14892578125, 3.1533203125, 3.072265625], "cpuCount": 16, "workers": 1, "typeAndLint": "sequential"}
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                  1254946.
+Pages active:                                 797018.
+Pages inactive:                               784249.
+Pages speculative:                            106202.
+Pages throttled:                                   0.
+Pages wired down:                             464037.
+Pages purgeable:                                6220.
+"Translation faults":                   115911503220.
+Pages copy-on-write:                     11017671767.
+Pages zero filled:                       58706496876.
+Pages reactivated:                       11756454060.
+Pages purged:                              293940500.
+File-backed pages:                           1032355.
+Anonymous pages:                              655114.
+Pages stored in compressor:                  1606068.
+Pages occupied by compressor:                 727430.
+Decompressions:                           6120618001.
+Compressions:                             6828466818.
+Pageins:                                  1595297091.
+Pageouts:                                   12897975.
+Swapins:                                     9872399.
+Swapouts:                                   17305435.
+
+
+STDERR:

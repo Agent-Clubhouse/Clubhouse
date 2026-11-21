@@ -1,0 +1,27 @@
+{
+  "scope": "Utility predicate and real coordinator with mocked drivers; NOT Annex consumer integration",
+  "mutants": [
+    {
+      "label": "04-no-close-rotation",
+      "expectedTestExit": 1,
+      "actualTestExit": 1,
+      "sourceSHA256": "90af4da572b655cc94578142501dbebd83c81f4a4da9a6fe413ef434de96d8c8",
+      "receipt": "04-no-close-rotation.json"
+    },
+    {
+      "label": "05-reset-on-reopen",
+      "expectedTestExit": 1,
+      "actualTestExit": 1,
+      "sourceSHA256": "d1ebebbb0a8221978ab64a0dafd3fb402d821090c1d6b9d1eb20f7e8e7ec1b19",
+      "receipt": "05-reset-on-reopen.json"
+    },
+    {
+      "label": "06-missing-open-latch",
+      "expectedTestExit": 1,
+      "actualTestExit": 1,
+      "sourceSHA256": "a296050e9c60f10db6b0b132620afa4a76b3876b1a1be45de66089ec0ada7d61",
+      "receipt": "06-missing-open-latch.json"
+    }
+  ],
+  "restoredSourceSHA256": "64d09e8e3074d27702014117575f62eda55fa62c11790b18e039eb07eda28290"
+}

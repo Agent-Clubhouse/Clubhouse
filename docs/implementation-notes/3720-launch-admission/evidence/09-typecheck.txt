@@ -1,0 +1,7 @@
+HEAD: 4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b
+Command argv: ["node", "node_modules/typescript/bin/tsc", "--noEmit", "--pretty", "false"]
+Start UTC: 2026-11-21T11:58:28.042662+00:00
+Exit code: 0
+STDOUT:
+
+STDERR:

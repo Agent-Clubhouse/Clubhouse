@@ -1,0 +1,45 @@
+HEAD: c2746d5744449612123d49c5e63925cd0515cf57
+Command argv: ["python3", "docs/implementation-notes/3720-launch-admission/preflight.py"]
+Start UTC: 2026-11-21T11:56:19.175910+00:00
+Exit code: 0
+STDOUT:
+{
+  "loadAverage": [
+    2.66455078125,
+    3.80712890625,
+    3.26318359375
+  ],
+  "cpuCount": 16,
+  "lockSHA256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+  "cachedLockEqual": true,
+  "nonOptionalPackageMetadataMatched": 1176,
+  "workersAdmitted": 1,
+  "heavyChecks": "sequential",
+  "cacheUse": "read-only; task config/cache under isolated workspace .cache; no install"
+}
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                  1255223.
+Pages active:                                 796715.
+Pages inactive:                               784007.
+Pages speculative:                            105938.
+Pages throttled:                                   0.
+Pages wired down:                             464015.
+Pages purgeable:                                6209.
+"Translation faults":                   115910465866.
+Pages copy-on-write:                     11017583708.
+Pages zero filled:                       58706050292.
+Pages reactivated:                       11756453783.
+Pages purged:                              293939689.
+File-backed pages:                           1031605.
+Anonymous pages:                              655055.
+Pages stored in compressor:                  1607247.
+Pages occupied by compressor:                 727975.
+Decompressions:                           6120616847.
+Compressions:                             6828466818.
+Pageins:                                  1595292301.
+Pageouts:                                   12897975.
+Swapins:                                     9872399.
+Swapouts:                                   17305435.
+
+
+STDERR:

@@ -1,0 +1,161 @@
+HEAD: 4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b
+Command argv: ["node", "node_modules/vitest/vitest.mjs", "run", "--config", ".cache/3720-launch/vitest.config.ts", "--configLoader", "runner", "--project", "main", "--maxWorkers", "1", "--no-file-parallelism", "src/main/services/launch-gate.test.ts", "src/main/services/app-shutdown.test.ts"]
+Start UTC: 2026-11-21T11:57:44.263705+00:00
+Exit code: 1
+STDOUT:
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness
+
+ ❯ |main| src/main/services/app-shutdown.test.ts (11 tests | 2 failed) 389ms
+     × refuses an old success effect after a real guarded update fails and reopens 9ms
+     × refuses an old failure effect after a real guarded update fails and reopens 7ms
+ ❯ |main| src/main/services/launch-gate.test.ts (9 tests | 4 failed) 6ms
+     × does not revive a pre-close capture when a canceled shutdown reopens launches 2ms
+     × keeps old captures invalid across repeated closes and later reopenings 0ms
+     × refuses a held success callback after close and reopen 1ms
+     × refuses a held failure callback after close and reopen 0ms
+
+ Test Files  2 failed (2)
+      Tests  6 failed | 14 passed (20)
+   Start at  06:57:44
+   Duration  858ms (transform 242ms, setup 6ms, import 304ms, tests 395ms, environment 0ms)
+
+
+STDERR:
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/app-shutdown.test.ts > app shutdown (#2053) > refuses an old success effect after a real guarded update fails and reopens
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "start",
+    ]
+
+
+Number of calls: 1
+
+ ❯ src/main/services/app-shutdown.test.ts:106:24
+    104|     else reject(new Error('late startup failure'));
+    105|     await completed;
+    106|     expect(effect).not.toHaveBeenCalled();
+       |                        ^
+    107|     expect(admitted()).toBe(false);
+    108|     const fresh = captureLaunchAdmission();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  |main| src/main/services/app-shutdown.test.ts > app shutdown (#2053) > refuses an old failure effect after a real guarded update fails and reopens
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "stop replacement",
+    ]
+
+
+Number of calls: 1
+
+ ❯ src/main/services/app-shutdown.test.ts:106:24
+    104|     else reject(new Error('late startup failure'));
+    105|     await completed;
+    106|     expect(effect).not.toHaveBeenCalled();
+       |                        ^
+    107|     expect(admitted()).toBe(false);
+    108|     const fresh = captureLaunchAdmission();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  |main| src/main/services/launch-gate.test.ts > launch gate > does not revive a pre-close capture when a canceled shutdown reopens launches
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/main/services/launch-gate.test.ts:37:19
+     35|     reopenLaunches();
+     36|     expect(launchesOpen()).toBe(true);
+     37|     expect(old()).toBe(false);
+       |                   ^
+     38|     expect(captureLaunchAdmission()()).toBe(true);
+     39|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  |main| src/main/services/launch-gate.test.ts > launch gate > keeps old captures invalid across repeated closes and later reopenings
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/main/services/launch-gate.test.ts:57:21
+     55|     reopenLaunches();
+     56|     const fresh = captureLaunchAdmission();
+     57|     expect(first()).toBe(false);
+       |                     ^
+     58|     expect(closed()).toBe(false);
+     59|     expect(fresh()).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  |main| src/main/services/launch-gate.test.ts > launch gate > refuses a held success callback after close and reopen
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "start",
+    ]
+
+
+Number of calls: 1
+
+ ❯ src/main/services/launch-gate.test.ts:83:24
+     81|     else reject(new Error('late failure'));
+     82|     await completed;
+     83|     expect(effect).not.toHaveBeenCalled();
+       |                        ^
+     84|     const fresh = captureLaunchAdmission();
+     85|     if (fresh()) effect('fresh explicit request');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  |main| src/main/services/launch-gate.test.ts > launch gate > refuses a held failure callback after close and reopen
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "stop",
+    ]
+
+
+Number of calls: 1
+
+ ❯ src/main/services/launch-gate.test.ts:83:24
+     81|     else reject(new Error('late failure'));
+     82|     await completed;
+     83|     expect(effect).not.toHaveBeenCalled();
+       |                        ^
+     84|     const fresh = captureLaunchAdmission();
+     85|     if (fresh()) effect('fresh explicit request');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+

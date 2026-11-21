@@ -1,0 +1,40 @@
+HEAD: 4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b
+Command argv: ["node", "node_modules/vitest/vitest.mjs", "run", "--config", ".cache/3720-launch/vitest.config.ts", "--configLoader", "runner", "--project", "main", "--maxWorkers", "1", "--no-file-parallelism", "src/main/services/launch-gate.test.ts", "src/main/services/app-shutdown.test.ts"]
+Start UTC: 2026-11-21T11:57:46.494363+00:00
+Exit code: 1
+STDOUT:
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness
+
+ ❯ |main| src/main/services/launch-gate.test.ts (9 tests | 1 failed) 5ms
+     × never admits a capture made while closed, including after reopening 2ms
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 19 passed (20)
+   Start at  06:57:46
+   Duration  803ms (transform 224ms, setup 7ms, import 282ms, tests 390ms, environment 0ms)
+
+
+STDERR:
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/launch-gate.test.ts > launch gate > never admits a capture made while closed, including after reopening
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/main/services/launch-gate.test.ts:46:22
+     44|     expect(closed()).toBe(false);
+     45|     reopenLaunches();
+     46|     expect(closed()).toBe(false);
+       |                      ^
+     47|     expect(captureLaunchAdmission()()).toBe(true);
+     48|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

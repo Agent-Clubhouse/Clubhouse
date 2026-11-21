@@ -1,0 +1,56 @@
+{
+  "label": "05-reset-on-reopen",
+  "headAtExecution": "4e9c3db4cbc98d2ac8513d42cbe87a96dedebf4b",
+  "startedAtUTC": "2026-11-21T11:57:45.385397+00:00",
+  "endedAtUTC": "2026-11-21T11:57:46.445959+00:00",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-launch/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--project",
+    "main",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/main/services/launch-gate.test.ts",
+    "src/main/services/app-shutdown.test.ts"
+  ],
+  "expectedExitCode": 1,
+  "actualExitCode": 1,
+  "inputSHA256": {
+    "src/main/services/launch-gate.ts": "d1ebebbb0a8221978ab64a0dafd3fb402d821090c1d6b9d1eb20f7e8e7ec1b19",
+    "src/main/services/launch-gate.test.ts": "6444d3da346cd636c065a195f57b7350be48809f5aa1261ee1d2f23660bcba47",
+    "src/main/services/app-shutdown.ts": "965ab9849ec08fa82163e9b29e816cf0ad6b792aec372393e032a2b90014148c",
+    "src/main/services/app-shutdown.test.ts": "5795c9f50ab993103bf81d02872c7a128e78fefd0f940b01ad83c943c4a17c4e",
+    "src/main/shutdown-guard.ts": "a5dbfd865ddcb5c136030253c6088ea33739760a3ef85e812d3db3c70225519b",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    ".cache/3720-launch/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/main/services/launch-gate.ts b/src/main/services/launch-gate.ts\nindex d7697f131..f8bc672f6 100644\n--- a/src/main/services/launch-gate.ts\n+++ b/src/main/services/launch-gate.ts\n@@ -5,6 +5,7 @@\n  */\n let closedFor: string | null = null;\n let admissionGeneration = Symbol();\n+const initialAdmissionGeneration = admissionGeneration;\n let workClosed = false;\n const workWaiters = new Set<() => void>();\n const activeWork = new Map<string, number>();\n@@ -23,6 +24,7 @@ export function closeLaunches(reason: string): void {\n \n /** Reopen after a shutdown that didn't end the app (a failed update apply, the dev restart). */\n export function reopenLaunches(): void {\n+  admissionGeneration = initialAdmissionGeneration;\n   closedFor = null;\n   workClosed = false;\n   for (const resolve of workWaiters) resolve();\n",
+  "rawOutput": "05-reset-on-reopen.txt",
+  "rawSHA256": "c5dee1a6e5169eb2165a4ff7f16e182b9037ec7c5fe64361a8a2bb75bd77d5d3",
+  "inputSHA256After": {
+    "src/main/services/launch-gate.ts": "d1ebebbb0a8221978ab64a0dafd3fb402d821090c1d6b9d1eb20f7e8e7ec1b19",
+    "src/main/services/launch-gate.test.ts": "6444d3da346cd636c065a195f57b7350be48809f5aa1261ee1d2f23660bcba47",
+    "src/main/services/app-shutdown.ts": "965ab9849ec08fa82163e9b29e816cf0ad6b792aec372393e032a2b90014148c",
+    "src/main/services/app-shutdown.test.ts": "5795c9f50ab993103bf81d02872c7a128e78fefd0f940b01ad83c943c4a17c4e",
+    "src/main/shutdown-guard.ts": "a5dbfd865ddcb5c136030253c6088ea33739760a3ef85e812d3db3c70225519b",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+    "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    ".cache/3720-launch/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "runnerSHA256": "daeadc19e20dec7167eb9c666848bc5cd4d6332b40fe2dba6dd1f540c5ce52ea",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  }
+}
