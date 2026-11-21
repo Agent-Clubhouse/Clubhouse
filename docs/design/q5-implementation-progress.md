@@ -109,6 +109,13 @@ post vectors and total process heap are not yet a proven product hot-detail
 budget. Authoritative incremental updates, journal codec/activation, index GC,
 R1 post-ID mode and integrated performance remain separate work.
 
+Page-read successor bounds allocation and read bytes before digest/JSON decode,
+including reuse checks on an existing immutable page. It rejects oversized,
+directory or symlink final paths and checks descriptor/path identity/metadata
+before and after capped reads. This addresses damaged page input, not a global
+heap bound or hostile interprocess CAS/directory-traversal guarantee. Journal
+legacy checkpoint reads and root activation remain separate work.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.
