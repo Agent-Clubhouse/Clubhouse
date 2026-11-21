@@ -1,0 +1,13 @@
+{
+  "scope": "Read-only predicate/resource observation; NOT RUN remains",
+  "files": {
+    "sanitized-process-and-baseline.json": "eb117ae30df6f1635c057c36ea918d4b0ad0ee1026b4059ca12b15126aaedd20",
+    "observation.json": "baa6cf0436131ef1cb6d1621fcbb00d104c96caf1a7b1691dace4ef47f3736a3",
+    "README.md": "c034a1b574820974046f4d87747a1e257daac966e3428e425ed544f1f6353387",
+    "vm-stat.txt": "8e1685d09a3212043b1975681b3b3567b456042fb6df162d7013454fad2c2b7b",
+    "top.txt": "25fe639c53ff140cd37da18cac0410a59d7cd7e4eba2f16702e1143042c8479d",
+    "gate-source.sh": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+    "swap.txt": "b89bb4c366c5af93f8345171baf13904af31ff3c7a9d8e9b88b57a7091db1961",
+    "memory-pressure.txt": "028410af75a139c42477d8feb2e3c922fc4256228d5a8329237c1985e72c5dc0"
+  }
+}

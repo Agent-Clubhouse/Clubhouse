@@ -1,0 +1,21 @@
+{
+  "observedAt": "2026-11-21T18:08:51.808899+00:00",
+  "gateSha256": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+  "swapBaseline": {
+    "exists": true,
+    "savedMB": "1812",
+    "modifiedAt": "2026-11-21T13:17:49.576990+00:00"
+  },
+  "slot": {
+    "exists": false,
+    "owner": null
+  },
+  "explicitHold": {
+    "exists": false,
+    "first200": null
+  },
+  "gateRelevantProcesses": [],
+  "lastAdmittedStartNoArgv": "2026-11-21T13:17:49Z START q5-ledger idle=89% unused=16G avail=33629M freepct=76 comp=7807M swap=1812M pid=72886",
+  "lastEndNoArgv": "2026-11-21T13:17:50Z END q5-ledger rc=0",
+  "noTestRetry": true
+}

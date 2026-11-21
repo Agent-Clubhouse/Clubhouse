@@ -1,0 +1,99 @@
+{
+  "scope": "Read-only resource observation, no test admission/child/retry or predicate/baseline/slot mutation",
+  "observations": {
+    "top": {
+      "argv": [
+        "top",
+        "-l",
+        "1",
+        "-n",
+        "0"
+      ],
+      "observedAt": "2026-11-21T18:09:45.627643+00:00",
+      "exitCode": 0,
+      "sha256": "25fe639c53ff140cd37da18cac0410a59d7cd7e4eba2f16702e1143042c8479d"
+    },
+    "vm-stat": {
+      "argv": [
+        "vm_stat"
+      ],
+      "observedAt": "2026-11-21T18:09:46.268509+00:00",
+      "exitCode": 0,
+      "sha256": "8e1685d09a3212043b1975681b3b3567b456042fb6df162d7013454fad2c2b7b"
+    },
+    "memory-pressure": {
+      "argv": [
+        "memory_pressure"
+      ],
+      "observedAt": "2026-11-21T18:09:46.270611+00:00",
+      "exitCode": 0,
+      "sha256": "028410af75a139c42477d8feb2e3c922fc4256228d5a8329237c1985e72c5dc0"
+    },
+    "swap": {
+      "argv": [
+        "sysctl",
+        "-n",
+        "vm.swapusage"
+      ],
+      "observedAt": "2026-11-21T18:09:46.272661+00:00",
+      "exitCode": 0,
+      "sha256": "b89bb4c366c5af93f8345171baf13904af31ff3c7a9d8e9b88b57a7091db1961"
+    }
+  },
+  "gateSha256": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+  "currentPredicateValues": {
+    "cpuIdlePctRaw": 84.4,
+    "cpuIdlePctTruncated": 84,
+    "cpuRequiredMin": 40,
+    "pageSizeBytes": 16384,
+    "pageCounts": {
+      "Pages free": 360784,
+      "Pages inactive": 1456907,
+      "Pages speculative": 230758,
+      "Pages purgeable": 76990
+    },
+    "availableMiBComputedExactlyAsScript": 33209,
+    "targetedRequiredMiB": 4096,
+    "heavyRequiredMiB": 6144,
+    "kernelFreePercent": 87,
+    "kernelFreeMinPercent": 25,
+    "compressorMiB": 1128,
+    "compressorMaximumMiB": 12288,
+    "swapUsedMiBRaw": 3945.44,
+    "swapUsedMiBTruncated": 3945,
+    "savedSwapBaselineMiB": 1812,
+    "toleranceMiB": 128,
+    "largestAllowedTruncatedSwapMiB": 1940,
+    "actualSwapPredicatePass": false
+  },
+  "savedBaseline": {
+    "exists": true,
+    "savedMB": "1812",
+    "modifiedAt": "2026-11-21T13:17:49.576990+00:00"
+  },
+  "sanitizedProcessObservation": {
+    "observedAt": "2026-11-21T18:08:51.808899+00:00",
+    "gateSha256": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+    "swapBaseline": {
+      "exists": true,
+      "savedMB": "1812",
+      "modifiedAt": "2026-11-21T13:17:49.576990+00:00"
+    },
+    "slot": {
+      "exists": false,
+      "owner": null
+    },
+    "explicitHold": {
+      "exists": false,
+      "first200": null
+    },
+    "gateRelevantProcesses": [],
+    "lastAdmittedStartNoArgv": "2026-11-21T13:17:49Z START q5-ledger idle=89% unused=16G avail=33629M freepct=76 comp=7807M swap=1812M pid=72886",
+    "lastEndNoArgv": "2026-11-21T13:17:50Z END q5-ledger rc=0",
+    "noTestRetry": true
+  },
+  "knownGoOwnerReport": "Parent relayed no known owned Swift/Xcode/simulator/heavy build/test; not independently attributed to a named owner by process data.",
+  "source": "224e0797daf1b6e696b46ddd82bea5d79894ae4c",
+  "dependencyRestored": true,
+  "nextObservationTrigger": "Observable OS swap-used fall to <=1940 truncated MiB, or genuinely new resource/normal authorized policy evidence supplied by owners. No known Go job completion, expiry or mere time passage constitutes a gate change."
+}
