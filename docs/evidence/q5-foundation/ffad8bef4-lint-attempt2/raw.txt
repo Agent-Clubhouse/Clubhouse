@@ -1,0 +1,7 @@
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/src/main/services/group-project-notice-ledger/installation.ts
+   99:5  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  103:7  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+
+✖ 2 problems (0 errors, 2 warnings)
+

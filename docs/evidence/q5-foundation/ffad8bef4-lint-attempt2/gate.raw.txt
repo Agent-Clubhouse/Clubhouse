@@ -1,0 +1,10 @@
+2026-11-21T11:57:28Z START q5-ledger idle=90% unused=21G avail=33637M freepct=71 comp=11G swap=1812M pid=31722 cmd=python3 test/research/q5-seal-implementation.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/ffad8bef4-lint-attempt2 -- ./node_modules/.bin/eslint src/main/services/group-project-notice-ledger/installation.ts src/main/services/group-project-notice-ledger/installation.test.ts
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/src/main/services/group-project-notice-ledger/installation.ts
+   99:5  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  103:7  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+
+✖ 2 problems (0 errors, 2 warnings)
+
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/ffad8bef4-lint-attempt2/receipt.json", "exitCode": 0, "sealEqual": true}
+2026-11-21T11:57:28Z END q5-ledger rc=0
