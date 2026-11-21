@@ -1,0 +1,24 @@
+{
+  "status": "PROPOSED_MANDATORY_Q5_ADDENDUM_NOT_IMPLEMENTED_OR_ACCEPTED",
+  "baseContractSha256": "5fba06856f4fe5b3f159c60d9eafa54166de8c4d385678dab8dd75b8fc7f2c9e",
+  "source": "Actual Q5 owner disclosure relayed by Clubhouse-Orchestrator",
+  "interpretation": "This qualifies every V1 reference to stopping/cancelling replaced-controller work. Recovery must not invent delivery outcomes or resolve ledger uncertainty.",
+  "settlement": {
+    "knownNeverSubmitted": "Known held work that never crossed provider entry may settle dropped.",
+    "afterProviderEntry": "Session loss, reset or rejection after entry must settle unknown and preserve intent; never fabricate delivered, dropped-as-unsubmitted or successful replay.",
+    "lateGenuineReceipt": "May settle the old attempt without publishing into a new chat/generation or acknowledging a rejoined member.",
+    "recovery": "Neither default keep-chat nor explicit reset resolves uncertainty or retries intent automatically."
+  },
+  "phonePrivacy": "Read-only routes/DTO/capabilities expose no Q5 local trusted-window retry or adoption capability, receipt or control.",
+  "ownership": {
+    "Q5": "Reserves chat-runtime deliverMessage/deliverQueuedMessage/settleQueued/discardQueue pre-entry/submitted classification, synchronous admission before session.send, callback-reference release, RuntimeActionQueue/ActionQueueSettlement unknown and exhaustive Group/Actions consumers.",
+    "noClearRecoveryReservation": "Owner disclosed no clear-chat/controller/recovery hook edits and no proposed Q5 recovery.",
+    "ourSuccessor": "No new discard/settlement/ledger implementation. Any shared queue/discard change requires concrete ownership coordination before edits.",
+    "implementationGate": "Q5 is docs-only and revised contract review is pending. Recovery capability cannot claim these semantics until actual backend behavior and risk-targeted proof support them; read-only and recovery capabilities remain independently gated."
+  },
+  "3720Clearance": {
+    "draft": "Existing pinned /network opt-in request/response Upgrade header, gated membership-name frame after unchanged v1 hello/members and active-member confirmation.",
+    "disjoint": "Owner disclosed zero REST/server/mobile-capability/replica/federation/client-lifecycle/start-stop/body hunks; phone dispatcher routes/caps/recovery sites disjoint.",
+    "remaining": "Future Alias intent/UI/preload/label projection hooks must be coordinated if they touch frozen SAVE_SETTINGS serialization or Annex devices metadata. No approval or implementation of the naming draft is transferred."
+  }
+}

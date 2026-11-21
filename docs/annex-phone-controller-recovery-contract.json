@@ -1,0 +1,132 @@
+{
+  "status": "PROPOSED_FROZEN_V1_FOR_INDEPENDENT_SECURITY_PRIVACY_REVIEW_NOT_IMPLEMENTED",
+  "desktopRepository": "Agent-Clubhouse/Clubhouse",
+  "hostTrackingIssue": 3613,
+  "focusedHostIssue": null,
+  "goAdoptionIssue": "Agent-Clubhouse/Clubhouse-Go#626",
+  "branch": "feat/phone-controller-recovery-contract",
+  "branchBase": "d8c7247a4dccc1ebff01f0f28f8e61279bdf5437",
+  "frozenCandidate": {
+    "pr": 3757,
+    "head": "0af3f079dbf86c25824a237431ec24c033e96f96",
+    "untouched": true
+  },
+  "canonicalEvidence": {
+    "3474": "Closed desktop-only diagnostics scope, explicitly no phone change; cannot be reused as phone authorization.",
+    "3616": "Closed recovery-copy scope. Existing work recovery preserves visible chat; both explicitly also clears it.",
+    "2400": "Older generic phone chat epic, not a current hidden-controller permission contract.",
+    "626": "Focused Go adoption via Navi; requires advertised capability and versioned redacted fixtures, never probing/fallback."
+  },
+  "existingBoundaries": [
+    "GET /api/v1/network/dispatcher/controller/chat and /sessions remain desktop-only under current pinned desktop membership and host agent.read.",
+    "Generic mobile agent endpoints and commands continue rejecting hidden controller ids; do not modify activeDispatcher or findMobileAgent to expose them.",
+    "No phone reverse-control link, federation controller identity, authenticatedDispatcherRead structural grant, new grant, new connection, general event echo or provider-file route.",
+    "Phone paired-human admission is not an agent MCP grant. Proposed new role-specific adapter uses current direct pinned phone control/read authority and current host privacy; it must not manufacture an agent caller or bypass Off/Ask policies applicable to that authority."
+  ],
+  "advertisedCapabilities": {
+    "location": "GET /api/v1/mobile/capabilities, under dispatcher; proposed names require #3720 owner overlap confirmation",
+    "controllerChat": {
+      "version": 1,
+      "readOnly": true,
+      "path": "/api/v1/mobile/dispatcher/controller/chat",
+      "sessionsPath": "/api/v1/mobile/dispatcher/controller/chat/sessions",
+      "eventProfile": "phone-controller-readonly-v1",
+      "maximumBytes": 8388608,
+      "maximumEvents": 2000,
+      "defaultLimit": 500
+    },
+    "recovery": {
+      "version": 1,
+      "settingsPath": "/api/v1/mobile/dispatcher/settings",
+      "command": "dispatcher.recover",
+      "defaultResetChat": false,
+      "confirmationField": "expectedState"
+    },
+    "availability": "Omit when not authorized/unsupported. Off or missing Dispatcher cannot be created or woken by reads. Go sends nothing without the corresponding advertised version; no guessed URL, desktop-route probe or old-command fallback."
+  },
+  "readAuthorization": {
+    "transport": "Direct host pinned mTLS, current paired phone identified by existing controllerSurface; persistent and valid session-only pairings retain their current direct-phone semantics.",
+    "predicate": "Current Annex principal still authorized for this host and controlling role, paired phone surface, Dispatcher enabled/current and existing phone read/privacy policy allows it. Independent review must confirm this paired-human policy distinction before code; no desktop agent.read identity is synthesized.",
+    "recheck": "Capture immutable pairing/pin/role, host-selected work-controller identity and session ownership; recheck after awaited reads and immediately before publication. Revocation/pin/role/host-policy changes withhold response; no cached content is published.",
+    "target": "Host resolves its own controller only. Accept no agent id, caller id, machine, path, project, native session id or cross-host target.",
+    "headers": "Cache-Control: no-store; no transcript/path/token contents in logs."
+  },
+  "readQuery": {
+    "allowlist": ["sessionId", "beforeSeq", "afterSeq", "limit"],
+    "constraints": "Exactly one value per key; unknown/duplicate keys reject400. beforeSeq>=1, afterSeq>=0, exclusive; integer limit1..2000/default500. sessionId opaque, nonempty<=256 and bound to selected host controller's transcript store."
+  },
+  "pageExample": {
+    "version": 1,
+    "readOnly": true,
+    "role": "dispatcher-controller",
+    "sessionId": "opaque-controller-session",
+    "currentSessionId": "opaque-controller-session",
+    "events": [
+      { "seq": 5, "ts": 1700000000000, "sessionId": "opaque-controller-session", "type": "agent_message", "text": "Sanitized controller text." }
+    ],
+    "lastSeq": 5,
+    "nextBeforeSeq": null,
+    "nextAfterSeq": null,
+    "filteredEventCount": 0
+  },
+  "readProjection": {
+    "eventAllowlist": "Versioned plain user/agent text plus allowlisted fixed recovery notices. Apply existing phone Dispatcher privacy/noise rules; no thoughts, tool calls/arguments/output, plans, subagents, actionable permissions/questions, raw routed instructions, grant receipts or control fields.",
+    "redaction": "Fold streamed text before existing known-secret-pattern/secret-field redaction. This is best-effort redaction, not a claim arbitrary secret text is detectable.",
+    "identity": "No physical controller agent id, native provider session id, local path/root, provider config, command token, attachment bytes or fetch capability in the read DTO.",
+    "cursor": "Scan a bounded source-sequence window first, then filter/project. Cursors advance using scanned source sequence even if every event is filtered; filtering must not cause gaps or an endless empty page.",
+    "bound": "Reuse current encoded 8MiB mobile page ceiling; accept exactly the bound and refuse oversized indivisible projected text explicitly rather than silently truncate. Existing bounded principal rate policy, no polling/retry/deadline expansion.",
+    "sessions": "Version1/readOnly role-specific index. Only selected controller's opaque session ids and sanitized timestamps/count/title metadata; no provider/native ids or filesystem paths; same authority and encoded bound."
+  },
+  "refusals": {
+    "401_403": "Existing TLS/pairing/role/policy refusals; no private body on revoked or denied reads.",
+    "404_405": "Unsupported route/version; Go does not probe or fall back.",
+    "409": "Dispatcher off/unavailable or target/session ownership changed; no automatic wake or recovery.",
+    "413": "Projected event or session index exceeds encoded bound.",
+    "429": "Existing bounded rate refusal with Retry-After.",
+    "500": "Sanitized bounded read error; no filesystem/transcript details."
+  },
+  "recoverySettings": {
+    "recovery": {
+      "version": 1,
+      "defaultResetChat": false,
+      "keepChat": { "expectedState": "opaque-action-and-principal-bound-token" },
+      "resetChat": { "expectedState": "separate-explicit-reset-token" }
+    },
+    "tokenBinding": "Phone principal, app/mobile epoch, action+reset choice, Dispatcher switch generation, work-controller identity/session/recovery generation, and visible chat identity/session/clear generation where applicable. Separate choices never share a token. Tokens stale on replacement, restart, another recovery/clear or role/pin revocation."
+  },
+  "recoveryCommandExample": {
+    "version": 1,
+    "commandId": "unique-command-id",
+    "epoch": "current-advertised-mobile-epoch",
+    "type": "dispatcher.recover",
+    "expectedState": "opaque-keep-chat-token",
+    "resetChat": false
+  },
+  "recoverySemantics": {
+    "default": "Absent resetChat means false. Recover work only via existing startDispatcherFresh('work'); visible chat/session and retained transcript history are preserved. A damaged work native session may be quarantined/replaced, not deleted from transcript history.",
+    "explicitReset": "Only resetChat:true plus its matching explicit confirmation invokes existing 'both' scope. Existing dispatcher.clearChat remains a distinct confirmed Start new chat action, never a recovery fallback.",
+    "effects": "Stop/cancel only requests owned by replaced controller turn/queue; delegated agent work continues. Memory, agents, connections, Actions and settings stay unchanged. Sleeping recovery applies next wake. Return actual work now/next_start and chat preserved/now/next_start.",
+    "authorization": "Revalidate authority and action-bound precondition after awaited preparation, immediately before irreversible effects. Single-winner recovery/clear generation prevents two confirmations on one state. Partial/failing effects are reported honestly, never false success.",
+    "delivery": "Reuse existing mobile commandId/epoch receipts. Cancel-before-send sends nothing; uncertain replies are not automatically replayed. Do not add recovery retry, background reset or client-off wake policy.",
+    "q5": "Retain current waiting-request capture/settlement boundaries and existing notice hooks. Durable notice ledger and chat-runtime/group-project settlement stay solely with Q5 owner; no parallel store, ledger, replay policy or settlement rewrite."
+  },
+  "fixturesPlannedAfterReview": [
+    "Advertised present/absent controller-read and recovery versions.",
+    "Redacted readonly page and session index, including all-filtered cursor progress.",
+    "Recovery settings with distinct keep/reset tokens.",
+    "Default/explicit-false keep-chat result and explicit-true reset result.",
+    "Stale/other-phone/wrong-action token refusal and partial/uncertain outcome."
+  ],
+  "writerBoundaries": {
+    "3720": "Proposed mobile dispatcher capability keys only. No edits to negotiated network membership/protocol/channel; obtain actual unpublished capability/annex-server hunk clearance via parent.",
+    "Q5": "No successor SAVE_SETTINGS edit. Frozen3757 owns the existing serialized closure; Q5 owner reports no planned edit there. Proposed recovery invokes existing settlement/notice hooks without touching group-project-delivery/chat-runtime ledger seams.",
+    "implementationReservations": "Role-specific server adapter/routes/capability, typed readonly DTO/projection, mobile recovery confirmation/command parsing, minimal service generation/admission hooks only if review requires, direct tests and protocol fixtures/docs. No current annex-client lifecycle, network naming or frozen3757 mutation."
+  },
+  "acceptanceBeforeCodeAndDelivery": [
+    "Independent security/privacy contract review confirms paired-human read authority, redaction/profile, action-token and immutable target ownership.",
+    "Canonical host issue and actual unpublished writer clearance recorded before shared edits.",
+    "Deterministic negative controls for desktop/generic-mobile isolation, revocation/target replacement after IO, secret chunk boundaries, hidden action/privacy fields, cursor progress, bounds, default no-clear, explicit reset/preconditions, single winner and honest failed/uncertain receipts.",
+    "Existing resource gate applies to future targeted tests/types/lint. No full local suite, local E2E, new live/native calibration, app restart, Go source edit, new grant/link, merge or release.",
+    "Versioned redacted fixtures/schema relayed only through parent to Navi for Go adoption; implementation/adoption/release remain separate gates."
+  ]
+}
