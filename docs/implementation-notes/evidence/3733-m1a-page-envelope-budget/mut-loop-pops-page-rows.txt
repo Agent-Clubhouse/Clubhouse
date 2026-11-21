@@ -1,0 +1,234 @@
+# mutation loop-pops-page-rows on src/main/services/remote-agent-details.ts (head e3dd5eb9303600943378b1c5786de0da5879c8e7)
+# applied diff:
+314c314
+<       const largest = cards.filter((c) => c.rows.length && !(result.connectionPageOnly === true && c.id === 'connections')).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];
+---
+>       const largest = cards.filter((c) => c.rows.length).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: missing-source
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: legacy-source
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: broken-index
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: missing-index
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: withheld
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: truncated
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: missing-controller
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: wrong-role
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: name-collision
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: controller-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: grants-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: description-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: source-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: switch-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: switch-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: switch-unknown
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: connected-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: both
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: both-level-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: both-controller-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: both-revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: on
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: missing-controller
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: mismatched-id
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: wrong-folder
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: unreadable-primary
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: removed-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: role-cleared-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > uses only a strictly admitted canonical Dispatcher wires identity: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: missing-record
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: stopped
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: late-level
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: late-nonce
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: late-replacement
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: late-untrack
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: disposed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: removed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: same-bytes-replaced
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: cache-cleared
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: cache-moved
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps an actual sleeping Dispatcher primary receipt through the final connection await: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > separates current registered provider from inherited next-start choice and fences late evidence: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > separates current registered provider from inherited next-start choice and fences late evidence: provider-changed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > separates current registered provider from inherited next-start choice and fences late evidence: folder-changed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects current provider facts only after the complete Details assembly fence: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects current provider facts only after the complete Details assembly fence: replacement
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects current provider facts only after the complete Details assembly fence: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not describe a connected peer without a snapshot as cached name evidence
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > folds only the selected local agent’s network directions and projects cached peer fields without raw trust records or unrelated agents
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > never substitutes a different cached agent’s name when the saved network target is absent
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds complete Details when real primary membership changes after helper work: parent-removal
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds complete Details when real primary membership changes after helper work: earlier-helper-release
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds complete Details when real primary membership changes after helper work: cross-project-reparent
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds complete Details when real primary membership changes after helper work: disposed-reparent
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects only the selected agent’s verified bounded canvas membership navigation identities
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects policy and the selected host folder/branch without invented usage or local defaults
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > returns only touching connections and related actions, never private definitions or unrelated records
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects selected agent Actions relationship groups and safe last-run fields only
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects selected dispatcher Actions relationship groups and safe last-run fields only
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > counts bounded action relationship rows and makes omissions explicit without truncating a last-run record
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds last-session usage to the selected saved session and provider, not a broad session list
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: complete
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: truncated
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: unknown-completeness
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: sleep-record
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: undefined
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: invalid
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: 2026-11-19T01:00:00
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: 0
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: -1
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: NaN
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: Infinity
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: 8640000000000001
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with missing association
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with unrelated association
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with unset association
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with conflicting association
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with partly-unset association
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > preserves historical reported values and completeness: zero
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > preserves historical reported values and completeness: missing
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > preserves historical reported values and completeness: truncated
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: uninstalled
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: no-transcript
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: no-results
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: unknown-completeness
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: invalid-totals
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: unsafe-id
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not initialize shell environment for historical display: cold
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not initialize shell environment for historical display: warm
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps a limited historical native lookup unknown rather than verified missing or empty
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > reads historical native provider file with real byte bound and unchanged storage: small
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > reads historical native provider file with real byte bound and unchanged storage: truncated
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds historical evidence after awaited inventory change with real primary witness
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > withholds historical evidence after awaited revocation change with real primary witness
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > distinguishes verified empty, per-section error and explicit bounded omissions
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > rejects aliases/disposed agents and rechecks authority after awaited work
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > rejects late results after revocation and never returns partial private host data
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not claim an earlier run’s retained MCP handshake or tool count is current
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps unqualified helper runtime/work facts unknown while preserving independent counters
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps disposed and live handed-off helpers distinct with their real timestamps
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps nested Settings valid for a 1024-character MCP name
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps nested Settings valid for a 1025-character MCP name
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps nested Settings valid for a 2048-character MCP name
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps unreadable global MCP config unknown, preserving other independent cards
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > accepts a stable registered PTY using the real resolver despite new facade objects per lookup
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > refuses a pty registration replacement across an awaited section
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > refuses a headless registration replacement across an awaited section
+ ↓ |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > refuses stopped headless/PTY evidence across an awaited section
+ ↓ |main| src/main/services/remote-agent-details.test.ts > holds a real selected instruction receipt across later Details card work: same
+ ↓ |main| src/main/services/remote-agent-details.test.ts > holds a real selected instruction receipt across later Details card work: changed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > holds a real selected instruction receipt across later Details card work: created
+ ↓ |main| src/main/services/remote-agent-details.test.ts > holds a real selected instruction receipt across later Details card work: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > keeps independently known Settings rows when the unchanged v1 contract cannot express unknown runtime
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: binding-before-connections
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: unrelated-binding
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: binding
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: source
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: primary
+ ↓ |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: revoked-and-changed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold manual Dispatcher link evidence at final Details assembly > keeps independent saved and process-known final receipts: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold manual Dispatcher link evidence at final Details assembly > keeps independent saved and process-known final receipts: primary-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold manual Dispatcher link evidence at final Details assembly > keeps independent saved and process-known final receipts: owner-only-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold manual Dispatcher link evidence at final Details assembly > keeps independent saved and process-known final receipts: revoked-and-primary
+ ↓ |main| src/main/services/remote-agent-details.test.ts > admitted endpoint target fields at complete normal Details assembly > delivers qualified primary fields and preserves final refusal: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > admitted endpoint target fields at complete normal Details assembly > delivers qualified primary fields and preserves final refusal: related-primary-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > admitted endpoint target fields at complete normal Details assembly > delivers qualified primary fields and preserves final refusal: revoked-and-related-primary
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: on
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: unknown-controller
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: wrong-role
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: unreadable-controller
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: switch-late-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: controller-late-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: role-late-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: selected-late-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: revoked-off
+ ↓ |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: cross-project
+ ↓ |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: convergent
+ ↓ |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: convergent-controller-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: cross-project-primary-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: cross-project-revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected registered Connections pages at final Details assembly > keeps source continuation and final selected evidence fences: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected registered Connections pages at final Details assembly > keeps source continuation and final selected evidence fences: related-primary-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected registered Connections pages at final Details assembly > keeps source continuation and final selected evidence fences: selected-removed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected registered Connections pages at final Details assembly > keeps source continuation and final selected evidence fences: run-change
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected registered Connections pages at final Details assembly > keeps source continuation and final selected evidence fences: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: source-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: endpoint-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: display-reopen
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: display-stable
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: display-reopen-early
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved tool-source connection pages in Details > projects source data without operational collection and retains final evidence: display-reopen-revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'canvas-records'/'unchanged'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'canvas-records'/'source-late'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'canvas-records'/'endpoint-late'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'canvas-records'/'revoked'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'zone-records'/'unchanged'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'zone-records'/'source-late'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'zone-records'/'endpoint-late'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > cold saved Canvas and zone connection pages in Details > keeps selected saved source fields and final receipts: 'zone-records'/'revoked'
+ ↓ |main| src/main/services/remote-agent-details.test.ts > qualified Dispatcher native-ID policy ambiguity at final Details > retains independent project fields and final source refusal: unchanged
+ ↓ |main| src/main/services/remote-agent-details.test.ts > qualified Dispatcher native-ID policy ambiguity at final Details > retains independent project fields and final source refusal: normal-primary-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > qualified Dispatcher native-ID policy ambiguity at final Details > retains independent project fields and final source refusal: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected helper parent connection in full Details > retains exact parent evidence until final assembly: stable
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected helper parent connection in full Details > retains exact parent evidence until final assembly: parent-removed
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected helper parent connection in full Details > retains exact parent evidence until final assembly: reparented
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected helper parent connection in full Details > retains exact parent evidence until final assembly: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected saved group membership in full Details > retains selected group and loaded identity evidence through final assembly: stable
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected saved group membership in full Details > retains selected group and loaded identity evidence through final assembly: membership-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected saved group membership in full Details > retains selected group and loaded identity evidence through final assembly: tombstone-late
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected saved group membership in full Details > retains selected group and loaded identity evidence through final assembly: identity-reloaded
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected saved group membership in full Details > retains selected group and loaded identity evidence through final assembly: revoked
+ ↓ |main| src/main/services/remote-agent-details.test.ts > selected Connections envelope admission > preserves every requested source field under unrelated full-card pressure
+ ↓ |main| src/main/services/remote-agent-details.test.ts > keeps typed outgoing Wires absent from denied and source-only Details responses
+ ↓ |main| src/main/services/remote-agent-details.test.ts > structured selected helper pages at the complete Details boundary > returns the 101st helper in an independent helper-only envelope and refuses unsupported arithmetic
+ ↓ |main| src/main/services/remote-agent-details.test.ts > structured selected helper pages at the complete Details boundary > keeps unavailable helper inventory counts independent of readable pending starts
+ ↓ |main| src/main/services/remote-agent-details.test.ts > preserves valid saved disposed dates and handoff words in legacy summaries outside the selected helper page
+ ↓ |main| src/main/services/remote-agent-details.test.ts > refuses a helper offset that fell beyond the current selected inventory without returning partial private cards
+ ↓ |main| src/main/services/remote-agent-details.test.ts > returns an independent selected managed page beyond100 without full setup, history, board content or unrelated card reads
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates selected Actions through the actual Details assembler and real started engine, preserving final relationship rows without mutation
+ ↓ |main| src/main/services/remote-agent-details.test.ts > fences the actual Actions Details page after late target changes with real selected primary metadata
+ ↓ |main| src/main/services/remote-agent-details.test.ts > fences the actual Actions Details page after late ordering changes with real selected primary metadata
+ ↓ |main| src/main/services/remote-agent-details.test.ts > fences the actual Actions Details page after late reference-name changes with real selected primary metadata
+ ↓ |main| src/main/services/remote-agent-details.test.ts > fences the actual Actions Details page after late revoked changes with real selected primary metadata
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: all-pages
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: home-source
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: project-source
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: target
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: registration
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: home-namespace
+ ↓ |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: revoked
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > keeps the ordinary omitted-budget path at the 256 KiB cap 7ms
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > passes a body exactly at the budget untouched and trims one byte under it, staying valid 3ms
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > fails closed when no trimming can fit the budget 1ms
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget 0 after authorization 0ms
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget -1 after authorization 0ms
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget 1.5 after authorization 0ms
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget NaN after authorization 0ms
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > refuses an invalid budget Infinity after authorization 0ms
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > keeps every requested Connections row in the role-budget window, truncating text instead (M1-a) 6ms
+ ✓ |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > applies the budget to a Connections page: exact size passes, an irreducible budget fails closed 1ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed | 200 skipped (210)
+   Start at  04:19:04
+   Duration  783ms (transform 534ms, setup 5ms, import 662ms, tests 19ms, environment 0ms)
+
+vitest exit=0
+# restore check:
+restored byte-identical
+888673e8fae31599fecc2d128b107ef8883fec9dc994e9795cf75175162c3d5c  src/main/services/remote-agent-details.ts
+888673e8fae31599fecc2d128b107ef8883fec9dc994e9795cf75175162c3d5c  -
+# post-restore git status --short:
