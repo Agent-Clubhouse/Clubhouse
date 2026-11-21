@@ -47,5 +47,13 @@
     }
   },
   "dependenciesRestored": true,
-  "slotAbsent": true
+  "slotAbsent": null,
+  "slotObservationCorrection": {
+    "originalEvidenceHead": "9b94dcdbbd18a358fc639c84f85f8b3e0acf6665",
+    "reason": "Original metadata checked an incorrect unused .slot path. Its slot-absence credit is withdrawn; command END0 remains raw execution evidence.",
+    "actualGateLockPath": "/tmp/clubhouse-desktop-test.lock",
+    "observedAt": "2026-11-21T19:50:24.174032+00:00",
+    "currentlyAbsent": true,
+    "scope": "later read-only observation, not an atomic end-of-command seal"
+  }
 }

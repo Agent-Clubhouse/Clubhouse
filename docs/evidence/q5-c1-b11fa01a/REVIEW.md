@@ -31,3 +31,9 @@ against mocked host/board/runtime; no provider, producer helper or future ledger
 scan adapter executes. This is source-bound evidence for current policy only.
 No all-history ID uniqueness, malformed-host/replica, lifecycle generation,
 root commit, barrier, catalog/R1, UI, whole-heap or product integration acceptance.
+
+Metadata correction: original bundle9b94 checked an incorrect unused `.slot`
+path. That historical slot-absence field is withdrawn (null in successor).
+The actual gate uses `/tmp/clubhouse-desktop-test.lock`; the successor summary
+records a separate later read-only observation with timestamp, not an atomic
+end-of-command seal. Raw START/END0 and embedded source seals are unchanged.
