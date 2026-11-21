@@ -6,7 +6,8 @@ vi.mock('../plugin-manifest-registry', () => ({
 
 import { GRANT_ACTIONS } from '../../../shared/agent-grants';
 import { getAttributeSpec } from '../../../shared/telemetry/attributes';
-import { dispatcherToolActions, grantToolMap, listToolGrants, _resetForTesting } from './tool-registry';
+import { buildToolName, dispatcherToolActions, grantToolMap, listToolGrants, _resetForTesting } from './tool-registry';
+import { bindingManager } from './binding-manager';
 import { defaultGrants } from '../../../shared/default-grants';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
@@ -32,6 +33,26 @@ describe('tool grant declarations (#2967)', () => {
     expect(tools.length).toBeGreaterThan(60);
     const missing = tools.filter((t) => t.grant === undefined).map((t) => `${t.kind}:${t.name}`);
     expect(missing).toEqual([]);
+  });
+
+  it('all real agent/group wire templates and call_wire_tool fit the complete name budget (#3738)', () => {
+    const tools = registerAll();
+    bindingManager._resetForTesting();
+    for (const kind of ['agent', 'group-project'] as const) {
+      bindingManager.bind('caller', { targetId: kind, targetKind: kind, label: 'robin'.repeat(1000), projectName: 'application'.repeat(1000) });
+      const binding = bindingManager.getBindingsForAgent('caller').find(b => b.targetKind === kind)!;
+      const templates = tools.filter(t => t.kind === kind);
+      expect(templates.length).toBeGreaterThan(0);
+      expect(Math.max(...templates.map(t => t.name.length))).toBe(kind === 'agent' ? 18 : 16);
+      for (const template of templates) {
+        const name = buildToolName(binding, template.name);
+        expect(name.length, template.name).toBeLessThanOrEqual(kind === 'agent' ? 64 : 58);
+        expect(name, template.name).toMatch(/^[A-Za-z0-9_]+$/);
+      }
+    }
+    expect(tools.find(t => t.name === 'call_wire_tool')?.kind).toBe('global');
+    expect('call_wire_tool'.length).toBeLessThanOrEqual(64);
+    bindingManager._resetForTesting();
   });
 
   it('every declaration names known actions and a known target', () => {

@@ -167,6 +167,18 @@ describe('ToolRegistry', () => {
       expect(forwarded.calls.map(call => call[1])).toEqual(targets);
     });
 
+    it('bounds complete built-in tool names without truncating callable identity (#3738)', () => {
+      for (const targetKind of ['agent', 'group-project'] as const) {
+        bindingManager.bind('agent-1', { targetId: targetKind, targetKind, label: 'robin'.repeat(1000), projectName: 'application'.repeat(1000) });
+        const binding = bindingManager.getBindingsForAgent('agent-1').find(b => b.targetId === targetKind)!;
+        const name = buildToolName(binding, targetKind === 'agent' ? 'check_connectivity' : 'get_project_info');
+        expect(name.length).toBeLessThanOrEqual(targetKind === 'agent' ? 64 : 58);
+        expect(name).toMatch(/^[A-Za-z0-9_]+$/);
+        const key = parseToolName(name)!.toolKey;
+        expect(key).toMatch(/[a-z0-9]{25}_[a-z0-9]+$/);
+      }
+    });
+
     it('never reuses a callable through repeated identical binding churn (#3738)', () => {
       const keys = new Set<string>();
       const target = { targetId: 'same-agent', targetKind: 'agent' as const, label: 'Same' };
@@ -281,6 +293,33 @@ describe('ToolRegistry', () => {
     it('returns empty list when no bindings', () => {
       registerToolTemplate('agent', 'test', { description: 'Test', inputSchema: { type: 'object' } }, vi.fn());
       expect(getScopedToolList('agent-1')).toHaveLength(0);
+    });
+
+    it('bounds and cleans only public target display metadata in descriptions (#3738)', () => {
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+      const far = `durable@${Array(16).fill('bb').join(':')}`;
+      bindingManager.bind('agent-1', {
+        targetId: far, targetKind: 'agent', label: 'Public label',
+        targetName: 'robin\n\t\u001b'.repeat(100), projectName: 'Public Project\r'.repeat(100),
+      });
+      const [tool] = getScopedToolList('agent-1');
+      const publicData = tool.description.split('\n\nTarget: ')[1];
+      const target = JSON.parse(publicData);
+      expect(Object.keys(target)).toEqual(['name', 'project', 'id']);
+      expect(target.id).toBe(far);
+      expect(target.name.length).toBeLessThanOrEqual(128);
+      expect(target.project.length).toBeLessThanOrEqual(128);
+      expect(publicData.length).toBeLessThanOrEqual(1100);
+      expect(target.name + target.project).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
+      const binding = bindingManager.getBindingsForAgent('agent-1')[0];
+      Object.assign(binding, { projectPath: '/private/project', privateConfig: 'private-marker' });
+      bindingManager.updateBinding('agent-1', far, { targetName: 'Learned Name', projectName: 'Learned Project' });
+      const [updated] = getScopedToolList('agent-1');
+      expect(updated.name).toBe(tool.name);
+      expect(updated.description).toContain('Learned Name');
+      expect(updated.description).toContain('Learned Project');
+      expect(updated.description).not.toContain('/private/project');
+      expect(updated.description).not.toContain('private-marker');
     });
 
     it('returns tools for bound targets with human-readable names', () => {
@@ -403,7 +442,7 @@ describe('ToolRegistry', () => {
       });
 
       const tools = getScopedToolList('agent-1');
-      expect(tools[0].description).toBe('Send a message');
+      expect(tools[0].description).toBe('Send a message\n\nTarget: {"name":"Agent 2","project":"","id":"agent-2"}');
       expect(tools[0].description).not.toContain('WIRE INSTRUCTIONS');
     });
 
@@ -579,6 +618,7 @@ describe('ToolRegistry', () => {
           ['agent-1', far, 'reverse-B', 'send_message', args],
         ]);
         expect(getScopedToolList('agent-1').filter(t => t.name.endsWith('__send_message')).map(t => t.name)).toEqual([name]);
+        expect(getScopedToolList('agent-1')[0].description).toContain('reverse-B');
         bindingManager.updateBinding('agent-1', far, { projectName: 'Renamed Project', agentName: 'Renamed Caller' });
         expect(getScopedToolList('agent-1').filter(t => t.name.endsWith('__send_message')).map(t => t.name)).toEqual([name]);
         expect(await callTool('agent-1', name, args)).toEqual(first);
@@ -649,9 +689,13 @@ describe('ToolRegistry', () => {
 
       it('isolates same display names and durable IDs on different hosts and callers', async () => {
         const other = `${id}@${Array(16).fill('cc').join(':')}`;
-        bindingManager.bind('agent-1', { ...target, targetId: other });
+        bindingManager.bind('agent-1', { ...target, targetId: other, projectName: 'Other Project' });
         bindingManager.bind('agent-3', target);
         const names = listed();
+        const descriptions = getScopedToolList('agent-1').map(t => t.description);
+        expect(descriptions[0]).toContain(far);
+        expect(descriptions[1]).toContain(other);
+        expect(descriptions[1]).toContain('Other Project');
         expect(new Set(names).size).toBe(2);
         for (const name of names) expect((await callTool('agent-1', name, args)).isError).toBeFalsy();
         expect(forwarded.calls.map(call => call[1])).toEqual([far, other]);

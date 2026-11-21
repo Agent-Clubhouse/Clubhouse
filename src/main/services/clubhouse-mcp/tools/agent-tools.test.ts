@@ -88,7 +88,9 @@ function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetI
 }
 
 function agentToolName(binding: McpBinding, suffix: string): string {
-  return buildToolName(binding, suffix);
+  const live = bindingManager.getBindingsForAgent(binding.agentId).find(b => b.targetId === binding.targetId);
+  if (!live) throw new Error(`Missing test binding: ${binding.agentId} -> ${binding.targetId}`);
+  return buildToolName(live, suffix);
 }
 
 /**
@@ -171,16 +173,20 @@ describe('AgentTools', () => {
       expect(suffixes).toContain('compact_agent');
     });
 
-    it('generates clubhouse-prefixed tool names with project and agent name', () => {
+    it('generates bounded clubhouse names with current project and agent descriptions', () => {
       const tools = getScopedToolList('agent-1');
       for (const tool of tools) {
-        expect(tool.name).toMatch(/^clubhouse__myapp_scrappy_robin_[a-z0-9]+__/);
+        expect(tool.name).toMatch(/^clubhouse__[A-Za-z0-9_]+_[a-z0-9]{25}_[a-z0-9]+__/);
+        expect(tool.name.length).toBeLessThanOrEqual(64);
+        expect(tool.description).toContain('scrappy-robin');
+        expect(tool.description).toContain('myapp');
       }
     });
   });
 
   describe('send_message', () => {
-    const sendToolName = agentToolName(sourceBinding, 'send_message');
+    let sendToolName: string;
+    beforeEach(() => { sendToolName = agentToolName(sourceBinding, 'send_message'); });
 
     it('names a sender on another machine with its machine, never "You" (#3064)', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
@@ -577,7 +583,7 @@ describe('AgentTools', () => {
       });
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
 
-      const toolName = buildToolName(makeBinding({
+      const toolName = agentToolName(makeBinding({
         agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
         targetName: 'scrappy-robin',
       }), 'send_message');
@@ -646,7 +652,8 @@ describe('AgentTools', () => {
   });
 
   describe('read_output', () => {
-    const readToolName = agentToolName(sourceBinding, 'read_output');
+    let readToolName: string;
+    beforeEach(() => { readToolName = agentToolName(sourceBinding, 'read_output'); });
 
     it('reads last N lines from PTY buffer', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
@@ -715,7 +722,8 @@ describe('AgentTools', () => {
   });
 
   describe('send_message error handling', () => {
-    const sendToolName = agentToolName(sourceBinding, 'send_message');
+    let sendToolName: string;
+    beforeEach(() => { sendToolName = agentToolName(sourceBinding, 'send_message'); });
 
     it('scrubs a planted message from the earlier Dispatcher send rejection log (#1919 QA)', async () => {
       const message = 'SEND-DISPATCHER-PRIVATE-MESSAGE-1919';
@@ -934,9 +942,10 @@ describe('AgentTools', () => {
     });
 
     it('keeps provider, context and message controls unavailable for an unconnected target despite configure ANY Ask first', async () => {
+      const disconnected = bindingManager.getBindingsForAgent('dispatcher-1').find(b => b.targetId === 'orch-1')!;
       bindingManager.unbind('dispatcher-1', 'orch-1');
       for (const suffix of ['change_provider', 'preview_provider', 'clear_agent', 'compact_agent', 'send_message', 'wake_agent', 'sleep_agent']) {
-        const name = agentToolName(toTarget, suffix);
+        const name = buildToolName(disconnected, suffix);
         expect(getScopedToolList('dispatcher-1').map((tool) => tool.name)).not.toContain(name);
         expect((await callTool('dispatcher-1', name, { provider: 'claude-code', expectedState: 'old' })).isError).toBe(true);
       }
@@ -978,9 +987,9 @@ describe('AgentTools', () => {
 
     it('sleeping hints stay on Clubhouse for other callers', async () => {
       bindingManager.bind('agent-1', { targetId: 'orch-1', targetKind: 'agent', label: 'boss', targetName: 'boss', projectName: 'myapp' });
-      const status = JSON.parse((await callTool('agent-1', agentToolName(toTarget, 'get_status'), {})).content[0].text!);
+      const status = JSON.parse((await callTool('agent-1', agentToolName({ ...toTarget, agentId: 'agent-1' }, 'get_status'), {})).content[0].text!);
       expect(status.message).toContain('Start it from Clubhouse');
-      const refused = await callTool('agent-1', agentToolName(toTarget, 'send_message'), { message: 'hi' });
+      const refused = await callTool('agent-1', agentToolName({ ...toTarget, agentId: 'agent-1' }, 'send_message'), { message: 'hi' });
       expect(refused.content[0].text).toContain('Start it from Clubhouse');
     });
   });
@@ -1252,7 +1261,7 @@ describe('AgentTools', () => {
     it('keeps the orchestrator project in the Dispatcher tool names', () => {
       const names = getScopedToolList('dispatcher-1').map(t => t.name);
       expect(names).toContain(agentToolName(toOrchestrator, 'send_message'));
-      expect(agentToolName(toOrchestrator, 'send_message')).toMatch(/^clubhouse__myapp_boss_[a-z0-9]+__send_message$/);
+      expect(agentToolName(toOrchestrator, 'send_message')).toMatch(/^clubhouse__[A-Za-z0-9_]+_[a-z0-9]{25}_[a-z0-9]+__send_message$/);
     });
 
     it('labels controller messages without changing the reply tool', async () => {
@@ -1274,7 +1283,7 @@ describe('AgentTools', () => {
       expect(mockPtyWrite.mock.calls[0][0]).toBe('dispatcher-1');
       expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d2] [FROM:boss@myapp] hi');
       expect(result.content[0].text).toContain('Message sent to Rosie.');
-      expect(agentToolName(toDispatcher, 'send_message')).toMatch(/^clubhouse__myapp_Dispatcher_[a-z0-9]+__send_message$/);
+      expect(agentToolName(toDispatcher, 'send_message')).toMatch(/^clubhouse__[A-Za-z0-9_]+_[a-z0-9]{25}_[a-z0-9]+__send_message$/);
     });
 
     it('labels controller file notices', async () => {
@@ -1343,7 +1352,8 @@ describe('AgentTools', () => {
   });
 
   describe('send_file', () => {
-    const sendFileToolName = agentToolName(sourceBinding, 'send_file');
+    let sendFileToolName: string;
+    beforeEach(() => { sendFileToolName = agentToolName(sourceBinding, 'send_file'); });
 
     it('writes content to temp file and sends single-line PTY notification', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
@@ -1439,7 +1449,8 @@ describe('AgentTools', () => {
   });
 
   describe('check_connectivity', () => {
-    const connectToolName = agentToolName(sourceBinding, 'check_connectivity');
+    let connectToolName: string;
+    beforeEach(() => { connectToolName = agentToolName(sourceBinding, 'check_connectivity'); });
 
     it('returns unidirectional when no reverse binding exists', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });

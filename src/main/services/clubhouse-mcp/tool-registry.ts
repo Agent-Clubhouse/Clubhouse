@@ -732,7 +732,7 @@ export { sanitizeId, shortHash, buildToolKey } from './binding-tool-key';
 
 /**
  * Build the full tool name from a binding and action suffix.
- * Agent targets: `clubhouse__<project>_<name>_b<generation>__<suffix>`
+ * Agent targets: `clubhouse__<readable>_<incarnation>_<generation>__<suffix>`
  * Other targets: `<targetKind>__<sanitizedId>__<suffix>`
  */
 export function buildToolName(binding: McpBinding, suffix: string): string {
@@ -819,6 +819,12 @@ export function getConnectionToolCatalog(
   };
 }
 
+/** Public binding display fields only; exclude controls and bound the disclosure. */
+function targetDisplay(value: string, limit: number): string {
+  const clean = value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ');
+  return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;
+}
+
 /**
  * Get the scoped tool list for an agent based on its current bindings.
  * Results are cached and invalidated when bindings change or a target wakes or sleeps.
@@ -873,6 +879,11 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       if (isAgentWake(binding, template.nameSuffix) && !wakeOffered(agentId, binding)) continue;
 
       let description = template.definition.description;
+      if (binding.targetKind === 'agent' || binding.targetKind === 'group-project') {
+        // Callable prefixes are frozen and shortened. Current metadata and the
+        // complete address keep same-name targets distinguishable to the caller.
+        description += `\n\nTarget: ${JSON.stringify({ name: targetDisplay(binding.targetName || binding.label, 128), project: targetDisplay(binding.projectName || '', 128), id: targetDisplay(binding.targetId, 256) })}`;
+      }
 
       // Inject per-wire custom instructions into tool description
       if (binding.instructions) {
