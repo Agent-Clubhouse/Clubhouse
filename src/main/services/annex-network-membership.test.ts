@@ -57,6 +57,7 @@ vi.mock('./annex-network-channel', () => ({
 }));
 
 import * as membership from './annex-network-membership';
+import * as annexPeers from './annex-peers';
 import * as annexSettings from './annex-settings';
 import * as networkChannel from './annex-network-channel';
 import { appLog } from './log-service';
@@ -603,6 +604,43 @@ describe('Annex Network membership (#3061)', () => {
     expect(broadcasts.at(-1)!.message).toMatchObject({ type: 'member-renamed', fingerprint: B, name: 'Travel laptop' });
     listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, name: 'Old name', at: '2020-01-01T00:00:00.000Z' });
     expect(peers.get(B.toLowerCase())?.alias).toBe('Travel laptop');
+  });
+
+  describe('legacy same-label rename ordering (#3720)', () => {
+    it('keeps a newer same-label event ahead of an older different name', () => {
+      listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, name: 'Laptop', at: '2030-03-01T00:00:00.000Z' });
+      listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, name: 'Older laptop', at: '2030-02-01T00:00:00.000Z' });
+      expect(peers.get(B.toLowerCase())?.alias).toBe('Laptop');
+    });
+
+    it('records a fresh same-label floor without rewriting peer trust or labels', () => {
+      const peer = peers.get(B.toLowerCase());
+      const at = '2030-03-01T00:00:00.000Z';
+      vi.mocked(annexPeers.addPeer).mockClear();
+      listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, name: 'Laptop', at });
+      expect(peers.get(B.toLowerCase())).toBe(peer);
+      expect(annexPeers.addPeer).not.toHaveBeenCalled();
+      expect(stored.renamedAt).toMatchObject({ [B.toLowerCase()]: at });
+    });
+
+    it('retains the first accepted label when a different name has exactly the same stamp', () => {
+      const at = '2030-03-01T00:00:00.000Z';
+      listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, name: 'Laptop', at });
+      listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, name: 'Equal stamp replacement', at });
+      expect(peers.get(B.toLowerCase())?.alias).toBe('Laptop');
+    });
+
+    it.each(['one-to-one sender', 'pending sender', 'network off'] as const)('does not let %s raise the ordering floor', (kind) => {
+      const original = peers.get(A.toLowerCase())!;
+      if (kind === 'one-to-one sender') peers.set(A.toLowerCase(), { ...original, role: undefined });
+      if (kind === 'pending sender') peers.set(A.toLowerCase(), { ...original, networkPending: true });
+      if (kind === 'network off') vi.mocked(annexSettings.networkEnabled).mockReturnValue(false);
+      listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, name: 'Laptop', at: '2030-03-01T00:00:00.000Z' });
+      peers.set(A.toLowerCase(), original);
+      vi.mocked(annexSettings.networkEnabled).mockReturnValue(true);
+      listener!(A, { v: 1, type: 'member-renamed', fingerprint: B, name: 'Authorized name', at: '2030-02-01T00:00:00.000Z' });
+      expect(peers.get(B.toLowerCase())?.alias).toBe('Authorized name');
+    });
   });
 
   it('does nothing while Annex Network is off here', () => {
