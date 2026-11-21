@@ -31,6 +31,16 @@ no ready/retry after disk reopen; an in-memory one-guard mutation must fail that
 assertion and preserves its actual child exit/output in the test log. No feature
 acceptance or lazy-index implementation is claimed by that correction.
 
+Independent successor: immutable bounded page index (`pages.ts`) with lazy
+point lookup/pagination and separate LRU limits (4 detail leaves, at most64
+entries each;16 reference-only index pages). Root references confer no activation
+authority: callers must flush pages then commit a root through the journal.
+Old roots remain immutable through updates/deletes; byte and entry limits both
+split leaves. This is a primitive only, not yet wired into the sequenced reducer
+or R1 adoption, and does not by itself close the full sparse-state memory gap.
+Terminal acknowledged attempts also release the journal's volatile entry-ID
+tracking; uncertain entered IDs remain tracked independently of handles.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.
