@@ -5,6 +5,8 @@ ebb062602/R1 d0316e476 remain authoritative. Planning baseline is implementation
 0826faa448f83738d3b4cd3b030c5c5eb665f49a. Existing code is unintegrated.
 This note specifies the next private store boundary; it supplies no activation,
 runtime generation, human authority, product approval or new access.
+This docs-only continuation also references pending-review successor28348cc4
+and evidence3b816a50; their implementation changes are not copied to this branch.
 
 ## Actual starting point and constraints
 
@@ -110,6 +112,35 @@ status and nonce/generation state. Repeat recovery and prove orphans do not
 activate or consume early. These controls remain unimplemented, not satisfied
 by the existing streaming-baseline or installation-marker tests.
 
+## Rollback floor and prepared-root barrier provenance
+
+The accepted contract's rollback section is explicit: ordinary supported
+rollback stays on ledger-aware schema-compatible builds. Actual legacy
+`group-project-notification-store.ts` reads/prunes/rewrites notified/wakes/urgent
+without checking the required marker; `group-project-delivery.ts` still calls
+its cursor path. No sidecar or minWriter field can make such a binary refuse.
+Before intentionally running it, the operator must use existing permission
+controls while still ledger-aware to disable affected notifications, drain/remove
+known-held work, preserve ledger and legacy files, and keep notifications off
+until compatible return. The implementation performs no automatic member pause,
+permission mutation, draining or file removal. Concurrent mixed-version writers
+on one userData directory remain unsupported. This clarifies the planning wording;
+it does not change the already accepted contract or grant maintenance authority.
+
+Before an authoritative new-profile codec consumes a prepared header, enforce
+its exact top-level field set and full recipient identity. Unknown top-level
+fields must visibly reject rather than disappear. Future compatible extensions
+need an explicit bounded/versioned contract; the current read-only prepared
+reader's permissive top-level copy is not authoritative format acceptance.
+
+Barrier credit also needs provenance. An authenticated previously committed
+root can supply prior durable-page ancestry under the existing single-owner
+model. An arbitrary prepared/uncommitted root cannot. Preparing a baseline or
+adopting an externally prepared tree must traverse and earn validation/file-sync
+and touched-directory barriers for every newly authoritative reference, not
+only the modified path through set(). The current reused-put fix alone is not
+an all-root activation function. No such activation API/token exists today.
+
 ## Human operations and runtime dependencies
 
 Trusted local main-window/top-frame/exact entry identity owns retry/adoption;
@@ -144,7 +175,9 @@ not a catalog-created alternative.
 3. Add root-backed incremental state and differential/large-hole/reopen proof,
    including scan exclusions and reviewed arbitration controls on changed paths.
 4. Add catalog/post-ID baseline/adoption with actual R1 cuts and mixed-version
-   refusal/rollback proof. Old binaries must visibly refuse required ledger state.
+   refusal/rollback proof for ledger-aware builds. Historical ledger-unaware
+   binaries cannot be retrofitted by a sidecar; their unsupported enabled-writer
+   behavior and explicit operator maintenance procedure remain as contracted.
 5. Coordinate real runtime interface/hunks, then local-human IPC/UI and actual
    delivery/revocation/queue/wake/exact-generation tests. No implicit chat reset.
 6. Independent exact source/evidence review before PR and hosted checks. No
