@@ -440,6 +440,21 @@ describe('remote full Details host evidence', () => {
     expect(window.clubhouse.mcpBinding.getAgentConnection).not.toHaveBeenCalled();
     expect(window.clubhouse.canvas.getAgentCanvases).not.toHaveBeenCalled();
   });
+  it('shows no live session facts while the host reports waking, then shows them once it reports running', async () => {
+    const chat = { ...createChatViewState(agent.id), provider: 'claude-code', driver: 'claude_agent_sdk' as const, sessionId: 's1', nativeSessionId: 'n1', effort: 'high', effortReported: true, effortIsDefault: false };
+    const spawnedAt = Date.now() - 90_000;
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), status: 'waking', running: false, spawnedAt } });
+    const view = render(<AgentDetails agent={{ ...agent, status: 'waking' }} chat={chat} />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI'));
+    expect(screen.queryByTestId('details-setting-effort')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('details-card-session-toggle'));
+    expect(within(screen.getByTestId('details-card-session')).queryByText('Running')).not.toBeInTheDocument();
+    // Positive control: the same retained chat is shown once the host reports a running session.
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), status: 'running', running: true, spawnedAt } });
+    view.rerender(<AgentDetails agent={{ ...agent, status: 'running' }} chat={chat} />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-effort')).toHaveTextContent('High'));
+    expect(within(screen.getByTestId('details-card-session')).getByText('Running')).toBeInTheDocument();
+  });
   it('preserves Effort/default, CLI version and inherited-provider skills bound to the selected session', async () => {
     const chat = { ...createChatViewState(agent.id), provider: 'claude-code', driver: 'claude_agent_sdk' as const, sessionId: 's1', nativeSessionId: 'n1', effort: 'high', effortReported: true, effortIsDefault: true, cliVersion: '1.2.3', providerSkills: { provider: 'claude-code' as const, driver: 'claude_agent_sdk' as const, source: 'system/init' as const, sessionId: 's1', nativeSessionId: 'n1', reportedAt: 1000, names: ['host-skill'] } };
     render(<AgentDetails agent={agent} chat={chat} />);
