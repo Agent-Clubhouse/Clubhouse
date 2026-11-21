@@ -223,7 +223,14 @@ class GroupProjectRemoteCreate {
   private async start(machine: string, requestId: string): Promise<void> {
     const entry = (await this.loadAnswers()).find((e) => e.machine === machine && e.requestId === requestId);
     if (!entry || entry.started !== false || entry.answer.status !== 'created') return;
-    const project = await groupProjectHost.get(entry.answer.groupProjectId).catch((): null => null);
+    let project: GroupProject | null;
+    try { project = await groupProjectHost.get(entry.answer.groupProjectId); }
+    catch (err) {
+      // A failed lookup is not an absent group: stay pending so the next request, startPending or a restart starts it (#3592 L1).
+      appLog('core:group-project', 'warn', 'Could not look up a remote create to start it', { meta: { error: errorText(err) } });
+      return;
+    }
+    // A group that is gone has nothing to start; its answer stays created and the start is settled, as before.
     if (project) {
       await this.deps?.afterCreate?.(project).catch((err: unknown) => {
         // telemetry-exempt: the group exists; membership catches up on its next reconcile
