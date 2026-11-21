@@ -230,6 +230,32 @@ describe('annex device list', () => {
     const list = (over: Partial<Parameters<typeof buildDeviceList>[0]> = {}) =>
       buildDeviceList({ ...empty, peers: [studio()], serverOn: true, ownPort: 7443, reach, now: Date.now(), ...over })[0];
 
+    it.each(['acceptedHere', 'openedHere'] as const)('uses a negotiated %s control link for the missing direction, drops it and recovers', (direction) => {
+      let ready = true;
+      const controlOf = () => ({ acceptedHere: ready && direction === 'acceptedHere', openedHere: ready && direction === 'openedHere' });
+      const sources = {
+        controlOf,
+        satellites: [satellite({ state: 'disconnected', host: '127.0.0.1', problem: describeAnnexProblem('refused', 'Studio', { host: '127.0.0.1' }) })],
+      };
+      const checkReady = () => {
+        const device = list(sources);
+        expect(device).toMatchObject({ state: 'connected', problem: null });
+        expect(device.reach).toMatchObject({ outbound: { state: 'up' }, inbound: { state: 'up' } });
+        expect(device.reach?.outbound.via).toBe(direction === 'acceptedHere' ? 'reverse' : undefined);
+        expect(device.reach?.inbound.via).toBe(direction === 'openedHere' ? 'reverse' : undefined);
+        expect(device.reach?.notice).toBeUndefined();
+      };
+      checkReady();
+      ready = false;
+      expect(list(sources).reach).toMatchObject({ outbound: { state: 'down' }, inbound: { state: 'unknown' } });
+      expect(list(sources).reach?.outbound.via).toBeUndefined();
+      expect(list(sources).reach?.inbound.via).toBeUndefined();
+      vi.advanceTimersByTime(REACH_SETTLE_MS);
+      expect(list(sources).reach).toMatchObject({ outbound: { state: 'down' }, inbound: { state: 'down' } });
+      ready = true;
+      checkReady();
+    });
+
     it('reports outbound up and inbound not known yet, then down once the settle window passes', () => {
       const sources = { satellites: [satellite({ state: 'connected' })], connected: new Set<string>() };
       let device = list(sources);

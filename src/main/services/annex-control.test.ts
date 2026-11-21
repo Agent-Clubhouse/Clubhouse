@@ -15,8 +15,10 @@ vi.mock('electron', () => ({ app: { getPath: () => '/tmp/annex-control-test' } }
 vi.mock('ws', () => ({ WebSocket: { OPEN: 1, CLOSED: 3 }, WebSocketServer: vi.fn() }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-tls', () => ({ extractPeerFingerprint: vi.fn(), extractPeerCertificateFingerprint: vi.fn() }));
+vi.mock('./annex-device-signal', () => ({ devicesChanged: vi.fn() }));
 
 import * as control from './annex-control';
+import { devicesChanged } from './annex-device-signal';
 import { authorize, stillAuthorized, type AnnexAuthorizerDeps, type AnnexPrincipal } from './annex-authorizer';
 import type { ControlHttpRequest } from '../../shared/annex-control-protocol';
 import { CONTROL_CLOSE_BACKLOG, CONTROL_CLOSE_PROTOCOL, CONTROL_CLOSE_REVOKED, CONTROL_CLOSE_VERSION, CONTROL_FRAME_MAX_BYTES } from '../../shared/annex-control-protocol';
@@ -143,6 +145,7 @@ beforeEach(() => {
   dispatch.mockClear();
   served = [];
   subscribeOnServer.mockClear();
+  vi.mocked(devicesChanged).mockClear();
   installServer();
 });
 
@@ -216,6 +219,33 @@ describe('capability hello and mixed versions', () => {
     control.connectTo(REQUESTER, '127.0.0.1', 9443, {}, REQUESTER_PIN);
     // No server, no target: connectTo returns before creating a socket (the ws mock has no constructor).
     expect(control.hasReverseLink(REQUESTER)).toBe(false);
+  });
+});
+
+describe('read-only direction readiness (#3613 P7)', () => {
+  it('notifies once on negotiated readiness and once on close, never for heartbeats or ordinary frames', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    const ws = new FakeSocket();
+    control._attachForTesting(ws as never, TARGET, TARGET_PIN, 'in');
+    expect(devicesChanged).not.toHaveBeenCalled();
+    ws.deliver({ v: 1, type: 'hello', features: ['request'] });
+    expect(devicesChanged).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 3; i++) {
+      vi.advanceTimersByTime(control.HEARTBEAT_MS);
+      ws.emit('pong');
+      ws.deliver({ v: 1, type: 'response', id: `unclaimed-${i}`, status: 200, headers: {}, body: '{}', encoding: 'utf8' });
+    }
+    expect(ws.pings).toBe(3);
+    expect(devicesChanged).toHaveBeenCalledTimes(1);
+    control.closeFor(TARGET, 'in');
+    control.closeFor(TARGET, 'in');
+    ws.emit('close', 1000);
+    expect(devicesChanged).toHaveBeenCalledTimes(2);
+    const old = new FakeSocket();
+    control._attachForTesting(old as never, TARGET, TARGET_PIN, 'in');
+    old.deliver({ v: 1, type: 'hello', features: [] });
+    control.closeFor(TARGET, 'in');
+    expect(devicesChanged).toHaveBeenCalledTimes(2);
   });
 });
 
