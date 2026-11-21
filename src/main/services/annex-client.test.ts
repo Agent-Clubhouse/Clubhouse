@@ -2865,11 +2865,12 @@ describe('annex-client', () => {
         expect(current().snapshotReceipt).toBe(newReceipt); expect(broadcasts()).toBe(count);
       });
 
-      it.each(['agent', 'canvas', 'role-page', 'role-actions-page'] as const)('a late %s denial still revokes the receipt it was read under', async (kind) => {
+      it.each(['agent', 'canvas', 'role-page', 'role-actions-page', 'board'] as const)('a late %s denial still revokes the receipt it was read under', async (kind) => {
         await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
         const finish = answer(401, {}, true);
         const pending = kind === 'role-page' ? annexClient.requestDispatcherDetails(FP, { card: 'connections', source: 'incoming', offset: 0, projectOffset: 0 }, 'role1')
           : kind === 'role-actions-page' ? annexClient.requestDispatcherDetails(FP, { card: 'actions', source: 'selected-action-relationships', offset: 25, selection: 'd'.repeat(64) }, 'role1')
+          : kind === 'board' ? annexClient.requestAgentDetails(FP, 'role1', { card: 'canvases', source: 'selected-canvas-board', member: 'a'.repeat(64), selection: 'b'.repeat(64) })
           : annexClient.requestAgentDetails(FP, 'role1', kind === 'canvas' ? { card: 'canvases', source: 'selected-canvas-memberships', offset: 0 } : undefined);
         const count = broadcasts(); finish();
         expect(await pending).toEqual({ status: 'forbidden' });
@@ -4580,6 +4581,50 @@ describe('annex-client', () => {
       answers.push({ status: 200, body: { ...value, PRIVATE_UNRELATED: 'PRIVATE' } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
       answers.push({ status: 403, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'forbidden' });
       const before = requests.length; expect(await annexClient.requestAgentDetails(FP, 'a1', { ...query, selection: undefined })).toEqual({ status: 'error' }); expect(requests).toHaveLength(before);
+    });
+
+    it('sends the selected board query exactly and binds the page to the requested agent, member and selection (#13 preview)', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const member = 'a'.repeat(64), selection = 'b'.repeat(64), query = { card: 'canvases' as const, source: 'selected-canvas-board' as const, member, selection };
+      const boardPage = { version: 1, source: 'selected-canvas-board', agentId: 'a1', projectId: 'p1', member, selection, observedAt: 1, notes: [], state: 'recorded', scope: 'project', canvasId: 'board-1', viewId: 'view-1', name: 'Board',
+        views: [{ key: member, type: 'agent', label: 'Selected', member: true, x: 0, y: 0, w: 10, h: 10, z: 0 }], total: 1 };
+      const value = { version: 1, inventoryPages: 1, inventorySources: ['selected-action-relationships', 'selected-canvas-memberships'], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        inventoryPage: boardPage, cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'canvases' && { requested: false }) })) } as unknown as RemoteAgentDetails;
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(true); answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain(`/agents/a1/details?card=canvases&source=selected-canvas-board&member=${member}&selection=${selection}`);
+      expect(requests[0].url).not.toMatch(/offset|projectOffset/);
+      // Main binds what it asked for; a structurally valid page for another row or selection is an error.
+      for (const patch of [{ member: 'c'.repeat(64), views: [{ ...boardPage.views[0], key: 'c'.repeat(64) }] }, { selection: 'c'.repeat(64) }]) {
+        answers.push({ status: 200, body: { ...value, inventoryPage: { ...boardPage, ...patch } } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      }
+      answers.push({ status: 200, body: { ...value, inventoryPage: { ...boardPage, views: [{ ...boardPage.views[0], member: false }] } } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: { ...value, inventorySources: ['selected-action-relationships'] } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1')).toEqual({ status: 'error' });
+      // A membership request never accepts a board page.
+      answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1', { card: 'canvases', source: 'selected-canvas-memberships' })).toEqual({ status: 'error' });
+      answers.push({ status: 400, body: { error: 'unsupported_inventory_page' } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
+      answers.push({ status: 403, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'forbidden' });
+      const before = requests.length;
+      for (const bad of [{ ...query, offset: 0 }, { ...query, member: 'x' }, { ...query, canvasId: 'board-1' }]) expect(await annexClient.requestAgentDetails(FP, 'a1', bad as never)).toEqual({ status: 'error' });
+      expect(requests).toHaveLength(before);
+    });
+
+    it('captures the board query once before any await: later mutation and getter re-reads change neither URL nor binding', async () => {
+      const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
+      const member = 'a'.repeat(64), selection = 'b'.repeat(64);
+      const boardPage = { version: 1, source: 'selected-canvas-board', agentId: 'a1', projectId: 'p1', member, selection, observedAt: 1, notes: [], state: 'unavailable', reason: 'limit' };
+      const value = { version: 1, inventoryPages: 1, inventorySources: ['selected-canvas-memberships'], inventoryPageOnly: true, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'unknown', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        inventoryPage: boardPage, cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1, ...(id !== 'canvases' && { requested: false }) })) } as unknown as RemoteAgentDetails;
+      const query: Record<string, unknown> = { card: 'canvases', source: 'selected-canvas-board', member, selection };
+      answers.push({ status: 200, body: value });
+      const pending = annexClient.requestAgentDetails(FP, 'a1', query as never);
+      Object.assign(query, { member: 'c'.repeat(64), selection: 'd'.repeat(64) });
+      expect(await pending).toEqual({ status: 'ok', value }); expect(requests.at(-1)!.url).toContain(`member=${member}&selection=${selection}`);
+      let reads = 0; const getter = { card: 'canvases', source: 'selected-canvas-board', selection, get member() { reads += 1; return reads === 1 ? member : 'c'.repeat(64); } };
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a1', getter as never)).toEqual({ status: 'ok', value });
+      expect(reads).toBe(1); expect(requests.at(-1)!.url).toContain(`member=${member}`);
     });
 
     it('binds helper-only Details pages to exact selected offsets and rejects mixed/default envelopes', async () => {
