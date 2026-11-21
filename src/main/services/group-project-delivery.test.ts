@@ -182,6 +182,49 @@ describe('who hears about a post', () => {
     expect(dev.sendMessage).not.toHaveBeenCalled();
   });
 
+  describe.each(['live', 'reconnect'] as const)('C1 source eligibility through %s', (entry) => {
+    it.each(['general', 'control', 'inbox-dev', 'system-topic-only'])(
+      'excludes %s at a shared bootstrap sequence without suppressing later ordinary work',
+      async (firstTopic) => {
+        grants.changes.set('lead', { changes: [{ action: 'group_project.lead', target: { kind: 'group_project', id: 'gp1' }, mode: 'allow' }] });
+        const dev = runtime('dev');
+        const lead = runtime('lead');
+        seq = 1;
+        // Actual channel/inbox bootstrap helpers use sender=system even on
+        // subscribed topics and may share one host change sequence. The mention
+        // text is deliberately adversarial synthetic input, not a helper quote.
+        // Reorder so the live path's first matching-seq lookup visits each topic.
+        const topics = firstTopic === 'system-topic-only' ? ['system']
+          : [firstTopic, ...['general', 'control', 'inbox-dev'].filter((topic) => topic !== firstTopic)];
+        fx.messages = topics.map((topic, index) => ({
+          id: `bootstrap-${index}`, sender: firstTopic === 'system-topic-only' ? 'qa' : 'system',
+          topic, body: 'bootstrap @dev @lead', timestamp: new Date().toISOString(), seq,
+        }));
+        if (entry === 'live') {
+          for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq, part: 'board' });
+          await vi.advanceTimersByTimeAsync(COALESCE_MS);
+        } else {
+          receipts.set('gp1dev', 0);
+          receipts.set('gp1lead', 0);
+          for (const agentId of ['dev', 'lead']) for (const fn of fx.connected) fn(agentId);
+          await vi.advanceTimersByTimeAsync(WAKE_SUMMARY_DELAY_MS);
+        }
+        expect(dev.sendMessage).not.toHaveBeenCalled();
+        expect(lead.sendMessage).not.toHaveBeenCalled();
+        expect(wake).not.toHaveBeenCalled();
+
+        // Positive control: sender/topic checks must not become a member pause,
+        // nor may shared system sequences hide the next eligible post.
+        await post('qa', 'general', 'ordinary later work');
+        await vi.advanceTimersByTimeAsync(COALESCE_MS);
+        for (const target of [dev, lead]) {
+          expect(target.sendMessage).toHaveBeenCalledTimes(1);
+          expect(sentTexts(target)[0]).toContain('1 new message in "general" from "qa"');
+        }
+      },
+    );
+  });
+
   it('matches @mentions on word boundaries', () => {
     expect(mentions('thanks @dev!', 'dev')).toBe(true);
     expect(mentions('@DEV look', 'dev')).toBe(true);

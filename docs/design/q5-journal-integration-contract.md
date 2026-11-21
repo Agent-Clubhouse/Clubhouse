@@ -120,9 +120,12 @@ results and issue readbacks are in the companion JSON. No exact matching open
 producer-retention issue was identified by these bounded searches; this is not
 an exhaustive search claim. #3363 is the closed network-group-project feature;
 #3334 concerns agent calls and a different receiver/outbox, despite a related
-bounded-dedupe failure class. #3758 remains canonical Q5. No new issue was filed.
+bounded-dedupe failure class. #3758 remains canonical Q5. No new issue was filed during that inspection. Subsequently independent QA filed
+[#3770](https://github.com/Agent-Clubhouse/Clubhouse/issues/3770), the canonical
+LOW source-derived/unreproduced producer follow-up. Producer edits and protocol
+choice remain outside this private integration batch.
 
-If scope review requests a separate issue, proposed title: **Network group posts:
+Historical draft title before #3770 publication: **Network group posts:
 bounded applied-result eviction can recreate a retained operation at a new
 sequence after its board post is removed**. The body should cite the immutable
 source above, give the conditional replay sequence, label it source-derived/not
@@ -281,3 +284,26 @@ Changed-source targeted checks use the actual desktop-test-gate4GiB tests/lint,
 receipts. Do not rerun approved224e for a docs-only contract. Independent exact
 contract/source/evidence review precedes integration/PR; normal hosted platform
 checks retain their prior explicit filesystem and native-coverage limits.
+
+
+## C1 source eligibility controls (successor, initially unvalidated)
+
+On inspected5bb, `group-project-delivery.ts:211` excludes sender `system` OR
+topic `system` before live recipient selection. Reconnect lines492–494 apply
+both exclusions before subscription/mention/lead eligibility. Production
+`postMessage` call-site inspection finds ordinary host post1074 (one per commit),
+system join1251/1253 and system bootstrap bulletin760/817; test passthroughs are
+not production writers. This closes neither arbitrary remote/malformed sequence
+identity nor IB3; current source may not be generalized into lifetime uniqueness.
+
+This successor adds eight test cases to the existing real delivery module tests:
+three sender-only subscribed bootstrap topics (general/control/inbox-dev), with
+shared sequence and first-match permutation, plus independently topic-only
+exclusion using non-system sender; each runs through live change and reconnect.
+Synthetic mentions and a granted lead exercise eligibility bypass attempts; later
+ordinary post proves continued flow. Host/board/runtime mocks isolate effects;
+this does not execute actual producer helpers, provider sends or a future Q5 scan
+adapter. Helper source binds real bootstrap sender identity; source-shaped test
+fixtures discriminate current delivery eligibility. No production policy edits.
+Execution/type/lint status must be recorded separately against this exact test
+head; none is borrowed from prepared-state224e approval.

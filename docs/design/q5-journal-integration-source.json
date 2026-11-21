@@ -272,5 +272,15 @@
       }
     ],
     "publication": "No issue created or edited; Q5 remains #3758."
+  },
+  "c1Successor": {
+    "status": "source/test freeze; not yet executed",
+    "productionSource": "5bbabde2d9f6dcb4db248d0976681fc331f5611e",
+    "files": {
+      "src/main/services/group-project-delivery.ts": "025a6fe24183b395a45b47aa19e414270853c9aee3175fd68285a2c5403ca016",
+      "src/main/services/group-project-delivery.test.ts": "2e00feebe1105f1c69c9da177969863174a198290edeee86f38b19cfd1e5d60f"
+    },
+    "producerFollowup": "https://github.com/Agent-Clubhouse/Clubhouse/issues/3770",
+    "limits": "real delivery module with mocked host/board/runtime; producer helpers source-inspected, not executed; future scan adapter unimplemented"
   }
 }
