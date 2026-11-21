@@ -79,6 +79,7 @@ const LOCAL_IDENTITY = {
 vi.mock('./annex-identity', () => ({
   getOrCreateIdentity: vi.fn(),
   getIdentity: vi.fn(),
+  getPublicIdentity: vi.fn(),
   computeFingerprint: vi.fn(),
 }));
 
@@ -4150,7 +4151,7 @@ describe('annex-client', () => {
 
         beforeEach(async () => {
           const handlers = new Map<string, (...args: unknown[]) => unknown>();
-          vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => { handlers.set(channel, handler); });
+          vi.spyOn(ipcMain, 'handle').mockImplementation((channel, handler) => { handlers.set(channel, handler); });
           const { registerAnnexHandlers } = await import('../ipc/annex-handlers');
           registerAnnexHandlers();
           save = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
@@ -4166,7 +4167,10 @@ describe('annex-client', () => {
           expect(annexControl.request).toHaveBeenCalledTimes(1);
         });
 
-        afterEach(() => { resetDeviceSignalForTests(); });
+        afterEach(() => {
+          vi.mocked(ipcMain.handle).mockRestore();
+          resetDeviceSignalForTests();
+        });
 
         it.each(['sequential', 'overlapping'] as const)('retires the old lease across %s network disable/re-enable without injecting a device event', async (order) => {
           const disabling = save({}, { ...enabled, networkEnabled: false });
