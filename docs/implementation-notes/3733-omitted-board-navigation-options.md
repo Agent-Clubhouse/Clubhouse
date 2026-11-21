@@ -62,6 +62,24 @@ Recorded November 21, 2026, against `main` `be0091d16` (tree `65fc29a44`). This 
    - colliding ids; over-cap boards; corrupt primary with a backup present (must not read the backup);
    - an older host without the route giving unavailable.
 
+## New endpoint vs new authority (follow-up assessment)
+
+The question: can a passive, host-selected board read fit existing grants, needing a new endpoint but no new authority?
+
+- **The data class is already reachable by the same principal.** Every untruncated snapshot carries whole `canvasState` and `appCanvasState` (`annex-server.ts:1271-1278,1417-1418`).
+  - Snapshots go to paired sockets through `broadcastFrame` with `grantViewerOf` (`:6730`). Per-viewer shaping in `snapshotFrame` (`:1615-1619`) touches grant rows only, not canvases.
+  - Canvases are dropped only for frame size (`SNAPSHOT_TRUNCATION_STEPS`, `:1588-1593`).
+  - So any peer that passes `desktopDetailsAuthorized` (`:4077-4081`: reauthorized, `kind === 'desktop'`, not network-pending, not a mobile session) already receives every board's content when the snapshot fits.
+  - One selected board is a strict subset. **That isn't a new data authority.**
+- **A passive, non-recovering reader already exists.** `selected-canvas-membership-page.ts:59-85` reads the Home and selected-project primary `canvas-instances.json` through `readReadOnlyConnectionSourceMetadata`: budgeted and receipt-bearing, with recovery keys stat-only (`:23-36`), never quarantining or restoring. It already parses each board's `views`. A single-board projection can come from that same read, with no whole-store route and no recovery side effects.
+- **The endpoint fits the existing Details route.** A new inventory source (for example `card=canvases&source=selected-canvas-board`, with `canvasId` and `viewId` from a current membership row) can sit under the existing agent Details GET and its `desktopDetailsAuthorized` gate (`annex-server.ts:4084-4098`). No new route family or principal is needed.
+- **The actual policy gap is contractual, not an authority gap.** The selected Details contract explicitly excludes board payloads: the reader header says "No board payload export" (`selected-canvas-membership-page.ts:1`), and every membership page tells users "board contents are not shared" (`:94`). That boundary was set and reviewed with the Canvas pages (#3749). Serving one board's content needs an explicit amendment to that stated contract.
+- **Secondary obligations** come with the amendment:
+  - redaction parity with what the snapshot already sends, so hydration stays faithful;
+  - the jump gate (`agent-canvases.ts:120-135`) has to accept a second, separately labelled provenance, not only the current snapshot;
+  - the freshness contract above applies unchanged.
+- **Conclusion:** B is a new endpoint variant under existing authority. It's blocked by the declared "no board contents" Details contract, not by missing grants. If the parent or QA approve amending that contract, B can be specified as an Annex server, client and renderer slice with lane3613 hunk coordination. Until then, C stands.
+
 ## Coordination
 
 `annex-client.ts` and `annex-server.ts` hunks for B can't be named until B is approved. When they can, they go through the parent relay to lane3613 with exact current ranges. Option C needs no hunks.
