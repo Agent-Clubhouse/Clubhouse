@@ -92,7 +92,7 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     { label: 'offline device', device: { state: 'offline' }, settings: {} },
     { label: 'server off', device: {}, settings: { enableServer: false } },
     { label: 'client off', device: {}, settings: { enableClient: false } },
-  ] satisfies Array<{ label: string; device: Partial<AnnexDevice>; settings: Partial<typeof ON> }>)('preserves exact forward advice for $label', ({ device, settings }) => {
+  ] satisfies Array<{ label: string; device: Partial<AnnexDevice>; settings: Partial<typeof ON> }>)('preserves exact forward advice for $label', async ({ device, settings }) => {
     const observed: AnnexDevice = {
       fingerprint: 'm', alias: 'Laptop', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop',
       state: 'connected', pairedAt: '', lastSeen: '', problem: null,
@@ -100,7 +100,7 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
       ...device,
     };
     setup({ ...ON, loopbackOnly: true, ...settings }, { devices: [observed] });
-    render(<AnnexNetworkSettingsView />);
+    await act(async () => { render(<AnnexNetworkSettingsView />); });
     expect(screen.getByText('Listen only on this computer and turn off local discovery. Other computers on your network and your phone can reach this computer only through a forward you set up.')).toBeInTheDocument();
     expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('A forward from another computer to this one must reach this port.');
   });
