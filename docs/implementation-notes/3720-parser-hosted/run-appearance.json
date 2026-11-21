@@ -1,0 +1,26 @@
+{
+  "observedAt": "2026-11-21T12:50:35.021Z",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Action completed."
+      }
+    ],
+    "structuredContent": {
+      "workflow_runs": [
+        {
+          "id": 44905811537,
+          "name": "Validate",
+          "status": "in_progress",
+          "conclusion": null,
+          "run_number": 5316,
+          "jobs_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44905811537/jobs",
+          "logs_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44905811537/logs",
+          "workflow_id": 234668431
+        }
+      ]
+    },
+    "isError": false
+  }
+}

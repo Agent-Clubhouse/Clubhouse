@@ -1,0 +1,53 @@
+{
+  "observedAt": "2026-11-21T12:49:38.525Z",
+  "result": {
+    "status": "fulfilled",
+    "value": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Action completed."
+        }
+      ],
+      "structuredContent": {
+        "url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3765",
+        "number": 3765,
+        "state": "open",
+        "merged": false,
+        "mergeable": true,
+        "draft": false,
+        "body": "Adds a pure, currently unwired local settings patch parser for Refs #3720. It accepts explicit changes/unsets with matching touched-field versions, validates the closed descriptive origin, UUIDs/counters and UTF-16 bounds, rejects non-data/extra-key inputs, and returns detached typed data. It changes no existing settings or transport flow.\n\nValidation on exact source `b908917305eaea9d2b8a11030e2361830b1478b9`:\n- 112/112 tests, full TypeScript check, targeted ESLint and base-to-head diff check passed.\n- Eight sealed safeguard mutants failed on assertions; byte-restored source passed 112/112 again.\n- [Independent exact-source QA approval](https://github.com/Agent-Clubhouse/Clubhouse/blob/a57962fd466978af6b9d4e3aa0b7b34c5f1297f6/docs/qa-transfer/2026-11-20/reports/3720-parser-b90891730-review.md) and [immutable evidence](https://github.com/Agent-Clubhouse/Clubhouse/tree/a95c48b9d6a77a0e61988a4393684b643d0f0f75/docs/implementation-notes/3720-local-settings-parser) retain 40 seals, 29 command receipts and every historical failure.\n- Historical missing-API red ran zero tests; the initial 109-test run used an untracked implementation and is historical only. The ES2020 type failure and the later reproduced reflection-error failure are preserved separately from final proof.\n\nOutput is detached, **not frozen or immutable**. Future admission consumers must separately capture/freeze requests and enforce sender/grant, current epoch and conflict checks. Direct descriptor/accessor/Proxy tests do not establish Electron IPC reachability. No IPC/admission, persistence, emergency/recovery, name convergence, mixed-version transport, runtime readiness, live or release acceptance is claimed. Hosted CI on this exact PR head remains required.\n",
+        "title": "Add strict local Annex settings patch parser",
+        "base": "main",
+        "base_sha": "e8e178c4bf462bcf443bfb1b91cbfbcd1f35d1c2",
+        "head": "annex-wake-readiness/3720-local-settings-parser",
+        "head_sha": "b908917305eaea9d2b8a11030e2361830b1478b9",
+        "head_repo_id": 1158026389,
+        "head_repo_full_name": "Agent-Clubhouse/Clubhouse",
+        "merge_commit_sha": "28d43a8efa26cfd6f488f584e9dc83607d4b806c",
+        "user": {
+          "login": "masra91",
+          "name": "masra91",
+          "email": null,
+          "avatar_url": "https://avatars.githubusercontent.com/u/1669494?v=4",
+          "id": 1669494
+        },
+        "requested_reviewers": null,
+        "requested_team_reviewers": null,
+        "diff": null,
+        "comments": null,
+        "created_at": "2026-11-21T12:49:30Z",
+        "updated_at": "2026-11-21T12:49:30Z",
+        "closed_at": null,
+        "merged_at": null,
+        "commits": 4,
+        "changed_files": 3,
+        "additions": 387,
+        "deletions": 0,
+        "display_url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3765",
+        "display_title": "Add strict local Annex settings patch parser"
+      },
+      "isError": false
+    }
+  }
+}
