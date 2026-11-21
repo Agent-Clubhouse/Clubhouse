@@ -40,6 +40,9 @@ export interface NoticeJournalOptions {
   /** Deterministic fault seam only; production callers omit this. */
   testFailure?: (point: NoticeJournalFailurePoint) => void | Promise<void>;
 }
+const handoffBrand = Symbol('notice-live-handoff');
+export interface NoticeLiveHandoff { readonly [handoffBrand]: true }
+interface LiveHandoffRecord { attemptId: string; coverageDigest: string; entered: boolean; consumed: boolean }
 
 function decodeManifest(body: Buffer, recipientKey: string): Manifest {
   if (body.length > NOTICE_DELTA_BYTES) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Oversized notice manifest');
@@ -82,6 +85,9 @@ export class SequencedNoticeJournal {
   private readonly directory: string;
   private readonly recipientKey: string;
   private readonly failure?: NoticeJournalOptions['testFailure'];
+  /** A receipt capability identity, NOT a runtime/session generation allocator. */
+  private readonly handoffProcess = randomUUID();
+  private readonly liveHandoffs = new WeakMap<NoticeLiveHandoff, LiveHandoffRecord>();
 
   private constructor(options: NoticeJournalOptions) {
     this.directory = options.directory;
@@ -99,6 +105,36 @@ export class SequencedNoticeJournal {
   }
   get committedRevision(): number { return this.revision; }
   get healthy(): boolean { return !this.poisoned; }
+  /** Main receipt sink only: cannot capture a restarted/recovered attempt. */
+  captureLiveHandoff(attemptId: string): NoticeLiveHandoff {
+    const attempt = this.state?.attempts.find((a) => a.attemptId === attemptId);
+    if (this.poisoned || !attempt || attempt.status === 'uncertain' || attempt.handoffProcess !== this.handoffProcess) throw new Error('No exact live notice handoff');
+    const handle: NoticeLiveHandoff = Object.freeze({ [handoffBrand]: true as const });
+    this.liveHandoffs.set(handle, { attemptId, coverageDigest: attempt.coverageDigest, entered: false, consumed: false });
+    return handle;
+  }
+  /** Called synchronously at actual provider entry, after the shared generation fence. */
+  markHandoffEntered(handle: NoticeLiveHandoff): void {
+    const proof = this.liveHandoffs.get(handle);
+    const attempt = proof && this.state?.attempts.find((a) => a.attemptId === proof.attemptId);
+    if (this.poisoned || !proof || proof.consumed || proof.entered || !attempt || attempt.status === 'uncertain'
+      || attempt.coverageDigest !== proof.coverageDigest || attempt.handoffProcess !== this.handoffProcess) throw new Error('Notice handoff entry is no longer current');
+    proof.entered = true;
+  }
+  releaseLiveHandoff(handle: NoticeLiveHandoff): void { this.liveHandoffs.delete(handle); }
+  /** Caller must be the main sink observing a genuine driver acknowledgement. */
+  async acknowledgeLiveHandoff(handle: NoticeLiveHandoff): Promise<SequencedNoticeState> {
+    const proof = this.liveHandoffs.get(handle);
+    if (!proof || !proof.entered) throw new Error('Notice acknowledgement lacks a live entered handoff');
+    if (proof.consumed) {
+      if (this.poisoned) throw new NoticeLedgerStorageError('notice_ledger_unavailable', 'Notice storage needs reconciliation');
+      return this.snapshot()!;
+    }
+    const state = await this.enqueue({ kind: 'settle', attemptId: proof.attemptId, outcome: 'accepted',
+      acknowledgement: { kind: 'same-process-exact-handoff', handoffProcess: this.handoffProcess, coverageDigest: proof.coverageDigest } }, proof);
+    proof.consumed = true;
+    return state;
+  }
   private location(segment: number): string { return path.join(this.directory, `journal-${String(segment).padStart(10, '0')}.log`); }
 
   private async atomicManifest(manifest: Manifest): Promise<void> {
@@ -196,8 +232,15 @@ export class SequencedNoticeJournal {
   }
 
   append(delta: NoticeDelta): Promise<SequencedNoticeState> {
+    if (delta.kind === 'settle' && delta.outcome === 'accepted') return Promise.reject(new Error('Use exact live notice acknowledgement capability'));
+    return this.enqueue(delta);
+  }
+  private enqueue(input: NoticeDelta, liveProof?: LiveHandoffRecord): Promise<SequencedNoticeState> {
     const next = this.work.catch(() => {}).then(async () => {
       if (this.poisoned) throw new NoticeLedgerStorageError('notice_ledger_unavailable', 'Notice storage needs reconciliation');
+      const delta = input.kind === 'intent' ? { ...input, handoffProcess: this.handoffProcess } : input;
+      if (delta.kind === 'settle' && delta.outcome === 'accepted'
+        && (!liveProof || !liveProof.entered || liveProof.attemptId !== delta.attemptId || liveProof.coverageDigest !== delta.acknowledgement?.coverageDigest)) throw new Error('Notice acceptance has no live provenance');
       const candidate = applyNoticeDelta(this.state, delta);
       if (candidate === this.state) return this.snapshot()!;
       if (noticeRecipientKey(candidate.recipient) !== this.recipientKey) throw new NoticeLedgerStorageError('notice_ledger_corrupt', 'Notice recipient does not match storage');

@@ -114,6 +114,12 @@ If a covered post was trimmed/deleted, report unavailable; do not reconstruct it
 from a private text copy or infer it was delivered. Sequence gaps/non-post board
 changes are not evidence of missing posts. If a complete scan cannot be proven,
 do not advance `scannedThrough` past that portion.
+F4 enforcement: a scan with the maximum50 eligible posts must end exactly at
+its greatest supplied eligible sequence; a farther `through` is refused. Split
+the next portion into another proven scan. A smaller batch still requires the
+main board owner to prove that complete range; an arbitrary filtered/truncated
+list is not a completeness assertion. F3 naming: `excludedSequenceCount` counts
+excluded sequence positions, including non-post changes, **not excluded posts**.
 
 Idempotency uses two levels:
 
@@ -132,6 +138,27 @@ store commits; mutation is copy-on-write, published to cache only after success.
 Stale callbacks can settle only their exact stored attempt and recipient
 generation. Repeated equal terminal outcomes are no-ops; conflicting late
 outcomes are retained as a visible anomaly, never overwrite a newer attempt.
+F1 clarification: a **genuine same-process exact-handoff ACK** is new receipt
+evidence, not an arbitrary overwrite. Main captures a non-serializable opaque
+receipt capability from the original durable intent, marks it entered only at
+the actual provider-entry sink, and retains only historical attempt identity
+for a potential late ACK (no replacement runtime/queue callback). The ordinary
+append/settlement API cannot write accepted. The dedicated acknowledgement
+sink validates the process capability, exact attempt and coverage digest before
+persisting the receipt. A late genuine ACK after `handoff_unknown` may settle
+only that original generation's attempt, increments a visible late-ACK anomaly
+counter and cannot clear or acknowledge any replacement/member generation.
+Duplicate receipt publication is idempotent. No provider-processing claim.
+
+A `recovered` uncertain attempt gets **no** live receipt capability and cannot
+be confirmed by caller-supplied accepted flags, reconstructed metadata, a new
+process or recovery itself. Replay may apply a previously committed and validated
+ACK record from before restart; that is pre-existing durable evidence, not a new
+ACK invented during recovery. No external-evidence import/resolver in v1. A
+new human-authorized retry has its own linked attempt and never rewrites its
+parent as originally delivered. This refines the earlier conflicting-outcome
+rule: only exact genuine ACK evidence is allowed; other incompatible outcomes
+remain refused/anomalous without changing uncertainty or newer state.
 An absent sequence selects the supported post-ID mode below, not indefinite
 deferral. Invalid identity or conflicting sequence is a visible source conflict,
 with the explicit adoption path below; never guess a key.
@@ -357,6 +384,18 @@ boundary with that owner; no direct/new access is implied.
 
 ## Revocation and wake boundary
 
+Concrete coordination reference: [phone recovery contract frozen2def25a1](https://github.com/Agent-Clubhouse/Clubhouse/blob/2def25a1b4b4aceb2566e8e51b5cb5a28faed96b/docs/annex-phone-controller-recovery-v2.md#5-one-runtimesession-generation-interface-for-recovery-and-q5).
+Its host-private proposed `RuntimeSessionGeneration {hostEpoch, sequence}`,
+exact live/dormant `RuntimeSessionLease`, `IsRuntimeSessionCurrent` and sole
+runtime-lifecycle overlapping-resource claim are **consumed** by Q5, not another
+Q5 allocator/coordinator. Q5 membership generation and ephemeral receipt-capability
+process identity are different scopes, not substitutes for the shared runtime
+lease. Work-only recovery never retires the visible-chat queue. That contract
+does not yet provide accepted implemented exports: final module/type/sink hunk
+agreement and independent review still gate runtime wiring. Late historical ACK
+uses exact minimal attempt provenance; runtime hook refs are released and no
+replacement chat/member is a receipt target.
+
 Perform asynchronous membership/board/storage admission before handoff. After
 awaited work finishes, the runtime invokes a **synchronous**, narrowly typed
 owner pre-entry hook on main immediately before `session.send`, with no await
@@ -424,6 +463,29 @@ failure in a complete record, non-tail damage, revision conflict, missing
 referenced page or unknown version refuses that recipient's writes/handoffs
 without replacing data. Healthy recipient shards continue. Never invent a
 verified prefix when the anchor or framing is itself corrupt.
+
+F2 safety decision: invalid full-length/checksum/zero-filled final frames remain
+**fail-closed**, just like interior complete corruption. Framing alone cannot
+prove that such a frame was never committed; automatically trimming it could
+lose a committed intent and resend already submitted work. Preserve original
+bytes unchanged, expose “Local notice storage needs recovery; automatic notices
+for this recipient are unavailable”, keep manual board reading available, and
+allow healthy recipient shards to continue. This can stop this recipient after
+a crash or physical storage damage until explicit recovery: it is an admitted
+storage-integrity/liveness tradeoff, not normal uncertainty quarantine or a
+hole-count policy. No silent baseline reset or corruption trimming for liveness.
+
+The proposed conservative invalid-tail repair (durable preservation plus a
+crash-safe/idempotent barrier making every otherwise-ready pending post
+uncertain before any later send) is **deferred**, not implemented or credited.
+It additionally needs proof of final-frame/last-segment boundary, nothing valid
+following, treatment of every record kind and interrupted recovery; without
+that proof refuse. First-version explicit repair is an inspected local-human
+storage recovery/adoption path preserving the damaged old generation/bytes as
+unreconciled history, never caller-supplied success or automatic replay. It must
+be independently reviewed before use. Incomplete, provably uncommitted append
+tails retain the already specified preserve-and-prefix recovery scope; that
+is not a claim to repair arbitrary post-fsync or power-loss corruption.
 
 Checkpoint by writing bounded immutable pages with hashes, syncing them and
 their directory, then atomically replace a small manifest naming the checkpoint

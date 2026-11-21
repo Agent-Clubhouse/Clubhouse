@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { applyNoticeDelta, noticeLegacyFloor, validateNoticeState, type NoticeDelta, type SequencedNoticeState } from './state';
+import { applyNoticeDelta, noticeCoverageDigest, noticeLegacyFloor, validateNoticeState, type NoticeDelta, type SequencedNoticeState } from './state';
 
 const recipient = { groupId: 'synthetic-group', host: null, agentId: 'synthetic-member', generation: 'generation-one' };
 function initialize(): SequencedNoticeState { return applyNoticeDelta(undefined, { kind: 'initialize', recipient, baseline: 0 }); }
 const scan = (seq: number): NoticeDelta => ({ kind: 'scan', through: seq, eligible: [{ seq, postId: `synthetic-post-${seq}` }] });
-const intent = (seq: number): NoticeDelta => ({ kind: 'intent', attemptId: `attempt-${seq}`, posts: [{ seq, postId: `synthetic-post-${seq}` }], startedAt: 1 });
+const intent = (seq: number): NoticeDelta => ({ kind: 'intent', attemptId: `attempt-${seq}`, posts: [{ seq, postId: `synthetic-post-${seq}` }], startedAt: 1, handoffProcess: 'synthetic-process' });
+const accepted = (seq: number): NoticeDelta => ({ kind: 'settle', attemptId: `attempt-${seq}`, outcome: 'accepted', acknowledgement: { kind: 'same-process-exact-handoff', handoffProcess: 'synthetic-process', coverageDigest: noticeCoverageDigest([{ seq, postId: `synthetic-post-${seq}` }]) } });
 
 describe('sequenced notice state', () => {
   it('keeps A uncertain, records B success, permits C and does not revive scan-time exclusions', () => {
     let state = initialize();
-    for (const delta of [scan(1), intent(1), { kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' }, scan(3), intent(3), { kind: 'settle', attemptId: 'attempt-3', outcome: 'accepted' }] as NoticeDelta[]) state = applyNoticeDelta(state, delta);
+    for (const delta of [scan(1), intent(1), { kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' }, scan(3), intent(3), accepted(3)] as NoticeDelta[]) state = applyNoticeDelta(state, delta);
     expect(state.pending).toEqual([{ seq: 1, postId: 'synthetic-post-1', attemptId: 'attempt-1' }]);
     expect(state.terminal).toEqual([[2, 3]]);
     expect(noticeLegacyFloor(state)).toBe(0);
@@ -41,11 +42,12 @@ describe('sequenced notice state', () => {
     expect(applyNoticeDelta(recovered, { kind: 'recover' })).toBe(recovered);
     expect(() => applyNoticeDelta(recovered, { kind: 'settle', attemptId: 'attempt-1', outcome: 'unsubmitted' })).toThrow('Uncertainty');
     expect(() => applyNoticeDelta(recovered, { ...intent(1), attemptId: 'blind-retry' })).toThrow('not ready');
+    expect(() => applyNoticeDelta(recovered, accepted(1))).toThrow('Recovered');
   });
 
   it('handles settlement before queued return and repeated callbacks without recreating coverage', () => {
     let state = applyNoticeDelta(applyNoticeDelta(initialize(), scan(1)), intent(1));
-    state = applyNoticeDelta(state, { kind: 'settle', attemptId: 'attempt-1', outcome: 'accepted' });
+    state = applyNoticeDelta(state, accepted(1));
     expect(applyNoticeDelta(state, { kind: 'queued', attemptId: 'attempt-1', messageId: 'late-return' })).toBe(state);
     expect(applyNoticeDelta(state, { kind: 'settle', attemptId: 'attempt-1', outcome: 'accepted' })).toBe(state);
     expect(state.acceptedCount).toBe(1);
@@ -77,5 +79,27 @@ describe('sequenced notice state', () => {
     }
     const future = { ...state, futureOptional: { keep: true } };
     expect(validateNoticeState(future)).toMatchObject({ futureOptional: { keep: true } });
+  });
+
+  it('permits only exact same-process late acknowledgement and records an anomaly count', () => {
+    let state = applyNoticeDelta(applyNoticeDelta(initialize(), scan(1)), intent(1));
+    state = applyNoticeDelta(state, { kind: 'settle', attemptId: 'attempt-1', outcome: 'uncertain' });
+    expect(() => applyNoticeDelta(state, { kind: 'settle', attemptId: 'attempt-1', outcome: 'accepted' })).toThrow('provenance');
+    const wrong = accepted(1) as Extract<NoticeDelta, { kind: 'settle' }>;
+    expect(() => applyNoticeDelta(state, { ...wrong, acknowledgement: { ...wrong.acknowledgement!, handoffProcess: 'other-process' } })).toThrow('provenance');
+    state = applyNoticeDelta(state, accepted(1));
+    expect(state.lateAcknowledgementCount).toBe(1);
+    expect(state.pending).toEqual([]);
+    expect(state.terminal).toEqual([[1, 1]]);
+  });
+
+  it('rejects a cap50 scan with an unproved trailing frontier and names nonpost coverage honestly', () => {
+    const state = initialize();
+    const eligible = Array.from({ length: 50 }, (_, index) => ({ seq: index + 1, postId: `p${index}` }));
+    expect(() => applyNoticeDelta(state, { kind: 'scan', through: 100, eligible })).toThrow('Capped');
+    expect(applyNoticeDelta(state, { kind: 'scan', through: 50, eligible }).scannedThrough).toBe(50);
+    const nonpostChanges = applyNoticeDelta(state, { kind: 'scan', through: 100, eligible: [] });
+    expect(nonpostChanges.excludedSequenceCount).toBe(100);
+    expect(nonpostChanges.acceptedCount).toBe(0);
   });
 });
