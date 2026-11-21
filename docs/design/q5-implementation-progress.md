@@ -81,6 +81,21 @@ New fault controls target all three metadata purposes plus actual rename failure
 temp-opened child exit, phase/version/UUID/dir/symlink negatives. These checks
 and exact successor QA are required before claiming M1 closure.
 
+M1-L is independently approved at6d208ecb2 (review9bccb144). Only the
+tempOpened cut actually exits a child process; beforeWrite/beforeRename are
+in-process injections. Crash residue still refuses pending inspected repair.
+
+Journal admission successor: source inspection and a preserved test-only
+baseline b8bd6c0e3 reproduce two additional races (two handles entering one
+attempt, and entry during a pending unsubmitted commit releasing coverage).
+This successor holds entry synchronously when settlement/recovery is requested,
+before queued IO can yield, and refuses a second handle after attempt entry.
+Attempt-local holds do not prevent unrelated entry; recovery holds all entry.
+Genuine already-entered ACKs retain their separate provenance path. These are
+journal-local controls, not the shared runtime-generation coordinator. Exact
+successor validation and independent review remain required; no provider or
+runtime execution incident was observed by these synthetic tests.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.
