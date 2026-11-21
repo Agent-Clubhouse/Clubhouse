@@ -211,6 +211,7 @@ export function getControllerReadObservation(fingerprint: string): ControllerRea
 }
 
 export function abortControllerReads(fingerprint?: string): void {
+  abortSatelliteRequests(fingerprint, true);
   const retired = new Set<string>();
   for (const lease of controllerReads) {
     if ((!fingerprint || lease.fingerprint === fingerprint.toLowerCase()) && !lease.controller.signal.aborted) {
@@ -225,6 +226,134 @@ export function abortControllerReads(fingerprint?: string): void {
     getControllerReadObservation(key);
     controllerReadObservations.get(key)!.revision = ++nextControllerReadRevision;
   }
+  reconcileSatelliteStreams();
+}
+
+interface SatelliteRequestLease {
+  fingerprint: string;
+  via: 'direct' | 'reverse';
+  trust: string | undefined;
+  linkEpoch: number;
+  satellite: SatelliteConnectionInternal | undefined;
+  connectionEpoch: number;
+  controller: AbortController;
+}
+type SatelliteStream =
+  | { via: 'direct'; ws: WebSocket | null; snapshotAccepted: boolean }
+  | { via: 'reverse'; trust: string | undefined; linkEpoch: number; snapshotAccepted: boolean; subscription?: annexControl.ControlSubscription };
+
+const satelliteRequests = new Set<SatelliteRequestLease>();
+let reconcilingStreams = false;
+
+function directSatelliteReady(fingerprint: string): boolean {
+  return satelliteFor(fingerprint)?.state === 'connected';
+}
+
+function canRequestSatellite(fingerprint: string): boolean {
+  return directSatelliteReady(fingerprint) || reverseControllerReadReady(fingerprint);
+}
+
+function satelliteRequestCurrent(lease: SatelliteRequestLease): boolean {
+  if (lease.controller.signal.aborted || lease.trust !== controllerReadTrust(lease.fingerprint)) return false;
+  if (lease.via === 'reverse') return reverseControllerReadReady(lease.fingerprint)
+    && lease.linkEpoch === annexControl.getAcceptedLinkEpoch(lease.fingerprint);
+  return satelliteFor(lease.fingerprint) === lease.satellite && lease.satellite?.state === 'connected'
+    && (connectionEpochs.get(lease.satellite.id) ?? 0) === lease.connectionEpoch;
+}
+
+function abortSatelliteRequests(fingerprint?: string, reverseOnly = false): void {
+  for (const lease of satelliteRequests) {
+    if ((!fingerprint || lease.fingerprint === fingerprint.toLowerCase()) && (!reverseOnly || lease.via === 'reverse')) lease.controller.abort();
+  }
+}
+
+function satelliteStreamCurrent(sat: SatelliteConnectionInternal, stream: SatelliteStream): boolean {
+  if (satellites.get(sat.fingerprint) !== sat || sat.stream !== stream) return false;
+  if (stream.via === 'direct') return sat.state === 'connected' && sat.ws === stream.ws;
+  return sat.state !== 'connected' && sat.ws?.readyState !== WebSocket.OPEN
+    && reverseControllerReadReady(sat.fingerprint) && controllerReadTrust(sat.fingerprint) === stream.trust
+    && annexControl.getAcceptedLinkEpoch(sat.fingerprint) === stream.linkEpoch;
+}
+
+function retireSatelliteStream(sat: SatelliteConnectionInternal): void {
+  const stream = sat.stream;
+  sat.stream = undefined;
+  if (!stream) return;
+  sat.snapshotReceipt = undefined;
+  if (stream.via === 'reverse') {
+    stream.subscription?.close();
+    for (const key of remoteStreams.keys()) {
+      if (key.startsWith(`${sat.id}:`)) headlessTerminal.dispose(`remote:${key}`);
+    }
+  }
+  disposeRemoteBuffers(sat.id);
+  satelliteEpochs.delete(sat.fingerprint);
+}
+
+function directSatelliteStream(sat: SatelliteConnectionInternal): SatelliteStream | undefined {
+  if (sat.state !== 'connected') return undefined;
+  if (sat.stream?.via !== 'direct' || sat.stream.ws !== sat.ws) {
+    retireSatelliteStream(sat);
+    sat.stream = { via: 'direct', ws: sat.ws, snapshotAccepted: false };
+  }
+  return sat.stream;
+}
+
+function reconcileSatelliteStreams(): void {
+  if (reconcilingStreams) return;
+  reconcilingStreams = true;
+  try {
+    for (const lease of satelliteRequests) if (!satelliteRequestCurrent(lease)) lease.controller.abort();
+    if (!controllerReadsRunning) {
+      for (const sat of satellites.values()) retireSatelliteStream(sat);
+      return;
+    }
+    if (controllerReadsRunning) {
+      for (const peer of annexPeers.listPeers()) {
+        if (!satelliteFor(peer.fingerprint) && reverseControllerReadReady(peer.fingerprint)) {
+          satellites.set(peer.fingerprint, newSatellite(peer, 'disconnected'));
+        }
+      }
+    }
+    for (const sat of satellites.values()) {
+      if (sat.state === 'connected') { directSatelliteStream(sat); continue; }
+      const old = sat.stream;
+      if (old && !satelliteStreamCurrent(sat, old)) retireSatelliteStream(sat);
+      if (!reverseControllerReadReady(sat.fingerprint)) {
+        sat.reverseStreamAttempt = undefined;
+        continue;
+      }
+      const trust = controllerReadTrust(sat.fingerprint);
+      const linkEpoch = annexControl.getAcceptedLinkEpoch(sat.fingerprint);
+      const attempt = JSON.stringify([trust, linkEpoch]);
+      if (sat.stream || sat.reverseStreamAttempt === attempt || !annexControl.hasReverseLink(sat.fingerprint, 'subscribe')) continue;
+      const stream: SatelliteStream = { via: 'reverse', trust, linkEpoch, snapshotAccepted: false };
+      sat.reverseStreamAttempt = attempt;
+      sat.stream = stream;
+      try {
+        const subscription = annexControl.subscribe(sat.fingerprint, {
+          onFrame: (frame) => {
+            if (!satelliteStreamCurrent(sat, stream)) return;
+            handleSatelliteMessage(sat, frame);
+          },
+          onEnd: (code) => {
+            if (sat.stream !== stream) return;
+            retireSatelliteStream(sat);
+            sat.snapshotUnavailable = true;
+            appLog('core:annex-client', 'warn', 'Reverse satellite subscription ended', { meta: { fingerprint: sat.fingerprint, code } });
+            broadcastSatellitesChanged();
+          },
+        });
+        if (satelliteStreamCurrent(sat, stream)) stream.subscription = subscription;
+        else subscription.close();
+      } catch (error) {
+        // telemetry-exempt: locally logged; no remote error text is published to the renderer.
+        retireSatelliteStream(sat);
+        sat.snapshotUnavailable = true;
+        appLog('core:annex-client', 'warn', 'Reverse satellite subscription failed', { meta: { fingerprint: sat.fingerprint, error: String(error) } });
+      }
+    }
+  } finally { reconcilingStreams = false; }
 }
 
 /** Discovered but unpaired services visible on the LAN. */
@@ -242,6 +371,8 @@ export interface DiscoveredService {
 const discoveredServices = new Map<string, DiscoveredService>();
 
 interface SatelliteConnectionInternal {
+  stream?: SatelliteStream;
+  reverseStreamAttempt?: string;
   snapshotUnavailable?: boolean;
   id: string;
   alias: string;
@@ -434,7 +565,7 @@ interface SatelliteBuffer {
   unavailable?: boolean;
 }
 
-function headerInt(res: http.IncomingMessage, name: string): number | undefined {
+function headerInt(res: Pick<http.IncomingMessage, 'headers'>, name: string): number | undefined {
   const raw = res.headers[name];
   const value = typeof raw === 'string' ? Number(raw) : NaN;
   return Number.isInteger(value) && value >= 0 ? value : undefined;
@@ -442,6 +573,19 @@ function headerInt(res: http.IncomingMessage, name: string): number | undefined 
 
 /** An icon through the satellite's authenticated icon route, as a data URL. */
 function fetchSatelliteIcon(sat: SatelliteConnectionInternal, kind: IconKind, id: string): Promise<IconFetchResult> {
+  if (sat.state !== 'connected' && reverseControllerReadReady(sat.fingerprint)) {
+    return requestSatelliteRaw(sat.fingerprint, {
+      method: 'GET', path: `/api/v1/icons/${kind}/${encodeURIComponent(id)}`, timeoutMs: 10_000, maxResponseBytes: REMOTE_ICON_MAX_BYTES,
+    }).then((response): IconFetchResult => {
+      if (response.status === 404) return { status: 'missing' };
+      const type = String(response.headers['content-type'] ?? '');
+      if (response.status !== 200 || !type.startsWith('image/')) return { status: 'failed' };
+      return { status: 'ok', dataUrl: `data:${type};base64,${response.body.toString('base64')}` };
+    }).catch((error): IconFetchResult => {
+      appLog('core:annex-client', 'warn', 'Reverse icon request failed', { meta: { fingerprint: sat.fingerprint, error: String(error) } });
+      return { status: 'failed' };
+    });
+  }
   const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
   return new Promise<IconFetchResult>((resolve) => {
     let settled = false;
@@ -469,14 +613,14 @@ function fetchSatelliteIcon(sat: SatelliteConnectionInternal, kind: IconKind, id
 
 /** Fetch the icons this satellite's snapshot names and doesn't carry, and show them when they arrive. */
 function fetchSatelliteLeftOutIcons(sat: SatelliteConnectionInternal): void {
-  const ws = sat.ws;
+  const stream = sat.stream ?? directSatelliteStream(sat);
   const state = (sat.iconState ??= newRemoteIconState());
   void fetchLeftOutIcons(
     state,
-    () => (sat.ws === ws ? sat.snapshot : null),
+    () => (stream && satelliteStreamCurrent(sat, stream) ? sat.snapshot : null),
     (kind, id) => fetchSatelliteIcon(sat, kind, id),
     () => {
-      if (sat.ws !== ws || !sat.snapshot) return;
+      if (!stream || !satelliteStreamCurrent(sat, stream) || !sat.snapshot) return;
       applyFetchedIcons(state, sat.snapshot);
       broadcastSatellitesChanged();
       broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
@@ -485,6 +629,21 @@ function fetchSatelliteLeftOutIcons(sat: SatelliteConnectionInternal): void {
 }
 
 function fetchSatelliteBuffer(sat: SatelliteConnectionInternal, agentId: string): Promise<SatelliteBuffer | null> {
+  if (sat.state !== 'connected' && reverseControllerReadReady(sat.fingerprint)) {
+    return requestSatelliteRaw(sat.fingerprint, {
+      method: 'GET', path: `/api/v1/agents/${encodeURIComponent(agentId)}/buffer`, timeoutMs: 5000,
+    }).then((response): SatelliteBuffer | null => {
+      if (response.status === 503) return { data: '', unavailable: true };
+      if (response.status !== 200) return null;
+      const cols = headerInt(response, ANNEX_BUFFER_HEADERS.cols), rows = headerInt(response, ANNEX_BUFFER_HEADERS.rows);
+      return { data: response.body.toString('utf8'), seq: headerInt(response, ANNEX_BUFFER_HEADERS.seq),
+        ...(cols && rows && { cols, rows }),
+      };
+    }).catch((error): null => {
+      appLog('core:annex-client', 'warn', 'Reverse agent buffer request failed', { meta: { fingerprint: sat.fingerprint, agentId, error: String(error) } });
+      return null;
+    });
+  }
   const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
   const satelliteId = sat.id;
 
@@ -538,7 +697,7 @@ async function seedFromSatellite(satelliteId: string, agentId: string): Promise<
   const sat = satellites.get(satelliteId);
   // Can't reach satellite: serve whatever local cache we have, and seed on
   // a later request once connected.
-  if (!sat || sat.state !== 'connected') return;
+  if (!sat || !canRequestSatellite(satelliteId)) return;
 
   const state = remoteStream(key);
   const epoch = connectionEpochs.get(satelliteId) ?? 0;
@@ -611,7 +770,7 @@ async function getRemoteBufferSnapshot(satelliteId: string, agentId: string, ret
     await seed.promise;
     // A reconnecting view can join a seed from the old connection. That seed
     // is discarded, so fetch once more, but don't loop if the peer keeps flapping.
-    if (seed.epoch !== (connectionEpochs.get(satelliteId) ?? 0) && satellites.get(satelliteId)?.state === 'connected') {
+    if (seed.epoch !== (connectionEpochs.get(satelliteId) ?? 0) && canRequestSatellite(satelliteId)) {
       appLog('core:annex-client', retryStaleSeed ? 'info' : 'warn', 'Agent buffer seed crossed a reconnect', {
         meta: { satelliteId, agentId, retrying: retryStaleSeed },
       });
@@ -643,13 +802,14 @@ function broadcastSatelliteEvent(satelliteId: string, type: string, payload: unk
 }
 
 function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection {
+  const liveStream = s.stream && s.stream.snapshotAccepted && satelliteStreamCurrent(s, s.stream);
   return {
     id: s.id,
     alias: s.alias,
     icon: s.icon,
     color: s.color,
     fingerprint: s.fingerprint,
-    state: s.state,
+    state: liveStream ? 'connected' : s.state,
     host: s.host,
     mainPort: s.mainPort,
     pairingPort: s.pairingPort,
@@ -684,7 +844,8 @@ function setState(
     // Last seen is when it was last confirmed alive, not when it connected.
     const confirmed = lastConfirmed.get(sat.fingerprint.toLowerCase());
     if (confirmed !== undefined) annexPeers.recordLastSeen(sat.fingerprint, new Date(confirmed));
-    disposeRemoteBuffers(sat.id);
+    if (sat.stream) retireSatelliteStream(sat);
+    else disposeRemoteBuffers(sat.id);
     satelliteEpochs.delete(sat.fingerprint);
     // Membership follows /ws; the separately authenticated control route owns its lifetime.
     networkChannel.closeFor(sat.fingerprint, 'out');
@@ -832,9 +993,11 @@ function satelliteUrl(sat: SatelliteConnectionInternal, urlPath: string, scheme:
  */
 function haltSatellite(sat: SatelliteConnectionInternal, kind: 'pairing' | 'mismatch' | 'clock', message: string, problem: AnnexProblemCode): void {
   sat.connectionAttempt = undefined;
-  abortControllerReads(sat.fingerprint);
   sat.halt = kind;
   sat.needsPairing = kind !== 'clock';
+  abortSatelliteRequests(sat.fingerprint);
+  retireSatelliteStream(sat);
+  abortControllerReads(sat.fingerprint);
   stopHeartbeat(sat);
   if (sat.reconnectTimer) {
     clearTimeout(sat.reconnectTimer);
@@ -1147,24 +1310,27 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
   }
 }
 
-/** Connections that have had a snapshot. */
-const socketsWithSnapshot = new WeakSet<WebSocket>();
+/** A replacement stream starts its own sequence, including after host restart. */
+const streamsWithSnapshot = new WeakSet<SatelliteStream>();
 
 function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<string, unknown>): void {
+  const stream = sat.stream ?? directSatelliteStream(sat);
+  if (!stream || !satelliteStreamCurrent(sat, stream)) return;
   const type = msg.type as string;
 
   switch (type) {
     case 'snapshot': {
       const incoming = msg.payload as SatelliteSnapshot;
       if (incoming.protocolVersion !== ANNEX_PROTOCOL_VERSION) {
+        retireSatelliteStream(sat);
         setState(sat, 'disconnected', 'Incompatible Annex version', { code: 'incompatible' });
         return;
       }
       connectSucceeded(sat.fingerprint);
       // A socket's first snapshot always stands. Seq only orders frames on one connection,
       // and restarts from zero when the satellite does, so a stale check would refuse it for good.
-      if (!sat.snapshot || !socketsWithSnapshot.has(sat.ws!) || incoming.lastSeq >= sat.snapshot.lastSeq) {
-        if (sat.ws) socketsWithSnapshot.add(sat.ws);
+      if (!sat.snapshot || !streamsWithSnapshot.has(stream) || incoming.lastSeq >= sat.snapshot.lastSeq) {
+        streamsWithSnapshot.add(stream);
         sat.lastError = null;
         sat.problem = null;
         sat.snapshotUnavailable = false;
@@ -1173,9 +1339,9 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         if (omitted) {
           incoming.canvasState ??= sat.snapshot?.canvasState;
           incoming.appCanvasState ??= sat.snapshot?.appCanvasState;
-        } else if (sat.ws) {
+        } else {
           // It has every canvas, from after any fetch still running began.
-          canvasRefetches.get(sat.ws)?.forEach((refetch) => { refetch.superseded = true; });
+          canvasRefetches.get(stream)?.forEach((refetch) => { refetch.superseded = true; });
         }
         sat.iconState ??= newRemoteIconState();
         applyFetchedIcons(sat.iconState, incoming);
@@ -1191,8 +1357,11 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
           meta: { machine: sat.fingerprint, requestId, source: 'snapshot' },
         });
         sat.snapshot = incoming;
+        stream.snapshotAccepted = true;
         sat.snapshotReceipt = sat.ws?.readyState === WebSocket.OPEN && sat.state === 'connected' && !sat.needsPairing && !incoming.sessionPaused ? randomUUID() : undefined;
-        void import('./connection-card').then((m) => m.rememberConnectionSnapshot(sat.fingerprint, incoming)).catch((error) => {
+        void import('./connection-card').then((m) => {
+          if (satelliteStreamCurrent(sat, stream)) return m.rememberConnectionSnapshot(sat.fingerprint, incoming);
+        }).catch((error) => {
           appLog('core:annex', 'warn', 'Could not save the network connection directory', { meta: { error: error instanceof Error ? error.message : String(error) } });
         });
         broadcastSatellitesChanged();
@@ -1262,10 +1431,8 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
 
     case 'canvas:state':
       // Kept too: a snapshot that leaves canvases out is refilled from here, and would otherwise put old ones back.
-      if (sat.ws) {
-        canvasEventsDuringFetch.get(sat.ws)?.push(msg.payload as CanvasStateEvent);
-        canvasRefetches.get(sat.ws)?.get(canvasKey(msg.payload as CanvasStateEvent))?.changes.push(msg.payload as CanvasStateEvent);
-      }
+      canvasEventsDuringFetch.get(stream)?.push(msg.payload as CanvasStateEvent);
+      canvasRefetches.get(stream)?.get(canvasKey(msg.payload as CanvasStateEvent))?.changes.push(msg.payload as CanvasStateEvent);
       if ((msg.payload as CanvasStateEvent).stateOmitted) {
         void refetchOmittedCanvas(sat, msg.payload as CanvasStateEvent);
         break;
@@ -1282,11 +1449,11 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
 }
 
 /** Connections that have fetched their canvases. Later changes come as `canvas:state`. */
-const socketsWithCanvases = new WeakSet<WebSocket>();
+const streamsWithCanvases = new WeakSet<SatelliteStream>();
 /** Changes that arrive while a connection's fetch is running: they go on top of what it returns. */
-const canvasEventsDuringFetch = new WeakMap<WebSocket, CanvasStateEvent[]>();
+const canvasEventsDuringFetch = new WeakMap<SatelliteStream, CanvasStateEvent[]>();
 /** The projects a connection has asked for canvases, once it's done its first fetch. */
-const canvasProjectsAsked = new WeakMap<WebSocket, Set<string>>();
+const canvasProjectsAsked = new WeakMap<SatelliteStream, Set<string>>();
 
 interface CanvasStateEvent {
   projectId?: string | null;
@@ -1327,7 +1494,7 @@ function withCanvasEvent(snapshot: SatelliteSnapshot, { projectId, scope, state 
 
 /** One canvas change too large to send: a fetch running, and what's come since. */
 interface CanvasRefetch { changes: CanvasStateEvent[]; again: boolean; superseded: boolean }
-const canvasRefetches = new WeakMap<WebSocket, Map<string, CanvasRefetch>>();
+const canvasRefetches = new WeakMap<SatelliteStream, Map<string, CanvasRefetch>>();
 const canvasKey = ({ projectId, scope }: CanvasStateEvent): string => (scope === 'global' ? '' : projectId ?? '');
 
 /**
@@ -1336,11 +1503,11 @@ const canvasKey = ({ projectId, scope }: CanvasStateEvent): string => (scope ===
  * on top, and a failure keeps what's known until the next marker.
  */
 async function refetchOmittedCanvas(sat: SatelliteConnectionInternal, marker: CanvasStateEvent): Promise<void> {
-  const ws = sat.ws;
+  const stream = sat.stream;
   const key = canvasKey(marker);
-  if (!ws || (!key && marker.scope !== 'global')) return;
-  const running = canvasRefetches.get(ws) ?? new Map<string, CanvasRefetch>();
-  canvasRefetches.set(ws, running);
+  if (!stream || (!key && marker.scope !== 'global')) return;
+  const running = canvasRefetches.get(stream) ?? new Map<string, CanvasRefetch>();
+  canvasRefetches.set(stream, running);
   const current = running.get(key);
   if (current) {
     current.again = true;
@@ -1359,7 +1526,7 @@ async function refetchOmittedCanvas(sat: SatelliteConnectionInternal, marker: Ca
     return;
   }
   running.delete(key);
-  if (sat.ws === ws && sat.snapshot && !refetch.superseded && state) {
+  if (satelliteStreamCurrent(sat, stream) && sat.snapshot && !refetch.superseded && state) {
     const fetched: SatelliteSnapshot = key
       ? { ...sat.snapshot, canvasState: { ...sat.snapshot.canvasState, [key]: state } }
       : { ...sat.snapshot, appCanvasState: state };
@@ -1367,7 +1534,7 @@ async function refetchOmittedCanvas(sat: SatelliteConnectionInternal, marker: Ca
     broadcastSatellitesChanged();
     broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
   }
-  if (refetch.again) void refetchOmittedCanvas(sat, marker);
+  if (refetch.again && satelliteStreamCurrent(sat, stream)) void refetchOmittedCanvas(sat, marker);
 }
 
 /**
@@ -1375,15 +1542,15 @@ async function refetchOmittedCanvas(sat: SatelliteConnectionInternal, marker: Ca
  * one project at a time, then send them on as a snapshot the renderer already reads.
  */
 async function fetchOmittedCanvases(sat: SatelliteConnectionInternal): Promise<void> {
-  const ws = sat.ws;
-  if (!ws) return;
-  if (socketsWithCanvases.has(ws)) {
-    void fetchNewProjectCanvases(sat, ws);
+  const stream = sat.stream;
+  if (!stream) return;
+  if (streamsWithCanvases.has(stream)) {
+    void fetchNewProjectCanvases(sat, stream);
     return;
   }
-  socketsWithCanvases.add(ws);
+  streamsWithCanvases.add(stream);
   const changes: CanvasStateEvent[] = [];
-  canvasEventsDuringFetch.set(ws, changes);
+  canvasEventsDuringFetch.set(stream, changes);
   const canvasState: Record<string, unknown> = {};
   let appCanvasState: unknown = null;
   const projects = (sat.snapshot?.projects ?? []) as Array<{ id: string }>;
@@ -1395,17 +1562,17 @@ async function fetchOmittedCanvases(sat: SatelliteConnectionInternal): Promise<v
     ({ state: appCanvasState } = await satelliteHttpsRequest(sat.fingerprint, 'GET', '/api/v1/mobile/canvas') as { state: unknown });
   } catch (err) {
     // Try again on the next snapshot that leaves them out. Until then it keeps what it has.
-    socketsWithCanvases.delete(ws);
-    canvasEventsDuringFetch.delete(ws);
+    streamsWithCanvases.delete(stream);
+    canvasEventsDuringFetch.delete(stream);
     appLog('core:annex', 'warn', 'Could not fetch canvases a satellite left out of its snapshot', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
     return;
   }
-  canvasEventsDuringFetch.delete(ws);
-  canvasProjectsAsked.set(ws, new Set(projects.map((project) => project.id)));
+  canvasEventsDuringFetch.delete(stream);
+  canvasProjectsAsked.set(stream, new Set(projects.map((project) => project.id)));
   // Only onto a snapshot still missing them: a full one that arrived meanwhile is newer.
-  if (sat.ws !== ws || !sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) return;
+  if (!satelliteStreamCurrent(sat, stream) || !sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) return;
   sat.snapshot = changes.reduce(withCanvasEvent, { ...sat.snapshot, canvasState, ...(appCanvasState ? { appCanvasState } : {}) } as SatelliteSnapshot);
   broadcastSatellitesChanged();
   broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
@@ -1413,7 +1580,7 @@ async function fetchOmittedCanvases(sat: SatelliteConnectionInternal): Promise<v
   for (const change of changes) {
     if (change.stateOmitted) void refetchOmittedCanvas(sat, change);
   }
-  void fetchNewProjectCanvases(sat, ws);
+  void fetchNewProjectCanvases(sat, stream);
 }
 
 /**
@@ -1421,13 +1588,13 @@ async function fetchOmittedCanvases(sat: SatelliteConnectionInternal): Promise<v
  * Each is asked for once, one at a time, however many snapshots name it. One that fails
  * waits for the next snapshot that leaves canvases out, as a first fetch does.
  */
-async function fetchNewProjectCanvases(sat: SatelliteConnectionInternal, ws: WebSocket): Promise<void> {
-  const asked = canvasProjectsAsked.get(ws);
-  if (!asked || canvasEventsDuringFetch.has(ws)) return;
+async function fetchNewProjectCanvases(sat: SatelliteConnectionInternal, stream: SatelliteStream): Promise<void> {
+  const asked = canvasProjectsAsked.get(stream);
+  if (!asked || canvasEventsDuringFetch.has(stream)) return;
   const changes: CanvasStateEvent[] = [];
-  canvasEventsDuringFetch.set(ws, changes);
+  canvasEventsDuringFetch.set(stream, changes);
   try {
-    while (sat.ws === ws && sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) {
+    while (satelliteStreamCurrent(sat, stream) && sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) {
       const projects = sat.snapshot.projects as Array<{ id: string }>;
       const projectId = projects.find((project) => !asked.has(project.id))?.id;
       if (!projectId) return;
@@ -1445,7 +1612,7 @@ async function fetchNewProjectCanvases(sat: SatelliteConnectionInternal, ws: Web
         return;
       }
       // Only onto a snapshot still missing them, as the first fetch does.
-      if (!state || sat.ws !== ws || !sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) continue;
+      if (!state || !satelliteStreamCurrent(sat, stream) || !sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) continue;
       const ownChanges = changes.filter((change) => change.projectId === projectId);
       sat.snapshot = ownChanges.reduce(withCanvasEvent, { ...sat.snapshot, canvasState: { ...sat.snapshot.canvasState, [projectId]: state } } as SatelliteSnapshot);
       broadcastSatellitesChanged();
@@ -1455,7 +1622,7 @@ async function fetchNewProjectCanvases(sat: SatelliteConnectionInternal, ws: Web
       }
     }
   } finally {
-    canvasEventsDuringFetch.delete(ws);
+    canvasEventsDuringFetch.delete(stream);
   }
 }
 
@@ -1631,6 +1798,8 @@ function restorePairedSatellites(): void {
 
 function disconnectSatellite(sat: SatelliteConnectionInternal): void {
   sat.connectionAttempt = undefined;
+  abortSatelliteRequests(sat.fingerprint);
+  retireSatelliteStream(sat);
   abortControllerReads(sat.fingerprint);
   appLog('core:annex-client', 'info', 'Disconnecting satellite', {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias, previousState: sat.state },
@@ -1998,9 +2167,9 @@ export function disconnect(fingerprint: string): void {
  * After this, the satellite must be re-paired to connect again.
  */
 export function forgetSatellite(fingerprint: string): void {
+  pausedControllerReads.add(fingerprint.toLowerCase());
   abortControllerReads(fingerprint);
   controllerReadObservations.delete(fingerprint.toLowerCase());
-  pausedControllerReads.delete(fingerprint.toLowerCase());
   appLog('core:annex-client', 'info', 'Forgetting satellite', { meta: { fingerprint } });
   // A network member is removed everywhere, not just here (#3061).
   membership.noteLocalRemoval(fingerprint);
@@ -2019,14 +2188,16 @@ export function forgetSatellite(fingerprint: string): void {
 export function retry(fingerprint: string): void {
   pausedControllerReads.delete(fingerprint.toLowerCase());
   const sat = satellites.get(fingerprint);
+  if (sat) sat.reverseStreamAttempt = undefined;
   annexControl.retryConnection(fingerprint);
+  reconcileSatelliteStreams();
   // A paired satellite not seen since startup has no connection yet: start one.
   if (!sat) { connect(fingerprint); return; }
   if (sat.state === 'disconnected') {
     sat.reconnectAttempt = 0;
     sat.needsPairing = false;
     sat.halt = null;
-    connectToSatellite(sat);
+    if (sat.host && sat.mainPort) connectToSatellite(sat);
   }
 }
 
@@ -2047,11 +2218,16 @@ export function sendToSatellite(fingerprint: string, message: Record<string, unk
 
 function sendToSatelliteNow(fingerprint: string, message: Record<string, unknown>): { sent: boolean; error?: string } {
   const sat = satellites.get(fingerprint);
-  if (!sat || !sat.ws || sat.ws.readyState !== WebSocket.OPEN) {
+  if (!sat) {
     return { sent: false, error: 'not_connected' };
   }
   try {
-    sat.ws.send(JSON.stringify(message));
+    if (sat.ws?.readyState === WebSocket.OPEN) sat.ws.send(JSON.stringify(message));
+    else {
+      const stream = sat.stream;
+      if (!stream || stream.via !== 'reverse' || !satelliteStreamCurrent(sat, stream)) return { sent: false, error: 'not_connected' };
+      if (!isReverseClientFrame(message) || !stream.subscription?.send(message)) return { sent: false, error: 'not_allowed_over_reverse' };
+    }
     return { sent: true };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -2060,6 +2236,12 @@ function sendToSatelliteNow(fingerprint: string, message: Record<string, unknown
     });
     return { sent: false, error: `send_failed: ${errorMsg}` };
   }
+}
+
+function isReverseClientFrame(message: Record<string, unknown>): message is Record<string, unknown> & Parameters<annexControl.ControlSubscription['send']>[0] {
+  return typeof message.type === 'string'
+    && (message.payload === undefined || typeof message.payload === 'object' && message.payload !== null && !Array.isArray(message.payload))
+    && (message.tc === undefined || typeof message.tc === 'string');
 }
 
 /**
@@ -2087,14 +2269,17 @@ export function requestPtyBufferSnapshot(fingerprint: string, agentId: string): 
  */
 export function requestFileTree(fingerprint: string, projectId: string, options?: { path?: string; depth?: number; includeHidden?: boolean }): Promise<unknown[]> {
   const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
   const params = new URLSearchParams();
   if (options?.path) params.set('path', options.path);
   if (options?.depth !== undefined) params.set('depth', String(options.depth));
   if (options?.includeHidden) params.set('includeHidden', 'true');
   const qs = params.toString() ? `?${params.toString()}` : '';
+  if (!sat || sat.state !== 'connected') {
+    return reverseControllerReadReady(fingerprint)
+      ? requestReverseArray(fingerprint, `/api/v1/projects/${encodeURIComponent(projectId)}/files/tree${qs}`, 'File tree')
+      : Promise.resolve([]);
+  }
+  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
 
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/projects/${encodeURIComponent(projectId)}/files/tree${qs}`);
@@ -2123,10 +2308,18 @@ export function requestFileTree(fingerprint: string, projectId: string, options?
  */
 export function requestFileRead(fingerprint: string, projectId: string, path: string): Promise<string> {
   const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.resolve('');
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
   const qs = `?path=${encodeURIComponent(path)}`;
+  if (!sat || sat.state !== 'connected') {
+    if (!reverseControllerReadReady(fingerprint)) return Promise.resolve('');
+    return requestSatelliteRaw(fingerprint, {
+      method: 'GET', path: `/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`, timeoutMs: 10_000,
+    }).then((response) => {
+      if (response.status === 404) throw new Error('File not found');
+      if (response.status !== 200) throw new Error(`HTTP ${response.status}`);
+      return response.body.toString('utf8');
+    });
+  }
+  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
 
   return new Promise<string>((resolve, reject) => {
     const url = satelliteUrl(sat, `/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`);
@@ -2147,9 +2340,6 @@ export function requestFileRead(fingerprint: string, projectId: string, path: st
  */
 export function requestBulletinDigest(fingerprint: string, groupProjectId: string, since?: DigestSince): Promise<unknown[]> {
   const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
   const params = new URLSearchParams();
   // A satellite predating per-channel read state ignores `sinceChannels` and
   // answers with no cutoff — everything unread, the pre-#1555 behaviour —
@@ -2162,6 +2352,12 @@ export function requestBulletinDigest(fingerprint: string, groupProjectId: strin
   }
   for (const [key, value] of Object.entries(encoded.params)) params.set(key, value);
   const qs = params.toString() ? `?${params.toString()}` : '';
+  if (!sat || sat.state !== 'connected') {
+    return reverseControllerReadReady(fingerprint)
+      ? requestReverseArray(fingerprint, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/digest${qs}`, 'Bulletin digest')
+      : Promise.resolve([]);
+  }
+  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
 
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/digest${qs}`);
@@ -2190,13 +2386,16 @@ export function requestBulletinDigest(fingerprint: string, groupProjectId: strin
  */
 export function requestBulletinTopicMessages(fingerprint: string, groupProjectId: string, topic: string, since?: string, limit?: number): Promise<unknown[]> {
   const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
   const params = new URLSearchParams();
   if (since) params.set('since', since);
   if (limit !== undefined) params.set('limit', String(limit));
   const qs = params.toString() ? `?${params.toString()}` : '';
+  if (!sat || sat.state !== 'connected') {
+    return reverseControllerReadReady(fingerprint)
+      ? requestReverseArray(fingerprint, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`, 'Bulletin topic messages')
+      : Promise.resolve([]);
+  }
+  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
 
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`);
@@ -2253,7 +2452,11 @@ export function requestBulletinAllMessages(
   const qs = params.toString() ? `?${params.toString()}` : '';
 
   const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
+  if (!sat || sat.state !== 'connected') {
+    return reverseControllerReadReady(fingerprint)
+      ? requestReverseArray(fingerprint, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages${qs}`, 'Bulletin messages')
+      : Promise.resolve([]);
+  }
 
   const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
 
@@ -2277,6 +2480,18 @@ export function requestBulletinAllMessages(
     });
     req.on('timeout', () => { req.destroy(); resolve([]); });
   });
+}
+
+async function requestReverseArray(fingerprint: string, path: string, label: string): Promise<unknown[]> {
+  try {
+    const response = await requestSatelliteRaw(fingerprint, { method: 'GET', path, timeoutMs: 10_000 });
+    if (response.status !== 200) return [];
+    return JSON.parse(response.body.toString('utf8'));
+  } catch (error) {
+    // telemetry-exempt: locally logged; the existing array adapter exposes only an empty result.
+    appLog('core:annex-client', 'warn', `${label} request failed`, { meta: { fingerprint, error: String(error) } });
+    return [];
+  }
 }
 
 /**
@@ -2413,51 +2628,112 @@ export function getDiscoveredServices(): DiscoveredService[] {
 // Generic HTTPS request helper for satellite REST APIs
 // ---------------------------------------------------------------------------
 
-function satelliteHttpsRequest(
+interface SatelliteResponse {
+  status: number;
+  headers: http.IncomingHttpHeaders;
+  body: Buffer;
+}
+type SatelliteRequest = annexControl.ControlRequestInput & {
+  timeoutMs: number;
+  signal?: AbortSignal;
+  maxResponseBytes?: number;
+};
+
+async function requestSatelliteRaw(fingerprint: string, input: SatelliteRequest): Promise<SatelliteResponse> {
+  if (input.signal?.aborted) throw new Error('Annex request aborted.');
+  const sat = satelliteFor(fingerprint);
+  const key = sat?.fingerprint ?? fingerprint.toLowerCase();
+  const route = selectRequestRoute(key, annexIdentity.getIdentity()?.fingerprint ?? '', {
+    direct: sat?.state === 'connected' ? { fingerprint: key, host: sat.host, port: sat.mainPort, source: 'known' } : null,
+    reverse: reverseControllerReadReady(key),
+  });
+  if (!route) throw new Error('Satellite not connected');
+  const lease: SatelliteRequestLease = {
+    fingerprint: key, via: route.via, trust: controllerReadTrust(key),
+    linkEpoch: annexControl.getAcceptedLinkEpoch(key), satellite: sat,
+    connectionEpoch: sat ? connectionEpochs.get(sat.id) ?? 0 : 0, controller: new AbortController(),
+  };
+  const signal = input.signal ? AbortSignal.any([input.signal, lease.controller.signal]) : lease.controller.signal;
+  const requestId = randomUUID();
+  satelliteRequests.add(lease);
+  try {
+    const response = route.via === 'reverse'
+      ? await annexControl.request(key, input, { signal, requestId, timeoutMs: input.timeoutMs, maxResponseBytes: input.maxResponseBytes })
+      : await new Promise<SatelliteResponse>((resolve, reject) => {
+        let settled = false;
+        const onAbort = () => fail(new Error('Annex request aborted.'));
+        const fail = (error: Error) => {
+          if (!settled) { settled = true; signal.removeEventListener('abort', onAbort); reject(error); }
+        };
+        const tlsOptions = pinnedTlsOptionsFor(key);
+        signal.addEventListener('abort', onAbort, { once: true });
+        if (signal.aborted) { onAbort(); return; }
+        try {
+          const req = https.request(`https://${bracketHost(route.route.host)}:${route.route.port}${input.path}`, {
+            ...tlsOptions, method: input.method, timeout: input.timeoutMs, signal,
+            headers: { ...input.headers, ...(input.body !== undefined && { 'Content-Length': Buffer.byteLength(input.body) }) },
+          }, (res) => {
+            const chunks: Buffer[] = [];
+            let bytes = 0;
+            res.on('error', fail);
+            res.on('data', (chunk: Buffer) => {
+              if (settled || signal.aborted) return;
+              bytes += chunk.byteLength;
+              if (input.maxResponseBytes !== undefined && bytes > input.maxResponseBytes) {
+                const error = new Error('Annex response exceeds its byte limit.');
+                fail(error);
+                req.destroy(error);
+                return;
+              }
+              chunks.push(chunk);
+            });
+            res.on('end', () => {
+              if (settled || signal.aborted) return;
+              settled = true;
+              signal.removeEventListener('abort', onAbort);
+              resolve({ status: res.statusCode ?? 0, headers: res.headers ?? {}, body: Buffer.concat(chunks) });
+            });
+            res.on('close', () => { if (!settled) fail(new Error('Annex response closed before completion.')); });
+          });
+          req.on('error', fail);
+          req.on('timeout', () => { fail(new Error('Timeout')); req.destroy(); });
+          if (input.body !== undefined) req.write(input.body);
+          req.end();
+        } catch (error) {
+          signal.removeEventListener('abort', onAbort);
+          throw error;
+        }
+      });
+    if (signal.aborted || !satelliteRequestCurrent(lease)) {
+      if (route.via === 'reverse') throw new annexControl.ControlRequestError(
+        signal.aborted ? 'cancelled' : 'authorization_revoked', !['GET', 'HEAD'].includes(input.method), requestId,
+      );
+      throw new Error('Annex request aborted.');
+    }
+    if (sat && response.status === 401) noteRestRefusal(sat, response.status, response.body.toString('utf8'));
+    return response;
+  } finally { satelliteRequests.delete(lease); }
+}
+
+async function satelliteHttpsRequest(
   fingerprint: string,
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   urlPath: string,
   body?: Record<string, unknown>,
 ): Promise<unknown> {
-  const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.reject(new Error('Satellite not connected'));
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
-  const url = satelliteUrl(sat, `${urlPath}`);
-
-  return new Promise<unknown>((resolve, reject) => {
-    const bodyStr = body ? JSON.stringify(body) : undefined;
-    const traceparent = currentTraceparent();
-    const headers: Record<string, string | number> = {
-      ...(bodyStr ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
-      ...(traceparent ? { traceparent } : {}),
-    };
-    const options: https.RequestOptions = {
-      ...tlsOptions,
-      method,
-      timeout: 30000,
-      headers: Object.keys(headers).length > 0 ? headers : undefined,
-    };
-
-    const req = https.request(url, options, (res) => {
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => {
-        const text = Buffer.concat(chunks).toString('utf-8');
-        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-          try { resolve(JSON.parse(text)); }
-          catch { resolve(text); }
-        } else {
-          noteRestRefusal(sat, res.statusCode, text);
-          reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`));
-        }
-      });
-    });
-    req.on('error', (err) => reject(err));
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-    if (bodyStr) req.write(bodyStr);
-    req.end();
+  const traceparent = currentTraceparent();
+  const response = await requestSatelliteRaw(fingerprint, {
+    method, path: urlPath, timeoutMs: 30_000, ...(body && { body: JSON.stringify(body) }),
+    headers: { ...(body && { 'content-type': 'application/json' }), ...(traceparent && { traceparent }) },
   });
+  const text = response.body.toString('utf8');
+  if (response.status >= 200 && response.status < 300) {
+    try { return JSON.parse(text); }
+    catch { return text; /* telemetry-exempt: existing JSON-or-text API. */ }
+  }
+  const sat = satelliteFor(fingerprint);
+  if (sat) noteRestRefusal(sat, response.status, text);
+  throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -2473,9 +2749,7 @@ export const REMOTE_CHAT_COMMANDS = ['chat.send', 'chat.interrupt', 'chat.queue.
 
 /** A JSON POST to another machine over the pinned connection (#3064, agent calls and connections). */
 export function postToMachine(machine: string, urlPath: string, body: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown }> {
-  const sat = satelliteFor(machine);
-  if (!sat) return Promise.reject(new Error('Satellite not connected'));
-  return satelliteJson(sat.fingerprint, 'POST', urlPath, body, options);
+  return satelliteJson(machine, 'POST', urlPath, body, options);
 }
 
 /** A person's terminal approval, over the host's existing pinned permission endpoint. */
@@ -2492,51 +2766,22 @@ export async function respondPermission(satelliteId: string, agentId: string, re
 }
 
 /** A JSON request over the pinned connection, answering its status and body whatever the status. */
-function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown; retryAfterMs?: number }> {
-  const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.reject(new Error('Satellite not connected'));
-  if (options?.signal?.aborted) return Promise.reject(new Error('Annex request aborted.'));
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
-  return new Promise((resolve, reject) => {
-    const bodyStr = body ? JSON.stringify(body) : undefined;
-    const req = https.request(satelliteUrl(sat, urlPath), {
-      ...tlsOptions,
-      method,
-      signal: options?.signal,
-      timeout: 30000,
-      ...(bodyStr && { headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } }),
-    }, (res) => {
-      const chunks: Buffer[] = [];
-      let bytes = 0;
-      res.on('error', reject);
-      res.on('data', (chunk: Buffer) => {
-        if (options?.signal?.aborted) return;
-        bytes += chunk.byteLength;
-        if (options?.maxResponseBytes !== undefined && bytes > options.maxResponseBytes) {
-          req.destroy(new Error('Annex response exceeds its byte limit.'));
-          return;
-        }
-        chunks.push(chunk);
-      });
-      res.on('end', () => {
-        if (options?.signal?.aborted) return;
-        const text = Buffer.concat(chunks).toString('utf-8');
-        noteRestRefusal(sat, res.statusCode, text);
-        let parsed: unknown = text;
-        try { parsed = JSON.parse(text); } catch { /* telemetry-exempt: the status still says what happened */ }
-        const retryAfter = res.statusCode === 429 ? res.headers?.['retry-after'] : undefined;
-        const header = Array.isArray(retryAfter) ? retryAfter[0] : retryAfter;
-        const delay = header === undefined ? NaN : /^\d+$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now();
-        resolve({ status: res.statusCode ?? 0, body: parsed,
-          ...(Number.isFinite(delay) && { retryAfterMs: Math.min(2 ** 31 - 1, Math.max(250, delay)) }),
-        });
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-    if (bodyStr) req.write(bodyStr);
-    req.end();
+async function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown; retryAfterMs?: number }> {
+  const response = await requestSatelliteRaw(fingerprint, {
+    method, path: urlPath, timeoutMs: 30_000, ...options,
+    ...(body && { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }),
   });
+  const text = response.body.toString('utf8');
+  const sat = satelliteFor(fingerprint);
+  if (sat) noteRestRefusal(sat, response.status, text);
+  let parsed: unknown = text;
+  try { parsed = JSON.parse(text); } catch { /* telemetry-exempt: the status still says what happened. */ }
+  const retryAfter = response.status === 429 ? response.headers['retry-after'] : undefined;
+  const header = Array.isArray(retryAfter) ? retryAfter[0] : retryAfter;
+  const delay = header === undefined ? NaN : /^\d+$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now();
+  return { status: response.status, body: parsed,
+    ...(Number.isFinite(delay) && { retryAfterMs: Math.min(2 ** 31 - 1, Math.max(250, delay)) }),
+  };
 }
 
 function rememberEpoch(fingerprint: string, body: unknown): void {
@@ -3356,14 +3601,18 @@ export function startClient(): void {
   stopControllerReadWatch ??= onDevicePresenceChanged(() => {
     for (const key of controllerReadObservations.keys()) getControllerReadObservation(key);
     for (const lease of controllerReads) if (!controllerReadCurrent(lease)) lease.controller.abort();
+    reconcileSatelliteStreams();
   });
   startControlConnections();
   startDiscovery();
   restorePairedSatellites();
+  reconcileSatelliteStreams();
 }
 
 export function stopClient(): void {
   controllerReadsRunning = false;
+  abortSatelliteRequests();
+  for (const sat of satellites.values()) retireSatelliteStream(sat);
   abortControllerReads();
   controllerReadObservations.clear();
   pausedControllerReads.clear();

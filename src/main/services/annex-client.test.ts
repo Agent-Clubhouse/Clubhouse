@@ -416,11 +416,14 @@ describe('annex-client', () => {
       subscriptionCapable = true;
       devicesChanged();
       expect(annexControl.subscribe).toHaveBeenCalledOnce();
-      const snapshot = (lastSeq: number) => ({
+      const snapshot = (lastSeq: number): Record<string, unknown> => ({
         type: 'snapshot', payload: { protocolVersion: 2, lastSeq, projects: [], agents: {}, quickAgents: {} },
       });
       subscriptions[0].handlers.onFrame(snapshot(50));
       expect(annexClient.getSatellite(fingerprint)?.snapshot?.lastSeq).toBe(50);
+      expect(annexClient.getSatellite(fingerprint)?.state).toBe('connected');
+      expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt).toBeUndefined();
+      expect(annexClient.isMachineConnected(fingerprint)).toBe(false);
       devicesChanged();
       expect(annexControl.subscribe).toHaveBeenCalledOnce();
       epoch++;
@@ -456,9 +459,14 @@ describe('annex-client', () => {
       devicesChanged();
       devicesChanged();
       expect(annexControl.subscribe).toHaveBeenCalledOnce();
-      epoch++;
+      annexClient.retry(fingerprint);
+      expect(annexControl.subscribe).toHaveBeenCalledTimes(2);
+      subscriptions[1].handlers.onEnd('not_supported');
       devicesChanged();
       expect(annexControl.subscribe).toHaveBeenCalledTimes(2);
+      epoch++;
+      devicesChanged();
+      expect(annexControl.subscribe).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -1219,6 +1227,7 @@ describe('annex-client', () => {
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
       await vi.waitFor(() => expect(messageHandler).not.toBeNull());
+      await vi.waitFor(() => expect(annexClient.isMachineConnected(FINGERPRINT)).toBe(true));
       const shown = () => (annexClient.getSatellite(FINGERPRINT)!.snapshot!.projects[0] as { id: string }).id;
 
       messageHandler!(snapshot(100, 'first'));
@@ -1231,6 +1240,7 @@ describe('annex-client', () => {
       annexClient.disconnect(FINGERPRINT);
       annexClient.connect(FINGERPRINT);
       await vi.waitFor(() => expect(messageHandler).not.toBe(before));
+      await vi.waitFor(() => expect(annexClient.isMachineConnected(FINGERPRINT)).toBe(true));
       messageHandler!(snapshot(0, 'after restart'));
       expect(shown()).toBe('after restart');
 
@@ -4571,7 +4581,7 @@ describe('annex-client', () => {
         });
       });
 
-      it('reads only controller pages and sessions on an authorized reverse route without a main address', async () => {
+      it('keeps bounded controller reads separate from common requests on an authorized reverse route without a main address', async () => {
         expect(await annexClient.requestControllerChatPage(FP, { sessionId: 'a?/#', beforeSeq: 3 })).toEqual({ status: 'ok', value });
         expect(await annexClient.requestControllerChatSessions(FP)).toEqual({ status: 'ok', value });
         expect(annexControl.request).toHaveBeenNthCalledWith(1, FP,
@@ -4583,8 +4593,10 @@ describe('annex-client', () => {
         expect(requests).toHaveLength(0);
         expect(annexClient.isMachineConnected(FP)).toBe(false);
         expect(await annexClient.requestAgentSettings(FP, 'a')).toEqual({ status: 'offline' });
-        await expect(annexClient.postToMachine(FP, '/api/v1/anything', {})).rejects.toThrow('Satellite not connected');
         expect(annexControl.request).toHaveBeenCalledTimes(2);
+        await expect(annexClient.postToMachine(FP, '/api/v1/anything', {})).resolves.toEqual({ status: 200, body: value });
+        expect(annexControl.request).toHaveBeenCalledTimes(3);
+        expect(requests).toHaveLength(0);
       });
 
       it('keeps direct requests preferred and never retries a failed direct request on control', async () => {

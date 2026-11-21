@@ -1,5 +1,47 @@
 # Desktop reverse-control routes and readiness (#3613 P2/P7/P7w)
 
+## Remaining consumer candidate (not accepted)
+
+The current-main capability inventory is in
+[`evidence/3613-duplex-current-c43/README.md`](evidence/3613-duplex-current-c43/README.md).
+The remaining-consumer candidate is separate from the landed bounded controller
+GET slice documented below. It does not establish full duplex or release acceptance.
+
+Common REST requests capture one route before sending: a live direct connection
+wins, otherwise an already-authorized accepted control link is used. Each request
+retains its original trust, direct connection or accepted-link epoch, cancellation,
+deadline and local receive limit. A retired response is rejected; an original
+control write error keeps its request ID and indeterminate disposition. No error
+causes transport fallback, operation replay or a new dial. Existing statuses,
+headers, UTF-8/JSON bodies and Retry-After handling are preserved.
+
+The specialized icon, PTY-buffer, file-tree/text-read and bulletin adapters retain
+their direct implementations and can use reverse requests when direct is absent.
+This text-read API is not an arbitrary binary decoder. Current binary content and
+handoff verification still require their separate byte-exact acceptance evidence.
+
+A subscription belongs to one current stream and original accepted-link epoch.
+Its first compatible snapshot starts a fresh sequence; old frames and asynchronous
+icon/canvas completions cannot modify a replacement. Direct availability retires
+the owned reverse subscription rather than migrating shells or replaying input.
+Stop, disconnect, forget, trust replacement and link loss retire subscriptions,
+pending requests and tracked reverse terminal handles. A refused/ended stream is
+not subscribed again in the same epoch without explicit Retry.
+
+Only a compatible current stream snapshot projects live renderer consumer state.
+Request capability alone does not mint a snapshot or live state. The existing
+direct connectivity/publication predicate remains direct-only, and device reach
+uses that observation rather than treating reverse consumer state as a direct
+route. Reverse snapshots do not mint the existing Details snapshot receipt.
+Details read/positive-receipt hunks remain held for their owner; Naming's pure
+alias getter is separate, and its full-list label notification is held.
+
+This candidate changes no handler permissions, phone/control/network fields,
+P5/P6 fence or grant. #3711, #3714's narrow security gate, current-app/P8 cleanup
+and confinement acceptance, #3760 and the release hold remain separate. Historical
+proofs do not transfer. All TypeScript compiler checks require gate minimum 6 GiB;
+targeted tests (at most two workers) and scoped lint require minimum 4 GiB.
+
 ## Route and reconnect slice (P2)
 
 This is a partial implementation slice, not full reverse-parity acceptance.
