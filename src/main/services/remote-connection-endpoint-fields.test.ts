@@ -85,7 +85,8 @@ it.each(['saved-and-memory', 'cold-cache', 'changed-directory', 'cache-late', 'd
   }
   if (kind === 'bounded-page') {
     expect(cacheRead).toHaveBeenCalledTimes(30); expect(receipts.every((r) => r.current())).toBe(true);
-    expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe(112); // 2 host rows + 30 directions × 7 fields, including saved and memory fields.
+    expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe(2 + 30 * 8 - 100); // 2 host rows + 30 directions × 8 fields (saved, memory and manual source eligibility), less 100 shown.
+    expect.soft(c.rows.some((r) => r.label.endsWith(' manual source eligibility'))).toBe(true);
     expect.soft(c.rows.some((r) => r.label.endsWith(' saved target'))).toBe(true); expect.soft(c.rows.some((r) => r.label.endsWith(' host memory target'))).toBe(true);
     expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|rootNamespace|targetProjectPath/); expect.soft(await snapshot()).toEqual(before); expect.soft(m.external).not.toHaveBeenCalled(); return;
   }
@@ -134,7 +135,8 @@ it.each(['cross-project-outgoing', 'cross-project-two-way', 'matching-role-folde
   resetObservation(); await readPassiveConnectionCard(c, selected.id, { receipts, authorized: () => true, projectPath: selectedProject, name: selected.name, automatic, automaticControllerProjectPath: mode === 'matching-role-folder' ? undefined : roleProject, endpoint: { target: selectedReceipt, readCache: readAgentConnectionCacheForDisplay } });
   expect.soft(await snapshot()).toEqual(before);
   expect(receipts.every((r) => r.current())).toBe(true); expect(m.external).not.toHaveBeenCalled();
-  if (mode === 'bounded-identity-page') { expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe(20); expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|rootNamespace|targetProjectPath/); return; }
+  if (mode === 'bounded-identity-page') { expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe(21); expect.soft(c.rows.some((r) => r.label.endsWith(' manual source eligibility'))).toBe(false); // The manual pair falls past the row cap; its 3 manual fields, including eligibility, are counted as omitted (121 total).
+    expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|rootNamespace|targetProjectPath/); return; }
   const automaticSources = c.rows.filter((r) => r.label.endsWith(' sources') && r.value.includes('Connect to Dispatcher (saved policy)'));
   const manualSources = c.rows.filter((r) => r.label.endsWith(' sources') && r.value.includes('Made by the Dispatcher (saved record'));
   expect.soft(automaticSources).toHaveLength(2); expect.soft(automaticSources.every((r) => r.label.startsWith('Operations'))).toBe(true);
