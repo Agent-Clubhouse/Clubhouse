@@ -41,6 +41,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { assertDeleteReview, noteDeleteReviewEffect } from './delete-review-guard';
 import { projectLoadedConnectionEndpointFieldsForDisplay } from './connection-endpoint-fields-display';
 import type { DisplayReceipt } from './display-settings';
+import { hasAsciiControl } from '../../shared/ascii-control';
 
 interface DurableCreationGit {
   active?: boolean;
@@ -1544,7 +1545,7 @@ export function readAgentConnectionCacheForDisplay(projectPath: string, agentId:
   const observedAt = Date.now();
   const unavailable = (availability: AgentConnectionCacheDisplay['availability']): AgentConnectionCacheDisplay => ({ scope: 'host-session-cache', availability, observedAt });
   if (typeof projectPath !== 'string' || !projectPath || projectPath.length > 4096 || !path.isAbsolute(projectPath) || projectPath.includes('\0')
-    || typeof agentId !== 'string' || !agentId.trim() || agentId.length > 200 || /[\x00-\x1f\x7f]/.test(agentId) || !Array.isArray(options?.receipts)) return unavailable('invalid');
+    || typeof agentId !== 'string' || !agentId.trim() || agentId.length > 200 || hasAsciiControl(agentId) || !Array.isArray(options?.receipts)) return unavailable('invalid');
   // Private admission input from the held primary root, never a route value.
   // Equality joins observed namespace tuples only, not runtime/authority/ABA.
   const expectedNamespace = options.expectedProjectNamespace;

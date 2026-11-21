@@ -1,9 +1,10 @@
 import { REMOTE_DETAILS_MAX_BYTES, REMOTE_DETAILS_MAX_ROWS, type RemoteAgentDetails, type RemoteDetailsCard, type RemoteDetailsCardId } from '../../shared/remote-agent-details';
 import { redactSecretValues } from '../telemetry/diag-redaction';
+import { replaceAsciiControl } from '../../shared/ascii-control';
 
 /** Redact before cutting so a partial credential cannot evade the existing secret patterns. */
 export const display = (value: unknown, max = 2048) => {
-  const text = redactSecretValues(String(value)).replace(/[\x00-\x1f\x7f]/g, ' ');
+  const text = replaceAsciiControl(redactSecretValues(String(value)));
   return text.length > max ? `${text.slice(0, max - 24)}… [text truncated]` : text;
 };
 

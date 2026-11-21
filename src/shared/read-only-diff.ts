@@ -33,7 +33,7 @@ export function readOnlyTextDiff(before: string, after: string, file: string, ma
     const prevK = k === -d || k !== d && (frontier.get(k - 1) ?? -1) < (frontier.get(k + 1) ?? -1) ? k + 1 : k - 1;
     const prevX = frontier.get(prevK) ?? 0;
     const prevY = prevX - prevK;
-    while (x > prevX && y > prevY) reversed.push({ kind: ' ', line: a[--x] }), y--;
+    while (x > prevX && y > prevY) { reversed.push({ kind: ' ', line: a[--x] }); y--; }
     if (d === 0) break;
     if (x === prevX) reversed.push({ kind: '+', line: b[--y] });
     else reversed.push({ kind: '-', line: a[--x] });

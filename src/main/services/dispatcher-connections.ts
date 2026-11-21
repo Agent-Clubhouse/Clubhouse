@@ -61,6 +61,7 @@ import { appLog } from './log-service';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { resolveOrchestrationPolicy, type ResolvedOrchestrationPolicy } from '../../shared/orchestration-policy';
 import type { DispatcherLink, DurableAgentConfig } from '../../shared/types';
+import { hasAsciiControl } from '../../shared/ascii-control';
 
 export const DISPATCHER_CONNECTION_SOURCE_ID = 'dispatcher-connections';
 export const DISPATCHER_CONNECTION_STORE_VERSION = 1;
@@ -211,7 +212,7 @@ export interface DispatcherLinkMemoryDisplay {
   storeWrites: 'unobserved' | 'recorded-writable' | 'recorded-blocked';
   rows: Array<Pair & { pendingRemoval: DisplayValue<boolean>; removalSaved: DisplayValue<boolean | null> }>;
 }
-const linkDisplayId = (v: unknown): v is string => typeof v === 'string' && v.length <= 200 && !!v.trim() && !/[\x00-\x1f\x7f]/.test(v);
+const linkDisplayId = (v: unknown): v is string => typeof v === 'string' && v.length <= 200 && !!v.trim() && !hasAsciiControl(v);
 const linkDisplayProject = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 4096 && path.isAbsolute(v) && !v.includes('\0');
 function knownLinkMemory(projectPath: string, selected: string, pairs: readonly Pair[]): DispatcherLinkMemoryDisplay {
   const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs: [] });

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { isRemoteAgentChanges, type RemoteAgentChanges } from '../../shared/remote-agent-changes';
+import { isRemoteAgentChanges } from '../../shared/remote-agent-changes';
 import { readRemoteAgentChanges } from './remote-agent-changes';
 import { ReadOnlyGitError } from './read-only-repository-changes';
 const m = vi.hoisted(() => ({ target: vi.fn(), registry: vi.fn(), runtime: vi.fn(), running: vi.fn(), root: vi.fn(), git: vi.fn(), changes: vi.fn(), refs: '', message: '', witnessCurrent: true }));

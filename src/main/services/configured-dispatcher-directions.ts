@@ -2,6 +2,7 @@
 import { AUTOMATIC_CONNECTION_SWITCHES } from '../../shared/connection-grants';
 import { display } from './remote-details-presentation';
 import type { DisplayValue } from './display-settings';
+import { hasAsciiControl } from '../../shared/ascii-control';
 
 export interface ConfiguredDispatcherDirection {
   agentId: string;
@@ -11,7 +12,7 @@ export interface ConfiguredDispatcherDirection {
   disabledTools: string[];
   enabledTools: string[];
 }
-const id = (value: unknown): value is string => typeof value === 'string' && !!value.trim() && value.length <= 200 && !value.includes('@') && !/[\x00-\x1f\x7f]/.test(value);
+const id = (value: unknown): value is string => typeof value === 'string' && !!value.trim() && value.length <= 200 && !value.includes('@') && !hasAsciiControl(value);
 const name = (value: unknown): string | undefined => typeof value === 'string' && !!value && value.length <= 1024 ? display(value, 240) : undefined;
 
 /** These are saved-policy directions, including while Dispatcher is off; never bindings or authority.

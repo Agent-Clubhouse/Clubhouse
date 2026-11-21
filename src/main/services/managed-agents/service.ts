@@ -50,6 +50,7 @@ import { builtinParts, builtinTemplates, DEFAULT_HELPER_TEMPLATE_ID, type Builti
 import type { ManagedStateStore } from './state-store';
 import { copiesRemoved, findPersonaCopies, PERSONA_BUILTIN_BLOCK, removePersonaCopies, type PersonaCopiesKeep } from './persona-copies';
 import type { ManagedRestartReceipt } from './activation-receipts';
+import { replaceAsciiControl } from '../../../shared/ascii-control';
 
 export class ManagedError extends Error {
   constructor(readonly code: ManagedErrorCode, message?: string) {
@@ -1076,7 +1077,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         if (typeof template !== 'object' || Array.isArray(template) || template.id !== id || typeof template.name !== 'string' || !template.name.trim()
           || template.updatedBy !== undefined && typeof template.updatedBy !== 'string'
           || template.updatedAt !== undefined && typeof template.updatedAt !== 'string') throw new ManagedError('failed', 'Managed template metadata is unavailable.');
-        const label = (value: string) => value.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 240);
+        const label = (value: string) => replaceAsciiControl(value).slice(0, 240);
         return { name: label(template.name), ...(template.updatedBy !== undefined && { updatedBy: label(template.updatedBy) }),
           ...(template.updatedAt !== undefined && { updatedAt: label(template.updatedAt) }), source: fromBuiltin ? 'builtin' as const : 'primary' as const,
           truncated: [template.name, template.updatedBy, template.updatedAt].some((text) => text !== undefined && text.length > 240) };

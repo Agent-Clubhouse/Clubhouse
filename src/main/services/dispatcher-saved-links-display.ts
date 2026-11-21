@@ -4,6 +4,7 @@ import * as path from 'path';
 import { getBaseDirPath } from './base-dir';
 import { peekMetadataFileForDisplaySync } from './settings-store';
 import type { DisplayReceipt, DisplayValue } from './display-settings';
+import { hasAsciiControl } from '../../shared/ascii-control';
 
 export const SAVED_LINK_DISPLAY_BYTES = 1024 * 1024;
 export const SAVED_LINK_DISPLAY_SCAN = 4096;
@@ -27,7 +28,7 @@ export interface SavedDispatcherLinksPage {
   excludedProjectRecords: number;
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const id = (v: unknown): v is string => typeof v === 'string' && v.length <= 200 && !!v.trim() && !/[\x00-\x1f\x7f]/.test(v);
+const id = (v: unknown): v is string => typeof v === 'string' && v.length <= 200 && !!v.trim() && !hasAsciiControl(v);
 const folder = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 4096 && path.isAbsolute(v) && !v.includes('\0');
 const date = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 128 && Number.isFinite(Date.parse(v));
 const offsetValid = (offset: number) => Number.isSafeInteger(offset) && offset >= 0 && offset <= SAVED_LINK_DISPLAY_SCAN;

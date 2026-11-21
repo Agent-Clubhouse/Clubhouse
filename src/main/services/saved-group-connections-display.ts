@@ -13,6 +13,7 @@ import { readRegisteredProjectRootsForDisplay } from './registered-project-roots
 import { createReadOnlyMetadataBudget, readReadOnlyConnectionSourceMetadata, ReadOnlyMetadataLimitError, type ReadOnlyConnectionSourceMetadata } from './read-only-agent-target-witness';
 import { matchLoadedIdentityForDisplay } from './annex-identity';
 import { display } from './remote-details-presentation';
+import { hasAsciiControl } from '../../shared/ascii-control';
 export interface SavedGroupConnection {
   groupId: string; name: string; membership: 'explicit' | 'auto' | 'excluded'; applicability: 'configured' | 'disposed' | 'excluded' | 'out-of-scope' | 'unknown';
   scope: 'app' | 'project' | 'unknown'; reach: 'local' | 'network' | 'unknown';
@@ -24,7 +25,7 @@ export interface SavedGroupConnectionPage {
   offset: number; next: { offset: number; projectOffset: number } | null;
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const id = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !/[\x00-\x1f\x7f]/.test(v);
+const id = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !hasAsciiControl(v);
 const groupId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(v);
 const current = (r: DisplayReceipt) => { try { return r.current(); } catch { return false; } };
 function combine(rs: readonly DisplayReceipt[]): DisplayReceipt { const captured = [...new Set(rs)]; return { current: () => captured.every(current) }; }

@@ -27,7 +27,7 @@ vi.mock('fs', async (original) => { const actual = await original<typeof import(
 vi.mock('fs/promises', async (original) => { const actual = await original<typeof import('fs/promises')>(); return { ...actual,
   readFile: vi.fn(actual.readFile), writeFile: vi.fn(actual.writeFile), stat: vi.fn(actual.stat), rename: vi.fn(actual.rename), mkdir: vi.fn(actual.mkdir),
 }; });
-import { clearAgentConfigCache, initializeDurableProject, getDurableConfig, peekCachedDurableConfig, readAgentConnectionCacheForDisplay, updateDurableConfig, flushAgentConfig } from './agent-config';
+import { clearAgentConfigCache, initializeDurableProject, getDurableConfig, peekCachedDurableConfig, readAgentConnectionCacheForDisplay } from './agent-config';
 import type { DisplayReceipt } from './display-settings';
 import { getBaseDirPath } from './base-dir';
 import { readSavedDispatcherEndpointMetadataForDisplay } from './dispatcher-endpoint-associations-display';
@@ -37,7 +37,6 @@ const agent = (extra = {}) => ({ id: 'target', name: 'Selected cache name', colo
 const io = () => [fsp.readFile, fsp.writeFile, fsp.stat, fsp.rename, fsp.mkdir, fs.openSync, fs.readFileSync, fs.lstatSync, fs.existsSync, fs.watch];
 const resetObservation = () => { for (const fn of io()) vi.mocked(fn).mockClear(); m.external.mockClear(); };
 const assertNoReadEffects = () => { for (const fn of io()) expect.soft(fn).not.toHaveBeenCalled(); expect.soft(m.external).not.toHaveBeenCalled(); };
-const read = (receipts: DisplayReceipt[] = []) => readAgentConnectionCacheForDisplay(project, 'target', { receipts });
 const warm = async () => { await initializeDurableProject(project); await new Promise<void>((resolve) => setImmediate(resolve)); resetObservation(); };
 beforeEach(async () => {
   m.selected = true; clearAgentConfigCache(); const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises'); vi.mocked(fsp.rename).mockImplementation(actual.rename);

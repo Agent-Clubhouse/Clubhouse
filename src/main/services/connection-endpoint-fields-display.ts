@@ -2,6 +2,7 @@
 import { projectOrchestrationAgentFieldsForDisplay } from './orchestration-agent-fields';
 import type { DisplayValue } from './display-settings';
 import type { OrchestrationPolicySource } from '../../shared/orchestration-policy';
+import { hasAsciiControl } from '../../shared/ascii-control';
 const ownDisplayValue = (raw: Record<string, unknown>, key: string): unknown => Object.prototype.hasOwnProperty.call(raw, key) ? raw[key] : undefined;
 
 export interface ConnectionEndpointFields {
@@ -12,7 +13,7 @@ export interface ConnectionEndpointFields {
   connectToDispatcher: DisplayValue<boolean>;
   connectSource?: OrchestrationPolicySource;
 }
-const identifier = (v: unknown): v is string => typeof v === 'string' && v.length <= 200 && !!v.trim() && !/[\x00-\x1f\x7f]/.test(v);
+const identifier = (v: unknown): v is string => typeof v === 'string' && v.length <= 200 && !!v.trim() && !hasAsciiControl(v);
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const input = (field: string) => [{ field: `Related agent ${field}`, source: 'agent' as const, observedAt: Date.now() }];
 const known = <T>(value: T, field: string): DisplayValue<T> => ({ state: 'ok', value, inputs: input(field) });

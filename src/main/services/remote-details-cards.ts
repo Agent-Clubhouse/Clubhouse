@@ -3,7 +3,7 @@ import type { RemoteDetailsCard } from '../../shared/remote-agent-details';
 import { readPassiveConnectionCard, type ConnectionCardReadOptions } from './remote-connection-card';
 import { readActionDetailsForAgent, peekActionProjectName } from './actions';
 import { getAgentCanvasMemberships } from './canvas-store-reader';
-import { row, display } from './remote-details-presentation';
+import { row } from './remote-details-presentation';
 
 export const readConnectionCard = (c: RemoteDetailsCard, wiresId: string, options: ConnectionCardReadOptions) => readPassiveConnectionCard(c, wiresId, options);
 

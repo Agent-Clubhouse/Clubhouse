@@ -4,6 +4,7 @@ import { getBaseDirPath } from './base-dir';
 import type { DisplayReceipt, DisplayValue } from './display-settings';
 import { projectConnectionEndpointFieldsForDisplay, type ConnectionEndpointFields } from './connection-endpoint-fields-display';
 import { createReadOnlyMetadataBudget, readReadOnlyPrimaryMetadata, ReadOnlyMetadataLimitError } from './read-only-agent-target-witness';
+import { hasAsciiControl } from '../../shared/ascii-control';
 
 export const CONNECTION_METADATA_REQUESTS = 50;
 export const CONNECTION_METADATA_ROOTS = 16;
@@ -29,7 +30,7 @@ export type ConnectionEndpointMetadata =
   | { record: 'absent-from-primary' | 'project-not-registered' };
 
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const identifier = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !/[\x00-\x1f\x7f]/.test(v);
+const identifier = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !hasAsciiControl(v);
 const folder = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 4096 && path.isAbsolute(v) && !v.includes('\0');
 const current = (receipt: DisplayReceipt): boolean => { try { return receipt.current(); } catch { return false; } };
 function profileReceipt(base: string): DisplayReceipt {

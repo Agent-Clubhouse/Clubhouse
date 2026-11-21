@@ -6,7 +6,8 @@ import type { ConnectionEndpointFields } from './connection-endpoint-fields-disp
 import type { ConfiguredRegisteredConnectionPage } from './configured-registered-connections-display';
 import { readRegisteredProjectRootsForDisplay } from './registered-project-roots-display';
 import { readConnectionEndpointMetadataForDisplay } from './connection-endpoint-metadata-display';
-const id = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !/[\x00-\x1f\x7f]/.test(v) && !v.includes('||') && !v.includes('@');
+import { hasAsciiControl } from '../../shared/ascii-control';
+const id = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !hasAsciiControl(v) && !v.includes('||') && !v.includes('@');
 const folder = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 4096 && path.isAbsolute(v) && !v.includes('\0');
 const current = (r: DisplayReceipt) => { try { return r.current(); } catch { return false; } };
 function combine(rs: readonly DisplayReceipt[]): DisplayReceipt { const captured = [...new Set(rs)]; return { current: () => captured.every(current) }; }

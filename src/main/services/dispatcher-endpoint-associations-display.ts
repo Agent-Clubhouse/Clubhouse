@@ -5,6 +5,7 @@ import type { DisplayReceipt, DisplayValue } from './display-settings';
 import type { AgentConnectionCacheDisplay } from './agent-config';
 import { createReadOnlyMetadataBudget, readReadOnlyPrimaryMetadata, ReadOnlyMetadataLimitError } from './read-only-agent-target-witness';
 import { readConnectionEndpointMetadataForDisplay, type AdmittedConnectionEndpoint, type ConnectionEndpointMetadata, type ConnectionEndpointProjectReceipt } from './connection-endpoint-metadata-display';
+import { hasAsciiControl } from '../../shared/ascii-control';
 
 interface Pair { agentId: string; targetId: string }
 export interface SavedDispatcherEndpointMetadataRow extends Pair {
@@ -19,7 +20,7 @@ export interface SavedDispatcherEndpointMetadata {
   rows: SavedDispatcherEndpointMetadataRow[];
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const identifier = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !/[\x00-\x1f\x7f]/.test(v);
+const identifier = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !hasAsciiControl(v);
 const folder = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 4096 && path.isAbsolute(v) && !v.includes('\0');
 const date = (v: unknown): boolean => typeof v === 'string' && !!v && v.length <= 128 && Number.isFinite(Date.parse(v));
 const key = (p: Pair) => `${p.agentId}\0${p.targetId}`;

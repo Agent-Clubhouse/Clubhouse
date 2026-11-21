@@ -12,8 +12,9 @@ import { redactSecretValues } from '../telemetry/diag-redaction';
 import { captureReadOnlyAgentTargetWitness } from './read-only-agent-target-witness';
 import { resolveReadOnlyQuickTarget } from './read-only-quick-target';
 import { quickRuntimeDisplay, quickRuntimeIsCurrent } from './quick-agent-events';
+import { replaceAsciiControl } from '../../shared/ascii-control';
 
-const safeText = (s: string) => redactSecretValues(s).replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 2048);
+const safeText = (s: string) => replaceAsciiControl(redactSecretValues(s)).slice(0, 2048);
 const inFlight = new Set<string>();
 export async function readRemoteAgentChanges(agentId: string, query: RemoteChangesQuery, authorized: () => boolean): Promise<{ status: number; body: unknown }> {
   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });

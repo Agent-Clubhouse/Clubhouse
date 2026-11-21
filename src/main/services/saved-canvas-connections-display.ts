@@ -7,6 +7,7 @@ import { readRegisteredProjectRootsForDisplay } from './registered-project-roots
 import { createReadOnlyMetadataBudget, readReadOnlyConnectionSourceMetadata, ReadOnlyMetadataLimitError, type ReadOnlyConnectionSourceMetadata } from './read-only-agent-target-witness';
 import { readConnectionEndpointMetadataForDisplay, type AdmittedConnectionEndpoint, type ConnectionEndpointMetadata } from './connection-endpoint-metadata-display';
 import { display } from './remote-details-presentation';
+import { hasAsciiControl } from '../../shared/ascii-control';
 
 export interface SavedCanvasConnection {
   agentId: string; targetId: string; targetKind: 'agent' | 'browser' | 'group-project' | 'terminal';
@@ -24,7 +25,7 @@ interface View { id: string; type: string; agentId?: string; projectId?: string;
 interface Canvas { id: string; views: View[] }
 interface Pair { agentId: string; targetId: string; targetKind: SavedCanvasConnection['targetKind']; label: string; disabledTools?: unknown }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const key = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !/[\x00-\x1f\x7f]/.test(v);
+const key = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !hasAsciiControl(v);
 const local = (v: string) => !v.includes('||') && !v.includes('@');
 const current = (r: DisplayReceipt) => { try { return r.current(); } catch { return false; } };
 function combine(rs: readonly DisplayReceipt[]): DisplayReceipt { const captured = [...new Set(rs)]; return { current: () => captured.every(current) }; }

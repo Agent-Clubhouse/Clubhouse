@@ -7,6 +7,7 @@ import { getBaseDirPath } from './base-dir';
 import type { DisplayReceipt, DisplayValue } from './display-settings';
 import { readReadOnlyPrimaryMetadata, createReadOnlyMetadataBudget, ReadOnlyMetadataLimitError } from './read-only-agent-target-witness';
 import { display } from './remote-details-presentation';
+import { hasAsciiControl } from '../../shared/ascii-control';
 export const DISPLAY_REGISTERED_ROOT_PAGE = 16;
 export const DISPLAY_REGISTERED_ROOT_ROWS = 4096;
 export interface RegisteredProjectDisplayRoot { id: string; path: string; name: DisplayValue<string> }
@@ -24,7 +25,7 @@ export interface RegisteredProjectDisplayRoots {
   receipt: DisplayReceipt;
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const id = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !/[\x00-\x1f\x7f]/.test(v);
+const id = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !hasAsciiControl(v);
 const folder = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 4096 && path.isAbsolute(v) && !v.includes('\0');
 const current = (r: DisplayReceipt) => { try { return r.current(); } catch { return false; } };
 function receipt(base: string, target: DisplayReceipt, primary: DisplayReceipt): DisplayReceipt {

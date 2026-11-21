@@ -5,6 +5,7 @@ import type { ChatEventDataMap, ChatMcpServer, TokenUsage, UsageLimit } from './
 import type { ContextLimits } from '../context-window';
 import type { ChatProviderInventory } from './provider-inventory';
 import type { ChatProviderSkills } from './provider-skills';
+import { hasAsciiControl } from '../ascii-control';
 
 export interface DisplayUsage { tokens?: TokenUsage; costUsd?: number; costIsEstimate?: boolean }
 export interface ChatDetailsValues {
@@ -50,7 +51,7 @@ export interface ChatDetailsEvidence {
 }
 const record = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
 const keys = (x: Record<string, unknown>, allowed: readonly string[]) => Object.keys(x).every((k) => allowed.includes(k));
-const text = (x: unknown): x is string => typeof x === 'string' && x.length <= 512 && !/[\x00-\x1f\x7f]/.test(x);
+const text = (x: unknown): x is string => typeof x === 'string' && x.length <= 512 && !hasAsciiControl(x);
 const number = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && x >= 0;
 const optional = (x: Record<string, unknown>, k: string, check: (v: unknown) => boolean) => x[k] === undefined || check(x[k]);
 const tokens = (x: unknown) => record(x) && keys(x, ['input', 'cachedInput', 'cacheWrite', 'output', 'reasoning', 'total']) && Object.values(x).every(number);

@@ -7,6 +7,7 @@ import type { TranscriptReadStats } from '../orchestrators/types';
 import { normalizeSessionEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
 import { isShellEnvironmentCached } from '../util/shell';
 import { row } from './remote-details-presentation';
+import { hasC0Control } from '../../shared/ascii-control';
 
 export async function readHistoricalSessionCard(c: RemoteDetailsCard, agent: DurableAgentConfig, cwd: string): Promise<void> {
   if (agent.lastSleep) {
@@ -16,7 +17,7 @@ export async function readHistoricalSessionCard(c: RemoteDetailsCard, agent: Dur
   const id = agent.lastSessionId;
   if (!id) { c.notes.push('No earlier session recorded.'); return; }
   // Even a host inventory cannot make an identifier into an arbitrary transcript path.
-  if (id.length > 1024 || !id || /[\\/\x00-\x1f]/.test(id) || id.startsWith('.')) {
+  if (id.length > 1024 || !id || /[\\/]/.test(id) || hasC0Control(id) || id.startsWith('.')) {
     row(c, 'Last CLI', 'Historical session identity unavailable');
     c.notes.push('The saved session identity cannot be read safely. No transcript was queried.'); return;
   }

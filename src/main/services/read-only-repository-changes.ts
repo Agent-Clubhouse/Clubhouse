@@ -11,6 +11,7 @@ import { REMOTE_CHANGES_PAGE_SIZE, remoteChangesDiffstat } from '../../shared/re
 import { readOnlyWorktreeFile } from './read-only-worktree-file';
 import { redactSecretValues } from '../telemetry/diag-redaction';
 import { redactChangeText } from './read-only-display-text';
+import { replaceAsciiControl } from '../../shared/ascii-control';
 
 const MAX_PATHS = 2000;
 const MAX_CONTENT = 1024 * 1024;
@@ -218,8 +219,8 @@ export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, 
     if (!oldPath && !filtered && oldBytes && newBytes && oldBytes.equals(newBytes) && !modeChanged && !presenceChanged) continue;
     const diff = evidence === 'text' && oldBytes && newBytes ? readOnlyTextDiff(oldBytes.toString('utf8'), newBytes.toString('utf8'), p, 2_000_000, 128 * 1024, diffBudget) : null;
     if (evidence === 'text' && !diff) evidence = 'too-large';
-    const label = redactSecretValues(p).replace(/[\x00-\x1f\x7f]/g, ' ');
-    files.push({ path: label.length > 2048 ? label.slice(0, 2020) + '… [path truncated]' : label, ...(oldPath && { oldPath: redactSecretValues(oldPath).replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 2048) }), fileKey, status: filtered || !oldBytes || !newBytes ? 'unknown' : oldPath ? 'renamed' : !left ? 'added' : (after ? !right : current?.state === 'missing') ? 'deleted' : 'modified', additions: diff?.additions ?? 0, deletions: diff?.deletions ?? 0, binary: evidence === 'binary', countsKnown: !!diff, evidence });
+    const label = replaceAsciiControl(redactSecretValues(p));
+    files.push({ path: label.length > 2048 ? label.slice(0, 2020) + '… [path truncated]' : label, ...(oldPath && { oldPath: replaceAsciiControl(redactSecretValues(oldPath)).slice(0, 2048) }), fileKey, status: filtered || !oldBytes || !newBytes ? 'unknown' : oldPath ? 'renamed' : !left ? 'added' : (after ? !right : current?.state === 'missing') ? 'deleted' : 'modified', additions: diff?.additions ?? 0, deletions: diff?.deletions ?? 0, binary: evidence === 'binary', countsKnown: !!diff, evidence });
     if (!after && evidence === 'text' && diff) {
       if (!left && current?.state === 'ok' && newBytes) additions.set(p, { path: p, bytes: current.bytes, observedBytes: current.bytes, mode: current.mode });
       if (left && current?.state === 'missing') deletions.add(p);

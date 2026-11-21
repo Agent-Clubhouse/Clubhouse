@@ -7,6 +7,7 @@ import type { DisplayReceipt, DisplayValue } from './display-settings';
 import { readRegisteredProjectRootsForDisplay } from './registered-project-roots-display';
 import { readReadOnlyConnectionSourceMetadata, createReadOnlyMetadataBudget, ReadOnlyMetadataLimitError } from './read-only-agent-target-witness';
 import { readConnectionEndpointMetadataForDisplay, type AdmittedConnectionEndpoint, type ConnectionEndpointMetadata } from './connection-endpoint-metadata-display';
+import { hasAsciiControl } from '../../shared/ascii-control';
 
 export interface SavedToolConnectionDisplay {
   agentId: string;
@@ -33,7 +34,7 @@ export interface SavedToolConnectionPage {
   next: { projectOffset: number; offset: number } | null;
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const id = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !/[\x00-\x1f\x7f]/.test(v) && !v.includes('@') && !v.includes('||');
+const id = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 200 && !hasAsciiControl(v) && !v.includes('@') && !v.includes('||');
 const folder = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 4096 && path.isAbsolute(v) && !v.includes('\0');
 const current = (r: DisplayReceipt) => { try { return r.current(); } catch { return false; } };
 function combine(rs: readonly DisplayReceipt[]): DisplayReceipt { const captured = [...new Set(rs)]; return { current: () => captured.every(current) }; }
