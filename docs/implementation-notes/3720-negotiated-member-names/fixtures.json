@@ -1,0 +1,430 @@
+{
+  "status": "PROPOSED CONTRACT FIXTURES; not executed evidence",
+  "base": "d8c7247a4dccc1ebff01f0f28f8e61279bdf5437",
+  "codecOnlyLegacyMember": "The synthetic public key is not identity proof; channel/auth tests must supply generated matching keys and pinned certificates.",
+  "legacyFrames": [
+    {
+      "v": 1,
+      "type": "hello",
+      "member": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "publicKey": "SYNTHETIC-CODEC-ONLY",
+        "certFingerprint": "dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd",
+        "name": "Studio",
+        "icon": "computer",
+        "color": "indigo",
+        "kind": "desktop",
+        "hosts": [
+          "192.0.2.1"
+        ],
+        "port": 9443,
+        "joinedAt": "2025-10-09T08:53:20.000Z",
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab"
+      }
+    },
+    {
+      "v": 1,
+      "type": "members",
+      "members": [
+        {
+          "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+          "publicKey": "SYNTHETIC-CODEC-ONLY",
+          "certFingerprint": "dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd:dd",
+          "name": "Studio",
+          "icon": "computer",
+          "color": "indigo",
+          "kind": "desktop",
+          "hosts": [
+            "192.0.2.1"
+          ],
+          "port": 9443,
+          "joinedAt": "2025-10-09T08:53:20.000Z",
+          "pairingId": "01234567-89ab-4cde-8000-0123456789ab"
+        }
+      ],
+      "removals": []
+    },
+    {
+      "v": 1,
+      "type": "member-renamed",
+      "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+      "name": "Studio 2",
+      "at": "2026-02-02T02:40:00.000Z"
+    }
+  ],
+  "ready": {
+    "v": 1,
+    "type": "member-names-ready",
+    "version": 1
+  },
+  "nameState": {
+    "v": 1,
+    "type": "member-names",
+    "version": 1,
+    "records": [
+      {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "name": "Studio",
+        "at": 1770000000000,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "id": "fc11917ffd04041bfeec045f8b909f46b9c28ef0d8b8e956dceeb59fc1a5e3ac"
+      }
+    ],
+    "request": true
+  },
+  "hashVectors": [
+    {
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "name": "Studio",
+        "at": 1770000000000,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "id": "fc11917ffd04041bfeec045f8b909f46b9c28ef0d8b8e956dceeb59fc1a5e3ac"
+      },
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303033363a30313233343536372d383961622d346364652d383030302d303132333435363738396162363a53747564696f31333a3137373030303030303030303034373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262",
+      "sha256": "fc11917ffd04041bfeec045f8b909f46b9c28ef0d8b8e956dceeb59fc1a5e3ac"
+    },
+    {
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "name": "Studio",
+        "at": 1770000000001,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "id": "19b85297d6c7b0650f9c493a808973ca7dc33a564509034a5bc9a164cb00fa99"
+      },
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303033363a30313233343536372d383961622d346364652d383030302d303132333435363738396162363a53747564696f31333a3137373030303030303030303134373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262",
+      "sha256": "19b85297d6c7b0650f9c493a808973ca7dc33a564509034a5bc9a164cb00fa99"
+    },
+    {
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "name": "Studio ☕ 🚀",
+        "at": 1770000000002,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "id": "20ded82d0daf9942c4fd355bbeaf165baf7e08793da8cfba7ade0b2a901b57a0"
+      },
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303033363a30313233343536372d383961622d346364652d383030302d30313233343536373839616231353a53747564696f20e2989520f09f9a8031333a3137373030303030303030303234373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262",
+      "sha256": "20ded82d0daf9942c4fd355bbeaf165baf7e08793da8cfba7ade0b2a901b57a0"
+    },
+    {
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "name": "Studio",
+        "at": 1770000000003,
+        "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "id": "fd4a37e70de48e55f75561a030b50f0ec9b7aa8fa584d70796390e1364831cff"
+      },
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303033363a30313233343536372d383961622d346364652d383030302d303132333435363738396162363a53747564696f31333a3137373030303030303030303334373a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a62623a6262",
+      "sha256": "fd4a37e70de48e55f75561a030b50f0ec9b7aa8fa584d70796390e1364831cff"
+    },
+    {
+      "record": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "joinedAt": 1760000000000,
+        "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+        "name": "Other",
+        "at": 1770000000000,
+        "by": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "id": "020be65c1f6418e44b4d2e64c6b6dbc612df2db9fd9092cb4d469575434af951"
+      },
+      "canonicalBytesHex": "436c7562686f7573652f6d656d6265722d6e616d652f310a34373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a616131333a3137363030303030303030303033363a30313233343536372d383961622d346364652d383030302d303132333435363738396162353a4f7468657231333a3137373030303030303030303034373a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a61613a6161",
+      "sha256": "020be65c1f6418e44b4d2e64c6b6dbc612df2db9fd9092cb4d469575434af951"
+    }
+  ],
+  "cases": [
+    {
+      "id": "N01-new-client-old-server",
+      "requestHeaders": [
+        [
+          "X-Clubhouse-Member-Names",
+          "1"
+        ]
+      ],
+      "responseHeaders": [],
+      "expected": "legacy v1 only; no ready/state and no disconnect"
+    },
+    {
+      "id": "N02-old-client-new-server",
+      "requestHeaders": [],
+      "responseHeaders": [],
+      "expected": "legacy v1 only; server sends no unsolicited extension"
+    },
+    {
+      "id": "N03-new-new",
+      "requestHeaders": [
+        [
+          "X-Clubhouse-Member-Names",
+          "1"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "X-Clubhouse-Member-Names",
+          "1"
+        ]
+      ],
+      "expectedSequence": [
+        "v1 hello/members both ways",
+        "active reciprocal member",
+        "client ready",
+        "server ready ack",
+        "bounded additive state both ways"
+      ]
+    },
+    {
+      "id": "N04-header-case-and-ows",
+      "requestHeaders": [
+        [
+          "x-CLUBHOUSE-member-NAMES",
+          "\t1 "
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "x-clubhouse-member-names",
+          "1"
+        ]
+      ],
+      "expected": "select version1"
+    },
+    {
+      "id": "N05-duplicate-request",
+      "requestHeaders": [
+        [
+          "X-Clubhouse-Member-Names",
+          "1"
+        ],
+        [
+          "x-clubhouse-member-names",
+          "1"
+        ]
+      ],
+      "responseHeaders": [],
+      "expected": "legacy, no disconnect"
+    },
+    {
+      "id": "N06-duplicate-response",
+      "requestHeaders": [
+        [
+          "X-Clubhouse-Member-Names",
+          "1"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "X-Clubhouse-Member-Names",
+          "1"
+        ],
+        [
+          "x-clubhouse-member-names",
+          "1"
+        ]
+      ],
+      "expected": "client declines/sends no ready; server never sends unsolicited extension; legacy stays open"
+    },
+    {
+      "id": "N07-malformed-or-unknown",
+      "values": [
+        "",
+        "2",
+        "1,1",
+        "1;foo",
+        "1 ",
+        "xxxxxxxxxxxxxxxxx"
+      ],
+      "expected": "no selection/ready/state, preserve v1 connection"
+    },
+    {
+      "id": "N08-unnegotiated-extension",
+      "frame": {
+        "v": 1,
+        "type": "member-names",
+        "version": 1,
+        "records": [
+          {
+            "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+            "joinedAt": 1760000000000,
+            "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+            "name": "Studio",
+            "at": 1770000000000,
+            "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+            "id": "fc11917ffd04041bfeec045f8b909f46b9c28ef0d8b8e956dceeb59fc1a5e3ac"
+          }
+        ],
+        "request": true
+      },
+      "expectedClose": 4400
+    },
+    {
+      "id": "N09-first-frame-ready",
+      "frame": {
+        "v": 1,
+        "type": "member-names-ready",
+        "version": 1
+      },
+      "expectedClose": 4400
+    },
+    {
+      "id": "N10-selected-unsupported-version",
+      "frame": {
+        "v": 1,
+        "type": "member-names-ready",
+        "version": 2
+      },
+      "expectedClose": 4426
+    },
+    {
+      "id": "N11-record-before-ready-ack",
+      "frame": {
+        "v": 1,
+        "type": "member-names",
+        "version": 1,
+        "records": [
+          {
+            "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+            "joinedAt": 1760000000000,
+            "pairingId": "01234567-89ab-4cde-8000-0123456789ab",
+            "name": "Studio",
+            "at": 1770000000000,
+            "by": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+            "id": "fc11917ffd04041bfeec045f8b909f46b9c28ef0d8b8e956dceeb59fc1a5e3ac"
+          }
+        ],
+        "request": true
+      },
+      "expectedClose": 4400
+    },
+    {
+      "id": "N12-pending-and-revocation",
+      "actors": [
+        "one-to-one",
+        "networkPending",
+        "removed",
+        "repinned",
+        "different pairing",
+        "network off"
+      ],
+      "expected": "no naming authority/data response; delayed commit guard rejects after change"
+    },
+    {
+      "id": "N13-reconnect-reset",
+      "oldConnection": "negotiated1",
+      "newConnectionResponseHeaders": [],
+      "expected": "new socket is legacy only; old capabilities cannot authorize state"
+    },
+    {
+      "id": "O01-same-name-progress",
+      "actions": [
+        "accept Studio at1770000000000",
+        "accept Studio at1770000000001",
+        "deliver Other at1770000000000"
+      ],
+      "expected": "Studio, durable stamp1770000000001; no name-only no-op"
+    },
+    {
+      "id": "O02-late-intermediate-and-return",
+      "actions": [
+        "explicit A",
+        "explicit B",
+        "explicit C",
+        "deliver late B",
+        "explicit A under frozen wall time"
+      ],
+      "expected": "C survives late B; final A strictly newer and wins"
+    },
+    {
+      "id": "O03-restart-and-clock-back",
+      "actions": [
+        "persist maximum and record",
+        "restart with Date.now lower",
+        "explicit new edit"
+      ],
+      "expected": "stamp=maxPersisted+1; old replay loses"
+    },
+    {
+      "id": "O04-equal-clock",
+      "expected": "order by at, then ordinal by, then canonical id; independent arrival orders converge"
+    },
+    {
+      "id": "O05-future-clock",
+      "fixtureNow": 1770000000000,
+      "incomingAt": 1770086400001,
+      "expected": "skip individual operation without advancing clock or refusing other valid page records"
+    },
+    {
+      "id": "E01-old-target-epoch",
+      "expected": "old pairing/join epoch cannot name a removed/rejoined identity; never introduce missing member"
+    },
+    {
+      "id": "S01-self-remote-rename",
+      "settingsBytesBefore": "fixture snapshot",
+      "expectedSettingsWrites": 0,
+      "expected": "effective self hello/snapshot/status name and peer labels converge; Alias preference unchanged"
+    },
+    {
+      "id": "S02-owner-alias-edit",
+      "expected": "reserve pending intent and stamp; local authorized save; activate exact stamp; publish/ack only after durable completion"
+    },
+    {
+      "id": "S03-same-stored-alias-reassert",
+      "expected": "local USE_LOCAL_ALIAS creates new operation; no Settings write, same-name progress allowed"
+    },
+    {
+      "id": "S04-owner-crash-recovery",
+      "expected": "pending after-value+epoch match activates original stamp; other preference/epoch discards; never retimestamp"
+    },
+    {
+      "id": "L01-legacy-stale-owner",
+      "frames": [
+        "v1 hello with old A",
+        "v1 own members with old A"
+      ],
+      "orderedWinner": "B",
+      "expected": "B survives, permitted reach data still merges, no echo loop"
+    },
+    {
+      "id": "L02-legacy-fresh-event",
+      "frame": {
+        "v": 1,
+        "type": "member-renamed",
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "name": "Studio 2",
+        "at": "2026-02-02T02:40:00.000Z"
+      },
+      "expected": "original event timestamp/source→canonical record; no receipt-time promotion; same-name progress retained"
+    },
+    {
+      "id": "L03-legacy-unstamped-owner-intent",
+      "expected": "cannot outrank existing ordered record; documented mixed-version limit, not a content blacklist"
+    },
+    {
+      "id": "L04-wire-keys",
+      "expected": "independent frozen d8 v1 parser accepts every legacy outbound frame; extra member fields/new types still refused"
+    },
+    {
+      "id": "C01-offline-and-caches",
+      "actions": [
+        "C offline",
+        "rename A online",
+        "restart writer",
+        "C reconnects negotiated",
+        "A sends stale base name"
+      ],
+      "expected": "full state converges C/A and sidebar/project/Dispatcher/device labels; no reconnect/pin/grant/note/route changes"
+    },
+    {
+      "id": "F01-disk-and-authority-failure",
+      "expected": "no acknowledged success or visible/published operation before durable commit; no late apply after revocation; corrupt metadata is not a clock reset"
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+# #3720: negotiated durable member display names — contract checkpoint
+
+Status: **proposed, not approved; documentation and fixtures only**. Branch `annex-wake-readiness/3720-rename-ordering`, base `d8c7247a4dccc1ebff01f0f28f8e61279bdf5437`. Canonical issue: https://github.com/Agent-Clubhouse/Clubhouse/issues/3720. D209 continues to authorize any active member to rename any member. Independent contract/security/mixed-version review is required before product code.
+
+Evidence is preserved at `04f0df954e551b7215eefdc767e7739f141db94a:docs/implementation-notes/evidence/3720-rename-overwrite/`, particularly `diagnostic-unit-test-run.txt`. It proves stale self-announcement overwrite; it does not identify the triggering frame in the hosted trace. This proposal does not invoke/import the refused 966a federation review or replica machinery and inherits no approval from that work.
+
+## 1. Concrete transport choice
+
+Use the existing pinned `/network` WebSocket. **No new REST route, mobile capability/route or replica transport.** The legacy protocol version remains 1, and legacy hello/member/member-list/removal/rename frames retain their exact keys. Extra fields on those frames remain invalid. New name frames are recognized only in the negotiated per-socket parser context below; the default parser still recognizes only the original five types.
+
+Negotiation uses request and response `X-Clubhouse-Member-Names: 1` followed by a client-first extension ready/ack. Do not use WebSocket subprotocol selection: an old ws server can select an offered subprotocol without understanding its semantics. The current old server ignores unrelated HTTP headers and does not manufacture this response header; fixtures must verify that property independently.
+
+Header parsing is case-insensitive for the field name, using raw header occurrences. Exactly one occurrence, with only HTTP SP/HTAB around the exact ASCII value `1`, selects the proposal. Duplicate occurrences (including differently cased names or identical values), arrays, comma lists, empty values, unknown versions, values longer than 16 bytes and other malformed values decline the extension. Do not reinterpret them as version 1. The channel stays legacy; malformed extension negotiation alone does not close a valid legacy connection. Existing HTTP parser/TLS rejection rules are unchanged.
+
+| Side/state | Required behavior |
+| --- | --- |
+| New outgoing client | Sends one offer header; captures response headers in ws `upgrade` before `open`. No valid response selection means legacy for this socket. |
+| New incoming server | After existing pinned authentication, echoes one response header only for a valid request selection. Own `WebSocketServer` headers hook writes it. No server.ts upgrade/route changes. |
+| Both before ready | Send original v1 hello and members only. The first received frame must still be the authenticated v1 hello. |
+| Outgoing, selected + valid peer hello + active confirmed membership | Sends `{v:1,type:"member-names-ready",version:1}` once. No name data yet. |
+| Incoming, selected + valid hello | May remember ready while membership confirmation is pending; sends neither ack nor name data until the peer is an active confirmed member. Pending readiness is bound to this socket/pin/pairing. |
+| Incoming, selected + active + ready received | Becomes negotiated, sends one identical ready frame as ack, then its name-state frames. |
+| Outgoing, selected + ready sent + valid ready ack + still active | Becomes negotiated, sends its name-state frames. |
+| Duplicate ready/ack | Idempotent; no response loop or repeated snapshot. |
+| Unknown/malformed/absent response selection | Client sends no ready. Server sends no unsolicited extension frame, so malformed acknowledgment can downgrade without disconnect. |
+
+Capability state is immutable per connection, not a peer-global or durable capability cache. Every reconnect starts unselected and renegotiates. Close, replacement, pin/pairing change or network departure invalidates pending ready/apply work. Unsupported ready/state version on a selected socket is refused with 4426; extension data before completion, extension frames on unselected sockets, extra fields, malformed frames and unrelated types are refused with 4400. Binary/size limits remain unchanged. A first-frame extension is always refused. A peer that falsely advertises support and then violates it is not a legacy compatibility case.
+
+## 2. Extension messages and strict codec
+
+```ts
+type NameReady = { v: 1; type: 'member-names-ready'; version: 1 };
+type NameState = {
+  v: 1; type: 'member-names'; version: 1;
+  records: MemberNameRecord[];
+  request?: boolean; // ask for one bounded full-state response, without another request
+};
+type MemberNameRecord = {
+  fingerprint: string; // target identity, normalized lowercase
+  joinedAt: number; // target membership epoch's UTC milliseconds
+  pairingId?: string; // exact existing pairing id, never generated by naming
+  name: string;
+  at: number; // monotonic millisecond logical stamp
+  by: string; // tie-breaker/provenance claim; NOT authentication or a signature
+  id: string; // canonical payload SHA256, lowercase hex
+};
+```
+
+Only these keys are allowed. Fingerprints/pairing IDs retain existing format bounds. `name` is nonempty after local trim, well-formed Unicode, at most 200 UTF-16 code units (also safe for the old v1 validator). Receivers hash the exact provided UTF-8 name bytes, with no locale/Unicode normalization. `joinedAt` is an integer in the supported Date range; `at` is an integer from 1 through `253402300799999`. `by` is a normalized fingerprint. IDs are exactly 64 lowercase hex digits and must equal the payload hash. The hash is content integrity/deduplication, not proof of authorship.
+
+Hash encoding: ASCII domain `Clubhouse/member-name/1\n` (the final byte is LF 0x0A), then six length-prefixed UTF-8 fields in this order: target fingerprint, decimal joinedAt, pairingId or empty string, exact name, decimal at, by. A field is ASCII byte-length + `:` + its UTF-8 bytes. No locale sorting, JSON serialization or platform newline conversion. Fixtures contain independent cross-language vectors for Go adoption.
+
+At most 64 records per frame; existing 512 KiB frame cap applies. Full state is additive/merge-only, never replacement-by-absence. Chunk larger active sets into bounded frames (hard local state cap 256 target epochs); `request:true` appears only on the first chunk. A response does not set request. No extra retry, deadline, polling or keepawake mechanism: use initial negotiation, reciprocal confirmation, reconnect, membership change and accepted local/remote name changes. Changed records forward to other negotiated active members; duplicates do not echo. A confirming peer requests state again, so an earlier pending-phase snapshot cannot be the only catch-up attempt.
+
+## 3. Authority, scope and revocation
+
+Capability negotiation grants no authority. Existing pinned TLS, hello identity/key/certificate match, member-role and reciprocal-confirmation checks still apply. One-to-one peers and network-pending members do not supply or receive a network name state. Network-off ignores remote naming work. No name record introduces a member, grants control, changes a pin/pairing/route/note, or alters host actor grants.
+
+The authenticated current sender is the actor authorized under D209 to vouch for these display-name choices; `by` only supplies deterministic ordering. Relayed records may retain a historical writer, including one no longer in the network. A current authorized member could already choose any target name; a claimed writer is not used to authorize a write or shown as authenticated audit attribution. Logs retain the actual receiving sender separately.
+
+Apply only to this machine or an existing active member in the exact target membership epoch. Match pairing ID when present and the epoch's joinedAt milliseconds. When neither side knows an ID, require the same legacy joinedAt; a missing ID never matches a different known ID. Unknown/removed targets and superseded epochs are ignored, not introduced. Existing membership/removal processing establishes epochs before name-state processing. On removal/re-pair, old-scope records cannot affect the new scope; ended-scope records may be pruned while the monotonic local clock is retained.
+
+Serialize merges/local mutations. Capture sender pin/pairing plus target epoch and recheck active membership, network enabled state and those bindings at the durable commit boundary. Use the existing settings-store commit precondition/atomic-replace support for the new metadata file; no generic persistence rewrite. Delayed work after revocation, repin, epoch change or departure must neither commit nor publish. Parse/hash/clock checks precede mutation. Pending peers' name data is discarded, then full state is requested after confirmation; never replay earlier data as newly authorized.
+
+## 4. Durable ordering and replay
+
+Persist a private membership metadata store `annex-member-names.json` (0600): format version, maximum accepted/local stamp, records, and any pending local Alias intent. This is not `annex-settings.json` or a remote Settings API. Initialize and validate it during membership setup before publishing channel hellos; display providers read its loaded cache and never initialize/migrate a store from a remote display request.
+
+Order records for one target epoch by `(at, by, id)`, using numeric at and ordinal byte/string order, never locale order. Local explicit edits reserve `max(Date.now(), maxPersistedStamp + 1)` and hash the resulting payload. Persist clock and winning record atomically before acknowledging success, broadcasting or changing visible projections. Duplicate records are no-ops. A same-name newer record still advances/persists ordering and catch-up state. Frozen/backwards local clocks cannot reuse a stamp. Deliberate A→B→C→A succeeds because the final edit has a new stamp; there is no name-only veto or remembered-name blacklist.
+
+An incoming operation more than 24 hours ahead of the receiving wall clock is skipped individually without advancing the clock or dropping other valid records. Existing accepted disk records are not invalidated merely because the local clock later moves back. Arbitrarily broken clocks do not have a convergence guarantee; no clock is adjusted. Range/overflow/storage failures fail the name mutation visibly, not as successful renames. Hash-verified payload IDs give a total tie-break even for equal-clock equivocation; identical payload replay cannot freshen ordering.
+
+The old `renamedAt` map cannot prove which name survived a later self-hello, nor who wrote it. Do NOT invent a new operation or timestamp from that map. Import existing names only as unstamped fallback display values; retain the old times as legacy replay floors. Old pre-upgrade/offline history may need an explicit new Rename to create a durable operation. Same-name Rename must perform that operation.
+
+## 5. Local Alias intent; no remote Settings writes
+
+Keep this distinction explicit: stored local Alias is the owner's preference; the winning name record is the network display name. A remote rename of this machine updates only membership name metadata/projection. It never calls local/remote settings save, changes the Alias preference, writes an agent Settings surface or gains a Settings grant.
+
+Actual local Alias (or fallback deviceName) changes through SAVE_SETTINGS publish owner name intent. Generic color/route/toggle saves with the same effective local Alias do not mint a rename. Serialize the local save transaction and reserve a durable pending intent/stamp before its Alias write; save the local setting under its existing authority, then activate that exact operation and acknowledge/publish. On failure, return failure and publish nothing. On startup after a crash between files, activate a pending intent only if actual stored Alias matches its expected after-value and target epoch still matches; otherwise discard it. Never retimestamp a recovered intent. This preserves later remote ordering even if the local setting write finished before a crash. A missing/corrupt metadata store must not be silently turned into a verified clock reset; fail new name writes and report degradation while preserving the original v1 connection behavior.
+
+Existing Rename callers become awaitable (`Promise<boolean>` at the durable boundary); upstream actor checks and preload boolean results are preserved.
+
+For an explicit return to the already-stored Alias after a remote rename, add a **local-only `USE_LOCAL_ALIAS` IPC action** with no caller-supplied settings object: it reads this machine's stored preference and creates a fresh self name operation without rewriting Settings. The Alias section shows the current network name separately and offers “Use this Alias” when different. This creates intent even when the string is unchanged locally; no remote/agent Settings-write entry point is added.
+
+The existing device Rename editor must not treat `name === device.alias` as a successful no-op. A nonempty Save is an explicit operation, including same-name ordering progress. Existing `device.manage` actor/host checks remain upstream; network naming has the same D209 member authority as before. Local offline renames persist without opening sockets; publication waits for eligible existing channels.
+
+## 6. Legacy semantics and cache convergence
+
+- New↔old and old↔new stay connected with exact v1 shapes. No extension frame is sent without completed negotiation. Modern local name edits also emit the existing v1 `member-renamed` event to legacy channels, with the original at converted to ISO; no new fields.
+- An authenticated current legacy `member-renamed` event is converted to a record with its original at, current target epoch and actual sender as by. Never assign receipt time or a fresh local counter. Enforce the stored legacy replay floor and reject an event older than the current target join; newer same-name events advance receipt/order. Modern records are relayed through the extension; relays do not manufacture additional legacy rename events or new stamps.
+- Unstamped legacy hello/members names can update fallback names only while no ordered record exists for that epoch. They still update permitted reach/pairing information. They cannot overwrite a durable ordered name. An old owner's Alias-only change has no timestamp/event, so after an ordered rename it cannot safely supersede that name on updated peers. A fresh legacy Rename event can. This is a stated mixed-version limit, not a name-content veto.
+- Old devices retain their existing best-effort/live-event behavior and can still show stale or divergent names; all-participant durable convergence is promised only for negotiated participants. UI copy must not promise an everywhere/offline rename to legacy devices. No installation/activation is performed.
+- New full name snapshots, reconnect and restart preserve the winning record, including a rename of this machine. No ephemeral live-connection alias can become naming authority.
+
+Provide a loaded, epoch-aware name projection on peer getters/listings and local membership hello/currentView. Trust fields remain unchanged. `addMember` must select the ordered name while still merging valid route/epoch data, avoiding repeated stale-name writes/echo storms. Project live satellite aliases from the peer/name authority and send a name-change snapshot to the renderer without reconnecting. Refresh device/presence/peer-card labels and local machine snapshot/status names from the same authority. Same-name metadata-only progress syncs without unnecessary display/route churn. Cached remote project/sidebar labels are included in tests. Raw stored Alias remains available only as the owner's preference.
+
+## 7. Proposed hunk reservations — clearance required before code
+
+Details owner has reported no active/planned membership/channel/protocol edits. Lane3613's phone successor has no such edits or client lifecycle/SAVE_SETTINGS edits. Reservations below are proposals, not permission to overwrite another writer; parent routes the remaining exact-site confirmations.
+
+| File/site on d8 | Proposed change / boundary |
+| --- | --- |
+| annex-network-channel.ts Channel/attach/upgrade/connectTo, localMember/listMembers | Per-socket header+ready state and gated codec/context; loaded display-name provider. No client control-route lifecycle. |
+| shared/annex-network-protocol.ts message types/parser | Add gated extension variants; default/legacy codec and MEMBER_KEYS unchanged. |
+| annex-network-membership.ts init hooks, addMember name selection (~463), onMessage rename (~679), renameMember (~796) | Durable name service, epoch/authority guards, same-name receipt, full sync; preserve removals/confirmations/display receipts. |
+| NEW shared/annex-member-names.ts + main/services/annex-member-names.ts + tests | Strict record codec/canonical hash, bounded atomic store and ordering. No replica/federation import. |
+| main/ipc/annex-handlers.ts SAVE_SETTINGS (~178–187), name-change notification hook and local USE_LOCAL_ALIAS handler | Local intent transaction only; retain applyNetworkSettings/P7w start/stop/reach behavior exactly. **P7w owner confirmation required.** |
+| preload/annex.ts save/local action; shared/ipc-channels.ts ANNEX keys; renderer/stores/annexStore.ts | Local-only action/error surface; no mobile/agent/remote Settings entry point. |
+| renderer/features/settings/AnnexIdentitySection.tsx; AnnexNetworkSettingsView.tsx identity-section props; AnnexDeviceList.tsx RenameEditor (~137–164) | Own preference vs network display label, reassert action, remove same-name no-op; **leave P7/P7w readiness/reach/repair/editor regions alone; exact owner confirmation required.** |
+| main/services/annex-peers.ts getPeer/listPeers projection + provider | Display alias only; pin, pairing, roles, notes and routes untouched. |
+| main/services/annex-client.ts toPublicConnection (~576) + dedicated name-snapshot hook | Label projection/notification only; NO lifecycle, scheduler, startup/stop or P7w control-source hunks. |
+| main/services/annex-server.ts machine identity snapshot (~4433) and getStatus alias (~6597) | **Read-only display projections only; requires explicit writer clearance.** No REST, mobile routes/capabilities, auth, upgrade or command-handler changes. This refines the earlier provisional “zero server” expectation after label-source inspection. Pairing invitation fields stay local-preference based. |
+| dispatcher-presence/derived peer-card label consumers, only if not already using projected peer alias | Read-only names; Details-owned remote-agent-details, selected-dispatcher-details, remote-details-presentation, RemoteHelpersCard and RemoteAgentDetailsView Helpers are reserved to that owner and excluded here. |
+
+## 8. Required proof before acceptance
+
+The accompanying `fixtures.json` is a contract fixture inventory and cross-language hash vectors, not executed evidence. Implementation must establish deterministic baseline failures, then green on the exact source with raw commands/exits/HEAD/hash manifests. Required coverage: all handshake direction/malformed/duplicate cases; independent frozen old-v1 parser and old endpoint; no extension on legacy sockets; first-frame and unnegotiated refusal; pending/one-to-one/revoked/repinned actors; same-name progress; A→B→C/late intermediate/deliberate return; equal clocks, clock rollback/restart, future skips; offline C/full-state catch-up; self rename with unchanged Settings bytes; local Alias crash/failure; target epoch changes; duplicate/no-echo traffic; label/cache refresh without reconnect or grant/route/note mutation.
+
+Mixed-version convergence limits must remain explicit. Independent contract/security/mixed-version approval precedes product code; independent exact-source review and hosted current-head CI precede landing. No release, install, activation, link/grant changes, live probe or inferred mobile adoption is authorized by this checkpoint.
