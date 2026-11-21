@@ -72,6 +72,25 @@ describe('member-name primitives (unwired)', () => {
       const raw = payload(); Object.setPrototypeOf(raw, null); Object.freeze(raw);
       expect(readMemberNamePayload(raw)).toEqual(payload());
     });
+    it('captures each descriptor once and never reads raw properties', () => {
+      const counts = new Map<PropertyKey, number>();
+      const raw = new Proxy(payload(), {
+        get() { throw new Error('raw property read forbidden'); },
+        getOwnPropertyDescriptor(target, key) {
+          const count = (counts.get(key) ?? 0) + 1; counts.set(key, count);
+          const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+          return key === 'name' ? { ...descriptor, value: count === 1 ? 'Studio' : 'changed' } : descriptor;
+        },
+      });
+      expect(readMemberNamePayload(raw)).toEqual(payload());
+      expect([...counts.values()]).toEqual([1, 1, 1, 1, 1, 1]);
+    });
+    it('returns fresh mutable bytes without sharing payload or earlier output storage', () => {
+      const raw = payload(), first = encodeMemberNamePayload(raw), second = encodeMemberNamePayload(raw);
+      expect(first).not.toBe(second); expect(first).toEqual(second);
+      first.fill(0); expect(first).not.toEqual(second);
+      expect(raw).toEqual(payload());
+    });
     it.each(['fingerprint', 'joinedAt', 'name', 'at', 'by'])('refuses absent %s', key => {
       const raw: Record<string, unknown> = payload(); delete raw[key];
       expect(readMemberNamePayload(raw)).toBeNull();
@@ -159,6 +178,15 @@ describe('member-name primitives (unwired)', () => {
       }
       expect(compareMemberNameOrder({ ...base, name: 'A' }, { ...base, name: 'Z' })).toBe(0);
     });
+    it('is antisymmetric/transitive across an independently declared tuple order', () => {
+      const sorted = [
+        { at: 1, by: FP, id: 'a'.repeat(64) }, { at: 1, by: FP, id: 'b'.repeat(64) },
+        { at: 1, by: BY, id: '0'.repeat(64) }, { at: 2, by: FP, id: '0'.repeat(64) },
+      ];
+      for (let i = 0; i < sorted.length; i++) for (let j = 0; j < sorted.length; j++) {
+        expect(compareMemberNameOrder(sorted[i], sorted[j])).toBe(i === j ? 0 : i < j ? -1 : 1);
+      }
+    });
     it('rejects invalid ordering inputs and malformed epoch scalars without getter reads', () => {
       for (const invalid of [{ ...order(), id: 'A'.repeat(64) }, { ...order(), id: 'a'.repeat(64) + '\n' }, { ...order(), at: 0 }, { ...order(), by: 'writer' }]) {
         expect(() => compareMemberNameOrder(order(), invalid)).toThrow('Invalid member name order');
@@ -167,6 +195,8 @@ describe('member-name primitives (unwired)', () => {
       const getter = vi.fn(() => epoch().joinedAt); const raw = epoch();
       Object.defineProperty(raw, 'joinedAt', { get: getter });
       expect(sameMemberNameEpoch(epoch(), raw)).toBe(false); expect(getter).not.toHaveBeenCalled();
+      const hostile = new Proxy(order(), { getOwnPropertyDescriptor() { throw new Error('private'); } });
+      expect(() => compareMemberNameOrder(order(), hostile)).toThrow('Invalid member name order.');
     });
   });
 
