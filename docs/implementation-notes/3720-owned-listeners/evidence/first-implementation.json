@@ -1,0 +1,53 @@
+{
+  "label": "first-implementation",
+  "headAtExecution": "fac5208103e2b66528bddc88b6fe60e547794b25",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-owned-listeners/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/main/services/annex-server.test.ts",
+    "-t",
+    "owned secure listener readiness"
+  ],
+  "expectedExit": 0,
+  "actualExit": 0,
+  "startedAtUTC": "2026-11-21T13:55:43.058790+00:00",
+  "endedAtUTC": "2026-11-21T13:55:44.837994+00:00",
+  "inputSHA256": {
+    "src/main/services/annex-server.ts": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+    "src/main/services/annex-server.test.ts": "fbb7d7677e7e77639130cccea0fa47fe72702985ec189cea0b7851f3647b2dbe",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/main/services/annex-server.ts": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+    "src/main/services/annex-server.test.ts": "fbb7d7677e7e77639130cccea0fa47fe72702985ec189cea0b7851f3647b2dbe",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/main/services/annex-server.ts b/src/main/services/annex-server.ts\nindex c2fa89786..c0204b228 100644\n--- a/src/main/services/annex-server.ts\n+++ b/src/main/services/annex-server.ts\n@@ -5814,6 +5814,44 @@ export async function startVerified(): Promise<void> {\n   }\n }\n \n+// expectedHost is computed by an admitted main-process caller from its owned committed settings/profile.\n+// This predicate confirms only listener ownership/readiness, never caller authority or peer reachability.\n+export function captureSecureListenerReadiness(expectedHost: string): () => boolean {\n+  const generation = serverGeneration;\n+  const main = tlsServer, pairing = pairingServer;\n+  const mainPort = serverPort, pairPort = pairingPort, host = boundHost;\n+  const wasReady = !!main && !!pairing && main.listening && pairing.listening\n+    && mainPort > 0 && pairPort > 0 && host.length > 0 && host === expectedHost;\n+  return () => wasReady && generation === serverGeneration\n+    && main === tlsServer && pairing === pairingServer && main.listening && pairing.listening\n+    && serverPort === mainPort && pairingPort === pairPort && boundHost === host;\n+}\n+\n+/** Opt-in verified attempt; default start()/startVerified() callers remain unchanged. */\n+export async function startVerifiedWithReceipt(expectedHost: string): Promise<() => boolean> {\n+  if (typeof expectedHost !== 'string' || !expectedHost) throw new TypeError('Invalid Annex expected listener host.');\n+  const starting = startVerified();\n+  // startVerified invokes startServer synchronously before its first await.\n+  const generation = serverGeneration;\n+  const main = tlsServer, pairing = pairingServer;\n+  await starting; // Existing strict readiness and owned failure cleanup, unchanged.\n+  if (generation !== serverGeneration || main !== tlsServer || pairing !== pairingServer) {\n+    throw new AnnexStartFailure(new Error('Annex listener attempt was superseded before confirmation.'), generation, true);\n+  }\n+  if (boundHost !== expectedHost) {\n+    // The current profile may belong to a newer committed writer outside settingsWrites.\n+    // Identity/generation alone never authorize stopping it. Do not refresh expectedHost.\n+    throw new AnnexStartFailure(new Error('Annex expected listener profile changed before confirmation.'), generation, true);\n+  }\n+  const current = captureSecureListenerReadiness(expectedHost);\n+  if (!current()) {\n+    // No await between identity/generation check and cleanup. Retire only this still-owned attempt.\n+    stop();\n+    throw new AnnexStartFailure(new Error('Annex owned secure listeners were not ready at confirmation.'), generation + 1, false);\n+  }\n+  return current;\n+}\n+\n function startServer(strict = false): Promise<void> {\n   if (tlsServer || httpServer) {\n     appLog('core:annex', 'debug', 'Annex server start() called but already running');\n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n\n Test Files  1 passed (1)\n      Tests  11 passed | 644 skipped (655)\n   Start at  08:55:43\n   Duration  1.52s (transform 1.12s, setup 5ms, import 1.38s, tests 70ms, environment 0ms)\n\n",
+  "stderr": "",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "99d51be8a45b88a4231e66fab43e5bf68f2e476e16044b7b12c2258c22fce62b"
+}

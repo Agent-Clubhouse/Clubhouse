@@ -1,0 +1,53 @@
+{
+  "label": "mutant-equality-only-adoption",
+  "headAtExecution": "19a681f03ec1c62e26ff328dd3f983e07e52986a",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-owned-listeners/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/main/services/annex-server.test.ts",
+    "-t",
+    "owned secure listener readiness"
+  ],
+  "expectedExit": 1,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T14:04:56.843254+00:00",
+  "endedAtUTC": "2026-11-21T14:04:58.672889+00:00",
+  "inputSHA256": {
+    "src/main/services/annex-server.ts": "b29c9d80bb89c7d5fbfe542951d7d331ba4a7e2ade833c26a5ff491c855f6037",
+    "src/main/services/annex-server.test.ts": "d3c4fe6d3af68a4444e5157e7132bb6f382fc332a933f39421e6111bcbec1368",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/main/services/annex-server.ts": "b29c9d80bb89c7d5fbfe542951d7d331ba4a7e2ade833c26a5ff491c855f6037",
+    "src/main/services/annex-server.test.ts": "d3c4fe6d3af68a4444e5157e7132bb6f382fc332a933f39421e6111bcbec1368",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/main/services/annex-server.ts b/src/main/services/annex-server.ts\nindex c0204b228..e240dabf3 100644\n--- a/src/main/services/annex-server.ts\n+++ b/src/main/services/annex-server.ts\n@@ -5822,8 +5822,7 @@ export function captureSecureListenerReadiness(expectedHost: string): () => bool\n   const mainPort = serverPort, pairPort = pairingPort, host = boundHost;\n   const wasReady = !!main && !!pairing && main.listening && pairing.listening\n     && mainPort > 0 && pairPort > 0 && host.length > 0 && host === expectedHost;\n-  return () => wasReady && generation === serverGeneration\n-    && main === tlsServer && pairing === pairingServer && main.listening && pairing.listening\n+  return () => wasReady && !!tlsServer && !!pairingServer && tlsServer.listening && pairingServer.listening\n     && serverPort === mainPort && pairingPort === pairPort && boundHost === host;\n }\n \n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |main| src/main/services/annex-server.test.ts (658 tests | 2 failed | 644 skipped) 91ms\n       \u00d7 invalidates ready captures on stop and replacement even with equal ports/profile 8ms\n       \u00d7 isolates the generation fence when modeled listener objects are reused across restart 1ms\n\n Test Files  1 failed (1)\n      Tests  2 failed | 12 passed | 644 skipped (658)\n   Start at  09:04:57\n   Duration  1.56s (transform 1.13s, setup 4ms, import 1.40s, tests 91ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 2 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |main| src/main/services/annex-server.test.ts > annex-server > owned secure listener readiness (#3720) > invalidates ready captures on stop and replacement even with equal ports/profile\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n \u276f src/main/services/annex-server.test.ts:1204:23\n    1202|       const replacement = await annexServer.startVerifiedWithReceipt('\u2026\n    1203|       expect(annexServer.liveListenerPorts()).toEqual(ports);\n    1204|       expect(ready()).toBe(false); expect(replacement()).toBe(true);\n       |                       ^\n    1205|     });\n    1206|     it('isolates the generation fence when modeled listener objects ar\u2026\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/2]\u23af\n\n FAIL  |main| src/main/services/annex-server.test.ts > annex-server > owned secure listener readiness (#3720) > isolates the generation fence when modeled listener objects are reused across restart\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n \u276f src/main/services/annex-server.test.ts:1218:23\n    1216|       expect(main().server).toBe(tlsObject); expect(pairing().server).\u2026\n    1217|       expect(annexServer.liveListenerPorts()).toEqual(ports);\n    1218|       expect(ready()).toBe(false); expect(replacement()).toBe(true);\n       |                       ^\n    1219|     });\n    1220|     it('does not revive a not-ready capture with modeled cached positi\u2026\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/2]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "99d51be8a45b88a4231e66fab43e5bf68f2e476e16044b7b12c2258c22fce62b"
+}

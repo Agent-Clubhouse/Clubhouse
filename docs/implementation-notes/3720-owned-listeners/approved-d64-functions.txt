@@ -1,0 +1,38 @@
+// REVIEW ONLY: proposed additions inside annex-server.ts; no consumers, unapplied/unexecuted.
+// expectedHost is computed by an admitted main-process caller from its owned committed settings/profile.
+// This predicate confirms only listener ownership/readiness, never caller authority or peer reachability.
+export function captureSecureListenerReadiness(expectedHost: string): () => boolean {
+  const generation = serverGeneration;
+  const main = tlsServer, pairing = pairingServer;
+  const mainPort = serverPort, pairPort = pairingPort, host = boundHost;
+  const wasReady = !!main && !!pairing && main.listening && pairing.listening
+    && mainPort > 0 && pairPort > 0 && host.length > 0 && host === expectedHost;
+  return () => wasReady && generation === serverGeneration
+    && main === tlsServer && pairing === pairingServer && main.listening && pairing.listening
+    && serverPort === mainPort && pairingPort === pairPort && boundHost === host;
+}
+
+/** Opt-in verified attempt; default start()/startVerified() callers remain unchanged. */
+export async function startVerifiedWithReceipt(expectedHost: string): Promise<() => boolean> {
+  if (typeof expectedHost !== 'string' || !expectedHost) throw new TypeError('Invalid Annex expected listener host.');
+  const starting = startVerified();
+  // startVerified invokes startServer synchronously before its first await.
+  const generation = serverGeneration;
+  const main = tlsServer, pairing = pairingServer;
+  await starting; // Existing strict readiness and owned failure cleanup, unchanged.
+  if (generation !== serverGeneration || main !== tlsServer || pairing !== pairingServer) {
+    throw new AnnexStartFailure(new Error('Annex listener attempt was superseded before confirmation.'), generation, true);
+  }
+  if (boundHost !== expectedHost) {
+    // The current profile may belong to a newer committed writer outside settingsWrites.
+    // Identity/generation alone never authorize stopping it. Do not refresh expectedHost.
+    throw new AnnexStartFailure(new Error('Annex expected listener profile changed before confirmation.'), generation, true);
+  }
+  const current = captureSecureListenerReadiness(expectedHost);
+  if (!current()) {
+    // No await between identity/generation check and cleanup. Retire only this still-owned attempt.
+    stop();
+    throw new AnnexStartFailure(new Error('Annex owned secure listeners were not ready at confirmation.'), generation + 1, false);
+  }
+  return current;
+}

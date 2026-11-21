@@ -1,0 +1,53 @@
+{
+  "label": "restored-targeted",
+  "headAtExecution": "19a681f03ec1c62e26ff328dd3f983e07e52986a",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-owned-listeners/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/main/services/annex-server.test.ts",
+    "-t",
+    "owned secure listener readiness"
+  ],
+  "expectedExit": 0,
+  "actualExit": 0,
+  "startedAtUTC": "2026-11-21T14:05:45.169863+00:00",
+  "endedAtUTC": "2026-11-21T14:05:46.963618+00:00",
+  "inputSHA256": {
+    "src/main/services/annex-server.ts": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+    "src/main/services/annex-server.test.ts": "d3c4fe6d3af68a4444e5157e7132bb6f382fc332a933f39421e6111bcbec1368",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/main/services/annex-server.ts": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+    "src/main/services/annex-server.test.ts": "d3c4fe6d3af68a4444e5157e7132bb6f382fc332a933f39421e6111bcbec1368",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n\n Test Files  1 passed (1)\n      Tests  14 passed | 644 skipped (658)\n   Start at  09:05:45\n   Duration  1.53s (transform 1.11s, setup 4ms, import 1.37s, tests 84ms, environment 0ms)\n\n",
+  "stderr": "",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "99d51be8a45b88a4231e66fab43e5bf68f2e476e16044b7b12c2258c22fce62b"
+}

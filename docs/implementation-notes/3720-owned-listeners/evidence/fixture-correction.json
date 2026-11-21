@@ -1,0 +1,53 @@
+{
+  "label": "fixture-correction",
+  "headAtExecution": "d292e339f3d972bc37637a74272c7ff14eed7db2",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-owned-listeners/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/main/services/annex-server.test.ts",
+    "-t",
+    "owned secure listener readiness"
+  ],
+  "expectedExit": 0,
+  "actualExit": 0,
+  "startedAtUTC": "2026-11-21T14:00:53.744708+00:00",
+  "endedAtUTC": "2026-11-21T14:00:55.524472+00:00",
+  "inputSHA256": {
+    "src/main/services/annex-server.ts": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+    "src/main/services/annex-server.test.ts": "d3c4fe6d3af68a4444e5157e7132bb6f382fc332a933f39421e6111bcbec1368",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/main/services/annex-server.ts": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+    "src/main/services/annex-server.test.ts": "d3c4fe6d3af68a4444e5157e7132bb6f382fc332a933f39421e6111bcbec1368",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/main/services/annex-server.test.ts b/src/main/services/annex-server.test.ts\nindex 3b2cece55..612bd62e4 100644\n--- a/src/main/services/annex-server.test.ts\n+++ b/src/main/services/annex-server.test.ts\n@@ -2,6 +2,16 @@ import * as selectedDispatcherDetails from './selected-dispatcher-details';\n import { app } from 'electron';\n import { setImmediate as nextTurn } from 'node:timers/promises';\n import { createSettingsStore } from './settings-store';\n+import { createServer as createHttpServer } from 'http';\n+import { createServer as createHttpsServer } from 'https';\n+vi.mock('http', async (original) => {\n+  const actual = await original<typeof import('http')>();\n+  return { ...actual, createServer: vi.fn(actual.createServer) };\n+});\n+vi.mock('https', async (original) => {\n+  const actual = await original<typeof import('https')>();\n+  return { ...actual, createServer: vi.fn(actual.createServer) };\n+});\n import * as agentConfigReader from './agent-config-reader';\n import * as dispatcherMetadataService from './dispatcher/dispatcher-service';\n import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';\n@@ -1198,10 +1208,11 @@ describe('annex-server', () => {\n       const tlsObject = main().server, pairingObject = pairing().server, ports = annexServer.liveListenerPorts();\n       annexServer.stop();\n       // Deliberate identity-reuse model, not a claim that default constructors reuse objects.\n-      vi.spyOn(https, 'createServer').mockReturnValue(tlsObject as https.Server);\n-      vi.spyOn(http, 'createServer').mockReturnValue(pairingObject as http.Server);\n+      vi.mocked(createHttpsServer).mockReturnValueOnce(tlsObject as https.Server);\n+      vi.mocked(createHttpServer).mockReturnValueOnce(pairingObject as http.Server);\n       vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: ports.mainPort!, pairingPort: ports.pairingPort! });\n       const replacement = await annexServer.startVerifiedWithReceipt('127.0.0.1');\n+      expect(listeners).toHaveLength(2);\n       expect(main().server).toBe(tlsObject); expect(pairing().server).toBe(pairingObject);\n       expect(annexServer.liveListenerPorts()).toEqual(ports);\n       expect(ready()).toBe(false); expect(replacement()).toBe(true);\n@@ -1266,8 +1277,8 @@ describe('annex-server', () => {\n       const tlsObject = main().server, pairingObject = pairing().server;\n       pairing().onRead = () => queueMicrotask(() => {\n         const ports = annexServer.liveListenerPorts(); annexServer.stop();\n-        vi.spyOn(https, 'createServer').mockReturnValue(tlsObject as https.Server);\n-        vi.spyOn(http, 'createServer').mockReturnValue(pairingObject as http.Server);\n+        vi.mocked(createHttpsServer).mockReturnValueOnce(tlsObject as https.Server);\n+        vi.mocked(createHttpServer).mockReturnValueOnce(pairingObject as http.Server);\n         vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: ports.mainPort!, pairingPort: ports.pairingPort! });\n         annexServer.start();\n       });\n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n\n Test Files  1 passed (1)\n      Tests  14 passed | 644 skipped (658)\n   Start at  09:00:53\n   Duration  1.52s (transform 1.12s, setup 5ms, import 1.38s, tests 60ms, environment 0ms)\n\n",
+  "stderr": "",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "99d51be8a45b88a4231e66fab43e5bf68f2e476e16044b7b12c2258c22fce62b"
+}

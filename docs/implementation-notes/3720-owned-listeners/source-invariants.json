@@ -1,0 +1,10 @@
+{
+  "sourceHead": "19a681f03ec1c62e26ff328dd3f983e07e52986a",
+  "base": "77fa095320f2184ebf8870a5251ad0fd26a46501",
+  "approvedProposal": "d64c8e6f125eea05a51fa3d9153f08342a7e0f40",
+  "approvedArtifactSHA256": "c188b648c266e24941567cb9b55d20e5cd0a19a6b2fab2e718c2aa6f5a8236e9",
+  "baseServerSHA256": "22d5e74f9e0ed7875ed6bbc822dad72908ccd3a5be1b84aca8076130ca3d2296",
+  "candidateServerSHA256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+  "onlyApprovedAdditions": true,
+  "unwiredImportSearch": "src/main/services/annex-server.ts:5819:export function captureSecureListenerReadiness(expectedHost: string): () => boolean {\nsrc/main/services/annex-server.ts:5831:export async function startVerifiedWithReceipt(expectedHost: string): Promise<() => boolean> {\nsrc/main/services/annex-server.ts:5846:  const current = captureSecureListenerReadiness(expectedHost);\n"
+}

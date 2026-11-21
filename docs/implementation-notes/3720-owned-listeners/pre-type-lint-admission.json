@@ -1,0 +1,14 @@
+{
+  "observedAt": "2026-11-21T14:05:58.785078+00:00",
+  "cpu": 16,
+  "load": [
+    2.27294921875,
+    2.12841796875,
+    2.05322265625
+  ],
+  "plannedReadOnlyChecks": [
+    "tsc --noEmit",
+    "ESLint changed server/test --quiet (hosted errors-only policy)"
+  ],
+  "maxConcurrentCheckProcesses": 2
+}

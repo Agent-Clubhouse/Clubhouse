@@ -1,0 +1,53 @@
+{
+  "label": "mutant-host-mismatch-stop",
+  "headAtExecution": "19a681f03ec1c62e26ff328dd3f983e07e52986a",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-owned-listeners/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/main/services/annex-server.test.ts",
+    "-t",
+    "owned secure listener readiness"
+  ],
+  "expectedExit": 1,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T14:05:00.525716+00:00",
+  "endedAtUTC": "2026-11-21T14:05:02.327788+00:00",
+  "inputSHA256": {
+    "src/main/services/annex-server.ts": "8adfecde6d5c29b59b2abbcf8546fa46e406dfc79f4831ea136de03b1244fcf1",
+    "src/main/services/annex-server.test.ts": "d3c4fe6d3af68a4444e5157e7132bb6f382fc332a933f39421e6111bcbec1368",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/main/services/annex-server.ts": "8adfecde6d5c29b59b2abbcf8546fa46e406dfc79f4831ea136de03b1244fcf1",
+    "src/main/services/annex-server.test.ts": "d3c4fe6d3af68a4444e5157e7132bb6f382fc332a933f39421e6111bcbec1368",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "diff --git a/src/main/services/annex-server.ts b/src/main/services/annex-server.ts\nindex c0204b228..11f22c6b4 100644\n--- a/src/main/services/annex-server.ts\n+++ b/src/main/services/annex-server.ts\n@@ -5841,7 +5841,7 @@ export async function startVerifiedWithReceipt(expectedHost: string): Promise<()\n   if (boundHost !== expectedHost) {\n     // The current profile may belong to a newer committed writer outside settingsWrites.\n     // Identity/generation alone never authorize stopping it. Do not refresh expectedHost.\n-    throw new AnnexStartFailure(new Error('Annex expected listener profile changed before confirmation.'), generation, true);\n+    stop(); throw new AnnexStartFailure(new Error('Annex expected listener profile changed before confirmation.'), generation, true);\n   }\n   const current = captureSecureListenerReadiness(expectedHost);\n   if (!current()) {\n",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |main| src/main/services/annex-server.test.ts (658 tests | 1 failed | 644 skipped) 72ms\n       \u00d7 leaves the newer committed profile running after actual store-queue interleaving (RL-1) 23ms\n\n Test Files  1 failed (1)\n      Tests  1 failed | 13 passed | 644 skipped (658)\n   Start at  09:05:00\n   Duration  1.54s (transform 1.13s, setup 5ms, import 1.39s, tests 72ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |main| src/main/services/annex-server.test.ts > annex-server > owned secure listener readiness (#3720) > leaves the newer committed profile running after actual store-queue interleaving (RL-1)\nAssertionError: expected false to be true // Object.is equality\n\n- Expected\n+ Received\n\n- true\n+ false\n\n \u276f src/main/services/annex-server.test.ts:1313:82\n    1311|         const result = await outcome(annexServer.startVerifiedWithRece\u2026\n    1312|         fail(result.error, true);\n    1313|         expect(listeners.every(item => item.listening && item.closeCal\u2026\n       |                                                                                  ^\n    1314|         expect(annexServer.captureSecureListenerReadiness('127.0.0.1')\u2026\n    1315|         expect(store.get().loopbackOnly).toBe(true);\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "99d51be8a45b88a4231e66fab43e5bf68f2e476e16044b7b12c2258c22fce62b"
+}

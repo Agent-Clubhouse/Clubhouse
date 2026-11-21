@@ -1,0 +1,53 @@
+{
+  "label": "candidate-green",
+  "headAtExecution": "d292e339f3d972bc37637a74272c7ff14eed7db2",
+  "argv": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".cache/3720-owned-listeners/vitest.config.ts",
+    "--configLoader",
+    "runner",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "src/main/services/annex-server.test.ts",
+    "-t",
+    "owned secure listener readiness"
+  ],
+  "expectedExit": 0,
+  "actualExit": 1,
+  "startedAtUTC": "2026-11-21T13:58:13.276596+00:00",
+  "endedAtUTC": "2026-11-21T13:58:15.111361+00:00",
+  "inputSHA256": {
+    "src/main/services/annex-server.ts": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+    "src/main/services/annex-server.test.ts": "0cc3a09b444db8fbdbd5de1128dad8ad80472b8f94b77c3389cfcafe6230eeb6",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "inputSHA256After": {
+    "src/main/services/annex-server.ts": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+    "src/main/services/annex-server.test.ts": "0cc3a09b444db8fbdbd5de1128dad8ad80472b8f94b77c3389cfcafe6230eeb6",
+    "src/main/services/settings-store.ts": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+    "src/main/services/annex-settings.ts": "38f4386e31b847f6d27f2e0f6ccb1d0f2f7c454ffbcd3c581f2bb3c19cb7c5a3",
+    "src/main/services/annex-network-profile.ts": "fc06d530b9f656792e52eb8cac5d16b5228ceafe27333a13bd9dc822e1ec0ddc",
+    "src/shared/types.ts": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    ".cache/3720-owned-listeners/vitest.config.ts": "b91a80c62152040e026c31a96d79b49fea14b522e9955012052fdf23bac04f6d"
+  },
+  "sourceDiff": "",
+  "stdout": "\n RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/annex-wake-readiness\n\n \u276f |main| src/main/services/annex-server.test.ts (658 tests | 1 failed | 644 skipped) 81ms\n       \u00d7 rejects old wrapper completion even when a restart reuses modeled objects and ports 13ms\n\n Test Files  1 failed (1)\n      Tests  1 failed | 13 passed | 644 skipped (658)\n   Start at  08:58:13\n   Duration  1.57s (transform 1.15s, setup 5ms, import 1.41s, tests 81ms, environment 0ms)\n\n",
+  "stderr": "\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |main| src/main/services/annex-server.test.ts > annex-server > owned secure listener readiness (#3720) > rejects old wrapper completion even when a restart reuses modeled objects and ports\nAssertionError: expected [ { \u2026(6) }, { \u2026(6) }, { \u2026(5) }, \u2026(1) ] to have a length of 2 but got 4\n\n- Expected\n+ Received\n\n- 2\n+ 4\n\n \u276f src/main/services/annex-server.test.ts:1275:25\n    1273|       });\n    1274|       const result = await pending; fail(result.error, true); await ne\u2026\n    1275|       expect(listeners).toHaveLength(2);\n       |                         ^\n    1276|       expect(listeners.every(item => item.listening && item.closeCalls\u2026\n    1277|       expect(annexServer.captureSecureListenerReadiness('127.0.0.1')()\u2026\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\n\n",
+  "environmentOverrides": {
+    "NODE_DISABLE_COMPILE_CACHE": "1",
+    "FORCE_COLOR": "0"
+  },
+  "runnerSHA256": "99d51be8a45b88a4231e66fab43e5bf68f2e476e16044b7b12c2258c22fce62b"
+}
