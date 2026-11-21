@@ -1,0 +1,12 @@
+{
+  "source": "224e0797daf1b6e696b46ddd82bea5d79894ae4c",
+  "sourceClean": true,
+  "slotAbsent": true,
+  "liveGateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+  "backupSha256": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+  "modeOctal": "0o755",
+  "dependencyRestored": true,
+  "dependencyLinkagePreserved": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/node_modules.linked-layout-224e-first-normal-d45",
+  "globalOwnLogSha256": "35a9ab335b554b71ceaa04f03cc624ba88cd3f28b63ab69576280f62d1c7b11c",
+  "observedAt": "2026-11-21T19:22:43.262028+00:00"
+}

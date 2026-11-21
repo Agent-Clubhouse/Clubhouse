@@ -1,0 +1,21 @@
+{
+  "scope": "Actual authorized gate activation and ONE actual root caller; source/product acceptance separate",
+  "files": {
+    "first-normal.raw.txt": "4f83c803d8b683bf32ffb7404660926d88d1fd1876048482baa00db1ee26c01c",
+    "activation.json": "b8c6fea85f0d9471d6a8505bd71afa7531464a88444e4dd0979434ed970021df",
+    "first-caller-prelaunch.json": "70dab1b93fc1fd2f120ebca7b0f458c8c3541775f8f3d783b1007c68a1cd16aa",
+    "first-caller-procedure.py": "1e51946d9911ef5c7cb6c53cf95d14afd62a715c933aad3af4a66b7672508c06",
+    "dry-run.raw.txt": "5b3819a57c61fc4c22cace32a9f44d8aca8479c0b804569fbb22c9f56bc95214",
+    "dry-run.json": "da4a4a6f60ce251da010620a87dbe36a44b47f1a1797ec3370df09d8142b1d1a",
+    "global-own-log.txt": "35a9ab335b554b71ceaa04f03cc624ba88cd3f28b63ab69576280f62d1c7b11c",
+    "first-normal.json": "d5a12ce92258f3f3300c8a1fa895c635d2032dac3e8b907094296dc3980745a7",
+    "post-caller.json": "89e50538bdf7acd0760b3070a8bc372cb4f230d44dc07aa39eab6fea8233d8e6",
+    "REVIEW.md": "5b4bec6c2c46bfdde301314522c94a5126af2c52f10c8632570e1e5ed879bb1c",
+    "first-normal-started.json": "ea9173ed555120b9f7d77917958ed9430ee7647067317b2ce34bf51cca1f107f",
+    "rollback-original.zsh.txt": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+    "preconditions.json": "7f86a9a2d89a1b6330f334422596e1903d9f9cd1e9575507ce881adc0d5e2be6",
+    "root-224e/raw.txt": "14796e7b40a5836c8963c3a590488fe8c870f25fdb4366a944f6f672a616246c",
+    "root-224e/seal.py": "806f6f0e49bf35a167fc1311bc96ba40671fc861e46afeb6b6e2dbacf7a13de9",
+    "root-224e/receipt.json": "bef6358b9a6ab99ae145d607cc39fb77237659912d9e64c396630bffbd1b387d"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "scope": "ONE authorized advisory dryrun, no actual admission",
+  "command": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "--dry-run",
+    "q5-ledger",
+    "4"
+  ],
+  "startedAt": "2026-11-21T19:18:15.771870+00:00",
+  "finishedAt": "2026-11-21T19:18:16.726262+00:00",
+  "exitCode": 75,
+  "before": {
+    "gateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+    "mode": 493,
+    "baselineSha256": "b5e6c34c4682ddcd4ed5159f0cf79e6a5e7dd814410b5b7f2502ca34e876520b",
+    "baselineMtimeNs": 1795267069576990368,
+    "slotAbsent": true
+  },
+  "after": {
+    "gateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+    "mode": 493,
+    "baselineSha256": "b5e6c34c4682ddcd4ed5159f0cf79e6a5e7dd814410b5b7f2502ca34e876520b",
+    "baselineMtimeNs": 1795267069576990368,
+    "slotAbsent": true
+  },
+  "rawSha256": "5b3819a57c61fc4c22cace32a9f44d8aca8479c0b804569fbb22c9f56bc95214",
+  "identityEqual": true,
+  "expected": true
+}

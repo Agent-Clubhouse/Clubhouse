@@ -1,0 +1,16 @@
+{
+  "scope": "Prepared ONE first normal targeted caller only, no command run yet",
+  "head": "224e0797daf1b6e696b46ddd82bea5d79894ae4c",
+  "tree": "08fdfe831ea135d013b48e5b203885e8d2b01124",
+  "sourceClean": true,
+  "gateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+  "rootSealerSha256": "806f6f0e49bf35a167fc1311bc96ba40671fc861e46afeb6b6e2dbacf7a13de9",
+  "baselineBefore": {
+    "sha256": "b5e6c34c4682ddcd4ed5159f0cf79e6a5e7dd814410b5b7f2502ca34e876520b",
+    "mtimeNs": 1795267069576990368
+  },
+  "logOffsetBefore": 975492,
+  "dependencyMatchedLockSha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+  "linksVerified": 811,
+  "observedAt": "2026-11-21T19:19:36.928374+00:00"
+}

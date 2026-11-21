@@ -1,0 +1,66 @@
+{
+  "scope": "Explicitly authorized conditional reviewed gate activation only, no product acceptance",
+  "startedAt": "2026-11-21T19:17:38.579902+00:00",
+  "scriptSha256": "74e2638417ea33436b1a99a2a09133887b334a8d502b3e1b5d4a8f7f2d31eb52",
+  "mutated": true,
+  "prerequisites": {
+    "274a39410-full23-preactivation": {
+      "receiptSha256": "45153dfdf7a51481d0535d6a1692901927c4cd00315ceee87f873b5df23ba1e8",
+      "rawSha256": "c23b4a2e22a8b2e8e72305d4961ab8b3c555e3c9b281713564ecaa0b3e9e9b2f"
+    },
+    "274a39410-original3-preactivation": {
+      "receiptSha256": "ad3c2eeaf67371403f4440186313827306f924aff0dd7b4ef860e0d990463089",
+      "rawSha256": "8aec7012d2893c9c03170e473cb3338c345ae6c49ae62cffeeccdc9ef32ab125"
+    },
+    "274a39410-floor-preactivation": {
+      "receiptSha256": "e3c9528feafa66fbd4797e2c729706817503d4bf5b5944a2f8ee7029c6f26467",
+      "rawSha256": "a859fadec728501fb205a139f8c67685ec7ae74aad8aedf0654459cc456acdb0"
+    }
+  },
+  "before": {
+    "liveSha256": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+    "mode": 493,
+    "uid": 501,
+    "gid": 20,
+    "baseline": {
+      "sha256": "b5e6c34c4682ddcd4ed5159f0cf79e6a5e7dd814410b5b7f2502ca34e876520b",
+      "mtimeNs": 1795267069576990368,
+      "mode": 420,
+      "bytesBase64": "MTgxMgo="
+    },
+    "activity": {
+      "slotAbsent": true,
+      "activeGateOrNodeTestChildren": [],
+      "rawArgumentsRetained": false
+    }
+  },
+  "backup": {
+    "path": "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh.backup-61797476-20261121T191738Z",
+    "sha256": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+    "mode": 493
+  },
+  "immediatePreReplaceActivity": {
+    "slotAbsent": true,
+    "activeGateOrNodeTestChildren": [],
+    "rawArgumentsRetained": false
+  },
+  "after": {
+    "liveSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+    "mode": 493,
+    "uid": 501,
+    "gid": 20,
+    "baseline": {
+      "sha256": "b5e6c34c4682ddcd4ed5159f0cf79e6a5e7dd814410b5b7f2502ca34e876520b",
+      "mtimeNs": 1795267069576990368,
+      "mode": 420,
+      "bytesBase64": "MTgxMgo="
+    },
+    "activity": {
+      "slotAbsent": true,
+      "activeGateOrNodeTestChildren": [],
+      "rawArgumentsRetained": false
+    }
+  },
+  "status": "installed_hash_verified_no_admission_or_dryrun_yet",
+  "finishedAt": "2026-11-21T19:17:38.727775+00:00"
+}

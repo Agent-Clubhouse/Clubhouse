@@ -1,0 +1,41 @@
+{
+  "scope": "ONE actual normal targeted four-suite root caller, no retry/compiler/product acceptance",
+  "startedAt": "2026-11-21T19:20:32.664928+00:00",
+  "finishedAt": "2026-11-21T19:21:41.709146+00:00",
+  "command": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "q5-ledger",
+    "4",
+    "--",
+    "python3",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-root-state-seal.py",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/224e0797d-root-state-first-admission-d45",
+    "--",
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/group-project-notice-ledger/sparse-state.test.ts",
+    "src/main/services/group-project-notice-ledger/sparse-reader.test.ts",
+    "src/main/services/group-project-notice-ledger/state.test.ts",
+    "src/main/services/group-project-notice-ledger/intervals.test.ts",
+    "--maxWorkers=2"
+  ],
+  "exitCode": 0,
+  "before": {
+    "gateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+    "baselineSha256": "b5e6c34c4682ddcd4ed5159f0cf79e6a5e7dd814410b5b7f2502ca34e876520b",
+    "baselineMtimeNs": 1795267069576990368,
+    "slotAbsent": true
+  },
+  "after": {
+    "gateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+    "baselineSha256": "aff37b37cea7c7ec0dfbfb8817edf3971a5d00d23e4fae43e011865add792289",
+    "baselineBytes": "3929\n",
+    "baselineMtimeNs": 1795288895490497914,
+    "slotAbsent": true
+  },
+  "childReceiptExists": true,
+  "rawSha256": "4f83c803d8b683bf32ffb7404660926d88d1fd1876048482baa00db1ee26c01c",
+  "procedureSha256": "1e51946d9911ef5c7cb6c53cf95d14afd62a715c933aad3af4a66b7672508c06"
+}

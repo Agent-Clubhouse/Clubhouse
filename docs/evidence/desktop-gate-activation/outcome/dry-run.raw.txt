@@ -1,0 +1,1 @@
+DRY_RUN: advisory only; guards= swap_grew=1812->3929M baseline_age_s=21627; locked sampling/revalidation required; no slot/baseline/child changes
