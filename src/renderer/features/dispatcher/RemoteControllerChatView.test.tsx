@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ChatEvent } from '../../../shared/chat';
-import type { ControllerChatPage } from '../../../shared/controller-chat';
+import type { ControllerChatPage, ControllerReadResult } from '../../../shared/controller-chat';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useAnnexStore } from '../../stores/annexStore';
 import type { AnnexDevice } from '../../../shared/types';
 import { mergeControllerEvents, RemoteControllerChatView } from './RemoteControllerChatView';
 
-const message = (seq: number, text: string, sessionId = 's'): ChatEvent => ({ agentId: 'work', sessionId, seq, ts: seq, type: 'agent_message', data: { messageId: `m${seq}`, text } });
-function page(events: ChatEvent[] = [], rest: Partial<ControllerChatPage> = {}) {
+const message = (seq: number, text: string, sessionId = 's'): Extract<ChatEvent, { type: 'agent_message' }> =>
+  ({ v: 2, agentId: 'work', sessionId, seq, ts: seq, type: 'agent_message', data: { messageId: `m${seq}`, text } });
+function page(events: ChatEvent[] = [], rest: Partial<ControllerChatPage> = {}): Extract<ControllerReadResult<ControllerChatPage>, { status: 'ok' }> {
   return { status: 'ok' as const, value: { version: 1 as const, agentId: 'work', sessionId: 's', currentSessionId: 's', events,
     lastSeq: events[events.length - 1]?.seq ?? 0, nextBeforeSeq: null, nextAfterSeq: null, readOnly: true as const, ...rest } };
 }

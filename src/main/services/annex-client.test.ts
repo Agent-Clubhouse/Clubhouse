@@ -990,7 +990,7 @@ describe('annex-client', () => {
       await bonjourFindCallback!(makeService());
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      const accepted = {
+      const accepted: Record<string, unknown> = {
         projects: [],
         agents: {},
         quickAgents: {},
@@ -1081,7 +1081,7 @@ describe('annex-client', () => {
   describe('a satellite that cannot build a snapshot', () => {
     const FINGERPRINT = 'SNAP:FAILED';
     const frame = (value: object) => Buffer.from(JSON.stringify(value));
-    const snapshot = { type: 'snapshot', payload: { protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1 } };
+    const snapshot: { type: string; payload: Record<string, unknown> } = { type: 'snapshot', payload: { protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1 } };
 
     async function connected() {
       const { WebSocket: WsMock } = await import('ws');
@@ -1135,7 +1135,8 @@ describe('annex-client', () => {
 
   describe('canvases a satellite left out of its snapshot', () => {
     const FINGERPRINT = 'CANVAS:OMITTED';
-    const STATE = { canvases: [{ id: 'canvas_1', name: 'Main', views: [] }], activeCanvasId: 'canvas_1' };
+    const STATE: { canvases: Array<{ id: string; name: string; views: unknown[] }>; activeCanvasId: string } =
+      { canvases: [{ id: 'canvas_1', name: 'Main', views: [] }], activeCanvasId: 'canvas_1' };
     let send: (frame: object) => void;
     let routes: Record<string, { status: number; body: unknown }>;
 
@@ -1178,7 +1179,7 @@ describe('annex-client', () => {
       await vi.waitFor(() => expect(annexClient.getSatellites()[0]?.state).toBe('connected'));
     }
 
-    const truncated = (lastSeq: number) => ({
+    const truncated = (lastSeq: number): { type: string; payload: { projects: Array<{ id: string }> } & Record<string, unknown> } => ({
       type: 'snapshot',
       payload: {
         protocolVersion: 2, projects: [{ id: 'proj_1' }], agents: {}, quickAgents: {}, theme: {}, orchestrators: {}, pendingPermissions: [], lastSeq,
@@ -1243,7 +1244,7 @@ describe('annex-client', () => {
     });
 
     describe('with a canvas changed after it was known', () => {
-      const edit = (name: string) => ({
+      const edit = (name: string): { type: string; payload: { projectId: string; state: Record<string, unknown> } } => ({
         type: 'canvas:state',
         payload: { projectId: 'proj_1', state: { canvasId: 'canvas_1', name, views: [{ id: 'v' }], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1, zoomedViewId: null, allCanvasTabs: [{ id: 'canvas_1', name }], activeCanvasId: 'canvas_1' } },
       });
@@ -1308,7 +1309,7 @@ describe('annex-client', () => {
 
     describe('with a project that appears after the fetch', () => {
       const NEW_ROUTE = '/api/v1/mobile/canvas/proj_new';
-      const NEW_STATE = { canvases: [{ id: 'new_canvas', name: 'New', views: [] }], activeCanvasId: 'new_canvas' };
+      const NEW_STATE: typeof STATE = { canvases: [{ id: 'new_canvas', name: 'New', views: [] }], activeCanvasId: 'new_canvas' };
       const withNew = (lastSeq: number) => {
         const frame = truncated(lastSeq);
         return { ...frame, payload: { ...frame.payload, projects: [{ id: 'proj_1' }, { id: 'proj_new' }] } };
@@ -1400,9 +1401,9 @@ describe('annex-client', () => {
     });
 
     describe('with a canvas too large for a frame', () => {
-      const full = () => ({ type: 'snapshot', payload: { ...truncated(5).payload, snapshotTruncated: undefined, canvasState: { proj_1: STATE }, appCanvasState: STATE } });
+      const full = (): { type: string; payload: Record<string, unknown> } => ({ type: 'snapshot', payload: { ...truncated(5).payload, snapshotTruncated: undefined, canvasState: { proj_1: STATE }, appCanvasState: STATE } });
       const marker = { type: 'canvas:state', payload: { projectId: 'proj_1', stateOmitted: { version: 1, reason: 'frame_limit', bytes: 9_000_000 } } };
-      const edit = (name: string) => ({ type: 'canvas:state', payload: { projectId: 'proj_1', state: { canvasId: 'canvas_1', name, views: [], viewport: {}, nextZIndex: 0, zoomedViewId: null } } });
+      const edit = (name: string): { type: string; payload: Record<string, unknown> } => ({ type: 'canvas:state', payload: { projectId: 'proj_1', state: { canvasId: 'canvas_1', name, views: [], viewport: {}, nextZIndex: 0, zoomedViewId: null } } });
       const big = (name: string) => ({ canvases: [{ id: 'canvas_1', name }], activeCanvasId: 'canvas_1' });
       const held = () => {
         const release: Array<() => void> = [];
@@ -1518,7 +1519,7 @@ describe('annex-client', () => {
     it('does not put an older fetch over a full snapshot that came meanwhile', async () => {
       await connectedSatellite();
       send(truncated(5));
-      const newer = { canvases: [], activeCanvasId: 'newer' };
+      const newer: typeof STATE = { canvases: [], activeCanvasId: 'newer' };
       send({ type: 'snapshot', payload: { ...truncated(6).payload, snapshotTruncated: undefined, canvasState: { proj_1: newer } } });
       await new Promise((r) => setTimeout(r, 20));
       expect(snapshotEvents().at(-1).canvasState).toEqual({ proj_1: newer });
@@ -2696,7 +2697,7 @@ describe('annex-client', () => {
     it('applies snapshot with higher sequence number', async () => {
       const { messageCb } = await connectSatelliteAN005();
 
-      const snapshot1 = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 5, protocolVersion: 2 };
+      const snapshot1: Record<string, unknown> = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 5, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot1 }));
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(5);
@@ -2710,7 +2711,7 @@ describe('annex-client', () => {
     it('discards snapshot with lower sequence number (stale on reconnect)', async () => {
       const { messageCb } = await connectSatelliteAN005();
 
-      const snapshot_new = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 20, protocolVersion: 2 };
+      const snapshot_new: Record<string, unknown> = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 20, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot_new }));
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(20);
@@ -2728,7 +2729,7 @@ describe('annex-client', () => {
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot).toBeNull();
 
-      const snapshot = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1, protocolVersion: 2 };
+      const snapshot: Record<string, unknown> = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot }));
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(1);
@@ -2739,7 +2740,7 @@ describe('annex-client', () => {
       const { broadcastToAllWindows: bcast } = await import('../util/ipc-broadcast');
       vi.mocked(bcast).mockClear();
 
-      const snapshot_new = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 15, protocolVersion: 2 };
+      const snapshot_new: Record<string, unknown> = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 15, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot_new }));
       const broadcastCountAfterNew = vi.mocked(bcast).mock.calls.length;
 
@@ -3612,7 +3613,10 @@ describe('annex-client', () => {
         vi.mocked(annexPeers.listPeers).mockReturnValue([]);
         vi.mocked(annexPeers.commitVerifiedRoute).mockReturnValue(true);
         vi.mocked(annexPeers.setTypedHost).mockReturnValue(true);
-        vi.mocked(annexPeers.trustOf).mockImplementation((p: any) => ({ fingerprint: p.fingerprint, tlsCertificateFingerprint: p.tlsCertificateFingerprint, pairingId: p.pairingId }));
+        vi.mocked(annexPeers.trustOf).mockImplementation((p) => ({
+          fingerprint: p.fingerprint, publicKey: p.publicKey, pairedAt: p.pairedAt,
+          tlsCertificateFingerprint: p.tlsCertificateFingerprint, pairingId: p.pairingId,
+        }));
       });
 
       it.each([
@@ -4104,7 +4108,7 @@ describe('annex-client', () => {
     describe('controller-only request routes', () => {
       let targetPeer: AnnexPeer | undefined;
       let accepted = true;
-      const value = { version: 1, events: [], readOnly: true };
+      const value: { version: number; events: unknown[]; readOnly: boolean } = { version: 1, events: [], readOnly: true };
 
       beforeEach(() => {
         annexClient.stopClient();
@@ -4431,7 +4435,7 @@ describe('annex-client', () => {
       expect(requests[0].url).toMatch(/\/agents\/a1\/settings-details$/);
     });
     it('reads only the fixed Settings route and rejects malformed or wrong-agent data', async () => {
-      const value = { version: 1, readOnly: true, agentId: 'a?/#', provider: 'Host', model: 'Model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'Host defaults', autoSleep: null, context: null,
+      const value: Record<string, unknown> = { version: 1, readOnly: true, agentId: 'a?/#', provider: 'Host', model: 'Model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'Host defaults', autoSleep: null, context: null,
         setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } };
       answers.push({ status: 200, body: value });
       expect(await annexClient.requestAgentSettings(FP, 'a?/#')).toEqual({ status: 'ok', value });

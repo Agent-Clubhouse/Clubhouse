@@ -133,3 +133,7 @@ This is not full P7w/P8, terminal/transfer/federation or phone parity acceptance
 Current-main integration, deterministic negative controls, complete changed
 fixture typing and independent exact-head review are required before delivery;
 historical P7w results and P7's prior 845-test execution do not transfer.
+The fixture configuration uses ES2022 library declarations for existing test
+APIs supported by the test/Electron runtime, including `Array.at`. Production's
+ES2020 target and `noImplicitAny` remain unchanged; raw wire fixtures and chat
+envelopes are contextually typed rather than excluded or cast through `any`.
