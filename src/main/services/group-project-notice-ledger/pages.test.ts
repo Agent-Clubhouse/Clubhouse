@@ -100,7 +100,7 @@ describe('lazy immutable notice index', () => {
     expect(await fs.readFile(file)).toEqual(oversized);
   });
 
-  it('refuses directory or symlink page replacements without following or replacing them', async () => {
+  it('refuses directory or symlink page replacements without following or replacing them', async ({ skip }) => {
     const directory = await home();
     let index = await NoticePageIndex.open(directory);
     const root = await index.set(undefined, 'stable-id', true);
@@ -111,7 +111,12 @@ describe('lazy immutable notice index', () => {
     index = await NoticePageIndex.open(directory);
     await expect(index.get(root, 'stable-id')).rejects.toThrow('type');
     await fs.rmdir(file);
-    await fs.symlink(saved, file);
+    try { await fs.symlink(saved, file); }
+    catch (error) {
+      // telemetry-exempt: skip only actual unsupported native fixture creation
+      if (process.platform === 'win32' && ['EPERM', 'ENOTSUP', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) { skip(); return; }
+      throw error;
+    }
     await expect(index.get(root, 'stable-id')).rejects.toThrow('type');
     await expect(index.set(undefined, 'stable-id', true)).rejects.toThrow('type');
     expect(index.cacheStats.pageReadBytes).toBe(0);
