@@ -64,6 +64,15 @@ without changing settings-store/replaceFile/renameOver or legacy budget writers.
 Native platform verification and safe explicit incomplete-bootstrap repair are
 still pending. None of these modules is imported by app startup or delivery.
 
+M1 successor to approved814 marker boundary: two-phase min-writer2 bootstrap
+resumes only absent/empty/matching-envelope pristine state with the same UUID;
+no possible supported generation/record can exist before active marker admission.
+Active missing data and ambiguous nonempty bootstrap refuse unchanged. Legacy
+min-writer1 is always active, never bootstrap; older814 refuses new version2.
+Five actual child-exit stages plus repeated envelope→active interruption and
+ambiguity/version controls are planned proof. This is installation recovery
+only, not a member generation, legacy migration or R1 activation record.
+
 Important remaining work before this can be a product:
 
 - Installation marker, migration orchestration and generation-pointer ownership.

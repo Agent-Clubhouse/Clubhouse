@@ -568,13 +568,42 @@ Persist an independent migration marker `group-project-notice-ledger.required`
 with supported version and installation UUID before first ledger activation;
 the envelope must match that UUID. Sync marker and directory before any
 handoff. A crash after marker/before initial ledger is an explicit incomplete
-migration, not permission to auto-rebaseline. A marker without ledger on a later
-process launch reports missing storage and refuses new handoffs. Ledger without
-marker is likewise inspected, not overwritten. Both artifacts are part of
+installation, not permission to auto-rebaseline. An **active** marker without
+ledger on a later process launch reports missing storage and refuses handoffs.
+Ledger without marker is likewise inspected, not overwritten. Both artifacts are part of
 backup/restore and downgrade documentation. This detects isolated ledger loss
 across process restart; simultaneous external removal of marker and ledger
 cannot be distinguished from a genuinely fresh installation and is outside
 the guarantee. Tests must not imply otherwise.
+
+M1 bootstrap refinement: new installation markers use schema1/minWriter2 with
+an explicit `bootstrapping → active` phase; the matching envelope uses
+minWriter2/`prepared`. The factory never returns usable installation ownership
+until the same-UUID active marker is committed. Only a supported bootstrapping
+marker with an absent directory, an empty directory, or **only** its valid
+matching prepared envelope may resume automatically. No journal, generation,
+index/nonce data, unknown file or partial temp may be present. Resume creates
+identity metadata only, never a new UUID, baseline, notice or migration result.
+Stream directory inspection rather than materializing arbitrary retained names.
+Any active missing-data, malformed/mixed-version/mismatched, or nonempty
+ambiguous state remains fatal without deletion or rebaseline.
+
+Compatibility: minWriter1 markers/envelopes are legacy **active**, read without
+rewriting; they are never reinterpreted as bootstrapping. Reserved phase on a
+minWriter1 marker refuses. minWriter2 forces older814 prototype readers to
+refuse the new bootstrap state instead of treating an additive field as active;
+production older-binary notification downgrade limits remain as documented.
+No default migration of existing marker files or settings is introduced.
+
+Prove actual process cuts after marker sync, directory creation, envelope sync,
+before active-marker commit and after active-marker sync. Repeat recovery at
+the envelope→marker cut, retaining UUID/optional fields, and assert idempotent
+active reopens. Ambiguous nonempty bootstrap and active missing-data controls
+must preserve originals and refuse. The single-main-instance/single-flight
+writer premise remains explicit: a final metadata check plus rename is not an
+interprocess atomic compare-and-swap and does not prove resistance to arbitrary
+external filesystem rewrites. Prepared pages/marker phases are not runtime
+generations or a replacement for shared lifecycle admission.
 
 **Older binaries are not ledger-aware.** A sidecar does not make their delivery
 writer fail closed. Do not mirror a scan frontier or uncertain coverage into
