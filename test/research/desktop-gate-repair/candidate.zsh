@@ -117,9 +117,11 @@ if [ "$reason" = " swap_grew=${base}->${swapmb}M" ] && baseline_age && [ "$age" 
       read_sample
     fi
     # All normal guards are rechecked. Swap growth remains the ONLY exemption.
-    if [ "$base" != "$old_base" ] || { [ -n "$reason" ] && [ "$reason" != " swap_grew=${base}->${swapmb}M" ]; } || ! repair_sample_readable; then
-      echo "REFUSED: repair sample $sample_number ${reason:-unreadable_or_swap_capacity}"; exit 75
+    [ "$base" = "$old_base" ] || { echo "REFUSED: repair sample $sample_number baseline changed"; exit 75; }
+    if [ -n "$reason" ] && [ "$reason" != " swap_grew=${base}->${swapmb}M" ]; then
+      echo "REFUSED: repair sample $sample_number$reason"; exit 75
     fi
+    repair_sample_readable || { echo "REFUSED: repair sample $sample_number unreadable_or_free_swap_below_1024"; exit 75; }
     if ! awk -v current="$swap_used" -v previous="$previous_used" -v first="$first_used" 'BEGIN {exit !(current <= previous && first-current <= 32)}'; then
       echo "REFUSED: unstable swap sample $sample_number"; exit 75
     fi

@@ -36,7 +36,7 @@ else:s=m['samples'][min(m.get('current',0),len(m['samples'])-1)]
 if name in s.get('fail_commands',[]):sys.exit(1)
 if name=='top':
  if s.get('malformed_top'):print('Unreadable top');sys.exit(0)
- print('CPU usage: 10% user, 10% sys, %s%% idle'%s.get('idle',80))
+ print('CPU usage: 10% user, 10% sys, '+str(s.get('idle',80))+'% idle')
  print('PhysMem: 40G used (2000M wired, %sM compressor), 9000M unused.'%s.get('compressor',1000))
 elif name=='sysctl':
  if s.get('malformed_swap'):print('Unreadable swap');sys.exit(0)
@@ -147,25 +147,33 @@ class GateTests(unittest.TestCase):
         self.refused(self.run_gate([{'used':1941}],age=0))
 
     def test_nonincreasing_raw_swap_not_truncated_integer(self):
-        self.refused(self.run_gate([{'used':3945.10},{'used':3945.11},{'used':3945.10}]))
+        r=self.run_gate([{'used':3945.10},{'used':3945.11},{'used':3945.10}]);self.refused(r)
+        self.assertIn('unstable swap sample 2',r['output'])
 
     def test_spread_just_above_32_refuses(self):
-        self.refused(self.run_gate([{'used':3945},{'used':3929},{'used':3912.99}]))
+        r=self.run_gate([{'used':3945},{'used':3929},{'used':3912.99}]);self.refused(r)
+        self.assertIn('unstable swap sample 3',r['output'])
 
     def test_paging_limits_each_across_whole_window(self):
         for field,start in [('pageouts',1000),('swapouts',2000)]:
             for middle,last in [(start+257,start+257),(start+128,start+257)]:
                 with self.subTest(field=field,middle=middle):
-                    self.refused(self.run_gate([{field:start},{field:middle},{field:last}]))
+                    r=self.run_gate([{field:start},{field:middle},{field:last}]);self.refused(r)
+                    self.assertIn('paging activity/reset sample',r['output'])
 
     def test_counter_reset_even_when_final_delta_small(self):
         for field,start in [('pageouts',1000),('swapouts',2000)]:
-            with self.subTest(field=field):self.refused(self.run_gate([{field:start},{field:start+200},{field:start+100}]))
+            with self.subTest(field=field):
+                r=self.run_gate([{field:start},{field:start+200},{field:start+100}]);self.refused(r)
+                self.assertIn('paging activity/reset sample 3',r['output'])
 
     def test_free_swap_each_sample(self):
         for n in range(3):
             samples=[{}, {}, {}];samples[n]['swap_free']=1023.99
-            with self.subTest(sample=n):self.refused(self.run_gate(samples))
+            with self.subTest(sample=n):
+                r=self.run_gate(samples);self.refused(r)
+                self.assertIn(f'repair sample {n+1} unreadable_or_free_swap_below_1024',r['output'])
+                self.assertEqual(r['model']['next'],n+1)
 
     def test_all_normal_guards_each_sample(self):
         failures=[{'idle':39},{'available':4095},{'freepct':24},{'compressor':12289},
@@ -173,7 +181,9 @@ class GateTests(unittest.TestCase):
         for failure in failures:
             for n in range(3):
                 samples=[{}, {}, {}];samples[n]=failure
-                with self.subTest(failure=failure,sample=n):self.refused(self.run_gate(samples,minimum=6 if 'swift' in failure else 4))
+                with self.subTest(failure=failure,sample=n):
+                    r=self.run_gate(samples,minimum=6 if 'swift' in failure else 4);self.refused(r)
+                    self.assertEqual(r['model']['next'],n+1)
 
     def test_normal_threshold_equality_and_minimum_scope(self):
         values={'idle':40,'available':4096,'freepct':25,'compressor':12288,'swift':True}
@@ -190,7 +200,9 @@ class GateTests(unittest.TestCase):
         for failure in failures:
             for n in range(3):
                 samples=[{}, {}, {}];samples[n]=failure
-                with self.subTest(failure=failure,sample=n):self.refused(self.run_gate(samples))
+                with self.subTest(failure=failure,sample=n):
+                    r=self.run_gate(samples);self.refused(r)
+                    self.assertEqual(r['model']['next'],n+1)
 
     def test_postrepair_normal_revalidation_failure_rolls_back_bytes_and_mtime(self):
         for changed in [{'idle':39},{'used':4074},{'node':True},{'hold':'new-hold'},
@@ -218,6 +230,7 @@ class GateTests(unittest.TestCase):
                 r=self.run_gate(dry=True,**options)
                 self.assertFalse(r['child']);self.assertEqual(r['before'],r['after']);self.assertEqual(r['log'],'')
                 self.assertEqual(r['slot'],options.get('slot',False));self.assertIn('DRY_RUN: advisory only',r['output'])
+                self.assertEqual(r['rc'],0 if 'samples' in options else 75)
                 self.assertEqual(r['model']['next'],1);self.assertFalse(any(x['command']=='sleep' for x in r['model']['trace']))
 
     def test_absent_baseline_normal_first_admission_is_preserved(self):
