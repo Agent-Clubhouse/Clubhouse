@@ -47,7 +47,7 @@ Reviewer: qa-details-local-composition, November 21, 2026.
 
 ## Dependencies this verdict relies on, and exclusions
 
-I read the parts of `pages.ts` (approved at its last change, `8142a812a`/`181046cde` in the foundation) that this reader relies on:
+I read the parts of `pages.ts` that this reader relies on. The orchestrator says `pages.ts` was not previously reviewed on its own, so this is a **targeted read of the read path only**, not a full review:
 
 - **`load`:** every uncached read re-checks the content sha256 against the root digest, and checks the reference metadata (first, last, count, depth) against the claim.
 - **`decode`:** byte bound, version, fanout, strictly increasing leaf keys, and `previous.last < child.first` across children. Together these give globally unique ordered keys.
