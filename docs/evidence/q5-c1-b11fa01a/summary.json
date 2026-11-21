@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "sourceHead": "b11fa01a0af97fe9ebd34c6917ff8d5771d73727",
+  "sourceTree": "c599b5eaaa24121221e375ca6a34c216cf92b0e8",
+  "scope": "C1 current delivery policy, mocked host/board/runtime; not future Q5 scan or producer helpers",
+  "checks": {
+    "tests": {
+      "argv": [
+        "./node_modules/.bin/vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/group-project-delivery.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "C1 source eligibility"
+      ],
+      "exit": 0,
+      "childWallSeconds": 0.430966,
+      "rawSha256": "d3d703330a03ebbdd8911a61512af8b598e382a5aa60c7fcc37582d31d28f528",
+      "sealedSourceCount": 31,
+      "beforeAfterEqual": true
+    },
+    "types": {
+      "argv": [
+        "./node_modules/.bin/tsc",
+        "--noEmit",
+        "-p",
+        "tsconfig.json"
+      ],
+      "exit": 0,
+      "childWallSeconds": 8.566655,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sealedSourceCount": 31,
+      "beforeAfterEqual": true
+    },
+    "lint": {
+      "argv": [
+        "./node_modules/.bin/eslint",
+        "src/main/services/group-project-delivery.test.ts"
+      ],
+      "exit": 0,
+      "childWallSeconds": 0.537637,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sealedSourceCount": 31,
+      "beforeAfterEqual": true
+    }
+  },
+  "dependenciesRestored": true,
+  "slotAbsent": true
+}

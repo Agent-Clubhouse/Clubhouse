@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "path": "REVIEW.md",
+      "sha256": "71002f0e2d57fa1d8d34bf2b79b8c374646843fd1c73fb4b77e1f9169dd4adc6",
+      "bytes": 2173
+    },
+    {
+      "path": "lint/gate.raw.txt",
+      "sha256": "00b7be7a2f08356decfe34a032fd12c259bc0034be0162461cf478a1db0072c8",
+      "bytes": 556
+    },
+    {
+      "path": "lint/launch.json",
+      "sha256": "b884693390c70756874ebe252b85e704fa5a83cb9024327eb591f743200b08f4",
+      "bytes": 528
+    },
+    {
+      "path": "lint/raw.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "lint/receipt.json",
+      "sha256": "54cf3aecb2d94f11bf8a74e39628c3533064c7a81e0bbd857876a18a93af47ad",
+      "bytes": 8587
+    },
+    {
+      "path": "seal.py",
+      "sha256": "0b2730d045c8bee70b31e981ac3d52fe24740095ae1dd92a35b7c88f288815a3",
+      "bytes": 3429
+    },
+    {
+      "path": "source-diff.patch",
+      "sha256": "ea1b72a98c47cf55418ca1f05e17d2aa366f86b6378b98045f518b79b1ed8916",
+      "bytes": 2979
+    },
+    {
+      "path": "summary.json",
+      "sha256": "4f8944336b086a38c28a8a0b33f2cae542ef827f695221a2e95ffe74987d2468",
+      "bytes": 1476
+    },
+    {
+      "path": "tests/gate.raw.txt",
+      "sha256": "1edfd13288351e38e1faefafa51b25d8201d6e491522cc40b69920f849daeb5b",
+      "bytes": 1264
+    },
+    {
+      "path": "tests/launch.json",
+      "sha256": "eaf6f4948ae4bb067c8a7893868d95999ab505e2bb97a850c29b959186ec98ea",
+      "bytes": 630
+    },
+    {
+      "path": "tests/raw.txt",
+      "sha256": "d3d703330a03ebbdd8911a61512af8b598e382a5aa60c7fcc37582d31d28f528",
+      "bytes": 647
+    },
+    {
+      "path": "tests/receipt.json",
+      "sha256": "923aa84115b76f1eaeb8fda174d437226fa23e3d4f6cc9836af87928f6cbaf49",
+      "bytes": 8688
+    },
+    {
+      "path": "types/gate.raw.txt",
+      "sha256": "11806d55a7bd600f6c30e1e7258593a6708375089887e319ff7757148be72fc8",
+      "bytes": 532
+    },
+    {
+      "path": "types/launch.json",
+      "sha256": "844865549e71ccca6438f769de82369dca2f8e8166014a6fcce127ebb59886ff",
+      "bytes": 517
+    },
+    {
+      "path": "types/raw.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "types/receipt.json",
+      "sha256": "9525908b1668ebbd55b93d8473a1a51f0dae78a5cd5361dd7df65834561ef3b7",
+      "bytes": 8575
+    }
+  ]
+}

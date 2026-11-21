@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh",
+    "q5-ledger",
+    "4",
+    "--",
+    "python3",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-c1-seal.py",
+    "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/b11fa01a-c1-tests-attempt1",
+    "--",
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/group-project-delivery.test.ts",
+    "--maxWorkers=2",
+    "-t",
+    "C1 source eligibility"
+  ],
+  "startedAt": "2026-11-21T19:48:39.851719+00:00",
+  "finishedAt": "2026-11-21T19:48:41.140948+00:00",
+  "exitCode": 0
+}
