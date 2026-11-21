@@ -1,0 +1,199 @@
+[
+  {
+    "digest": "sha256:ca4ad17652bffcccc2d23dbb87c58bc5bb8896bb80d1837dbb78ed9427d5215a",
+    "id": 14698250390,
+    "name": "annex-traces-ubuntu-latest-1",
+    "size_in_bytes": 12293,
+    "label": "annex-ubuntu-1",
+    "file": "hosted-44879425441-annex-ubuntu-1.zip",
+    "download_sha256": "ca4ad17652bffcccc2d23dbb87c58bc5bb8896bb80d1837dbb78ed9427d5215a",
+    "junit": {
+      "entry": "junit.xml",
+      "bytes": 257554,
+      "sha256": "4f067cad73be128c4cd7f52674f52af002638a53c2ee2c39084a57d5fdcfeaca",
+      "tests": 20,
+      "failed": 0,
+      "skipped": 0,
+      "target_cases": [
+        {
+          "name": "a sender crash after a durable200 replays the same identity once, then preserves FIFO and file bytes",
+          "time": "10.907",
+          "skipped": false,
+          "failure": false,
+          "error": false
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "entry": "annex-v2-agents-across-mac-f2b59-eserves-FIFO-and-file-bytes/attachments/delivery-boundary-json-deda92380f93dc0c70c372d4bff9d622b3dd2540.json",
+        "sha256": "b5524439c4e2a96f7e8e1c6f5243819713b61bcde6dfb4718891a70d0243abc4",
+        "value": {
+          "pid": 3489,
+          "launcherPid": 3489,
+          "callId": "bb85d7d540e4032e512b57a732ad4253c40bf902dff35821c63fc92b0d9496cb",
+          "status": 200,
+          "receiptAt": "2026-11-21T07:26:27.929Z",
+          "resultHash": "3153f48fdb8b158484313fe653ae5628d8d0645f61ed343caab3e9e59e36ae27",
+          "outboxIds": [
+            "bb85d7d540e4032e512b57a732ad4253c40bf902dff35821c63fc92b0d9496cb",
+            "0a8ab45982fe8fe73e09d2901987ccc60288dbee7d54fb3267e80433fb7a55b7"
+          ]
+        }
+      }
+    ],
+    "actual_request_observation": {
+      "entry": "annex-v2-agents-across-mac-f2b59-eserves-FIFO-and-file-bytes/attachments/received-call-ids-jsonl-bce1f5294eea0c80625fde6bac6c69a430dd3ec2.jsonl",
+      "sha256": "6d78d730c6eab21688bb7403aff024d1615104e028c77e867d6a9f607d7a3691",
+      "call_ids": [
+        "bb85d7d540e4032e512b57a732ad4253c40bf902dff35821c63fc92b0d9496cb",
+        "bb85d7d540e4032e512b57a732ad4253c40bf902dff35821c63fc92b0d9496cb",
+        "0a8ab45982fe8fe73e09d2901987ccc60288dbee7d54fb3267e80433fb7a55b7",
+        "c55c746e4c82c59547130ae4d839c883c7057a87d35c5c17c26f0d27e3c4ed5a"
+      ],
+      "first_call_attempts": 2,
+      "second_call_attempts": 1,
+      "total_requests": 4
+    },
+    "inline_replay_witness_retained": false
+  },
+  {
+    "digest": "sha256:c9f7e2e40d060dfd3b9c8b80e1f066658f1e4ab3f805b5598e6e3549c557057d",
+    "id": 14697742228,
+    "name": "test-results-windows-latest-2",
+    "size_in_bytes": 522642,
+    "label": "windows-2",
+    "file": "hosted-44879425441-windows-2.zip",
+    "download_sha256": "c9f7e2e40d060dfd3b9c8b80e1f066658f1e4ab3f805b5598e6e3549c557057d",
+    "junit": {
+      "entry": "test-results.xml",
+      "bytes": 15627783,
+      "sha256": "96e20c3cf47c121f36c986c9b6c83401e859b391a0ac1b549a2ee00d6ce65607",
+      "tests": 15789,
+      "failed": 0,
+      "skipped": 172,
+      "target_cases": [
+        {
+          "name": "built-in skill status (#3517) > exposes current applicability and only a successful current running delivery",
+          "time": "0.4173173",
+          "skipped": false,
+          "failure": false,
+          "error": false
+        }
+      ]
+    },
+    "witnesses": []
+  },
+  {
+    "digest": "sha256:f640ad617c51e832cbd40fa9c0852a1c9843b0d741cee8d07b051c041dbf8d8f",
+    "id": 14697716866,
+    "name": "chat-e2e-traces-windows-2022-3",
+    "size_in_bytes": 3394,
+    "label": "chat-windows-3",
+    "file": "hosted-44879425441-chat-windows-3.zip",
+    "download_sha256": "f640ad617c51e832cbd40fa9c0852a1c9843b0d741cee8d07b051c041dbf8d8f",
+    "junit": {
+      "entry": "junit.xml",
+      "bytes": 26404,
+      "sha256": "70f6050d27671989eca0a21a5c4d8eb127b06b14f8696b409ac4773978d66830",
+      "tests": 17,
+      "failed": 0,
+      "skipped": 0,
+      "target_cases": [
+        {
+          "name": "the Dispatcher wakes a connected agent with a message and sleeps it again",
+          "time": "6.285",
+          "skipped": false,
+          "failure": false,
+          "error": false
+        }
+      ]
+    },
+    "witnesses": []
+  },
+  {
+    "digest": "sha256:e75c4d4a1c583cfa3176c60edb10f0ec0b61b9463596b6d52be5df11ef1edcd8",
+    "id": 14697378290,
+    "name": "chat-e2e-traces-ubuntu-latest-3",
+    "size_in_bytes": 7197,
+    "label": "chat-ubuntu-3",
+    "file": "hosted-44879425441-chat-ubuntu-3.zip",
+    "download_sha256": "e75c4d4a1c583cfa3176c60edb10f0ec0b61b9463596b6d52be5df11ef1edcd8",
+    "junit": {
+      "entry": "junit.xml",
+      "bytes": 167459,
+      "sha256": "fde737809e69faa405dbe0d788b17048a4574be4a4b0e8da52e009dac9b4a5d5",
+      "tests": 17,
+      "failed": 0,
+      "skipped": 0,
+      "target_cases": [
+        {
+          "name": "the Dispatcher wakes a connected agent with a message and sleeps it again",
+          "time": "3.837",
+          "skipped": false,
+          "failure": false,
+          "error": false
+        }
+      ]
+    },
+    "witnesses": []
+  },
+  {
+    "digest": "sha256:c6ec547fe1f14763f56a3f1ea6abdd2a739fa0253db8c73eea2eb1501b525b24",
+    "id": 14697344459,
+    "name": "annex-traces-windows-2022-1",
+    "size_in_bytes": 6817,
+    "label": "annex-windows-1",
+    "file": "hosted-44879425441-annex-windows-1.zip",
+    "download_sha256": "c6ec547fe1f14763f56a3f1ea6abdd2a739fa0253db8c73eea2eb1501b525b24",
+    "junit": {
+      "entry": "junit.xml",
+      "bytes": 41615,
+      "sha256": "036de454ef804a72f7b0b6a32b250b7922b6195e3ed338107456a1cc5eb902ab",
+      "tests": 20,
+      "failed": 0,
+      "skipped": 0,
+      "target_cases": [
+        {
+          "name": "a sender crash after a durable200 replays the same identity once, then preserves FIFO and file bytes",
+          "time": "14.44",
+          "skipped": false,
+          "failure": false,
+          "error": false
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "entry": "annex-v2-agents-across-mac-f2b59-eserves-FIFO-and-file-bytes/attachments/delivery-boundary-json-56d6ed17b207d1d43c8f57a9148ef8ff5b3676a5.json",
+        "sha256": "db5c469eb89764ea0328dc1c71a75957ef25eea3d81da81540d3757e3cc5be35",
+        "value": {
+          "pid": 2136,
+          "launcherPid": 544,
+          "callId": "93265e36ed82c143f8fe46a901e5ef861981398d664b42cfc73a425affb2e0af",
+          "status": 200,
+          "receiptAt": "2026-11-21T07:27:24.740Z",
+          "resultHash": "3153f48fdb8b158484313fe653ae5628d8d0645f61ed343caab3e9e59e36ae27",
+          "outboxIds": [
+            "93265e36ed82c143f8fe46a901e5ef861981398d664b42cfc73a425affb2e0af",
+            "94b68aeab2210c26efac3c54f86a3dbe8a2bf2a3fc78fd10fcb5f8d67bb48c4d"
+          ]
+        }
+      }
+    ],
+    "actual_request_observation": {
+      "entry": "annex-v2-agents-across-mac-f2b59-eserves-FIFO-and-file-bytes/attachments/received-call-ids-jsonl-d1c19d666cfef367926f6585fc6e70af17393119.jsonl",
+      "sha256": "d5f856eb390419570b304fe1d32e7a517eb60e702b2a39a41e7b98c8612d4ff2",
+      "call_ids": [
+        "93265e36ed82c143f8fe46a901e5ef861981398d664b42cfc73a425affb2e0af",
+        "93265e36ed82c143f8fe46a901e5ef861981398d664b42cfc73a425affb2e0af",
+        "94b68aeab2210c26efac3c54f86a3dbe8a2bf2a3fc78fd10fcb5f8d67bb48c4d",
+        "c08f257b1180ff9e6940581772ef35cfdac695f5411fa1039aeefeab895f3c7d"
+      ],
+      "first_call_attempts": 2,
+      "second_call_attempts": 1,
+      "total_requests": 4
+    },
+    "inline_replay_witness_retained": false
+  }
+]

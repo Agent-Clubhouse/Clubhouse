@@ -1,0 +1,81 @@
+{
+  "issue": 3738,
+  "pr": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3751",
+  "approved_source": "c0a278d6e96484394cda8b595a90e32da2af9a12",
+  "approved_source_chain": [
+    "807360c543a28848e9359564b7917d0bac425e91",
+    "0723c341045212306c3966f6b8951b626d95e10f",
+    "c0a278d6e96484394cda8b595a90e32da2af9a12"
+  ],
+  "final_independent_qa": "4f2175d637b69728c7038e56c8eeb27b33e04d61",
+  "evidence_only_branch": "evidence/3738-hosted-c0a278d6e",
+  "hosted": {
+    "run": 44879425441,
+    "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44879425441",
+    "status": "completed",
+    "conclusion": "success",
+    "source_head": "c0a278d6e96484394cda8b595a90e32da2af9a12",
+    "actual_checkout": "596ad681aa4385185b3dc30e5fb82249f280b49c",
+    "actual_checkout_parents": [
+      "6130b29669f58c8a7bad112aa745d4ca43775971",
+      "c0a278d6e96484394cda8b595a90e32da2af9a12"
+    ],
+    "actual_checkout_tree": "cf169e860c3786939aee75fcef1d7e2e7ba28349",
+    "job_conclusions": {
+      "success": 33,
+      "skipped": 4
+    },
+    "skips_are_not_passes": true,
+    "four_affected_e2e_jobs_no_retries": true
+  },
+  "merged": {
+    "headRefOid": "c0a278d6e96484394cda8b595a90e32da2af9a12",
+    "mergeCommit": {
+      "oid": "daa7dab5e3db78280ba845602bbcfd7e5f73cf0c"
+    },
+    "mergedAt": "2026-11-21T07:33:46Z",
+    "number": 3751,
+    "state": "MERGED",
+    "url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3751"
+  },
+  "original_baseline_and_red_evidence": "7e362e2cc1f0ea153a5569dad86ec5cfedc00a0d",
+  "preview_and_original_hosted_red_evidence": "e8a55d50b7b1b1fc1651f712595b5e30be162e03",
+  "consumer_exact_head_local_evidence": "e86254490b5860c431ed41936352d254b6ac543e",
+  "raw_logs": [
+    {
+      "file": "hosted-44879425441-annex-ubuntu-1.log.gz",
+      "uncompressed_bytes": 294486,
+      "uncompressed_sha256": "1064970979dca9692305ef0ac600b56a942af549cb7eb0ea67bb1ee097f726c8"
+    },
+    {
+      "file": "hosted-44879425441-annex-windows-1.log.gz",
+      "uncompressed_bytes": 79539,
+      "uncompressed_sha256": "82178fdada8c1040e84d08431fcf72ab624ca21987dccd3e49c97ac4dc37bfed"
+    },
+    {
+      "file": "hosted-44879425441-chat-ubuntu-3.log.gz",
+      "uncompressed_bytes": 201544,
+      "uncompressed_sha256": "629f8538c9b5bd28427f5674322918ccf7ce4e12fde7df60bb0063035cf9d1ae"
+    },
+    {
+      "file": "hosted-44879425441-chat-windows-3.log.gz",
+      "uncompressed_bytes": 61119,
+      "uncompressed_sha256": "61e072e0f9b80f79bdf7b5276b5910e5903aa5c9452799b3e9e03a416af65c2b"
+    },
+    {
+      "file": "hosted-44879425441-plan.log.gz",
+      "uncompressed_bytes": 77484,
+      "uncompressed_sha256": "1cb3485a692322da3e8cd84112bb938c77ae89c41a643fdec41801546d53ce09"
+    },
+    {
+      "file": "hosted-44879425441-watch.log.gz",
+      "uncompressed_bytes": 275470,
+      "uncompressed_sha256": "4202197b3668773ae3091da59061e27ddd9cbef07e58098be2d86c9dbd1a713b"
+    }
+  ],
+  "limitations": [
+    "Historical Windows restart.test.ts timeout did not recur; root cause remains unresolved.",
+    "Inline durable-replay-witness body is not retained by existing CI archive/JUnit; exact archived boundary JSON and request JSONL plus passing source assertions are retained.",
+    "No local E2E, full P8, federation review, live settings/access changes, restarts, installs or release claim."
+  ]
+}
