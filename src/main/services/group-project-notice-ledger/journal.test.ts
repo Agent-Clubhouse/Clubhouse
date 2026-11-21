@@ -166,6 +166,7 @@ describe('sequenced notice journal persistence', () => {
     const segments = (await fs.readdir(directory)).filter((n) => /^journal-\d+\.log$/.test(n));
     expect(segments.length).toBeLessThanOrEqual(4);
     for (const name of segments) expect((await fs.stat(path.join(directory, name))).size).toBeLessThanOrEqual(NOTICE_PAGE_BYTES);
+    expect(journal.retainedEntryCount).toBe(0);
     journal = await open(directory);
     expect(journal.snapshot()?.terminal).toEqual([[1, 2000]]);
     expect(journal.snapshot()?.acceptedCount).toBe(2000);

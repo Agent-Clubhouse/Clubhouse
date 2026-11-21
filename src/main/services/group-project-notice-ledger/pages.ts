@@ -20,7 +20,8 @@ function keyValid(key: unknown): asserts key is string {
   if (typeof key !== 'string' || !key || Buffer.byteLength(key) > 512 || [...key].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new Error('Invalid notice index key');
 }
 function json(value: unknown): NoticeJson {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string') return value;
+  if (value === null) return null;
+  if (typeof value === 'boolean' || typeof value === 'string') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (Array.isArray(value)) return value.map(json);
   if (isObject(value) && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
