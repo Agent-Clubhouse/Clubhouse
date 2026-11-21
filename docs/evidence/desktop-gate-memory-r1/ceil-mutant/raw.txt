@@ -1,0 +1,77 @@
+{"mutant": "floor-pressure-MiB", "sha256": "66d3efc476315f8bc13c086232cee69ff99270e21a246d7d4b2030895e796011", "command": ["/Users/masonallen/.pyenv/versions/3.11.9/bin/python3", "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", "--candidate", "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-unit-mutant-only-1wqzm84j/floor-mutant.zsh", "GateTests.test_memory_units_and_overlimit_fraction_are_conservative", "-v"], "exitCode": 1, "killed": true}
+test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) ... 
+  test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) (comp='12.000001G') ... FAIL
+  test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) (comp='12288.000001M') ... FAIL
+  test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) (comp='12582912.001K') ... FAIL
+  test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) (comp='12884901889B') ... FAIL
+  test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) (comp='0.011718750001T') ... FAIL
+
+======================================================================
+FAIL: test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) (comp='12.000001G')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 257, in test_memory_units_and_overlimit_fraction_are_conservative
+    self.refused(r);self.assertIn('compressor=',r['output']);self.assertNotIn('unreadable_sample',r['output'])
+    ^^^^^^^^^^^^^^^
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 117, in refused
+    self.assertEqual(result['rc'],75,result['output'])
+AssertionError: 0 != 75 : 1970-01-02T03:46:40Z START fake-only idle=80% unused=9000M avail=32768M freepct=87 comp=12.000001G swap=1812M pid=85800 cmd=/bin/sh -c printf child > /var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-tyesv10_/child; exit 0
+1970-01-02T03:46:40Z END fake-only rc=0
+
+
+======================================================================
+FAIL: test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) (comp='12288.000001M')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 257, in test_memory_units_and_overlimit_fraction_are_conservative
+    self.refused(r);self.assertIn('compressor=',r['output']);self.assertNotIn('unreadable_sample',r['output'])
+    ^^^^^^^^^^^^^^^
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 117, in refused
+    self.assertEqual(result['rc'],75,result['output'])
+AssertionError: 0 != 75 : 1970-01-02T03:46:40Z START fake-only idle=80% unused=9000M avail=32768M freepct=87 comp=12288.000001M swap=1812M pid=85857 cmd=/bin/sh -c printf child > /var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-qfwr5sve/child; exit 0
+1970-01-02T03:46:40Z END fake-only rc=0
+
+
+======================================================================
+FAIL: test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) (comp='12582912.001K')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 257, in test_memory_units_and_overlimit_fraction_are_conservative
+    self.refused(r);self.assertIn('compressor=',r['output']);self.assertNotIn('unreadable_sample',r['output'])
+    ^^^^^^^^^^^^^^^
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 117, in refused
+    self.assertEqual(result['rc'],75,result['output'])
+AssertionError: 0 != 75 : 1970-01-02T03:46:40Z START fake-only idle=80% unused=9000M avail=32768M freepct=87 comp=12582912.001K swap=1812M pid=85921 cmd=/bin/sh -c printf child > /var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-bqh9iftj/child; exit 0
+1970-01-02T03:46:40Z END fake-only rc=0
+
+
+======================================================================
+FAIL: test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) (comp='12884901889B')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 257, in test_memory_units_and_overlimit_fraction_are_conservative
+    self.refused(r);self.assertIn('compressor=',r['output']);self.assertNotIn('unreadable_sample',r['output'])
+    ^^^^^^^^^^^^^^^
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 117, in refused
+    self.assertEqual(result['rc'],75,result['output'])
+AssertionError: 0 != 75 : 1970-01-02T03:46:40Z START fake-only idle=80% unused=9000M avail=32768M freepct=87 comp=12884901889B swap=1812M pid=85978 cmd=/bin/sh -c printf child > /var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-f8e2e_r4/child; exit 0
+1970-01-02T03:46:40Z END fake-only rc=0
+
+
+======================================================================
+FAIL: test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) (comp='0.011718750001T')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 257, in test_memory_units_and_overlimit_fraction_are_conservative
+    self.refused(r);self.assertIn('compressor=',r['output']);self.assertNotIn('unreadable_sample',r['output'])
+    ^^^^^^^^^^^^^^^
+  File "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py", line 117, in refused
+    self.assertEqual(result['rc'],75,result['output'])
+AssertionError: 0 != 75 : 1970-01-02T03:46:40Z START fake-only idle=80% unused=9000M avail=32768M freepct=87 comp=0.011718750001T swap=1812M pid=86042 cmd=/bin/sh -c printf child > /var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-fake-only-k5c13ois/child; exit 0
+1970-01-02T03:46:40Z END fake-only rc=0
+
+
+----------------------------------------------------------------------
+Ran 1 test in 20.967s
+
+FAILED (failures=5)

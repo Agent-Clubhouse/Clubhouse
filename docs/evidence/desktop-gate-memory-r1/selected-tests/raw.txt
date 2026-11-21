@@ -1,0 +1,12 @@
+test_memory_units_and_overlimit_fraction_are_conservative (__main__.GateTests.test_memory_units_and_overlimit_fraction_are_conservative) ... ok
+test_zero_and_kib_compressor_and_unused_work_through_full_repair (__main__.GateTests.test_zero_and_kib_compressor_and_unused_work_through_full_repair) ... ok
+test_unused_is_diagnostic_with_unknown_fallback (__main__.GateTests.test_unused_is_diagnostic_with_unknown_fallback) ... ok
+test_unparseable_compressor_fails_closed_at_every_stage (__main__.GateTests.test_unparseable_compressor_fails_closed_at_every_stage) ... ok
+test_success_exact_bounds_and_locked_revalidation (__main__.GateTests.test_success_exact_bounds_and_locked_revalidation) ... ok
+test_normal_threshold_equality_and_minimum_scope (__main__.GateTests.test_normal_threshold_equality_and_minimum_scope) ... ok
+test_dry_run_is_advisory_even_on_success_or_stale_baseline_or_held_slot (__main__.GateTests.test_dry_run_is_advisory_even_on_success_or_stale_baseline_or_held_slot) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 44.271s
+
+OK

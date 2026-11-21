@@ -1,0 +1,16 @@
+{
+  "scope": "Narrow R1 fake-resource proof only, no activation",
+  "source": "274a39410c714931abfd38369d53b9101d5b60c5",
+  "files": {
+    "mutant.json": "39c3abdc312c01a79c3cee4470db5b9b0465761431a51d442268984ca981d247",
+    "seal.py": "c7f798cc86d375fa289749aae9b406b66c8983bc8156d049480fd1ff4078a044",
+    "source-bridge.json": "b6f3683d9fa0eec1ea2b2d8ce7d0ce7b8a290617ce632c2b8dc02140c7dc4e8f",
+    "candidate-from-4be.patch": "35686a7657759bebfdd06cd0ee8dd7143bce734e0a9c18277d205bdfdbeeb5fa",
+    "REVIEW.md": "6c2d385cb16d18706c73bcf3e41c7e686d49fb66b7d92f0801a3782875ab21f5",
+    "floor-mutant.zsh.txt": "66d3efc476315f8bc13c086232cee69ff99270e21a246d7d4b2030895e796011",
+    "ceil-mutant/raw.txt": "b85127fb78268c294ad67435df7fdd78ac6e1e8aa7b6fdee6fc3def5942e28e6",
+    "ceil-mutant/receipt.json": "288ef9a421d93f0143e2cdf4e882c80733337298089482015c6bacdd7c9dff10",
+    "selected-tests/raw.txt": "5723520d573e286a4c9031b425db2771e27dee9a2aa5abf25e1b61cd3f9902fa",
+    "selected-tests/receipt.json": "be196de59eb7faab67826fb537c09daf0e284fbe9228c06f60b036afd0ac53eb"
+  }
+}

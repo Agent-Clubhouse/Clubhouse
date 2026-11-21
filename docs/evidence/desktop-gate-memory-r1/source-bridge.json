@@ -1,0 +1,34 @@
+{
+  "scope": "Static source bridge only; no old19tests or three-mutant proof transferred",
+  "oldSource": "4be6edfd3b87fd8434c62550ea17bffb8d356bec",
+  "oldEvidence": "5a6dd656ac4de0bfdcd9b2076d4ba78785cfc81c",
+  "source": "274a39410c714931abfd38369d53b9101d5b60c5",
+  "tree": "e3ae0e77c55a1da6017ed3f85129e8a64bac85b6",
+  "files": {
+    "test/research/desktop-gate-repair/README.md": {
+      "before": "d750ff34ff9a65967e50df96f1d8e08bfe4f16e27cde1ef56753e2b998ba4907",
+      "after": "db8b0db120381015c0ae3926455deacad66eb47433a1f55d5b8932ab3459614e",
+      "equal": false
+    },
+    "test/research/desktop-gate-repair/candidate.zsh": {
+      "before": "f80745f1a6ea7ea1d4d83f9c2cc5a22e5143000a5d42c0ca7b2e381caefdb4fd",
+      "after": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+      "equal": false
+    },
+    "test/research/desktop-gate-repair/gate.patch": {
+      "before": "56768dd8ed31755adfd7d583258367eae5ee4e1a7e652fd54c34f27e7b578f61",
+      "after": "8ed5bf1316aba3179673fe4090dca33954aca666d9c8390710be201afaba7daf",
+      "equal": false
+    },
+    "test/research/desktop-gate-repair/original.zsh": {
+      "before": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+      "after": "61797476544935859d70911b17cab44fae4c2575180498ab6d9388a79f8fcf16",
+      "equal": true
+    },
+    "test/research/desktop-gate-repair/test_gate.py": {
+      "before": "173e358d8b9289806fe375fc66df3ce75c020fc8065d050eaa3e7c670fcfebfa",
+      "after": "8e290c91f51ab334997f0b6b0f6785f5214214c05ac21b51abed1d5564577f41",
+      "equal": false
+    }
+  }
+}

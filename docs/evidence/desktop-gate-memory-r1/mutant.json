@@ -1,0 +1,19 @@
+{
+  "mutant": "floor-pressure-MiB",
+  "sha256": "66d3efc476315f8bc13c086232cee69ff99270e21a246d7d4b2030895e796011",
+  "command": [
+    "/Users/masonallen/.pyenv/versions/3.11.9/bin/python3",
+    "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design/test/research/desktop-gate-repair/test_gate.py",
+    "--candidate",
+    "/var/folders/qq/v0d1915d0b1448qg10bzfkn80000gn/T/gate-unit-mutant-only-1wqzm84j/floor-mutant.zsh",
+    "GateTests.test_memory_units_and_overlimit_fraction_are_conservative",
+    "-v"
+  ],
+  "exitCode": 1,
+  "killed": true,
+  "replacement": {
+    "old": "whole=int(mib); if (mib > whole) whole++",
+    "new": "whole=int(mib)"
+  },
+  "preserved": "Byte-equal reconstruction matches executed temporary mutant SHA; original temp removed by fixture"
+}
