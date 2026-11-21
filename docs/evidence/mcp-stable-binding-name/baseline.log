@@ -1,0 +1,48 @@
+2026-11-21T04:43:33Z START mcp-stable-binding-name idle=76% unused=2743M avail=27858M freepct=82 comp=4096M swap=1820M pid=14118 cmd=node node_modules/vitest/vitest.mjs run src/main/services/clubhouse-mcp/tool-registry.test.ts --maxWorkers=1 -t issued callable
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name
+
+ ❯ |main| src/main/services/clubhouse-mcp/tool-registry.test.ts (127 tests | 2 failed | 125 skipped) 8ms
+       × keeps an issued callable through actual name hydration on claude-code (#3738) 6ms
+       × keeps an issued callable through actual name hydration on codex-cli (#3738) 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/tool-registry.test.ts > ToolRegistry > callTool > keeps an issued callable through actual name hydration on claude-code (#3738)
+ FAIL  |main| src/main/services/clubhouse-mcp/tool-registry.test.ts > ToolRegistry > callTool > keeps an issued callable through actual name hydration on codex-cli (#3738)
+AssertionError: expected { Object (content, isError) } to deeply equal { content: [ { type: 'text', …(1) } ] }
+
+- Expected
++ Received
+
+  {
+    "content": [
+      {
+-       "text": "sent there",
++       "text": "No binding found for target: project_durable_1795076596637_iq1wwx_f7ra",
+        "type": "text",
+      },
+    ],
++   "isError": true,
+  }
+
+ ❯ src/main/services/clubhouse-mcp/tool-registry.test.ts:535:55
+    533|         expect(original.targetId).toBe(far);
+    534|         // A fixed-list client repeats the original name without fetch…
+    535|         expect(await callTool('agent-1', name, args)).toEqual(first);
+       |                                                       ^
+    536|         expect(forwarded.calls).toEqual([
+    537|           ['agent-1', far, id, 'send_message', args],
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 125 skipped (127)
+   Start at  23:43:33
+   Duration  1.00s (transform 741ms, setup 5ms, import 921ms, tests 8ms, environment 0ms)
+
+2026-11-21T04:43:35Z END mcp-stable-binding-name rc=1

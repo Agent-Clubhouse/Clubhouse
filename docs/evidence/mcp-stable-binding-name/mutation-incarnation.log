@@ -1,0 +1,49 @@
+2026-11-21T05:01:45Z START mcp-stable-binding-name idle=89% unused=3411M avail=28231M freepct=82 comp=4108M swap=1820M pid=21390 cmd=node node_modules/vitest/vitest.mjs run src/main/services/clubhouse-mcp/binding-incarnation.test.ts -t reversed-order --maxWorkers=1
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name
+
+ ❯ |main| src/main/services/clubhouse-mcp/binding-incarnation.test.ts (4 tests | 1 failed | 3 skipped) 940ms
+     × refuses old names after a reversed-order process rebuild without forwarding 939ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/binding-incarnation.test.ts > binding callable process incarnation (#3738) > refuses old names after a reversed-order process rebuild without forwarding
+AssertionError: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+-   "forwarded": [],
++   "forwarded": [
++     "second@cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc",
++     "first@bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
++   ],
+    "refusals": [
+-     "no_binding",
+-     "no_binding",
++     undefined,
++     undefined,
+    ],
+  }
+
+ ❯ src/main/services/clubhouse-mcp/binding-incarnation.test.ts:92:75
+     90|     const refusals = [];
+     91|     for (const oldName of oldNames) refusals.push(second.refusalReason…
+     92|     expect({ refusals, forwarded: forwarded.calls.map(call => call[1])…
+       |                                                                           ^
+     93|       refusals: ['no_binding', 'no_binding'], forwarded: [],
+     94|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 skipped (4)
+   Start at  00:01:45
+   Duration  1.03s (transform 747ms, setup 4ms, import 14ms, tests 940ms, environment 0ms)
+
+2026-11-21T05:01:46Z END mcp-stable-binding-name rc=1

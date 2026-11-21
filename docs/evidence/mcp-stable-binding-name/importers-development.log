@@ -1,0 +1,45 @@
+2026-11-21T04:58:11Z START mcp-stable-binding-name idle=79% unused=2500M avail=27630M freepct=82 comp=4110M swap=1820M pid=12327 cmd=node node_modules/vitest/vitest.mjs run src/main/services/clubhouse-mcp/binding-incarnation.test.ts src/main/services/clubhouse-mcp/tool-registry.test.ts src/main/services/clubhouse-mcp/binding-manager.test.ts src/main/services/clubhouse-mcp/bridge-server.test.ts src/main/services/clubhouse-mcp/local-wake.test.ts src/main/services/clubhouse-mcp/plugin-tool-registry.test.ts src/main/services/clubhouse-mcp/tool-grants.test.ts src/main/services/clubhouse-mcp/tools/dispatcher-routing.test.ts src/main/services/persisted-bindings.test.ts src/main/services/clubhouse-mcp/tools/agent-tools.test.ts src/main/services/clubhouse-mcp/tools/group-project-tools.test.ts src/main/services/group-project-delivery.test.ts --maxWorkers=1
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name
+
+ ❯ |main| src/main/services/clubhouse-mcp/tools/agent-tools.test.ts (115 tests | 2 failed) 45ms
+       × keeps provider, context and message controls unavailable for an unconnected target despite configure ANY Ask first 3ms
+       × sleeping hints stay on Clubhouse for other callers 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/tools/agent-tools.test.ts > AgentTools > Dispatcher wake and sleep (#2577) > keeps provider, context and message controls unavailable for an unconnected target despite configure ANY Ask first
+Error: Missing test binding: dispatcher-1 -> orch-1
+ ❯ agentToolName src/main/services/clubhouse-mcp/tools/agent-tools.test.ts:92:20
+     90| function agentToolName(binding: McpBinding, suffix: string): string {
+     91|   const live = bindingManager.getBindingsForAgent(binding.agentId).fin…
+     92|   if (!live) throw new Error(`Missing test binding: ${binding.agentId}…
+       |                    ^
+     93|   return buildToolName(live, suffix);
+     94| }
+ ❯ src/main/services/clubhouse-mcp/tools/agent-tools.test.ts:947:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/tools/agent-tools.test.ts > AgentTools > Dispatcher wake and sleep (#2577) > sleeping hints stay on Clubhouse for other callers
+SyntaxError: Unexpected token 'N', "No binding"... is not valid JSON
+ ❯ src/main/services/clubhouse-mcp/tools/agent-tools.test.ts:989:27
+    987|     it('sleeping hints stay on Clubhouse for other callers', async () …
+    988|       bindingManager.bind('agent-1', { targetId: 'orch-1', targetKind:…
+    989|       const status = JSON.parse((await callTool('agent-1', agentToolNa…
+       |                           ^
+    990|       expect(status.message).toContain('Start it from Clubhouse');
+    991|       const refused = await callTool('agent-1', agentToolName(toTarget…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 11 passed (12)
+      Tests  2 failed | 519 passed (521)
+   Start at  23:58:11
+   Duration  6.68s (transform 1.74s, setup 23ms, import 3.46s, tests 2.45s, environment 0ms)
+
+2026-11-21T04:58:18Z END mcp-stable-binding-name rc=1

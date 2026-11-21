@@ -1,0 +1,250 @@
+2026-11-21T04:53:02Z START mcp-stable-binding-name idle=89% unused=3041M avail=27831M freepct=81 comp=4112M swap=1820M pid=7243 cmd=node node_modules/vitest/vitest.mjs run src/main/services/clubhouse-mcp/binding-incarnation.test.ts src/main/services/clubhouse-mcp/tool-registry.test.ts src/main/services/clubhouse-mcp/binding-manager.test.ts src/main/services/clubhouse-mcp/bridge-server.test.ts src/main/services/clubhouse-mcp/local-wake.test.ts src/main/services/clubhouse-mcp/plugin-tool-registry.test.ts src/main/services/clubhouse-mcp/tools/dispatcher-routing.test.ts src/main/services/persisted-bindings.test.ts --maxWorkers=1
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name
+
+ ❯ |main| src/main/services/clubhouse-mcp/local-wake.test.ts (19 tests | 13 failed) 780ms
+     × is off by default: a sleeping target lists get_status but not wake_agent, and a call is refused 39ms
+     × turned on: a sleeping target lists wake_agent and get_status, and the call wakes it 51ms
+     × still needs the agent.wake grant: Ask first asks, Off refuses 55ms
+     × points the sender at wake_agent only when it can call it 31ms
+     × never offers sleep to an agent that is not the Dispatcher, switch or not 39ms
+     × leaves the Dispatcher as it was: wake_agent offered with no switch and nothing saved 31ms
+     × refuses wake_agent to the Dispatcher's chat, which wakes nothing but the Dispatcher, switch or not 32ms
+     × a connection Clubhouse makes starts with wake on and nothing saved: a sleeping target lists wake_agent, and the call wakes it 31ms
+     × a wire the user draws starts with wake on 35ms
+     × still needs the agent.wake grant: Ask first asks, Off refuses 32ms
+     × turned off by the user, it stays off over the start 33ms
+     × never offers sleep to an agent that is not the Dispatcher, every tool on or not 31ms
+     × the Dispatcher starts with read, message and wake, but no clear or compact 32ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on a local connection (#3215) > is off by default: a sleeping target lists get_status but not wake_agent, and a call is refused
+AssertionError: expected [] to include 'get_status'
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:79:32
+     77| describe('wake on a local connection (#3215)', () => {
+     78|   it('is off by default: a sleeping target lists get_status but not wa…
+     79|     expect(suffixes('a', 'b')).toContain('get_status');
+       |                                ^
+     80|     expect(suffixes('a', 'b')).not.toContain('wake_agent');
+     81|     const refused = await call('a', 'b', 'wake_agent');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on a local connection (#3215) > turned on: a sleeping target lists wake_agent and get_status, and the call wakes it
+AssertionError: expected [] to deeply equal ArrayContaining{…}
+
+- Expected
++ Received
+
+- ArrayContaining [
+-   "get_status",
+-   "wake_agent",
+- ]
++ []
+
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:96:32
+     94|   it('turned on: a sleeping target lists wake_agent and get_status, an…
+     95|     await setLocalWake('a', 'b', true);
+     96|     expect(suffixes('a', 'b')).toEqual(expect.arrayContaining(['get_st…
+       |                                ^
+     97|     const result = await call('a', 'b', 'wake_agent', { message: 'revi…
+     98|     expect(result.isError).toBeFalsy();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on a local connection (#3215) > still needs the agent.wake grant: Ask first asks, Off refuses
+AssertionError: expected [] to include 'wake_agent'
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:129:32
+    127|     await setLocalWake('a', 'b', true);
+    128|     await updateAgentGrantChanges('a', () => ({ changes: [{ action: 'a…
+    129|     expect(suffixes('a', 'b')).toContain('wake_agent');
+       |                                ^
+    130|     const asked = await call('a', 'b', 'wake_agent');
+    131|     expect(refusalReasonOf(asked)).toBe('ask_first');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on a local connection (#3215) > points the sender at wake_agent only when it can call it
+SyntaxError: Unexpected token 'N', "No binding"... is not valid JSON
+ ❯ hint src/main/services/clubhouse-mcp/local-wake.test.ts:152:35
+    150|
+    151|   it('points the sender at wake_agent only when it can call it', async…
+    152|     const hint = async () => JSON.parse((await call('a', 'b', 'get_sta…
+       |                                   ^
+    153|     const refused = async () => (await call('a', 'b', 'send_message', …
+    154|     expect(await hint()).toBe('Agent is sleeping. Start it from Clubho…
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:154:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on a local connection (#3215) > never offers sleep to an agent that is not the Dispatcher, switch or not
+AssertionError: expected 'no_binding' to be 'group_off' // Object.is equality
+
+Expected: "group_off"
+Received: "no_binding"
+
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:169:66
+    167|     running.add('b');
+    168|     expect(suffixes('a', 'b')).not.toContain('sleep_agent');
+    169|     expect(refusalReasonOf(await call('a', 'b', 'sleep_agent'))).toBe(…
+       |                                                                  ^
+    170|     expect(lifecycle.sleepAgent).not.toHaveBeenCalled();
+    171|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on a local connection (#3215) > leaves the Dispatcher as it was: wake_agent offered with no switch and nothing saved
+AssertionError: expected [] to deeply equal ArrayContaining{…}
+
+- Expected
++ Received
+
+- ArrayContaining [
+-   "get_status",
+-   "wake_agent",
+- ]
++ []
+
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:176:41
+    174|     bindingManager.bind('dispatcher', wire('dispatcher', 'b'));
+    175|     expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId…
+    176|     expect(suffixes('dispatcher', 'b')).toEqual(expect.arrayContaining…
+       |                                         ^
+    177|     expect((await call('dispatcher', 'b', 'wake_agent')).isError).toBe…
+    178|     expect(lifecycle.wakeWiredAgent).toHaveBeenCalledWith(expect.objec…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on a local connection (#3215) > refuses wake_agent to the Dispatcher's chat, which wakes nothing but the Dispatcher, switch or not
+AssertionError: expected 'no_binding' to be 'tool_denied' // Object.is equality
+
+Expected: "tool_denied"
+Received: "no_binding"
+
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:188:68
+    186|     bindingManager.bind('chat', wire('chat', 'b'));
+    187|     expect(suffixes('chat', 'b')).not.toContain('wake_agent');
+    188|     expect(refusalReasonOf(await call('chat', 'b', 'wake_agent'))).toB…
+       |                                                                    ^
+    189|     await setLocalWake('chat', 'b', true);
+    190|     expect(suffixes('chat', 'b')).not.toContain('wake_agent');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on by default (the maintainer's defaults, 2026-11-09) > a connection Clubhouse makes starts with wake on and nothing saved: a sleeping target lists wake_agent, and the call wakes it
+AssertionError: expected [] to deeply equal ArrayContaining{…}
+
+- Expected
++ Received
+
+- ArrayContaining [
+-   "get_status",
+-   "wake_agent",
+- ]
++ []
+
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:228:32
+    226|     start('a', 'b', AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink);
+    227|     expect(getConnectionDirection({ agentId: 'a' }, { agentId: 'b' }))…
+    228|     expect(suffixes('a', 'b')).toEqual(expect.arrayContaining(['get_st…
+       |                                ^
+    229|     expect((await call('a', 'b', 'wake_agent')).isError).toBeFalsy();
+    230|     expect(lifecycle.wakeWiredAgent).toHaveBeenCalledWith(expect.objec…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on by default (the maintainer's defaults, 2026-11-09) > a wire the user draws starts with wake on
+AssertionError: expected [] to include 'wake_agent'
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:235:32
+    233|   it('a wire the user draws starts with wake on', async () => {
+    234|     await applyConnectionTools('a', 'b', ['clear_agent', 'compact_agen…
+    235|     expect(suffixes('a', 'b')).toContain('wake_agent');
+       |                                ^
+    236|     expect((await call('a', 'b', 'wake_agent')).isError).toBeFalsy();
+    237|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on by default (the maintainer's defaults, 2026-11-09) > still needs the agent.wake grant: Ask first asks, Off refuses
+AssertionError: expected [] to include 'wake_agent'
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:242:32
+    240|     start('a', 'b', AUTOMATIC_CONNECTION_SWITCHES.helperToParent);
+    241|     await updateAgentGrantChanges('a', () => ({ changes: [{ action: 'a…
+    242|     expect(suffixes('a', 'b')).toContain('wake_agent');
+       |                                ^
+    243|     expect(refusalReasonOf(await call('a', 'b', 'wake_agent'))).toBe('…
+    244|     expect(ask.askFirst).toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on by default (the maintainer's defaults, 2026-11-09) > turned off by the user, it stays off over the start
+AssertionError: expected 'no_binding' to be 'tool_denied' // Object.is equality
+
+Expected: "tool_denied"
+Received: "no_binding"
+
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:257:65
+    255|     start('a', 'b', AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink);
+    256|     expect(suffixes('a', 'b')).not.toContain('wake_agent');
+    257|     expect(refusalReasonOf(await call('a', 'b', 'wake_agent'))).toBe('…
+       |                                                                 ^
+    258|   });
+    259|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on by default (the maintainer's defaults, 2026-11-09) > never offers sleep to an agent that is not the Dispatcher, every tool on or not
+AssertionError: expected [] to deeply equal ArrayContaining{…}
+
+- Expected
++ Received
+
+- ArrayContaining [
+-   "clear_agent",
+-   "compact_agent",
+- ]
++ []
+
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:263:32
+    261|     start('a', 'b', EVERY_SWITCH_ON);
+    262|     running.add('b');
+    263|     expect(suffixes('a', 'b')).toEqual(expect.arrayContaining(['clear_…
+       |                                ^
+    264|     expect(suffixes('a', 'b')).not.toContain('sleep_agent');
+    265|     expect(refusalReasonOf(await call('a', 'b', 'sleep_agent'))).toBe(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/13]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/local-wake.test.ts > wake on by default (the maintainer's defaults, 2026-11-09) > the Dispatcher starts with read, message and wake, but no clear or compact
+AssertionError: expected [] to deeply equal ArrayContaining{…}
+
+- Expected
++ Received
+
+- ArrayContaining [
+-   "get_status",
+-   "wake_agent",
+- ]
++ []
+
+ ❯ src/main/services/clubhouse-mcp/local-wake.test.ts:273:41
+    271|     start('dispatcher', 'b', AUTOMATIC_CONNECTION_SWITCHES.dispatcherT…
+    272|     expect(readLocalDirectionTools('dispatcher', 'b').disabled).toEqua…
+    273|     expect(suffixes('dispatcher', 'b')).toEqual(expect.arrayContaining…
+       |                                         ^
+    274|     expect((await call('dispatcher', 'b', 'wake_agent')).isError).toBe…
+    275|     running.add('b');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/13]⎯
+
+
+ Test Files  1 failed | 7 passed (8)
+      Tests  13 failed | 285 passed (298)
+   Start at  23:53:02
+   Duration  5.02s (transform 1.14s, setup 16ms, import 1.53s, tests 2.97s, environment 0ms)
+
+2026-11-21T04:53:07Z END mcp-stable-binding-name rc=1

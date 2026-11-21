@@ -1,0 +1,80 @@
+2026-11-21T04:52:09Z START mcp-stable-binding-name idle=80% unused=3297M avail=28180M freepct=82 comp=4112M swap=1820M pid=6297 cmd=node node_modules/vitest/vitest.mjs run src/main/services/clubhouse-mcp/binding-incarnation.test.ts --maxWorkers=1
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/mcp-stable-binding-name
+
+ ❯ |main| src/main/services/clubhouse-mcp/binding-incarnation.test.ts (2 tests | 2 failed) 922ms
+     × refuses old names after a same-order process rebuild without forwarding 896ms
+     × refuses old names after a reversed-order process rebuild without forwarding 25ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/binding-incarnation.test.ts > binding callable process incarnation (#3738) > refuses old names after a same-order process rebuild without forwarding
+AssertionError: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+-   "forwarded": [],
++   "forwarded": [
++     "first@bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
++     "second@cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc",
++   ],
+    "refusals": [
+-     "no_binding",
+-     "no_binding",
++     undefined,
++     undefined,
+    ],
+  }
+
+ ❯ src/main/services/clubhouse-mcp/binding-incarnation.test.ts:89:75
+     87|     const refusals = [];
+     88|     for (const oldName of oldNames) refusals.push(second.refusalReason…
+     89|     expect({ refusals, forwarded: forwarded.calls.map(call => call[1])…
+       |                                                                           ^
+     90|       refusals: ['no_binding', 'no_binding'], forwarded: [],
+     91|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/clubhouse-mcp/binding-incarnation.test.ts > binding callable process incarnation (#3738) > refuses old names after a reversed-order process rebuild without forwarding
+AssertionError: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+-   "forwarded": [],
++   "forwarded": [
++     "second@cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc",
++     "first@bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
++   ],
+    "refusals": [
+-     "no_binding",
+-     "no_binding",
++     undefined,
++     undefined,
+    ],
+  }
+
+ ❯ src/main/services/clubhouse-mcp/binding-incarnation.test.ts:89:75
+     87|     const refusals = [];
+     88|     for (const oldName of oldNames) refusals.push(second.refusalReason…
+     89|     expect({ refusals, forwarded: forwarded.calls.map(call => call[1])…
+       |                                                                           ^
+     90|       refusals: ['no_binding', 'no_binding'], forwarded: [],
+     91|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  23:52:09
+   Duration  1.01s (transform 710ms, setup 5ms, import 12ms, tests 922ms, environment 0ms)
+
+2026-11-21T04:52:11Z END mcp-stable-binding-name rc=1
