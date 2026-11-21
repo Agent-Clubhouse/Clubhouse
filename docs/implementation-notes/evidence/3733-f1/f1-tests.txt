@@ -1,0 +1,1 @@
+src/main/services/remote-connection-card.test.ts src/main/services/remote-connection-endpoint-fields.test.ts  src/main/services/remote-connection-endpoint-fields.test.ts

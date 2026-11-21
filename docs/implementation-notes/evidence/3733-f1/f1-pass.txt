@@ -1,0 +1,85 @@
+$ vitest run --no-cache --maxWorkers=3 src/main/services/remote-connection-card.test.ts src/main/services/remote-connection-endpoint-fields.test.ts  src/main/services/remote-connection-endpoint-fields.test.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: saved-and-memory 21ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: cold-cache 11ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: changed-directory 12ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: cache-late 12ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: dispatcher-inapplicable 4ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: helper-inapplicable 5ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: revoked-before-metadata 5ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: bounded-page 15ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: cross-project-outgoing 22ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: cross-project-two-way 20ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: matching-role-folder 18ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: distinct-native-ids 15ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: convergent-admitted-role-folder 21ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: cross-project-same-name 16ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: cross-project-native-override 17ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: reverse-cross-project 17ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: bounded-identity-page 18ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > projects actual selected binding/source/direction records without raw instructions, unrelated agents, legacy readers or writes 6ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > matches local group naming order and never borrows this target’s label as an incoming sender name 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > keeps corrupt saved overrides unknown instead of claiming default allowed switches or recovering the file 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > uses network wake defaults independently of the local opt-in flag 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > does not initialize cold corrupt credential/membership stores or run a cold saved source just for display 3ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > retains actual selected display receipts through later binding change 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > retains actual selected display receipts through later removal change 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > retains actual selected display receipts through later reference-name change 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > retains actual selected display receipts through later transport change 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > rejects an inconsistent unscoped reader reply before any unrelated row is emitted 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > uses actual recorded controller/pause evidence and retains independent pin receipts 4ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > uses actual recorded controller/pause evidence and retains independent router receipts 2ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > uses actual recorded controller/pause evidence and retains independent publication receipts 2ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > uses actual recorded controller/pause evidence and retains independent local-switch receipts 2ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > does not serialize another controller’s publication when the selected target identity differs 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > shows fixed network namespace records instead of treating an ordinary saved override as effective 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > keeps cold source coverage unknown instead of presenting a verified empty Connections list 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > preserves row and reader omissions without querying omitted target names or hosts 2ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > uses shared local source identities and keeps unknown prototype-shaped source IDs unclassified 0ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > refuses revoked admission before reading any selected binding or primary file 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > preserves independently known Connections when selected source originals hit their limit: typed-incoming 3ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > preserves independently known Connections when selected source originals hit their limit: unbound-incoming 3ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > preserves independently known Connections when selected source originals hit their limit: widget-and-unrelated 2ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > does not guess incoming widget identity from an untyped source field result with known rows=true 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > does not guess incoming widget identity from an untyped source field result with known rows=false 0ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > composes cold saved Dispatcher records and independent owner evidence: saved 2ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > composes cold saved Dispatcher records and independent owner evidence: unqualified-cached-name 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > composes cold saved Dispatcher records and independent owner evidence: pending-not-saved 3ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > composes cold saved Dispatcher records and independent owner evidence: owner-saved-copy-missing 2ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > composes cold saved Dispatcher records and independent owner evidence: override-present 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > composes cold saved Dispatcher records and independent owner evidence: override-unavailable 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > composes cold saved Dispatcher records and independent owner evidence: primary-unavailable 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > composes cold saved Dispatcher records and independent owner evidence: owner-unavailable 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > composes cold saved Dispatcher records and independent owner evidence: primary-late 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > composes cold saved Dispatcher records and independent owner evidence: owner-late 2ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > does not adopt manual Dispatcher-link records for the locally inapplicable dispatcher role 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > does not adopt manual Dispatcher-link records for the locally inapplicable helper role 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > keeps an unavailable cold manual source distinct from a complete retained empty cache 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > keeps cold manual source page and row omissions visible 2ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > shows selected configured automatic Dispatcher directions without collecting sources: on 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > shows selected configured automatic Dispatcher directions without collecting sources: off 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > shows selected configured automatic Dispatcher directions without collecting sources: unknown-controller 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > shows selected configured automatic Dispatcher directions without collecting sources: unknown-name 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > shows selected configured automatic Dispatcher directions without collecting sources: saved-override 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > shows selected configured automatic Dispatcher directions without collecting sources: unreadable-override 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > shows selected configured automatic Dispatcher directions without collecting sources: mixed-source 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > charges automatic source fields even when known binding rows fill the displayed page 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > continues actual outgoing binding records without dropping late fields behind the Details row cap 1ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > renders project-qualified configured helpers independently of colliding native binding names and private paths 16ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > renders independently qualified saved canvas records without effective switches or raw definitions 26ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > renders independently qualified saved zone records without effective switches or raw definitions 13ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > keeps same-ID ordinary Dispatcher metadata visible with explicit ambiguity and no configured switch/direction claim 5ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > continues every retained target-kind variant without losing fields to the card row budget 2ms
+ ✓ |main| src/main/services/remote-connection-card.test.ts > keeps manual source eligibility unknown when saved switches permit it, and rechecks observed restrictions 2ms
+
+ Test Files  2 passed (2)
+      Tests  71 passed (71)
+   Start at  23:24:41
+   Duration  1.10s (transform 1.05s, setup 10ms, import 1.42s, tests 387ms, environment 0ms)
+
+vitest exit=0

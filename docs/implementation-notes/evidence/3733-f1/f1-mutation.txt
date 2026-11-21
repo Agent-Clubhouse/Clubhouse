@@ -1,0 +1,83 @@
+# mutation on 7daca0e3e87dbfc58f87aa3fb1536d5802891d80: remote-connection-card.ts (pair.manual ? 3 : 0) -> (pair.manual ? 2 : 0)
+diff --git a/src/main/services/remote-connection-card.ts b/src/main/services/remote-connection-card.ts
+index fa51a4af4..4689a0216 100644
+--- a/src/main/services/remote-connection-card.ts
++++ b/src/main/services/remote-connection-card.ts
+@@ -259,7 +259,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected:
+       if (pair.kind === 'agent' && !pair.machine) { const address = parseAgentAddress(other); if (address.machine) { pair.machine = address.machine; pair.remoteAgent = address.agentId; } }
+       const makers = pair.saved?.makers;
+       const makerField = makers && (makers.state !== 'ok' || !!makers.value.length);
+-      const fields = 3 + (pair.machine ? 3 + (options.dispatcher ? 1 : 0) : 0) + (makerField ? 1 : 0) + (pair.manual ? 3 : 0) + (pair.manual && pair.identityGroup ? 1 : 0) + (pair.automatic ? 1 : 0) + (pair.manualFields ? 1 + (pair.manualFields.memory ? 1 : 0) : 0);
++      const fields = 3 + (pair.machine ? 3 + (options.dispatcher ? 1 : 0) : 0) + (makerField ? 1 : 0) + (pair.manual ? 2 : 0) + (pair.manual && pair.identityGroup ? 1 : 0) + (pair.automatic ? 1 : 0) + (pair.manualFields ? 1 + (pair.manualFields.memory ? 1 : 0) : 0);
+       if (c.rows.length >= REMOTE_DETAILS_MAX_ROWS) { c.omitted += fields; continue; }
+       const sourceBinding = pair.sources.map((source) => value(source.binding)).find((b) => !!b);
+       const record = pair.binding ?? sourceBinding;
+$ vitest run --no-cache --maxWorkers=2 src/main/services/remote-connection-endpoint-fields.test.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: saved-and-memory 20ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: cold-cache 9ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: changed-directory 9ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: cache-late 10ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: dispatcher-inapplicable 4ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: helper-inapplicable 4ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: revoked-before-metadata 5ms
+ × |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: bounded-page 15ms
+   → expected 125 to be 142 // Object.is equality
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: cross-project-outgoing 19ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: cross-project-two-way 17ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: matching-role-folder 15ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: distinct-native-ids 14ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: convergent-admitted-role-folder 14ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: cross-project-same-name 16ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: cross-project-native-override 18ms
+ ✓ |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: reverse-cross-project 20ms
+ × |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: bounded-identity-page 16ms
+   → expected 20 to be 21 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/remote-connection-endpoint-fields.test.ts > integrates real selected source, primary and owner cache fields into a read-only Connections card: bounded-page
+AssertionError: expected 125 to be 142 // Object.is equality
+
+- Expected
++ Received
+
+- 142
++ 125
+
+ ❯ src/main/services/remote-connection-endpoint-fields.test.ts:88:67
+     86|   if (kind === 'bounded-page') {
+     87|     expect(cacheRead).toHaveBeenCalledTimes(30); expect(receipts.every…
+     88|     expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBe…
+       |                                                                   ^
+     89|     expect.soft(c.rows.some((r) => r.label.endsWith(' manual source el…
+     90|     expect.soft(c.rows.some((r) => r.label.endsWith(' saved target')))…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/remote-connection-endpoint-fields.test.ts > keeps configured controller and saved manual endpoint identities independent: bounded-identity-page
+AssertionError: expected 20 to be 21 // Object.is equality
+
+- Expected
++ Received
+
+- 21
++ 20
+
+ ❯ src/main/services/remote-connection-endpoint-fields.test.ts:138:105
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 15 passed (17)
+   Start at  23:24:43
+   Duration  812ms (transform 404ms, setup 4ms, import 515ms, tests 225ms, environment 0ms)
+
+vitest exit=1
