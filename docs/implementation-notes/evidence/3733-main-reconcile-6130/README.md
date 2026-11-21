@@ -1,6 +1,6 @@
 # Main reconciliation for #3749: `ed13e3060`
 
-`ed13e3060c3dcd1b6c36a48aed0e8d46d6f20d7a` merges `main` `6130b2966` (#3748 wake readiness, #3750 upload lease) into the QA-approved CI-fix head `81cd9b4ef`. These are sanitized copies of output.
+`ed13e30604dedc24733af0a42daceea2b058316c` merges `main` `6130b2966` (#3748 wake readiness, #3750 upload lease) into the QA-approved CI-fix head `81cd9b4ef`. These are sanitized copies of output.
 
 ## Conflicts (both unions)
 
@@ -30,3 +30,7 @@
 ## Limits
 
 Windows fixtures are proven only by a hosted run. The earlier short-`/tmp` handoff failures stay recorded in `../3733-ci-3749-run44868309476/` with their main comparison. Results that were printed to the terminal only (703 on macOS, 309 controls, 333 at default depth) are not credited.
+
+## Correction
+
+The first version of this README (commit `29a75c916`) gave a wrong full SHA for the merge. The SHA was typed by hand. The correct value, from `git rev-parse`, is now above.
