@@ -1,0 +1,258 @@
+# mutation renderer-agent on src/renderer/features/dispatcher/RemoteDispatcherConnectionPages.tsx (head 1bd612ca6fce8ea2463b231798f3b4abd27d4fb5)
+# applied diff:
+33c33
+<   const value = result.status === 'ok' && result.value.agentId === roleAgentId ? result.value : undefined;
+---
+>   const value = result.status === 'ok' ? result.value : undefined;
+$ vitest run --no-cache --maxWorkers=2 src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ❯ |renderer| src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx (27 tests | 1 failed) 6728ms
+     × pages role Connections by source with the overview role agent and resets on a role event 1220ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |renderer| src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx > no-chat selected-host Dispatcher role consumer > pages role Connections by source with the overview role agent and resets on a role event
+TestingLibraryElementError: Unable to find an element with the text: The host did not return the selected source page for this Dispatcher.. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+<section
+  aria-label="Connections"
+  data-testid="details-card-connections"
+>
+  <h3
+    class="pr-3.5 pl-[33px] pt-2 pb-1 text-xs font-semibold text-ctp-subtext1"
+  >
+    Connections
+     
+    <span
+      class="font-normal text-ctp-overlay1"
+      data-testid="details-card-connections-summary"
+    >
+      HOST_connections
+    </span>
+  </h3>
+  <div
+    class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+  >
+    <span
+      class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+    >
+      Link from here
+    </span>
+    <span
+      class="min-w-0 text-ctp-text break-words"
+    >
+      Link active
+    </span>
+  </div>
+  <p
+    class="pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"
+  >
+    This computer’s published controller-link observation. It is not the selected host’s connection inventory.
+  </p>
+  <div
+    aria-label="Dispatcher connection inventories"
+    class="flex flex-wrap gap-3 pl-[33px] pr-3.5 pb-2 text-xs"
+  >
+    <button
+      aria-pressed="false"
+      type="button"
+    >
+      Overview
+    </button>
+    <button
+      aria-pressed="false"
+      type="button"
+    >
+      Outgoing bindings
+    </button>
+    <button
+      aria-pressed="true"
+      type="button"
+    >
+      Incoming bindings
+    </button>
+  </div>
+  <div
+    class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+  >
+    <span
+      class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+    >
+      Incoming row 25
+    </span>
+    <span
+      class="min-w-0 text-ctp-text break-words"
+    >
+      <span
+        class="break-words"
+      >
+        HOST_PAGE
+      </span>
+    </span>
+  </div>
+  <p
+    class="pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"
+  >
+    1
+     known 
+    records
+     in this inventory page
+    . Pages are separate host observations of the same Dispatcher.
+  </p>
+  <div
+    class="flex gap-3 pl-[33px] text-xs"
+  >
+    <button
+      type="button"
+    >
+      First page
+    </button>
+    <button
+      type="button"
+    >
+      Previous
+    </button>
+    <button
+      disabled=""
+      type="button"
+    >
+      Next
+    </button>
+  </div>
+</section>
+
+Ignored nodes: comments, script, style
+<section
+  aria-label="Connections"
+  data-testid="details-card-connections"
+>
+  <h3
+    class="pr-3.5 pl-[33px] pt-2 pb-1 text-xs font-semibold text-ctp-subtext1"
+  >
+    Connections
+     
+    <span
+      class="font-normal text-ctp-overlay1"
+      data-testid="details-card-connections-summary"
+    >
+      HOST_connections
+    </span>
+  </h3>
+  <div
+    class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+  >
+    <span
+      class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+    >
+      Link from here
+    </span>
+    <span
+      class="min-w-0 text-ctp-text break-words"
+    >
+      Link active
+    </span>
+  </div>
+  <p
+    class="pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"
+  >
+    This computer’s published controller-link observation. It is not the selected host’s connection inventory.
+  </p>
+  <div
+    aria-label="Dispatcher connection inventories"
+    class="flex flex-wrap gap-3 pl-[33px] pr-3.5 pb-2 text-xs"
+  >
+    <button
+      aria-pressed="false"
+      type="button"
+    >
+      Overview
+    </button>
+    <button
+      aria-pressed="false"
+      type="button"
+    >
+      Outgoing bindings
+    </button>
+    <button
+      aria-pressed="true"
+      type="button"
+    >
+      Incoming bindings
+    </button>
+  </div>
+  <div
+    class="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+  >
+    <span
+      class="flex-shrink-0 w-[96px] text-ctp-overlay1"
+    >
+      Incoming row 25
+    </span>
+    <span
+      class="min-w-0 text-ctp-text break-words"
+    >
+      <span
+        class="break-words"
+      >
+        HOST_PAGE
+      </span>
+    </span>
+  </div>
+  <p
+    class="pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"
+  >
+    1
+     known 
+    records
+     in this inventory page
+    . Pages are separate host observations of the same Dispatcher.
+  </p>
+  <div
+    class="flex gap-3 pl-[33px] text-xs"
+  >
+    <button
+      type="button"
+    >
+      First page
+    </button>
+    <button
+      type="button"
+    >
+      Previous
+    </button>
+    <button
+      disabled=""
+      type="button"
+    >
+      Next
+    </button>
+  </div>
+</section>
+ ❯ waitForWrapper ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx:231:23
+    229|     pageAgent = 'role2';
+    230|     act(() => connections.getByRole('button', { name: 'Next' }).click(…
+    231|     await connections.findByText('The host did not return the selected…
+       |                       ^
+    232|     expect(connections.queryByText('Incoming row 25')).not.toBeInTheDo…
+    233|     // A role event changes the role context: navigation returns to th…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 26 passed (27)
+   Start at  03:27:07
+   Duration  7.14s (transform 86ms, setup 54ms, import 87ms, tests 6.73s, environment 175ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+# post-restore git status --short:

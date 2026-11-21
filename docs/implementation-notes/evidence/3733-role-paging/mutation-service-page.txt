@@ -1,0 +1,182 @@
+# mutation service-page on src/main/services/selected-dispatcher-details.ts (head 1bd612ca6fce8ea2463b231798f3b4abd27d4fb5)
+# applied diff:
+38c38
+<     if (query ? !isSelectedDispatcherConnectionPage(body, query) : result.body.connectionPageOnly === true
+---
+>     if (query ? false : result.body.connectionPageOnly === true
+$ vitest run --no-cache --maxWorkers=2 src/main/services/selected-dispatcher-details.test.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ❯ |main| src/main/services/selected-dispatcher-details.test.ts (17 tests | 1 failed) 38ms
+     × pages the host-selected role Connections only, validating the page against the query 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/selected-dispatcher-details.test.ts > staged selected-host Dispatcher Details > pages the host-selected role Connections only, validating the page against the query
+AssertionError: expected { status: 200, …(2) } to deeply equal { status: 500, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": {
+-     "error": "dispatcher_details_invalid",
++     "agentId": "role1",
++     "details": {
++       "agentId": "role1",
++       "cards": [
++         {
++           "id": "settings",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "settings",
++         },
++         {
++           "id": "dispatcher",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "dispatcher",
++         },
++         {
++           "id": "orchestrate",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "orchestrate",
++         },
++         {
++           "connectionPage": {
++             "complete": true,
++             "known": 0,
++             "next": null,
++             "offset": 0,
++             "projectOffset": 0,
++             "source": "incoming",
++           },
++           "id": "connections",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "connections",
++         },
++         {
++           "id": "actions",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "actions",
++         },
++         {
++           "id": "skills-mcp",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "skills-mcp",
++         },
++         {
++           "id": "session",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "session",
+          },
+-   "status": 500,
++         {
++           "id": "canvases",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "canvases",
++         },
++         {
++           "id": "changes",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "changes",
++         },
++       ],
++       "connectionPageEnvelope": 1,
++       "connectionPageOnly": true,
++       "connectionPages": 1,
++       "nativeSessionId": null,
++       "providerId": "claude-code",
++       "readAt": 1,
++       "readOnly": true,
++       "running": false,
++       "sessionId": null,
++       "settings": null,
++       "spawnedAt": null,
++       "status": "sleeping",
++       "version": 1,
++     },
++     "role": "dispatcher",
++     "version": 1,
++   },
++   "receipt": {
++     "current": [Function current],
++   },
++   "status": 200,
+  }
+
+ ❯ src/main/services/selected-dispatcher-details.test.ts:70:67
+     68|     for (const wrong of [pageBody('incoming'), pageBody('outgoing', 25…
+     69|       m.details.mockResolvedValue({ status: 200, body: wrong });
+     70|       expect(await readSelectedDispatcherDetails(allowed, query)).toEq…
+       |                                                                   ^
+     71|     }
+     72|     m.details.mockClear();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 16 passed (17)
+   Start at  03:27:06
+   Duration  215ms (transform 60ms, setup 4ms, import 76ms, tests 38ms, environment 0ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+# post-restore git status --short:

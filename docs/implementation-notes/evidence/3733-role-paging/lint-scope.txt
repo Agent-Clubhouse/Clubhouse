@@ -1,0 +1,16 @@
+src/main/ipc/annex-client-handlers.test.ts
+src/main/ipc/annex-client-handlers.ts
+src/main/services/annex-client.test.ts
+src/main/services/annex-client.ts
+src/main/services/annex-server.test.ts
+src/main/services/annex-server.ts
+src/main/services/selected-dispatcher-details.test.ts
+src/main/services/selected-dispatcher-details.ts
+src/preload/annexClient.ts
+src/preload/index.test.ts
+src/renderer/features/agents/details/RemoteConnectionsCard.tsx
+src/renderer/features/dispatcher/RemoteDispatcherConnectionPages.tsx
+src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx
+src/renderer/features/dispatcher/RemoteDispatcherRoleDetails.tsx
+src/shared/selected-dispatcher-details.test.ts
+src/shared/selected-dispatcher-details.ts

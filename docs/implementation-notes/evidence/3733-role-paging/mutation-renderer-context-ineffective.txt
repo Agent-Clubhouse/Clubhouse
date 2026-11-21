@@ -1,0 +1,23 @@
+# mutation renderer-context-ineffective on src/renderer/features/dispatcher/RemoteDispatcherConnectionPages.tsx (head 1bd612ca6fce8ea2463b231798f3b4abd27d4fb5)
+# applied diff:
+17c17
+<   const identity = `${contextKey}:${roleAgentId}`;
+---
+>   const identity = `${roleAgentId}`;
+$ vitest run --no-cache --maxWorkers=2 src/renderer/features/dispatcher/RemoteDispatcherDetails.test.tsx
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+
+ Test Files  1 passed (1)
+      Tests  27 passed (27)
+   Start at  03:27:14
+   Duration  6.32s (transform 95ms, setup 53ms, import 98ms, tests 5.91s, environment 174ms)
+
+vitest exit=0
+# restore check:
+restored byte-identical
+# post-restore git status --short:

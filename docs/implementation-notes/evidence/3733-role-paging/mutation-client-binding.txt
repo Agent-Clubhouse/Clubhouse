@@ -1,0 +1,178 @@
+# mutation client-binding on src/main/services/annex-client.ts (head 1bd612ca6fce8ea2463b231798f3b4abd27d4fb5)
+# applied diff:
+2551c2551
+<     if (page) return isSelectedDispatcherConnectionPage(body, page) && body.agentId === expectedAgentId ? { status: 'ok', value: body } : { status: 'error' };
+---
+>     if (page) return isSelectedDispatcherConnectionPage(body, page) ? { status: 'ok', value: body } : { status: 'error' };
+$ vitest run --no-cache --maxWorkers=2 src/main/services/annex-client.test.ts -t selected Dispatcher role transport
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ❯ |main| src/main/services/annex-client.test.ts (305 tests | 1 failed | 295 skipped) 81ms
+         × pages role Connections bound to the first page's role agent, with older hosts unavailable 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > chat across desktops (#2390) > selected Dispatcher role transport > pages role Connections bound to the first page's role agent, with older hosts unavailable
+AssertionError: expected { status: 'ok', value: { …(4) } } to deeply equal { status: 'error' }
+
+- Expected
++ Received
+
+  {
+-   "status": "error",
++   "status": "ok",
++   "value": {
++     "agentId": "role2",
++     "details": {
++       "agentId": "role2",
++       "cards": [
++         {
++           "id": "settings",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "settings",
++         },
++         {
++           "id": "dispatcher",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "dispatcher",
++         },
++         {
++           "id": "orchestrate",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "orchestrate",
++         },
++         {
++           "connectionPage": {
++             "complete": true,
++             "known": 0,
++             "next": null,
++             "offset": 25,
++             "projectOffset": 0,
++             "source": "incoming",
++           },
++           "id": "connections",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "connections",
++         },
++         {
++           "id": "actions",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "actions",
++         },
++         {
++           "id": "skills-mcp",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "skills-mcp",
++         },
++         {
++           "id": "session",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "session",
++         },
++         {
++           "id": "canvases",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "canvases",
++         },
++         {
++           "id": "changes",
++           "notes": [],
++           "observedAt": 1,
++           "omitted": 0,
++           "requested": false,
++           "rows": [],
++           "state": "ok",
++           "summary": "",
++           "title": "changes",
++         },
++       ],
++       "connectionPageEnvelope": 1,
++       "connectionPageOnly": true,
++       "connectionPages": 1,
++       "nativeSessionId": null,
++       "providerId": "PRIVATE_ROLE_RESPONSE",
++       "readAt": 1,
++       "readOnly": true,
++       "running": false,
++       "sessionId": null,
++       "settings": null,
++       "spawnedAt": null,
++       "status": "sleeping",
++       "version": 1,
++     },
++     "role": "dispatcher",
++     "version": 1,
++   },
+  }
+
+ ❯ src/main/services/annex-client.test.ts:4065:119
+    4063|         // A different role between pages, a mismatched page or a whol…
+    4064|         for (const body of [page('role2'), page('role1', 'outgoing'), …
+    4065|           answers.push({ status: 200, body }); expect(await annexClien…
+       |                                                                                                                       ^
+    4066|         }
+    4067|         answers.push({ status: 400, body: { error: 'invalid_dispatcher…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 9 passed | 295 skipped (305)
+   Start at  03:27:01
+   Duration  495ms (transform 241ms, setup 6ms, import 307ms, tests 81ms, environment 0ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+# post-restore git status --short:

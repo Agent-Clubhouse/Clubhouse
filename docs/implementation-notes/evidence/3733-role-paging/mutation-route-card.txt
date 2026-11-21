@@ -1,0 +1,42 @@
+# mutation route-card on src/shared/selected-dispatcher-details.ts (head 1bd612ca6fce8ea2463b231798f3b4abd27d4fb5)
+# applied diff:
+27c27
+<   return isRemoteDetailsQuery(value) && value.card === 'connections';
+---
+>   return isRemoteDetailsQuery(value);
+$ vitest run --no-cache --maxWorkers=2 src/main/services/annex-server.test.ts -t selected-role desktop Details HTTP
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ❯ |main| src/main/services/annex-server.test.ts (643 tests | 1 failed | 610 skipped) 2264ms
+       × has no mutation/mobile alias or caller-selected identity/path inputs, and no page other than a Connections source page 100ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-server.test.ts > annex-server > selected-role desktop Details HTTP authority (#3733) > has no mutation/mobile alias or caller-selected identity/path inputs, and no page other than a Connections source page
+AssertionError: expected 500 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 500
+
+ ❯ src/main/services/annex-server.test.ts:747:74
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 32 passed | 610 skipped (643)
+   Start at  03:27:02
+   Duration  3.77s (transform 1.14s, setup 6ms, import 1.40s, tests 2.26s, environment 0ms)
+
+vitest exit=1
+# restore check:
+restored byte-identical
+# post-restore git status --short:
