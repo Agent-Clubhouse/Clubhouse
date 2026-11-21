@@ -166,10 +166,12 @@ describe('sequenced notice journal persistence', () => {
     const segments = (await fs.readdir(directory)).filter((n) => /^journal-\d+\.log$/.test(n));
     expect(segments.length).toBeLessThanOrEqual(4);
     for (const name of segments) expect((await fs.stat(path.join(directory, name))).size).toBeLessThanOrEqual(NOTICE_PAGE_BYTES);
+    expect(journal.retainedEntryCount).toBe(0);
     journal = await open(directory);
     expect(journal.snapshot()?.terminal).toEqual([[1, 2000]]);
     expect(journal.snapshot()?.acceptedCount).toBe(2000);
     expect(journal.snapshot()?.attempts).toEqual([]);
+    expect(journal.retainedEntryCount).toBe(0);
   }, 30000);
 
   it('requires entered same-process capability for a late ACK; reopen cannot mint one for recovered uncertainty', async () => {
@@ -187,6 +189,7 @@ describe('sequenced notice journal persistence', () => {
     await journal.acknowledgeLiveHandoff(handle);
     expect(journal.snapshot()?.lateAcknowledgementCount).toBe(1);
     expect(journal.snapshot()?.acceptedCount).toBe(1);
+    expect(journal.retainedEntryCount).toBe(0);
 
     await journal.append({ kind: 'scan', through: 2, eligible: [post(2)] });
     await journal.append(intent(2));
@@ -221,6 +224,7 @@ describe('sequenced notice journal persistence', () => {
     const handle = journal.captureLiveHandoff('attempt-1');
     journal.markHandoffEntered(handle);
     journal.releaseLiveHandoff(handle);
+    expect(journal.retainedEntryCount).toBe(1);
     await journal.append({ kind: 'settle', attemptId: 'attempt-1', outcome: 'unsubmitted' });
     expect(journal.snapshot()?.pending[0].attemptId).toBe('attempt-1');
     expect(journal.snapshot()?.attempts[0]).toMatchObject({ status: 'uncertain', reason: 'handoff_unknown' });

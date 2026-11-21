@@ -107,6 +107,7 @@ export class SequencedNoticeJournal {
   }
   get committedRevision(): number { return this.revision; }
   get healthy(): boolean { return !this.poisoned; }
+  get retainedEntryCount(): number { return this.enteredAttempts.size; }
   /** Main receipt sink only: cannot capture a restarted/recovered attempt. */
   captureLiveHandoff(attemptId: string): NoticeLiveHandoff {
     const attempt = this.state?.attempts.find((a) => a.attemptId === attemptId);
@@ -270,6 +271,7 @@ export class SequencedNoticeJournal {
         await syncDirectory(this.directory);
         await this.failure?.('afterSync');
         this.revision = envelope.revision; this.digest = digest; this.state = candidate;
+        if (delta.kind === 'settle' && delta.outcome === 'accepted') this.enteredAttempts.delete(delta.attemptId);
         this.segmentBytes += frame.length;
         this.currentFileHash = hash(await this.readCurrent());
       } catch (error) {
