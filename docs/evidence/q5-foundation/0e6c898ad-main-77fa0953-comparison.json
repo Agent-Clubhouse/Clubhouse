@@ -1,0 +1,99 @@
+{
+  "scope": "static main-name-primitives comparison only; publication remains403-blocked",
+  "observedAtUTC": "2026-11-21T13:56:02.857840+00:00",
+  "sourceHead": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+  "sourceTree": "9d15165a116d7645f116ad2cc9e2a44a3108ced9",
+  "assemblyBase": "e8e178c4bf462bcf443bfb1b91cbfbcd1f35d1c2",
+  "previousComparedMain": "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+  "fetchedMain": "77fa095320f2184ebf8870a5251ad0fd26a46501",
+  "changedPaths": [
+    "docs/implementation-notes/3720-name-primitives/run-proof.py",
+    "src/shared/annex-member-names.test.ts",
+    "src/shared/annex-member-names.ts",
+    "src/shared/fixtures/annex-member-names-v1.json"
+  ],
+  "sourceAssessment": "Four added pure/unwired name primitive/test/vector/proof files. Production module has no imports or consumers added. Full production source read; no index references or config/lock/setup changes.",
+  "unchangedContexts": [
+    {
+      "path": "package.json",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "equalAcross": [
+        "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19"
+      ]
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "equalAcross": [
+        "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19"
+      ]
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "equalAcross": [
+        "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19"
+      ]
+    },
+    {
+      "path": "vitest.config.ts",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "equalAcross": [
+        "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19"
+      ]
+    },
+    {
+      "path": "eslint.config.mjs",
+      "sha256": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+      "equalAcross": [
+        "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19"
+      ]
+    },
+    {
+      "path": ".github/workflows/validate.yml",
+      "sha256": "2612b8fd22c3ded25f53b95495aed6c49c62f404763d3173f52bf760c7f55963",
+      "equalAcross": [
+        "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19"
+      ]
+    },
+    {
+      "path": "test/global-setup.ts",
+      "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "equalAcross": [
+        "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19"
+      ]
+    },
+    {
+      "path": "test/standard-runtime-boundary.ts",
+      "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "equalAcross": [
+        "b02542b5cf3cac51a3aada5919dd5b6c43757a9e",
+        "77fa095320f2184ebf8870a5251ad0fd26a46501",
+        "0e6c898ada85efefb80bc3aec61e07d3d15d2b19"
+      ]
+    }
+  ],
+  "indexPathsPresentOnMain": [],
+  "indexReferenceScan": {
+    "exitCode": 1,
+    "stdout": ""
+  },
+  "rebasePerformed": false,
+  "testsRepeated": false,
+  "publicationAttempted": false,
+  "limits": "No combined execution/native Windows credit or future freshness. Existing-auth publication route still awaits explicit user answer; no fallback or CI dispatch authorized."
+}
