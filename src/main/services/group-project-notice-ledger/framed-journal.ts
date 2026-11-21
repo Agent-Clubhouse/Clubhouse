@@ -4,6 +4,8 @@ import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import { constants } from 'fs';
 import { NoticeDirectoryFlusher } from './durability';
+import { NoticeLedgerValidationError } from './validation';
+export { NoticeLedgerValidationError } from './validation';
 
 export const NOTICE_DELTA_BYTES = 64 * 1024;
 export const NOTICE_SEGMENT_TARGET = 256 * 1024;
@@ -20,10 +22,6 @@ export type NoticeStorageCode = 'notice_ledger_corrupt' | 'notice_ledger_version
   | 'notice_ledger_unavailable' | 'notice_ledger_open' | 'notice_ledger_conflict' | 'notice_ledger_reconciliation';
 export class NoticeLedgerStorageError extends Error {
   constructor(public readonly code: NoticeStorageCode, message: string) { super(message); }
-}
-/** A closed codec may use this only for deterministic refusal with no authority effect. */
-export class NoticeLedgerValidationError extends Error {
-  constructor(message: string, public readonly original?: unknown) { super(message); }
 }
 interface Manifest {
   schemaVersion: 1;
@@ -56,6 +54,10 @@ export interface NoticePhysicalCodec<S, D, R> {
   validate(state: S): void;
   checkpoint(state: S, pages: NoticePhysicalPages): Promise<string>;
   restore(root: string, pages: NoticePhysicalPages): Promise<S>;
+  /** New root profile verifies the final committed tree once before open returns. */
+  finalizeOpen?(state: S): Promise<S>;
+  /** Synchronous root/epoch capability recheck immediately before physical append. */
+  assertPrepared?(state: S, record: R): void;
   /** Legacy codec may collect only its own page namespace, after manifest commit. */
   collect?(root: string, pages: NoticePhysicalPages): Promise<void>;
 }
@@ -292,6 +294,10 @@ export class NoticeFramedJournal<S, D, R> {
     }
     if (!segments.length) this.segment = this.manifest.firstSegment;
     this.currentFileHash = hash(await this.readCurrent());
+    if (this.state && this.options.codec.finalizeOpen) {
+      this.state = await this.options.codec.finalizeOpen(this.state);
+      this.options.codec.validate(this.state);
+    }
   }
   private async preserveAndTrimTail(body: Buffer, offset: number): Promise<void> {
     const location = path.join(this.directory, `incomplete-tail-${randomUUID()}.bin`);
@@ -343,6 +349,7 @@ export class NoticeFramedJournal<S, D, R> {
           }
         }
         await this.options.testFailure?.('beforeAppend');
+        this.options.codec.assertPrepared?.(prepared.state, prepared.record);
         const handle = await fs.open(this.location(targetSegment), 'a', 0o600);
         try { await handle.writeFile(frame); await this.options.testFailure?.('afterAppendBeforeSync'); await handle.sync(); }
         finally { await handle.close(); }

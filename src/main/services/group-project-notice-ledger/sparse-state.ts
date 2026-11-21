@@ -1,6 +1,7 @@
 /** Prepared root transitions only. No committed revision, receipt or send authority. */
 import { NoticePageIndex, type NoticeJson, type NoticePageEntry } from './pages';
 import { noticeSequence } from './intervals';
+import { NoticeLedgerValidationError } from './validation';
 import { noticeSequenceKey, PreparedNoticeReader, type PreparedNoticeRoots } from './sparse-reader';
 import { NOTICE_BATCH_LIMIT, noticeCoverageDigest, noticeRecipientKey, type NoticeAttempt, type NoticeDelta, type NoticePost, type NoticeRecipient, type PendingNoticePost } from './state';
 
@@ -9,10 +10,10 @@ export type SparseNoticeDelta = Exclude<NoticeDelta, { kind: 'initialize' } | { 
   | { kind: 'recover'; attemptIds: string[] };
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 function id(value: unknown): asserts value is string {
-  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 256 || [...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new Error('Invalid sparse notice identity');
+  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 256 || [...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new NoticeLedgerValidationError('Invalid sparse notice identity');
 }
 function keys(value: object, required: string[], optional: string[] = []): void {
-  if (required.some((k) => !Object.prototype.hasOwnProperty.call(value, k)) || Object.keys(value).some((k) => !required.includes(k) && !optional.includes(k))) throw new Error('Unsupported sparse notice fields');
+  if (required.some((k) => !Object.prototype.hasOwnProperty.call(value, k)) || Object.keys(value).some((k) => !required.includes(k) && !optional.includes(k))) throw new NoticeLedgerValidationError('Unsupported sparse notice fields');
 }
 function post(value: NoticePost): NoticePost {
   keys(value, ['seq', 'postId']); noticeSequence(value.seq); id(value.postId);
@@ -20,7 +21,7 @@ function post(value: NoticePost): NoticePost {
 }
 function json(value: object): NoticeJson { return copy(value) as unknown as NoticeJson; }
 function boundedList(values: readonly unknown[]): void {
-  if (!Array.isArray(values) || values.length > NOTICE_BATCH_LIMIT) throw new Error('Sparse notice batch too large');
+  if (!Array.isArray(values) || values.length > NOTICE_BATCH_LIMIT) throw new NoticeLedgerValidationError('Sparse notice batch too large');
 }
 
 /**
@@ -79,13 +80,13 @@ export class PreparedNoticeState {
         keys(delta, ['kind', 'through', 'eligible']); const through = noticeSequence(delta.through);
         boundedList(delta.eligible);
         const eligible = delta.eligible.map(post).sort((a, b) => a.seq - b.seq);
-        if (eligible.length === NOTICE_BATCH_LIMIT && through !== eligible[eligible.length - 1].seq) throw new Error('Capped notice scan cannot over-advance its frontier');
+        if (eligible.length === NOTICE_BATCH_LIMIT && through !== eligible[eligible.length - 1].seq) throw new NoticeLedgerValidationError('Capped notice scan cannot over-advance its frontier');
         const seqs = new Set<number>(); const ids = new Set<string>();
         for (const p of eligible) {
-          if (p.seq > through || seqs.has(p.seq) || ids.has(p.postId)) throw new Error('Conflicting notice scan');
+          if (p.seq > through || seqs.has(p.seq) || ids.has(p.postId)) throw new NoticeLedgerValidationError('Conflicting notice scan');
           seqs.add(p.seq); ids.add(p.postId);
           const old = await this.pending(p.seq); const oldSeq = await this.index.get(header.roots.postIds, p.postId);
-          if (old && old.postId !== p.postId || oldSeq !== undefined && oldSeq !== p.seq) throw new Error('Conflicting notice post identity');
+          if (old && old.postId !== p.postId || oldSeq !== undefined && oldSeq !== p.seq) throw new NoticeLedgerValidationError('Conflicting notice post identity');
         }
         if (through <= header.scannedThrough) return this;
         let cursor = header.scannedThrough;
@@ -109,17 +110,17 @@ export class PreparedNoticeState {
       case 'intent': {
         keys(delta, ['kind', 'attemptId', 'posts', 'startedAt', 'handoffProcess']); id(delta.attemptId); id(delta.handoffProcess);
         boundedList(delta.posts);
-        if (!delta.posts.length || !Number.isFinite(delta.startedAt) || delta.startedAt < 0) throw new Error('Invalid notice attempt');
+        if (!delta.posts.length || !Number.isFinite(delta.startedAt) || delta.startedAt < 0) throw new NoticeLedgerValidationError('Invalid notice attempt');
         const posts = delta.posts.map(post).sort((a, b) => a.seq - b.seq);
-        if (new Set(posts.map((p) => p.seq)).size !== posts.length || new Set(posts.map((p) => p.postId)).size !== posts.length) throw new Error('Duplicate attempt coverage');
+        if (new Set(posts.map((p) => p.seq)).size !== posts.length || new Set(posts.map((p) => p.postId)).size !== posts.length) throw new NoticeLedgerValidationError('Duplicate attempt coverage');
         const coverageDigest = noticeCoverageDigest(posts); const existing = await this.attempt(delta.attemptId);
         if (existing) {
-          if (existing.coverageDigest !== coverageDigest) throw new Error('Notice attempt key conflict');
+          if (existing.coverageDigest !== coverageDigest) throw new NoticeLedgerValidationError('Notice attempt key conflict');
           return this;
         }
         for (const p of posts) {
           const old = await this.pending(p.seq);
-          if (!old || old.postId !== p.postId || old.attemptId !== undefined || await this.index.get(header.roots.ready, noticeSequenceKey(p.seq)) !== p.postId) throw new Error('Notice coverage is not ready');
+          if (!old || old.postId !== p.postId || old.attemptId !== undefined || await this.index.get(header.roots.ready, noticeSequenceKey(p.seq)) !== p.postId) throw new NoticeLedgerValidationError('Notice coverage is not ready');
         }
         for (const p of posts) {
           header.roots.pending = await this.index.set(header.roots.pending, noticeSequenceKey(p.seq), json({ ...p, attemptId: delta.attemptId }));
@@ -134,14 +135,14 @@ export class PreparedNoticeState {
         if (delta.messageId !== undefined) id(delta.messageId);
         const old = await this.attempt(delta.attemptId);
         if (!old || old.status === 'uncertain') return this;
-        if (old.messageId && delta.messageId && old.messageId !== delta.messageId) throw new Error('Notice runtime message conflict');
+        if (old.messageId && delta.messageId && old.messageId !== delta.messageId) throw new NoticeLedgerValidationError('Notice runtime message conflict');
         if (old.status === 'queued' && old.messageId === delta.messageId) return this;
         await this.putAttempt(header, { ...old, status: 'queued', ...(delta.messageId !== undefined ? { messageId: delta.messageId } : {}) });
         break;
       }
       case 'settle': {
         keys(delta, ['kind', 'attemptId', 'outcome'], ['acknowledgement']); id(delta.attemptId);
-        if (!['accepted', 'uncertain', 'unsubmitted'].includes(delta.outcome)) throw new Error('Unsupported notice settlement');
+        if (!['accepted', 'uncertain', 'unsubmitted'].includes(delta.outcome)) throw new NoticeLedgerValidationError('Unsupported notice settlement');
         const old = await this.attempt(delta.attemptId);
         if (!old) return this;
         if (delta.outcome === 'uncertain') {
@@ -150,11 +151,11 @@ export class PreparedNoticeState {
           header.roots.active = await this.index.delete(header.roots.active, old.attemptId);
           break;
         }
-        if (delta.outcome === 'unsubmitted' && old.status === 'uncertain') throw new Error('Uncertainty cannot become proven unsubmitted');
+        if (delta.outcome === 'unsubmitted' && old.status === 'uncertain') throw new NoticeLedgerValidationError('Uncertainty cannot become proven unsubmitted');
         if (delta.outcome === 'accepted') {
           const proof = delta.acknowledgement;
-          if (old.reason === 'recovered') throw new Error('Recovered notice cannot accept a live acknowledgement');
-          if (!proof || proof.kind !== 'same-process-exact-handoff' || proof.handoffProcess !== old.handoffProcess || proof.coverageDigest !== old.coverageDigest) throw new Error('Notice acceptance requires exact live handoff provenance');
+          if (old.reason === 'recovered') throw new NoticeLedgerValidationError('Recovered notice cannot accept a live acknowledgement');
+          if (!proof || proof.kind !== 'same-process-exact-handoff' || proof.handoffProcess !== old.handoffProcess || proof.coverageDigest !== old.coverageDigest) throw new NoticeLedgerValidationError('Notice acceptance requires exact live handoff provenance');
           keys(proof, ['kind', 'handoffProcess', 'coverageDigest']);
         }
         for (const p of old.posts) {
@@ -179,7 +180,7 @@ export class PreparedNoticeState {
       }
       case 'recover': {
         keys(delta, ['kind', 'attemptIds']); boundedList(delta.attemptIds);
-        if (new Set(delta.attemptIds).size !== delta.attemptIds.length) throw new Error('Duplicate recovery attempt');
+        if (new Set(delta.attemptIds).size !== delta.attemptIds.length) throw new NoticeLedgerValidationError('Duplicate recovery attempt');
         let changed = false;
         for (const attemptId of delta.attemptIds) {
           id(attemptId); const old = await this.attempt(attemptId);
@@ -191,13 +192,13 @@ export class PreparedNoticeState {
         if (!changed) return this;
         break;
       }
-      default: throw new Error('Unsupported sparse notice transition');
+      default: throw new NoticeLedgerValidationError('Unsupported sparse notice transition');
     }
     return new PreparedNoticeState(this.index, header);
   }
   /** Bounded read selection, never automatic handoff or a global ready snapshot. */
   async listReady(options: { after?: string; limit: number }): Promise<{ posts: PendingNoticePost[]; nextAfter?: string }> {
-    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > NOTICE_BATCH_LIMIT) throw new Error('Invalid sparse notice read limit');
+    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > NOTICE_BATCH_LIMIT) throw new NoticeLedgerValidationError('Invalid sparse notice read limit');
     const page = await this.index.list(this.header.roots.ready, options);
     const posts: PendingNoticePost[] = [];
     for (const entry of page.entries) {
@@ -208,7 +209,7 @@ export class PreparedNoticeState {
     return { posts, ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}) };
   }
   async listActive(options: { after?: string; limit: number }): Promise<{ attemptIds: string[]; nextAfter?: string }> {
-    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > NOTICE_BATCH_LIMIT) throw new Error('Invalid sparse notice read limit');
+    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > NOTICE_BATCH_LIMIT) throw new NoticeLedgerValidationError('Invalid sparse notice read limit');
     const page = await this.index.list(this.header.roots.active, options);
     return { attemptIds: page.entries.map((row: NoticePageEntry) => row.key), ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}) };
   }

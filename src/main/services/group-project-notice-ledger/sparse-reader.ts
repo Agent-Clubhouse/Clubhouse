@@ -1,5 +1,5 @@
 /** Prepared immutable sequenced roots only: no journal commit or send authority. */
-import { NoticePageIndex, type NoticePageEntry, type NoticePageRoot } from './pages';
+import { NoticePageIndex, validateNoticePageRoot, type NoticePageEntry, type NoticePageRoot } from './pages';
 import { noticeSequence, type NoticeInterval } from './intervals';
 import { NOTICE_BATCH_LIMIT, noticeCoverageDigest, noticeRecipientKey, type NoticeAttempt, type NoticeRecipient, type PendingNoticePost } from './state';
 
@@ -57,6 +57,19 @@ function attemptRow(entry: NoticePageEntry): NoticeAttempt {
   return clone(value) as unknown as NoticeAttempt;
 }
 
+/** Strict bounded metadata decoder only; no committed or page durability authority. */
+export function decodePreparedNoticeHeader(value: unknown): PreparedNoticeRoots {
+  if (!object(value) || value.schemaVersion !== 1 || value.minWriterVersion !== 2 || value.profile !== 'sequenced-sparse-v1'
+    || !exactKeys(value, ['schemaVersion', 'minWriterVersion', 'profile', 'recipient', 'baselineThrough', 'scannedThrough', 'acceptedCount', 'excludedSequenceCount', 'lateAcknowledgementCount', 'roots'])
+    || !object(value.recipient) || !exactKeys(value.recipient, ['groupId', 'host', 'agentId', 'generation'])
+    || !object(value.roots) || Buffer.byteLength(JSON.stringify(value)) > 16 * 1024) throw new Error('Unsupported sparse notice header');
+  noticeRecipientKey(value.recipient as unknown as NoticeRecipient);
+  for (const field of ['baselineThrough', 'scannedThrough', 'acceptedCount', 'excludedSequenceCount', 'lateAcknowledgementCount']) noticeSequence(value[field] as number);
+  if ((value.baselineThrough as number) > (value.scannedThrough as number) || Object.keys(value.roots).some((name) => !rootNames.includes(name as typeof rootNames[number]))) throw new Error('Invalid sparse notice frontier or roots');
+  for (const root of Object.values(value.roots)) validateNoticePageRoot(root);
+  return clone(value) as unknown as PreparedNoticeRoots;
+}
+
 /**
  * Read-only prepared snapshot. Even successful verification does not authenticate
  * a root as committed, migrate a generation, consume a nonce, or permit a send.
@@ -65,14 +78,7 @@ function attemptRow(entry: NoticePageEntry): NoticeAttempt {
 export class PreparedNoticeReader {
   private constructor(private readonly index: NoticePageIndex, private readonly header: PreparedNoticeRoots) {}
   static async openPrepared(index: NoticePageIndex, value: unknown): Promise<PreparedNoticeReader> {
-    if (!object(value) || value.schemaVersion !== 1 || value.minWriterVersion !== 2 || value.profile !== 'sequenced-sparse-v1'
-      || !exactKeys(value, ['schemaVersion', 'minWriterVersion', 'profile', 'recipient', 'baselineThrough', 'scannedThrough', 'acceptedCount', 'excludedSequenceCount', 'lateAcknowledgementCount', 'roots'])
-      || !object(value.recipient) || !exactKeys(value.recipient, ['groupId', 'host', 'agentId', 'generation'])
-      || !object(value.roots) || Buffer.byteLength(JSON.stringify(value)) > 16 * 1024) throw new Error('Unsupported sparse notice header');
-    noticeRecipientKey(value.recipient as unknown as NoticeRecipient);
-    for (const field of ['baselineThrough', 'scannedThrough', 'acceptedCount', 'excludedSequenceCount', 'lateAcknowledgementCount']) noticeSequence(value[field] as number);
-    if ((value.baselineThrough as number) > (value.scannedThrough as number) || Object.keys(value.roots).some((name) => !rootNames.includes(name as typeof rootNames[number]))) throw new Error('Invalid sparse notice frontier or roots');
-    const reader = new PreparedNoticeReader(index, clone(value) as unknown as PreparedNoticeRoots);
+    const reader = new PreparedNoticeReader(index, decodePreparedNoticeHeader(value));
     await reader.verify();
     return reader;
   }

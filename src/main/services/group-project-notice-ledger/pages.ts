@@ -56,6 +56,8 @@ function rootValid(root: unknown): asserts root is NoticePageRoot {
   keyValid(root.first); keyValid(root.last);
   if (root.first > root.last) throw new Error('Reversed notice page bounds');
 }
+/** Shape/order/bounds only. This does not read, sync or authenticate a root. */
+export function validateNoticePageRoot(root: unknown): asserts root is NoticePageRoot { rootValid(root); }
 function reference(page: Page, hash: string): NoticePageRoot {
   if (page.kind === 'leaf') return { digest: hash, first: page.entries[0].key, last: page.entries[page.entries.length - 1].key, count: page.entries.length, depth: 0 };
   const count = page.children.reduce((sum, child) => sum + child.count, 0);
