@@ -8,13 +8,16 @@ import { NoticeDirectoryFlusher } from './durability';
 export type NoticeJson = null | boolean | number | string | NoticeJson[] | { [key: string]: NoticeJson };
 export interface NoticePageEntry { key: string; value: NoticeJson }
 export interface NoticePageRoot { digest: string; first: string; last: string; count: number; depth: number }
-interface LeafPage { schemaVersion: 1; minWriterVersion: 1; kind: 'leaf'; entries: NoticePageEntry[]; [extra: string]: unknown }
-interface IndexPage { schemaVersion: 1; minWriterVersion: 1; kind: 'index'; children: NoticePageRoot[]; [extra: string]: unknown }
+interface LeafPage { schemaVersion: 1; minWriterVersion: 1; kind: 'leaf'; entries: NoticePageEntry[] }
+interface IndexPage { schemaVersion: 1; minWriterVersion: 1; kind: 'index'; children: NoticePageRoot[] }
 type Page = LeafPage | IndexPage;
 export const NOTICE_INDEX_PAGE_BYTES = 256 * 1024;
 export const NOTICE_INDEX_FANOUT = 64;
 const MAX_LEAF_CACHE = 4; // at most256 detailed rows; index cache contains references only
 const MAX_INDEX_CACHE = 16;
+// At most20 decoded pages per index, each encoded <=256KiB (~5MiB encoded).
+// Parsed-object expansion, input values and call transients are additional;
+// this is not a whole-index heap or whole-process memory budget.
 /** Only absence at the initial lookup permits creation; later IO never does. */
 class NoticePageAbsentError extends Error { readonly code = 'ENOENT'; }
 export type NoticePageFailurePoint = 'beforePageOpen' | 'pageTempOpened' | 'beforePageWrite' | 'beforePageSync' | 'beforePageRename' | 'beforeTempCleanup' | 'beforeReusedSync' | 'reusedPageSynced' | 'beforeDirectoryFlush' | 'afterDirectoryFlush';
@@ -28,6 +31,9 @@ export interface NoticePageOptions {
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const digest = (body: Buffer) => createHash('sha256').update(body).digest('hex');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
 function keyValid(key: unknown): asserts key is string {
   if (typeof key !== 'string' || !key || Buffer.byteLength(key) > 512 || [...key].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new Error('Invalid notice index key');
 }
@@ -42,7 +48,7 @@ function json(value: unknown): NoticeJson {
   throw new Error('Notice index requires finite JSON values');
 }
 function rootValid(root: unknown): asserts root is NoticePageRoot {
-  if (!isObject(root) || typeof root.digest !== 'string' || !/^[a-f0-9]{64}$/.test(root.digest)
+  if (!isObject(root) || !exactKeys(root, ['digest', 'first', 'last', 'count', 'depth']) || typeof root.digest !== 'string' || !/^[a-f0-9]{64}$/.test(root.digest)
     || !Number.isSafeInteger(root.count) || (root.count as number) < 1 || !Number.isSafeInteger(root.depth) || (root.depth as number) < 0 || (root.depth as number) > 32) throw new Error('Invalid notice page reference');
   keyValid(root.first); keyValid(root.last);
   if (root.first > root.last) throw new Error('Reversed notice page bounds');
@@ -57,10 +63,13 @@ function decode(body: Buffer): Page {
   if (body.length > NOTICE_INDEX_PAGE_BYTES) throw new Error('Notice index page exceeds byte bound');
   const value: unknown = JSON.parse(body.toString('utf8'));
   if (!isObject(value) || value.schemaVersion !== 1 || value.minWriterVersion !== 1) throw new Error('Unsupported notice index page writer version');
+  const keys = value.kind === 'leaf' ? ['schemaVersion', 'minWriterVersion', 'kind', 'entries']
+    : value.kind === 'index' ? ['schemaVersion', 'minWriterVersion', 'kind', 'children'] : undefined;
+  if (!keys || !exactKeys(value, keys)) throw new Error('Unsupported notice index page fields');
   if (value.kind === 'leaf' && Array.isArray(value.entries) && value.entries.length > 0 && value.entries.length <= NOTICE_INDEX_FANOUT) {
     let previous: string | undefined;
     for (const entry of value.entries) {
-      if (!isObject(entry)) throw new Error('Invalid notice index entry');
+      if (!isObject(entry) || !exactKeys(entry, ['key', 'value'])) throw new Error('Invalid notice index entry fields');
       keyValid(entry.key); json(entry.value);
       if (previous !== undefined && previous >= entry.key) throw new Error('Noncanonical notice index keys');
       previous = entry.key;
@@ -348,6 +357,9 @@ export class NoticePageIndex {
       if (entries.length <= NOTICE_INDEX_FANOUT && Buffer.byteLength(JSON.stringify(candidate)) <= NOTICE_INDEX_PAGE_BYTES) return [await this.put(candidate)];
       const roots: NoticePageRoot[] = [];
       let batch: NoticePageEntry[] = [];
+      // Fanout64 limits this split to at most65 rows. Repeated JSON sizing
+      // copies bounded batches (quadratic row work per split), not a whole
+      // build/heap/latency guarantee for caller-supplied values.
       for (const item of entries) {
         if (batch.length && (batch.length === NOTICE_INDEX_FANOUT || Buffer.byteLength(JSON.stringify({ ...page, entries: [...batch, item] })) > NOTICE_INDEX_PAGE_BYTES)) {
           roots.push(await this.put({ ...page, entries: batch })); batch = [];

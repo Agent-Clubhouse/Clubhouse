@@ -19,6 +19,13 @@ async function temps(directory: string) {
   }
   return result.sort();
 }
+async function immutableFiles(directory: string) {
+  const result: Array<{ file: string; sha256: string }> = [];
+  for (const prefix of await fs.readdir(directory)) for (const file of await fs.readdir(path.join(directory, prefix))) {
+    result.push({ file: `${prefix}/${file}`, sha256: createHash('sha256').update(await fs.readFile(path.join(directory, prefix, file))).digest('hex') });
+  }
+  return result.sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : 0);
+}
 async function child(directory: string, mode: string) {
   return promisify(execFile)(process.execPath, ['test/research/q5-index-process.cjs', directory, mode], { cwd: process.cwd() }).then(
     (value) => ({ code: 0, stdout: value.stdout, stderr: value.stderr }),
@@ -402,6 +409,43 @@ describe('lazy immutable notice index', () => {
     await fs.mkdir(path.join(directory, hash.slice(0, 2)));
     await fs.writeFile(path.join(directory, hash.slice(0, 2), `${hash}.json`), bytes);
     await expect(index.get({ digest: hash, first: 'id', last: 'id', count: 1, depth: 0 }, 'id')).rejects.toThrow('writer');
+  });
+
+  it.each(['leaf', 'index', 'entry', 'child-reference', 'root-reference'] as const)(
+    'D1 schema: refuses unknown %s fields without propagation or new writes', async (kind) => {
+      const directory = await home(); const index = await NoticePageIndex.open(directory);
+      async function save(page: unknown, depth: number): Promise<NoticePageRoot> {
+        const bytes = JSON.stringify(page); const hash = createHash('sha256').update(bytes).digest('hex');
+        await fs.mkdir(path.join(directory, hash.slice(0, 2)), { recursive: true });
+        await fs.writeFile(path.join(directory, hash.slice(0, 2), `${hash}.json`), bytes);
+        return { digest: hash, first: 'id', last: 'id', count: 1, depth };
+      }
+      const leaf = { schemaVersion: 1, minWriterVersion: 1, kind: 'leaf', entries: [{ key: 'id', value: { payload: true } }] };
+      let root: NoticePageRoot;
+      if (kind === 'leaf') root = await save({ ...leaf, unsupportedStructuralField: true }, 0);
+      else if (kind === 'entry') root = await save({ ...leaf, entries: [{ ...leaf.entries[0], unsupportedStructuralField: true }] }, 0);
+      else {
+        const child = await save(leaf, 0);
+        if (kind === 'root-reference') root = { ...child, unsupportedStructuralField: true } as NoticePageRoot;
+        else root = await save({ schemaVersion: 1, minWriterVersion: 1, kind: 'index',
+          children: [kind === 'child-reference' ? { ...child, unsupportedStructuralField: true } : child],
+          ...(kind === 'index' ? { unsupportedStructuralField: true } : {}) }, 1);
+      }
+      const before = await immutableFiles(directory);
+      await expect(index.get(root, 'id')).rejects.toThrow();
+      await expect(index.set(root, 'later-id', true)).rejects.toThrow();
+      expect(await immutableFiles(directory)).toEqual(before);
+      expect(await temps(directory)).toEqual([]);
+    });
+
+  it('D1 schema: preserves arbitrary JSON payload fields inside an exact structural envelope', async () => {
+    const index = await NoticePageIndex.open(await home());
+    const value = { unsupportedStructuralField: true, nested: { futurePayloadField: ['kept', 1, null] } };
+    const original = await index.set(undefined, 'id', value);
+    const changed = await index.set(original, 'later-id', false);
+    expect(await index.get(original, 'id')).toEqual(value);
+    expect(await index.get(changed, 'id')).toEqual(value);
+    expect(await index.get(changed, 'later-id')).toBe(false);
   });
 
   it('pages lexically without treating keys as board ordering and refuses malformed limits/keys/JSON', async () => {
