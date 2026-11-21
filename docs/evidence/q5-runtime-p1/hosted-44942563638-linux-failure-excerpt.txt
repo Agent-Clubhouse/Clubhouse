@@ -1,0 +1,33 @@
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3075961Z [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3076384Z 
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3079001Z [41m[1m FAIL [22m[49m [30m[45m main [49m[39m src/main/services/dispatcher/dispatcher-copy.test.ts[2m > [22mthe Dispatcher uses one identity and calls its controller by its current name (#3036)[2m > [22mno string the app can show mentions a coordinator, a second session or the controller's old name
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3083335Z [31m[1mAssertionError[22m: expected [ …(3) ] to deeply equal [][39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3088064Z 
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3088272Z [32m- Expected[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3088614Z [31m+ Received[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3088798Z 
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3088929Z [32m- [][39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3089194Z [31m+ [[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3089945Z [31m+   "src/main/services/agent-runtime/runtime-coordinator.ts:141: Runtime coordinator operation rejected",[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3090657Z [31m+   "src/main/services/agent-runtime/runtime-coordinator.ts:142: Runtime coordinator: ",[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3091354Z [31m+   "src/main/services/agent-runtime/runtime-coordinator.ts:146: Runtime coordinator operation refused",[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3091787Z [31m+ ][39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3091893Z 
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3092333Z [36m [2m❯[22m src/main/services/dispatcher/dispatcher-copy.test.ts:[2m91:18[22m[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3116508Z     [90m 89|[39m       }
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3116846Z     [90m 90|[39m     }
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3117375Z     [90m 91|[39m     [34mexpect[39m(hits)[33m.[39m[34mtoEqual[39m([])[33m;[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3117921Z     [90m   |[39m                  [31m^[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3118567Z     [90m 92|[39m     // It reads what it should: a tool refusal, a renderer status line…
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3119563Z     [90m 93|[39m     [34mexpect[39m(seen)[33m.[39m[34mtoContain[39m([32m'Only the Dispatcher can use this tool.'[39m)[33m;[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3120117Z 
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3120344Z [31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3120635Z 
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3124000Z 
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3181436Z [2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m737 passed[39m[22m[2m | [22m[33m5 skipped[39m[90m (743)[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3382325Z [2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m19403 passed[39m[22m[2m | [22m[33m54 skipped[39m[90m (19458)[39m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3383148Z [2m   Start at [22m 19:46:13
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3394127Z [2m   Duration [22m 395.39s[2m (transform 40.80s, setup 47.52s, import 145.82s, tests 727.61s, environment 164.74s)[22m
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:49.3395971Z 
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:51.4573987Z JUNIT report written to /home/runner/work/Clubhouse/Clubhouse/test-results.xml
+Unit + Component Tests (ubuntu-latest, 1/2)	UNKNOWN STEP	2026-11-21T19:52:51.8855929Z ##[error]Process completed with exit code 1.

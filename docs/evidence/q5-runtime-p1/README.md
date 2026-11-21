@@ -1,12 +1,14 @@
 # Q5 runtime P1: unwired source proof, independent review pending
 
-**NOT ACCEPTED; independent exact-source re-review pending.** Exact source
-`2766cc377e766540e4c2e46718a4bcc372ef3d76` passed 39 targeted tests, production
-and fixture TypeScript, and zero-warning scoped lint through ordinary admission.
-Five bounded mutants were killed; every mutation was removed and the restored
-source passed all 39 tests again. Historical refusal and compiler failures remain
-preserved, not converted into passes. No PR, runtime binding, phone acceptance
-or journal acceptance is claimed.
+**Diagnostic successor review and hosted CI pending; no landing acceptance.**
+Independent QA approved historical `2766` source / `02f` evidence for scoped
+PR #3769, but its ordinary hosted run failed the existing naming guard on three
+new diagnostic strings. Corrected source
+`0d07e07e36d144d4668bec378f2faf3e06d59695` changes only those strings and passes
+44 targeted tests, both typechecks and zero-warning lint with structured
+before/after receipts. The historical 39-case proof, five killed/restored mutants,
+refusal and compiler failures remain preserved, not transferred or erased.
+No runtime binding, phone or journal acceptance is claimed.
 
 This successor also preserves the prior static candidate
 `c61665ca1d6ccf3285efbac80cac96e0e20c1e8e`, tree
@@ -47,16 +49,17 @@ fingerprints remain available unchanged in history.
   P1-a through P1-e and WeakRef lifetime were accepted statically, with no
   execution or PR approval.
 
-## Preserved source identity
+## Preserved `2766` / `02f` source identity
 
 Branch: `lane-3613-p2-routes/q5-runtime-p1`. The exact tested source is
 `2766cc377e766540e4c2e46718a4bcc372ef3d76`, tree
 `e263078f60e3ab6bf107264fc915f09e6321d8cc`, parent
 `a5781b18461e8450f88d3997fe506018a5f779a6`. The following SHA256 values identify
-that source and its byte-identical copy in this evidence-only successor.
+that historical source and its byte-identical copy at `02f`.
 Fingerprints alone are not execution proof; the original receipts below bind
 the actual runs to `2766`. No command is claimed to have run on the later
 evidence commit ID, and no source-changing successor may inherit these results.
+The diagnostic correction's separate current source identity and proof are below.
 
 | File | SHA256 |
 | --- | --- |
@@ -322,9 +325,70 @@ preserved refusal/compiler receipts, they survive outside ignored `node_modules`
 | `mutant-expiry-reopens-original.txt` | `f25e69e15226bd48c49f2c77a6a74d5fd8ff280cbc04d95a4b339ce759d81fa3` |
 | `mutant-fabricated-ack-original.txt` | `cb639c93e62e5de3f6a2b73e86e0fb0a217d6ee4cf682f65d78f9eb4b53bc5ba` |
 
-Independent exact-source re-review remains required before any PR. The earlier
-static `fe1` report and typed Q5 `b05` concurrence are preserved prerequisites,
-not approval of this execution evidence or of an executable journal binding.
+The earlier static `fe1` report and typed Q5 `b05` concurrence are preserved
+prerequisites, not executable journal-binding approval. The subsequent scoped
+PR approval and hosted finding are recorded below.
+
+## Hosted naming-guard finding and diagnostic successor
+
+Independent QA at
+[`b2c95b9cf72ec8d957a816e088112c2f85c908c3`](https://github.com/Agent-Clubhouse/Clubhouse/blob/b2c95b9cf72ec8d957a816e088112c2f85c908c3/docs/qa-transfer/2026-11-20/reports/q5-runtime-p1-2766cc377-review.md)
+approved `2766` / `02f` for the unwired PR only. It explicitly accepted terminal
+raw output plus README seal binding for the small typing delta, not structured
+per-command receipts. The correction below now uses structured receipts.
+
+Ordinary [Validate run `44942563638`](https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44942563638)
+on PR #3769 head `02f` completed **FAILURE: 31 successful jobs, 2 failed,
+4 skipped**. Its checkout was synthetic merge
+`e4e33fd37205683a7ed281e26076556490684e34`, tree
+`4d1698e81389f7e1ce6b331970b6701027af49f0`, identical to the head tree.
+The Plan log's actual `git log -1` confirmed that checkout; raw log SHA256
+`ea32d313a75ee6e7cfc84c6eb971b55b8ccc62e75b8963d018276684d096c513`.
+`hosted-44942563638.json` preserves actual run/job metadata, SHA256
+`edc4358bb72f163ac7119df78614ca9af7828c54652c5cd1f47b2158ffb2d5cb`.
+
+Both failed unit shard-1 jobs report exactly the pre-existing
+`dispatcher-copy.test.ts` naming guard finding the new source's strings at
+lines 141, 142 and 146. This is a P1-caused failure, not a baseline flake.
+Existing main `5bb` run `44932438430` was successful. No failed run was rerun.
+
+| Original hosted failure | Full raw log SHA256 | Unmodified failure excerpt SHA256 |
+| --- | --- | --- |
+| Linux job `136962855558`; raw lines 55147-55179 | `91cb9c25fa873cfbd2c135ae8236d5bddfea815ad352250fbf832db98051c6b4` | `bdf0a04805706cce8c9ca6c0f289b3fffe22b1ebb1f7d185937daccda60cf1c1` |
+| Windows job `136962855535`; raw lines 55427-55459 | `ca86f1f72753d320eb980349acf899d1f4803d5d15d6ec01df0b52e2348b76ec` | `a41ebea75d7d0e94368371d88cca210f59d02a1199a83e97c7a407fbfc7feddd` |
+
+The complete raw logs remain on those immutable run/job links; the portable
+`hosted-44942563638-{linux,windows}-failure-excerpt.txt` files preserve their
+original failure, diff, assertion, totals and exit-1 lines without modification.
+
+Source correction `0d07e07e36d144d4668bec378f2faf3e06d59695`, tree
+`92eedd815a7dddaab871ed00caffa96e90e88dcd`, parent `02f`, changes exactly three
+diagnostic strings to identity-neutral `Runtime operation...` wording. Reasons,
+error/refusal types, logging level, APIs and behavior are unchanged. No naming
+guard, source exclusion, fixture or runtime identity was weakened. Current
+coordinator SHA256 is
+`9107c5a2d55363479fc64f46becf8538a028dacb33a7fe1ca166cd19e8c065f0`.
+
+All four normally admitted min-4 checks on exact `0d07` include clean HEAD/tree,
+ten validation-input SHA256s and gate-script SHA256 before **and** after, the
+exact command, actual admission, exit code and raw-output hash. These are
+generated per-command structured receipts, each paired with its original output.
+
+| Actual `0d07` check | Outcome / UTC END | Structured receipt SHA256 |
+| --- | --- | --- |
+| Coordinator plus unchanged Dispatcher naming tests, `--maxWorkers=2` | 44 PASS / 2 files; `20:10:43Z`, rc 0 | `76db6192f013a5cfdc1c4649bd74a7fd561c6e3bb528ec35538a333de11dec80` |
+| Production TypeScript | PASS / `20:11:08Z`, rc 0 | `548d029a178fd962b7b1189da29f644d95f9c68268f40943d10f075fbe4542cf` |
+| Inherited fixture TypeScript | PASS / `20:11:10Z`, rc 0 | `e51db6da3c881e99026f1efb65a3506e56f03294001861000fc3609dacb9847a` |
+| Existing three-file scoped ESLint, `--max-warnings=0` | 0 errors / 0 warnings; `20:11:11Z`, rc 0 | `d1e3135c8aafdf2827a9241d17d0eb8f3ec2ca4dfbd37764e050b136e6ade4fa` |
+
+Receipt filenames are
+`q5-runtime-p1-diagnostics-{tests,prod-tsc,fixture-tsc,eslint}-01-receipt.json`;
+their `rawOutput` fields name the byte-identical portable originals beside them.
+No install, full suite, local E2E or repeated mutant matrix was used for this
+wording-only finding. The five mutant selectors/restoration and dependency
+chronology above remain historical evidence, not new execution claims.
+Independent successor QA and ordinary hosted CI on the updated PR head remain
+required. The previously failed run is not converted into a pass.
 
 ## Deliberately deferred
 
