@@ -1,0 +1,54 @@
+2026-11-21T16:47:45.9239956Z ##[group]Checking out the ref
+2026-11-21T16:47:45.9248407Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force refs/remotes/pull/3768/merge
+2026-11-21T16:47:46.9965700Z Updating files:  71% (3484/4864)
+2026-11-21T16:47:47.0089026Z Updating files:  72% (3503/4864)
+2026-11-21T16:47:47.0215921Z Updating files:  73% (3551/4864)
+2026-11-21T16:47:47.0328328Z Updating files:  74% (3600/4864)
+2026-11-21T16:47:47.0465812Z Updating files:  75% (3648/4864)
+2026-11-21T16:47:47.0601025Z Updating files:  76% (3697/4864)
+2026-11-21T16:47:47.0780566Z Updating files:  77% (3746/4864)
+2026-11-21T16:47:47.0915165Z Updating files:  78% (3794/4864)
+2026-11-21T16:47:47.1054512Z Updating files:  79% (3843/4864)
+2026-11-21T16:47:47.1181976Z Updating files:  80% (3892/4864)
+2026-11-21T16:47:47.1321117Z Updating files:  81% (3940/4864)
+2026-11-21T16:47:47.1450737Z Updating files:  82% (3989/4864)
+2026-11-21T16:47:47.1603275Z Updating files:  83% (4038/4864)
+2026-11-21T16:47:47.1741585Z Updating files:  84% (4086/4864)
+2026-11-21T16:47:47.1877497Z Updating files:  85% (4135/4864)
+2026-11-21T16:47:47.2012355Z Updating files:  86% (4184/4864)
+2026-11-21T16:47:47.2137952Z Updating files:  87% (4232/4864)
+2026-11-21T16:47:47.2266222Z Updating files:  88% (4281/4864)
+2026-11-21T16:47:47.2389237Z Updating files:  89% (4329/4864)
+2026-11-21T16:47:47.2512273Z Updating files:  90% (4378/4864)
+2026-11-21T16:47:47.2631873Z Updating files:  91% (4427/4864)
+2026-11-21T16:47:47.2752440Z Updating files:  92% (4475/4864)
+2026-11-21T16:47:47.2873878Z Updating files:  93% (4524/4864)
+2026-11-21T16:47:47.2988861Z Updating files:  94% (4573/4864)
+2026-11-21T16:47:47.3132430Z Updating files:  95% (4621/4864)
+2026-11-21T16:47:47.3317551Z Updating files:  96% (4670/4864)
+2026-11-21T16:47:47.3438021Z Updating files:  97% (4719/4864)
+2026-11-21T16:47:47.3564327Z Updating files:  98% (4767/4864)
+2026-11-21T16:47:47.3705359Z Updating files:  99% (4816/4864)
+2026-11-21T16:47:47.3710685Z Updating files: 100% (4864/4864)
+2026-11-21T16:47:47.3712234Z Updating files: 100% (4864/4864), done.
+2026-11-21T16:47:47.3854252Z Note: switching to 'refs/remotes/pull/3768/merge'.
+2026-11-21T16:47:47.3854726Z 
+2026-11-21T16:47:47.3855049Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-11-21T16:47:47.3855838Z changes and commit them, and you can discard any commits you make in this
+2026-11-21T16:47:47.3856598Z state without impacting any branches by switching back to a branch.
+2026-11-21T16:47:47.3856882Z 
+2026-11-21T16:47:47.3857066Z If you want to create a new branch to retain commits you create, you may
+2026-11-21T16:47:47.3857485Z do so (now or later) by using -c with the switch command. Example:
+2026-11-21T16:47:47.3857724Z 
+2026-11-21T16:47:47.3857876Z   git switch -c <new-branch-name>
+2026-11-21T16:47:47.3858040Z 
+2026-11-21T16:47:47.3858138Z Or undo this operation with:
+2026-11-21T16:47:47.3858706Z 
+2026-11-21T16:47:47.3858822Z   git switch -
+2026-11-21T16:47:47.3859010Z 
+2026-11-21T16:47:47.3859364Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-11-21T16:47:47.3859908Z 
+2026-11-21T16:47:47.3860543Z HEAD is now at a2b621b Merge 0e6c898ada85efefb80bc3aec61e07d3d15d2b19 into f19eceee25effd264276d70a419bebfe58924876
+2026-11-21T16:47:47.3961548Z ##[endgroup]
+2026-11-21T16:47:47.4424365Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2026-11-21T16:47:47.4768747Z a2b621bbd6790059d22abaae2ef519b747bb202e

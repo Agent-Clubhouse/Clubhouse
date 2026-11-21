@@ -1,0 +1,6 @@
+2026-11-21T16:47:36.3949831Z ##[group]Runner Image
+2026-11-21T16:47:36.3950887Z Image: windows-2025-vs2026
+2026-11-21T16:47:36.3952039Z Version: 20261116.315.1
+2026-11-21T16:47:36.3954729Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20261116.315/images/windows/Windows2025-VS2026-Readme.md
+2026-11-21T16:47:36.3957824Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20261116.315
+2026-11-21T16:47:36.3959627Z ##[endgroup]
