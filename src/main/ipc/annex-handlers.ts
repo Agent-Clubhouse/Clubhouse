@@ -178,13 +178,20 @@ export function registerAnnexHandlers(): void {
     return annexSettings.getSettings();
   });
 
+  let settingsWrites: Promise<void> = Promise.resolve();
   ipcMain.handle(IPC.ANNEX.SAVE_SETTINGS, withValidatedArgs(
     [objectArg<AnnexSettings>()],
-    async (_event, settings) => {
-    const previous = annexSettings.getSettings();
-    await annexSettings.saveSettings(settings);
-    settingsChanged('annex');
-    applyNetworkSettings(settings, previous);
+    (_event, settings) => {
+      const requested = structuredClone(settings);
+      const apply = async () => {
+        const previous = annexSettings.getSettings();
+        await annexSettings.saveSettings(requested);
+        settingsChanged('annex');
+        applyNetworkSettings(requested, previous);
+      };
+      const saved = settingsWrites.then(apply, apply);
+      settingsWrites = saved;
+      return saved;
   }));
 
   ipcMain.handle(IPC.ANNEX.GET_STATUS, () => {

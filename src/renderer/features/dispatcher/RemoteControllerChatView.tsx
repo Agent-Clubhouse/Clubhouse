@@ -23,10 +23,11 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
   const machineName = satellite?.alias || 'other computer';
   const connection = satellite?.state;
   const loadDevices = useAnnexStore((s) => s.loadDevices);
-  const reverseReady = useAnnexStore((s) => s.devices.some((device) =>
-    device.fingerprint.toLowerCase() === machine.toLowerCase() && device.role === 'member' && device.kind === 'desktop'
+  const device = useAnnexStore((s) => s.devices.find((candidate) => candidate.fingerprint.toLowerCase() === machine.toLowerCase()));
+  const reverseReady = connection !== 'connected' && device?.role === 'member' && device.kind === 'desktop'
     && (device.reach?.acceptedControl
-      ?? (device.reach?.outbound.state === 'up' && device.reach.outbound.via === 'reverse'))));
+      ?? (device.reach?.outbound.state === 'up' && device.reach.outbound.via === 'reverse'));
+  const reverseRevision = reverseReady ? device?.reach?.acceptedControlRevision ?? 0 : 0;
   const [selected, setSelected] = useState(''); // empty follows the current conversation
   const [sessions, setSessions] = useState<ChatSessionSummary[] | null>(null);
   const [sessionsError, setSessionsError] = useState(false);
@@ -96,7 +97,7 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
       if (historyRetry.current) clearTimeout(historyRetry.current);
       historyRetry.current = null;
     };
-  }, [machine, selected, retry, connection, reverseReady]);
+  }, [machine, selected, retry, connection, reverseReady, reverseRevision]);
 
   const earlier = async () => {
     const before = current.current;

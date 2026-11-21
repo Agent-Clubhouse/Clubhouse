@@ -276,6 +276,7 @@ interface Link {
   /** Agreed features; null until the hellos are exchanged. */
   features: Set<ControlFeature> | null;
   announcedReady: boolean;
+  requestEpoch: number;
   /** What the opener offered in its hello (`out` only). */
   offered: Set<string> | null;
   closed: boolean;
@@ -327,6 +328,7 @@ interface KeptConnection {
 // ---------------------------------------------------------------------------
 
 const links = new Set<Link>();
+let nextLinkEpoch = 0;
 let inboundAuthority: InboundAuthority | null = null;
 let target: ControlTarget | null = null;
 let wss: WebSocketServer | null = null;
@@ -653,7 +655,7 @@ function inboundStillAllowed(link: Link): boolean {
 
 function attach(ws: WebSocket, fingerprint: string, pin: string, direction: 'in' | 'out', remoteAddress: string | undefined): Link {
   const link = {
-    ws, fingerprint, pin, direction, remoteAddress, features: null, announcedReady: false, offered: null, closed: false,
+    ws, fingerprint, pin, direction, remoteAddress, features: null, announcedReady: false, requestEpoch: ++nextLinkEpoch, offered: null, closed: false,
     helloTimer: null, heartbeat: null, alive: true, pending: new Map(), replying: new Map(), subscriptions: new Map(), subscription: null,
   } as Link;
   link.bulk = makeBulkLane(link);
@@ -1167,6 +1169,11 @@ export function getLinkReadiness(fingerprint: string): ControlLinkReadiness {
   };
 }
 
+export function getAcceptedLinkEpoch(fingerprint: string): number {
+  const link = linkFor(fingerprint, 'in');
+  return link && requestReady(link) ? link.requestEpoch : 0;
+}
+
 /** Whether `request()` can reach that computer now: it opened a control connection here that agreed to `feature`. */
 export function hasReverseLink(fingerprint: string, feature: ControlFeature = 'request'): boolean {
   const link = linkFor(fingerprint, 'in');
@@ -1596,6 +1603,7 @@ export function resetControlForTests(): void {
   bulkTokenLimitForTests = undefined;
   inboundAuthority = null;
   target = null;
+  nextLinkEpoch = 0;
 }
 
 /** Test helper: wraps an already-open socket as a control connection, as an accepted upgrade (`in`) or an opened one (`out`) would. */

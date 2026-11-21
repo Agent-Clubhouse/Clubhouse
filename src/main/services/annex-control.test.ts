@@ -268,6 +268,20 @@ describe('capability hello and mixed versions', () => {
 });
 
 describe('read-only direction readiness (#3613 P7)', () => {
+  it('distinguishes accepted-link ownership across replacement without adding any wire metadata', () => {
+    const first = new FakeSocket();
+    control._attachForTesting(first as never, TARGET, TARGET_PIN, 'in');
+    first.deliver({ v: 1, type: 'hello', features: ['request'] });
+    const epoch = control.getAcceptedLinkEpoch(TARGET);
+    expect(epoch).toBeGreaterThan(0);
+    const replacement = new FakeSocket();
+    control._attachForTesting(replacement as never, TARGET, TARGET_PIN, 'in');
+    replacement.deliver({ v: 1, type: 'hello', features: ['request'] });
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(true);
+    expect(control.getAcceptedLinkEpoch(TARGET)).toBeGreaterThan(epoch);
+    expect(JSON.stringify([...first.sent, ...replacement.sent])).not.toContain('requestEpoch');
+  });
+
   it('reports the negotiated physical direction without dialing, sending frames or dispatching requests', async () => {
     const { requesterWs, targetWs } = await connected();
     const sent = [requesterWs.sent.length, targetWs.sent.length];

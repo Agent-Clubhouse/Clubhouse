@@ -164,9 +164,16 @@ const pausedControllerReads = new Set<string>();
 interface ControllerReadLease {
   fingerprint: string;
   trust: string | undefined;
+  revision: number;
   controller: AbortController;
 }
 const controllerReads = new Set<ControllerReadLease>();
+export interface ControllerReadObservation {
+  ready: boolean;
+  revision: number;
+}
+const controllerReadObservations = new Map<string, { identity: string; revision: number }>();
+let nextControllerReadRevision = 0;
 
 function controllerReadTrust(fingerprint: string): string | undefined {
   const peer = annexPeers.getPeer(fingerprint);
@@ -185,13 +192,38 @@ function reverseControllerReadReady(fingerprint: string): boolean {
 }
 
 function controllerReadCurrent(lease: ControllerReadLease): boolean {
-  return !lease.controller.signal.aborted && lease.trust === controllerReadTrust(lease.fingerprint)
-    && reverseControllerReadReady(lease.fingerprint);
+  if (lease.controller.signal.aborted || lease.trust !== controllerReadTrust(lease.fingerprint)) return false;
+  const current = getControllerReadObservation(lease.fingerprint);
+  return current.ready && current.revision === lease.revision;
+}
+
+/** Desktop-local observation: never dials, sends a request or grants authority. */
+export function getControllerReadObservation(fingerprint: string): ControllerReadObservation {
+  const key = fingerprint.toLowerCase();
+  const ready = reverseControllerReadReady(key);
+  const identity = JSON.stringify([ready, controllerReadTrust(key), annexControl.getAcceptedLinkEpoch(key)]);
+  let observed = controllerReadObservations.get(key);
+  if (!observed || observed.identity !== identity) {
+    observed = { identity, revision: ++nextControllerReadRevision };
+    controllerReadObservations.set(key, observed);
+  }
+  return { ready, revision: observed.revision };
 }
 
 export function abortControllerReads(fingerprint?: string): void {
+  const retired = new Set<string>();
   for (const lease of controllerReads) {
-    if (!fingerprint || lease.fingerprint === fingerprint.toLowerCase()) lease.controller.abort();
+    if ((!fingerprint || lease.fingerprint === fingerprint.toLowerCase()) && !lease.controller.signal.aborted) {
+      retired.add(lease.fingerprint);
+      lease.controller.abort();
+    }
+  }
+  for (const key of controllerReadObservations.keys()) {
+    if (!fingerprint || key === fingerprint.toLowerCase()) getControllerReadObservation(key);
+  }
+  for (const key of retired) {
+    getControllerReadObservation(key);
+    controllerReadObservations.get(key)!.revision = ++nextControllerReadRevision;
   }
 }
 
@@ -1967,6 +1999,7 @@ export function disconnect(fingerprint: string): void {
  */
 export function forgetSatellite(fingerprint: string): void {
   abortControllerReads(fingerprint);
+  controllerReadObservations.delete(fingerprint.toLowerCase());
   pausedControllerReads.delete(fingerprint.toLowerCase());
   appLog('core:annex-client', 'info', 'Forgetting satellite', { meta: { fingerprint } });
   // A network member is removed everywhere, not just here (#3061).
@@ -2547,7 +2580,10 @@ async function controllerChatRead<T>(machine: string, path: string): Promise<Con
   });
   if (!route) return { status: 'offline' };
   if (route.via === 'direct' && sat) return directControllerChatRead<T>(sat, path);
-  const lease: ControllerReadLease = { fingerprint, trust: controllerReadTrust(fingerprint), controller: new AbortController() };
+  const lease: ControllerReadLease = {
+    fingerprint, trust: controllerReadTrust(fingerprint), revision: getControllerReadObservation(fingerprint).revision,
+    controller: new AbortController(),
+  };
   controllerReads.add(lease);
   try {
     const res = await annexControl.request(fingerprint, { method: 'GET', path }, {
@@ -3309,6 +3345,7 @@ function startControlConnections(): void {
 export function startClient(): void {
   controllerReadsRunning = true;
   stopControllerReadWatch ??= onDevicePresenceChanged(() => {
+    for (const key of controllerReadObservations.keys()) getControllerReadObservation(key);
     for (const lease of controllerReads) if (!controllerReadCurrent(lease)) lease.controller.abort();
   });
   startControlConnections();
@@ -3319,6 +3356,7 @@ export function startClient(): void {
 export function stopClient(): void {
   controllerReadsRunning = false;
   abortControllerReads();
+  controllerReadObservations.clear();
   pausedControllerReads.clear();
   stopControllerReadWatch?.();
   stopControllerReadWatch = null;

@@ -13,6 +13,7 @@ vi.mock('./annex-client', () => ({
   getSatellite: vi.fn(() => null),
   forgetSatellite: vi.fn(),
   satelliteAddress: vi.fn(() => undefined),
+  getControllerReadObservation: vi.fn(),
 }));
 vi.mock('./annex-settings', () => ({ networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false, getSettings: vi.fn(() => ({ enableClient: true })) }));
 vi.mock('./annex-network-membership', () => ({
@@ -288,6 +289,17 @@ describe('annex device list', () => {
       expect(withdrawn.inbound).toEqual(before.inbound);
       acceptedHere = true;
       expect(list(sources).reach?.acceptedControl).toBe(true);
+    });
+
+    it('publishes controller-owned revision without reinterpreting the aggregate direction', () => {
+      const device = list({
+        controlOf: () => ({ acceptedHere: true, openedHere: true }),
+        controllerReadOf: () => ({ ready: false, revision: 7 }),
+      });
+      expect(device.reach).toMatchObject({
+        outbound: { state: 'up' }, inbound: { state: 'up' },
+        acceptedControl: false, acceptedControlRevision: 7,
+      });
     });
 
     it.each([

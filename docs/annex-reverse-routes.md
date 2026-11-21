@@ -120,9 +120,12 @@ that lease; a normal main-socket drop does not. Explicit Connect or Retry can
 lift a manual pause. Responses from a retired lease are never published.
 A successful network-enabled to network-disabled settings transition aborts
 only controller-read leases synchronously before notifying device observers.
-It uses the committed transition, not a possibly re-enabled cached flag.
-Failed and semantic no-op saves leave leases alone; direct requests and
-unrelated sockets keep their existing lifecycle.
+SAVE_SETTINGS serializes persistence plus runtime application, so each next
+request reads the prior committed or rolled-back settings, never an earlier
+save's optimistic cache. Every rejected save remains its caller's failure
+without poisoning the queue. Failed and semantic no-op saves do not apply the
+network-transition abort hook; direct requests and unrelated sockets keep
+their existing lifecycle.
 
 The receive limit remains exactly 8 MiB and the request timeout remains 30
 seconds. The local limit is checked against decoded inline bytes and before
@@ -131,8 +134,14 @@ limits, P5/P6 authority, deadlines or retry policy. Existing controller
 404/405, 401/403 and 429 states remain unavailable, forbidden and rate-limited.
 
 The existing read-only renderer consumes the optional desktop-local
-`reach.acceptedControl` observation to reload after accepted request-readiness
-loss/recovery and suppress stale results. This is local IPC metadata, not a
+`reach.acceptedControl` observation and per-peer `acceptedControlRevision` to
+reload after accepted request-readiness loss/recovery or replacement and
+suppress stale results. Revisions capture current trust, accepted-link ownership
+and immediate withdrawal before the debounced device publication, so a burst
+ending with the same ready boolean does not hide a retired request. Heartbeats,
+presentation changes and other peers do not revise a selected peer's read.
+The renderer ignores reverse revisions while a direct main connection is up.
+This is local IPC metadata, not a
 phone/control/network wire field or routing authority. Aggregate direction
 presentation can stay up through an opened control or ordinary main link even
 when the accepted request link changes; it is not a substitute for this
@@ -162,3 +171,12 @@ with three controls passing, and three UI semantic failures with two
 accepted-only controls passing. Earlier IPC fixture setup failures remain
 separate receipts, not semantic negatives. That pre-fix proof is not acceptance
 of the corrected/current-main composition.
+
+The next `5a44c556d40c8892d0f8e1aa86bfb3de69efd035` composition on
+`d991a39e790f02b7da2b9385d2c32aeec0111ba9` ran 939 targeted tests and
+production types successfully, but exposed 84 additional integrated fixture
+diagnostics (83 TS7018, one TS2353) and two further reviewed race conditions.
+Regression-only fixtures separately reproduced coalesced ready-state recovery
+and a failed-first/successful-second optimistic save as two genuine failures.
+Those originals remain separate from the earlier red/green runs; neither
+pre-fix execution is acceptance of the final revision/serialized-save source.

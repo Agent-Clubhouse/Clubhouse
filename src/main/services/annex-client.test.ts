@@ -165,7 +165,7 @@ import * as annexPeers from './annex-peers';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
 import * as annexSettings from './annex-settings';
-import { devicesChanged, resetDeviceSignalForTests } from './annex-device-signal';
+import { devicesChanged, onDevicesChanged, resetDeviceSignalForTests } from './annex-device-signal';
 import { CONTROLLER_CHAT_MAX_BYTES } from '../../shared/controller-chat';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -4146,6 +4146,59 @@ describe('annex-client', () => {
         vi.mocked(annexControl.request).mockRestore();
       });
 
+      it('preserves read revision across one actual notification burst without revising unrelated presence', async () => {
+        vi.useFakeTimers();
+        annexClient.stopClient();
+        resetDeviceSignalForTests();
+        annexClient.startClient();
+        const before = annexClient.getControllerReadObservation(FP);
+        let finish!: (result: annexControl.ControlResult) => void;
+        let signal: AbortSignal | undefined;
+        vi.mocked(annexControl.request).mockImplementation((_fp, _input, options) => new Promise((resolve) => {
+          finish = resolve; signal = options?.signal;
+        }));
+        const pending = annexClient.requestControllerChatPage(FP);
+        const observed: annexClient.ControllerReadObservation[] = [];
+        const stop = onDevicesChanged(() => { observed.push(annexClient.getControllerReadObservation(FP)); });
+        try {
+          accepted = false; devicesChanged();
+          expect(signal?.aborted).toBe(true);
+          accepted = true; devicesChanged();
+          await vi.advanceTimersByTimeAsync(50);
+          expect(observed).toHaveLength(1);
+          expect(observed[0].ready).toBe(true);
+          expect(observed[0].revision).toBeGreaterThan(before.revision);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          vi.mocked(annexControl.request).mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+          const stable = annexClient.getControllerReadObservation(FP).revision;
+          targetPeer!.alias = 'Renamed';
+          devicesChanged('last-seen');
+          devicesChanged();
+          await vi.advanceTimersByTimeAsync(50);
+          expect(annexClient.getControllerReadObservation(FP).revision).toBe(stable);
+          expect(annexControl.request).toHaveBeenCalledTimes(2);
+        } finally { stop(); vi.useRealTimers(); }
+      });
+
+      it('retires only the old accepted-link epoch while a newly-owned read remains valid', async () => {
+        const epoch = vi.spyOn(annexControl, 'getAcceptedLinkEpoch').mockReturnValue(1);
+        const held: Array<{ finish: (result: annexControl.ControlResult) => void; signal: AbortSignal | undefined }> = [];
+        vi.mocked(annexControl.request).mockImplementation((_fp, _input, options) => new Promise((resolve) => {
+          held.push({ finish: resolve, signal: options?.signal });
+        }));
+        const old = annexClient.requestControllerChatPage(FP);
+        epoch.mockReturnValue(2);
+        const fresh = annexClient.requestControllerChatSessions(FP);
+        devicesChanged();
+        expect(held[0].signal?.aborted).toBe(true);
+        expect(held[1].signal?.aborted).toBe(false);
+        for (const pending of held) pending.finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+        expect(await old).toEqual({ status: 'offline' });
+        expect(await fresh).toEqual({ status: 'ok', value });
+      });
+
       describe('actual SAVE_SETTINGS controller lease lifecycle', () => {
         let save: (event: unknown, settings: AnnexSettings) => unknown;
         let finish: (result: annexControl.ControlResult) => void;
@@ -4230,6 +4283,41 @@ describe('annex-client', () => {
           expect(await pending).toEqual({ status: 'offline' });
           vi.mocked(annexControl.request).mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
           expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+        });
+
+        it('keeps the successful disable when a queued optimistic re-enable fails, then accepts a fresh successful retry', async () => {
+          let writes = 0;
+          vi.mocked(annexSettings.saveSettings).mockImplementation(async (settings) => {
+            const previous = annexSettings.getSettings();
+            vi.mocked(annexSettings.getSettings).mockReturnValue(settings);
+            if (++writes === 2) {
+              vi.mocked(annexSettings.getSettings).mockReturnValue(previous);
+              throw new Error('second save failed');
+            }
+          });
+          const first = save({}, { ...enabled, networkEnabled: false });
+          const second = expect(save({}, enabled)).rejects.toThrow('second save failed');
+          await first;
+          await second;
+          expect(annexSettings.getSettings().networkEnabled).toBe(false);
+          expect(signal?.aborted).toBe(true);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          await save({}, enabled);
+          vi.mocked(annexControl.request).mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'ok', value });
+        });
+
+        it('does not revise already-disabled reads for repeated or unrelated settings saves', async () => {
+          const disabled = { ...enabled, networkEnabled: false };
+          await save({}, disabled);
+          finish({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(value)) });
+          expect(await pending).toEqual({ status: 'offline' });
+          const revision = annexClient.getControllerReadObservation(FP).revision;
+          await save({}, disabled);
+          await save({}, { ...disabled, alias: 'Renamed' });
+          expect(annexClient.getControllerReadObservation(FP).revision).toBe(revision);
+          expect(annexControl.request).toHaveBeenCalledTimes(1);
         });
 
         it('does not reset a main socket or cancel an already-sent direct controller request while retiring reverse leases', async () => {

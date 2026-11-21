@@ -139,6 +139,28 @@ describe('remote controller desktop chat', () => {
     expect(read()).toHaveBeenCalledTimes(2);
   });
 
+  it('does not restart direct reads for accepted-control revisions while the main connection remains connected', async () => {
+    const reach: NonNullable<AnnexDevice['reach']> = {
+      outbound: { state: 'up' }, inbound: { state: 'up' }, acceptedControl: true, acceptedControlRevision: 1,
+    };
+    const device: AnnexDevice = {
+      fingerprint: 'peer', alias: 'Peer', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop',
+      state: 'connected', pairedAt: '', lastSeen: '', problem: null, reach,
+    };
+    useAnnexClientStore.setState({ satellites: [{
+      id: 'peer', fingerprint: 'peer', alias: 'Peer', icon: 'computer', color: 'indigo', state: 'connected',
+      host: '127.0.0.1', mainPort: 1, pairingPort: 2, snapshot: null, lastError: null,
+    }] });
+    useAnnexStore.setState({ devices: [device] });
+    vi.mocked(window.clubhouse.annex.listDevices).mockResolvedValue([device]);
+    render(<RemoteControllerChatView machine="peer" />);
+    await screen.findByText('This conversation has no messages.');
+    await act(async () => {
+      useAnnexStore.setState({ devices: [{ ...device, reach: { ...reach, acceptedControlRevision: 2 } }] });
+    });
+    expect(read()).toHaveBeenCalledTimes(1);
+  });
+
   it('renders full conversation messages read-only and fetches earlier pages lazily', async () => {
     read().mockResolvedValueOnce(page([message(3, 'Newest controller reply')], { nextBeforeSeq: 3 }))
       .mockResolvedValueOnce(page([message(1, 'Earlier controller reply')], { nextBeforeSeq: null }));
