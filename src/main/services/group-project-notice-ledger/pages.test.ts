@@ -3,6 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
+import { constants } from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { NOTICE_INDEX_PAGE_BYTES, NoticePageIndex, type NoticePageRoot, type NoticePageFailurePoint } from './pages';
@@ -175,6 +176,95 @@ describe('lazy immutable notice index', () => {
     expect(retry.cacheStats.pendingDirectoryCount).toBe(0);
     expect(events).toEqual(['file-synced', 'prefix-requested', 'prefix-requested']);
     expect(await fs.readFile(file)).toEqual(before);
+  });
+
+  it('uses one non-truncating write-capable descriptor for simulated Windows reuse, but ordinary reads stay read-only', async () => {
+    const directory = await home();
+    const initial = await NoticePageIndex.open(directory);
+    const root = await initial.set(undefined, 'stable-id', true);
+    const file = path.join(directory, root.digest.slice(0, 2), `${root.digest}.json`);
+    const before = await fs.readFile(file); const flags: number[] = []; let syncs = 0;
+    const options = { testPlatform: 'win32' as const, testOpenPage: async (location: string, mode: number) => {
+      flags.push(mode); const handle = await fs.open(location, mode); const sync = handle.sync.bind(handle);
+      handle.sync = async () => { syncs++; await sync(); }; return handle;
+    } };
+    const reuse = await NoticePageIndex.open(directory, options);
+    expect(await reuse.set(undefined, 'stable-id', true)).toEqual(root);
+    expect(flags).toHaveLength(1); expect(flags[0] & constants.O_RDWR).toBe(constants.O_RDWR);
+    expect(flags[0] & (constants.O_TRUNC | constants.O_CREAT | constants.O_APPEND)).toBe(0);
+    expect(syncs).toBe(1);
+    const reader = await NoticePageIndex.open(directory, options);
+    expect(await reader.get(root, 'stable-id')).toBe(true);
+    expect(flags).toHaveLength(2); expect(flags[1] & (constants.O_WRONLY | constants.O_RDWR)).toBe(0);
+    expect(syncs).toBe(1); expect(await fs.readFile(file)).toEqual(before);
+  });
+
+  it.skipIf(process.platform === 'win32')('preserves native POSIX read-only reuse and actual sync', async () => {
+    const directory = await home(); const initial = await NoticePageIndex.open(directory);
+    const root = await initial.set(undefined, 'stable-id', true); const flags: number[] = [];
+    const index = await NoticePageIndex.open(directory, { testOpenPage: async (location, mode) => { flags.push(mode); return fs.open(location, mode); } });
+    expect(await index.set(undefined, 'stable-id', true)).toEqual(root);
+    expect(flags).toHaveLength(1); expect(flags[0] & (constants.O_WRONLY | constants.O_RDWR)).toBe(0);
+  });
+
+  it.each(['EACCES', 'EPERM', 'EIO', 'ENOENT'])('refuses simulated Windows descriptor sync %s without durability downgrade or replacement', async (code) => {
+    const directory = await home(); const initial = await NoticePageIndex.open(directory);
+    const root = await initial.set(undefined, 'stable-id', true);
+    const file = path.join(directory, root.digest.slice(0, 2), `${root.digest}.json`); const before = await fs.readFile(file);
+    const original = Object.assign(new Error('synthetic-descriptor-sync'), { code });
+    const handles: import('fs/promises').FileHandle[] = [];
+    const index = await NoticePageIndex.open(directory, { testPlatform: 'win32', testOpenPage: async (location, mode) => {
+      expect(mode & constants.O_RDWR).toBe(constants.O_RDWR);
+      const handle = await fs.open(location, mode); handles.push(handle);
+      handle.sync = async () => { throw original; }; return handle;
+    } });
+    await expect(index.set(undefined, 'stable-id', true)).rejects.toBe(original);
+    expect(handles).toHaveLength(1); expect(handles[0].fd).toBe(-1);
+    expect(index.directoryDurability).toBe('not-observed'); expect(index.cacheStats.pendingDirectoryCount).toBe(2);
+    expect(await fs.readFile(file)).toEqual(before);
+  });
+
+  it.each(['beforePageOpen', 'beforeReusedSync'] as NoticePageFailurePoint[])('refuses a same-content different-inode replacement at %s in simulated Windows reuse', async (point) => {
+    const directory = await home(); const initial = await NoticePageIndex.open(directory);
+    const root = await initial.set(undefined, 'stable-id', true);
+    const file = path.join(directory, root.digest.slice(0, 2), `${root.digest}.json`); const before = await fs.readFile(file);
+    const index = await NoticePageIndex.open(directory, { testPlatform: 'win32', testFailure: async (seen, location) => {
+      if (seen === point) { await fs.rename(location, location + '.saved'); await fs.copyFile(location + '.saved', location); }
+    } });
+    await expect(index.set(undefined, 'stable-id', true)).rejects.toThrow('changed');
+    expect(await fs.readFile(file)).toEqual(before); expect(await fs.readFile(file + '.saved')).toEqual(before);
+    expect(index.cacheStats.pendingDirectoryCount).toBe(2);
+  });
+
+  it('refuses a symlink swap to the original validated inode in simulated Windows reuse', async ({ skip }) => {
+    const directory = await home(); const initial = await NoticePageIndex.open(directory);
+    const root = await initial.set(undefined, 'stable-id', true);
+    const file = path.join(directory, root.digest.slice(0, 2), `${root.digest}.json`); const before = await fs.readFile(file);
+    const link = file + '.prepared-link';
+    try { await fs.symlink(file + '.saved', link); }
+    catch (error) {
+      // telemetry-exempt: only actual unsupported native fixture creation skips
+      if (process.platform === 'win32' && ['EPERM', 'ENOTSUP', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) { skip(); return; }
+      throw error;
+    }
+    let syncs = 0;
+    const index = await NoticePageIndex.open(directory, { testPlatform: 'win32', testFailure: async (point, location) => {
+      if (point === 'beforePageOpen') { await fs.rename(location, location + '.saved'); await fs.rename(link, location); }
+    }, testOpenPage: async (location, mode) => {
+      const handle = await fs.open(location, mode); const sync = handle.sync.bind(handle);
+      handle.sync = async () => { syncs++; await sync(); }; return handle;
+    } });
+    await expect(index.set(undefined, 'stable-id', true)).rejects.toThrow();
+    expect(syncs).toBe(0); expect((await fs.lstat(file)).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(file + '.saved')).toEqual(before);
+  });
+
+  it.skipIf(process.platform !== 'win32')('native Windows reuse sync succeeds without platform or descriptor overrides', async () => {
+    const directory = await home(); const first = await NoticePageIndex.open(directory);
+    const root = await first.set(undefined, 'stable-id', true);
+    const reopened = await NoticePageIndex.open(directory);
+    expect(await reopened.set(undefined, 'stable-id', true)).toEqual(root);
+    await reopened.flush(); expect(await reopened.get(root, 'stable-id')).toBe(true);
   });
 
   it('retains a concurrent reuse barrier rather than deleting a newer dirty mark', async () => {

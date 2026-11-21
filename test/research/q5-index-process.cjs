@@ -6,7 +6,7 @@ const { spawnSync, execFileSync } = require('node:child_process');
 const ts = require('typescript');
 const directory = process.argv[2];
 const mode = process.argv[3];
-if (!['prepare-unflushed', 'temp-opened', 'fifo-swap', 'reuse-guarded', 'skip-reuse-dirty'].includes(mode)) throw new Error('Unknown index fixture mode');
+if (!['prepare-unflushed', 'temp-opened', 'fifo-swap', 'reuse-guarded', 'skip-reuse-dirty', 'win32-sync-policy', 'win32-sync-failure'].includes(mode)) throw new Error('Unknown index fixture mode');
 require.extensions['.ts'] = (module, filename) => {
   let source = fs.readFileSync(filename, 'utf8');
   if (filename.endsWith(`${path.sep}pages.ts`) && mode === 'skip-reuse-dirty') {
@@ -23,6 +23,37 @@ const prepare = async (options) => {
   return { index, root };
 };
 (async () => {
+  if (mode === 'win32-sync-policy' || mode === 'win32-sync-failure') {
+    const { root } = await prepare();
+    const location = path.join(directory, root.digest.slice(0, 2), `${root.digest}.json`);
+    const before = fs.readFileSync(location); const flags = []; const handles = []; let syncs = 0;
+    const original = Object.assign(new Error('synthetic-Windows-descriptor-sync'), { code: 'EPERM' });
+    const options = { testPlatform: 'win32', testOpenPage: async (name, access) => {
+      flags.push(access); const handle = await fs.promises.open(name, access); handles.push(handle);
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => { syncs++; if (mode === 'win32-sync-failure') throw original; await sync(); };
+      return handle;
+    } };
+    const index = await NoticePageIndex.open(directory, options);
+    let refusal;
+    try { await index.set(undefined, 'stable-id', { state: 'uncertain' }); }
+    catch (error) { refusal = error; }
+    if (mode === 'win32-sync-policy') {
+      if (refusal) throw refusal;
+      await index.flush();
+      const reader = await NoticePageIndex.open(directory, options);
+      await reader.get(root, 'stable-id');
+    }
+    const unchanged = before.equals(fs.readFileSync(location));
+    console.log(JSON.stringify({ mode, actualPlatform: process.platform, simulatedReusePlatform: 'win32', flags, syncs,
+      refusalCode: refusal?.code ?? null, closedDescriptors: handles.map((h) => h.fd), unchanged,
+      O_RDWR: fs.constants.O_RDWR, O_TRUNC: fs.constants.O_TRUNC, O_CREAT: fs.constants.O_CREAT, O_APPEND: fs.constants.O_APPEND }));
+    if (!(flags[0] & fs.constants.O_RDWR) || flags[0] & (fs.constants.O_TRUNC | fs.constants.O_CREAT | fs.constants.O_APPEND)
+      || syncs !== 1 || !unchanged || handles.some((h) => h.fd !== -1)) throw new Error('Windows descriptor policy failed');
+    if (mode === 'win32-sync-failure' ? refusal !== original : flags.length !== 2 || (flags[1] & (fs.constants.O_WRONLY | fs.constants.O_RDWR))) throw new Error('Windows refusal/read-only policy failed');
+    console.log(mode === 'win32-sync-policy' ? 'PASS: non-truncating Windows reuse policy on actual host' : 'PASS: Windows sync permission refusal preserved');
+    return;
+  }
   if (mode === 'prepare-unflushed') {
     const { root } = await prepare();
     console.log(JSON.stringify({ root, skippedFlush: true }));
