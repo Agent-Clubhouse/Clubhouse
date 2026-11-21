@@ -1,0 +1,46 @@
+{
+  "scope": "exact five-file isolated assembly; no caller/activation authority",
+  "source": "cacbb88f4d69b58a45e80a4781e72bb904e669b8",
+  "base": "e8e178c4bf462bcf443bfb1b91cbfbcd1f35d1c2",
+  "head": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+  "tree": "9d15165a116d7645f116ad2cc9e2a44a3108ced9",
+  "changedPaths": [
+    "src/main/services/group-project-notice-ledger/durability.test.ts",
+    "src/main/services/group-project-notice-ledger/durability.ts",
+    "src/main/services/group-project-notice-ledger/pages.test.ts",
+    "src/main/services/group-project-notice-ledger/pages.ts",
+    "test/research/q5-index-process.cjs"
+  ],
+  "files": [
+    {
+      "path": "src/main/services/group-project-notice-ledger/pages.ts",
+      "sha256": "53973c5468babb7830d2a198f1d17d011f44f8201558569bb5dd95b2135d8513",
+      "sourceBlob": "f058508d00c11bf48001d0ef188cf9881bf78d47",
+      "assembledBlob": "f058508d00c11bf48001d0ef188cf9881bf78d47"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/pages.test.ts",
+      "sha256": "f3531a965b9a43478ca29c8862c3398907f7c1fe76c6c0bb18c73138687dd010",
+      "sourceBlob": "b1d20a24859e330c363a710aac95f4b9bcbf28e5",
+      "assembledBlob": "b1d20a24859e330c363a710aac95f4b9bcbf28e5"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/durability.ts",
+      "sha256": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9",
+      "sourceBlob": "8bfd5a55ce0095c133f70d15b53f9c6ea0c3e142",
+      "assembledBlob": "8bfd5a55ce0095c133f70d15b53f9c6ea0c3e142"
+    },
+    {
+      "path": "src/main/services/group-project-notice-ledger/durability.test.ts",
+      "sha256": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903",
+      "sourceBlob": "66aaec835714e5ee183c1e91e9637f39a11459c5",
+      "assembledBlob": "66aaec835714e5ee183c1e91e9637f39a11459c5"
+    },
+    {
+      "path": "test/research/q5-index-process.cjs",
+      "sha256": "f5f22a04236fd812a99be1257bca10fa7ea843dc56baa4c473a2ced2466bac8c",
+      "sourceBlob": "e6b46981ecc5854f8c50e6c4ad9c99d9dd1d8195",
+      "assembledBlob": "e6b46981ecc5854f8c50e6c4ad9c99d9dd1d8195"
+    }
+  ]
+}

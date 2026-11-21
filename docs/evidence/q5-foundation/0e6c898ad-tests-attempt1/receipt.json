@@ -1,0 +1,60 @@
+{
+  "scope": "isolated five-file index only; no activation/runtime authority",
+  "startedAt": "2026-11-21T13:15:15.390110+00:00",
+  "finishedAt": "2026-11-21T13:15:33.233204+00:00",
+  "cwd": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/auto-reset-policy-design",
+  "argv": [
+    "./node_modules/.bin/vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/group-project-notice-ledger/pages.test.ts",
+    "src/main/services/group-project-notice-ledger/durability.test.ts",
+    "--maxWorkers=2"
+  ],
+  "exitCode": 0,
+  "before": {
+    "head": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+    "tree": "9d15165a116d7645f116ad2cc9e2a44a3108ced9",
+    "status": "",
+    "sealerSha256": "efad6b395bf775d316e303de372ef7999155079e959846560c8c47671614fedf",
+    "sources": {
+      ".github/workflows/validate.yml": "2612b8fd22c3ded25f53b95495aed6c49c62f404763d3173f52bf760c7f55963",
+      "eslint.config.mjs": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+      "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "package.json": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "src/main/services/group-project-notice-ledger/durability.test.ts": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903",
+      "src/main/services/group-project-notice-ledger/durability.ts": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9",
+      "src/main/services/group-project-notice-ledger/pages.test.ts": "f3531a965b9a43478ca29c8862c3398907f7c1fe76c6c0bb18c73138687dd010",
+      "src/main/services/group-project-notice-ledger/pages.ts": "53973c5468babb7830d2a198f1d17d011f44f8201558569bb5dd95b2135d8513",
+      "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "test/research/q5-index-process.cjs": "f5f22a04236fd812a99be1257bca10fa7ea843dc56baa4c473a2ced2466bac8c",
+      "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    }
+  },
+  "after": {
+    "head": "0e6c898ada85efefb80bc3aec61e07d3d15d2b19",
+    "tree": "9d15165a116d7645f116ad2cc9e2a44a3108ced9",
+    "status": "",
+    "sealerSha256": "efad6b395bf775d316e303de372ef7999155079e959846560c8c47671614fedf",
+    "sources": {
+      ".github/workflows/validate.yml": "2612b8fd22c3ded25f53b95495aed6c49c62f404763d3173f52bf760c7f55963",
+      "eslint.config.mjs": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+      "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "package.json": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "src/main/services/group-project-notice-ledger/durability.test.ts": "69e23eb6b2a2163de252259d1bac88e9921515d9ccf90d967e1bc5535c622903",
+      "src/main/services/group-project-notice-ledger/durability.ts": "0e199a2f4a964f1680d8a9a5c0c3d1f8622fd51eeb5f3390fc2a6269cb4d56e9",
+      "src/main/services/group-project-notice-ledger/pages.test.ts": "f3531a965b9a43478ca29c8862c3398907f7c1fe76c6c0bb18c73138687dd010",
+      "src/main/services/group-project-notice-ledger/pages.ts": "53973c5468babb7830d2a198f1d17d011f44f8201558569bb5dd95b2135d8513",
+      "test/global-setup.ts": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "test/research/q5-index-process.cjs": "f5f22a04236fd812a99be1257bca10fa7ea843dc56baa4c473a2ced2466bac8c",
+      "test/standard-runtime-boundary.ts": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    }
+  },
+  "sealEqual": true,
+  "rawSha256": "48b1ed86059acf9ba1bd33d644911170b599bf707d64681d7629b108bc8bf6e0"
+}

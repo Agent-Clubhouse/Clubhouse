@@ -1,0 +1,4 @@
+2026-11-21T13:17:49Z START q5-ledger idle=89% unused=16G avail=33629M freepct=76 comp=7807M swap=1812M pid=72886 cmd=python3 /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/q5-index-assembly-seal.py /Users/masonallen/.clubhouse/orch/evidence/q5-implementation/0e6c898ad-lint-attempt1 -- ./node_modules/.bin/eslint src/main/services/group-project-notice-ledger/pages.ts src/main/services/group-project-notice-ledger/pages.test.ts src/main/services/group-project-notice-ledger/durability.ts src/main/services/group-project-notice-ledger/durability.test.ts
+{"receipt": "/Users/masonallen/.clubhouse/orch/evidence/q5-implementation/0e6c898ad-lint-attempt1/receipt.json", "exitCode": 0, "sealEqual": true}
+2026-11-21T13:17:50Z END q5-ledger rc=0
+
