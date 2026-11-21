@@ -1348,6 +1348,9 @@ export interface AnnexDirection {
 }
 
 export interface AnnexDeviceReach {
+  /** Local desktop request observation, not phone/control/network wire data or request authority. */
+  acceptedControl?: boolean;
+  acceptedControlRevision?: number;
   /** This machine reaching it. */
   outbound: AnnexDirection;
   /** It reaching this machine. */

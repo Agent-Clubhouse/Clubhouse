@@ -46,6 +46,7 @@ interface Sources {
   reach?: ReachTracker;
   now?: number;
   controlOf?: (fingerprint: string) => ControlLinkReadiness;
+  controllerReadOf?: (fingerprint: string) => annexClient.ControllerReadObservation;
 }
 
 /**
@@ -134,6 +135,7 @@ function readSources(): Sources {
     reach: reachTracker,
     now: Date.now(),
     controlOf: getLinkReadiness,
+    controllerReadOf: annexClient.getControllerReadObservation,
   };
 }
 
@@ -196,7 +198,13 @@ function reachFor(peer: AnnexPeer, sat: annexClient.SatelliteConnection | undefi
       action: specific ?? `Add an address for ${name} with Address, such as a local forward to its Annex port.`,
     };
   }
-  return { outbound, inbound, ...(notice && { notice }) };
+  const read = control ? sources.controllerReadOf?.(peer.fingerprint) : undefined;
+  return {
+    outbound, inbound,
+    ...(control && { acceptedControl: read?.ready ?? (sources.clientOn && control.acceptedHere) }),
+    ...(read && { acceptedControlRevision: read.revision }),
+    ...(notice && { notice }),
+  };
 }
 
 /** The device list from given sources. Exported for tests. */

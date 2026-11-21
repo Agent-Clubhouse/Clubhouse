@@ -24,7 +24,7 @@ import { createBonjour } from './annex-mdns';
 import { annexNetworkProfile } from './annex-network-profile';
 import * as networkChannel from './annex-network-channel';
 import * as annexControl from './annex-control';
-import { peerRoutes } from './annex-routes';
+import { peerRoutes, selectRequestRoute } from './annex-routes';
 import * as membership from './annex-network-membership';
 import {
   formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, routeCollision, savedLoopbackRoutes,
@@ -43,7 +43,7 @@ import { CONTROLLER_CHAT_PATH, CONTROLLER_CHAT_MAX_BYTES, type ControllerChatQue
 import type { DigestSince } from '../../shared/group-project-types';
 import { encodeDigestSince } from '../../shared/digest-since';
 import { normalizeCertFingerprint, parsePairingUrl } from './annex-pairing-url';
-import { devicesChanged, onDevicesChanged } from './annex-device-signal';
+import { devicesChanged, onDevicesChanged, onDevicePresenceChanged } from './annex-device-signal';
 import {
   annexProblemText,
   classifyConnectionError,
@@ -159,6 +159,73 @@ export interface SatelliteSnapshot {
 let bonjourBrowser: Browser | null = null;
 let bonjourInstance: InstanceType<typeof Bonjour> | null = null;
 const satellites = new Map<string, SatelliteConnectionInternal>();
+let controllerReadsRunning = false;
+const pausedControllerReads = new Set<string>();
+interface ControllerReadLease {
+  fingerprint: string;
+  trust: string | undefined;
+  revision: number;
+  controller: AbortController;
+}
+const controllerReads = new Set<ControllerReadLease>();
+export interface ControllerReadObservation {
+  ready: boolean;
+  revision: number;
+}
+const controllerReadObservations = new Map<string, { identity: string; revision: number }>();
+let nextControllerReadRevision = 0;
+
+function controllerReadTrust(fingerprint: string): string | undefined {
+  const peer = annexPeers.getPeer(fingerprint);
+  return peer ? JSON.stringify([annexPeers.trustOf(peer), peer.kind]) : undefined;
+}
+
+function reverseControllerReadReady(fingerprint: string): boolean {
+  const settings = annexSettings.getSettings();
+  const peer = annexPeers.getPeer(fingerprint);
+  const sat = satelliteFor(fingerprint);
+  return controllerReadsRunning && settings.enableClient && annexSettings.networkEnabled(settings)
+    && !pausedControllerReads.has(fingerprint) && !sat?.halt && !sat?.needsPairing
+    && peer?.role === 'member' && peer.kind === 'desktop' && !peer.networkPending
+    && !!peer.tlsCertificateFingerprint && !annexPeers.peerNeedsPairing(peer)
+    && annexControl.getLinkReadiness(fingerprint).acceptedHere;
+}
+
+function controllerReadCurrent(lease: ControllerReadLease): boolean {
+  if (lease.controller.signal.aborted || lease.trust !== controllerReadTrust(lease.fingerprint)) return false;
+  const current = getControllerReadObservation(lease.fingerprint);
+  return current.ready && current.revision === lease.revision;
+}
+
+/** Desktop-local observation: never dials, sends a request or grants authority. */
+export function getControllerReadObservation(fingerprint: string): ControllerReadObservation {
+  const key = fingerprint.toLowerCase();
+  const ready = reverseControllerReadReady(key);
+  const identity = JSON.stringify([ready, controllerReadTrust(key), annexControl.getAcceptedLinkEpoch(key)]);
+  let observed = controllerReadObservations.get(key);
+  if (!observed || observed.identity !== identity) {
+    observed = { identity, revision: ++nextControllerReadRevision };
+    controllerReadObservations.set(key, observed);
+  }
+  return { ready, revision: observed.revision };
+}
+
+export function abortControllerReads(fingerprint?: string): void {
+  const retired = new Set<string>();
+  for (const lease of controllerReads) {
+    if ((!fingerprint || lease.fingerprint === fingerprint.toLowerCase()) && !lease.controller.signal.aborted) {
+      retired.add(lease.fingerprint);
+      lease.controller.abort();
+    }
+  }
+  for (const key of controllerReadObservations.keys()) {
+    if (!fingerprint || key === fingerprint.toLowerCase()) getControllerReadObservation(key);
+  }
+  for (const key of retired) {
+    getControllerReadObservation(key);
+    controllerReadObservations.get(key)!.revision = ++nextControllerReadRevision;
+  }
+}
 
 /** Discovered but unpaired services visible on the LAN. */
 export interface DiscoveredService {
@@ -765,6 +832,7 @@ function satelliteUrl(sat: SatelliteConnectionInternal, urlPath: string, scheme:
  */
 function haltSatellite(sat: SatelliteConnectionInternal, kind: 'pairing' | 'mismatch' | 'clock', message: string, problem: AnnexProblemCode): void {
   sat.connectionAttempt = undefined;
+  abortControllerReads(sat.fingerprint);
   sat.halt = kind;
   sat.needsPairing = kind !== 'clock';
   stopHeartbeat(sat);
@@ -1563,6 +1631,7 @@ function restorePairedSatellites(): void {
 
 function disconnectSatellite(sat: SatelliteConnectionInternal): void {
   sat.connectionAttempt = undefined;
+  abortControllerReads(sat.fingerprint);
   appLog('core:annex-client', 'info', 'Disconnecting satellite', {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias, previousState: sat.state },
   });
@@ -1773,6 +1842,7 @@ export function getSatellite(fingerprint: string): SatelliteConnection | null {
  * The satellite must already be a known peer and must have been paired.
  */
 export function connect(fingerprint: string): void {
+  pausedControllerReads.delete(fingerprint.toLowerCase());
   let sat = satellites.get(fingerprint);
   if (!sat) {
     const peer = annexPeers.getPeer(fingerprint);
@@ -1848,6 +1918,7 @@ export async function setSatelliteHost(fingerprint: string, input: string): Prom
   const sat = satellites.get(fingerprint);
   if (!parsed) {
     annexPeers.setTypedHost(fingerprint, undefined);
+    abortControllerReads(fingerprint);
     appLog('core:annex-client', 'info', 'Typed host cleared for satellite', { meta: { fingerprint } });
     broadcastSatellitesChanged();
     return { ok: true };
@@ -1885,6 +1956,7 @@ export async function setSatelliteHost(fingerprint: string, input: string): Prom
     appLog('core:annex-client', 'warn', 'Typed host not saved: the pairing changed while it was checked', { meta: { fingerprint } });
     return { ok: false, error: `${peer.alias || 'That computer'} changed while its address was checked. Nothing was changed. Try again.` };
   }
+  abortControllerReads(fingerprint);
   appLog('core:annex-client', 'info', 'Typed host set for satellite', { meta: { fingerprint } });
 
   // Saved either way; connecting waits for Connect to satellites.
@@ -1914,6 +1986,8 @@ export function satelliteAddress(fingerprint: string): string | undefined {
 }
 
 export function disconnect(fingerprint: string): void {
+  pausedControllerReads.add(fingerprint.toLowerCase());
+  abortControllerReads(fingerprint);
   const sat = satellites.get(fingerprint);
   if (sat) disconnectSatellite(sat);
   else annexControl.closeFor(fingerprint, 'out');
@@ -1924,6 +1998,9 @@ export function disconnect(fingerprint: string): void {
  * After this, the satellite must be re-paired to connect again.
  */
 export function forgetSatellite(fingerprint: string): void {
+  abortControllerReads(fingerprint);
+  controllerReadObservations.delete(fingerprint.toLowerCase());
+  pausedControllerReads.delete(fingerprint.toLowerCase());
   appLog('core:annex-client', 'info', 'Forgetting satellite', { meta: { fingerprint } });
   // A network member is removed everywhere, not just here (#3061).
   membership.noteLocalRemoval(fingerprint);
@@ -1940,6 +2017,7 @@ export function forgetSatellite(fingerprint: string): void {
 }
 
 export function retry(fingerprint: string): void {
+  pausedControllerReads.delete(fingerprint.toLowerCase());
   const sat = satellites.get(fingerprint);
   annexControl.retryConnection(fingerprint);
   // A paired satellite not seen since startup has no connection yet: start one.
@@ -2479,9 +2557,7 @@ export async function requestChatPage(fingerprint: string, agentId: string, opts
 }
 
 /** Desktop controller reads use pinned TLS, but never the mobile command endpoint. */
-async function controllerChatRead<T>(machine: string, path: string): Promise<ControllerReadResult<T>> {
-  const sat = satelliteFor(machine);
-  if (!sat || sat.state !== 'connected') return { status: 'offline' };
+async function directControllerChatRead<T>(sat: SatelliteConnectionInternal, path: string): Promise<ControllerReadResult<T>> {
   try {
     const res = await satelliteJson(sat.fingerprint, 'GET', path, undefined, { maxResponseBytes: CONTROLLER_CHAT_MAX_BYTES });
     if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
@@ -2493,6 +2569,44 @@ async function controllerChatRead<T>(machine: string, path: string): Promise<Con
     // telemetry-exempt: a bounded state, never a remote error containing conversation text.
     return { status: sat.state === 'connected' ? 'error' : 'offline' };
   }
+}
+
+async function controllerChatRead<T>(machine: string, path: string): Promise<ControllerReadResult<T>> {
+  const fingerprint = machine.toLowerCase();
+  const sat = satelliteFor(machine);
+  const route = selectRequestRoute(fingerprint, annexIdentity.getIdentity()?.fingerprint ?? '', {
+    direct: sat?.state === 'connected' ? { fingerprint, host: sat.host, port: sat.mainPort, source: 'known' } : null,
+    reverse: reverseControllerReadReady(fingerprint),
+  });
+  if (!route) return { status: 'offline' };
+  if (route.via === 'direct' && sat) return directControllerChatRead<T>(sat, path);
+  const lease: ControllerReadLease = {
+    fingerprint, trust: controllerReadTrust(fingerprint), revision: getControllerReadObservation(fingerprint).revision,
+    controller: new AbortController(),
+  };
+  controllerReads.add(lease);
+  try {
+    const res = await annexControl.request(fingerprint, { method: 'GET', path }, {
+      signal: lease.controller.signal, timeoutMs: 30_000, maxResponseBytes: CONTROLLER_CHAT_MAX_BYTES,
+    });
+    if (!controllerReadCurrent(lease)) return { status: 'offline' };
+    const text = res.body.toString('utf8');
+    if (sat) noteRestRefusal(sat, res.status, text);
+    if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
+    if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+    if (res.status === 429) {
+      const header = res.headers['retry-after'];
+      const delay = header === undefined ? NaN : /^\d+$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now();
+      return { status: 'rate_limited', retryAfterMs: Number.isFinite(delay) ? Math.min(2 ** 31 - 1, Math.max(250, delay)) : 1000 };
+    }
+    if (res.status !== 200) return { status: 'error' };
+    const body: unknown = JSON.parse(text);
+    if (!body || typeof body !== 'object') return { status: 'error' };
+    return { status: 'ok', value: body as T };
+  } catch {
+    // telemetry-exempt: a bounded state, never remote error text.
+    return { status: controllerReadCurrent(lease) ? 'error' : 'offline' };
+  } finally { controllerReads.delete(lease); }
 }
 
 /** A read-only host summary. Older hosts have no route; never fall back to local files or a write. */
@@ -3193,6 +3307,7 @@ export function resumeAllConnections(): void {
 }
 
 let stopControlRouteWatch: (() => void) | null = null;
+let stopControllerReadWatch: (() => void) | null = null;
 
 function startControlConnections(): void {
   if (stopControlRouteWatch) { annexControl.refreshConnections(); return; }
@@ -3228,12 +3343,23 @@ function startControlConnections(): void {
 }
 
 export function startClient(): void {
+  controllerReadsRunning = true;
+  stopControllerReadWatch ??= onDevicePresenceChanged(() => {
+    for (const key of controllerReadObservations.keys()) getControllerReadObservation(key);
+    for (const lease of controllerReads) if (!controllerReadCurrent(lease)) lease.controller.abort();
+  });
   startControlConnections();
   startDiscovery();
   restorePairedSatellites();
 }
 
 export function stopClient(): void {
+  controllerReadsRunning = false;
+  abortControllerReads();
+  controllerReadObservations.clear();
+  pausedControllerReads.clear();
+  stopControllerReadWatch?.();
+  stopControllerReadWatch = null;
   stopControlRouteWatch?.();
   stopControlRouteWatch = null;
   annexControl.setConnectionSource(null);

@@ -13,6 +13,7 @@ vi.mock('./annex-client', () => ({
   getSatellite: vi.fn(() => null),
   forgetSatellite: vi.fn(),
   satelliteAddress: vi.fn(() => undefined),
+  getControllerReadObservation: vi.fn(),
 }));
 vi.mock('./annex-settings', () => ({ networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false, getSettings: vi.fn(() => ({ enableClient: true })) }));
 vi.mock('./annex-network-membership', () => ({
@@ -248,6 +249,7 @@ describe('annex device list', () => {
         expect(device.reach).toMatchObject({ outbound: { state: 'up' }, inbound: { state: 'up' } });
         expect(device.reach?.outbound.via).toBe(direction === 'acceptedHere' ? 'reverse' : undefined);
         expect(device.reach?.inbound.via).toBe(direction === 'openedHere' ? 'reverse' : undefined);
+        expect(device.reach?.acceptedControl).toBe(direction === 'acceptedHere');
         expect(device.reach?.notice).toBeUndefined();
       };
       checkReady();
@@ -255,6 +257,7 @@ describe('annex device list', () => {
       expect(list(sources).reach).toMatchObject({ outbound: { state: 'down' }, inbound: { state: 'unknown' } });
       expect(list(sources).reach?.outbound.via).toBeUndefined();
       expect(list(sources).reach?.inbound.via).toBeUndefined();
+      expect(list(sources).reach?.acceptedControl).toBe(false);
       vi.advanceTimersByTime(REACH_SETTLE_MS);
       expect(list(sources).reach).toMatchObject({ outbound: { state: 'down' }, inbound: { state: 'down' } });
       ready = true;
@@ -271,6 +274,34 @@ describe('annex device list', () => {
       expect(device.reach?.inbound.via).toBeUndefined();
     });
 
+    it('observes accepted request loss and recovery even when ordinary main and opened control hide both direction changes', () => {
+      let acceptedHere = true;
+      const sources = {
+        satellites: [satellite({ state: 'connected' })], connected: new Set(['fp-sat']),
+        controlOf: () => ({ acceptedHere, openedHere: true }),
+      };
+      const before = list(sources).reach!;
+      expect(before.acceptedControl).toBe(true);
+      acceptedHere = false;
+      const withdrawn = list(sources).reach!;
+      expect(withdrawn.acceptedControl).toBe(false);
+      expect(withdrawn.outbound).toEqual(before.outbound);
+      expect(withdrawn.inbound).toEqual(before.inbound);
+      acceptedHere = true;
+      expect(list(sources).reach?.acceptedControl).toBe(true);
+    });
+
+    it('publishes controller-owned revision without reinterpreting the aggregate direction', () => {
+      const device = list({
+        controlOf: () => ({ acceptedHere: true, openedHere: true }),
+        controllerReadOf: () => ({ ready: false, revision: 7 }),
+      });
+      expect(device.reach).toMatchObject({
+        outbound: { state: 'up' }, inbound: { state: 'up' },
+        acceptedControl: false, acceptedControlRevision: 7,
+      });
+    });
+
     it.each([
       { role: 'satellite' }, { role: 'controller' }, { kind: 'phone' }, { kind: undefined },
       { networkPending: true }, { tlsCertificateFingerprint: undefined },
@@ -281,6 +312,7 @@ describe('annex device list', () => {
       expect(device.state).not.toBe('connected');
       expect(device.reach?.outbound.via).toBeUndefined();
       expect(device.reach?.inbound.via).toBeUndefined();
+      expect(device.reach?.acceptedControl).not.toBe(true);
     });
 
     it('does not observe control readiness while the current satellite needs pairing', () => {
@@ -305,7 +337,7 @@ describe('annex device list', () => {
 
     it('preserves off directions even when a control socket has negotiated', () => {
       const device = list({ clientOn: false, serverOn: false, controlOf: () => ({ acceptedHere: true, openedHere: true }) });
-      expect(device.reach).toEqual({ outbound: { state: 'off' }, inbound: { state: 'off' } });
+      expect(device.reach).toEqual({ outbound: { state: 'off' }, inbound: { state: 'off' }, acceptedControl: false });
     });
 
     it('keeps old-peer one-way advice exact when control has not negotiated request capability', () => {
