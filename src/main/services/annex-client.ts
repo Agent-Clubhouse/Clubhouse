@@ -1022,6 +1022,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     ws.on('close', (_code, reason) => {
       if (sat.ws !== ws) return;
       sat.ws = null;
+      stopHeartbeat(sat);
       // The satellite removed this pairing; reconnecting would only be refused.
       const refusal = needsPairingRefusalFor(reason?.toString());
       if (refusal) { markNeedsPairing(sat, refusal); return; }
@@ -1033,6 +1034,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
 
     ws.on('error', (err) => {
       if (sat.ws !== ws) return;
+      stopHeartbeat(sat);
       if (haltForTlsError(sat, err)) { sat.ws = null; return; }
       const errorText = (err && typeof err === 'object' && 'message' in err) ? String((err as Error).message) : String(err);
 

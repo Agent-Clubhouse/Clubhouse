@@ -1,0 +1,36 @@
+Reproduced against 2cbdad6f9fd3268c88e05d0ac78fdfafb6f6dfa6 before terminal cleanup correction.
+
+ RUN  v4.1.12 <workspace>
+
+ ❯ |main| src/main/services/annex-client.test.ts (239 tests | 2 failed | 237 skipped) 13ms
+         × retires heartbeat timers after the current socket reports close with reconnect off 11ms
+         × retires heartbeat timers after the current socket reports error with reconnect off 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > retires heartbeat timers after the current socket reports close with reconnect off
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > resume freshness > retires heartbeat timers after the current socket reports error with reconnect off
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ src/main/services/annex-client.test.ts:2625:36
+    2623|         expect(annexClient.isMachineConnected(FP)).toBe(false);
+    2624|         expect(sockets[0].ping).not.toHaveBeenCalled();
+    2625|         expect(vi.getTimerCount()).toBe(0);
+       |                                    ^
+    2626|       });
+    2627|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 237 skipped (239)
+   Start at  22:42:59
+   Duration  339ms (transform 193ms, setup 4ms, import 253ms, tests 13ms, environment 0ms)
+

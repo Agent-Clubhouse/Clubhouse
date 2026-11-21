@@ -2613,6 +2613,18 @@ describe('annex-client', () => {
         expect(annexClient.isMachineConnected(FP)).toBe(true);
       });
 
+      it.each(['close', 'error'] as const)('retires heartbeat timers after the current socket reports %s with reconnect off', async (event) => {
+        await discover();
+        sockets[0].handlers.open();
+        vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), autoReconnect: false });
+        if (event === 'close') sockets[0].handlers.close(1000, Buffer.from(''));
+        else sockets[0].handlers.error(new Error('lost route'));
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+        expect(sockets[0].ping).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
       it('does not let a replaced socket pong cancel the current socket heartbeat deadline', async () => {
         await discover();
         const old = sockets[0];
