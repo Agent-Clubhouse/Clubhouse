@@ -119,7 +119,10 @@ legacy checkpoint reads and root activation remain separate work.
 Index-publication successor to approved0826 syncs a validated reused file through
 its checked read descriptor, then marks its hash-prefix and index directory
 dirty. Bookkeeping is bounded by256 prefixes plus index/parent, not page count.
-Flush failure remains refusal with the relevant barrier pending. Opens are
+Flush failure remains refusal with the relevant barrier pending. Dirty versions
+prevent a concurrently reused page from losing its newer mark while an older
+flush awaits IO; a changed preparation makes that flush refuse until retried.
+Opens are
 read-only/nonblocking/no-follow where supported, then recheck actual file type
 and identity; swapped FIFOs cannot become blocking reads. Private temp writes
 use current-exclusive-owner identity, first-error preservation and best-effort

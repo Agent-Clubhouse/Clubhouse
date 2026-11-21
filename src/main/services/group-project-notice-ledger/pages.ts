@@ -74,7 +74,7 @@ function decode(body: Buffer): Page {
 export class NoticePageIndex {
   private readonly leaves = new Map<string, LeafPage>();
   private readonly branches = new Map<string, IndexPage>();
-  private readonly dirtyDirectories = new Set<string>();
+  private readonly dirtyDirectories = new Map<string, symbol>();
   private reads = 0;
   private pageReadBytes = 0;
   private maxPageReadBytes = 0;
@@ -84,7 +84,7 @@ export class NoticePageIndex {
   static async open(directory: string, options: NoticePageOptions = {}): Promise<NoticePageIndex> {
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
     const index = new NoticePageIndex(directory, options);
-    index.dirtyDirectories.add(directory); index.dirtyDirectories.add(path.dirname(directory));
+    index.dirtyDirectories.set(directory, Symbol()); index.dirtyDirectories.set(path.dirname(directory), Symbol());
     return index;
   }
   /** Fixed-shape diagnostics for bounded-memory tests; no IDs/content. */
@@ -174,7 +174,7 @@ export class NoticePageIndex {
   }
   private markPageDirectories(location: string): void {
     // Only the 256 fixed hash prefixes plus index/parent: never per-page growth.
-    this.dirtyDirectories.add(path.dirname(location)); this.dirtyDirectories.add(this.directory);
+    this.dirtyDirectories.set(path.dirname(location), Symbol()); this.dirtyDirectories.set(this.directory, Symbol());
   }
   private async writePage(location: string, body: Buffer, hash: string): Promise<void> {
     const temporary = path.join(path.dirname(location), `${hash}-${randomUUID()}.tmp`);
@@ -264,12 +264,13 @@ export class NoticePageIndex {
   }
   /** Must succeed before an activating journal/root record; no root is activated here. */
   async flush(): Promise<void> {
-    for (const directory of [...this.dirtyDirectories].sort((a, b) => b.length - a.length)) {
+    for (const [directory, version] of [...this.dirtyDirectories].sort(([a], [b]) => b.length - a.length)) {
       await this.options.testFailure?.('beforeDirectoryFlush', directory);
       await this.directoryFlusher.flush(directory);
-      this.dirtyDirectories.delete(directory);
+      if (this.dirtyDirectories.get(directory) === version) this.dirtyDirectories.delete(directory);
       await this.options.testFailure?.('afterDirectoryFlush', directory);
     }
+    if (this.dirtyDirectories.size) throw new Error('Notice page preparation changed during flush; retry the barrier');
   }
   async get(root: NoticePageRoot | undefined, key: string): Promise<NoticeJson | undefined> {
     keyValid(key);

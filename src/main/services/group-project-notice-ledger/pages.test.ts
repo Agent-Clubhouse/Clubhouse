@@ -177,6 +177,26 @@ describe('lazy immutable notice index', () => {
     expect(await fs.readFile(file)).toEqual(before);
   });
 
+  it('retains a concurrent reuse barrier rather than deleting a newer dirty mark', async () => {
+    const directory = await home();
+    let blocked = false; let arrived!: () => void; let release!: () => void;
+    const waiting = new Promise<void>((resolve) => { arrived = resolve; });
+    const pause = new Promise<void>((resolve) => { release = resolve; });
+    const index = await NoticePageIndex.open(directory, { testFailure: async (point, location) => {
+      if (point === 'beforeDirectoryFlush' && path.dirname(location) === directory && !blocked) {
+        blocked = true; arrived(); await pause;
+      }
+    } });
+    const root = await index.set(undefined, 'stable-id', true);
+    const flushing = index.flush();
+    await waiting;
+    expect(await index.set(undefined, 'stable-id', true)).toEqual(root);
+    release();
+    await expect(flushing).rejects.toThrow('changed during flush');
+    expect(index.cacheStats.pendingDirectoryCount).toBe(2);
+    await index.flush(); expect(index.cacheStats.pendingDirectoryCount).toBe(0);
+  });
+
   it.each(['beforePageWrite', 'beforePageSync', 'beforePageRename'] as NoticePageFailurePoint[])('cleans only current-own temp after %s failure and then prepares successfully', async (point) => {
     const directory = await home();
     const original = Object.assign(new Error('synthetic-page-ENOSPC'), { code: 'ENOSPC' });
