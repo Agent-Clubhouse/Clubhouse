@@ -1,0 +1,18 @@
+HEAD: a025ec2ec2a8d317b2ec49ea0f7fd7455d27d973
+Command argv: ["git", "diff", "--name-only", "15383280a1bdd7151b07a66e4177eef38d10b40c", "a025ec2ec2a8d317b2ec49ea0f7fd7455d27d973"]
+Working directory: repository root
+Exit code: 0
+STDOUT:
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/README.md
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/SHA256SUMS.txt
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/amendment.md
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/base-readback.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/check-documentation.py
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/corrected-boundaries.review.patch
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/fixtures.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/make-corrected-scaffold.py
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/review-and-retained-binding.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/source-binding.json
+docs/implementation-notes/3720-negotiated-member-names/successor-r3/strict-parser-body.review.txt
+
+STDERR:

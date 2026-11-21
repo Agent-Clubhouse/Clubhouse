@@ -1,0 +1,9 @@
+HEAD: a025ec2ec2a8d317b2ec49ea0f7fd7455d27d973
+Command argv: ["python3", "docs/implementation-notes/3720-negotiated-member-names/successor-r3/check-documentation.py"]
+Working directory: repository root
+Exit code: 0
+STDOUT:
+PASS docs only:8 current-main source hashes/equality, corrected scaffold git apply--check on disposable copies, 36 unique discriminator inventory,40>32 arithmetic, frozen r2/earlier bytes and review/launch hashes.
+No parser/schema/clone/store/renderer/recovery/emergency/teardown/type/lint or product test ran. Scaffold helpers remain unimplemented.
+
+STDERR:

@@ -1,0 +1,17 @@
+HEAD: a025ec2ec2a8d317b2ec49ea0f7fd7455d27d973
+Command argv: ["shasum", "-a", "256", "-c", "SHA256SUMS.txt"]
+Working directory: docs/implementation-notes/3720-negotiated-member-names/successor-r3
+Exit code: 0
+STDOUT:
+README.md: OK
+amendment.md: OK
+base-readback.json: OK
+check-documentation.py: OK
+corrected-boundaries.review.patch: OK
+fixtures.json: OK
+make-corrected-scaffold.py: OK
+review-and-retained-binding.json: OK
+source-binding.json: OK
+strict-parser-body.review.txt: OK
+
+STDERR:

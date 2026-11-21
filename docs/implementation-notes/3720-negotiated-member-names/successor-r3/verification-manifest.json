@@ -1,0 +1,72 @@
+{
+  "headAtExecution": "a025ec2ec2a8d317b2ec49ea0f7fd7455d27d973",
+  "executedAtUTC": "2026-11-21T11:45:38.595757+00:00",
+  "status": "Documentation/source-context checks ONLY; no product/parser/model/clone/UI/store/emergency/teardown/type/lint test execution",
+  "sourceMain": "be0091d1676764b0e3300898ab0ad1f135f88a46",
+  "retainedR2": "15383280a1bdd7151b07a66e4177eef38d10b40c",
+  "inputManifestHash": "722c01a74d92ab7916a1958e3f0cf8c6702cfe390f15d7a60ee0b5bc96dc7b45",
+  "checks": [
+    {
+      "label": "documentation-context",
+      "argv": [
+        "python3",
+        "docs/implementation-notes/3720-negotiated-member-names/successor-r3/check-documentation.py"
+      ],
+      "cwd": "repository root",
+      "exitCode": 0,
+      "rawOutput": "documentation-context.txt",
+      "sha256": "a8d6577162ae07627b2849c580fda71911fa3cd3be401d16e41f285a5cfe3c64"
+    },
+    {
+      "label": "frozen-diff-whitespace",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "15383280a1bdd7151b07a66e4177eef38d10b40c",
+        "a025ec2ec2a8d317b2ec49ea0f7fd7455d27d973"
+      ],
+      "cwd": "repository root",
+      "exitCode": 0,
+      "rawOutput": "frozen-diff-whitespace.txt",
+      "sha256": "b2be73e9f13cd5a320255a4e033d38db2ed5f13f4a70dc656fa182a74668c45b"
+    },
+    {
+      "label": "docs-input-hashes",
+      "argv": [
+        "shasum",
+        "-a",
+        "256",
+        "-c",
+        "SHA256SUMS.txt"
+      ],
+      "cwd": "docs/implementation-notes/3720-negotiated-member-names/successor-r3",
+      "exitCode": 0,
+      "rawOutput": "docs-input-hashes.txt",
+      "sha256": "ab097beb65084d1af0db841dd06b6d0f5d63d188e284c1c4080026eba3d4f699"
+    },
+    {
+      "label": "docs-only-paths",
+      "argv": [
+        "git",
+        "diff",
+        "--name-only",
+        "15383280a1bdd7151b07a66e4177eef38d10b40c",
+        "a025ec2ec2a8d317b2ec49ea0f7fd7455d27d973"
+      ],
+      "cwd": "repository root",
+      "exitCode": 0,
+      "rawOutput": "docs-only-paths.txt",
+      "sha256": "5c88fc9f4aba52a123e5f0ae8cbe8aa12795a1193dc7af90428ee44d15956e3c"
+    }
+  ],
+  "requiredUnexecuted": [
+    "B1 actual UNKNOWN primary/reread/emergency controls",
+    "L1 actual >32 recovery failures and duplicate/status idempotence",
+    "C1 actual stale setter ownership controls",
+    "C2 actual original caller and audit/typed refusal controls",
+    "C3 actual descriptor/parser and Electron clone reachability controls",
+    "actual owned runtime readiness",
+    "all implementation red/green/type/lint/matrix/source review/hosted CI"
+  ]
+}
