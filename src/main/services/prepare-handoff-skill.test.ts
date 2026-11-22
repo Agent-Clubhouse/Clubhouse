@@ -1,7 +1,7 @@
 /**
  * The prepare-handoff skill (#3344), followed step by step by a scripted agent
  * through the real handoff tools on a fixture repository: the live host,
- * preflight and preparation, with fake peers and no model. It proves the
+ * preflight, preparation and real agreement/grant scope, with fake peers and no model. It proves the
  * skill's instructions produce a valid offer, and that every tool it names exists.
  */
 import { execFile } from 'child_process';
@@ -45,10 +45,6 @@ vi.mock('./clubhouse-mcp/tool-registry', async (original) => {
   };
 });
 vi.mock('./clubhouse-mcp/ask-first', () => ({ describeCallsForAsk: vi.fn() }));
-vi.mock('./clubhouse-mcp/handoff-permissions', async (original) => ({
-  ...await original<typeof import('./clubhouse-mcp/handoff-permissions')>(),
-  withHandoffAgreementCall: (_call: unknown, work: () => Promise<unknown>) => work(),
-}));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ defaultHelperTemplateId: async () => 'person-helper-template' }) }));
 vi.mock('./clubhouse-mcp/tools/agent-lifecycle', () => ({ wakeWiredAgent: vi.fn() }));
 
@@ -73,12 +69,6 @@ beforeEach(async () => {
   const config = path.join(state.dir, 'empty-config'); fs.writeFileSync(config, '');
   vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   _resetHandoffPreparationsForTesting();
-  const host = await import('./handoff-host');
-  const offer = host.offerCallerHandoff;
-  vi.spyOn(host, 'offerCallerHandoff').mockImplementation(async (...args) => {
-    try { return await offer(...args); }
-    catch (error) { console.error('Original skill offer failure:', error); throw error; }
-  });
   state.handlers.clear();
   registerHandoffTools(); registerHandoffCapacityTools();
   fs.mkdirSync(state.sender); await git(state.sender, 'init', '-b', 'main');
@@ -156,6 +146,20 @@ describe('the prepare-handoff skill (#3344)', () => {
     const followed = await call('get_handoff', { id: offered.body.id });
     expect(followed.body).toMatchObject({ id: offered.body.id, state: 'offered' });
     expect(handoffHost().store.get(offered.body.id)?.task.brief).toBe(brief);
+  }, 30_000);
+
+  it('refuses the same prepared offer when its original agreement scope is bypassed', async () => {
+    const prepared = await call('prepare_handoff', { mode: 'worktree', exclude: ['deploy.key'] });
+    expect(prepared.body).toMatchObject({ ready: true });
+    const catalog = path.join(state.dir, 'handoff-preparations.json');
+    const before = fs.readFileSync(catalog, 'utf8');
+    const agreement = await import('./clubhouse-mcp/handoff-permissions');
+    vi.spyOn(agreement, 'withHandoffAgreementCall').mockImplementation((_call, work) => work());
+    const offered = await call('offer_handoff', { to: 'Receiver', task: 'Continue', brief: 'Goal: continue.',
+      mode: 'worktree', manifest: prepared.body.summary });
+    expect(offered.result.isError).toBe(true);
+    expect(handoffHost().store.list()).toEqual([]);
+    expect(fs.readFileSync(catalog, 'utf8')).toBe(before);
   }, 30_000);
 
   it('tells a too-big refusal apart from a secret finding, and a dirty branch from both', () => {
