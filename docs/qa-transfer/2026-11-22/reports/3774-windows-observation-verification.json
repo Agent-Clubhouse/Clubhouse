@@ -1,0 +1,304 @@
+{
+  "manifestSha256": "62fe0300ccd45cec7c73ff91905bf87bdb39521ca65637467df5669ec0a97f7e",
+  "evidence": "bea07196b4b948642b4dcc4b42cc9a0aad325e22",
+  "verifiedCommittedArtifacts": [
+    {
+      "path": "docs/evidence/3774-windows-observation/README.md",
+      "bytes": 4720,
+      "sha256": "0674e1ba2fb048c90ddb7ec7cc1d3471680e3652c5e629a4fe81c49dfdf6f522",
+      "gitBlob": "559456f38eee2c59ffb36d25107fc423f3adf771"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/artifact-audit-01-fail.txt",
+      "bytes": 89,
+      "sha256": "a5b710ecd9e07822444cb7cd3ee08be4bcca56851413e09a34ab7c1205c7ac3e",
+      "gitBlob": "54ea53b01775fabc84b306e474a87e101f32929c"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/artifacts.json",
+      "bytes": 24640,
+      "sha256": "080ad44b2a102c274489f7d88817bff0c6d2a24f7ef727aa48caae0091a5bb89",
+      "gitBlob": "931f5e8eb7ee4b98e735f0f5c74b6a95e979dc72"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/capture-owner.py",
+      "bytes": 5334,
+      "sha256": "829a6e716afd9f907a746f6a196d748ad3bfb187f52812b96ed86b89a7a7cdf6",
+      "gitBlob": "5020b2e0c24ea7a046eb98e823ee923f5383cf57"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/checkout-commit.json",
+      "bytes": 2654,
+      "sha256": "bf19210efc93ed489ef9707318c07f377503f7f2f9f25baa1613c5fa16f3eba8",
+      "gitBlob": "d9cf60e41017dedcecc4e1f9f4f3f998d3c61ba1"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/hosted-verification.json",
+      "bytes": 1403,
+      "sha256": "f7d8df987ec1009320e1b2c097de2c0a33e5892cc862cc8fea6551b9bb0cb077",
+      "gitBlob": "cc29f73ab513c3fe0825440953774100cf4b5b6d"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/jobs.json",
+      "bytes": 150163,
+      "sha256": "12d380d83ae952a173b44329bb8045ec240982124e8d7e1f3839b2a67d67cbb7",
+      "gitBlob": "a9417b9a39056a695b655d8b5a2a267259e8d21d"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/observation.json",
+      "bytes": 4422,
+      "sha256": "fa67ade01b0af7788f59e86441d343fb2ca4d6a6421b1a0aa813e3e821bbeb75",
+      "gitBlob": "71de5c6bc844753e426885c809aaa578f269eae7"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/pr-terminal-readback.json",
+      "bytes": 8161,
+      "sha256": "e8b2d2013fa2915e5c26d31faff858a9099a04578db1d3b83d86f261f43d5469",
+      "gitBlob": "b3e54f099fde8bc0fb80bc64c4bf086cba088155"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/registration.json",
+      "bytes": 15221,
+      "sha256": "5722aaf920a24f5e725992617261625489463948b4be88394f7344d38dfb16ff",
+      "gitBlob": "605a11046cfed84b8238059ec27701234ae56f31"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/terminal.json",
+      "bytes": 15229,
+      "sha256": "7c9aa6bdc0ceaf91241208b38afe344cbbea306f998e869089dcb5788e1f1cdd",
+      "gitBlob": "11d122276c1ecf6266e2aa027fa394135dcdca35"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/watch-original.txt.gz",
+      "bytes": 4169,
+      "sha256": "798f51e8316b4bb89ad6ef8836feb0a5968b98bdcd2851386eee0acff560be4f",
+      "gitBlob": "27bce15a2aa41b5afa1d5896193673556d7462a9"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/windows-shard2-junit-original.zip",
+      "bytes": 561329,
+      "sha256": "002d7f42224065756ddca4d1f2d95ad2b1041e05c894d8925a95ea30ee2fe512",
+      "gitBlob": "f7e2d75e8b06f1bc990b161597146e2f2ba41434"
+    },
+    {
+      "path": "docs/evidence/3774-windows-observation/windows-shard2-original.log.gz",
+      "bytes": 194555,
+      "sha256": "e6bc1a5520c4ac3782fb8c9fcb5ca7380c19e17a2586191ca554d29d5efb9346",
+      "gitBlob": "7eef0c818cc0c8edff665d417aad6966270fedca"
+    }
+  ],
+  "reviewedHead": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+  "reviewedTree": "040b9eb93b5dd769920564319f7f3e4becdf2b84",
+  "actualCheckout": "d17b9af3b22b77b18cd6e73f0979e40c7de8b43e",
+  "checkoutParents": [
+    "e68536e2d292ed0b824230e158e54ff79b2f027d",
+    "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+  ],
+  "run": {
+    "id": 44990834408,
+    "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+    "status": "completed",
+    "conclusion": "success",
+    "run_attempt": 1,
+    "event": "pull_request",
+    "created_at": "2026-11-22T05:46:22Z",
+    "updated_at": "2026-11-22T06:07:20Z"
+  },
+  "jobs": {
+    "success": 33,
+    "skipped": 4
+  },
+  "officialGhRunViewLogSha256": "20cbfe98f8ca78cd75ee87e37f61b8e047a8b758af5c1b55164ee8c0859a550e",
+  "officialJobLogsApiSha256": "9f7cfff1adb1a62ed827ab031339c069fef3d667f3af3156d4b8a2960d937a89",
+  "logRepresentationNote": "gh run view includes job/step prefixes and LF; job logs API has BOM/timestamps/CRLF. Byte comparison uses same gh run view route as owner; both actual output forms contain identical final packet. Initial mixed-representation equality assertion was refused, then corrected without any CI rerun.",
+  "jobStepPrefixesRemovedAndLineEndingsNormalizedEqual": true,
+  "officialJunitArchiveSha256": "002d7f42224065756ddca4d1f2d95ad2b1041e05c894d8925a95ea30ee2fe512",
+  "officialJunitXmlSha256": "e0f78e38c3a73f413b3ae664d011d249f4433c92ed9dc9f474b14b83eade63c8",
+  "officialGhRunViewAndJunitBytesEqualCommittedArchives": true,
+  "target": {
+    "classname": "src/main/services/managed-agents/delivery.test.ts",
+    "name": "deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)",
+    "time": "0.3456768"
+  },
+  "suite": {
+    "name": "src/main/services/managed-agents/delivery.test.ts",
+    "timestamp": "2026-11-22T06:07:11.978Z",
+    "hostname": "runnervmbpeip",
+    "tests": "68",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "1",
+    "time": "15.8203359"
+  },
+  "skips": [
+    {
+      "classname": "src/main/services/managed-agents/delivery.test.ts",
+      "name": "previewManagedSetup > keeps separate raw ranges when a valid POSIX path expands across lines",
+      "time": "0"
+    }
+  ],
+  "packet": {
+    "version": 1,
+    "platform": "win32",
+    "node": "v22.23.4",
+    "transitions": [
+      {
+        "seq": 1,
+        "event": "begin",
+        "phase": "beforeEach",
+        "offsetMs": 0.14789999999993597
+      },
+      {
+        "seq": 2,
+        "event": "begin",
+        "phase": "seed.copy",
+        "offsetMs": 2.293499999999767
+      },
+      {
+        "seq": 3,
+        "event": "end",
+        "phase": "seed.copy",
+        "offsetMs": 82.3801999999996,
+        "threw": false
+      },
+      {
+        "seq": 4,
+        "event": "begin",
+        "phase": "builtins.ensure",
+        "offsetMs": 82.65279999999984
+      },
+      {
+        "seq": 5,
+        "event": "end",
+        "phase": "builtins.ensure",
+        "offsetMs": 102.30609999999979,
+        "threw": false
+      },
+      {
+        "seq": 6,
+        "event": "end",
+        "phase": "beforeEach",
+        "offsetMs": 102.41199999999935,
+        "threw": false
+      },
+      {
+        "seq": 7,
+        "event": "begin",
+        "phase": "body",
+        "offsetMs": 103.10709999999926
+      },
+      {
+        "seq": 8,
+        "event": "begin",
+        "phase": "git.init",
+        "offsetMs": 103.2564999999995
+      },
+      {
+        "seq": 9,
+        "event": "end",
+        "phase": "git.init",
+        "offsetMs": 180.4935999999998,
+        "threw": false
+      },
+      {
+        "seq": 10,
+        "event": "begin",
+        "phase": "git.add",
+        "offsetMs": 182.04069999999956
+      },
+      {
+        "seq": 11,
+        "event": "end",
+        "phase": "git.add",
+        "offsetMs": 236.6176999999998,
+        "threw": false
+      },
+      {
+        "seq": 12,
+        "event": "begin",
+        "phase": "delivery",
+        "offsetMs": 236.70749999999953
+      },
+      {
+        "seq": 13,
+        "event": "begin",
+        "phase": "git.async",
+        "offsetMs": 242.30059999999958
+      },
+      {
+        "seq": 14,
+        "event": "end",
+        "phase": "git.async",
+        "offsetMs": 307.23529999999937,
+        "threw": false
+      },
+      {
+        "seq": 15,
+        "event": "end",
+        "phase": "delivery",
+        "offsetMs": 339.40099999999984,
+        "threw": false
+      },
+      {
+        "seq": 16,
+        "event": "begin",
+        "phase": "resolve",
+        "offsetMs": 339.5481
+      },
+      {
+        "seq": 17,
+        "event": "end",
+        "phase": "resolve",
+        "offsetMs": 342.6203999999998,
+        "threw": false
+      },
+      {
+        "seq": 18,
+        "event": "begin",
+        "phase": "grant.cleanup",
+        "offsetMs": 342.95759999999973
+      },
+      {
+        "seq": 19,
+        "event": "end",
+        "phase": "grant.cleanup",
+        "offsetMs": 343.0216999999993,
+        "threw": false
+      },
+      {
+        "seq": 20,
+        "event": "end",
+        "phase": "body",
+        "offsetMs": 343.0488999999998,
+        "threw": false
+      }
+    ],
+    "abort": null,
+    "final": {
+      "event": "final",
+      "offsetMs": 343.90049999999974,
+      "aborted": false,
+      "active": []
+    },
+    "overflow": false,
+    "droppedTransitions": 0,
+    "observerFailures": 0,
+    "observerUnavailable": false
+  },
+  "packetEqualsBothActualRawForms": true,
+  "phaseWallMs": {
+    "seed.copy": 80.08669999999984,
+    "builtins.ensure": 19.653299999999945,
+    "beforeEach": 102.26409999999942,
+    "git.init": 77.23710000000028,
+    "git.add": 54.577000000000226,
+    "git.async": 64.9346999999998,
+    "delivery": 102.69350000000031,
+    "resolve": 3.0722999999998137,
+    "grant.cleanup": 0.06409999999959837,
+    "body": 239.9418000000005
+  },
+  "artifactId": 14742008876,
+  "jobId": 137111373322,
+  "reviewerExecution": "Read-only gh metadata/log/artifact download and local hash/XML analysis; no local application or CI rerun."
+}
