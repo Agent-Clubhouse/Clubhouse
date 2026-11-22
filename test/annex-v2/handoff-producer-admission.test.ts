@@ -1,4 +1,5 @@
 import { execFile } from 'child_process';
+import { AsyncLocalStorage } from 'async_hooks';
 import { generateKeyPairSync } from 'crypto';
 import * as nativeFs from 'fs';
 import * as fs from 'fs/promises';
@@ -38,7 +39,7 @@ async function initializeRepository(repository: string): Promise<void> {
   await fs.writeFile(path.join(repository, 'fixture.txt'), contents);
 }
 
-async function setup(dir: string) {
+async function setup(dir: string, owner: FixtureOwner) {
   const userData = path.join(dir, 'user-data');
   const repository = path.join(dir, 'repository');
   await fs.mkdir(userData);
@@ -67,42 +68,114 @@ async function setup(dir: string) {
   await setGrant('allow');
   (await import('../../src/main/services/clubhouse-mcp/tools/handoff-tools')).registerHandoffTools();
   const hostApi = await import('../../src/main/services/handoff-host');
+  owner.stop = () => hostApi.stopHandoffs();
+  const requests = await import('../../src/main/services/grant-requests');
+  owner.reset = () => requests._resetGrantRequestsForTesting();
   const host = hostApi.handoffHost();
   await host.ready;
   const preparation = await import('../../src/main/services/handoff-preparations');
   const source = await import('../../src/main/services/handoff-preflight-host');
-  const requests = await import('../../src/main/services/grant-requests');
   return { userData, repository, project, registry, gate, grants, tools, hostApi, host, preparation, source, requests, setGrant, machine, binding };
 }
 
 type Fixture = Awaited<ReturnType<typeof setup>>;
-let dir: string;
-let fixture: Fixture | undefined;
-const releases: Array<() => void> = [];
-const operations: Promise<unknown>[] = [];
-let retiringFixture = false;
-const toolWork: Array<{ tool: string; started: number; state: 'pending' | 'completed' | 'failed' }> = [];
+type FailureStage = 'setup' | 'work' | 'release' | 'teardown' | 'body';
+type Failure = Readonly<{ stage: FailureStage; error: unknown }>;
+type Completion = Readonly<{ failures: readonly Failure[] }>;
+type CoreCompletion = Completion & Readonly<{ teardown: readonly Completion[]; error?: unknown }>;
+type FixtureOwner = {
+  directory?: string;
+  fixture?: Fixture;
+  stop?: () => Promise<void>;
+  reset?: () => void;
+  retiring: boolean;
+  disposed: boolean;
+  complete: boolean;
+  hookRequested: boolean;
+  operations: Promise<unknown>[];
+  releases: Array<() => void>;
+  holds: Array<() => void>;
+  released: Set<() => void>;
+  releaseFailures: Failure[];
+  toolWork: Array<{ tool: string; started: number; state: 'pending' | 'completed' | 'failed' }>;
+  setup?: Promise<Completion>;
+  body?: Promise<Completion>;
+  core?: Promise<CoreCompletion>;
+  hook?: Promise<Completion>;
+  final?: Completion;
+  teardown: Array<() => void | Promise<void>>;
+  expected: readonly Error[];
+  acknowledged: Set<Failure>;
+};
+const bodyOwner = new AsyncLocalStorage<FixtureOwner>();
+const hookOwners = new WeakMap<object, FixtureOwner>();
+let activeOwner: FixtureOwner | undefined;
 
-function fixtureDiagnostic(observe: () => void): void {
-  try { observe(); } catch {
-    // Optional metadata must not mask actual caller outcomes or strand owned work.
-  }
+function newOwner(): FixtureOwner {
+  return {
+    retiring: false, disposed: false, complete: false, hookRequested: false, operations: [], releases: [],
+    holds: [], released: new Set(), releaseFailures: [], toolWork: [], teardown: [],
+    expected: [], acknowledged: new Set(),
+  };
 }
 
-beforeEach(async () => {
-  retiringFixture = false;
-  toolWork.length = 0;
-  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'handoff-producer-admission-'));
-  fixture = await setup(dir);
+function fixtureOwner(): FixtureOwner {
+  const owner = bodyOwner.getStore() ?? activeOwner;
+  if (!owner) throw new Error('Producer fixture is not initialized.');
+  return owner;
+}
+
+function fixtureDirectory(owner = fixtureOwner()): string {
+  const directory = owner.directory;
+  if (!directory) throw new Error('Producer fixture directory is not initialized.');
+  return directory;
+}
+
+function allocateDirectory(owner: FixtureOwner, directory: string): void {
+  if (owner.directory !== undefined) throw new Error('Producer fixture owner already has its original directory.');
+  Object.defineProperty(owner, 'directory', { value: directory, enumerable: true });
+}
+
+function registerExpected(owner: FixtureOwner, errors: readonly Error[]): void {
+  if (owner.retiring || owner.expected.length || !errors.length) throw new Error('Expected fixture errors must be registered before retirement.');
+  owner.expected = Object.freeze([...errors]);
+}
+
+function admitOwner(): FixtureOwner {
+  if (activeOwner && !activeOwner.complete) throw new Error('Previous producer fixture owner is unfinished; shared setup refused.');
+  const owner = newOwner();
+  activeOwner = owner;
+  return owner;
+}
+
+function observe(owner: FixtureOwner, stage: 'setup' | 'body', callback: () => Promise<void>): Promise<void> {
+  const pending = Promise.resolve().then(() => bodyOwner.run(owner, callback));
+  owner[stage] = pending.then(
+    () => Object.freeze({ failures: Object.freeze([]) }),
+    (error: unknown) => Object.freeze({ failures: Object.freeze([Object.freeze({ stage, error })]) }),
+  );
+  return pending;
+}
+
+function runFixtureBody(callback: () => Promise<void>): Promise<void> {
+  const owner = fixtureOwner();
+  if (owner.retiring || owner.body) throw new Error('Producer fixture body cannot be admitted.');
+  return observe(owner, 'body', callback);
+}
+
+function installFixture(owner: FixtureOwner, fixture: Fixture): void {
+  if (owner.fixture) throw new Error('Producer fixture owner already has its original fixture.');
+  Object.defineProperty(owner, 'fixture', { value: fixture, enumerable: true });
+  if (owner.retiring) throw new Error('Producer fixture setup retired before caller wrapper installation.');
   const callTool = fixture.tools.callTool;
   vi.spyOn(fixture.tools, 'callTool').mockImplementation((...args) => {
     if (args[0] !== caller) return callTool(...args);
-    if (retiringFixture) throw new Error('Producer fixture is retiring; no new test calls may start.');
-    let trace: (typeof toolWork)[number] | undefined;
+    if (owner.retiring) throw new Error('Producer fixture is retiring; no new test calls may start.');
+    let trace: (typeof owner.toolWork)[number] | undefined;
     fixtureDiagnostic(() => {
       trace = { tool: args[1].slice(0, 80), started: Date.now(), state: 'pending' };
-      toolWork.splice(0, Math.max(0, toolWork.length - 7));
-      toolWork.push(trace);
+      owner.toolWork.splice(0, Math.max(0, owner.toolWork.length - 7));
+      owner.toolWork.push(trace);
     });
     const pending = callTool(...args).then((result) => {
       fixtureDiagnostic(() => { if (trace) trace.state = 'completed'; });
@@ -111,15 +184,73 @@ beforeEach(async () => {
       fixtureDiagnostic(() => { if (trace) trace.state = 'failed'; });
       throw error;
     });
-    operations.push(pending);
+    owner.operations.push(pending);
     return pending;
   });
+}
+
+function fixtureDiagnostic(observe: () => void): void {
+  try { observe(); } catch {
+    // Optional metadata must not mask actual caller outcomes or strand owned work.
+  }
+}
+
+beforeEach(async (context) => {
+  const owner = admitOwner();
+  hookOwners.set(context, owner);
+  owner.teardown = [
+    async () => { await owner.stop?.(); },
+    () => { owner.reset?.(); },
+    () => { vi.restoreAllMocks(); },
+    () => { vi.useRealTimers(); },
+    async () => { (await import('../../src/main/services/agent-config')).clearAgentConfigCache(); },
+    () => { owner.disposed = true; },
+    async () => { if (owner.directory) await fs.rm(owner.directory, { recursive: true, force: true }); },
+  ];
+  await observe(owner, 'setup', async () => {
+    allocateDirectory(owner, await fs.mkdtemp(path.join(os.tmpdir(), 'handoff-producer-admission-')));
+    installFixture(owner, await setup(fixtureDirectory(owner), owner));
+  });
 });
-async function cleanupFixture(): Promise<void> {
-  retiringFixture = true;
+
+function releaseOwned(owner: FixtureOwner, callbacks: Array<() => void>): void {
+  for (const release of callbacks.splice(0)) {
+    if (owner.released.has(release)) continue;
+    owner.released.add(release);
+    const before = owner.releaseFailures.length;
+    try { release(); } catch (error) {
+      if (!owner.releaseFailures.slice(before).some((failure) => failure.error === error)) {
+        owner.releaseFailures.push(Object.freeze({ stage: 'release', error }));
+      }
+    }
+  }
+}
+
+function heldRelease(owner: FixtureOwner, release: () => void): () => void {
+  let released = false;
+  const finish = () => {
+    if (released) return;
+    released = true;
+    try { release(); } catch (error) {
+      owner.releaseFailures.push(Object.freeze({ stage: 'release', error }));
+      throw error;
+    }
+  };
+  owner.holds.push(finish);
+  if (owner.hookRequested) releaseOwned(owner, owner.holds);
+  return finish;
+}
+
+function failureError(failures: readonly Failure[]): unknown {
+  if (failures.length === 1) return failures[0].error;
+  if (failures.length > 1) return Object.assign(new Error('Producer fixture work or teardown failed.'), { errors: failures.map((failure) => failure.error) });
+  return undefined;
+}
+
+async function retireCore(owner: FixtureOwner): Promise<CoreCompletion> {
   fixtureDiagnostic(() => {
     if (process.platform === 'win32') {
-      const recent = toolWork.slice(-8);
+      const recent = owner.toolWork.slice(-8);
       if (recent.some((work) => work.state === 'pending')) {
         const now = Date.now();
         console.error('Producer fixture teardown work:', recent.map((work) => ({
@@ -128,39 +259,89 @@ async function cleanupFixture(): Promise<void> {
       }
     }
   });
-  for (const release of releases.splice(0)) release();
-  const failures: unknown[] = [];
+  releaseOwned(owner, owner.releases);
+  const failures: Failure[] = [...(await owner.setup)?.failures ?? []];
   const drained = new Set<Promise<unknown>>();
-  while (operations.length) {
-    const batch = operations.splice(0).filter((pending) => {
+  while (owner.operations.length) {
+    const batch = owner.operations.splice(0).filter((pending) => {
       if (drained.has(pending)) return false;
       drained.add(pending);
       return true;
     });
     for (const outcome of await Promise.allSettled(batch)) {
-      if (outcome.status === 'rejected') failures.push(outcome.reason);
+      if (outcome.status === 'rejected') failures.push(Object.freeze({ stage: 'work', error: outcome.reason }));
     }
+    releaseOwned(owner, owner.releases);
   }
-  const teardown: Array<() => void | Promise<void>> = [
-    async () => { await fixture?.hostApi.stopHandoffs(); },
-    () => { fixture?.requests._resetGrantRequestsForTesting(); },
-    () => { vi.restoreAllMocks(); },
-    () => { vi.useRealTimers(); },
-    async () => { (await import('../../src/main/services/agent-config')).clearAgentConfigCache(); },
-    () => { fixture = undefined; },
-    async () => { await fs.rm(dir, { recursive: true, force: true }); },
-  ];
-  for (const finish of teardown) {
-    try { await finish(); } catch (error) { failures.push(error); }
+  const teardown: Completion[] = [];
+  for (const finish of owner.teardown) {
+    const step: Failure[] = [];
+    try { await finish(); } catch (error) { step.push(Object.freeze({ stage: 'teardown', error })); }
+    teardown.push(Object.freeze({ failures: Object.freeze(step) }));
+    failures.push(...step);
   }
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) throw Object.assign(new Error('Producer fixture work or teardown failed.'), { errors: failures });
+  failures.push(...owner.releaseFailures);
+  return Object.freeze({ failures: Object.freeze(failures), teardown: Object.freeze(teardown), error: failureError(failures) });
 }
-afterEach(cleanupFixture);
+
+function coreCompletion(owner: FixtureOwner): Promise<CoreCompletion> {
+  if (!owner.core) {
+    owner.retiring = true;
+    let resolve!: (record: CoreCompletion) => void;
+    let reject!: (error: unknown) => void;
+    owner.core = new Promise<CoreCompletion>((complete, failed) => { resolve = complete; reject = failed; });
+    retireCore(owner).then(resolve, reject);
+  }
+  return owner.core;
+}
+
+async function cleanupFixture(owner = fixtureOwner()): Promise<void> {
+  const record = await coreCompletion(owner);
+  if (record.failures.length) throw record.error;
+}
+
+async function acknowledgeExpected(owner: FixtureOwner, error: unknown): Promise<void> {
+  const record = await coreCompletion(owner);
+  expect(owner.expected.length).toBeGreaterThan(0);
+  expect(record.failures).toHaveLength(owner.expected.length);
+  expect(error).toBe(record.error);
+  record.failures.forEach((failure, index) => {
+    expect(failure.stage).toBe('work');
+    expect(failure.error).toBe(owner.expected[index]);
+  });
+  for (const failure of record.failures) owner.acknowledged.add(failure);
+}
+
+function hookCompletion(owner: FixtureOwner): Promise<Completion> {
+  if (!owner.hook) {
+    let resolve!: (record: Completion) => void;
+    let reject!: (error: unknown) => void;
+    owner.hook = new Promise<Completion>((complete, failed) => { resolve = complete; reject = failed; });
+    owner.hookRequested = true;
+    releaseOwned(owner, owner.holds);
+    (async () => {
+      const core = await coreCompletion(owner);
+      const body = await owner.body;
+      const all = [...core.failures, ...owner.releaseFailures.filter((failure) => !core.failures.includes(failure)), ...body?.failures ?? []];
+      owner.final = Object.freeze({ failures: Object.freeze(all) });
+      owner.complete = true;
+      if (activeOwner === owner) activeOwner = undefined;
+      return Object.freeze({ failures: Object.freeze(all.filter((failure) => !owner.acknowledged.has(failure))) });
+    })().then(resolve, reject);
+  }
+  return owner.hook;
+}
+afterEach(async (context) => {
+  const owner = hookOwners.get(context);
+  if (!owner) return;
+  const record = await hookCompletion(owner);
+  if (record.failures.length) throw failureError(record.failures);
+});
 
 function current(): Fixture {
-  if (!fixture) throw new Error('Producer fixture is not initialized.');
-  return fixture;
+  const owner = fixtureOwner();
+  if (owner.disposed || !owner.fixture) throw new Error('Producer fixture is not initialized.');
+  return owner.fixture;
 }
 
 async function prepare(fx: Fixture, exclude?: string[]): Promise<HandoffManifestSummary> {
@@ -199,7 +380,7 @@ async function verifySource(fx: Fixture, record: Handoff, summary: HandoffManife
 
 async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestSummary, args = offerArgs(summary)) {
   const entered = deferred(), queued = deferred(), release = deferred();
-  releases.push(release.resolve);
+  fixtureOwner().releases.push(release.resolve);
   const transact: Fixture['host']['store']['transact'] = fx.host.store.transact.bind(fx.host.store);
   vi.spyOn(fx.host.store, 'transact').mockImplementation((id, change) => {
     if (id !== seed.id) queued.resolve();
@@ -214,11 +395,11 @@ async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestS
       await release.promise;
       return record;
     });
-    operations.push(blocker);
+    fixtureOwner().operations.push(blocker);
     return actualOffer(input, sender, beforeCommit, admission);
   });
   const pending = fx.tools.callTool(caller, 'offer_handoff', args);
-  operations.push(pending);
+  fixtureOwner().operations.push(pending);
   await Promise.race([
     Promise.all([entered.promise, queued.promise]),
     pending.then((result) => { throw new Error(`Offer settled before its actual history-queue hold: ${JSON.stringify(result)}`); }),
@@ -230,7 +411,7 @@ async function heldPostPositiveSource(fx: Fixture, args: Record<string, unknown>
   const permissions = await import('../../src/main/services/clubhouse-mcp/handoff-permissions');
   const approve = permissions.handoffAgreementCallApproved, source = fx.source.callerHandoffSource;
   const entered = deferred(), release = deferred();
-  releases.push(release.resolve);
+  fixtureOwner().releases.push(release.resolve);
   let positive = false, held = false, returned = false, positiveCalls = 0;
   vi.spyOn(permissions, 'handoffAgreementCallApproved').mockImplementation(async (...input) => {
     const allowed = await approve(...input);
@@ -254,7 +435,7 @@ async function heldPostPositiveSource(fx: Fixture, args: Record<string, unknown>
     return selected;
   });
   const pending = fx.tools.callTool(caller, 'offer_handoff', args);
-  operations.push(pending);
+  fixtureOwner().operations.push(pending);
   await Promise.race([entered.promise, pending.then(() => { throw new Error('Offer settled before postpositive source verification.'); })]);
   expect(positiveCalls).toBe(1);
   return { pending, release: release.resolve, returned: () => returned };
@@ -274,6 +455,7 @@ describe('isolated real MCP producer domain admission', () => {
 
   async function heldFixturePreparation(fx: Fixture) {
     const entered = deferred(), release = deferred();
+    const finish = heldRelease(fixtureOwner(), release.resolve);
     const source = fx.source.callerHandoffSource;
     vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
       const selected = await source(...args);
@@ -282,12 +464,16 @@ describe('isolated real MCP producer domain admission', () => {
       return selected;
     });
     const pending = fx.tools.callTool(caller, 'prepare_handoff', { mode: 'worktree' });
-    await entered.promise;
-    return { pending, release: release.resolve };
+    await Promise.race([
+      entered.promise,
+      pending.then(() => { throw new Error('Preparation settled before its actual source hold.'); }),
+    ]);
+    return { pending, release: finish };
   }
 
-  it('keeps overlapping cleanup behind the original actual preparation drain', async () => {
+  it('keeps overlapping cleanup behind the original actual preparation drain', async () => runFixtureBody(async () => {
     const fx = current(), failure = new Error('Original overlap fixture caller rejection.');
+    registerExpected(fixtureOwner(), [failure]);
     const grant = fx.tools.listToolGrants().find((tool) => tool.kind === 'global' && tool.name === 'offer_handoff')?.grant;
     if (!grant) throw new Error('Missing actual offer grant declaration.');
     fx.tools.registerGlobalTool('fixture_overlap_rejection', {
@@ -324,18 +510,22 @@ describe('isolated real MCP producer domain admission', () => {
       held.release();
       try { await held.pending; } finally {
         for (const outcome of await Promise.all([first, overlap])) {
-          if ('error' in outcome) expect.soft(outcome.error).toBe(failure);
+          if ('error' in outcome) {
+            expect.soft(outcome.error).toBe(failure);
+            await acknowledgeExpected(fixtureOwner(), outcome.error);
+          }
           else expect.soft(false, 'Expected both cleanup callers to retain the original actual caller rejection.').toBe(true);
         }
         expect.soft(stopCalls).toBe(1);
         expect.soft(nativeFs.existsSync(fx.userData)).toBe(false);
       }
     }
-  });
+  }));
 
-  it.each([1, 9])('drains a real held preparation and completes teardown before reporting its original caller rejection (%i failures)', async (count) => {
+  it.each([1, 9])('drains a real held preparation and completes teardown before reporting its original caller rejection (%i failures)', async (count) => runFixtureBody(async () => {
     const fx = current();
     const failures = Array.from({ length: count }, (_, index) => new Error(`Original fixture caller rejection ${index}.`));
+    registerExpected(fixtureOwner(), failures);
     let next = 0;
     const grant = fx.tools.listToolGrants().find((tool) => tool.kind === 'global' && tool.name === 'offer_handoff')?.grant;
     if (!grant) throw new Error('Missing actual offer grant declaration.');
@@ -362,15 +552,26 @@ describe('isolated real MCP producer domain admission', () => {
       (error: unknown) => { finished = true; return { ok: false, error }; },
     );
     logging?.mockRestore();
+    let overlapFinished = false;
+    const overlap = count > 1 ? cleanupFixture().then(
+      () => { overlapFinished = true; return { ok: true }; },
+      (error: unknown) => { overlapFinished = true; return { ok: false, error }; },
+    ) : undefined;
     try {
       await new Promise((resolve) => setTimeout(resolve, 25));
       expect.soft(finished).toBe(false);
       expect.soft(nativeFs.existsSync(fx.userData)).toBe(true);
       expect.soft(stop).not.toHaveBeenCalled();
+      if (overlap) expect.soft(overlapFinished).toBe(false);
     } finally {
       held.release();
       const prepared = await held.pending;
       const outcome = await cleaning;
+      if (overlap) {
+        const joined = await overlap;
+        expect('error' in joined && 'error' in outcome).toBe(true);
+        if ('error' in joined && 'error' in outcome) expect(joined.error).toBe(outcome.error);
+      }
       expect.soft(prepared.isError).not.toBe(true);
       if ('error' in outcome) {
         if (count === 1) expect.soft(outcome.error).toBe(failures[0]);
@@ -383,6 +584,7 @@ describe('isolated real MCP producer domain admission', () => {
             failures.forEach((failure, index) => expect.soft(originals[index]).toBe(failure));
           } else expect.soft(false, 'Expected every original caller rejection after mandatory teardown.').toBe(true);
         }
+        await acknowledgeExpected(fixtureOwner(), outcome.error);
       } else expect.soft(false, 'Expected original caller rejection after mandatory teardown.').toBe(true);
       expect.soft(stop).toHaveBeenCalledOnce();
       expect.soft(reset).toHaveBeenCalledOnce();
@@ -406,12 +608,12 @@ describe('isolated real MCP producer domain admission', () => {
         }
       }
     }
-  });
+  }));
 
-  it.each(['clock', 'logger'] as const)('completes actual fixture teardown when its Windows %s diagnostic throws', async (port) => {
+  it.each(['clock', 'logger'] as const)('completes actual fixture teardown when its Windows %s diagnostic throws', async (port) => runFixtureBody(async () => {
     const fx = current(), held = await heldFixturePreparation(fx);
     const release = vi.fn(held.release);
-    releases.push(release);
+    fixtureOwner().releases.push(release);
     const stop = vi.spyOn(fx.hostApi, 'stopHandoffs');
     const reset = vi.spyOn(fx.requests, '_resetGrantRequestsForTesting');
     const failure = new Error(`Original fixture ${port} diagnostic fault.`);
@@ -442,9 +644,9 @@ describe('isolated real MCP producer domain admission', () => {
       held.release();
       expect.soft((await held.pending).isError).not.toBe(true);
     }
-  });
+  }));
 
-  it('forwards actual preparation once when its pre-forward diagnostic clock throws', async () => {
+  it('forwards actual preparation once when its pre-forward diagnostic clock throws', async () => runFixtureBody(async () => {
     const fx = current();
     const source = vi.spyOn(fx.source, 'callerHandoffSource');
     let faulted = false;
@@ -463,19 +665,20 @@ describe('isolated real MCP producer domain admission', () => {
     if ('result' in outcome) expect.soft(outcome.result.isError).not.toBe(true);
     else expect.soft(false, 'Diagnostic failure masked the actual preparation.').toBe(true);
     expect.soft(nativeFs.existsSync(path.join(fx.userData, 'handoff-preparations.json'))).toBe(true);
-  });
+  }));
 
-  it('reports actual early offer settlement without entering an unreachable history hold', async () => {
+  it('reports actual early offer settlement without entering an unreachable history hold', async () => runFixtureBody(async () => {
     const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
     const before = await catalog(fx);
     await fx.setGrant('off');
     await expect(queuedOffer(fx, seed, summary)).rejects.toThrow('Offer settled before its actual history-queue hold:');
     expect(fx.host.store.list()).toEqual([seed]);
     expect(await catalog(fx)).toBe(before);
-  });
+  }));
 
-  it('keeps actual fixture preparation alive until teardown settles it', async () => {
+  it('keeps actual fixture preparation alive until teardown settles it', async () => runFixtureBody(async () => {
     const fx = current(), entered = deferred(), release = deferred();
+    heldRelease(fixtureOwner(), release.resolve);
     const source = fx.source.callerHandoffSource;
     vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
       const selected = await source(...args);
@@ -497,9 +700,9 @@ describe('isolated real MCP producer domain admission', () => {
       await cleaning;
       expect.soft(result.isError).not.toBe(true);
     }
-  });
+  }));
 
-  it('keeps current sender authority, source bytes and durable binding through a held history queue', async () => {
+  it('keeps current sender authority, source bytes and durable binding through a held history queue', async () => runFixtureBody(async () => {
     const fx = current(), summary = await prepare(fx);
     const seed = await offer(fx, summary);
     await verifySource(fx, seed, summary);
@@ -511,11 +714,171 @@ describe('isolated real MCP producer domain admission', () => {
     await verifySource(fx, parseHandoff(resultValue(result)), summary);
     expect(fx.host.store.list()).toHaveLength(2);
     expect(fx.requests.listGrantRequests()).toEqual([]);
-  });
+  }));
+
+  async function sentinelOwner() {
+    const owner = newOwner();
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'producer-owner-control-'));
+    allocateDirectory(owner, directory);
+    owner.teardown = [
+      () => { owner.disposed = true; },
+      async () => { await fs.rm(directory, { recursive: true, force: true }); },
+    ];
+    return owner;
+  }
+
+  it('owner lifecycle excludes later setup until the actual body finishes without a manual self-cycle', async () => runFixtureBody(async () => {
+    const original = fixtureOwner(), owner = await sentinelOwner();
+    const reached = deferred(), release = deferred();
+    const actual = observe(owner, 'body', async () => {
+      await cleanupFixture(owner);
+      reached.resolve();
+      await release.promise;
+    });
+    activeOwner = owner;
+    let joined: Promise<Completion> | undefined;
+    try {
+      await Promise.race([reached.promise, actual.then(() => { throw new Error('Body settled before its continuation hold.'); })]);
+      joined = hookCompletion(owner);
+      expect(await Promise.race([joined, Promise.resolve('expired waiter')])).toBe('expired waiter');
+      expect(owner.complete).toBe(false);
+      expect(() => admitOwner()).toThrow('Previous producer fixture owner is unfinished');
+      expect(bodyOwner.getStore()).toBe(original);
+    } finally {
+      release.resolve();
+      await actual;
+      expect((await (joined ?? hookCompletion(owner))).failures).toEqual([]);
+      activeOwner = original;
+    }
+    expect(owner.complete).toBe(true);
+    const next = await sentinelOwner();
+    try {
+      let touched = 0;
+      next.teardown.unshift(() => { touched++; });
+      activeOwner = next;
+      await cleanupFixture(owner);
+      expect(nativeFs.existsSync(fixtureDirectory(next))).toBe(true);
+      expect(touched).toBe(0);
+      expect(owner.final?.failures).toEqual([]);
+      expect((await hookCompletion(next)).failures).toEqual([]);
+    } finally {
+      activeOwner = original;
+    }
+  }));
+
+  it('owner lifecycle hook releases original and late body holds exactly once before joining core', async () => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), gate = deferred(), bodyGate = deferred();
+    let releases = 0;
+    const release = heldRelease(owner, () => { releases++; gate.resolve(); });
+    owner.operations.push(gate.promise);
+    const actual = observe(owner, 'body', async () => {
+      await cleanupFixture(owner);
+      heldRelease(owner, bodyGate.resolve);
+      await bodyGate.promise;
+      release();
+    });
+    const joining = hookCompletion(owner);
+    expect((await joining).failures).toEqual([]);
+    await actual;
+    expect(releases).toBe(1);
+    expect(owner.complete).toBe(true);
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it('owner lifecycle drains appended actual filesystem work and retains rejection plus every teardown outcome', async () => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), gate = deferred();
+    const directory = fixtureDirectory(owner);
+    const file = path.join(directory, 'settled.txt');
+    const first = gate.promise.then(() => fs.writeFile(file, 'settled'));
+    owner.operations.push(first, first);
+    let readyAtTeardown = false;
+    const teardownError = new Error('Original mandatory teardown fault.');
+    owner.teardown.unshift(() => {
+      readyAtTeardown = nativeFs.existsSync(file);
+      throw teardownError;
+    });
+    const core = coreCompletion(owner);
+    await Promise.resolve();
+    const appended = fs.readFile(path.join(directory, 'missing'));
+    const rejected = appended.then(
+      () => { throw new Error('Expected an actual missing-file rejection.'); },
+      (error: unknown) => error,
+    );
+    owner.operations.push(appended, appended);
+    gate.resolve();
+    const record = await core;
+    const actualError = await rejected;
+    expect(record.failures.map((failure) => failure.stage)).toEqual(['work', 'teardown']);
+    expect(record.failures[0].error).toBe(actualError);
+    expect(record.failures[1].error).toBe(teardownError);
+    expect(record.teardown).toHaveLength(3);
+    expect(readyAtTeardown).toBe(true);
+    expect(nativeFs.existsSync(directory)).toBe(false);
+    await expect(cleanupFixture(owner)).rejects.toBe(record.error);
+    const final = await hookCompletion(owner);
+    expect(final.failures).toEqual(record.failures);
+  }));
+
+  it.each(['caller', 'release', 'teardown', 'body'] as const)('owner lifecycle preserves unexpected %s errors without inferred acknowledgment', async (stage) => runFixtureBody(async () => {
+    const owner = await sentinelOwner();
+    const expected = new Error('Registered synthetic caller fault.'), unexpected = new Error(`Original unexpected ${stage} fault.`);
+    registerExpected(owner, [expected]);
+    owner.operations.push(Promise.reject(expected));
+    if (stage === 'caller') owner.operations.push(Promise.reject(unexpected));
+    if (stage === 'teardown') owner.teardown.unshift(() => { throw unexpected; });
+    const record = await coreCompletion(owner);
+    if (stage === 'caller' || stage === 'teardown') {
+      await expect(acknowledgeExpected(owner, record.error)).rejects.toThrow();
+      expect(owner.acknowledged.size).toBe(0);
+    } else {
+      await acknowledgeExpected(owner, record.error);
+      if (stage === 'release') heldRelease(owner, () => { throw unexpected; });
+      else await expect(observe(owner, 'body', async () => { throw unexpected; })).rejects.toBe(unexpected);
+    }
+    const final = await hookCompletion(owner);
+    expect(final.failures.some((failure) => failure.error === unexpected)).toBe(true);
+    expect(owner.final?.failures.some((failure) => failure.error === expected)).toBe(true);
+    expect(final.failures.filter((failure) => failure.error === expected)).toHaveLength(stage === 'caller' || stage === 'teardown' ? 1 : 0);
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it('owner lifecycle refuses incomplete actual setup and retains partial storage and late-install failure until settlement', async () => runFixtureBody(async () => {
+    const original = fixtureOwner(), fx = current(), owner = await sentinelOwner(), gate = deferred();
+    const raw = observe(owner, 'setup', async () => {
+      await fs.writeFile(path.join(fixtureDirectory(owner), 'partial.txt'), 'partial');
+      await gate.promise;
+      installFixture(owner, fx);
+    });
+    activeOwner = owner;
+    const core = coreCompletion(owner);
+    try {
+      await Promise.resolve();
+      expect(() => admitOwner()).toThrow('Previous producer fixture owner is unfinished');
+      expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(true);
+    } finally {
+      gate.resolve();
+      await expect(raw).rejects.toThrow('setup retired before caller wrapper installation');
+      const record = await core;
+      expect(record.failures.map((failure) => failure.stage)).toEqual(['setup']);
+      expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+      expect((await hookCompletion(owner)).failures).toEqual(record.failures);
+      activeOwner = original;
+    }
+    expect(fx.tools.callTool).toBeDefined();
+  }));
+
+  it('owner lifecycle reports actual early preparation refusal instead of stranding source entry', async () => runFixtureBody(async () => {
+    const fx = current();
+    const original = fx.registry.agentRegistry.get(caller);
+    if (!original) throw new Error('Missing original fixture caller registration.');
+    original.projectPath = path.join(fixtureDirectory(), 'unregistered-source');
+    await expect(heldFixturePreparation(fx)).rejects.toThrow('Preparation settled before its actual source hold.');
+    expect(nativeFs.existsSync(fx.userData)).toBe(true);
+  }));
 
   async function heldSelection(fx: Fixture, args: Record<string, unknown>, afterSelection = false) {
     const entered = deferred(), release = deferred();
-    releases.push(release.resolve);
+    fixtureOwner().releases.push(release.resolve);
     const select = fx.preparation.selectPreparedHandoff;
     let selected: Awaited<ReturnType<typeof select>> | undefined;
     vi.spyOn(fx.preparation, 'selectPreparedHandoff').mockImplementation(async (...input) => {
@@ -525,14 +888,14 @@ describe('isolated real MCP producer domain admission', () => {
       return selected ?? select(...input);
     });
     const pending = fx.tools.callTool(caller, 'offer_handoff', args);
-    operations.push(pending);
+    fixtureOwner().operations.push(pending);
     await entered.promise;
     return { pending, release: release.resolve, selected: () => selected };
   }
 
   function heldRename(fx: Fixture, filename: string, eligible = () => true) {
     const entered = deferred(), release = deferred();
-    releases.push(release.resolve);
+    fixtureOwner().releases.push(release.resolve);
     const rename: typeof nativeFs.promises.rename = nativeFs.promises.rename.bind(nativeFs.promises);
     vi.spyOn(nativeFs.promises, 'rename').mockImplementation(async (from, to) => {
       if (to === path.join(fx.userData, filename) && eligible()) {
@@ -580,7 +943,7 @@ describe('isolated real MCP producer domain admission', () => {
 
   async function heldStandalonePreparation(fx: Fixture, mode: 'branch' | 'worktree') {
     const entered = deferred(), release = deferred(), selected = deferred();
-    releases.push(release.resolve);
+    fixtureOwner().releases.push(release.resolve);
     const originalSource = fx.source.callerHandoffSource, select = fx.preparation.selectPreparedHandoff;
     let first = true;
     vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
@@ -597,13 +960,13 @@ describe('isolated real MCP producer domain admission', () => {
       return pending;
     });
     const pending = fx.tools.callTool(caller, 'prepare_handoff', { mode });
-    operations.push(pending);
+    fixtureOwner().operations.push(pending);
     await entered.promise;
     return { pending, release: release.resolve, selected: selected.promise };
   }
 
   describe('original producer continuity and admitted persistence', () => {
-    it('retains original grant retirement even when Allow is restored before the queue resumes', async () => {
+    it('retains original grant retirement even when Allow is restored before the queue resumes', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
       const before = await catalog(fx);
       const queued = await queuedOffer(fx, seed, summary);
@@ -613,9 +976,9 @@ describe('isolated real MCP producer domain admission', () => {
       expect((await queued.pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([seed]);
       expect(await catalog(fx)).toBe(before);
-    });
+    }));
 
-    it('preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata', async () => {
+    it('preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
       const queued = await queuedOffer(fx, seed, summary);
       fx.gate.forgetMcpCaller(caller);
@@ -627,9 +990,9 @@ describe('isolated real MCP producer domain admission', () => {
       const result = await queued.pending;
       expect(result.isError).not.toBe(true);
       await verifySource(fx, parseHandoff(resultValue(result)), summary);
-    });
+    }));
 
-    it('ignores cosmetic binding changes during the actual target-project capture await', async () => {
+    it('ignores cosmetic binding changes during the actual target-project capture await', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx), originalSource = fx.source.callerHandoffSource;
       let wired = false;
       vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
@@ -650,9 +1013,9 @@ describe('isolated real MCP producer domain admission', () => {
       const record = await offer(fx, summary);
       expect(wired).toBe(true);
       await verifySource(fx, record, summary);
-    });
+    }));
 
-    it('does not adopt a replacement quick source with the same id and worktree', async () => {
+    it('does not adopt a replacement quick source with the same id and worktree', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
       const original = fx.registry.agentRegistry.get(caller);
       if (!original) throw new Error('Missing original caller.');
@@ -665,22 +1028,22 @@ describe('isolated real MCP producer domain admission', () => {
       expect((await queued.pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([seed]);
       expect(await catalog(fx)).toBe(before);
-    });
+    }));
 
-    it('does not adopt a different registered caller worktree after preparation', async () => {
+    it('does not adopt a different registered caller worktree after preparation', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
       const original = fx.registry.agentRegistry.get(caller);
       if (!original) throw new Error('Missing original caller.');
       const before = await catalog(fx);
       const queued = await queuedOffer(fx, seed, summary);
-      original.cwd = path.join(dir, 'different-source');
+      original.cwd = path.join(fixtureDirectory(), 'different-source');
       queued.release();
       expect((await queued.pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([seed]);
       expect(await catalog(fx)).toBe(before);
-    });
+    }));
 
-    it('keeps a durable original source without a live runtime and ignores display name/color changes', async () => {
+    it('keeps a durable original source without a live runtime and ignores display name/color changes', async () => runFixtureBody(async () => {
       const fx = current(), config = await configuredSource(fx), summary = await prepare(fx, ['.clubhouse/**']);
       const seed = await offer(fx, summary), queued = await queuedOffer(fx, seed, summary);
       config.row.name = 'Cosmetic source'; config.row.color = 'blue';
@@ -693,9 +1056,9 @@ describe('isolated real MCP producer domain admission', () => {
       const record = parseHandoff(resultValue(result));
       expect(record.senderName).toBe('Original source');
       await verifySource(fx, record, summary);
-    });
+    }));
 
-    it('refuses a durable source replacement with only its original createdAt changed', async () => {
+    it('refuses a durable source replacement with only its original createdAt changed', async () => runFixtureBody(async () => {
       const fx = current(), config = await configuredSource(fx), summary = await prepare(fx, ['.clubhouse/**']);
       const seed = await offer(fx, summary), before = await catalog(fx), queued = await queuedOffer(fx, seed, summary);
       config.row.createdAt = '2026-01-01T00:00:01.000Z';
@@ -704,14 +1067,14 @@ describe('isolated real MCP producer domain admission', () => {
       expect((await queued.pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([seed]);
       expect(await catalog(fx)).toBe(before);
-    });
+    }));
 
-    it('rechecks retirement during the actual positive authorization await', async () => {
+    it('rechecks retirement during the actual positive authorization await', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
       const permissions = await import('../../src/main/services/clubhouse-mcp/handoff-permissions');
       const approve = permissions.handoffAgreementCallApproved;
       const entered = deferred(), release = deferred();
-      releases.push(release.resolve);
+      fixtureOwner().releases.push(release.resolve);
       vi.spyOn(permissions, 'handoffAgreementCallApproved').mockImplementation(async (...args) => {
         const allowed = await approve(...args);
         expect(allowed).toBe(true);
@@ -721,7 +1084,7 @@ describe('isolated real MCP producer domain admission', () => {
       });
       const before = await catalog(fx);
       const pending = fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary));
-      operations.push(pending);
+      fixtureOwner().operations.push(pending);
       await entered.promise;
       await fx.setGrant('off');
       await fx.setGrant('allow');
@@ -729,9 +1092,9 @@ describe('isolated real MCP producer domain admission', () => {
       expect((await pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([seed]);
       expect(await catalog(fx)).toBe(before);
-    });
+    }));
 
-    it('uses a synthetic isolated exact-call approval without changing standing Ask grants', async () => {
+    it('uses a synthetic isolated exact-call approval without changing standing Ask grants', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx);
       await fx.setGrant('ask');
       expect((await fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary))).isError).toBe(true);
@@ -741,9 +1104,9 @@ describe('isolated real MCP producer domain admission', () => {
       await verifySource(fx, await offer(fx, summary), summary);
       expect(fx.grants.getAgentGrantChanges(caller)).toEqual(before);
       expect(fx.requests.listGrantRequests()).toEqual([]);
-    });
+    }));
 
-    it('requires still-valid consumed approval inside the queue, not merely a stable Ask grant', async () => {
+    it('requires still-valid consumed approval inside the queue, not merely a stable Ask grant', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
       await fx.setGrant('ask');
       expect((await fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary))).isError).toBe(true);
@@ -755,9 +1118,9 @@ describe('isolated real MCP producer domain admission', () => {
       expect((await queued.pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([seed]);
       expect(await catalog(fx)).toBe(before);
-    });
+    }));
 
-    it('preserves consumed Ask approval when only the general MCP gate forgets the caller', async () => {
+    it('preserves consumed Ask approval when only the general MCP gate forgets the caller', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
       await fx.setGrant('ask');
       expect((await fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary))).isError).toBe(true);
@@ -767,9 +1130,9 @@ describe('isolated real MCP producer domain admission', () => {
       queued.release();
       expect((await queued.pending).isError).not.toBe(true);
       expect(fx.host.store.list()).toHaveLength(2);
-    });
+    }));
 
-    it('does not borrow consumed Ask approval for a changed exact approval context', async () => {
+    it('does not borrow consumed Ask approval for a changed exact approval context', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
       await fx.setGrant('ask');
       expect((await fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary))).isError).toBe(true);
@@ -781,10 +1144,10 @@ describe('isolated real MCP producer domain admission', () => {
       expect((await queued.pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([seed]);
       expect(await catalog(fx)).toBe(before);
-    });
+    }));
 
     it.each(['dropped Ask approval', 'changed Ask context', 'current Ask', 'fresh Allow with changed approval/context', 'forget-only Ask'] as const)(
-      'fences %s during real postpositive source verification', async (change) => {
+      'fences %s during real postpositive source verification', async (change) => runFixtureBody(async () => {
         const fx = current(), summary = await prepare(fx), peer = await remote(fx);
         const mode = change.startsWith('fresh Allow') ? 'allow' : 'ask';
         await fx.grants.updateAgentGrantChanges(caller, () => ({
@@ -834,7 +1197,7 @@ describe('isolated real MCP producer domain admission', () => {
           expect(notice).toHaveBeenCalledExactlyOnceWith(record);
           expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ boundTo: [record.id] }] });
         }
-      },
+      }),
     );
 
     it.each([
@@ -843,10 +1206,10 @@ describe('isolated real MCP producer domain admission', () => {
       ['durable current', 'ask'], ['durable current', 'allow'], ['durable cosmetic', 'ask'], ['durable cosmetic', 'allow'],
       ['durable unrelated', 'ask'], ['durable unrelated', 'allow'],
     ] as const)(
-      'keeps original recipient project and identity through postpositive verification: %s / %s', async (change, mode) => {
+      'keeps original recipient project and identity through postpositive verification: %s / %s', async (change, mode) => runFixtureBody(async () => {
         const fx = current(), projectStore = await import('../../src/main/services/project-store');
         const config = await import('../../src/main/services/agent-config');
-        const projectB = path.join(dir, 'recipient-B'), projectC = path.join(dir, 'recipient-C');
+        const projectB = path.join(fixtureDirectory(), 'recipient-B'), projectC = path.join(fixtureDirectory(), 'recipient-C');
         await fs.mkdir(projectB); await fs.mkdir(projectC);
         await projectStore.add(projectB); await projectStore.add(projectC);
         const row: DurableAgentConfig = { id: receiver, name: 'Original recipient', color: 'indigo',
@@ -926,11 +1289,11 @@ describe('isolated real MCP producer domain admission', () => {
           await verifySource(fx, record, summary);
           expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ boundTo: [record.id] }] });
         }
-      },
+      }),
     );
 
     it.each(['pending incompatible', 'pending benign', 'settled benign'] as const)(
-      'verifies only the awaited source observation revision: %s', async (change) => {
+      'verifies only the awaited source observation revision: %s', async (change) => runFixtureBody(async () => {
         const fx = current(), configured = await configuredSource(fx), summary = await prepare(fx, ['.clubhouse/**']);
         const config = await import('../../src/main/services/agent-config');
         const listen = config.onAgentConfigChanged, peek = config.peekDurableConfigs;
@@ -948,7 +1311,7 @@ describe('isolated real MCP producer domain admission', () => {
         if (!producer) throw new Error('Missing original source producer.');
         expect(listeners.size).toBe(1);
         const entered = deferred(), release = deferred();
-        releases.push(release.resolve);
+        fixtureOwner().releases.push(release.resolve);
         let scheduled = false, observing = false, pendingObservation = false, released = false, fenceChecks = 0;
         const check: typeof producer.check = producer.check.bind(producer);
         vi.spyOn(producer, 'check').mockImplementation(() => {
@@ -1000,10 +1363,10 @@ describe('isolated real MCP producer domain admission', () => {
           await producer.settled;
           if (change === 'pending benign') await verifySource(fx, await offer(fx, summary), summary);
         }
-      },
+      }),
     );
 
-    it('does not borrow a newly retargeted alias authorization for the frozen recipient', async () => {
+    it('does not borrow a newly retargeted alias authorization for the frozen recipient', async () => runFixtureBody(async () => {
       const fx = current();
       const config = await import('../../src/main/services/agent-config');
       const configs: DurableAgentConfig[] = [
@@ -1025,9 +1388,9 @@ describe('isolated real MCP producer domain admission', () => {
       expect((await held.pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([]);
       expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ boundTo: [] }] });
-    });
+    }));
 
-    it('does not substitute a new same-summary preparation for the captured catalog entry', async () => {
+    it('does not substitute a new same-summary preparation for the captured catalog entry', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx);
       const held = await heldSelection(fx, offerArgs(summary), true);
       const selected = held.selected();
@@ -1039,15 +1402,15 @@ describe('isolated real MCP producer domain admission', () => {
       expect((await held.pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([]);
       expect(JSON.parse(await catalog(fx))).toEqual(replacement);
-    });
+    }));
 
-    it('prepares its own requested mode after an independently running preparation', async () => {
+    it('prepares its own requested mode after an independently running preparation', async () => runFixtureBody(async () => {
       const fx = current();
       await exec('git', ['add', 'fixture.txt'], { cwd: fx.repository });
       await exec('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Clean branch fixture'], { cwd: fx.repository });
       const held = await heldStandalonePreparation(fx, 'branch');
       const pending = fx.tools.callTool(caller, 'offer_handoff', { to: receiver, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
-      operations.push(pending);
+      fixtureOwner().operations.push(pending);
       await held.selected;
       held.release();
       const prepared = resultValue(await held.pending);
@@ -1061,10 +1424,10 @@ describe('isolated real MCP producer domain admission', () => {
       expect(record.manifest).not.toEqual(prepared.summary);
       expect(fx.host.store.get(record.id)).toEqual(record);
       expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ mode: 'worktree', boundTo: [record.id] }] });
-    });
+    }));
 
-    it('prepares its original captured source after an independently running preparation on another source', async () => {
-      const fx = current(), second = path.join(dir, 'second-repository');
+    it('prepares its original captured source after an independently running preparation on another source', async () => runFixtureBody(async () => {
+      const fx = current(), second = path.join(fixtureDirectory(), 'second-repository');
       await fs.mkdir(second);
       await initializeRepository(second);
       const project = await (await import('../../src/main/services/project-store')).add(second);
@@ -1076,7 +1439,7 @@ describe('isolated real MCP producer domain admission', () => {
         fx.gate.setMcpCallerQuick(agent, second);
       }
       const pending = fx.tools.callTool(caller, 'offer_handoff', { to: receiver, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
-      operations.push(pending);
+      fixtureOwner().operations.push(pending);
       await held.selected;
       expect(fx.preparation.selectPreparedHandoff).toHaveBeenCalledWith(caller, 'worktree', undefined,
         expect.objectContaining({ project: expect.objectContaining({ id: project.id }), worktreeRoot: second }), expect.any(Function));
@@ -1089,16 +1452,16 @@ describe('isolated real MCP producer domain admission', () => {
       expect(prepared.source.worktreeRoot).toBe(second);
       expect(await fs.readFile(path.join(prepared.snapshot.root, 'files', 'fixture.txt'), 'utf8')).toBe(contents);
       expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ project: project.id, mode: 'worktree', boundTo: [record.id] }] });
-    });
+    }));
 
-    it('owns its await of separately admitted preparation without cancelling that independent read on stop', async () => {
+    it('owns its await of separately admitted preparation without cancelling that independent read on stop', async () => runFixtureBody(async () => {
       const fx = current(), held = await heldStandalonePreparation(fx, 'worktree');
       const pending = fx.tools.callTool(caller, 'offer_handoff', { to: receiver, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
-      operations.push(pending);
+      fixtureOwner().operations.push(pending);
       await held.selected;
       let stopped = false;
       const stopping = fx.hostApi.stopHandoffs().then(() => { stopped = true; });
-      operations.push(stopping);
+      fixtureOwner().operations.push(stopping);
       await Promise.resolve();
       expect(stopped).toBe(false);
       expect(fx.host.producers.size).toBe(1);
@@ -1110,14 +1473,14 @@ describe('isolated real MCP producer domain admission', () => {
       expect(fx.host.producers.size).toBe(0);
       expect(fx.host.store.list()).toEqual([]);
       expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ project: fx.project.id, mode: 'worktree', boundTo: [] }] });
-    });
+    }));
 
-    it('owns the original host before implicit preparation and refuses stop-time replacement', async () => {
+    it('owns the original host before implicit preparation and refuses stop-time replacement', async () => runFixtureBody(async () => {
       const fx = current();
       const held = await heldSelection(fx, { to: receiver, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
       let stopped = false;
       const stopping = fx.hostApi.stopHandoffs().then(() => { stopped = true; });
-      operations.push(stopping);
+      fixtureOwner().operations.push(stopping);
       await Promise.resolve();
       expect(stopped).toBe(false);
       expect(() => fx.hostApi.handoffHost()).toThrow();
@@ -1129,9 +1492,9 @@ describe('isolated real MCP producer domain admission', () => {
       const replacement = fx.hostApi.handoffHost();
       expect(replacement).not.toBe(fx.host);
       await replacement.ready;
-    });
+    }));
 
-    it.each(['handoff-commands.json', 'handoff-preparations.json', 'handoffs.json'])('finishes admitted %s save truthfully while stop waits actual work', async (filename) => {
+    it.each(['handoff-commands.json', 'handoff-preparations.json', 'handoffs.json'])('finishes admitted %s save truthfully while stop waits actual work', async (filename) => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx);
       const peer = filename === 'handoff-commands.json' ? await remote(fx) : undefined;
       const post = vi.spyOn(fx.machine.client, 'postToMachine');
@@ -1143,11 +1506,11 @@ describe('isolated real MCP producer domain admission', () => {
       });
       const held = heldRename(fx, filename, () => filename !== 'handoff-commands.json' || marking);
       const pending = fx.tools.callTool(caller, 'offer_handoff', { ...offerArgs(summary), ...(peer && { to: `machine:${peer}` }) });
-      operations.push(pending);
+      fixtureOwner().operations.push(pending);
       await held.entered;
       let stopped = false;
       const stopping = fx.hostApi.stopHandoffs().then(() => { stopped = true; });
-      operations.push(stopping);
+      fixtureOwner().operations.push(stopping);
       await Promise.resolve();
       expect(stopped).toBe(false);
       expect(fx.host.store.list()).toEqual([]);
@@ -1162,9 +1525,9 @@ describe('isolated real MCP producer domain admission', () => {
       if (peer) expect(fx.host.commands.isUndelivered(record.id)).toBe(true);
       expect(post).not.toHaveBeenCalled();
       await stopping;
-    });
+    }));
 
-    it('holds a dispatched POST beyond its deadline until the actual promise releases', async () => {
+    it('holds a dispatched POST beyond its deadline until the actual promise releases', async () => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx), peer = await remote(fx);
       const entered = deferred();
       let finish!: (value: Awaited<ReturnType<typeof fx.machine.client.postToMachine>>) => void;
@@ -1172,17 +1535,17 @@ describe('isolated real MCP producer domain admission', () => {
       const post = vi.spyOn(fx.machine.client, 'postToMachine').mockImplementation(async () => { entered.resolve(); return response; });
       vi.useFakeTimers();
       const pending = fx.tools.callTool(caller, 'offer_handoff', { ...offerArgs(summary), to: `machine:${peer}` });
-      operations.push(pending);
+      fixtureOwner().operations.push(pending);
       await entered.promise;
       const record = fx.host.store.list()[0];
       const producer = fx.host.producers.values().next().value;
       if (!producer) throw new Error('Missing dispatched original producer.');
       let producerSettled = false;
-      operations.push(producer.settled.then(() => { producerSettled = true; }));
-      releases.push(() => finish({ status: 200, body: record }));
+      fixtureOwner().operations.push(producer.settled.then(() => { producerSettled = true; }));
+      fixtureOwner().releases.push(() => finish({ status: 200, body: record }));
       let stopped = false;
       const stopping = fx.hostApi.stopHandoffs().then(() => { stopped = true; });
-      operations.push(stopping);
+      fixtureOwner().operations.push(stopping);
       await vi.advanceTimersByTimeAsync(5_000);
       expect((await pending).isError).not.toBe(true);
       expect(stopped).toBe(false);
@@ -1195,9 +1558,9 @@ describe('isolated real MCP producer domain admission', () => {
       expect(fx.host.store.get(record.id)).toEqual(record);
       expect(fx.host.producers.size).toBe(0);
       expect(producerSettled).toBe(true);
-    });
+    }));
 
-    it.each(['catalog-prewrite', 'history-prewrite', 'history-after-rename'] as const)('retains exact partial ids and distinguishes %s failure without retry or rollback fiction', async (failure) => {
+    it.each(['catalog-prewrite', 'history-prewrite', 'history-after-rename'] as const)('retains exact partial ids and distinguishes %s failure without retry or rollback fiction', async (failure) => runFixtureBody(async () => {
       const fx = current(), summary = await prepare(fx);
       const peer = failure === 'catalog-prewrite' ? await remote(fx) : undefined;
       const post = vi.spyOn(fx.machine.client, 'postToMachine');
@@ -1230,10 +1593,10 @@ describe('isolated real MCP producer domain admission', () => {
         console.info('Admitted ambiguous IO witness', JSON.stringify({ failure, id, memory: [], disk: records, error: error.message }));
       } else await expect(fs.access(path.join(fx.userData, 'handoffs.json'))).rejects.toMatchObject({ code: 'ENOENT' });
       await fx.hostApi.stopHandoffs();
-    });
+    }));
   });
 
-  it('refuses original sender grant retirement before queued offer admission without adding history or binding', async () => {
+  it('refuses original sender grant retirement before queued offer admission without adding history or binding', async () => runFixtureBody(async () => {
     const fx = current(), summary = await prepare(fx);
     const seed = await offer(fx, summary);
     const originalCaller = fx.registry.agentRegistry.get(caller);
@@ -1262,9 +1625,9 @@ describe('isolated real MCP producer domain admission', () => {
     expect.soft(result.isError).toBe(true);
     expect.soft(fx.host.store.list()).toEqual([seed]);
     expect.soft(after).toBe(before);
-  });
+  }));
 
-  it.each(['ask', 'off'] as const)('keeps explicit prepared source but refuses %s offer before handler admission', async (mode) => {
+  it.each(['ask', 'off'] as const)('keeps explicit prepared source but refuses %s offer before handler admission', async (mode) => runFixtureBody(async () => {
     const fx = current(), summary = await prepare(fx);
     const before = await catalog(fx);
     await fx.setGrant(mode);
@@ -1281,5 +1644,5 @@ describe('isolated real MCP producer domain admission', () => {
       expect(JSON.parse(request.argumentsText)).toEqual(offerArgs(summary));
     }
     expect(fx.gate.mcpCallAccess(caller, fx.repository)).toBe('open');
-  });
+  }));
 });
