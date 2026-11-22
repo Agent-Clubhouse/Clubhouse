@@ -1,0 +1,163 @@
+{
+  "task": "3613-resume",
+  "baseline": "50c474b48f57e0256661244bd29b9343ec112bc4",
+  "baselineTree": "42ab44d9d911f8d370cba393aff0c442f165472c",
+  "branch": "lane-3613-p2-routes/handoff-usable-path",
+  "kind": "Fresh-main source reconciliation and proposed boundary; no runtime counterexample or implementation approval",
+  "landed": {
+    "pr": 3778,
+    "at": "2026-11-22T17:58:57Z",
+    "main": "50c474b48f57e0256661244bd29b9343ec112bc4",
+    "sourceAndProof": "e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+    "hosted": "97c4cdebfb1961c623a0c947a467dc18b3e756b2"
+  },
+  "existingUsablePath": [
+    "Real callTool registers prepare_handoff/offer_handoff/respond_to_handoff and checks existing group/agent grants and exact consumed Ask-first approval",
+    "Authenticated caller source lookup selects registered project/worktree, bounds and secret policy, not caller-supplied filesystem paths",
+    "prepareCallerHandoff freezes real Git/worktree snapshot and saves an owner/project/mode/summary-bound preparation catalog",
+    "offer_handoff carries withHandoffAgreementCall across preparation and invokes the actual HandoffCoordinator",
+    "Coordinator binds durable prepared source inside the history transaction before offer visibility; remote offers also retain existing durable delivery markers",
+    "Receiver acceptance starts existing worker continuation through real transfer-source/transport/receive/Git verification/apply and guarded wake/delivery"
+  ],
+  "chosenFiniteBoundary": "Original authorized MCP sender admission into the actual local offer queue and its durable preparation binding",
+  "sourceObservations": [
+    {
+      "path": "src/main/services/handoff-service.ts",
+      "symbol": "HandoffService.offer",
+      "fact": "Positive handoff.offer authorization is awaited before store.transact. Inside the actual serialized updater only duplicate/capacity and awaited beforeCommit are checked, without rechecking original sender authority."
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.ts",
+      "symbol": "HandoffCoordinator.offer",
+      "fact": "beforeCommit marks remote delivery state and awaits bindOffer; actual offer history becomes visible only after those durable operations complete."
+    },
+    {
+      "path": "src/main/services/handoff-preparations.ts",
+      "symbol": "PreparationStore.change / bindPreparedHandoff",
+      "fact": "Preparation catalog has its own async queue/save and owner/project binding. An admitted bind can become durable before the handoff history save; retirement or save failure cannot truthfully be represented as global rollback."
+    },
+    {
+      "path": "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+      "symbol": "handoffAgreementCallApproved",
+      "fact": "Checks exact current call target/policy/consumed approval, but its result is obtained outside the local offer transaction. The original call context is not a promise that survives later queue waits unchanged."
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "symbol": "authorize / handoffHost / stopHandoffs",
+      "fact": "Native incoming and reverse synchronization own actual operations; local producer/preparation/offer is not in either owner set. Existing transferAuthority provides negative policy continuity for later transfer/sync, not this initial producer path."
+    },
+    {
+      "path": "src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+      "symbol": "global handoff tools",
+      "fact": "Mocks registry, handoff agreement context, preparation and coordinator. It cannot provide real producer/approval/preparation/coordinator assembly acceptance."
+    },
+    {
+      "path": "src/main/services/handoff-preparations.test.ts",
+      "symbol": "preparation ownership cases",
+      "fact": "Exercises real Git/catalog binding but mocks callerHandoffSource and has no real MCP grant/call admission. It is not producer authority proof."
+    }
+  ],
+  "concreteConflictBeforeDependentEdits": "Where local offer admission occurs relative to the independent preparation-catalog save, and who owns already admitted producer work through host stop/replacement. Native request admission and ordinary MCP dispatch authorization are different boundaries.",
+  "proposedContract": [
+    "Use original authenticated caller/call/target/host and source identity; do not replace it with a later caller or source lookup.",
+    "Preserve complete positive handoff.offer authorization and consumed Ask-first semantics. Narrow negative continuity complements, never replaces, positive permission.",
+    "Retirement before actual producer admission refuses offer/history/notice/remote delivery and offer-specific binding; independent explicit preparation remains separately authorized local work, not a global zero-write guarantee.",
+    "Define one actual decision admission before binding/history commit. Retirement after admitted save may finish with matching committed catalog/history memory and normal retained-history notices; no post-save fake refusal or claimed rollback.",
+    "If two independent durable stores cannot meet that truth table without a new transaction/permission/ownership abstraction, report the precise conflict rather than invent atomicity.",
+    "Actual admitted producer/binding work must retain appropriate host ownership through its actual settlement; no timed-out waiter or replacement-host inference.",
+    "Keep grants, wire, command attempt IDs, prepared TTL/retention/secret rules, direct/local behavior outside the corrected admission, worker/apply/wake and protected stores unchanged."
+  ],
+  "nextExecutableAcceptance": [
+    "One genuine isolated real-MCP registration/call, real grant evaluator and exact call context, real Git preparation/catalog and actual coordinator/history queue baseline.",
+    "Hold an earlier real history transaction after positive sender authorization. Change only original sender grant/connection or caller identity; observe whether release publishes offer/binding despite retirement.",
+    "Matched unchanged current-positive must preserve prepared manifest/source bytes and actual history; refusal/Ask-first without consumed approval must never enter offer admission.",
+    "Hold actual binding/save to distinguish pre-admission refusal from truthful post-admission completion and actual operation ownership; preserve deterministic versus ambiguous IO errors.",
+    "No live grants, human approvals, helpers, provider runtime, content application or wake execution is substituted or bypassed by this fixture.",
+    "Freeze original failures and minimal source-bound contract for existing independent boundary disposition before dependent production changes; no repeated accepted lower/native proof."
+  ],
+  "provisionalProductionTouchSurface": [
+    "src/main/services/handoff-service.ts",
+    "src/main/services/handoff-coordinator.ts",
+    "src/main/services/handoff-preparations.ts",
+    "src/main/services/handoff-host.ts",
+    "src/main/services/clubhouse-mcp/tools/handoff-tools.ts only if original producer capture must begin before preparation"
+  ],
+  "explicitlyNotApproved": [
+    "No production edit yet; exact touch surface and admission/ownership disposition remain review-bound.",
+    "No new grant, permission, protocol, phone field, generic transaction framework or protected shared-store change.",
+    "No full native grant/preparation/content-through-coordinator/apply/wake/two-host/full-handoff/full-duplex acceptance.",
+    "No rerun of accepted lower/native/sync proofs, whole inventory, full local suite or local E2E.",
+    "Original local47/49 BOTHFAIL166 scoped accepted nonregression,247/71 warning attribution and unknown historical hosted cause remain unchanged."
+  ],
+  "at": "2026-11-22T18:03:42.937Z",
+  "productionChanged": false,
+  "executedProof": false,
+  "sourceFiles": [
+    {
+      "file": "src/main/services/handoff-service.ts",
+      "blob": "72e02b6700ad5cce8d3667822c2abec386924617",
+      "bytes": 14799,
+      "sha256": "3e8cb1f3cd92c1a2eb6add2039869977505b79d85c18ba3a414391717e90f04f"
+    },
+    {
+      "file": "src/main/services/handoff-coordinator.ts",
+      "blob": "185ab771d3a14becc89b54e55bf832b854c12ba9",
+      "bytes": 21765,
+      "sha256": "62570ff20f6f44c9c1f6e0ee9d94b153b991221351adac771dd555330e38d602"
+    },
+    {
+      "file": "src/main/services/handoff-preparations.ts",
+      "blob": "7d61608768d90ffd25f221b17da3cbf2f2f0eb91",
+      "bytes": 11076,
+      "sha256": "668d02f5a22dcb59728d425c57d0c5e60b9d726f59dc39b843c7033faeeef673"
+    },
+    {
+      "file": "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+      "blob": "7f166c49620880c32f2547d649591320b8e02df3",
+      "bytes": 1619,
+      "sha256": "3b3eac031a37891fedaa65edc7e4e186da6af663b5b1cd52e88a9736f2a39cc9"
+    },
+    {
+      "file": "src/main/services/handoff-host.ts",
+      "blob": "0c4cc42034ade17e8dcc05dd53d0cec4f0df3969",
+      "bytes": 46004,
+      "sha256": "8323fe2b1df1931feea68bb7e8fa6bf35ac2a28bd1776105c30bccf3adaa310d"
+    },
+    {
+      "file": "src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+      "blob": "01686457ccb06e2a7a17968b0b090603d1768684",
+      "bytes": 10779,
+      "sha256": "71e673b6c04f0a075958409ca8499235da63f7576441c1104dcb3d8636aa0c62"
+    },
+    {
+      "file": "src/main/services/handoff-preparations.test.ts",
+      "blob": "00e4a6490439813712bef08452c1fcee2a6a4d0b",
+      "bytes": 6848,
+      "sha256": "e38a56e7bd6a746ae716feba0796309de72191e1c7e80ad89c0bfd54ddfac956"
+    },
+    {
+      "file": "src/main/services/clubhouse-mcp/tools/handoff-tools.ts",
+      "blob": "7537824fa207e516b87a78555bc8e63ab4c24027",
+      "bytes": 15878,
+      "sha256": "de94ab80d324008662d26631d652aac70ea8b778b3c35489b7b0573628409f1a"
+    },
+    {
+      "file": "src/main/services/clubhouse-mcp/tool-registry.ts",
+      "blob": "e1e733db5022b81e1e9da581d33e2e8420dd086f",
+      "bytes": 57843,
+      "sha256": "21fc05c002a6744176dce8bdb911ad2f3008aa3835a8bc269b7c62f0909f2ed2"
+    },
+    {
+      "file": "src/main/services/handoff-preflight-host.ts",
+      "blob": "72dd6b3a42f11aa877c8b830a715e06756239c7a",
+      "bytes": 1635,
+      "sha256": "3825c33cca45c21619f88b7d22239e3a131a4c8f9ff3dd3a34f338b0a446f99f"
+    },
+    {
+      "file": "src/main/services/handoff-worker.ts",
+      "blob": "f1fd348162a8684eb314dd4c1a092192805d898b",
+      "bytes": 11195,
+      "sha256": "2bffe1111b820791b5d5ef7e0852ac08a7575e0e3c83f841e5b49b10b5ff724f"
+    }
+  ]
+}
