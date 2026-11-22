@@ -1,0 +1,52 @@
+2026-11-22T05:31:21Z START lane-p2 idle=90% unused=7431M avail=34354M freepct=87 comp=714M swap=3761M pid=51266 cmd=npx vitest run --project main src/main/services/managed-agents/delivery.test.ts --maxWorkers=2 -t phase r1|does not claim installation of a grant-gated skill left to the project --reporter=default --reporter=junit --outputFile.junit=docs/evidence/3774-phase-observation/attempts/09-final-output-fixed.xml
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.21754199999986668}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"begin","phase":"seed.copy","offsetMs":1.5347919999999249}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"end","phase":"seed.copy","offsetMs":11.570042000000058,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":11.67599999999993}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":26.6139169999999,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"beforeEach","offsetMs":26.656999999999925,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":7,"event":"begin","phase":"body","offsetMs":26.886708999999883}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":8,"event":"begin","phase":"git.init","offsetMs":26.944999999999936}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":9,"event":"end","phase":"git.init","offsetMs":53.272334,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":10,"event":"begin","phase":"git.add","offsetMs":53.61420900000007}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":11,"event":"end","phase":"git.add","offsetMs":67.92608399999995,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":12,"event":"begin","phase":"delivery","offsetMs":67.95387499999993}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":13,"event":"begin","phase":"git.async","offsetMs":69.93395899999996}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":14,"event":"end","phase":"git.async","offsetMs":81.17283399999997,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":15,"event":"end","phase":"delivery","offsetMs":559.4818339999999,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":16,"event":"begin","phase":"resolve","offsetMs":559.83175}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":17,"event":"end","phase":"resolve","offsetMs":560.8625420000001,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":18,"event":"begin","phase":"grant.cleanup","offsetMs":561.039792}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":19,"event":"end","phase":"grant.cleanup","offsetMs":561.0563749999999,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":20,"event":"end","phase":"body","offsetMs":561.067792,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.21754199999986668},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":1.5347919999999249},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":11.570042000000058,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":11.67599999999993},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":26.6139169999999,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":26.656999999999925,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":26.886708999999883},{"seq":8,"event":"begin","phase":"git.init","offsetMs":26.944999999999936},{"seq":9,"event":"end","phase":"git.init","offsetMs":53.272334,"threw":false},{"seq":10,"event":"begin","phase":"git.add","offsetMs":53.61420900000007},{"seq":11,"event":"end","phase":"git.add","offsetMs":67.92608399999995,"threw":false},{"seq":12,"event":"begin","phase":"delivery","offsetMs":67.95387499999993},{"seq":13,"event":"begin","phase":"git.async","offsetMs":69.93395899999996},{"seq":14,"event":"end","phase":"git.async","offsetMs":81.17283399999997,"threw":false},{"seq":15,"event":"end","phase":"delivery","offsetMs":559.4818339999999,"threw":false},{"seq":16,"event":"begin","phase":"resolve","offsetMs":559.83175},{"seq":17,"event":"end","phase":"resolve","offsetMs":560.8625420000001,"threw":false},{"seq":18,"event":"begin","phase":"grant.cleanup","offsetMs":561.039792},{"seq":19,"event":"end","phase":"grant.cleanup","offsetMs":561.0563749999999,"threw":false},{"seq":20,"event":"end","phase":"body","offsetMs":561.067792,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":561.236834,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+stderr | src/main/services/managed-agents/delivery.test.ts > deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.21754199999986668},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":1.5347919999999249},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":11.570042000000058,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":11.67599999999993},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":26.6139169999999,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":26.656999999999925,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":26.886708999999883},{"seq":8,"event":"begin","phase":"git.init","offsetMs":26.944999999999936},{"seq":9,"event":"end","phase":"git.init","offsetMs":53.272334,"threw":false},{"seq":10,"event":"begin","phase":"git.add","offsetMs":53.61420900000007},{"seq":11,"event":"end","phase":"git.add","offsetMs":67.92608399999995,"threw":false},{"seq":12,"event":"begin","phase":"delivery","offsetMs":67.95387499999993},{"seq":13,"event":"begin","phase":"git.async","offsetMs":69.93395899999996},{"seq":14,"event":"end","phase":"git.async","offsetMs":81.17283399999997,"threw":false},{"seq":15,"event":"end","phase":"delivery","offsetMs":559.4818339999999,"threw":false},{"seq":16,"event":"begin","phase":"resolve","offsetMs":559.83175},{"seq":17,"event":"end","phase":"resolve","offsetMs":560.8625420000001,"threw":false},{"seq":18,"event":"begin","phase":"grant.cleanup","offsetMs":561.039792},{"seq":19,"event":"end","phase":"grant.cleanup","offsetMs":561.0563749999999,"threw":false},{"seq":20,"event":"end","phase":"body","offsetMs":561.067792,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":561.236834,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"body","offsetMs":0.013374999999996362}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"end","phase":"body","offsetMs":0.029084000000011656,"threw":false}
+stderr | src/main/services/managed-agents/delivery.test.ts > disposable final-output R1 controls > phase r1 final raw write only failure reaches remaining channel
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"observerUnavailable":true}
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"body","offsetMs":0.008833000000095126}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"end","phase":"body","offsetMs":0.023667000000159533,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"body","offsetMs":0.008833000000095126},{"seq":2,"event":"end","phase":"body","offsetMs":0.023667000000159533,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":0.11587499999995998,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+stderr | src/main/services/managed-agents/delivery.test.ts > disposable final-output R1 controls > phase r1 no post-freeze clock reads or misleading timing
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"body","offsetMs":0.008833000000095126},{"seq":2,"event":"end","phase":"body","offsetMs":0.023667000000159533,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":0.11587499999995998,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+
+ ✓ |main| src/main/services/managed-agents/delivery.test.ts (70 tests | 67 skipped) 841ms
+     ✓ does not claim installation of a grant-gated skill left to the project (#3517)  563ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 67 skipped (70)
+   Start at  00:31:22
+   Duration  1.94s (transform 829ms, setup 4ms, import 1.03s, tests 841ms, environment 0ms)
+
+JUNIT report written to /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/docs/evidence/3774-phase-observation/attempts/09-final-output-fixed.xml
+2026-11-22T05:31:24Z END lane-p2 rc=0

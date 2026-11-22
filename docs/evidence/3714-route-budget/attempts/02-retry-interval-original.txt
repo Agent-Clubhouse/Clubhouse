@@ -1,0 +1,8 @@
+[lane-3613-p2-routes/budget-disposition-3714 eae35decd] docs(annex): freeze request-local route-budget refusal boundary (#3714)
+ 1 file changed, 93 insertions(+)
+ create mode 100644 docs/evidence/3714-route-budget/design.md
+prior refusal 75 elapsedSeconds 52.505386
+Traceback (most recent call last):
+  File "<stdin>", line 2, in <module>
+AssertionError: Refusal retry must wait at least60s
+REFUSED: other_test_running

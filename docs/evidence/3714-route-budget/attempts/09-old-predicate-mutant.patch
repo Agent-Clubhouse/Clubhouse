@@ -1,0 +1,14 @@
+diff --git a/src/main/services/annex-control.ts b/src/main/services/annex-control.ts
+index af98145ff..d398a9716 100644
+--- a/src/main/services/annex-control.ts
++++ b/src/main/services/annex-control.ts
+@@ -526,8 +526,7 @@ function makeBulkLane(link: Link): ControlBulkLane {
+       const message = bulkMeta(kind, id, meta);
+       const pending = link.pending.get(id);
+       if (kind === 'response' && message?.type === 'response' && link.direction === 'in' && link.features?.has('request')
+-        && pending && (size > responseBodyLimit(pending.path)
+-          || (pending.maxResponseBytes !== undefined && size > pending.maxResponseBytes))) {
++        && pending && size <= responseBodyLimit(pending.path) && pending.maxResponseBytes !== undefined && size > pending.maxResponseBytes) {
+         link.pending.delete(id);
+         pending.cleanup();
+         pending.reject(new ControlRequestError('response_too_large', !isReadOnlyMethod(pending.method), id));

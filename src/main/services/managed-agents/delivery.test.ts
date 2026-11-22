@@ -2,12 +2,54 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ChildProcess } from 'node:child_process';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TestContext } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, PREPARE_HANDOFF_SKILL_ID, isListed } from '../../../shared/managed-agents-types';
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+
+type DeliveryPhase = 'beforeEach' | 'seed.copy' | 'builtins.ensure' | 'body'
+  | 'git.init' | 'git.add' | 'git.async' | 'delivery' | 'resolve' | 'grant.cleanup';
+type PhaseTransition = {
+  seq: number; event: 'begin' | 'end'; phase: DeliveryPhase; offsetMs: number; threw?: boolean;
+};
+type ActivePhase = { beginSeq: number; phase: DeliveryPhase; startMs: number };
+type PhaseSnapshot = {
+  event: 'abort' | 'final'; offsetMs: number; aborted: boolean;
+  active: Array<ActivePhase & { elapsedMs: number }>;
+};
+type PhaseRecorder = {
+  owner: TestContext['task'] | undefined;
+  begin(phase: DeliveryPhase): number | undefined;
+  end(key: number | undefined, threw: boolean): void;
+  watch(child: ChildProcess, key: number | undefined): void;
+  finish(): void;
+};
+const deliveryPhases = vi.hoisted<{ active: PhaseRecorder | undefined }>(() => ({ active: undefined }));
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    execFile: new Proxy(actual.execFile, {
+      apply(target, thisArg, args) {
+        const recorder = deliveryPhases.active;
+        const key = args[0] === 'git' ? recorder?.begin('git.async') : undefined;
+        let child: ChildProcess | undefined;
+        try {
+          child = Reflect.apply(target, thisArg, args);
+          return child;
+        } finally {
+          if (child) recorder?.watch(child, key);
+          else recorder?.end(key, true);
+        }
+      },
+    }),
+  };
+});
 
 import { createAssetCatalogStore } from '../asset-catalog/store';
 import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
@@ -33,6 +75,126 @@ import {
 import type { OrchestratorProvider } from '../../orchestrators/types';
 
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
+
+const PHASE_CASE = 'does not claim installation of a grant-gated skill left to the project (#3517)';
+const PHASE_PREFIX = 'CLUBHOUSE_MANAGED_PHASE_V1 ';
+
+function phaseAttempt(action: () => void): boolean {
+  try { action(); return true; }
+  // telemetry-exempt: bounded unavailable output reports diagnostic loss without masking the primary outcome.
+  catch { return false; }
+}
+
+function createPhaseRecorder(context: TestContext): PhaseRecorder {
+  let origin: number | undefined;
+  let accepting = true;
+  let frozen = false;
+  let failures = 0;
+  let sequence = 0;
+  let dropped = 0;
+  let signal: TestContext['signal'] | undefined;
+  const transitions: PhaseTransition[] = [];
+  const active = new Map<number, ActivePhase>();
+  const children: Array<{ child: ChildProcess; close: () => void }> = [];
+  let aborted: PhaseSnapshot | null = null;
+  const observe = (action: () => void) => {
+    if (!frozen && !phaseAttempt(action)) failures = Math.min(32, failures + 1);
+  };
+  const clock = () => {
+    const value = performance.now();
+    if (origin === undefined || !Number.isFinite(value)) throw new Error('Diagnostic clock unavailable');
+    const offset = value - origin;
+    if (!Number.isFinite(offset) || offset < 0) throw new Error('Diagnostic clock unavailable');
+    return offset;
+  };
+  const raw = (value: unknown) => { process.stderr.write(PHASE_PREFIX + JSON.stringify(value) + '\n'); };
+  const transition = (event: PhaseTransition) => {
+    if (transitions.length === 32) { dropped++; return; }
+    transitions.push(event);
+    raw({ version: 1, ...event });
+  };
+  const snapshot = (event: PhaseSnapshot['event']): PhaseSnapshot => {
+    const offsetMs = clock();
+    if (!signal) throw new Error('Diagnostic signal unavailable');
+    return {
+      event, offsetMs, aborted: signal.aborted,
+      active: [...active.values()].map((entry) => ({ ...entry, elapsedMs: offsetMs - entry.startMs })),
+    };
+  };
+  const onAbort = () => {
+    if (accepting) observe(() => { aborted = snapshot('abort'); raw({ version: 1, ...aborted }); });
+  };
+  observe(() => {
+    const value = performance.now();
+    if (!Number.isFinite(value)) throw new Error('Diagnostic clock unavailable');
+    origin = value;
+    signal = context.signal;
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  const recorder: PhaseRecorder = {
+    owner: context.task,
+    begin(phase) {
+      let key: number | undefined;
+      if (accepting) observe(() => {
+        if (active.size === 32) { dropped++; return; }
+        const offsetMs = clock();
+        key = ++sequence;
+        active.set(key, { beginSeq: key, phase, startMs: offsetMs });
+        transition({ seq: key, event: 'begin', phase, offsetMs });
+      });
+      return key;
+    },
+    end(key, threw) {
+      if (accepting && key !== undefined) observe(() => {
+        const entry = active.get(key);
+        if (!entry) return;
+        active.delete(key);
+        transition({ seq: ++sequence, event: 'end', phase: entry.phase, offsetMs: clock(), threw });
+      });
+    },
+    watch(child, key) {
+      if (accepting && key !== undefined) observe(() => {
+        if (children.length === 32) { dropped++; return; }
+        const close = () => {
+          if (accepting) observe(() => {
+            const index = children.findIndex((entry) => entry.close === close);
+            if (index >= 0) children.splice(index, 1);
+            recorder.end(key, false);
+          });
+        };
+        children.push({ child, close });
+        child.once('close', close);
+      });
+    },
+    finish() {
+      if (!accepting) return;
+      accepting = false;
+      observe(() => { signal?.removeEventListener('abort', onAbort); });
+      for (const { child, close } of children) observe(() => { child.removeListener('close', close); });
+      children.length = 0;
+      let prepared: string | undefined;
+      observe(() => {
+        prepared = JSON.stringify({
+          version: 1, platform: process.platform, node: process.version, transitions, abort: aborted,
+          final: snapshot('final'), overflow: dropped > 0, droppedTransitions: dropped,
+          observerFailures: failures, observerUnavailable: failures > 0,
+        });
+      });
+      active.clear();
+      transitions.length = 0;
+      aborted = null;
+      signal = undefined;
+      recorder.owner = undefined;
+      frozen = true;
+      const unavailable = PHASE_PREFIX + '{"version":1,"observerUnavailable":true}';
+      const line = prepared === undefined ? unavailable : PHASE_PREFIX + prepared;
+      const written = phaseAttempt(() => { process.stderr.write(line + '\n'); });
+      const emitted = phaseAttempt(() => { console.error(written ? line : unavailable); });
+      if (!emitted) phaseAttempt(() => { process.stderr.write(unavailable + '\n'); });
+    },
+  };
+  return recorder;
+}
 
 let root: string;
 let project: string;
@@ -74,16 +236,38 @@ beforeAll(async () => {
 });
 afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
 
-beforeEach(async () => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-'));
-  project = path.join(root, 'project');
-  const wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
-  fs.mkdirSync(wt, { recursive: true });
-  _resetSettingsAuditForTesting(false);
-  for (const name of fs.readdirSync(seed)) fs.cpSync(path.join(seed, name), path.join(root, name), { recursive: true });
-  service = serviceAt(root);
-  await service.ensureBuiltins();
-  agent = { id: 'a1', name: 'cool-gazelle', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt, branch: 'cool-gazelle/standby' };
+beforeEach(async (context) => {
+  deliveryPhases.active = context.task.name === PHASE_CASE ? createPhaseRecorder(context) : undefined;
+  const phases = deliveryPhases.active;
+  const setup = phases?.begin('beforeEach');
+  let complete = false;
+  try {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-'));
+    project = path.join(root, 'project');
+    const wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
+    fs.mkdirSync(wt, { recursive: true });
+    _resetSettingsAuditForTesting(false);
+    const copy = phases?.begin('seed.copy');
+    let copied = false;
+    try {
+      for (const name of fs.readdirSync(seed)) fs.cpSync(path.join(seed, name), path.join(root, name), { recursive: true });
+      copied = true;
+    } finally { phases?.end(copy, !copied); }
+    service = serviceAt(root);
+    const builtins = phases?.begin('builtins.ensure');
+    let ensured = false;
+    try { await service.ensureBuiltins(); ensured = true; }
+    finally { phases?.end(builtins, !ensured); }
+    agent = { id: 'a1', name: 'cool-gazelle', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt, branch: 'cool-gazelle/standby' };
+    complete = true;
+  } finally { phases?.end(setup, !complete); }
+});
+afterEach((context) => {
+  const recorder = deliveryPhases.active;
+  if (recorder?.owner === context.task) {
+    deliveryPhases.active = undefined;
+    recorder.finish();
+  }
 });
 
 describe('deliverManagedSetup', () => {
@@ -231,6 +415,9 @@ describe('deliverManagedSetup', () => {
   });
 
   it('does not claim installation of a grant-gated skill left to the project (#3517)', async () => {
+    const phases = deliveryPhases.active;
+    const body = phases?.begin('body');
+    let complete = false;
     const stop = setGrantedSkills(() => [PREPARE_HANDOFF_SKILL_ID]);
     try {
       const wt = agent.worktreePath!;
@@ -240,13 +427,30 @@ describe('deliverManagedSetup', () => {
       fs.writeFileSync(path.join(folder, 'SKILL.md'), '# Project handoff');
       git(wt, 'add', '.claude/skills/prepare-handoff/SKILL.md');
       agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
-      const record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+      const delivery = phases?.begin('delivery');
+      let record: Awaited<ReturnType<typeof deliverManagedSetup>>;
+      let delivered = false;
+      try {
+        record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+        delivered = true;
+      } finally { phases?.end(delivery, !delivered); }
       expect(record!.deliveredSkillIds).toEqual([]);
-      expect(builtinSkillStatus(await resolveManagedSetup(service, agent.managed, agent), record!)).toEqual([
+      const resolution = phases?.begin('resolve');
+      let current: Awaited<ReturnType<typeof resolveManagedSetup>>;
+      let resolved = false;
+      try { current = await resolveManagedSetup(service, agent.managed, agent); resolved = true; }
+      finally { phases?.end(resolution, !resolved); }
+      expect(builtinSkillStatus(current, record!)).toEqual([
         { id: PREPARE_HANDOFF_SKILL_ID, name: 'Prepare handoff' },
       ]);
       expect(fs.readFileSync(path.join(folder, 'SKILL.md'), 'utf8')).toBe('# Project handoff');
-    } finally { stop(); }
+      complete = true;
+    } finally {
+      const cleanup = phases?.begin('grant.cleanup');
+      let stopped = false;
+      try { stop(); stopped = true; }
+      finally { phases?.end(cleanup, !stopped); phases?.end(body, !complete); }
+    }
   });
 
   it('lets a chosen skill that installs to prepare-handoff/ win over the granted built-in, and says so (#3344, D75)', async () => {
@@ -438,7 +642,7 @@ describe('previewManagedSetup', () => {
 
   it('renders an agent that doesn\'t exist yet as delivery will, once it has its folder (#2895)', async () => {
     const rules = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'I am @@AgentName in @@Path on @@StandbyBranch.' } }));
-    const setup = { version: 1 as const, blocks: [BUILTIN_BLOCK_IDS.identity, rules.id], skills: [], mcps: [] };
+    const setup: NonNullable<DurableAgentConfig['managed']> = { version: 1 as const, blocks: [BUILTIN_BLOCK_IDS.identity, rules.id], skills: [], mcps: [] };
     // The New agent builder's draft: no folder yet, the name typed.
     const draft: DurableAgentConfig = { id: 'new-agent', name: 'cool-gazelle', color: 'gray', createdAt: '2026-11-07T00:00:00.000Z' };
     const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent: draft, provider: provider(), setup }));
@@ -608,7 +812,7 @@ describe('quickLaunchFor (D25)', () => {
     try {
       const mcp = await user(() => service.createPart({ name: 'WorkIQ', content: { kind: 'mcp', serverKey: 'workiq', transport: 'stdio', command: 'npx' } }));
       const template = await user(() => service.saveTemplate({ name: 'Reader', description: '', settings: {}, setup: { blocks: [], skills: [], mcps: [mcp.id] } }));
-      const flags = { ...provider(), id: 'codex-cli', buildMcpArgs: () => [] } as unknown as OrchestratorProvider;
+      const flags = { ...provider(), id: 'codex-cli', buildMcpArgs: (): string[] => [] } as unknown as OrchestratorProvider;
       const withFlags = await user(() => quickLaunchFor(project, project, 'q1', { id: template.id, agentName: 'q' }, flags));
       expect(Object.keys(withFlags.servers)).toEqual(['workiq']);
       vi.mocked(appLog).mockClear();
@@ -622,7 +826,12 @@ describe('quickLaunchFor (D25)', () => {
 });
 
 function git(cwd: string, ...args: string[]) {
-  execFileSync('git', args, { cwd, stdio: 'ignore' });
+  const phases = deliveryPhases.active;
+  const phase = args[0] === 'init' ? 'git.init' : args[0] === 'add' ? 'git.add' : undefined;
+  const key = phase ? phases?.begin(phase) : undefined;
+  let complete = false;
+  try { execFileSync('git', args, { cwd, stdio: 'ignore' }); complete = true; }
+  finally { phases?.end(key, !complete); }
 }
 
 describe('rootFileExcludes (D16, D97)', () => {
@@ -731,7 +940,7 @@ describe('exactly its parts (#2819)', () => {
     fs.writeFileSync(path.join(project, '.claude', 'skills', 'build', 'SKILL.md'), '# ours');
     git(project, 'add', '.claude/skills/build/SKILL.md');
     const draft: DurableAgentConfig = { id: 'new-agent', name: 'keen-heron', color: 'gray', createdAt: '2026-11-07T00:00:00.000Z' };
-    const setup = { version: 1 as const, blocks: [], skills: [BUILTIN_SKILL_IDS.build, BUILTIN_SKILL_IDS.validate], mcps: [] };
+    const setup: NonNullable<DurableAgentConfig['managed']> = { version: 1 as const, blocks: [], skills: [BUILTIN_SKILL_IDS.build, BUILTIN_SKILL_IDS.validate], mcps: [] };
     const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent: draft, provider: provider(), setup, projectOwnFrom: project }));
     expect(preview.skills.find((sk) => sk.id === BUILTIN_SKILL_IDS.build)!.projectOwn).toBe("Using the project's own build skill");
     expect(preview.skills.find((sk) => sk.id === BUILTIN_SKILL_IDS.validate)!.projectOwn).toBeUndefined();

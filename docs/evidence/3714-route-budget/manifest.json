@@ -1,0 +1,345 @@
+{
+  "issue": 3714,
+  "base": "e68536e2d292ed0b824230e158e54ff79b2f027d",
+  "baselineSource": "a7033fa7d7081cf78fc50ef0de6c4e62fa691b76",
+  "baselineTree": "3489b8c0a2b2c77a5e8546151f01f5901585a8cb",
+  "frozenSource": "b4fdbe97a49d87ecce289b91445cec984c2bdae7",
+  "frozenTree": "1a406a90d90635c2ecf06500ccc6e4ef92c2dd42",
+  "productionByteIdenticalToBase": true,
+  "productionPolicyImplemented": false,
+  "testOnlyChangedSourcePaths": [
+    "src/main/services/annex-control.test.ts"
+  ],
+  "designPath": "design.md",
+  "designSha256": "58e6bfccc3161b793f243b5c9caece703248ef63ce2a7853e5e83c14881fa4ec",
+  "inputs": [
+    {
+      "path": "src/main/services/annex-control.ts",
+      "blob": "d398a97162e3eb4c554828dde82e863e0505bea9",
+      "bytes": 78498,
+      "sha256": "4d69cb8bd02dc20d00e03c7685878d09ab0e2c228e44217e477aa775539ffbba"
+    },
+    {
+      "path": "src/main/services/annex-control.test.ts",
+      "blob": "c226001df6f3948e0591bae5bb03569a7b761f73",
+      "bytes": 89906,
+      "sha256": "15b2bb0c5aee6808b176af9f739cc86ca628d89571d10dae03239d9a70deaaac"
+    },
+    {
+      "path": "src/main/services/annex-control-bulk.ts",
+      "blob": "18ee308fc55d33e89523d840f584101eea189be0",
+      "bytes": 8912,
+      "sha256": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee"
+    },
+    {
+      "path": "src/main/services/annex-control-bulk.test.ts",
+      "blob": "0e70e901d855fac04e42ff39508840186cbc53ae",
+      "bytes": 6891,
+      "sha256": "80f634f00a2754568be5519556137f0728ef2e0adf488a2246f90a008c84c8d2"
+    },
+    {
+      "path": "src/main/services/annex-authorizer.ts",
+      "blob": "b88180d9ac2c9f855691e731bc71eec0903cd824",
+      "bytes": 5807,
+      "sha256": "e1a98c503ac0bddb45b70436155c6936b75ed75dbdc259fec09b28ac8d912483"
+    },
+    {
+      "path": "src/shared/annex-control-protocol.ts",
+      "blob": "6ee5ef77a8d978da390838dde7e450ac05374d78",
+      "bytes": 15458,
+      "sha256": "572357f08535654bc6fe6ebffbe0bf6508363eab61c8c7170681d1efdd374f61"
+    },
+    {
+      "path": "src/shared/annex-control-protocol.test.ts",
+      "blob": "0c9cf1f050c4cb30218ecd81f32342474e2dfa3b",
+      "bytes": 7114,
+      "sha256": "629dd1740f0b0784ae8cd0516b376cde30e2a84281f382da3602be4d89e889bc"
+    },
+    {
+      "path": "src/shared/annex-binary-limits.ts",
+      "blob": "f9015fabed6d83cd82071c8a101f67c6b5865372",
+      "bytes": 431,
+      "sha256": "471d2d33525218a1017c05b60a7da065bcb7295f787c685ae1fa4a6a484c8a6c"
+    },
+    {
+      "path": "src/shared/icon-limits.ts",
+      "blob": "d440bcd0def61724a4792888ededa3c4723f7fd1",
+      "bytes": 1954,
+      "sha256": "4088b925aaa66bc8e0b5164c6ceb75456be028f6b45d68a6921bd2804f9eccab"
+    },
+    {
+      "path": "src/shared/chat/index.ts",
+      "blob": "0b029abb9461174d0d31facb84b26131aa4cb091",
+      "bytes": 305,
+      "sha256": "c9b6cf0df080130c9d4778a1048cb3546380fc82ab42244d8c64edfb8bcbcf94"
+    },
+    {
+      "path": "src/shared/chat/attachments.ts",
+      "blob": "bcee1a73f0eac05e36e7493a6e84b80a92d0c9bf",
+      "bytes": 1892,
+      "sha256": "0afe904b534ee5a12e3a34b4d3cf2e89546814758984b7dd160559db82573898"
+    },
+    {
+      "path": "src/main/services/annex-full-events.ts",
+      "blob": "a9b9c8875cabe561a171e38bd868c8389a962f06",
+      "bytes": 3943,
+      "sha256": "a479f7f1e154dedb395bacfb6e9d4a2d961a4141414579d6489b1d424d1a715c"
+    },
+    {
+      "path": "src/shared/handoff-transfer.ts",
+      "blob": "7927b7731a6a0303e5a75699fdc25a811fab10c2",
+      "bytes": 1521,
+      "sha256": "657663ef9c6836a0b0b3ae59b0e92679c2a070d1cbfbcf6609f8ef45d104ef82"
+    },
+    {
+      "path": "src/main/services/annex-routes.ts",
+      "blob": "40900d393e8c66b27e11883a3e7677dc9ddd1bd3",
+      "bytes": 3399,
+      "sha256": "e676e222b543b11e6978a86fd1c0916e510c8ed3cea526a030164bb25fcc72b8"
+    },
+    {
+      "path": "src/shared/annex-problems.ts",
+      "blob": "ffe01e149cf5838d7ce9c13587838a1daa511cc3",
+      "bytes": 8137,
+      "sha256": "f87cdb5a347bf1f3b2f28146459d98d44e4cd07b3c7d4015fb08e1880a05803e"
+    },
+    {
+      "path": "src/shared/types.ts",
+      "blob": "d1b0d86fda1037c8262e12503bdfb0c8e63acde0",
+      "bytes": 76632,
+      "sha256": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa"
+    },
+    {
+      "path": "src/main/services/annex-tls.ts",
+      "blob": "dad106486d21d16f65beb9b9edbb357d8bb809e8",
+      "bytes": 13601,
+      "sha256": "138761ee7b60e65d7dd3b282f5926a754efc068abfa14186a26a086fdc511cea"
+    },
+    {
+      "path": "src/main/services/annex-device-signal.ts",
+      "blob": "9b23750124ddfc79612a0bc87216b001fa995e81",
+      "bytes": 1990,
+      "sha256": "31e25abf98c78e7ce5721c9c9391e0d657ff9e670b9ac0939e9e0001f5cd04bf"
+    },
+    {
+      "path": "src/main/services/log-service.ts",
+      "blob": "050e6f105d2ebdbd84ca3af9e29e8e37cc6c1e19",
+      "bytes": 3644,
+      "sha256": "0e6c8c53c69597eebf8d3db43d34b2c47a9fabd14f9552e0a99aba387a752c9a"
+    },
+    {
+      "path": "test/global-setup.ts",
+      "blob": "f80eac131998f792ca0f271f80eb606215c942af",
+      "bytes": 658,
+      "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e"
+    },
+    {
+      "path": "test/standard-runtime-boundary.ts",
+      "blob": "0a2d496ec59195a46b27a4b5394d4fab9111f62d",
+      "bytes": 379,
+      "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+    },
+    {
+      "path": "vitest.config.ts",
+      "blob": "e371e57159be74b4f5baf9aadcb0339fa6034025",
+      "bytes": 3220,
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    },
+    {
+      "path": "tsconfig.json",
+      "blob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef",
+      "bytes": 530,
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+    },
+    {
+      "path": "docs/annex-reverse-routes.tsconfig.json",
+      "blob": "31137e6846a46b3ad0f8890b2e10bc2b39620112",
+      "bytes": 921,
+      "sha256": "26b864ea875ec6db8bc65c0e514f6103314a7133639b44b2e185d62d06a3de4a"
+    },
+    {
+      "path": "package.json",
+      "blob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8",
+      "bytes": 5782,
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9"
+    },
+    {
+      "path": "package-lock.json",
+      "blob": "7e45389f84ca58c5c7832cab169aa5674320d25d",
+      "bytes": 690814,
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+    },
+    {
+      "path": "docs/evidence/3714-route-budget/capture.py",
+      "blob": "febf6281cc988d2458e71776ec8a1e35b2f4f767",
+      "bytes": 3644,
+      "sha256": "9102ebb4cf1216143d2846dad22da18c8a14ac6c8a854455b10ba15babba4e6f"
+    }
+  ],
+  "receipts": [
+    {
+      "path": "attempts/01-baseline-red-receipt.json",
+      "head": "582d8f00fe842143ae7ea3d8b1f182d0cc6bfe6b",
+      "tree": "f9461bf63c56f266a10a31247cf528f627cd5c2b",
+      "exit": 75,
+      "minimumGiB": 4,
+      "logSha256": "4cc9b04085c41e57a354a6a321e779ad2630ee967c14f378e16770a02d4aa903",
+      "inputsUnchanged": true,
+      "claimedExecution": "NOT RUN"
+    },
+    {
+      "path": "attempts/02-baseline-red-receipt.json",
+      "head": "eae35decda70d69ba725a23cae467571ce574821",
+      "tree": "542fb5be6f7bdd132b4306bfe3cae58750d4cb0b",
+      "exit": 75,
+      "minimumGiB": 4,
+      "logSha256": "4cc9b04085c41e57a354a6a321e779ad2630ee967c14f378e16770a02d4aa903",
+      "inputsUnchanged": true,
+      "claimedExecution": "NOT RUN"
+    },
+    {
+      "path": "attempts/04-baseline-red-receipt.json",
+      "head": "a7033fa7d7081cf78fc50ef0de6c4e62fa691b76",
+      "tree": "3489b8c0a2b2c77a5e8546151f01f5901585a8cb",
+      "exit": 1,
+      "minimumGiB": 4,
+      "logSha256": "a3c6ee7157e50c0142c3a60ea4a363a7371c937b5c9c3e3311a5ba4a07340c07",
+      "inputsUnchanged": true,
+      "claimedExecution": "EXECUTED"
+    },
+    {
+      "path": "attempts/05-preserved-guards-receipt.json",
+      "head": "a7033fa7d7081cf78fc50ef0de6c4e62fa691b76",
+      "tree": "3489b8c0a2b2c77a5e8546151f01f5901585a8cb",
+      "exit": 0,
+      "minimumGiB": 4,
+      "logSha256": "9655f55de9245b31c51d72b571a97881a5cd5e9e23020c17171f0e7ad74571ce",
+      "inputsUnchanged": true,
+      "claimedExecution": "EXECUTED"
+    },
+    {
+      "path": "attempts/06-fixture-types-receipt.json",
+      "head": "a7033fa7d7081cf78fc50ef0de6c4e62fa691b76",
+      "tree": "3489b8c0a2b2c77a5e8546151f01f5901585a8cb",
+      "exit": 0,
+      "minimumGiB": 6,
+      "logSha256": "32e4e9817bc4965e3aa52e13fdc54befb7916e29aa9efe0988903e1688e1ecc6",
+      "inputsUnchanged": true,
+      "claimedExecution": "EXECUTED"
+    },
+    {
+      "path": "attempts/07-test-lint-receipt.json",
+      "head": "b4fdbe97a49d87ecce289b91445cec984c2bdae7",
+      "tree": "1a406a90d90635c2ecf06500ccc6e4ef92c2dd42",
+      "exit": 0,
+      "minimumGiB": 4,
+      "logSha256": "84c792a3425780caa2cec90dc17beebdd7f380283b55f7bc8b384b1932e2338a",
+      "inputsUnchanged": true,
+      "claimedExecution": "EXECUTED"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "attempts/00-capture-preflight-original.txt",
+      "bytes": 1594,
+      "sha256": "4d721f462dab5277143b4dcfdf4675c46785578c8b946e48d785f493c3358ff4"
+    },
+    {
+      "path": "attempts/01-baseline-red-original.txt",
+      "bytes": 28,
+      "sha256": "4cc9b04085c41e57a354a6a321e779ad2630ee967c14f378e16770a02d4aa903"
+    },
+    {
+      "path": "attempts/01-baseline-red-receipt.json",
+      "bytes": 9550,
+      "sha256": "f0c204abb26e5a97809b7618770c4c01bda1264b14b62f48ce5bcb27697e810d"
+    },
+    {
+      "path": "attempts/02-baseline-red-original.txt",
+      "bytes": 28,
+      "sha256": "4cc9b04085c41e57a354a6a321e779ad2630ee967c14f378e16770a02d4aa903"
+    },
+    {
+      "path": "attempts/02-baseline-red-receipt.json",
+      "bytes": 9550,
+      "sha256": "2d26fb17717270fd988683081d067cb12439b1852e0f8969a74454edd6736547"
+    },
+    {
+      "path": "attempts/02-retry-interval-original.txt",
+      "bytes": 419,
+      "sha256": "f915324494091436cd4f9b148394eab96de26ed20040e49fde7ab24465555230"
+    },
+    {
+      "path": "attempts/03-holder-advisory-original.txt",
+      "bytes": 239,
+      "sha256": "72ec7ac6ea2119fe3ee05809e0280a1a8b513013c1d37def3134782649eaba40"
+    },
+    {
+      "path": "attempts/04-baseline-red-original.txt",
+      "bytes": 4698,
+      "sha256": "a3c6ee7157e50c0142c3a60ea4a363a7371c937b5c9c3e3311a5ba4a07340c07"
+    },
+    {
+      "path": "attempts/04-baseline-red-receipt.json",
+      "bytes": 9533,
+      "sha256": "10c53f93223405d9393f8c124fb93e6a7b537344bb5db1010e5ead3747288b8f"
+    },
+    {
+      "path": "attempts/05-preserved-guards-original.txt",
+      "bytes": 1091,
+      "sha256": "9655f55de9245b31c51d72b571a97881a5cd5e9e23020c17171f0e7ad74571ce"
+    },
+    {
+      "path": "attempts/05-preserved-guards-receipt.json",
+      "bytes": 9653,
+      "sha256": "3722e617d6473448fb893f8dac3d5ce3954940b1f0c52dec332428f20203c813"
+    },
+    {
+      "path": "attempts/06-fixture-types-original.txt",
+      "bytes": 221,
+      "sha256": "32e4e9817bc4965e3aa52e13fdc54befb7916e29aa9efe0988903e1688e1ecc6"
+    },
+    {
+      "path": "attempts/06-fixture-types-receipt.json",
+      "bytes": 9452,
+      "sha256": "ba30c482e2ae77d51b8d6f19f83cebfbf730a22bf0ac605e5a7363691b44297f"
+    },
+    {
+      "path": "attempts/07-test-lint-original.txt",
+      "bytes": 564,
+      "sha256": "84c792a3425780caa2cec90dc17beebdd7f380283b55f7bc8b384b1932e2338a"
+    },
+    {
+      "path": "attempts/07-test-lint-receipt.json",
+      "bytes": 9450,
+      "sha256": "90a1662ba003cd027d56a35ab454893a6f8c3d3d30c4f0dfc87b72335d120d7f"
+    }
+  ],
+  "outcomes": {
+    "00": "capture preflight failed; no gate",
+    "01": "75 NOT RUN",
+    "02": "75 NOT RUN;52.5s retry violation preserved",
+    "03": "bounded read-only no-holder/no-lock/advisory pass;no child",
+    "04": {
+      "failed": 2,
+      "passed": 7,
+      "skipped": 169
+    },
+    "05": {
+      "passed": 106,
+      "skipped": 90,
+      "files": 2
+    },
+    "06": "complete fixture compilerPASS min6",
+    "07": "changed-test lintPASS0errors0warnings min4"
+  },
+  "limits": [
+    "independent exact design/security review required before any production policy change",
+    "baseline desired liveness assertions after first failed aggregate were not executed",
+    "paired deterministic wire/subscription/dispatch fixtures,not realTCP/TLS/current-app/phone/native shells",
+    "selected source-input seals are not exhaustive transitive-runtime seals",
+    "old Node refusal receipts retain original source/input/log ordering,not retrosealed",
+    "00/02-console transcripts owner-copied;03read-only admission evidence separately qualified",
+    "52.5s retry violation retained;later capture enforces60s,gate unchanged"
+  ]
+}

@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="75" failures="3" errors="0" time="7.446062833">
+    <testsuite name="src/main/services/managed-agents/delivery.test.ts" timestamp="2026-11-22T05:09:45.845Z" hostname="Masons-MacBook-Pro-13346.local" tests="75" failures="3" errors="0" skipped="67" time="7.446062833">
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; writes exactly the blocks in order with wildcards filled, and nothing else" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; every built-in template that is offered composes with no @@If and only wildcards delivery fills (#2902)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; writes the built-in build, test, lint and validate skill folders for a Developer agent (#2902)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; leaves @@SourceControlProvider and the build, test and lint wildcards as written, in delivery and Preview (#2902)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; delivers conditional wildcards as written: a variant is its own block (#2901)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; leaves @@Mission and @@Persona as written, and Preview shows the same bytes (D60)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; copies skills whole, including binary files, and removes a skill dropped from the setup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; delivers prepare-handoff only while the agent holds handoff.offer, never from its setup (#3344)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; reports current grant-gated skills and requires actual delivery evidence (#3517)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; does not claim installation of a grant-gated skill left to the project (#3517)" time="2.098093166">
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; lets a chosen skill that installs to prepare-handoff/ win over the granted built-in, and says so (#3344, D75)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; writes a supporting folder&apos;s files at their nested path, like .github/skills/sample-skill/assets/note.md (#3247)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; never removes the skills folder itself for a &quot;.&quot; in its manifest (#3101)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; writes Codex skills to .agents/skills and removes only the ones it delivered to .codex/skills before" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; moves a skill folder Clubhouse did not write out of the way instead of deleting it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; writes MCP servers to the JSON file without the Clubhouse part, and none for TOML CLIs" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; fingerprints change when a part is edited, so a running agent knows it is behind" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="deliverManagedSetup &gt; skips a part that no longer exists instead of failing the start" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="previewManagedSetup &gt; matches what delivery writes, with line ranges per block" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="previewManagedSetup &gt; keeps separate raw ranges when a valid POSIX path expands across lines" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="previewManagedSetup &gt; says the level an agent starts at when its CLI has no start for the saved one in its runtime (#3004)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="previewManagedSetup &gt; gives the text with wildcards as written for &quot;Show wildcards&quot;, and a settings summary (#2895)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="previewManagedSetup &gt; renders an agent that doesn&apos;t exist yet as delivery will, once it has its folder (#2895)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="what a running session started with (D9, #2895) &gt; keeps the delivered text, parts and settings in the record for &quot;Running now&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="what a running session started with (D9, #2895) &gt; fingerprints the effort, which every launch passes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickManagedLaunch (D25) &gt; refuses explicit execution overrides on parts-only quick templates instead of dropping restrictions (#3686)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickManagedLaunch (D25) &gt; renders the template for the quick agent in its folder and writes nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickManagedLaunch (D25) &gt; gives a quick agent from a built-in template the working Identity, and skips its skills (#2902)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickManagedLaunch (D25) &gt; names a durable agent&apos;s worktree relative to the project, and says so when there is no branch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickManagedLaunch (D25) &gt; gives a template saved without the Clubhouse part no extra server: the bridge is added at launch (D69)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickManagedLaunch (D25) &gt; counts the parts the template names that no longer exist" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickManagedLaunch (D25) &gt; refuses a template that doesn&apos;t exist" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickManagedLaunch (D25) &gt; one launch adds or leaves out parts (#2928, D102) &gt; adds, leaves out and swaps parts for that launch only, and the next launch starts from the template" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickManagedLaunch (D25) &gt; one launch adds or leaves out parts (#2928, D102) &gt; either Identity id names the one a quick agent gets, and leaving one out and adding it back is no change" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickManagedLaunch (D25) &gt; one launch adds or leaves out parts (#2928, D102) &gt; can&apos;t grant what a person couldn&apos;t put in a setup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="quickLaunchFor (D25) &gt; keeps the servers for a CLI with launch flags and drops them, logged, for one without" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="rootFileExcludes (D16, D97) &gt; anchors the instructions file, the MCP file and Claude Code&apos;s local settings to the root" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="rootFileExcludes (D16, D97) &gt; uses Copilot&apos;s paths in its config folder, and has no local settings for it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="rootFileExcludes (D16, D97) &gt; lists no MCP file for a TOML CLI, which gets its servers as launch flags" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="rootFileExcludes (D16, D97) &gt; leaves out a file the worktree tracks" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="rootFileExcludes (D16, D97) &gt; still lists them all outside a git checkout" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; moves every untracked skill folder the setup does not list to app data, and leaves tracked ones for Preview (D48)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; leaves a built-in skill folder git tracks to the project, and never writes, records or removes it (D74)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; says the same in a New agent draft&apos;s Preview, from the project checkout its worktree comes from (#2895)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; matches a tracked folder to a built-in ignoring case, so a tracked Build/ is the project&apos;s build skill (D74)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; never removes a folder it delivered once the project commits it, even after the skill leaves the setup (D74)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; still replaces an untracked folder in a built-in skill&apos;s way, and leaves one it delivered once git tracks it (D74)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; keeps today&apos;s behavior for a custom skill whose folder git tracks: the folder moves aside and the skill takes its place (D48, D74)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; never delivers literal env values, even from a part stored with them (D46)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; says which stored env values are no longer used, in Preview and once in the log, by name only (D46)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; tells Claude Code not to read CLAUDE.md files above the worktree, keeping the local settings it has (D49)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; leaves a local settings file it cannot read alone, and Preview says the parent files are read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; writes no local settings when nothing above the worktree would be read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="exactly its parts (#2819) &gt; lists the instruction files Copilot also reads that git tracks in the worktree (D50)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="skill folders Clubhouse must not move (D48) &gt; moves nothing when the skills folder is a link to somewhere outside, and Preview lists the folders" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="skill folders Clubhouse must not move (D48) &gt; moves nothing when .claude itself is a link, and refuses to move a clashing folder out of it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="skill folders Clubhouse must not move (D48) &gt; treats a submodule folder as tracked: git lists it with no trailing slash" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="skill folders Clubhouse must not move (D48) &gt; moves nothing when git fails for a reason other than &quot;not a git repository&quot;, logging the code only" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="skill folders Clubhouse must not move (D48) &gt; moves nothing when git is missing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="skill folders Clubhouse must not move (D48) &gt; still moves untracked folders out when the agent folder is not a git checkout" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="the claudeMdExcludes entries Clubhouse adds (D49) &gt; replaces exactly the entries it added at each start and never touches the person&apos;s" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="the claudeMdExcludes entries Clubhouse adds (D49) &gt; removes its entries and the manifest on unmanage, keeping the rest of the settings" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="the claudeMdExcludes entries Clubhouse adds (D49) &gt; removes a settings file it created once nothing else is in it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="the claudeMdExcludes entries Clubhouse adds (D49) &gt; keeps a settings file it created once the person adds to it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="the claudeMdExcludes entries Clubhouse adds (D49) &gt; takes its entries out when the agent starts on a CLI that does not read them" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="the claudeMdExcludes entries Clubhouse adds (D49) &gt; leaves an unreadable settings file and its manifest alone on unmanage" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="isSameFolder &gt; compares folders after resolving links" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="isSameFolder &gt; ignores case only on Windows" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="disposable phase observer proof &gt; phase proof setup failure" time="0.007866125">
+            <failure message="proof primary setup failure" type="Error">
+Error: proof primary setup failure
+ ❯ src/main/services/managed-agents/delivery.test.ts:283:68
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="disposable phase observer proof &gt; phase proof deadline abort" time="5.012395125">
+            <failure message="Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with &quot;testTimeout&quot;." type="Error">
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with &quot;testTimeout&quot;.
+ ❯ src/main/services/managed-agents/delivery.test.ts:1344:3
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="disposable phase observer proof &gt; phase proof native forwarding metadata and writer failure" time="0.02596325">
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="disposable phase observer proof &gt; phase proof native primary and real stop survive observer failure" time="0.009311958">
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="disposable phase observer proof &gt; phase proof retired recorder isolation owned detach and bounds" time="0.00892">
+            <failure message="Cannot read properties of undefined (reading &apos;includes&apos;)" type="TypeError">
+TypeError: Cannot read properties of undefined (reading &apos;includes&apos;)
+ ❯ src/main/services/managed-agents/delivery.test.ts:1454:26
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="disposable phase observer proof &gt; phase proof serialization failure reports unavailable without throwing" time="0.007944667">
+        </testcase>
+        <testcase classname="src/main/services/managed-agents/delivery.test.ts" name="disposable phase observer proof &gt; phase proof original captured cleanup was not skipped" time="0.008359375">
+        </testcase>
+    </testsuite>
+</testsuites>
