@@ -120,7 +120,9 @@ memory; no post-save fake refusal or rollback is added. Marker/binding failures
 retain their actual partial IDs/artifacts. A generic IO failure, including an
 after-rename failure, does not prove disk absence or authorize an automatic
 new-ID retry. Explicit preparation and initial maintenance remain separate work,
-not an offer-wide zero-write guarantee.
+not an offer-wide zero-write guarantee. A producer can own its await of a prior
+independent preparation, then make its own original source/mode selection.
+Stopping that producer denies its continuation, not the already-admitted read.
 
 Stop/replacement account for actual producer work and already-dispatched POSTs,
 including underlying promises beyond the existing five-second waiter deadline.
