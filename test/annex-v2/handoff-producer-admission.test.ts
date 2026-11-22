@@ -222,6 +222,22 @@ describe('isolated real MCP producer domain admission', () => {
     return fingerprint;
   }
 
+  async function configuredSource(fx: Fixture) {
+    const config = await import('../../src/main/services/agent-config');
+    const row: DurableAgentConfig = { id: caller, name: 'Original source', color: 'indigo',
+      createdAt: '2026-01-01T00:00:00.000Z', worktreePath: fx.repository };
+    const directory = path.join(fx.repository, '.clubhouse');
+    await fs.mkdir(directory, { recursive: true });
+    const write = async () => {
+      await fs.writeFile(path.join(directory, 'agents.json'), JSON.stringify([row]));
+      config.clearAgentConfigCache(fx.repository);
+    };
+    await write();
+    fx.gate.forgetMcpCaller(caller);
+    fx.gate.setMcpCaller(caller, fx.repository, row);
+    return { row, write };
+  }
+
   describe('original producer continuity and admitted persistence', () => {
     it('retains original grant retirement even when Allow is restored before the queue resumes', async () => {
       const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
@@ -271,6 +287,32 @@ describe('isolated real MCP producer domain admission', () => {
       const before = await catalog(fx);
       const queued = await queuedOffer(fx, seed, summary);
       original.cwd = path.join(dir, 'different-source');
+      queued.release();
+      expect((await queued.pending).isError).toBe(true);
+      expect(fx.host.store.list()).toEqual([seed]);
+      expect(await catalog(fx)).toBe(before);
+    });
+
+    it('keeps a durable original source without a live runtime and ignores display name/color changes', async () => {
+      const fx = current(), config = await configuredSource(fx), summary = await prepare(fx, ['.clubhouse/**']);
+      const seed = await offer(fx, summary), queued = await queuedOffer(fx, seed, summary);
+      config.row.name = 'Cosmetic source'; config.row.color = 'blue';
+      await config.write();
+      fx.registry.agentRegistry.untrack(caller);
+      fx.gate.forgetMcpCaller(caller);
+      queued.release();
+      const result = await queued.pending;
+      expect(result.isError).not.toBe(true);
+      const record = parseHandoff(resultValue(result));
+      expect(record.senderName).toBe('Original source');
+      await verifySource(fx, record, summary);
+    });
+
+    it('refuses a durable source replacement with only its original createdAt changed', async () => {
+      const fx = current(), config = await configuredSource(fx), summary = await prepare(fx, ['.clubhouse/**']);
+      const seed = await offer(fx, summary), before = await catalog(fx), queued = await queuedOffer(fx, seed, summary);
+      config.row.createdAt = '2026-01-01T00:00:01.000Z';
+      await config.write();
       queued.release();
       expect((await queued.pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([seed]);
@@ -473,6 +515,8 @@ describe('isolated real MCP producer domain admission', () => {
 
     it.each(['catalog-prewrite', 'history-prewrite', 'history-after-rename'] as const)('retains exact partial ids and distinguishes %s failure without retry or rollback fiction', async (failure) => {
       const fx = current(), summary = await prepare(fx);
+      const peer = failure === 'catalog-prewrite' ? await remote(fx) : undefined;
+      const post = vi.spyOn(fx.machine.client, 'postToMachine');
       const filename = failure === 'catalog-prewrite' ? 'handoff-preparations.json' : 'handoffs.json';
       const rename: typeof nativeFs.promises.rename = nativeFs.promises.rename.bind(nativeFs.promises);
       const error = new Error(`Synthetic ${failure} failure`);
@@ -485,10 +529,15 @@ describe('isolated real MCP producer domain admission', () => {
         if (failure === 'history-after-rename') await rename(from, to);
         throw error;
       });
-      const result = await fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary));
+      const result = await fx.tools.callTool(caller, 'offer_handoff', { ...offerArgs(summary), ...(peer && { to: `machine:${peer}` }) });
       expect(result.isError).toBe(true);
       expect(faults).toBe(1);
       expect(fx.host.store.list()).toEqual([]);
+      if (peer) {
+        expect(fx.host.commands.isUndelivered(id!)).toBe(true);
+        expect(JSON.parse(await fs.readFile(path.join(fx.userData, 'handoff-commands.json'), 'utf8')).undelivered).toEqual([id]);
+      }
+      expect(post).not.toHaveBeenCalled();
       expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ boundTo: failure === 'catalog-prewrite' ? [] : [id] }] });
       if (failure === 'history-after-rename') {
         const records = JSON.parse(await fs.readFile(path.join(fx.userData, 'handoffs.json'), 'utf8')).records;
