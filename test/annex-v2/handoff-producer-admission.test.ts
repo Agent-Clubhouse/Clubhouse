@@ -130,12 +130,12 @@ async function verifySource(fx: Fixture, record: Handoff, summary: HandoffManife
 async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestSummary) {
   const entered = deferred(), queued = deferred(), release = deferred();
   releases.push(release.resolve);
-  const transact = fx.host.store.transact.bind(fx.host.store);
+  const transact: Fixture['host']['store']['transact'] = fx.host.store.transact.bind(fx.host.store);
   vi.spyOn(fx.host.store, 'transact').mockImplementation((id, change) => {
     if (id !== seed.id) queued.resolve();
     return transact(id, change);
   });
-  const actualOffer = fx.host.coordinator.service.offer.bind(fx.host.coordinator.service);
+  const actualOffer: Fixture['host']['coordinator']['service']['offer'] = fx.host.coordinator.service.offer.bind(fx.host.coordinator.service);
   // Coordinator pruning precedes this entry. The blocker is an actual older history transaction.
   vi.spyOn(fx.host.coordinator.service, 'offer').mockImplementation((input, sender, beforeCommit) => {
     const blocker = transact(seed.id, async (record) => {
