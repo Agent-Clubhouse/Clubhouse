@@ -1,0 +1,1714 @@
+{
+  "source": "ef5e2f53ea9c3af94e7f22e23d9f0c5432b7a596",
+  "sourceTree": "d4aecf6d612b57e5bf94861ea7372c4995aeda22",
+  "proof": "206a88dcc93ecd7d2f5009d533894dd77e36e2ed",
+  "proofTree": "48956fa912ed4e7696451f1f802f74294f0b863c",
+  "manifestSHA256": "4fe021839b560cd7e14b6823e3f73232e775f4a6738291d9acd911a98cb03f52",
+  "README_SHA256": "e33da0ceecd35f5bd32b80bcd069caac0ea8b40f27c6fe223a560a75328e8ac5",
+  "redSource": "940365ecde7ca2e9fb31abf48362a938445e1fe5",
+  "redFixtureFreeze": "7be137c573314d76e7f206dd319a8ac7c08f25c7",
+  "initialCanonicalSource": "222737575bba9a36af9ac9c626b92d8cdf23a86f",
+  "sourceInputs": [
+    {
+      "path": "src/main/services/annex-server.ts",
+      "bytes": 362090,
+      "sha256": "4262460c65d3e485103bc6a3d2cbabda9d310fc128b48e8a1e8735f1a3d111b0",
+      "blob": "108a4c45160c0d77ef0efcb9da3934ba1b1a50a8"
+    },
+    {
+      "path": "test/annex-v2/annex-native-handoff-admission.test.ts",
+      "bytes": 28378,
+      "sha256": "4055877fe49ea85c121aecd62c9f6fa45166323bfc691dc500a414c2759464a4",
+      "blob": "b58285525bacf812e292c0524901a32a77522bd1"
+    },
+    {
+      "path": "docs/annex-native-handoff-admission.md",
+      "bytes": 6844,
+      "sha256": "4492fd014e4dfbb279e275963b216703165091d1f7b2f8dd8b922b061245469e",
+      "blob": "60b2f021e629f9fa796306a78f32981178afad04"
+    }
+  ],
+  "XMLs": {
+    "27-legacy-pairing-positive-original.xml": {
+      "counts": {
+        "skipped": 19,
+        "pass": 1
+      },
+      "cases": [
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for pairingId-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for certificatePem-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for unchanged-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for legacy-undefined-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for route-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for alias-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for lastSeen-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        }
+      ]
+    },
+    "21-canonical-trust-red-original.xml": {
+      "counts": {
+        "skipped": 13,
+        "fail": 2,
+        "pass": 4
+      },
+      "cases": [
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for pairingId-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "fail",
+          "failure": "\nAssertionError: expected 'fulfilled' to be 'rejected' // Object.is equality\n\nExpected: \"rejected\"\nReceived: \"fulfilled\"\n\n \u276f test/annex-v2/annex-native-handoff-admission.test.ts:424:29\n            "
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for certificatePem-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "fail",
+          "failure": "\nAssertionError: expected 'fulfilled' to be 'rejected' // Object.is equality\n\nExpected: \"rejected\"\nReceived: \"fulfilled\"\n\n \u276f test/annex-v2/annex-native-handoff-admission.test.ts:424:29\n            "
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for unchanged-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for route-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for alias-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for lastSeen-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        }
+      ]
+    },
+    "22-canonical-trust-green-original.xml": {
+      "counts": {
+        "skipped": 11,
+        "pass": 8
+      },
+      "cases": [
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for pairingId-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for certificatePem-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for unchanged-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for route-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for alias-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for lastSeen-only updates",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "skipped",
+          "failure": null
+        }
+      ]
+    }
+  },
+  "trustReceipts": {
+    "21-canonical-trust-red-original.log": [
+      {
+        "change": "pairingId",
+        "changedTrust": true,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      },
+      {
+        "change": "certificatePem",
+        "changedTrust": true,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      },
+      {
+        "change": "unchanged",
+        "changedTrust": false,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      },
+      {
+        "change": "route",
+        "changedTrust": false,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      },
+      {
+        "change": "alias",
+        "changedTrust": false,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      },
+      {
+        "change": "lastSeen",
+        "changedTrust": false,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      }
+    ],
+    "22-canonical-trust-green-original.log": [
+      {
+        "change": "pairingId",
+        "changedTrust": true,
+        "domainOutcome": "rejected",
+        "storedState": null
+      },
+      {
+        "change": "certificatePem",
+        "changedTrust": true,
+        "domainOutcome": "rejected",
+        "storedState": null
+      },
+      {
+        "change": "unchanged",
+        "changedTrust": false,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      },
+      {
+        "change": "route",
+        "changedTrust": false,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      },
+      {
+        "change": "alias",
+        "changedTrust": false,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      },
+      {
+        "change": "lastSeen",
+        "changedTrust": false,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      }
+    ],
+    "27-legacy-pairing-positive-original.log": [
+      {
+        "change": "legacy-undefined",
+        "changedTrust": false,
+        "domainOutcome": "fulfilled",
+        "storedState": "offered"
+      }
+    ]
+  },
+  "initialTypes": {
+    "head": "222737575bba9a36af9ac9c626b92d8cdf23a86f",
+    "actualInputs": 3957,
+    "totalRoots": 2466,
+    "productionRoots": 2465,
+    "explicitFixtures": 1,
+    "trackedImmutableHashMatches": 2469,
+    "ownerObservedDependencyHashes": 1488,
+    "exit": 0,
+    "atomicPerReadSeal": false
+  },
+  "finalTypes": {
+    "head": "ef5e2f53ea9c3af94e7f22e23d9f0c5432b7a596",
+    "actualInputs": 3957,
+    "totalRoots": 2466,
+    "productionRoots": 2465,
+    "explicitFixtures": 1,
+    "trackedImmutableHashMatches": 2469,
+    "ownerObservedDependencyHashes": 1488,
+    "exit": 0,
+    "atomicPerReadSeal": false
+  },
+  "serverWarningsFullObjectsMatched": 71,
+  "warningSuggestionOffsetDelta": -69,
+  "finalFixtureLint": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "c2NamesCorrected": 185,
+  "c2AllOtherHistoricalFieldsUnchanged": true,
+  "c2Bindings": [
+    {
+      "group": "final",
+      "ordinal": 0,
+      "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+      "fragmentSHA256": "c5912bd3bd1df98a625ef6952dc092f0229ee5a091bae97c7911db5d100e0454"
+    },
+    {
+      "group": "final",
+      "ordinal": 1,
+      "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+      "fragmentSHA256": "f209a361a8c5ea40dda9c9b863ab07c2a70f0c235d04c6ee93e014fd823d0dc9"
+    },
+    {
+      "group": "final",
+      "ordinal": 2,
+      "name": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+      "fragmentSHA256": "f59223013ed3098aa41b2fde0c48de6632f755d672c1059c80e0a6be3b2e51dc"
+    },
+    {
+      "group": "final",
+      "ordinal": 3,
+      "name": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+      "fragmentSHA256": "f43a7aec73766444492e30a9eb14b29377b29782f9b64d79a8df620f8b626693"
+    },
+    {
+      "group": "final",
+      "ordinal": 4,
+      "name": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+      "fragmentSHA256": "2fed8e4044c8dd5fe0d4644cb41df027cbad4527d3088e6802de2c1a76ce4b0a"
+    },
+    {
+      "group": "final",
+      "ordinal": 5,
+      "name": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+      "fragmentSHA256": "e3505b4256a7f47171bb277606320e44b8f3c9fb2f22e971959f920ef99faeb5"
+    },
+    {
+      "group": "final",
+      "ordinal": 6,
+      "name": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+      "fragmentSHA256": "1b533c063e38f9cb0f67b778d7b2916a0e4c2cb0144b57294b408423d7d9b546"
+    },
+    {
+      "group": "final",
+      "ordinal": 7,
+      "name": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+      "fragmentSHA256": "7a2efc0eef7e0258226c05b9cfe110d20651ae1ce7281d9e96cbdfecf18add02"
+    },
+    {
+      "group": "final",
+      "ordinal": 8,
+      "name": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+      "fragmentSHA256": "c44a375a081cd835a304f9b6a5715e44bf4ad333579117749f6027e9d47f173d"
+    },
+    {
+      "group": "final",
+      "ordinal": 9,
+      "name": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+      "fragmentSHA256": "ba36fcd2e7aa908394afc367ab480bc39b136b770db897615ce487e95eb8c22d"
+    },
+    {
+      "group": "final",
+      "ordinal": 10,
+      "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+      "fragmentSHA256": "c5a6e63e9fbe92846f49a5daf39c81eefb741b1a3274e0012eefd71d1c763232"
+    },
+    {
+      "group": "final",
+      "ordinal": 11,
+      "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+      "fragmentSHA256": "e711db789f17b762166b30a772ade4366f454af6d3ff8023950c3d5629849ce2"
+    },
+    {
+      "group": "final",
+      "ordinal": 12,
+      "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+      "fragmentSHA256": "670e973716cd219a0b0f82ef43d3c7f12ca136310ebf5427f8b27ef25b79b0bb"
+    },
+    {
+      "group": "final",
+      "ordinal": 13,
+      "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real existing-offer queue",
+      "fragmentSHA256": "7df45cea660b9f2f4eef1249109c64dc1467c1e4fc8db26429ff0031f4a7f3cd"
+    },
+    {
+      "group": "final",
+      "ordinal": 14,
+      "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real cancel-with-offer queue",
+      "fragmentSHA256": "fc8c8a95c2d59b08efd67328c67ef4efb4a1274d69517cb7a881d7b2dc534f99"
+    },
+    {
+      "group": "final",
+      "ordinal": 15,
+      "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real cancel queue",
+      "fragmentSHA256": "5825620d0dce7f22f0840a945f34c7595c0e6aeba8fc47ef020c1637be9b7af6"
+    },
+    {
+      "group": "final",
+      "ordinal": 16,
+      "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real newer-snapshot queue",
+      "fragmentSHA256": "0251959fa9a3742ad863926c3d88fee628955b708dae11bf95779907ff053579"
+    },
+    {
+      "group": "final",
+      "ordinal": 17,
+      "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real older-snapshot queue",
+      "fragmentSHA256": "ed405f576ab32ae3f7162baa8ba441fbcfa86793aa2af1cfaa7427647762d508"
+    },
+    {
+      "group": "final",
+      "ordinal": 18,
+      "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > checks original admission before its synchronous terminal-ACK decision",
+      "fragmentSHA256": "26ec965cefa8256a4887179de4e532d6d8e04fd41d7c2c5bb0fb7476f90d84ad"
+    },
+    {
+      "group": "final",
+      "ordinal": 19,
+      "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > checks original admission before its synchronous terminal-cancel decision",
+      "fragmentSHA256": "70975d9672679e49ab0f5e70f8057679be01b05a744dde9977aa112cb3b8fb76"
+    },
+    {
+      "group": "final",
+      "ordinal": 20,
+      "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > retains separately admitted local expiry but refuses the retired incoming message afterwards",
+      "fragmentSHA256": "6fdb2f61b4e9ca4f6cb6514c16d5a86312478c5babd691812e4237d5c6dbd8e2"
+    },
+    {
+      "group": "final",
+      "ordinal": 21,
+      "name": "reverse sync actual history and command queue assembly > carries the original capture into queued receiver-ACK and refuses before its real mutation",
+      "fragmentSHA256": "c735ae856f71095572b6af6e96372308db6e50aeeae4af76edcfcf05a13946cc"
+    },
+    {
+      "group": "final",
+      "ordinal": 22,
+      "name": "reverse sync actual history and command queue assembly > carries the original capture into queued terminal-ACK and refuses before its real mutation",
+      "fragmentSHA256": "e2407b8a64318fe1412adc67a905c569b8d6f224c2c882f951c215a05f152966"
+    },
+    {
+      "group": "final",
+      "ordinal": 23,
+      "name": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-ACK and refuses before its real mutation",
+      "fragmentSHA256": "b12fbac3ed1a3e3e41dbfbe9d440bb4f85c1f2c152e47aa6e8b5359aee4c7040"
+    },
+    {
+      "group": "final",
+      "ordinal": 24,
+      "name": "reverse sync actual history and command queue assembly > carries the original capture into queued primary-remove and refuses before its real mutation",
+      "fragmentSHA256": "642ecdf0f14dd10edb355438874319e55f8e1d4f62897254e66677b030d67d0d"
+    },
+    {
+      "group": "final",
+      "ordinal": 25,
+      "name": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-remove and refuses before its real mutation",
+      "fragmentSHA256": "6ea00feffa3b2638bb1c209225c659c9d6ca68ae5ff2e1a1aa08dc705b0ad312"
+    },
+    {
+      "group": "final",
+      "ordinal": 26,
+      "name": "reverse sync actual history and command queue assembly > does not advance reverse ACK memory after either deterministic precommit failure or ambiguous post-rename failure",
+      "fragmentSHA256": "d8764093a23c11f638d906c70f4b22755f9811769d30942f9357633449adea12"
+    },
+    {
+      "group": "final",
+      "ordinal": 27,
+      "name": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=false)",
+      "fragmentSHA256": "bad53d820af6300499e47f017a8c962d48379f0d1321cda977aba7af3751bae8"
+    },
+    {
+      "group": "final",
+      "ordinal": 28,
+      "name": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=true)",
+      "fragmentSHA256": "ea182f5885ef4f36be0ba64f9b9b79c0c861a9695267bb641c54895fd4f5a0a0"
+    },
+    {
+      "group": "final",
+      "ordinal": 29,
+      "name": "reverse sync actual history and command queue assembly > commits history admitted before retirement but refuses the next secondary POST under the original capture",
+      "fragmentSHA256": "b34c4041fd9d8c167d508b389f86053596876b280d92d5b5917deb1bdec1dc0b"
+    },
+    {
+      "group": "final",
+      "ordinal": 30,
+      "name": "reverse sync actual history and command queue assembly > publishes a real ACK admitted before retirement but refuses the distinct primary removal",
+      "fragmentSHA256": "eead6670c8bcc2d898699fbf7cb68de5ce4cd41fd8b9d79bc6dddc54f0170a1d"
+    },
+    {
+      "group": "final",
+      "ordinal": 31,
+      "name": "reverse sync actual history and command queue assembly > uses one original capture and cancellation ID through primary adoption and every secondary adoption/ACK/removal",
+      "fragmentSHA256": "baf5467c9a398e9359d67797a83d68fa5366d97af30233d346dc07fe17de573b"
+    },
+    {
+      "group": "final",
+      "ordinal": 32,
+      "name": "handoff agreement synchronization > offers, accepts and cancels locally without using a network transport",
+      "fragmentSHA256": "8e765884641959130f7cd4b20e0f17ef4d4f1c122e81f091150b83dcfe10b6ae"
+    },
+    {
+      "group": "final",
+      "ordinal": 33,
+      "name": "handoff agreement synchronization > synchronizes a receiver decision and preserves one response across retries and restart",
+      "fragmentSHA256": "e8529c26e6e54f2316733dd7f6197797753c3fc539f19a5e919050aead79e89d"
+    },
+    {
+      "group": "final",
+      "ordinal": 34,
+      "name": "handoff agreement synchronization > retains offline offers and sender cancellations until reconnect after restart",
+      "fragmentSHA256": "6e47ebda0df52a5c66b9d4cd20f65f01e5463eb396523883a61451eac4cb64af"
+    },
+    {
+      "group": "final",
+      "ordinal": 35,
+      "name": "handoff agreement synchronization > refuses forged transport identity and does not deliver a queued offer after revocation",
+      "fragmentSHA256": "26f97a9463700984d107d89de916cb19a8ab0617e0dae5edff4ac49e8dfe94af"
+    },
+    {
+      "group": "final",
+      "ordinal": 36,
+      "name": "handoff agreement synchronization > lets only an addressed Dispatcher choose a receiver and preserves participant privacy",
+      "fragmentSHA256": "d60feaee35c810177064226f5fa0e7fff961c89aa5cfae997ce2f5584bfbd1bd"
+    },
+    {
+      "group": "final",
+      "ordinal": 37,
+      "name": "handoff agreement synchronization > recovers a same-machine cancellation intent committed just before a crash",
+      "fragmentSHA256": "832a566c3cc017835639e836e038489bfac5a5acff4b27941e5509b66cefc16d"
+    },
+    {
+      "group": "final",
+      "ordinal": 38,
+      "name": "handoff agreement synchronization > does not treat an unrelated participant as the author of an idempotent decline",
+      "fragmentSHA256": "04b149ab5c2862fd874a7a09b03d121b4d9fcd21e48452e6250e9327c46a22ad"
+    },
+    {
+      "group": "final",
+      "ordinal": 39,
+      "name": "handoff agreement synchronization > services an active agreement before retained terminal history after restart",
+      "fragmentSHA256": "5506288fd1d45234589b71636a982a6b962bf05964715a03f11be122926ed8c1"
+    },
+    {
+      "group": "final",
+      "ordinal": 40,
+      "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: incoming-setting",
+      "fragmentSHA256": "a6b6d3bf7a652718a7f0b841bcb58f904a7a3108958ea3b93fdb36184d81cb06"
+    },
+    {
+      "group": "final",
+      "ordinal": 41,
+      "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection",
+      "fragmentSHA256": "4b50e9919487cb91ac988530d2e34f71cfd20a278953d863cfe3b8fc43d106d8"
+    },
+    {
+      "group": "final",
+      "ordinal": 42,
+      "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection-restored",
+      "fragmentSHA256": "25031f2a1eb4c144fd881ba22415cc58ff956eabd55b1a43e0f8c4e174904adb"
+    },
+    {
+      "group": "final",
+      "ordinal": 43,
+      "name": "native incoming host ownership and fresh policy > drains an admitted native save and its normal committed-history notice before replacement",
+      "fragmentSHA256": "a09138b49ebabdc46a27f85442ba0a2136222c001acee599290b828ef7255ecd"
+    },
+    {
+      "group": "final",
+      "ordinal": 44,
+      "name": "native incoming host ownership and fresh policy > does not replace a host identity while its original native authorization operation remains owned",
+      "fragmentSHA256": "fc588c7931963bd9e556159263e5d178795a7d3355bb38f245ac64eee3aecab7"
+    },
+    {
+      "group": "final",
+      "ordinal": 45,
+      "name": "native incoming host ownership and fresh policy > drains native writers without changing retired outgoing POST lifetime or permitting its late adoption",
+      "fragmentSHA256": "d237e3891f15347946c7549cbfc6738ec90b828131d64f9c9980f92aaafce898"
+    },
+    {
+      "group": "final",
+      "ordinal": 46,
+      "name": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+      "fragmentSHA256": "a589a0eec829144c83487edcb4247138d4b1dd9c2577151c36bb32d75a4d0c95"
+    },
+    {
+      "group": "final",
+      "ordinal": 47,
+      "name": "checks metadata before asking for approval and refuses a secret before any durable write",
+      "fragmentSHA256": "f1104a0012706d8b9e4e5a7d2c359aa9ff4e65ed747b828f316008a341dcf7c4"
+    },
+    {
+      "group": "final",
+      "ordinal": 48,
+      "name": "retains query access after revocation and delivers each notice once across host restart",
+      "fragmentSHA256": "e2d116432d88e9e01979dac8a02af468f32727aca107a23ff67cfccddf7f214e"
+    },
+    {
+      "group": "final",
+      "ordinal": 49,
+      "name": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+      "fragmentSHA256": "dba9dbc8888b5814b49a85a6c0e5464fa6c31d22f65d412cd82441b0f3d02a51"
+    },
+    {
+      "group": "final",
+      "ordinal": 50,
+      "name": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+      "fragmentSHA256": "f0bf86a88d637e68a2da51adac0a64508d84d429f963a1527958759367a05691"
+    },
+    {
+      "group": "final",
+      "ordinal": 51,
+      "name": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+      "fragmentSHA256": "73ad5d02214b78d6a943e26b899aabcbfbce32cc2ae4f02d681f405ab2879be5"
+    },
+    {
+      "group": "final",
+      "ordinal": 52,
+      "name": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+      "fragmentSHA256": "39fd51967bd882022277bd3be257a7a8102a7da20d2943180c1e3256746bce7f"
+    },
+    {
+      "group": "final",
+      "ordinal": 53,
+      "name": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+      "fragmentSHA256": "f88322240168f2f3870a1e7e0a4dd73765e3a746c1178b37c7a7b299455ba4e0"
+    },
+    {
+      "group": "final",
+      "ordinal": 54,
+      "name": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+      "fragmentSHA256": "1bc0d1f7dd27a3b657eef1fb282a91b32acf28006fab239726f07e7ca60fac0c"
+    },
+    {
+      "group": "final",
+      "ordinal": 55,
+      "name": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+      "fragmentSHA256": "4ffc2ffc15f3ff74e6d227c84decb1082b676bae1fd51138e5e473924af190a7"
+    },
+    {
+      "group": "final",
+      "ordinal": 56,
+      "name": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+      "fragmentSHA256": "9b4d6a0771a0b36481a415105e497e23213709c1f23878d9d422a13c2af0630d"
+    },
+    {
+      "group": "final",
+      "ordinal": 57,
+      "name": "preserves old no-control behavior and the existing direct route (direct=false)",
+      "fragmentSHA256": "015b8f8adeace8104f0eedcdb1bffbd6949e7b2c830e2b8e57733288b3df52b1"
+    },
+    {
+      "group": "final",
+      "ordinal": 58,
+      "name": "preserves old no-control behavior and the existing direct route (direct=true)",
+      "fragmentSHA256": "98da6cb5e5be0d6eb35a7c659c79a688bbe47ff54807912b1da7819297160a97"
+    },
+    {
+      "group": "final",
+      "ordinal": 59,
+      "name": "retires the original reverse grant-revision capture across the actual outgoing authorization await",
+      "fragmentSHA256": "a239633486c09dcbc0771e99dc97b216d026fbdb5191e1964d923ff041278c47"
+    },
+    {
+      "group": "final",
+      "ordinal": 60,
+      "name": "retires the original reverse configuration capture across the actual outgoing authorization await",
+      "fragmentSHA256": "19e9d20ff9947158758747a63e83f031746f5ab1dde0f44b1dc8d11434bf1b32"
+    },
+    {
+      "group": "final",
+      "ordinal": 61,
+      "name": "retires the original reverse connection-notification capture across the actual outgoing authorization await",
+      "fragmentSHA256": "dd4b3c45faccdafeffcc1330ab969e3e2b8866d7b8b29ef372a8fa5b54a7b161"
+    },
+    {
+      "group": "final",
+      "ordinal": 62,
+      "name": "retires the original reverse binding-membership capture across the actual outgoing authorization await",
+      "fragmentSHA256": "eded49ca2a921b495f831d217a49f8c7ae7261776ba1ca6971eddbee75f72e67"
+    },
+    {
+      "group": "final",
+      "ordinal": 63,
+      "name": "retires the original reverse binding-permissions capture across the actual outgoing authorization await",
+      "fragmentSHA256": "6c9058f6a0e0dac979da5f224d10da6b4e02d99027208ed5db2e34b4e926284e"
+    },
+    {
+      "group": "final",
+      "ordinal": 64,
+      "name": "retires the original reverse epoch capture across the actual outgoing authorization await",
+      "fragmentSHA256": "b84e1c656525fe2df0a076079e8d5edc096c23f0632e221b2c5d5ab15077a6bd"
+    },
+    {
+      "group": "final",
+      "ordinal": 65,
+      "name": "retires the original reverse readiness capture across the actual outgoing authorization await",
+      "fragmentSHA256": "9f2996617f36dcac47b36a9d6cef7f4c9ae22dfa538c70e31c46eda08150d145"
+    },
+    {
+      "group": "final",
+      "ordinal": 66,
+      "name": "retires the original reverse membership capture across the actual outgoing authorization await",
+      "fragmentSHA256": "d0c943f87f6de8b29b910a146c6290120efcedab59aae015ec7a093fe0938da1"
+    },
+    {
+      "group": "final",
+      "ordinal": 67,
+      "name": "retires the original reverse direct-promotion capture across the actual outgoing authorization await",
+      "fragmentSHA256": "573309a7d8b4ef0ba5911c9bb0aa8730cee6b1affcb1e6f9345c39bbfcb481e9"
+    },
+    {
+      "group": "final",
+      "ordinal": 68,
+      "name": "retires the original reverse host-instance capture across the actual outgoing authorization await",
+      "fragmentSHA256": "2dd3237875c735a6be7b9c39f801f3484c32ecdca15a00ff46f994a4b7b92d1d"
+    },
+    {
+      "group": "final",
+      "ordinal": 69,
+      "name": "does not turn a valid reverse capture into a positive outgoing grant",
+      "fragmentSHA256": "18957a3de2f29b4655088d0316a615e0eb65b28d30389d4ad5e8fa3ba41c6ff7"
+    },
+    {
+      "group": "final",
+      "ordinal": 70,
+      "name": "still refuses an unconnected ordinary outgoing target even when reverse is ready",
+      "fragmentSHA256": "0b0f066299a2526e96e313b29d7d25cd1950949b8a83429330252162ff5f4e0f"
+    },
+    {
+      "group": "final",
+      "ordinal": 71,
+      "name": "keeps the durable attempted marker if retirement follows its real save but precedes POST",
+      "fragmentSHA256": "5639066bd4abe015225ea934d79046406628ea37fc41afcf98de609c75ec3875"
+    },
+    {
+      "group": "final",
+      "ordinal": 72,
+      "name": "checks the same capture inside the actual deadline microtask immediately before POST",
+      "fragmentSHA256": "2d41c0ddd06281dbd461ab970dec582353ff6706f2e2370414526169f5b25208"
+    },
+    {
+      "group": "final",
+      "ordinal": 73,
+      "name": "retains the pending cancellation exception and original command ID after grant and connection revocation",
+      "fragmentSHA256": "27a140e29e8507539623e571e28062a5c806cbd6639eaa02dab279dd2f691a74"
+    },
+    {
+      "group": "final",
+      "ordinal": 74,
+      "name": "keeps authoritative receiver history queryable and ACK-able without fresh outgoing or incoming permission",
+      "fragmentSHA256": "9aef87966f61b5ace17bc0cfced5fca9f51f057d3c8e9a9faffddd9075e461d4"
+    },
+    {
+      "group": "final",
+      "ordinal": 75,
+      "name": "drains an already-admitted real history save on stop before replacement and retains normal committed-history notices",
+      "fragmentSHA256": "7b62ece4230824c6558aad79b786706c326da6be79a80d9541641bd19ace4a8f"
+    },
+    {
+      "group": "final",
+      "ordinal": 76,
+      "name": "keeps the actual posted-operation lease after outer deadline until real settlement",
+      "fragmentSHA256": "ddd062760e547102265ad0108c3896aef18e1150bf5e1f466675d095ed6651ca"
+    },
+    {
+      "group": "final",
+      "ordinal": 77,
+      "name": "keeps the actual scheduled-operation lease after outer deadline until real settlement",
+      "fragmentSHA256": "1c2cee5d975652ebe717fd7d97045e579429544e3dda9a8d36104fb09779dc0d"
+    },
+    {
+      "group": "final",
+      "ordinal": 78,
+      "name": "keeps the actual posted-rejection lease after outer deadline until real settlement",
+      "fragmentSHA256": "92a532ff059281e5b8018f87159ea770d6541bdc7b3fd68dfc253e779cea5893"
+    },
+    {
+      "group": "final",
+      "ordinal": 79,
+      "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=true",
+      "fragmentSHA256": "a8828446a733104bdfdf4c51ef2ed1eebdd3f9fd406be6f2cec47b911b5685f7"
+    },
+    {
+      "group": "final",
+      "ordinal": 80,
+      "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=false",
+      "fragmentSHA256": "6e6e85e2f0433d0acf9b84e87e9e30db5c9d7409b4ef3f0c585ee50456b54e39"
+    },
+    {
+      "group": "final",
+      "ordinal": 81,
+      "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=true",
+      "fragmentSHA256": "79d5ebea0204b30e3487277466a720a402ba6b15fc11d9e016fc549dd3e8979c"
+    },
+    {
+      "group": "final",
+      "ordinal": 82,
+      "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=false",
+      "fragmentSHA256": "1c9b89ddf488b0fc92d8f5b4a3751368c429303f18743a3670d477d4343d5ce5"
+    },
+    {
+      "group": "final",
+      "ordinal": 83,
+      "name": "native incoming decision admission > checks inside the actual held queue before the existing-offer decision",
+      "fragmentSHA256": "586b122bb7c6d7e33e5a90c468e5acb447a00ae065b809aa9b420e5a1ef49ab3"
+    },
+    {
+      "group": "final",
+      "ordinal": 84,
+      "name": "native incoming decision admission > checks inside the actual held queue before the terminal-cancelled-offer decision",
+      "fragmentSHA256": "31e7fd71e40322d8f4ce3404f75dd8c3e9250bce910e88bc2be2bf259404a485"
+    },
+    {
+      "group": "final",
+      "ordinal": 85,
+      "name": "native incoming decision admission > checks inside the actual held queue before the cancellation decision",
+      "fragmentSHA256": "fe8461f2900240708b782812caa1e4a214da13c310512947106423967105f4f6"
+    },
+    {
+      "group": "final",
+      "ordinal": 86,
+      "name": "native incoming decision admission > retains known history and cancellation exceptions while new incoming permission is withdrawn",
+      "fragmentSHA256": "3e44e755e53bb37ad302c1bfd030996f1a09338ad2fc34380e50ea726705054b"
+    },
+    {
+      "group": "final",
+      "ordinal": 87,
+      "name": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+      "fragmentSHA256": "4f62665cb75a6026a5d96cff1954df5497d0e28aedb0f9e23f00b3ced546bef3"
+    },
+    {
+      "group": "final",
+      "ordinal": 88,
+      "name": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+      "fragmentSHA256": "0429f9d7b78492a6c1cff502fcd82b985ca3d0421c0f3f28ea702136cbcbfb9f"
+    },
+    {
+      "group": "final",
+      "ordinal": 89,
+      "name": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+      "fragmentSHA256": "de5e860832c5e510222e77d9a27a70a25bf45731da4188481c78ea39309169bb"
+    },
+    {
+      "group": "final",
+      "ordinal": 90,
+      "name": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+      "fragmentSHA256": "65fc57eadc047bd9145c8bd58b8cb3ab9d445bc5c5859ec52cb02624332ba357"
+    },
+    {
+      "group": "final",
+      "ordinal": 91,
+      "name": "durable handoff agreement > declines durably and rejects acceptance after decline",
+      "fragmentSHA256": "6330ca0e90317bb3c9d6a8c3adc56a5676858ae689d44528d50dd625b8efbcca"
+    },
+    {
+      "group": "final",
+      "ordinal": 92,
+      "name": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+      "fragmentSHA256": "9be5f17e1b0694f74bd8f39e7f9de56af69e35fd54c097f6c5f5895a4858f450"
+    },
+    {
+      "group": "final",
+      "ordinal": 93,
+      "name": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+      "fragmentSHA256": "69f2846997987bd32769a6d5dd0cd0d893542720c13d41860e1fbd826c591db2"
+    },
+    {
+      "group": "final",
+      "ordinal": 94,
+      "name": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+      "fragmentSHA256": "1bffd46a5c7ed66376e62d2913cc0fc93ab97e276fa1984afe79dc8e8832e02b"
+    },
+    {
+      "group": "final",
+      "ordinal": 95,
+      "name": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+      "fragmentSHA256": "8d9f898830bcd04e6af0ab6eb827a1ce15e774902ff57006c670a7ad80503db1"
+    },
+    {
+      "group": "final",
+      "ordinal": 96,
+      "name": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+      "fragmentSHA256": "d519d9a375bd99c1aae053fcd406a4f138d57eb84e9f82af70b71c913ddb1b38"
+    },
+    {
+      "group": "final",
+      "ordinal": 97,
+      "name": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+      "fragmentSHA256": "1d638fb7d53f86196eb0564a84d3cbb65732dfd5adfcb3444b6678e818e6a71e"
+    },
+    {
+      "group": "final",
+      "ordinal": 98,
+      "name": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+      "fragmentSHA256": "6a107a3c9b09aa6443ca34aa514185d2c1c031772968bca582024172128d5f94"
+    },
+    {
+      "group": "final",
+      "ordinal": 99,
+      "name": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+      "fragmentSHA256": "26e756d69249e3252d10fc2b06cd62d2a08bbb1bd7575e35c2abed6de26c10c6"
+    },
+    {
+      "group": "final",
+      "ordinal": 100,
+      "name": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+      "fragmentSHA256": "76c0ec639f9135baa4b660579d7c77d632aa66a4ee222d33989005fc564a4d98"
+    },
+    {
+      "group": "final",
+      "ordinal": 101,
+      "name": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+      "fragmentSHA256": "ae360c9cbd85b87e3e8fe6ab2022fa91949a89d1f303bae6a63ca4c6598602c1"
+    },
+    {
+      "group": "final",
+      "ordinal": 102,
+      "name": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+      "fragmentSHA256": "a8adbd25001b0a44beeb57b8db6e7cba713a1a8b4d1bca3928ab3c2fd58f15cb"
+    },
+    {
+      "group": "final",
+      "ordinal": 103,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+      "fragmentSHA256": "599f7fa3141b240cc73f8532c996a11dac682fca57a54ce7a3db7a5c3bdcba69"
+    },
+    {
+      "group": "final",
+      "ordinal": 104,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+      "fragmentSHA256": "076098e2992a2a6b691e2a0ae24e589fb5a46f2303909d448ab84fede943bf6c"
+    },
+    {
+      "group": "final",
+      "ordinal": 105,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+      "fragmentSHA256": "eeee0038594ab6363239a75f453ed61f6af2f822ff1f65697f403e789698c61d"
+    },
+    {
+      "group": "final",
+      "ordinal": 106,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+      "fragmentSHA256": "24226dc57faffcf650340daa0ccb722e27e46876b6a1cde2742bb644fbe8bd9d"
+    },
+    {
+      "group": "final",
+      "ordinal": 107,
+      "name": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+      "fragmentSHA256": "901e5d5fa513c97350e26e5f0f404d5cdf409aed006427473d52aeba0006b0b1"
+    },
+    {
+      "group": "final",
+      "ordinal": 108,
+      "name": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+      "fragmentSHA256": "534fceff8544d82c809f5130c05c7e79b3d3d537d65f2d0d520c32e3f60908b3"
+    },
+    {
+      "group": "final",
+      "ordinal": 109,
+      "name": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+      "fragmentSHA256": "e2cea3133424a52043c2386ac6550106437dee0a952def269d8d9f3e18996d2a"
+    },
+    {
+      "group": "queue",
+      "ordinal": 0,
+      "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=true",
+      "fragmentSHA256": "b240b2c94ce3f1ff218314282ac764bd671234ddba6236580d5b239e1bea0f29"
+    },
+    {
+      "group": "queue",
+      "ordinal": 1,
+      "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=false",
+      "fragmentSHA256": "e43d218c348d0087adf0ccb3efc5fc0dfe858281bd7dfa5c1ada2a16748317c7"
+    },
+    {
+      "group": "queue",
+      "ordinal": 2,
+      "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=true",
+      "fragmentSHA256": "e78fa46ad2c1ddc12925def9714d8eca5a82db5e730e92c3abf4f4a113c68caf"
+    },
+    {
+      "group": "queue",
+      "ordinal": 3,
+      "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=false",
+      "fragmentSHA256": "b702348c63e6666be51e76b4607f0b01214e3933e62d4270aa2c1a2315a15285"
+    },
+    {
+      "group": "queue",
+      "ordinal": 4,
+      "name": "native incoming decision admission > checks inside the actual held queue before the existing-offer decision",
+      "fragmentSHA256": "93748b3dce3b6425e8c34cd5c837c402a7449fa99638a5ddf0ea068230406917"
+    },
+    {
+      "group": "queue",
+      "ordinal": 5,
+      "name": "native incoming decision admission > checks inside the actual held queue before the terminal-cancelled-offer decision",
+      "fragmentSHA256": "d09aa93e27ced8d001d29da854f71c7b36a7b1c770bf38860a5e72e5d8a5f73a"
+    },
+    {
+      "group": "queue",
+      "ordinal": 6,
+      "name": "native incoming decision admission > checks inside the actual held queue before the cancellation decision",
+      "fragmentSHA256": "a15d41de70a0b8ebe64f8040e37c7cee50f6651522dc98e17e48fd5475db1be7"
+    },
+    {
+      "group": "queue",
+      "ordinal": 7,
+      "name": "native incoming decision admission > retains known history and cancellation exceptions while new incoming permission is withdrawn",
+      "fragmentSHA256": "ffa13562f282d856c1e70883a9768dad59fea601f5d883eee34bb807b6942b32"
+    },
+    {
+      "group": "queue",
+      "ordinal": 8,
+      "name": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+      "fragmentSHA256": "4f62665cb75a6026a5d96cff1954df5497d0e28aedb0f9e23f00b3ced546bef3"
+    },
+    {
+      "group": "queue",
+      "ordinal": 9,
+      "name": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+      "fragmentSHA256": "0429f9d7b78492a6c1cff502fcd82b985ca3d0421c0f3f28ea702136cbcbfb9f"
+    },
+    {
+      "group": "queue",
+      "ordinal": 10,
+      "name": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+      "fragmentSHA256": "de5e860832c5e510222e77d9a27a70a25bf45731da4188481c78ea39309169bb"
+    },
+    {
+      "group": "queue",
+      "ordinal": 11,
+      "name": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+      "fragmentSHA256": "65fc57eadc047bd9145c8bd58b8cb3ab9d445bc5c5859ec52cb02624332ba357"
+    },
+    {
+      "group": "queue",
+      "ordinal": 12,
+      "name": "durable handoff agreement > declines durably and rejects acceptance after decline",
+      "fragmentSHA256": "6330ca0e90317bb3c9d6a8c3adc56a5676858ae689d44528d50dd625b8efbcca"
+    },
+    {
+      "group": "queue",
+      "ordinal": 13,
+      "name": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+      "fragmentSHA256": "9be5f17e1b0694f74bd8f39e7f9de56af69e35fd54c097f6c5f5895a4858f450"
+    },
+    {
+      "group": "queue",
+      "ordinal": 14,
+      "name": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+      "fragmentSHA256": "69f2846997987bd32769a6d5dd0cd0d893542720c13d41860e1fbd826c591db2"
+    },
+    {
+      "group": "queue",
+      "ordinal": 15,
+      "name": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+      "fragmentSHA256": "1bffd46a5c7ed66376e62d2913cc0fc93ab97e276fa1984afe79dc8e8832e02b"
+    },
+    {
+      "group": "queue",
+      "ordinal": 16,
+      "name": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+      "fragmentSHA256": "8d9f898830bcd04e6af0ab6eb827a1ce15e774902ff57006c670a7ad80503db1"
+    },
+    {
+      "group": "queue",
+      "ordinal": 17,
+      "name": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+      "fragmentSHA256": "d519d9a375bd99c1aae053fcd406a4f138d57eb84e9f82af70b71c913ddb1b38"
+    },
+    {
+      "group": "queue",
+      "ordinal": 18,
+      "name": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+      "fragmentSHA256": "1d638fb7d53f86196eb0564a84d3cbb65732dfd5adfcb3444b6678e818e6a71e"
+    },
+    {
+      "group": "queue",
+      "ordinal": 19,
+      "name": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+      "fragmentSHA256": "6a107a3c9b09aa6443ca34aa514185d2c1c031772968bca582024172128d5f94"
+    },
+    {
+      "group": "queue",
+      "ordinal": 20,
+      "name": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+      "fragmentSHA256": "26e756d69249e3252d10fc2b06cd62d2a08bbb1bd7575e35c2abed6de26c10c6"
+    },
+    {
+      "group": "queue",
+      "ordinal": 21,
+      "name": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+      "fragmentSHA256": "76c0ec639f9135baa4b660579d7c77d632aa66a4ee222d33989005fc564a4d98"
+    },
+    {
+      "group": "queue",
+      "ordinal": 22,
+      "name": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+      "fragmentSHA256": "ae360c9cbd85b87e3e8fe6ab2022fa91949a89d1f303bae6a63ca4c6598602c1"
+    },
+    {
+      "group": "queue",
+      "ordinal": 23,
+      "name": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+      "fragmentSHA256": "a8adbd25001b0a44beeb57b8db6e7cba713a1a8b4d1bca3928ab3c2fd58f15cb"
+    },
+    {
+      "group": "queue",
+      "ordinal": 24,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+      "fragmentSHA256": "599f7fa3141b240cc73f8532c996a11dac682fca57a54ce7a3db7a5c3bdcba69"
+    },
+    {
+      "group": "queue",
+      "ordinal": 25,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+      "fragmentSHA256": "076098e2992a2a6b691e2a0ae24e589fb5a46f2303909d448ab84fede943bf6c"
+    },
+    {
+      "group": "queue",
+      "ordinal": 26,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+      "fragmentSHA256": "eeee0038594ab6363239a75f453ed61f6af2f822ff1f65697f403e789698c61d"
+    },
+    {
+      "group": "queue",
+      "ordinal": 27,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+      "fragmentSHA256": "24226dc57faffcf650340daa0ccb722e27e46876b6a1cde2742bb644fbe8bd9d"
+    },
+    {
+      "group": "queue",
+      "ordinal": 28,
+      "name": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+      "fragmentSHA256": "901e5d5fa513c97350e26e5f0f404d5cdf409aed006427473d52aeba0006b0b1"
+    },
+    {
+      "group": "queue",
+      "ordinal": 29,
+      "name": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+      "fragmentSHA256": "534fceff8544d82c809f5130c05c7e79b3d3d537d65f2d0d520c32e3f60908b3"
+    },
+    {
+      "group": "queue",
+      "ordinal": 30,
+      "name": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+      "fragmentSHA256": "e2cea3133424a52043c2386ac6550106437dee0a952def269d8d9f3e18996d2a"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 0,
+      "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+      "fragmentSHA256": "cb91ae11fad8407fd035b0eb78abf433f4cae79b09bd0f8c834e3ac93a4768de"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 1,
+      "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+      "fragmentSHA256": "eb3acd7d45f53707897c6b4800d3e022a239a55cb8d0f6b1eb470e54ee94ba86"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 2,
+      "name": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+      "fragmentSHA256": "e25ba496e79c68a26483e9884a5183bcbc70273ef278afac243c99377ef0b128"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 3,
+      "name": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+      "fragmentSHA256": "c9d79f8ca1de1e28ea915404a01bbed4239d4a53e569a43dd5f74656647ab152"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 4,
+      "name": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+      "fragmentSHA256": "f3af8a26bad62f6d21daa81ca2b3bf2c6d3c215d7fe6f229ff87ddb0039d7c05"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 5,
+      "name": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+      "fragmentSHA256": "f9693706ff7b9c8645969f0ddd99fe2863a51bb3cf1fde110ee4e57e15e81512"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 6,
+      "name": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+      "fragmentSHA256": "df9163f66823172c55aafbecc575830928063a2dacf17eb87d4324eec712f37f"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 7,
+      "name": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+      "fragmentSHA256": "3699b410b02c09a60752d8a5d2ce182fda3ae28dc2560ebff8897a85412a122e"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 8,
+      "name": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+      "fragmentSHA256": "e7ccc121b10d1c8ecdc5e2411cf0802f9ad895063dbc8f867e6626ba7f7ce82c"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 9,
+      "name": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+      "fragmentSHA256": "06b255e5418c08608da4ea15c978ddbffb9486cabad77b0d7d06077e54cf3fc9"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 10,
+      "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+      "fragmentSHA256": "81fa75f4b2f295a82b16a895551ca8e5badb3edd52f8c9e9ddb87fe2cab7d907"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 11,
+      "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+      "fragmentSHA256": "d5a60a2d28c2e87fe179c746dfdcc048df2fa7d3c042f5ff31e2cb01e29d5a63"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 12,
+      "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+      "fragmentSHA256": "cf7d20572a977817ad0997b49b6164e572393368506bc65e4a63ede333e91d89"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 13,
+      "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=true",
+      "fragmentSHA256": "41eba09c7664541db5ab998b0d5bb1c1122da076120fd9d4eb1f15c995a3c64b"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 14,
+      "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=false",
+      "fragmentSHA256": "57f2cecab6bbeaca83794fc8ec7a7f5453825000d54359b0b5a68c740ad4c7b4"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 15,
+      "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=true",
+      "fragmentSHA256": "b012645d452e0579ff86cfca31d3c9b74707c59301db011fa7740a86e92d3104"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 16,
+      "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=false",
+      "fragmentSHA256": "2eb49c7ce0efc120f17da2ae5f80fd96405e4f805b22e2634c588d97257e16b6"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 17,
+      "name": "native incoming decision admission > checks inside the actual held queue before the existing-offer decision",
+      "fragmentSHA256": "5ad9137b9f1ded8519ae451f23cad4d8e28732060b60f0874aeb1b0908bbea5c"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 18,
+      "name": "native incoming decision admission > checks inside the actual held queue before the terminal-cancelled-offer decision",
+      "fragmentSHA256": "1a79b7de9bad53c73923b0ec4c30eaa66a732d613597993d1dc17d3a1afeabab"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 19,
+      "name": "native incoming decision admission > checks inside the actual held queue before the cancellation decision",
+      "fragmentSHA256": "cac997402e76b73e1c502d5e3ca6ab7406953d546a373070e8f4b27b7b87a1ac"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 20,
+      "name": "native incoming decision admission > retains known history and cancellation exceptions while new incoming permission is withdrawn",
+      "fragmentSHA256": "758907be58dd348abfca075f94274686b474bbc9ebe29d4813cb71440c033672"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 21,
+      "name": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+      "fragmentSHA256": "4f62665cb75a6026a5d96cff1954df5497d0e28aedb0f9e23f00b3ced546bef3"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 22,
+      "name": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+      "fragmentSHA256": "0429f9d7b78492a6c1cff502fcd82b985ca3d0421c0f3f28ea702136cbcbfb9f"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 23,
+      "name": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+      "fragmentSHA256": "de5e860832c5e510222e77d9a27a70a25bf45731da4188481c78ea39309169bb"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 24,
+      "name": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+      "fragmentSHA256": "65fc57eadc047bd9145c8bd58b8cb3ab9d445bc5c5859ec52cb02624332ba357"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 25,
+      "name": "durable handoff agreement > declines durably and rejects acceptance after decline",
+      "fragmentSHA256": "6330ca0e90317bb3c9d6a8c3adc56a5676858ae689d44528d50dd625b8efbcca"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 26,
+      "name": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+      "fragmentSHA256": "9be5f17e1b0694f74bd8f39e7f9de56af69e35fd54c097f6c5f5895a4858f450"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 27,
+      "name": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+      "fragmentSHA256": "69f2846997987bd32769a6d5dd0cd0d893542720c13d41860e1fbd826c591db2"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 28,
+      "name": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+      "fragmentSHA256": "1bffd46a5c7ed66376e62d2913cc0fc93ab97e276fa1984afe79dc8e8832e02b"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 29,
+      "name": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+      "fragmentSHA256": "8d9f898830bcd04e6af0ab6eb827a1ce15e774902ff57006c670a7ad80503db1"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 30,
+      "name": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+      "fragmentSHA256": "d519d9a375bd99c1aae053fcd406a4f138d57eb84e9f82af70b71c913ddb1b38"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 31,
+      "name": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+      "fragmentSHA256": "1d638fb7d53f86196eb0564a84d3cbb65732dfd5adfcb3444b6678e818e6a71e"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 32,
+      "name": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+      "fragmentSHA256": "6a107a3c9b09aa6443ca34aa514185d2c1c031772968bca582024172128d5f94"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 33,
+      "name": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+      "fragmentSHA256": "26e756d69249e3252d10fc2b06cd62d2a08bbb1bd7575e35c2abed6de26c10c6"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 34,
+      "name": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+      "fragmentSHA256": "76c0ec639f9135baa4b660579d7c77d632aa66a4ee222d33989005fc564a4d98"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 35,
+      "name": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+      "fragmentSHA256": "ae360c9cbd85b87e3e8fe6ab2022fa91949a89d1f303bae6a63ca4c6598602c1"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 36,
+      "name": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+      "fragmentSHA256": "a8adbd25001b0a44beeb57b8db6e7cba713a1a8b4d1bca3928ab3c2fd58f15cb"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 37,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+      "fragmentSHA256": "599f7fa3141b240cc73f8532c996a11dac682fca57a54ce7a3db7a5c3bdcba69"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 38,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+      "fragmentSHA256": "076098e2992a2a6b691e2a0ae24e589fb5a46f2303909d448ab84fede943bf6c"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 39,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+      "fragmentSHA256": "eeee0038594ab6363239a75f453ed61f6af2f822ff1f65697f403e789698c61d"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 40,
+      "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+      "fragmentSHA256": "24226dc57faffcf650340daa0ccb722e27e46876b6a1cde2742bb644fbe8bd9d"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 41,
+      "name": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+      "fragmentSHA256": "901e5d5fa513c97350e26e5f0f404d5cdf409aed006427473d52aeba0006b0b1"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 42,
+      "name": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+      "fragmentSHA256": "534fceff8544d82c809f5130c05c7e79b3d3d537d65f2d0d520c32e3f60908b3"
+    },
+    {
+      "group": "postauth",
+      "ordinal": 43,
+      "name": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+      "fragmentSHA256": "e2cea3133424a52043c2386ac6550106437dee0a952def269d8d9f3e18996d2a"
+    }
+  ],
+  "protectedTrees": [
+    {
+      "path": "test/fixtures",
+      "tree": "547b613aefe0e14abfb27b049d2407d13675c3a2"
+    },
+    {
+      "path": "docs/evidence/3613-native-handoff-ingress/baseline",
+      "tree": "e7012a1d3c3ec7865959cac69bf1a1bed0aa713a"
+    },
+    {
+      "path": "docs/evidence/3613-native-handoff-ingress/candidate",
+      "tree": "2c4f74c5c2ce755d120ef4a806acbbb7f8b51f7a"
+    },
+    {
+      "path": "docs/evidence/3613-reverse-handoff",
+      "tree": "dfdca9d6da91dfac5cd7c874ac739e02fabd1e85"
+    },
+    {
+      "path": "docs/evidence/3613-handoff-reverse-sync",
+      "tree": "978b83b9dc77794736180683fdf8cd617d0e719d"
+    }
+  ],
+  "protectedFiles": [
+    {
+      "path": "src/main/services/annex-peers.ts",
+      "blob": "b85f7eece758f9d1bf400d6ab85bf1b51bbd764d"
+    },
+    {
+      "path": "src/main/services/annex-client.ts",
+      "blob": "87dc6c769e81a1b5dd6e0a9e38948e1ceaceabd7"
+    },
+    {
+      "path": "src/main/services/annex-authorizer.ts",
+      "blob": "b88180d9ac2c9f855691e731bc71eec0903cd824"
+    },
+    {
+      "path": "src/main/services/annex-control.ts",
+      "blob": "065b48063fed54a6114dbe5b1d316530b97517ce"
+    },
+    {
+      "path": "src/shared/annex-control-protocol.ts",
+      "blob": "6ee5ef77a8d978da390838dde7e450ac05374d78"
+    },
+    {
+      "path": "src/main/services/handoff-service.ts",
+      "blob": "72e02b6700ad5cce8d3667822c2abec386924617"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.ts",
+      "blob": "185ab771d3a14becc89b54e55bf832b854c12ba9"
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "blob": "0c4cc42034ade17e8dcc05dd53d0cec4f0df3969"
+    },
+    {
+      "path": "docs/annex-route-contract-3611.md",
+      "blob": "6e730374c6bc8c7e7c1a9c2afc453f0bc0cecfed"
+    },
+    {
+      "path": "package.json",
+      "blob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8"
+    },
+    {
+      "path": "package-lock.json",
+      "blob": "7e45389f84ca58c5c7832cab169aa5674320d25d"
+    },
+    {
+      "path": "tsconfig.json",
+      "blob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "blob": "976d18982b0d82dad5e924939921613aca8b29d3"
+    }
+  ],
+  "reviewerProductExecution": false,
+  "aggregateSuccessorExecutionClaimed": false,
+  "preservedTreesIndependentlyEqualOriginal0da": true,
+  "protectedFilesIndependentlyEqualOriginal940": true
+}
