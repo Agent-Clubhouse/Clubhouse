@@ -274,12 +274,21 @@ describe('annex-handlers', () => {
 
   // --- PURGE_SERVER_CONFIG ---
 
-  it('REMOVE_PEER revokes the pairing (closing its connections) and broadcasts the list', () => {
+  it('REMOVE_PEER revokes before forgetting the outgoing connection and broadcasting the list', () => {
     const handler = handlers.get(IPC.ANNEX.REMOVE_PEER)!;
     expect(handler({}, 'fp:phone')).toBe(true);
     expect(annexServer.revokePeer).toHaveBeenCalledWith('fp:phone');
+    expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:phone');
+    expect(vi.mocked(annexServer.revokePeer).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(annexClient.forgetSatellite).mock.invocationCallOrder[0]);
     expect(annexPeers.removePeer).not.toHaveBeenCalled();
     expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.PEERS_CHANGED, []);
+  });
+
+  it('REMOVE_PEER forgets retained outgoing state even when its pairing is already absent', () => {
+    vi.mocked(annexServer.revokePeer).mockReturnValueOnce(false);
+    expect(handlers.get(IPC.ANNEX.REMOVE_PEER)!({}, 'fp:gone')).toBe(false);
+    expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:gone');
+    expect(broadcastToAllWindows).not.toHaveBeenCalled();
   });
 
   it('LIST_DEVICES answers with the one device list', () => {
@@ -327,9 +336,18 @@ describe('annex-handlers', () => {
     }
   });
 
-  it('REMOVE_ALL_PEERS revokes every pairing', () => {
+  it('REMOVE_ALL_PEERS captures the pairings before revocation and forgets each outgoing owner', () => {
+    const peers = ['fp:one', 'fp:two', 'fp:phone'].map((fingerprint) => ({
+      fingerprint, publicKey: fingerprint, alias: fingerprint, icon: 'computer', color: 'indigo',
+      pairedAt: '', lastSeen: '',
+    }));
+    vi.mocked(annexPeers.listPeers).mockReturnValueOnce(peers);
+    vi.mocked(annexServer.revokeAllPeers).mockImplementationOnce(() => { peers.length = 0; });
     handlers.get(IPC.ANNEX.REMOVE_ALL_PEERS)!({});
     expect(annexServer.revokeAllPeers).toHaveBeenCalled();
+    expect(vi.mocked(annexClient.forgetSatellite).mock.calls).toEqual([['fp:one'], ['fp:two'], ['fp:phone']]);
+    expect(vi.mocked(annexServer.revokeAllPeers).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(annexClient.forgetSatellite).mock.invocationCallOrder[0]);
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.PEERS_CHANGED, []);
   });
 
   it('LIST_PEERS marks entries that need pairing again', () => {

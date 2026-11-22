@@ -1151,6 +1151,117 @@ describe('annex-client', () => {
     });
   });
 
+  describe('legacy peer-removal IPC outgoing retirement (#3711)', () => {
+    type PeerSocket = EventEmitter & {
+      readyState: number;
+      socket: ReturnType<typeof makeMockSocket>;
+      send: ReturnType<typeof vi.fn>;
+      ping: ReturnType<typeof vi.fn>;
+      close: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    };
+    let handlers: Map<string, (...args: unknown[]) => unknown>;
+    let peers: Map<string, AnnexPeer>;
+    let sockets: Map<string, PeerSocket>;
+
+    const frame = (socket: PeerSocket, lastSeq: number, id: string): void => {
+      socket.emit('message', Buffer.from(JSON.stringify({ type: 'snapshot', payload: {
+        protocolVersion: 2, lastSeq, projects: [{ id }], agents: {}, quickAgents: {},
+      } })));
+    };
+
+    beforeEach(async () => {
+      vi.useFakeTimers();
+      peers = new Map<string, AnnexPeer>(['remove-one', 'remove-two'].map((fingerprint, index) => [fingerprint, {
+        fingerprint, publicKey: fingerprint, alias: fingerprint, icon: 'computer', color: 'indigo',
+        pairedAt: '', lastSeen: '', role: 'satellite', kind: 'desktop',
+        tlsCertificateFingerprint: `${fingerprint}-pin`, tlsCertificatePem: `${fingerprint}-cert`,
+        knownHosts: ['satellite.local'], mainPort: 9000 + index,
+      }]));
+      sockets = new Map();
+      vi.mocked(annexPeers.getPeer).mockImplementation((fingerprint) => peers.get(fingerprint));
+      vi.mocked(annexPeers.listPeers).mockImplementation(() => [...peers.values()]);
+      vi.mocked(annexPeers.removePeer).mockImplementation((fingerprint) => peers.delete(fingerprint));
+      vi.mocked(annexPeers.removeAllPeers).mockImplementation(() => { peers.clear(); });
+      WebSocketMock.mockImplementation(function (url: string) {
+        const peer = [...peers.values()].find((candidate) => candidate.mainPort === Number(new URL(url).port));
+        if (!peer) throw new Error(`Unexpected removal-fixture dial: ${url}`);
+        const socket = Object.assign(new EventEmitter(), {
+          readyState: WebSocketMock.OPEN, socket: makeMockSocket(peer.fingerprint),
+          send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn(),
+        });
+        socket.ping.mockImplementation(() => { setTimeout(() => socket.emit('pong'), 0); });
+        sockets.set(peer.fingerprint, socket);
+        return socket;
+      });
+      handlers = new Map();
+      vi.spyOn(ipcMain, 'handle').mockImplementation((channel, handler) => { handlers.set(channel, handler); });
+      const { registerAnnexHandlers } = await import('../ipc/annex-handlers');
+      registerAnnexHandlers();
+      annexClient.startClient();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sockets.size).toBe(2);
+      for (const [fingerprint, socket] of sockets) {
+        socket.emit('open');
+        frame(socket, 1, `${fingerprint}-before`);
+        expect(annexClient.isMachineConnected(fingerprint)).toBe(true);
+        expect(annexClient.getSatellite(fingerprint)?.snapshot?.projects).toEqual([{ id: `${fingerprint}-before` }]);
+        expect(annexClient.sendToSatellite(fingerprint, { type: 'ping' })).toEqual({ sent: true });
+        expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'ping' }));
+      }
+    });
+
+    afterEach(() => {
+      resetDeviceSignalForTests();
+    });
+
+    it.each(['REMOVE_PEER', 'REMOVE_ALL_PEERS'] as const)('%s retires sends and late frames without reviving its outgoing owner', async (channel) => {
+      const removed = channel === 'REMOVE_PEER' ? ['remove-one'] : [...peers.keys()];
+      expect(handlers.get(IPC.ANNEX[channel])!({}, 'remove-one')).toBe(channel === 'REMOVE_PEER' ? true : undefined);
+      vi.mocked(broadcastToAllWindows).mockClear();
+      const observed = removed.map((fingerprint) => {
+        const socket = sockets.get(fingerprint)!;
+        const writesBefore = socket.send.mock.calls.length;
+        const sent = annexClient.sendToSatellite(fingerprint, { type: 'agent:kill', payload: { agentId: 'removed-agent' } });
+        frame(socket, 2, `${fingerprint}-late`);
+        const result = {
+          fingerprint, connected: annexClient.isMachineConnected(fingerprint),
+          satellite: annexClient.getSatellite(fingerprint), sent,
+          extraWrites: socket.send.mock.calls.length - writesBefore,
+          socketClosed: socket.close.mock.calls.length,
+        };
+        socket.emit('close', 1006, Buffer.from('late close'));
+        socket.emit('error', new Error('late socket failure'));
+        socket.emit('open');
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect({
+        retired: observed,
+        lateEvents: vi.mocked(broadcastToAllWindows).mock.calls.filter(([event]) => event === IPC.ANNEX.SATELLITE_EVENT),
+        dials: WebSocketMock.mock.calls.length,
+        retainedRemoved: removed.filter((fingerprint) => annexClient.getSatellite(fingerprint) !== null),
+      }).toEqual({
+        retired: removed.map((fingerprint) => ({
+          fingerprint, connected: false, satellite: null, sent: { sent: false, error: 'not_connected' },
+          extraWrites: 0, socketClosed: 1,
+        })),
+        lateEvents: [], dials: 2, retainedRemoved: [],
+      });
+      if (channel === 'REMOVE_PEER') {
+        const other = sockets.get('remove-two')!;
+        other.emit('pong');
+        expect(peers.has('remove-two')).toBe(true);
+        expect(annexClient.isMachineConnected('remove-two')).toBe(true);
+        expect(annexClient.sendToSatellite('remove-two', { type: 'ping' })).toEqual({ sent: true });
+        frame(other, 2, 'unremoved-live');
+        expect(annexClient.getSatellite('remove-two')?.snapshot?.projects).toEqual([{ id: 'unremoved-live' }]);
+      } else {
+        expect(peers.size).toBe(0);
+      }
+    });
+  });
+
   // ---- forgetAllSatellites ----
 
   describe('forgetAllSatellites', () => {
