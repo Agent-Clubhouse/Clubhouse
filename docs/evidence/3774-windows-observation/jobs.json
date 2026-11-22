@@ -1,0 +1,4341 @@
+{
+  "total_count": 37,
+  "jobs": [
+    {
+      "id": 137111303196,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7Hh0HA",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111303196",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111303196",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:23Z",
+      "started_at": "2026-11-22T05:46:25Z",
+      "completed_at": "2026-11-22T05:46:42Z",
+      "name": "Plan the run",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:26Z",
+          "completed_at": "2026-11-22T05:46:28Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:28Z",
+          "completed_at": "2026-11-22T05:46:34Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:34Z",
+          "completed_at": "2026-11-22T05:46:38Z"
+        },
+        {
+          "name": "Check paths are valid on Windows",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:46:38Z",
+          "completed_at": "2026-11-22T05:46:38Z"
+        },
+        {
+          "name": "Check the CLI kill switch list isn't reset",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:46:38Z",
+          "completed_at": "2026-11-22T05:46:38Z"
+        },
+        {
+          "name": "Classify the change",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:46:38Z",
+          "completed_at": "2026-11-22T05:46:38Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-22T05:46:38Z",
+          "completed_at": "2026-11-22T05:46:38Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-22T05:46:38Z",
+          "completed_at": "2026-11-22T05:46:38Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-22T05:46:38Z",
+          "completed_at": "2026-11-22T05:46:38Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111303196",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336007,
+      "runner_name": "GitHub Actions 1000336007",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111303863,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7Hh2tw",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111303863",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111303863",
+      "status": "completed",
+      "conclusion": "skipped",
+      "created_at": "2026-11-22T05:46:23Z",
+      "started_at": "2026-11-22T05:46:23Z",
+      "completed_at": "2026-11-22T05:46:23Z",
+      "name": "Dependency resolution preflight",
+      "steps": [],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111303863",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": null,
+      "runner_name": null,
+      "runner_group_id": null,
+      "runner_group_name": null
+    },
+    {
+      "id": 137111373265,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmF0Q",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373265",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373265",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:44Z",
+      "completed_at": "2026-11-22T05:48:21Z",
+      "name": "ESLint (errors only)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:45Z",
+          "completed_at": "2026-11-22T05:46:46Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:46Z",
+          "completed_at": "2026-11-22T05:46:51Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:51Z",
+          "completed_at": "2026-11-22T05:46:57Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:46:57Z",
+          "completed_at": "2026-11-22T05:47:43Z"
+        },
+        {
+          "name": "Run npm run lint",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:47:43Z",
+          "completed_at": "2026-11-22T05:48:19Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:48:19Z",
+          "completed_at": "2026-11-22T05:48:19Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:48:19Z",
+          "completed_at": "2026-11-22T05:48:19Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-22T05:48:19Z",
+          "completed_at": "2026-11-22T05:48:19Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373265",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336010,
+      "runner_name": "GitHub Actions 1000336010",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373285,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmF5Q",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373285",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373285",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:44Z",
+      "completed_at": "2026-11-22T05:50:16Z",
+      "name": "Copilot SDK chunk (windows-2022)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:45Z",
+          "completed_at": "2026-11-22T05:46:46Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:46Z",
+          "completed_at": "2026-11-22T05:46:53Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:53Z",
+          "completed_at": "2026-11-22T05:47:17Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:47:17Z",
+          "completed_at": "2026-11-22T05:47:19Z"
+        },
+        {
+          "name": "Run npm ci --foreground-scripts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:47:19Z",
+          "completed_at": "2026-11-22T05:48:37Z"
+        },
+        {
+          "name": "Check koffi used its prebuilt binary",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:48:37Z",
+          "completed_at": "2026-11-22T05:48:38Z"
+        },
+        {
+          "name": "Run node scripts/check-copilot-sdk-chunk.mjs --static-only",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:48:38Z",
+          "completed_at": "2026-11-22T05:50:12Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-22T05:50:12Z",
+          "completed_at": "2026-11-22T05:50:13Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-22T05:50:13Z",
+          "completed_at": "2026-11-22T05:50:13Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-22T05:50:13Z",
+          "completed_at": "2026-11-22T05:50:15Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-11-22T05:50:15Z",
+          "completed_at": "2026-11-22T05:50:15Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373285",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336008,
+      "runner_name": "GitHub Actions 1000336008",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373308,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmF_A",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373308",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373308",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:44Z",
+      "completed_at": "2026-11-22T05:48:19Z",
+      "name": "Typecheck + API surface",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:45Z",
+          "completed_at": "2026-11-22T05:46:45Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:45Z",
+          "completed_at": "2026-11-22T05:46:49Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:49Z",
+          "completed_at": "2026-11-22T05:46:58Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:46:58Z",
+          "completed_at": "2026-11-22T05:47:50Z"
+        },
+        {
+          "name": "Run npx tsc --noEmit",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:47:50Z",
+          "completed_at": "2026-11-22T05:48:14Z"
+        },
+        {
+          "name": "Run npm run check:test-coverage-ratchet",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:48:14Z",
+          "completed_at": "2026-11-22T05:48:14Z"
+        },
+        {
+          "name": "Run npx vitest run --project renderer plugin-api-version-contracts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:48:14Z",
+          "completed_at": "2026-11-22T05:48:16Z"
+        },
+        {
+          "name": "Check plugin-types changes",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:48:16Z",
+          "completed_at": "2026-11-22T05:48:16Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-11-22T05:48:16Z",
+          "completed_at": "2026-11-22T05:48:16Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-11-22T05:48:16Z",
+          "completed_at": "2026-11-22T05:48:16Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17,
+          "started_at": "2026-11-22T05:48:16Z",
+          "completed_at": "2026-11-22T05:48:16Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373308",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336017,
+      "runner_name": "GitHub Actions 1000336017",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373317,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmGBQ",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373317",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373317",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:45Z",
+      "completed_at": "2026-11-22T05:46:59Z",
+      "name": "Workflow lint (actionlint)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:46Z",
+          "completed_at": "2026-11-22T05:46:47Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:47Z",
+          "completed_at": "2026-11-22T05:46:53Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:53Z",
+          "completed_at": "2026-11-22T05:46:55Z"
+        },
+        {
+          "name": "Download actionlint",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:46:55Z",
+          "completed_at": "2026-11-22T05:46:55Z"
+        },
+        {
+          "name": "Run ./actionlint -shellcheck= -pyflakes=",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:46:55Z",
+          "completed_at": "2026-11-22T05:46:55Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:46:55Z",
+          "completed_at": "2026-11-22T05:46:56Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:46:56Z",
+          "completed_at": "2026-11-22T05:46:56Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-22T05:46:56Z",
+          "completed_at": "2026-11-22T05:46:56Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373317",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336013,
+      "runner_name": "GitHub Actions 1000336013",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373320,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmGCA",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373320",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373320",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:44Z",
+      "completed_at": "2026-11-22T05:53:52Z",
+      "name": "Unit + Component Tests (windows-latest, 1/2)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:44Z",
+          "completed_at": "2026-11-22T05:46:45Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:45Z",
+          "completed_at": "2026-11-22T05:46:51Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:51Z",
+          "completed_at": "2026-11-22T05:47:08Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:47:08Z",
+          "completed_at": "2026-11-22T05:47:55Z"
+        },
+        {
+          "name": "Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:47:55Z",
+          "completed_at": "2026-11-22T05:53:48Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:53:48Z",
+          "completed_at": "2026-11-22T05:53:49Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-22T05:53:49Z",
+          "completed_at": "2026-11-22T05:53:49Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-22T05:53:49Z",
+          "completed_at": "2026-11-22T05:53:51Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-22T05:53:51Z",
+          "completed_at": "2026-11-22T05:53:51Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373320",
+      "labels": [
+        "windows-latest"
+      ],
+      "runner_id": 1000336016,
+      "runner_name": "GitHub Actions 1000336016",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373322,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmGCg",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373322",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373322",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:46Z",
+      "completed_at": "2026-11-22T06:07:19Z",
+      "name": "Unit + Component Tests (windows-latest, 2/2)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:47Z",
+          "completed_at": "2026-11-22T05:46:49Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:49Z",
+          "completed_at": "2026-11-22T05:46:58Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:58Z",
+          "completed_at": "2026-11-22T05:47:22Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:47:22Z",
+          "completed_at": "2026-11-22T05:48:36Z"
+        },
+        {
+          "name": "Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:48:36Z",
+          "completed_at": "2026-11-22T06:07:12Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T06:07:12Z",
+          "completed_at": "2026-11-22T06:07:14Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-22T06:07:14Z",
+          "completed_at": "2026-11-22T06:07:15Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-22T06:07:15Z",
+          "completed_at": "2026-11-22T06:07:17Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-22T06:07:17Z",
+          "completed_at": "2026-11-22T06:07:17Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373322",
+      "labels": [
+        "windows-latest"
+      ],
+      "runner_id": 1000336009,
+      "runner_name": "GitHub Actions 1000336009",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373325,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmGDQ",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373325",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373325",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:44Z",
+      "completed_at": "2026-11-22T05:55:15Z",
+      "name": "Unit + Component Tests (ubuntu-latest, 2/2)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:45Z",
+          "completed_at": "2026-11-22T05:46:46Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:46Z",
+          "completed_at": "2026-11-22T05:46:48Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:48Z",
+          "completed_at": "2026-11-22T05:46:55Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:46:55Z",
+          "completed_at": "2026-11-22T05:47:59Z"
+        },
+        {
+          "name": "Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:47:59Z",
+          "completed_at": "2026-11-22T05:55:12Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:55:12Z",
+          "completed_at": "2026-11-22T05:55:13Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-22T05:55:13Z",
+          "completed_at": "2026-11-22T05:55:13Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-22T05:55:13Z",
+          "completed_at": "2026-11-22T05:55:14Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-22T05:55:14Z",
+          "completed_at": "2026-11-22T05:55:14Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373325",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336015,
+      "runner_name": "GitHub Actions 1000336015",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373329,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmGEQ",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373329",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373329",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:44Z",
+      "completed_at": "2026-11-22T05:55:01Z",
+      "name": "Build app (ubuntu-latest)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:45Z",
+          "completed_at": "2026-11-22T05:46:46Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:46Z",
+          "completed_at": "2026-11-22T05:46:48Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:48Z",
+          "completed_at": "2026-11-22T05:46:55Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:46:55Z",
+          "completed_at": "2026-11-22T05:46:55Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:46:55Z",
+          "completed_at": "2026-11-22T05:46:57Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:46:57Z",
+          "completed_at": "2026-11-22T05:48:03Z"
+        },
+        {
+          "name": "Build app",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:48:03Z",
+          "completed_at": "2026-11-22T05:54:52Z"
+        },
+        {
+          "name": "Build unsigned isolated macOS test artifact",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:54:52Z",
+          "completed_at": "2026-11-22T05:54:52Z"
+        },
+        {
+          "name": "Verify actual packaged Windows runtime",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T05:54:52Z",
+          "completed_at": "2026-11-22T05:54:52Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-11-22T05:54:52Z",
+          "completed_at": "2026-11-22T05:54:52Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11,
+          "started_at": "2026-11-22T05:54:52Z",
+          "completed_at": "2026-11-22T05:54:52Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-22T05:54:52Z",
+          "completed_at": "2026-11-22T05:54:59Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-11-22T05:54:59Z",
+          "completed_at": "2026-11-22T05:54:59Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-11-22T05:54:59Z",
+          "completed_at": "2026-11-22T05:54:59Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24,
+          "started_at": "2026-11-22T05:54:59Z",
+          "completed_at": "2026-11-22T05:54:59Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-11-22T05:54:59Z",
+          "completed_at": "2026-11-22T05:54:59Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373329",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336012,
+      "runner_name": "GitHub Actions 1000336012",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373333,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmGFQ",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373333",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373333",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:44Z",
+      "completed_at": "2026-11-22T05:47:01Z",
+      "name": "Codex app-server schema drift",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:45Z",
+          "completed_at": "2026-11-22T05:46:46Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:46Z",
+          "completed_at": "2026-11-22T05:46:48Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:48Z",
+          "completed_at": "2026-11-22T05:46:52Z"
+        },
+        {
+          "name": "Run npm run codex:check-types",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:46:52Z",
+          "completed_at": "2026-11-22T05:46:59Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:46:59Z",
+          "completed_at": "2026-11-22T05:46:59Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:46:59Z",
+          "completed_at": "2026-11-22T05:46:59Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:46:59Z",
+          "completed_at": "2026-11-22T05:46:59Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373333",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336014,
+      "runner_name": "GitHub Actions 1000336014",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373337,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmGGQ",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373337",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373337",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:45Z",
+      "completed_at": "2026-11-22T05:49:45Z",
+      "name": "Copilot SDK chunk (ubuntu-latest)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:46Z",
+          "completed_at": "2026-11-22T05:46:46Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:46Z",
+          "completed_at": "2026-11-22T05:46:49Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:49Z",
+          "completed_at": "2026-11-22T05:46:59Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:46:59Z",
+          "completed_at": "2026-11-22T05:47:02Z"
+        },
+        {
+          "name": "Run npm ci --foreground-scripts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:47:02Z",
+          "completed_at": "2026-11-22T05:48:08Z"
+        },
+        {
+          "name": "Check koffi used its prebuilt binary",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:48:08Z",
+          "completed_at": "2026-11-22T05:48:08Z"
+        },
+        {
+          "name": "Run node scripts/check-copilot-sdk-chunk.mjs --static-only",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:48:08Z",
+          "completed_at": "2026-11-22T05:49:41Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-22T05:49:41Z",
+          "completed_at": "2026-11-22T05:49:41Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-22T05:49:41Z",
+          "completed_at": "2026-11-22T05:49:41Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-22T05:49:41Z",
+          "completed_at": "2026-11-22T05:49:41Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-11-22T05:49:41Z",
+          "completed_at": "2026-11-22T05:49:41Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373337",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336018,
+      "runner_name": "GitHub Actions 1000336018",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373343,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmGHw",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373343",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373343",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:44Z",
+      "completed_at": "2026-11-22T05:54:20Z",
+      "name": "Unit + Component Tests (ubuntu-latest, 1/2)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:45Z",
+          "completed_at": "2026-11-22T05:46:46Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:46Z",
+          "completed_at": "2026-11-22T05:46:48Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:48Z",
+          "completed_at": "2026-11-22T05:46:58Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:46:58Z",
+          "completed_at": "2026-11-22T05:47:51Z"
+        },
+        {
+          "name": "Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:47:51Z",
+          "completed_at": "2026-11-22T05:54:15Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:54:15Z",
+          "completed_at": "2026-11-22T05:54:16Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-22T05:54:16Z",
+          "completed_at": "2026-11-22T05:54:16Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-22T05:54:16Z",
+          "completed_at": "2026-11-22T05:54:17Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-22T05:54:17Z",
+          "completed_at": "2026-11-22T05:54:17Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373343",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336011,
+      "runner_name": "GitHub Actions 1000336011",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111373365,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmGNQ",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111373365",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111373365",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:44Z",
+      "completed_at": "2026-11-22T05:55:47Z",
+      "name": "Build app (windows-2022)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:46:45Z",
+          "completed_at": "2026-11-22T05:46:46Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:46:46Z",
+          "completed_at": "2026-11-22T05:46:53Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:46:53Z",
+          "completed_at": "2026-11-22T05:47:17Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:47:17Z",
+          "completed_at": "2026-11-22T05:47:26Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:47:26Z",
+          "completed_at": "2026-11-22T05:47:28Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:47:28Z",
+          "completed_at": "2026-11-22T05:48:45Z"
+        },
+        {
+          "name": "Build app",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:48:45Z",
+          "completed_at": "2026-11-22T05:55:24Z"
+        },
+        {
+          "name": "Build unsigned isolated macOS test artifact",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:55:24Z",
+          "completed_at": "2026-11-22T05:55:24Z"
+        },
+        {
+          "name": "Verify actual packaged Windows runtime",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:55:24Z",
+          "completed_at": "2026-11-22T05:55:35Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:55:35Z",
+          "completed_at": "2026-11-22T05:55:37Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11,
+          "started_at": "2026-11-22T05:55:37Z",
+          "completed_at": "2026-11-22T05:55:37Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-22T05:55:37Z",
+          "completed_at": "2026-11-22T05:55:43Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-11-22T05:55:43Z",
+          "completed_at": "2026-11-22T05:55:44Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-11-22T05:55:44Z",
+          "completed_at": "2026-11-22T05:55:44Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24,
+          "started_at": "2026-11-22T05:55:44Z",
+          "completed_at": "2026-11-22T05:55:46Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-11-22T05:55:46Z",
+          "completed_at": "2026-11-22T05:55:46Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111373365",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336019,
+      "runner_name": "GitHub Actions 1000336019",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137111374185,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmJaQ",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111374185",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111374185",
+      "status": "completed",
+      "conclusion": "skipped",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:43Z",
+      "completed_at": "2026-11-22T05:46:42Z",
+      "name": "macOS build + E2E smoke",
+      "steps": [],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111374185",
+      "labels": [
+        "macos-latest"
+      ],
+      "runner_id": null,
+      "runner_name": null,
+      "runner_group_id": null,
+      "runner_group_name": null
+    },
+    {
+      "id": 137111374565,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmK5Q",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111374565",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111374565",
+      "status": "completed",
+      "conclusion": "skipped",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:43Z",
+      "completed_at": "2026-11-22T05:46:42Z",
+      "name": "Linux Package Smoke Test",
+      "steps": [],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111374565",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": null,
+      "runner_name": null,
+      "runner_group_id": null,
+      "runner_group_name": null
+    },
+    {
+      "id": 137111374709,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7HmLdQ",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137111374709",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137111374709",
+      "status": "completed",
+      "conclusion": "skipped",
+      "created_at": "2026-11-22T05:46:43Z",
+      "started_at": "2026-11-22T05:46:43Z",
+      "completed_at": "2026-11-22T05:46:42Z",
+      "name": "macOS unit",
+      "steps": [],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137111374709",
+      "labels": [
+        "macos-latest"
+      ],
+      "runner_id": null,
+      "runner_name": null,
+      "runner_group_id": null,
+      "runner_group_name": null
+    },
+    {
+      "id": 137113278409,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaXyQ",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278409",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278409",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T06:00:44Z",
+      "name": "Annex E2E Tests (ubuntu-latest, 1/2)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:52Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:52Z",
+          "completed_at": "2026-11-22T05:55:54Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:54Z",
+          "completed_at": "2026-11-22T05:56:04Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:04Z",
+          "completed_at": "2026-11-22T05:56:04Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:04Z",
+          "completed_at": "2026-11-22T05:56:06Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:06Z",
+          "completed_at": "2026-11-22T05:57:01Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:01Z",
+          "completed_at": "2026-11-22T05:57:04Z"
+        },
+        {
+          "name": "Run Annex E2E tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:04Z",
+          "completed_at": "2026-11-22T05:57:04Z"
+        },
+        {
+          "name": "Run Annex E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:57:04Z",
+          "completed_at": "2026-11-22T06:00:39Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T06:00:39Z",
+          "completed_at": "2026-11-22T06:00:40Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T06:00:40Z",
+          "completed_at": "2026-11-22T06:00:40Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T06:00:40Z",
+          "completed_at": "2026-11-22T06:00:41Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T06:00:41Z",
+          "completed_at": "2026-11-22T06:00:41Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T06:00:41Z",
+          "completed_at": "2026-11-22T06:00:41Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278409",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336035,
+      "runner_name": "GitHub Actions 1000336035",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278458,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaX-g",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278458",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278458",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T05:59:36Z",
+      "name": "Chat E2E Tests (windows-2022, 2/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:52Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:52Z",
+          "completed_at": "2026-11-22T05:55:58Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:58Z",
+          "completed_at": "2026-11-22T05:56:19Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:19Z",
+          "completed_at": "2026-11-22T05:56:27Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:27Z",
+          "completed_at": "2026-11-22T05:56:33Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:33Z",
+          "completed_at": "2026-11-22T05:57:33Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:33Z",
+          "completed_at": "2026-11-22T05:57:36Z"
+        },
+        {
+          "name": "Run chat E2E tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:36Z",
+          "completed_at": "2026-11-22T05:59:30Z"
+        },
+        {
+          "name": "Run chat E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T05:59:30Z",
+          "completed_at": "2026-11-22T05:59:30Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:59:30Z",
+          "completed_at": "2026-11-22T05:59:31Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:59:31Z",
+          "completed_at": "2026-11-22T05:59:32Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:59:32Z",
+          "completed_at": "2026-11-22T05:59:32Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:59:32Z",
+          "completed_at": "2026-11-22T05:59:34Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:59:34Z",
+          "completed_at": "2026-11-22T05:59:34Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278458",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336033,
+      "runner_name": "GitHub Actions 1000336033",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278466,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaYAg",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278466",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278466",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:50Z",
+      "completed_at": "2026-11-22T06:00:06Z",
+      "name": "E2E Tests (ubuntu-latest, 2/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:53Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:53Z",
+          "completed_at": "2026-11-22T05:55:59Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:59Z",
+          "completed_at": "2026-11-22T05:56:10Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:10Z",
+          "completed_at": "2026-11-22T05:56:10Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:10Z",
+          "completed_at": "2026-11-22T05:56:14Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:14Z",
+          "completed_at": "2026-11-22T05:57:01Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:01Z",
+          "completed_at": "2026-11-22T05:57:06Z"
+        },
+        {
+          "name": "Run E2E tests (shard 2/3)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:06Z",
+          "completed_at": "2026-11-22T05:57:06Z"
+        },
+        {
+          "name": "Run E2E tests (shard 2/3, Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:57:06Z",
+          "completed_at": "2026-11-22T06:00:01Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T06:00:01Z",
+          "completed_at": "2026-11-22T06:00:03Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T06:00:03Z",
+          "completed_at": "2026-11-22T06:00:03Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T06:00:03Z",
+          "completed_at": "2026-11-22T06:00:03Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T06:00:03Z",
+          "completed_at": "2026-11-22T06:00:03Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T06:00:03Z",
+          "completed_at": "2026-11-22T06:00:03Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278466",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336034,
+      "runner_name": "GitHub Actions 1000336034",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278468,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaYBA",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278468",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278468",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T05:58:37Z",
+      "name": "Chat E2E Tests (ubuntu-latest, 1/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:53Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:53Z",
+          "completed_at": "2026-11-22T05:56:00Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:00Z",
+          "completed_at": "2026-11-22T05:56:00Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:00Z",
+          "completed_at": "2026-11-22T05:56:01Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:01Z",
+          "completed_at": "2026-11-22T05:57:07Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:07Z",
+          "completed_at": "2026-11-22T05:57:09Z"
+        },
+        {
+          "name": "Run chat E2E tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:09Z",
+          "completed_at": "2026-11-22T05:57:09Z"
+        },
+        {
+          "name": "Run chat E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:57:09Z",
+          "completed_at": "2026-11-22T05:58:34Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:58:34Z",
+          "completed_at": "2026-11-22T05:58:35Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:58:35Z",
+          "completed_at": "2026-11-22T05:58:35Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:58:35Z",
+          "completed_at": "2026-11-22T05:58:35Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:58:35Z",
+          "completed_at": "2026-11-22T05:58:35Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:58:35Z",
+          "completed_at": "2026-11-22T05:58:35Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278468",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336038,
+      "runner_name": "GitHub Actions 1000336038",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278538,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaYSg",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278538",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278538",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T05:59:14Z",
+      "name": "Chat E2E Tests (ubuntu-latest, 2/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:53Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:53Z",
+          "completed_at": "2026-11-22T05:56:01Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:01Z",
+          "completed_at": "2026-11-22T05:56:01Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:01Z",
+          "completed_at": "2026-11-22T05:56:03Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:03Z",
+          "completed_at": "2026-11-22T05:57:13Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:13Z",
+          "completed_at": "2026-11-22T05:57:15Z"
+        },
+        {
+          "name": "Run chat E2E tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:15Z",
+          "completed_at": "2026-11-22T05:57:15Z"
+        },
+        {
+          "name": "Run chat E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:57:15Z",
+          "completed_at": "2026-11-22T05:59:11Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:59:11Z",
+          "completed_at": "2026-11-22T05:59:12Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:59:12Z",
+          "completed_at": "2026-11-22T05:59:12Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:59:12Z",
+          "completed_at": "2026-11-22T05:59:12Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:59:12Z",
+          "completed_at": "2026-11-22T05:59:12Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:59:12Z",
+          "completed_at": "2026-11-22T05:59:12Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278538",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336050,
+      "runner_name": "GitHub Actions 1000336050",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278632,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaYqA",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278632",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278632",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T05:59:15Z",
+      "name": "Classic layout E2E Tests (windows-2022, 1/1)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:59Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:59Z",
+          "completed_at": "2026-11-22T05:56:20Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:20Z",
+          "completed_at": "2026-11-22T05:56:27Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:27Z",
+          "completed_at": "2026-11-22T05:56:29Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:29Z",
+          "completed_at": "2026-11-22T05:57:29Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:29Z",
+          "completed_at": "2026-11-22T05:57:32Z"
+        },
+        {
+          "name": "Run classic layout E2E tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:32Z",
+          "completed_at": "2026-11-22T05:59:11Z"
+        },
+        {
+          "name": "Run classic layout E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T05:59:11Z",
+          "completed_at": "2026-11-22T05:59:11Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:59:11Z",
+          "completed_at": "2026-11-22T05:59:12Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:59:12Z",
+          "completed_at": "2026-11-22T05:59:12Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:59:12Z",
+          "completed_at": "2026-11-22T05:59:12Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:59:12Z",
+          "completed_at": "2026-11-22T05:59:14Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:59:14Z",
+          "completed_at": "2026-11-22T05:59:14Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278632",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336031,
+      "runner_name": "GitHub Actions 1000336031",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278648,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaYuA",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278648",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278648",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:50Z",
+      "completed_at": "2026-11-22T05:59:45Z",
+      "name": "Annex E2E Tests (ubuntu-latest, 2/2)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:52Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:52Z",
+          "completed_at": "2026-11-22T05:55:54Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:54Z",
+          "completed_at": "2026-11-22T05:56:03Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:03Z",
+          "completed_at": "2026-11-22T05:56:03Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:03Z",
+          "completed_at": "2026-11-22T05:56:05Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:05Z",
+          "completed_at": "2026-11-22T05:57:04Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:04Z",
+          "completed_at": "2026-11-22T05:57:07Z"
+        },
+        {
+          "name": "Run Annex E2E tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:07Z",
+          "completed_at": "2026-11-22T05:57:07Z"
+        },
+        {
+          "name": "Run Annex E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:57:07Z",
+          "completed_at": "2026-11-22T05:59:40Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:59:40Z",
+          "completed_at": "2026-11-22T05:59:41Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:59:41Z",
+          "completed_at": "2026-11-22T05:59:42Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:59:42Z",
+          "completed_at": "2026-11-22T05:59:42Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:59:42Z",
+          "completed_at": "2026-11-22T05:59:42Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:59:42Z",
+          "completed_at": "2026-11-22T05:59:42Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278648",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336041,
+      "runner_name": "GitHub Actions 1000336041",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278670,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaYzg",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278670",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278670",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T05:58:36Z",
+      "name": "Stable-mode E2E Tests (windows-2022)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:56Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:56Z",
+          "completed_at": "2026-11-22T05:56:15Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:15Z",
+          "completed_at": "2026-11-22T05:56:22Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:22Z",
+          "completed_at": "2026-11-22T05:56:24Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:24Z",
+          "completed_at": "2026-11-22T05:57:08Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:08Z",
+          "completed_at": "2026-11-22T05:57:10Z"
+        },
+        {
+          "name": "Run stable-mode E2E tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:10Z",
+          "completed_at": "2026-11-22T05:58:32Z"
+        },
+        {
+          "name": "Run stable-mode E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T05:58:32Z",
+          "completed_at": "2026-11-22T05:58:32Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:58:32Z",
+          "completed_at": "2026-11-22T05:58:33Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:58:33Z",
+          "completed_at": "2026-11-22T05:58:33Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:58:33Z",
+          "completed_at": "2026-11-22T05:58:33Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:58:33Z",
+          "completed_at": "2026-11-22T05:58:34Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:58:34Z",
+          "completed_at": "2026-11-22T05:58:34Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278670",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336048,
+      "runner_name": "GitHub Actions 1000336048",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278685,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaY3Q",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278685",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278685",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T05:59:22Z",
+      "name": "Chat E2E Tests (ubuntu-latest, 3/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:52Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:52Z",
+          "completed_at": "2026-11-22T05:55:55Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:55Z",
+          "completed_at": "2026-11-22T05:56:05Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:05Z",
+          "completed_at": "2026-11-22T05:56:05Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:05Z",
+          "completed_at": "2026-11-22T05:56:08Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:08Z",
+          "completed_at": "2026-11-22T05:57:13Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:13Z",
+          "completed_at": "2026-11-22T05:57:16Z"
+        },
+        {
+          "name": "Run chat E2E tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:16Z",
+          "completed_at": "2026-11-22T05:57:16Z"
+        },
+        {
+          "name": "Run chat E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:57:16Z",
+          "completed_at": "2026-11-22T05:59:17Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:59:17Z",
+          "completed_at": "2026-11-22T05:59:19Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:59:19Z",
+          "completed_at": "2026-11-22T05:59:19Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:59:19Z",
+          "completed_at": "2026-11-22T05:59:19Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:59:19Z",
+          "completed_at": "2026-11-22T05:59:19Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:59:19Z",
+          "completed_at": "2026-11-22T05:59:19Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278685",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336045,
+      "runner_name": "GitHub Actions 1000336045",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278686,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaY3g",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278686",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278686",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T05:59:11Z",
+      "name": "Stable-mode E2E Tests (ubuntu-latest)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:54Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:54Z",
+          "completed_at": "2026-11-22T05:56:02Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:02Z",
+          "completed_at": "2026-11-22T05:56:02Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:02Z",
+          "completed_at": "2026-11-22T05:56:04Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:04Z",
+          "completed_at": "2026-11-22T05:57:10Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:10Z",
+          "completed_at": "2026-11-22T05:57:13Z"
+        },
+        {
+          "name": "Run stable-mode E2E tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:13Z",
+          "completed_at": "2026-11-22T05:57:13Z"
+        },
+        {
+          "name": "Run stable-mode E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:57:13Z",
+          "completed_at": "2026-11-22T05:59:06Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:59:06Z",
+          "completed_at": "2026-11-22T05:59:08Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:59:08Z",
+          "completed_at": "2026-11-22T05:59:08Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:59:08Z",
+          "completed_at": "2026-11-22T05:59:08Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:59:08Z",
+          "completed_at": "2026-11-22T05:59:08Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:59:08Z",
+          "completed_at": "2026-11-22T05:59:08Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278686",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336040,
+      "runner_name": "GitHub Actions 1000336040",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278687,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaY3w",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278687",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278687",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:50Z",
+      "completed_at": "2026-11-22T06:01:21Z",
+      "name": "Annex E2E Tests (windows-2022, 2/2)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:52Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:52Z",
+          "completed_at": "2026-11-22T05:56:00Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:56:00Z",
+          "completed_at": "2026-11-22T05:56:23Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:23Z",
+          "completed_at": "2026-11-22T05:56:31Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:31Z",
+          "completed_at": "2026-11-22T05:56:35Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:35Z",
+          "completed_at": "2026-11-22T05:57:51Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:51Z",
+          "completed_at": "2026-11-22T05:57:54Z"
+        },
+        {
+          "name": "Run Annex E2E tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:54Z",
+          "completed_at": "2026-11-22T06:01:15Z"
+        },
+        {
+          "name": "Run Annex E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T06:01:15Z",
+          "completed_at": "2026-11-22T06:01:15Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T06:01:15Z",
+          "completed_at": "2026-11-22T06:01:16Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T06:01:16Z",
+          "completed_at": "2026-11-22T06:01:17Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T06:01:17Z",
+          "completed_at": "2026-11-22T06:01:17Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T06:01:17Z",
+          "completed_at": "2026-11-22T06:01:19Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T06:01:19Z",
+          "completed_at": "2026-11-22T06:01:19Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278687",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336037,
+      "runner_name": "GitHub Actions 1000336037",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278688,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaY4A",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278688",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278688",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T06:01:46Z",
+      "name": "E2E Tests (windows-2022, 2/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:58Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:58Z",
+          "completed_at": "2026-11-22T05:56:22Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:22Z",
+          "completed_at": "2026-11-22T05:56:32Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:32Z",
+          "completed_at": "2026-11-22T05:56:33Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:33Z",
+          "completed_at": "2026-11-22T05:57:54Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:54Z",
+          "completed_at": "2026-11-22T05:57:57Z"
+        },
+        {
+          "name": "Run E2E tests (shard 2/3)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:57Z",
+          "completed_at": "2026-11-22T06:01:40Z"
+        },
+        {
+          "name": "Run E2E tests (shard 2/3, Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T06:01:40Z",
+          "completed_at": "2026-11-22T06:01:40Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T06:01:40Z",
+          "completed_at": "2026-11-22T06:01:41Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T06:01:41Z",
+          "completed_at": "2026-11-22T06:01:41Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T06:01:41Z",
+          "completed_at": "2026-11-22T06:01:42Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T06:01:42Z",
+          "completed_at": "2026-11-22T06:01:44Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T06:01:44Z",
+          "completed_at": "2026-11-22T06:01:44Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278688",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336036,
+      "runner_name": "GitHub Actions 1000336036",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278694,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaY5g",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278694",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278694",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:50Z",
+      "completed_at": "2026-11-22T05:58:44Z",
+      "name": "Classic layout E2E Tests (ubuntu-latest, 1/1)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:54Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:54Z",
+          "completed_at": "2026-11-22T05:55:58Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:58Z",
+          "completed_at": "2026-11-22T05:56:08Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:08Z",
+          "completed_at": "2026-11-22T05:56:08Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:08Z",
+          "completed_at": "2026-11-22T05:56:11Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:11Z",
+          "completed_at": "2026-11-22T05:56:58Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:56:58Z",
+          "completed_at": "2026-11-22T05:57:03Z"
+        },
+        {
+          "name": "Run classic layout E2E tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:03Z",
+          "completed_at": "2026-11-22T05:57:03Z"
+        },
+        {
+          "name": "Run classic layout E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:57:03Z",
+          "completed_at": "2026-11-22T05:58:40Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:58:40Z",
+          "completed_at": "2026-11-22T05:58:41Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:58:41Z",
+          "completed_at": "2026-11-22T05:58:41Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:58:41Z",
+          "completed_at": "2026-11-22T05:58:41Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:58:41Z",
+          "completed_at": "2026-11-22T05:58:42Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:58:42Z",
+          "completed_at": "2026-11-22T05:58:42Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278694",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336046,
+      "runner_name": "GitHub Actions 1000336046",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278700,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaY7A",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278700",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278700",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T06:00:05Z",
+      "name": "E2E Tests (ubuntu-latest, 1/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:53Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:53Z",
+          "completed_at": "2026-11-22T05:56:02Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:02Z",
+          "completed_at": "2026-11-22T05:56:02Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:02Z",
+          "completed_at": "2026-11-22T05:56:04Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:04Z",
+          "completed_at": "2026-11-22T05:57:09Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:09Z",
+          "completed_at": "2026-11-22T05:57:11Z"
+        },
+        {
+          "name": "Run E2E tests (shard 1/3)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:11Z",
+          "completed_at": "2026-11-22T05:57:11Z"
+        },
+        {
+          "name": "Run E2E tests (shard 1/3, Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:57:11Z",
+          "completed_at": "2026-11-22T06:00:01Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T06:00:01Z",
+          "completed_at": "2026-11-22T06:00:02Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T06:00:02Z",
+          "completed_at": "2026-11-22T06:00:02Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T06:00:02Z",
+          "completed_at": "2026-11-22T06:00:03Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T06:00:03Z",
+          "completed_at": "2026-11-22T06:00:03Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T06:00:03Z",
+          "completed_at": "2026-11-22T06:00:03Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278700",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336039,
+      "runner_name": "GitHub Actions 1000336039",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278716,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaY_A",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278716",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278716",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T06:00:07Z",
+      "name": "Chat E2E Tests (windows-2022, 3/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:56Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:56Z",
+          "completed_at": "2026-11-22T05:56:17Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:17Z",
+          "completed_at": "2026-11-22T05:56:24Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:24Z",
+          "completed_at": "2026-11-22T05:56:26Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:26Z",
+          "completed_at": "2026-11-22T05:57:42Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:42Z",
+          "completed_at": "2026-11-22T05:57:44Z"
+        },
+        {
+          "name": "Run chat E2E tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:44Z",
+          "completed_at": "2026-11-22T06:00:03Z"
+        },
+        {
+          "name": "Run chat E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T06:00:03Z",
+          "completed_at": "2026-11-22T06:00:03Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T06:00:03Z",
+          "completed_at": "2026-11-22T06:00:04Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T06:00:04Z",
+          "completed_at": "2026-11-22T06:00:04Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T06:00:04Z",
+          "completed_at": "2026-11-22T06:00:04Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T06:00:04Z",
+          "completed_at": "2026-11-22T06:00:06Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T06:00:06Z",
+          "completed_at": "2026-11-22T06:00:06Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278716",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336032,
+      "runner_name": "GitHub Actions 1000336032",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278721,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaZAQ",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278721",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278721",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T06:00:36Z",
+      "name": "E2E Tests (windows-2022, 3/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:58Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:58Z",
+          "completed_at": "2026-11-22T05:56:23Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:23Z",
+          "completed_at": "2026-11-22T05:56:32Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:32Z",
+          "completed_at": "2026-11-22T05:56:34Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:34Z",
+          "completed_at": "2026-11-22T05:57:48Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:48Z",
+          "completed_at": "2026-11-22T05:57:51Z"
+        },
+        {
+          "name": "Run E2E tests (shard 3/3)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:51Z",
+          "completed_at": "2026-11-22T06:00:31Z"
+        },
+        {
+          "name": "Run E2E tests (shard 3/3, Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T06:00:31Z",
+          "completed_at": "2026-11-22T06:00:31Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T06:00:31Z",
+          "completed_at": "2026-11-22T06:00:32Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T06:00:32Z",
+          "completed_at": "2026-11-22T06:00:32Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T06:00:32Z",
+          "completed_at": "2026-11-22T06:00:32Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T06:00:32Z",
+          "completed_at": "2026-11-22T06:00:35Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T06:00:35Z",
+          "completed_at": "2026-11-22T06:00:35Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278721",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336047,
+      "runner_name": "GitHub Actions 1000336047",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278724,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaZBA",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278724",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278724",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T06:00:41Z",
+      "name": "E2E Tests (windows-2022, 1/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:57Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:57Z",
+          "completed_at": "2026-11-22T05:56:17Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:17Z",
+          "completed_at": "2026-11-22T05:56:24Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:24Z",
+          "completed_at": "2026-11-22T05:56:26Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:26Z",
+          "completed_at": "2026-11-22T05:57:44Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:44Z",
+          "completed_at": "2026-11-22T05:57:46Z"
+        },
+        {
+          "name": "Run E2E tests (shard 1/3)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:46Z",
+          "completed_at": "2026-11-22T06:00:37Z"
+        },
+        {
+          "name": "Run E2E tests (shard 1/3, Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T06:00:37Z",
+          "completed_at": "2026-11-22T06:00:37Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T06:00:37Z",
+          "completed_at": "2026-11-22T06:00:37Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T06:00:37Z",
+          "completed_at": "2026-11-22T06:00:38Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T06:00:38Z",
+          "completed_at": "2026-11-22T06:00:38Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T06:00:38Z",
+          "completed_at": "2026-11-22T06:00:40Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T06:00:40Z",
+          "completed_at": "2026-11-22T06:00:40Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278724",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336043,
+      "runner_name": "GitHub Actions 1000336043",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278732,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaZDA",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278732",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278732",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T05:59:41Z",
+      "name": "E2E Tests (ubuntu-latest, 3/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:53Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:53Z",
+          "completed_at": "2026-11-22T05:56:00Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:00Z",
+          "completed_at": "2026-11-22T05:56:00Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:00Z",
+          "completed_at": "2026-11-22T05:56:01Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:01Z",
+          "completed_at": "2026-11-22T05:57:07Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:07Z",
+          "completed_at": "2026-11-22T05:57:08Z"
+        },
+        {
+          "name": "Run E2E tests (shard 3/3)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:08Z",
+          "completed_at": "2026-11-22T05:57:08Z"
+        },
+        {
+          "name": "Run E2E tests (shard 3/3, Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-22T05:57:08Z",
+          "completed_at": "2026-11-22T05:59:38Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:59:38Z",
+          "completed_at": "2026-11-22T05:59:39Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:59:39Z",
+          "completed_at": "2026-11-22T05:59:39Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:59:39Z",
+          "completed_at": "2026-11-22T05:59:39Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:59:39Z",
+          "completed_at": "2026-11-22T05:59:40Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:59:40Z",
+          "completed_at": "2026-11-22T05:59:40Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278732",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000336042,
+      "runner_name": "GitHub Actions 1000336042",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278735,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaZDw",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278735",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278735",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T05:59:59Z",
+      "name": "Chat E2E Tests (windows-2022, 1/3)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:51Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:51Z",
+          "completed_at": "2026-11-22T05:55:58Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:58Z",
+          "completed_at": "2026-11-22T05:56:21Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:21Z",
+          "completed_at": "2026-11-22T05:56:30Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:30Z",
+          "completed_at": "2026-11-22T05:56:33Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:33Z",
+          "completed_at": "2026-11-22T05:57:44Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:44Z",
+          "completed_at": "2026-11-22T05:57:47Z"
+        },
+        {
+          "name": "Run chat E2E tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:47Z",
+          "completed_at": "2026-11-22T05:59:54Z"
+        },
+        {
+          "name": "Run chat E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T05:59:54Z",
+          "completed_at": "2026-11-22T05:59:54Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T05:59:54Z",
+          "completed_at": "2026-11-22T05:59:55Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T05:59:55Z",
+          "completed_at": "2026-11-22T05:59:55Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T05:59:55Z",
+          "completed_at": "2026-11-22T05:59:55Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T05:59:55Z",
+          "completed_at": "2026-11-22T05:59:57Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T05:59:57Z",
+          "completed_at": "2026-11-22T05:59:57Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278735",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336044,
+      "runner_name": "GitHub Actions 1000336044",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 137113278840,
+      "run_id": 44990834408,
+      "workflow_name": "Validate",
+      "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+      "run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/runs/44990834408",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORQYUlc8AAAAf7JaZeA",
+      "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/jobs/137113278840",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44990834408/job/137113278840",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-22T05:55:47Z",
+      "started_at": "2026-11-22T05:55:49Z",
+      "completed_at": "2026-11-22T06:02:32Z",
+      "name": "Annex E2E Tests (windows-2022, 1/2)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-22T05:55:50Z",
+          "completed_at": "2026-11-22T05:55:52Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-22T05:55:52Z",
+          "completed_at": "2026-11-22T05:55:58Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-22T05:55:58Z",
+          "completed_at": "2026-11-22T05:56:19Z"
+        },
+        {
+          "name": "Exclude workspace from Windows Defender",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-22T05:56:19Z",
+          "completed_at": "2026-11-22T05:56:27Z"
+        },
+        {
+          "name": "Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-22T05:56:27Z",
+          "completed_at": "2026-11-22T05:56:29Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-22T05:56:29Z",
+          "completed_at": "2026-11-22T05:57:45Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-22T05:57:45Z",
+          "completed_at": "2026-11-22T05:57:48Z"
+        },
+        {
+          "name": "Run Annex E2E tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-22T05:57:48Z",
+          "completed_at": "2026-11-22T06:02:27Z"
+        },
+        {
+          "name": "Run Annex E2E tests (Linux \u2014 requires virtual display)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-22T06:02:27Z",
+          "completed_at": "2026-11-22T06:02:27Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-22T06:02:27Z",
+          "completed_at": "2026-11-22T06:02:28Z"
+        },
+        {
+          "name": "Post Run actions/cache@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-22T06:02:28Z",
+          "completed_at": "2026-11-22T06:02:29Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-22T06:02:29Z",
+          "completed_at": "2026-11-22T06:02:29Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-22T06:02:29Z",
+          "completed_at": "2026-11-22T06:02:31Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-22T06:02:31Z",
+          "completed_at": "2026-11-22T06:02:31Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/check-runs/137113278840",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000336049,
+      "runner_name": "GitHub Actions 1000336049",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

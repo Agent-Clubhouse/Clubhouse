@@ -1,0 +1,545 @@
+{
+  "total_count": 27,
+  "artifacts": [
+    {
+      "id": 14742620142,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MjYyMDE0Mg==",
+      "name": "playwright-traces-windows-2022-1",
+      "size_in_bytes": 5700,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742620142",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742620142/zip",
+      "expired": false,
+      "digest": "sha256:4dcad913ce722aca251d49f3442b7478e5c48e87de8f66d107b7f419ad7ac003",
+      "created_at": "2026-11-22T06:00:37Z",
+      "updated_at": "2026-11-22T06:00:37Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14742451101,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MjQ1MTEwMQ==",
+      "name": "classic-e2e-traces-windows-2022-1",
+      "size_in_bytes": 3996,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742451101",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742451101/zip",
+      "expired": false,
+      "digest": "sha256:5eb6e52bb0331fa59bad4dce448f5d4ffe5d81f2ee588b14e7ce22c3e3d385be",
+      "created_at": "2026-11-22T05:59:12Z",
+      "updated_at": "2026-11-22T05:59:12Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14742391484,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MjM5MTQ4NA==",
+      "name": "playwright-traces-ubuntu-latest-3",
+      "size_in_bytes": 8892,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742391484",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742391484/zip",
+      "expired": false,
+      "digest": "sha256:11e1e61c1ca6fa7df6335e9b644b76c539e7fdb0789bd8963a42e684895d9878",
+      "created_at": "2026-11-22T05:59:39Z",
+      "updated_at": "2026-11-22T05:59:39Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14742346507,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MjM0NjUwNw==",
+      "name": "chat-e2e-traces-windows-2022-2",
+      "size_in_bytes": 3549,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742346507",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742346507/zip",
+      "expired": false,
+      "digest": "sha256:73ea34e4efadd843f25989872eb0fde29f93fc937eafb437a3a05efd1a8d98c7",
+      "created_at": "2026-11-22T05:59:31Z",
+      "updated_at": "2026-11-22T05:59:31Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14742306708,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MjMwNjcwOA==",
+      "name": "playwright-traces-windows-2022-3",
+      "size_in_bytes": 5355,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742306708",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742306708/zip",
+      "expired": false,
+      "digest": "sha256:4da7e3e7a5b169287cad21284321883c567e64d4444aa292b06aab04b035ac81",
+      "created_at": "2026-11-22T06:00:32Z",
+      "updated_at": "2026-11-22T06:00:32Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14742187084,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MjE4NzA4NA==",
+      "name": "chat-e2e-traces-ubuntu-latest-1",
+      "size_in_bytes": 520744,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742187084",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742187084/zip",
+      "expired": false,
+      "digest": "sha256:c402b52cb5ec3ad9f46bada32952e151e1adb67d61cb27009e75bd852170f510",
+      "created_at": "2026-11-22T05:58:34Z",
+      "updated_at": "2026-11-22T05:58:34Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14742147462,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MjE0NzQ2Mg==",
+      "name": "playwright-traces-windows-2022-2",
+      "size_in_bytes": 5576,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742147462",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742147462/zip",
+      "expired": false,
+      "digest": "sha256:bf2946a84431bb17baecadfde9691de3c05eadd5841a087824644d1d2f34154d",
+      "created_at": "2026-11-22T06:01:41Z",
+      "updated_at": "2026-11-22T06:01:41Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14742137423,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MjEzNzQyMw==",
+      "name": "annex-traces-ubuntu-latest-1",
+      "size_in_bytes": 12435,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742137423",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742137423/zip",
+      "expired": false,
+      "digest": "sha256:df1419c150443c422aa679e2d7cfcb4717f1d2c9b783b1f79491e6c430d88c9c",
+      "created_at": "2026-11-22T06:00:40Z",
+      "updated_at": "2026-11-22T06:00:40Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14742008876,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MjAwODg3Ng==",
+      "name": "test-results-windows-latest-2",
+      "size_in_bytes": 561329,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742008876",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14742008876/zip",
+      "expired": false,
+      "digest": "sha256:002d7f42224065756ddca4d1f2d95ad2b1041e05c894d8925a95ea30ee2fe512",
+      "created_at": "2026-11-22T06:07:14Z",
+      "updated_at": "2026-11-22T06:07:14Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741978065,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTk3ODA2NQ==",
+      "name": "chat-e2e-traces-ubuntu-latest-2",
+      "size_in_bytes": 8344,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741978065",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741978065/zip",
+      "expired": false,
+      "digest": "sha256:0844220ebeb3ba58c462e7d2b182fc5ed11b346a389c858afa5e7a7a09b1966b",
+      "created_at": "2026-11-22T05:59:12Z",
+      "updated_at": "2026-11-22T05:59:12Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741968094,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTk2ODA5NA==",
+      "name": "chat-e2e-traces-windows-2022-3",
+      "size_in_bytes": 3406,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741968094",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741968094/zip",
+      "expired": false,
+      "digest": "sha256:c5bc2bc5a4b8381d52a42f49e59333aa10c01f083b714d82a7b6d0c64a1ec52d",
+      "created_at": "2026-11-22T06:00:03Z",
+      "updated_at": "2026-11-22T06:00:03Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741942513,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTk0MjUxMw==",
+      "name": "webpack-ubuntu-latest",
+      "size_in_bytes": 41008566,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741942513",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741942513/zip",
+      "expired": false,
+      "digest": "sha256:08991de38c71bb819078187b4193d5e37801f32b364ad6845a0446d1493cfbd2",
+      "created_at": "2026-11-22T05:54:58Z",
+      "updated_at": "2026-11-22T05:54:58Z",
+      "expires_at": "2026-11-25T05:54:53Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741932531,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTkzMjUzMQ==",
+      "name": "test-results-windows-latest-1",
+      "size_in_bytes": 607112,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741932531",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741932531/zip",
+      "expired": false,
+      "digest": "sha256:5c167f0b222ecf6bd7019e8b98d3c0ee83de67ebfea2e24ca030dd3a6a36d0be",
+      "created_at": "2026-11-22T05:53:49Z",
+      "updated_at": "2026-11-22T05:53:49Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741902178,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTkwMjE3OA==",
+      "name": "chat-e2e-traces-ubuntu-latest-3",
+      "size_in_bytes": 7350,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741902178",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741902178/zip",
+      "expired": false,
+      "digest": "sha256:8677fce8085320550aecfd9f42a5c273a19912bcfaea3b3313252977c91c70ad",
+      "created_at": "2026-11-22T05:59:18Z",
+      "updated_at": "2026-11-22T05:59:18Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741882302,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTg4MjMwMg==",
+      "name": "playwright-traces-ubuntu-latest-2",
+      "size_in_bytes": 10760,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741882302",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741882302/zip",
+      "expired": false,
+      "digest": "sha256:8c9d1cf9fd7eb82cc29bfe217ee3a3e00e5b2a238510dfa6c42bd79054ac70b9",
+      "created_at": "2026-11-22T06:00:02Z",
+      "updated_at": "2026-11-22T06:00:02Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741838483,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTgzODQ4Mw==",
+      "name": "classic-e2e-traces-ubuntu-latest-1",
+      "size_in_bytes": 5569,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741838483",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741838483/zip",
+      "expired": false,
+      "digest": "sha256:8b39380e580b84fc0ba27bb4bc5fee8ba3ea791bb04d1c8d0cb8cb9b6325677d",
+      "created_at": "2026-11-22T05:58:41Z",
+      "updated_at": "2026-11-22T05:58:41Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741802605,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTgwMjYwNQ==",
+      "name": "playwright-traces-ubuntu-latest-1",
+      "size_in_bytes": 8735,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741802605",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741802605/zip",
+      "expired": false,
+      "digest": "sha256:6e8dd9b99b67dc19852a9f363f1c01ec69067353dcd7086819ac6c7c29b502dd",
+      "created_at": "2026-11-22T06:00:02Z",
+      "updated_at": "2026-11-22T06:00:02Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741767514,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTc2NzUxNA==",
+      "name": "stable-e2e-traces-ubuntu-latest",
+      "size_in_bytes": 7389,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741767514",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741767514/zip",
+      "expired": false,
+      "digest": "sha256:84d9196748f5b8265f975460a76af6c0da45467f388bb7b1362938b65a8812b8",
+      "created_at": "2026-11-22T05:59:07Z",
+      "updated_at": "2026-11-22T05:59:07Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741744503,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTc0NDUwMw==",
+      "name": "annex-traces-windows-2022-2",
+      "size_in_bytes": 5789,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741744503",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741744503/zip",
+      "expired": false,
+      "digest": "sha256:2a0ffe643ae7a544697b8db9962263c4c93bfc9091b7a0e74abdd85135b614ab",
+      "created_at": "2026-11-22T06:01:16Z",
+      "updated_at": "2026-11-22T06:01:16Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741737760,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTczNzc2MA==",
+      "name": "annex-traces-ubuntu-latest-2",
+      "size_in_bytes": 10730,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741737760",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741737760/zip",
+      "expired": false,
+      "digest": "sha256:e86f138a745b0bf14b2cf0c096cffd7115b40c6435b86b9ab5f76141a2c0f519",
+      "created_at": "2026-11-22T05:59:41Z",
+      "updated_at": "2026-11-22T05:59:41Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741673810,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTY3MzgxMA==",
+      "name": "test-results-ubuntu-latest-1",
+      "size_in_bytes": 634968,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741673810",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741673810/zip",
+      "expired": false,
+      "digest": "sha256:19aa89b5d405754344f8c8881156ffe8a2f5a6a507007f1e4a377435fe77787f",
+      "created_at": "2026-11-22T05:54:16Z",
+      "updated_at": "2026-11-22T05:54:16Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741662684,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTY2MjY4NA==",
+      "name": "webpack-windows-2022",
+      "size_in_bytes": 41056923,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741662684",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741662684/zip",
+      "expired": false,
+      "digest": "sha256:61c45f60b0dd98ef54939693e8b64652d6081fd1a7a427bb0f22cb604f15c980",
+      "created_at": "2026-11-22T05:55:43Z",
+      "updated_at": "2026-11-22T05:55:43Z",
+      "expires_at": "2026-11-25T05:55:37Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741642725,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTY0MjcyNQ==",
+      "name": "packaged-runtime-Windows-X64-d17b9af3b22b77b18cd6e73f0979e40c7de8b43e",
+      "size_in_bytes": 630,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741642725",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741642725/zip",
+      "expired": false,
+      "digest": "sha256:597a2ba1b014b1fb4adecd30e4eaa7f09edbdf9bebf81cf9455d1c336520ffcf",
+      "created_at": "2026-11-22T05:55:36Z",
+      "updated_at": "2026-11-22T05:55:36Z",
+      "expires_at": "2026-11-29T05:55:36Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741598463,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTU5ODQ2Mw==",
+      "name": "chat-e2e-traces-windows-2022-1",
+      "size_in_bytes": 171858,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741598463",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741598463/zip",
+      "expired": false,
+      "digest": "sha256:fee3641cb5aac53a090669a92d8c58a8582164f9df002d3cb67c86d4b122a9cd",
+      "created_at": "2026-11-22T05:59:55Z",
+      "updated_at": "2026-11-22T05:59:55Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741564513,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTU2NDUxMw==",
+      "name": "test-results-ubuntu-latest-2",
+      "size_in_bytes": 585698,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741564513",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741564513/zip",
+      "expired": false,
+      "digest": "sha256:262db36bef7e2250ee73ddfe10e9230ad93e0d4022663964e49717f868dcb2ec",
+      "created_at": "2026-11-22T05:55:13Z",
+      "updated_at": "2026-11-22T05:55:13Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741533790,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTUzMzc5MA==",
+      "name": "annex-traces-windows-2022-1",
+      "size_in_bytes": 6856,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741533790",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741533790/zip",
+      "expired": false,
+      "digest": "sha256:f3a9f42325836bd1398abf4b6b91f1098c8a12c4aaabce4d60c582116be414e9",
+      "created_at": "2026-11-22T06:02:28Z",
+      "updated_at": "2026-11-22T06:02:28Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    },
+    {
+      "id": 14741004865,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc0MTAwNDg2NQ==",
+      "name": "stable-e2e-traces-windows-2022",
+      "size_in_bytes": 3301,
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741004865",
+      "archive_download_url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/actions/artifacts/14741004865/zip",
+      "expired": false,
+      "digest": "sha256:48fb553eb269ed7a31f78af02bac67dc954fe75fd00157f716e8eaa259b2b59b",
+      "created_at": "2026-11-22T05:58:33Z",
+      "updated_at": "2026-11-22T05:58:33Z",
+      "expires_at": "2027-02-20T05:46:22Z",
+      "workflow_run": {
+        "id": 44990834408,
+        "repository_id": 1158026389,
+        "head_repository_id": 1158026389,
+        "head_branch": "lane-3613-p2-routes/budget-disposition-3714",
+        "head_sha": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0"
+      }
+    }
+  ]
+}

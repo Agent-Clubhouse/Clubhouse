@@ -1,0 +1,174 @@
+{
+  "run": 44990834408,
+  "head": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+  "runAttempt": 1,
+  "status": "completed",
+  "conclusion": "success",
+  "watchExit": 0,
+  "windowsJob": {
+    "id": 137111373322,
+    "conclusion": "success"
+  },
+  "target": {
+    "classname": "src/main/services/managed-agents/delivery.test.ts",
+    "name": "deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)",
+    "time": "0.3456768"
+  },
+  "targetFailures": [],
+  "actualJUnitPhasePackets": [
+    {
+      "version": 1,
+      "platform": "win32",
+      "node": "v22.23.4",
+      "transitions": [
+        {
+          "seq": 1,
+          "event": "begin",
+          "phase": "beforeEach",
+          "offsetMs": 0.14789999999993597
+        },
+        {
+          "seq": 2,
+          "event": "begin",
+          "phase": "seed.copy",
+          "offsetMs": 2.293499999999767
+        },
+        {
+          "seq": 3,
+          "event": "end",
+          "phase": "seed.copy",
+          "offsetMs": 82.3801999999996,
+          "threw": false
+        },
+        {
+          "seq": 4,
+          "event": "begin",
+          "phase": "builtins.ensure",
+          "offsetMs": 82.65279999999984
+        },
+        {
+          "seq": 5,
+          "event": "end",
+          "phase": "builtins.ensure",
+          "offsetMs": 102.30609999999979,
+          "threw": false
+        },
+        {
+          "seq": 6,
+          "event": "end",
+          "phase": "beforeEach",
+          "offsetMs": 102.41199999999935,
+          "threw": false
+        },
+        {
+          "seq": 7,
+          "event": "begin",
+          "phase": "body",
+          "offsetMs": 103.10709999999926
+        },
+        {
+          "seq": 8,
+          "event": "begin",
+          "phase": "git.init",
+          "offsetMs": 103.2564999999995
+        },
+        {
+          "seq": 9,
+          "event": "end",
+          "phase": "git.init",
+          "offsetMs": 180.4935999999998,
+          "threw": false
+        },
+        {
+          "seq": 10,
+          "event": "begin",
+          "phase": "git.add",
+          "offsetMs": 182.04069999999956
+        },
+        {
+          "seq": 11,
+          "event": "end",
+          "phase": "git.add",
+          "offsetMs": 236.6176999999998,
+          "threw": false
+        },
+        {
+          "seq": 12,
+          "event": "begin",
+          "phase": "delivery",
+          "offsetMs": 236.70749999999953
+        },
+        {
+          "seq": 13,
+          "event": "begin",
+          "phase": "git.async",
+          "offsetMs": 242.30059999999958
+        },
+        {
+          "seq": 14,
+          "event": "end",
+          "phase": "git.async",
+          "offsetMs": 307.23529999999937,
+          "threw": false
+        },
+        {
+          "seq": 15,
+          "event": "end",
+          "phase": "delivery",
+          "offsetMs": 339.40099999999984,
+          "threw": false
+        },
+        {
+          "seq": 16,
+          "event": "begin",
+          "phase": "resolve",
+          "offsetMs": 339.5481
+        },
+        {
+          "seq": 17,
+          "event": "end",
+          "phase": "resolve",
+          "offsetMs": 342.6203999999998,
+          "threw": false
+        },
+        {
+          "seq": 18,
+          "event": "begin",
+          "phase": "grant.cleanup",
+          "offsetMs": 342.95759999999973
+        },
+        {
+          "seq": 19,
+          "event": "end",
+          "phase": "grant.cleanup",
+          "offsetMs": 343.0216999999993,
+          "threw": false
+        },
+        {
+          "seq": 20,
+          "event": "end",
+          "phase": "body",
+          "offsetMs": 343.0488999999998,
+          "threw": false
+        }
+      ],
+      "abort": null,
+      "final": {
+        "event": "final",
+        "offsetMs": 343.90049999999974,
+        "aborted": false,
+        "active": []
+      },
+      "overflow": false,
+      "droppedTransitions": 0,
+      "observerFailures": 0,
+      "observerUnavailable": false
+    }
+  ],
+  "packetDisposition": "full",
+  "rawContainsEveryJUnitPacket": true,
+  "rawSha256": "20cbfe98f8ca78cd75ee87e37f61b8e047a8b758af5c1b55164ee8c0859a550e",
+  "junitSha256": "e0f78e38c3a73f413b3ae664d011d249f4433c92ed9dc9f474b14b83eade63c8",
+  "junitArchiveSha256": "002d7f42224065756ddca4d1f2d95ad2b1041e05c894d8925a95ea30ee2fe512",
+  "scope": "one automatic observation; no prior timeout cause/flake/fix/landing inference"
+}

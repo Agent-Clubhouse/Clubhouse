@@ -1,0 +1,38 @@
+{
+  "run": 44990834408,
+  "head": "30f8287ccdc8241c3bc046c9ef3dd5833230cbf0",
+  "checkout": "d17b9af3b22b77b18cd6e73f0979e40c7de8b43e",
+  "tree": "040b9eb93b5dd769920564319f7f3e4becdf2b84",
+  "jobConclusions": {
+    "success": 33,
+    "skipped": 4
+  },
+  "windowsFixture": {
+    "cases": 68,
+    "failures": 0,
+    "skips": 1
+  },
+  "targetJUnitSeconds": 0.3456768,
+  "phaseWallMs": {
+    "seed.copy": 80.08669999999984,
+    "builtins.ensure": 19.653299999999945,
+    "beforeEach": 102.26409999999942,
+    "git.init": 77.23710000000028,
+    "git.add": 54.577000000000226,
+    "git.async": 64.9346999999998,
+    "delivery": 102.69350000000031,
+    "resolve": 3.0722999999998137,
+    "grant.cleanup": 0.06409999999959837,
+    "body": 239.9418000000005
+  },
+  "finalOffsetMs": 343.90049999999974,
+  "actualNormalWindowsPacketVerified": true,
+  "observerFailures": 0,
+  "observerUnavailable": false,
+  "originalRawSha256": "20cbfe98f8ca78cd75ee87e37f61b8e047a8b758af5c1b55164ee8c0859a550e",
+  "originalXmlSha256": "e0f78e38c3a73f413b3ae664d011d249f4433c92ed9dc9f474b14b83eade63c8",
+  "originalXmlBytes": 15910287,
+  "gzipAndOriginalZipRoundTripByteIdentity": true,
+  "preservedArtifactAudit01Failure": "Wrong unproven zero-Windows-skip assumption; actual68 cases/67pass/1POSIXskip; no application rerun",
+  "limits": "normal successful sample only; no Windows failure-phase/cause/flake/fix/landing proof"
+}
