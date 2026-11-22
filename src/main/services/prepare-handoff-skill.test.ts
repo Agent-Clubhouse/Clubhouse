@@ -68,6 +68,12 @@ beforeEach(async () => {
   const config = path.join(state.dir, 'empty-config'); fs.writeFileSync(config, '');
   vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   _resetHandoffPreparationsForTesting();
+  const host = await import('./handoff-host');
+  const offer = host.offerCallerHandoff;
+  vi.spyOn(host, 'offerCallerHandoff').mockImplementation(async (...args) => {
+    try { return await offer(...args); }
+    catch (error) { console.error('Original skill offer failure:', error); throw error; }
+  });
   state.handlers.clear();
   registerHandoffTools(); registerHandoffCapacityTools();
   fs.mkdirSync(state.sender); await git(state.sender, 'init', '-b', 'main');
