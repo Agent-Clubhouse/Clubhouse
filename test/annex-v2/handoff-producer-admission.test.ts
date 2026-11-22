@@ -265,6 +265,29 @@ describe('isolated real MCP producer domain admission', () => {
       await verifySource(fx, parseHandoff(resultValue(result)), summary);
     });
 
+    it('ignores cosmetic binding changes during the actual target-project capture await', async () => {
+      const fx = current(), summary = await prepare(fx), originalSource = fx.source.callerHandoffSource;
+      let wired = false;
+      vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
+        const source = await originalSource(...args);
+        if (!wired) {
+          const producer = fx.host.producers.values().next().value;
+          if (!producer) throw new Error('Missing original producer.');
+          const capture: typeof producer.captureTarget = producer.captureTarget.bind(producer);
+          vi.spyOn(producer, 'captureTarget').mockImplementation((target) => {
+            const pending = capture(target);
+            fx.binding.bindingManager.updateBinding(caller, receiver, { label: 'Cosmetic pending target' });
+            return pending;
+          });
+          wired = true;
+        }
+        return source;
+      });
+      const record = await offer(fx, summary);
+      expect(wired).toBe(true);
+      await verifySource(fx, record, summary);
+    });
+
     it('does not adopt a replacement quick source with the same id and worktree', async () => {
       const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
       const original = fx.registry.agentRegistry.get(caller);
@@ -497,6 +520,10 @@ describe('isolated real MCP producer domain admission', () => {
       operations.push(pending);
       await entered.promise;
       const record = fx.host.store.list()[0];
+      const producer = fx.host.producers.values().next().value;
+      if (!producer) throw new Error('Missing dispatched original producer.');
+      let producerSettled = false;
+      operations.push(producer.settled.then(() => { producerSettled = true; }));
       releases.push(() => finish({ status: 200, body: record }));
       let stopped = false;
       const stopping = fx.hostApi.stopHandoffs().then(() => { stopped = true; });
@@ -504,6 +531,7 @@ describe('isolated real MCP producer domain admission', () => {
       await vi.advanceTimersByTimeAsync(5_000);
       expect((await pending).isError).not.toBe(true);
       expect(stopped).toBe(false);
+      expect(producerSettled).toBe(false);
       expect(fx.host.producers.size).toBe(1);
       expect(() => fx.hostApi.handoffHost()).toThrow();
       finish({ status: 200, body: record });
@@ -511,6 +539,7 @@ describe('isolated real MCP producer domain admission', () => {
       expect(post).toHaveBeenCalledTimes(1);
       expect(fx.host.store.get(record.id)).toEqual(record);
       expect(fx.host.producers.size).toBe(0);
+      expect(producerSettled).toBe(true);
     });
 
     it.each(['catalog-prewrite', 'history-prewrite', 'history-after-rename'] as const)('retains exact partial ids and distinguishes %s failure without retry or rollback fiction', async (failure) => {
