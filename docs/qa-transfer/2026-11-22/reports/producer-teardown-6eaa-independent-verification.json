@@ -1,0 +1,295 @@
+{
+  "source": "6eaa947d4195510a39a4f8331aa904c7e86b6bfb",
+  "sourceTree": "879b992c16aadfd93cf48be46dbf94a1ce167cfc",
+  "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+  "proof": "76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2",
+  "proofTree": "0526a2a05866a683981805b546365aaf3b98af69",
+  "changedFile": "test/annex-v2/handoff-producer-admission.test.ts",
+  "sourceBridges": {
+    "oneFixture217plus15minus": true,
+    "entireSrcTreeIdenticalToC165": true,
+    "old52BodiesBytes": 45893,
+    "old52BodiesSha256": "a1f8664ae4f3f29a453d2ebea37c3ab44ba77830d3327ba13564c7a4fe4d714a",
+    "146OriginalFragmentBytes": 1584,
+    "151OriginalFragmentBytes": 836
+  },
+  "receipts": [
+    {
+      "prefix": "146-fixture-teardown-faults-red",
+      "head": "81c40696132e2b32382121fcaee107f86b4c8af7",
+      "tree": "5f8aacc8d632fc42be2af665ab37e0f11747fae1",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 1
+    },
+    {
+      "prefix": "147-fixture-teardown-faults-green",
+      "head": "c655bb63cb42f61b7d0cc10e6a28a4e18473132c",
+      "tree": "f60b9f2fc92df10dbac6ada46c9e5527756b821f",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 0
+    },
+    {
+      "prefix": "148-fixture-teardown-types",
+      "head": "c655bb63cb42f61b7d0cc10e6a28a4e18473132c",
+      "tree": "f60b9f2fc92df10dbac6ada46c9e5527756b821f",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 2
+    },
+    {
+      "prefix": "151-pre-forward-diagnostic-red",
+      "head": "0007940501bba9b9fd341e6e1e8f5b16388bbb8d",
+      "tree": "d653f3bfb5e68fe8a4318c37bda0e3deae9db923",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 1
+    },
+    {
+      "prefix": "153-fixture-teardown-final-green",
+      "head": "6eaa947d4195510a39a4f8331aa904c7e86b6bfb",
+      "tree": "879b992c16aadfd93cf48be46dbf94a1ce167cfc",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 0
+    },
+    {
+      "prefix": "154-fixture-teardown-types",
+      "head": "6eaa947d4195510a39a4f8331aa904c7e86b6bfb",
+      "tree": "879b992c16aadfd93cf48be46dbf94a1ce167cfc",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 0
+    },
+    {
+      "prefix": "155-fixture-teardown-lint",
+      "head": "6eaa947d4195510a39a4f8331aa904c7e86b6bfb",
+      "tree": "879b992c16aadfd93cf48be46dbf94a1ce167cfc",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 0
+    }
+  ],
+  "xml": [
+    {
+      "prefix": "146-fixture-teardown-faults-red",
+      "head": "81c40696132e2b32382121fcaee107f86b4c8af7",
+      "counts": {
+        "fail": 3,
+        "skip": 52
+      },
+      "failureNodes": 17,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "fail",
+          "failures": [
+            "<failure message=\"expected true to be false // Object.is equality\" type=\"AssertionError\">\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:266:29\n            </failure>\n            ",
+            "<failure message=\"expected &quot;stopHandoffs&quot; to be called once, but got 0 times\" type=\"AssertionError\">\nAssertionError: expected \"stopHandoffs\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:275:25\n            </failure>\n            ",
+            "<failure message=\"expected &quot;_resetGrantRequestsForTesting&quot; to be called once, but got 0 times\" type=\"AssertionError\">\nAssertionError: expected \"_resetGrantRequestsForTesting\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:276:26\n            </failure>\n            ",
+            "<failure message=\"expected true to be false // Object.is equality\" type=\"AssertionError\">\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:277:53\n            </failure>\n            ",
+            "<failure message=\"expected [Function current] to throw an error\" type=\"AssertionError\">\nAssertionError: expected [Function current] to throw an error\n\n- Expected:\nnull\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:278:28\n            </failure>\n        "
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows clock diagnostic throws",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "fail",
+          "failures": [
+            "<failure message=\"expected { ok: false, \u2026(1) } to deeply equal { ok: true }\" type=\"AssertionError\">\nAssertionError: expected { ok: false, \u2026(1) } to deeply equal { ok: true }\n\n- Expected\n+ Received\n\n  {\n-   \"ok\": true,\n+   \"error\": Error {\n+     \"message\": \"Original fixture clock diagnostic fault.\",\n+   },\n+   \"ok\": false,\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:310:35\n            </failure>\n            ",
+            "<failure message=\"expected &quot;vi.fn()&quot; to be called once, but got 0 times\" type=\"AssertionError\">\nAssertionError: expected \"vi.fn()\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:311:28\n            </failure>\n            ",
+            "<failure message=\"expected &quot;stopHandoffs&quot; to be called once, but got 0 times\" type=\"AssertionError\">\nAssertionError: expected \"stopHandoffs\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:312:25\n            </failure>\n            ",
+            "<failure message=\"expected &quot;_resetGrantRequestsForTesting&quot; to be called once, but got 0 times\" type=\"AssertionError\">\nAssertionError: expected \"_resetGrantRequestsForTesting\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:313:26\n            </failure>\n            ",
+            "<failure message=\"expected true to be false // Object.is equality\" type=\"AssertionError\">\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:314:53\n            </failure>\n            ",
+            "<failure message=\"expected [Function current] to throw an error\" type=\"AssertionError\">\nAssertionError: expected [Function current] to throw an error\n\n- Expected:\nnull\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:315:28\n            </failure>\n        "
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows logger diagnostic throws",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "fail",
+          "failures": [
+            "<failure message=\"expected { ok: false, \u2026(1) } to deeply equal { ok: true }\" type=\"AssertionError\">\nAssertionError: expected { ok: false, \u2026(1) } to deeply equal { ok: true }\n\n- Expected\n+ Received\n\n  {\n-   \"ok\": true,\n+   \"error\": Error {\n+     \"message\": \"Original fixture logger diagnostic fault.\",\n+   },\n+   \"ok\": false,\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:310:35\n            </failure>\n            ",
+            "<failure message=\"expected &quot;vi.fn()&quot; to be called once, but got 0 times\" type=\"AssertionError\">\nAssertionError: expected \"vi.fn()\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:311:28\n            </failure>\n            ",
+            "<failure message=\"expected &quot;stopHandoffs&quot; to be called once, but got 0 times\" type=\"AssertionError\">\nAssertionError: expected \"stopHandoffs\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:312:25\n            </failure>\n            ",
+            "<failure message=\"expected &quot;_resetGrantRequestsForTesting&quot; to be called once, but got 0 times\" type=\"AssertionError\">\nAssertionError: expected \"_resetGrantRequestsForTesting\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:313:26\n            </failure>\n            ",
+            "<failure message=\"expected true to be false // Object.is equality\" type=\"AssertionError\">\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:314:53\n            </failure>\n            ",
+            "<failure message=\"expected [Function current] to throw an error\" type=\"AssertionError\">\nAssertionError: expected [Function current] to throw an error\n\n- Expected:\nnull\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:315:28\n            </failure>\n        "
+          ]
+        }
+      ]
+    },
+    {
+      "prefix": "147-fixture-teardown-faults-green",
+      "head": "c655bb63cb42f61b7d0cc10e6a28a4e18473132c",
+      "counts": {
+        "pass": 5,
+        "skip": 50
+      },
+      "failureNodes": 0,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows clock diagnostic throws",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows logger diagnostic throws",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps actual fixture preparation alive until teardown settles it",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "prefix": "151-pre-forward-diagnostic-red",
+      "head": "0007940501bba9b9fd341e6e1e8f5b16388bbb8d",
+      "counts": {
+        "skip": 57,
+        "fail": 1
+      },
+      "failureNodes": 3,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > forwards actual preparation once when its pre-forward diagnostic clock throws",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "fail",
+          "failures": [
+            "<failure message=\"expected &quot;callerHandoffSource&quot; to be called once, but got 0 times\" type=\"AssertionError\">\nAssertionError: expected \"callerHandoffSource\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:407:25\n            </failure>\n            ",
+            "<failure message=\"Diagnostic failure masked the actual preparation.: expected false to be true // Object.is equality\" type=\"AssertionError\">\nAssertionError: Diagnostic failure masked the actual preparation.: expected false to be true // Object.is equality\n\n- Expected\n+ Received\n\n- true\n+ false\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:409:82\n            </failure>\n            ",
+            "<failure message=\"expected false to be true // Object.is equality\" type=\"AssertionError\">\nAssertionError: expected false to be true // Object.is equality\n\n- Expected\n+ Received\n\n- true\n+ false\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:410:91\n            </failure>\n        "
+          ]
+        }
+      ]
+    },
+    {
+      "prefix": "153-fixture-teardown-final-green",
+      "head": "6eaa947d4195510a39a4f8331aa904c7e86b6bfb",
+      "counts": {
+        "pass": 8,
+        "skip": 50
+      },
+      "failureNodes": 0,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection (1 failures)",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection (9 failures)",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows clock diagnostic throws",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows logger diagnostic throws",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > forwards actual preparation once when its pre-forward diagnostic clock throws",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > reports actual early offer settlement without entering an unreachable history hold",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps actual fixture preparation alive until teardown settles it",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        }
+      ]
+    }
+  ],
+  "xmlRows": 226,
+  "archiveCount": 57,
+  "compiler": {
+    "154Exit": 0,
+    "orderedInputs": 3959,
+    "trackedHashesVerifiedToSourceGit": 2471,
+    "dependencyHashesOwnerObservedAfterExecution": 1488,
+    "threeCompleteFixtures": [
+      "../../../test/annex-v2/handoff-producer-admission.test.ts",
+      "../../../src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+      "../../../src/main/services/prepare-handoff-skill.test.ts"
+    ],
+    "atomicReadSeal": false
+  },
+  "lint": {
+    "155Exit": 0,
+    "completeFixtureFiles": 1,
+    "errors": 0,
+    "warnings": 0
+  },
+  "diagnosticBounds": {
+    "traceRows": 8,
+    "outputRows": 8,
+    "outputFields": 3,
+    "toolNameCharacters": 80
+  },
+  "protectedHistoricalTreesEqual": true,
+  "manifestSha256": "7d0931826013cc6af4671f3e84474ed389de9f9585ac1f5686280568d56d3166",
+  "readmeSha256": "1ebd36486a7fc92c824c6970c877174330888b9e0ef16cc872bac64d3e627cd3",
+  "disposition": "APPROVE F1/F2 exact fixture successor for one ordinary same-PR new-head observation after guards; no hosted cause/fix/landing acceptance",
+  "closure": {
+    "F1": "resolved all-settlement actual batches and post-teardown original error reporting",
+    "F2": "resolved contained pre-forward/status/teardown diagnostics with8rows3fields80characters",
+    "remainingFindings": [],
+    "allowedNextStep": "one ordinary same-PR new-head observation after fresh guards; not hosted cause/fix/landing acceptance"
+  },
+  "remoteReadback": {
+    "head": "76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2",
+    "tree": "0526a2a05866a683981805b546365aaf3b98af69",
+    "parent": "6eaa947d4195510a39a4f8331aa904c7e86b6bfb",
+    "ref": "refs/heads/lane-3613-p2-routes/handoff-producer-teardown-correction",
+    "READMEblob": "8a942b81bcbae442b2c9cb511355c9a8de91d45f"
+  },
+  "originalE08ReviewByteEqual": true,
+  "privateWorkspace": {
+    "head": "079a257acf38b168b529fb7745dae97f686b72b8",
+    "tree": "89e942aabd42c8ec93fe47794f2eef95b0b61980",
+    "clean": true
+  }
+}
