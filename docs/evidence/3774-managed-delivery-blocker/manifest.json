@@ -1,0 +1,132 @@
+{
+  "pullRequest": 3774,
+  "run": 44981401024,
+  "failedJob": 137082523804,
+  "runConclusion": "failure",
+  "runCompletedAt": "2026-11-22T03:54:03Z",
+  "approvedSource": "7207ed4cd4d0a6d5fba443450bed049c8283a02e",
+  "approvedSourceReview": "592f4bdae8d22515c4fd6b434b8ded81a7a5310f",
+  "unchangedPrHead": "e56648cb0952cb29c5045107b635d81f662dae74",
+  "actualFailedCheckout": {
+    "head": "7d8f85ef23058350d0491886665eeea90976750d",
+    "tree": "3a565789d7551b92fce8c34ee14677b79efd69cc",
+    "parents": [
+      "e68536e2d292ed0b824230e158e54ff79b2f027d",
+      "e56648cb0952cb29c5045107b635d81f662dae74"
+    ],
+    "rawLogContainsCheckout": true,
+    "githubCommitAndFetchedObjectVerified": true,
+    "entireTreeEqualsApprovedPrHead": true
+  },
+  "hostedFailure": {
+    "file": "src/main/services/managed-agents/delivery.test.ts",
+    "blob": "a47f156c1fc496d9472b7e074257b91e566fb3b7",
+    "line": 233,
+    "test": "deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)",
+    "deadlineMs": 5000,
+    "junitReportedDurationSeconds": 10.395297,
+    "durationIsNotProvedBodyDuration": true,
+    "passed": 16721,
+    "failed": 1,
+    "skipped": 176,
+    "node": "22.23.4"
+  },
+  "reportPath": "README.md",
+  "reportSha256": "a068f0f035fc91309558f4aef3692bb25cc0a8b8b76d445ab30e123683b6b37c",
+  "causeEstablished": false,
+  "correctionImplemented": false,
+  "allProductAndTestSourcesRestored": true,
+  "prUpdatedOrCiRerun": false,
+  "producer": {
+    "head": "7abb83169bc57eefb7a69cbbaf04ebbab853a77c",
+    "tree": "24e3c566f1785325079dce9dcbf15d2bebc00d6e",
+    "path": "capture.py",
+    "sha256": "9f577014c63b56ed5e7a87b08b54877e18de4020abbe905c255ff052698a6700",
+    "gateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3"
+  },
+  "observationalInputs": {
+    "receipt": "attempts/02-phase-recording-receipt.json",
+    "jsonPointer": "/before/inputs",
+    "count": 55,
+    "originalCiFixtureServiceMockConfigBuiltinInputs": 54,
+    "extraTaskOnlyCaptureProducer": 1,
+    "measurementFixtureIsExplicitTrackedWip": true,
+    "originalInputBytesBridgeToActualFailedCheckout": true,
+    "beforeAfterSealsEqual": true,
+    "bothPatchesReconstructCapturedWipFixtureSha256": true
+  },
+  "observations": [
+    {
+      "key": "01-phase-observation",
+      "exit": 0,
+      "passed": 4,
+      "skipped": 64,
+      "minimumGiB": 4,
+      "metricCredit": false,
+      "reason": "original capture has no emitted phase records",
+      "wipFixtureSha256": "47766b8f64483114ce3c60a7dbb65e90f4823c4031f00db8c9dd116849be1c98"
+    },
+    {
+      "key": "02-phase-recording",
+      "exit": 0,
+      "passed": 4,
+      "skipped": 64,
+      "minimumGiB": 4,
+      "metricCredit": "local transparent WIP wall intervals only, not hosted cause",
+      "wipFixtureSha256": "cbd9549e779ba79fbb7c0e21ea51211d3482417c20cce322db751febc27607d4"
+    }
+  ],
+  "localMeasurement": {
+    "phaseArtifact": "phase-observation.json",
+    "beforeEachMs": 7.311958,
+    "seedCopyMs": 3.580208,
+    "ensureBuiltinsMs": 3.531708,
+    "gitInitMs": 20.375542,
+    "gitAddMs": 14.100917,
+    "asyncGitCloseMs": 9.594958,
+    "deliveryMs": 12.165083,
+    "testBodyFinallyMs": 47.516042,
+    "childWallIntervalSumMs": 44.071417,
+    "childWallIntervalFraction": 0.9275060621,
+    "syntheticDelayOrFakeTrackingResult": false,
+    "originalGrantContentAssertionsAndDeadlineRetained": true,
+    "platform": "macOS-26.5.2-arm64",
+    "node": "24.22.1",
+    "runtimeVersionObservedAfterRunsNotRetrosealed": true
+  },
+  "postObservationRunnerInspection": {
+    "path": "node_modules/@vitest/runner/dist/chunk-artifact.js",
+    "sha256": "bf6af6d2f4469911879a67e83b8f9e7b20332cf42795032c53457b10ccc1c617",
+    "version": "4.1.12",
+    "reportedDurationIncludesBeforeEachAndCleanup": true,
+    "callbackDeadlineIsSeparateWrapper": true,
+    "notHostedPhaseOrStackTraceEvidence": true
+  },
+  "artifacts": [
+    {"path": "official/windows-unit-2-all-steps-original.log", "bytes": 2589040, "sha256": "0390e7809c9448b3c126e65b525e901a4fddbdfe92f78ef58c95b159ff5e3014"},
+    {"path": "official/test-results-windows-latest-2-original.zip", "bytes": 559423, "sha256": "fe42f0c760f17f48c5fb67ed6ab8875d6421b4a8c06a895842577a2984478d12"},
+    {"path": "phase-observation.json", "bytes": 5645, "sha256": "de0e1a87531dfbc3082fa92adfcda3fb0e88f37fbb7e42bdaaa2dfe63f898c87"},
+    {"path": "attempts-01-phase-observation.patch", "bytes": 4963, "sha256": "6325c182576b0cf25adfe1371338889ec69cf5a6e00d23eb09d4963f6edee5df"},
+    {"path": "attempts-02-phase-recording.patch", "bytes": 5264, "sha256": "2d8edf350b4fe8f128534e8a503662eea3998c74492e501b83ba91780ad8db58"},
+    {"path": "attempts/01-phase-observation-original.txt", "bytes": 1087, "sha256": "20f474b21786b7348bbd6589f96a9530b3e4ddebe15755aff703286fc95fe13b"},
+    {"path": "attempts/01-phase-observation-receipt.json", "bytes": 20500, "sha256": "943d4b52d162cee19a7d8b7b015f686d2a7e72cfdf0d70fb098da8b2c2809b46"},
+    {"path": "attempts/02-phase-recording-original.txt", "bytes": 1087, "sha256": "0254d0271e7f003aaa856a6654296c8af5c35b2b2dfead37beffed5cc1ac97f3"},
+    {"path": "attempts/02-phase-recording-receipt.json", "bytes": 20500, "sha256": "f16c209945faf28050e7dea3eee631bf4426208680f5e6912126c85fe7f99492"}
+  ],
+  "originalJunitArtifact": {
+    "id": 14738805633,
+    "name": "test-results-windows-latest-2",
+    "xmlPathInArchive": "test-results.xml",
+    "xmlSha256": "9e0f1842ff0270ea4de3ebbd25f6b869a4f96bf7eaeaa533d38b06e336637410"
+  },
+  "limits": [
+    "hosted timeout remains real; local green and unchanged inputs are not baseline or flake proof",
+    "child interval concentration on macOS does not identify the Windows stall",
+    "selected-input seals are not exhaustive transitive-runtime or untracked-input seals",
+    "two observations use explicitly reconstructed tracked-WIP fixture, not clean-head baseline execution",
+    "archived Git patches retain required space-prefixed blank context lines; these trigger generic new-file whitespace checks and must not be normalized; authored documents are checked separately",
+    "no forced fixture correction, source edit retained, timeout/workflow/grant change, CI rerun or landing",
+    "smallest missing evidence is actual Windows22.23.4 fixture phase attribution under an existing approved validation route",
+    "3714 source approval and same3774 remain unchanged; no security/phone/current-app/full-duplex closure"
+  ]
+}

@@ -1,0 +1,201 @@
+[
+  {
+    "phase": "seed-builtins",
+    "ms": 261.2031669999999
+  },
+  {
+    "test": "deliverManagedSetup > delivers prepare-handoff only while the agent holds handoff.offer, never from its setup (#3344)",
+    "phase": "before-each",
+    "ms": 13.27949999999987,
+    "copyMs": 7.11241700000005,
+    "ensureMs": 5.785707999999886
+  },
+  {
+    "test": "deliverManagedSetup > delivers prepare-handoff only while the agent holds handoff.offer, never from its setup (#3344)",
+    "phase": "async-child-close",
+    "file": "git",
+    "args": [
+      "--literal-pathspecs",
+      "ls-files",
+      "-z",
+      "--",
+      ".claude/skills"
+    ],
+    "ms": 14.78495799999996
+  },
+  {
+    "test": "deliverManagedSetup > delivers prepare-handoff only while the agent holds handoff.offer, never from its setup (#3344)",
+    "phase": "async-child-close",
+    "file": "git",
+    "args": [
+      "--literal-pathspecs",
+      "ls-files",
+      "-z",
+      "--",
+      ".claude/skills"
+    ],
+    "ms": 11.867750000000115
+  },
+  {
+    "test": "deliverManagedSetup > delivers prepare-handoff only while the agent holds handoff.offer, never from its setup (#3344)",
+    "phase": "async-child-close",
+    "file": "git",
+    "args": [
+      "--literal-pathspecs",
+      "ls-files",
+      "-z",
+      "--",
+      ".claude/skills"
+    ],
+    "ms": 9.952708999999913
+  },
+  {
+    "test": "deliverManagedSetup > delivers prepare-handoff only while the agent holds handoff.offer, never from its setup (#3344)",
+    "phase": "async-child-close",
+    "file": "git",
+    "args": [
+      "--literal-pathspecs",
+      "ls-files",
+      "-z",
+      "--",
+      ".claude/skills"
+    ],
+    "ms": 10.050000000000182
+  },
+  {
+    "test": "deliverManagedSetup > reports current grant-gated skills and requires actual delivery evidence (#3517)",
+    "phase": "before-each",
+    "ms": 7.891125000000102,
+    "copyMs": 4.1616670000000795,
+    "ensureMs": 3.5266670000000886
+  },
+  {
+    "test": "deliverManagedSetup > reports current grant-gated skills and requires actual delivery evidence (#3517)",
+    "phase": "async-child-close",
+    "file": "git",
+    "args": [
+      "--literal-pathspecs",
+      "ls-files",
+      "-z",
+      "--",
+      ".claude/skills"
+    ],
+    "ms": 9.209291999999778
+  },
+  {
+    "test": "deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)",
+    "phase": "before-each",
+    "ms": 7.311958000000004,
+    "copyMs": 3.580207999999857,
+    "ensureMs": 3.531708000000208
+  },
+  {
+    "test": "deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)",
+    "phase": "sync-child",
+    "file": "git",
+    "args": [
+      "init",
+      "-q"
+    ],
+    "ms": 20.375541999999996
+  },
+  {
+    "test": "deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)",
+    "phase": "sync-child",
+    "file": "git",
+    "args": [
+      "add",
+      ".claude/skills/prepare-handoff/SKILL.md"
+    ],
+    "ms": 14.100916999999981
+  },
+  {
+    "test": "deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)",
+    "phase": "async-child-close",
+    "file": "git",
+    "args": [
+      "--literal-pathspecs",
+      "ls-files",
+      "-z",
+      "--",
+      ".claude/skills"
+    ],
+    "ms": 9.594957999999906
+  },
+  {
+    "test": "deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)",
+    "phase": "delivery",
+    "ms": 12.165082999999868
+  },
+  {
+    "test": "deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)",
+    "phase": "test-body-finally",
+    "ms": 47.51604199999997
+  },
+  {
+    "test": "exactly its parts (#2819) > leaves a built-in skill folder git tracks to the project, and never writes, records or removes it (D74)",
+    "phase": "before-each",
+    "ms": 7.87566599999991,
+    "copyMs": 4.368499999999813,
+    "ensureMs": 3.282583000000159
+  },
+  {
+    "test": "exactly its parts (#2819) > leaves a built-in skill folder git tracks to the project, and never writes, records or removes it (D74)",
+    "phase": "sync-child",
+    "file": "git",
+    "args": [
+      "init",
+      "-q"
+    ],
+    "ms": 14.915166999999883
+  },
+  {
+    "test": "exactly its parts (#2819) > leaves a built-in skill folder git tracks to the project, and never writes, records or removes it (D74)",
+    "phase": "sync-child",
+    "file": "git",
+    "args": [
+      "add",
+      ".claude/skills/build/SKILL.md"
+    ],
+    "ms": 13.608999999999924
+  },
+  {
+    "test": "exactly its parts (#2819) > leaves a built-in skill folder git tracks to the project, and never writes, records or removes it (D74)",
+    "phase": "async-child-close",
+    "file": "git",
+    "args": [
+      "--literal-pathspecs",
+      "ls-files",
+      "-z",
+      "--",
+      ".claude/skills"
+    ],
+    "ms": 11.775875000000042
+  },
+  {
+    "test": "exactly its parts (#2819) > leaves a built-in skill folder git tracks to the project, and never writes, records or removes it (D74)",
+    "phase": "async-child-close",
+    "file": "git",
+    "args": [
+      "--literal-pathspecs",
+      "ls-files",
+      "-z",
+      "--",
+      ".claude/skills"
+    ],
+    "ms": 10.623417000000018
+  },
+  {
+    "test": "exactly its parts (#2819) > leaves a built-in skill folder git tracks to the project, and never writes, records or removes it (D74)",
+    "phase": "async-child-close",
+    "file": "git",
+    "args": [
+      "--literal-pathspecs",
+      "ls-files",
+      "-z",
+      "--",
+      ".claude/skills"
+    ],
+    "ms": 9.689833000000135
+  }
+]

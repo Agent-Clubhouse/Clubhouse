@@ -1,0 +1,14 @@
+2026-11-22T04:04:19Z START lane-p2 idle=81% unused=6765M avail=34312M freepct=87 comp=717M swap=3769M pid=15663 cmd=npx vitest run --project main src/main/services/managed-agents/delivery.test.ts --maxWorkers=2 -t does not claim installation|reports current grant-gated skills|delivers prepare-handoff only|leaves a built-in skill folder git tracks
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed | 64 skipped (68)
+   Start at  23:04:19
+   Duration  3.64s (transform 816ms, setup 4ms, import 1.04s, tests 2.52s, environment 0ms)
+
+2026-11-22T04:04:23Z END lane-p2 rc=0

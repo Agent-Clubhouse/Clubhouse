@@ -1,0 +1,110 @@
+diff --git a/src/main/services/managed-agents/delivery.test.ts b/src/main/services/managed-agents/delivery.test.ts
+index a47f156c1..007937c12 100644
+--- a/src/main/services/managed-agents/delivery.test.ts
++++ b/src/main/services/managed-agents/delivery.test.ts
+@@ -6,8 +6,37 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
+ import type { DurableAgentConfig } from '../../../shared/types';
+ import { CLUBHOUSE_MCP_PART_ID, PREPARE_HANDOFF_SKILL_ID, isListed } from '../../../shared/managed-agents-types';
+ 
++const phases = vi.hoisted(() => {
++  const entries: Record<string, unknown>[] = [];
++  return entries;
++});
++
+ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
+ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
++vi.mock('child_process', async (importOriginal) => {
++  const actual = await importOriginal<typeof import('node:child_process')>();
++  return {
++    ...actual,
++    execFile: (...args: Parameters<typeof actual.execFile>) => {
++      const start = performance.now();
++      const test = expect.getState().currentTestName;
++      const child = actual.execFile(...args);
++      child.once('close', () => phases.push({
++        test, phase: 'async-child-close', file: args[0], args: args[1], ms: performance.now() - start,
++      }));
++      return child;
++    },
++    execFileSync: (...args: Parameters<typeof actual.execFileSync>) => {
++      const start = performance.now();
++      try { return actual.execFileSync(...args); }
++      finally {
++        phases.push({
++          test: expect.getState().currentTestName, phase: 'sync-child', file: args[0], args: args[1], ms: performance.now() - start,
++        });
++      }
++    },
++  };
++});
+ 
+ import { createAssetCatalogStore } from '../asset-catalog/store';
+ import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
+@@ -68,22 +97,34 @@ function serviceAt(dir: string): ManagedAgentsService {
+ // for each test; ensureBuiltins then finds them current and writes nothing.
+ let seed: string;
+ beforeAll(async () => {
++  const started = performance.now();
+   seed = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-seed-'));
+   _resetSettingsAuditForTesting(false);
+   await serviceAt(seed).ensureBuiltins();
++  phases.push({ phase: 'seed-builtins', ms: performance.now() - started });
++});
++afterAll(() => {
++  fs.rmSync(seed, { recursive: true, force: true });
++  fs.writeFileSync('node_modules/.cache/3714-ci-44981401024/phase-observation.json', JSON.stringify(phases, null, 2), { flag: 'wx' });
+ });
+-afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+ 
+ beforeEach(async () => {
++  const started = performance.now();
+   root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-'));
+   project = path.join(root, 'project');
+   const wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
+   fs.mkdirSync(wt, { recursive: true });
+   _resetSettingsAuditForTesting(false);
++  const copying = performance.now();
+   for (const name of fs.readdirSync(seed)) fs.cpSync(path.join(seed, name), path.join(root, name), { recursive: true });
++  const copied = performance.now();
+   service = serviceAt(root);
+   await service.ensureBuiltins();
+   agent = { id: 'a1', name: 'cool-gazelle', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt, branch: 'cool-gazelle/standby' };
++  phases.push({
++    test: expect.getState().currentTestName, phase: 'before-each', ms: performance.now() - started,
++    copyMs: copied - copying, ensureMs: performance.now() - copied,
++  });
+ });
+ 
+ describe('deliverManagedSetup', () => {
+@@ -231,6 +272,7 @@ describe('deliverManagedSetup', () => {
+   });
+ 
+   it('does not claim installation of a grant-gated skill left to the project (#3517)', async () => {
++    const started = performance.now();
+     const stop = setGrantedSkills(() => [PREPARE_HANDOFF_SKILL_ID]);
+     try {
+       const wt = agent.worktreePath!;
+@@ -240,13 +282,22 @@ describe('deliverManagedSetup', () => {
+       fs.writeFileSync(path.join(folder, 'SKILL.md'), '# Project handoff');
+       git(wt, 'add', '.claude/skills/prepare-handoff/SKILL.md');
+       agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
++      const delivering = performance.now();
+       const record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
++      phases.push({
++        test: expect.getState().currentTestName, phase: 'delivery', ms: performance.now() - delivering,
++      });
+       expect(record!.deliveredSkillIds).toEqual([]);
+       expect(builtinSkillStatus(await resolveManagedSetup(service, agent.managed, agent), record!)).toEqual([
+         { id: PREPARE_HANDOFF_SKILL_ID, name: 'Prepare handoff' },
+       ]);
+       expect(fs.readFileSync(path.join(folder, 'SKILL.md'), 'utf8')).toBe('# Project handoff');
+-    } finally { stop(); }
++    } finally {
++      stop();
++      phases.push({
++        test: expect.getState().currentTestName, phase: 'test-body-finally', ms: performance.now() - started,
++      });
++    }
+   });
+ 
+   it('lets a chosen skill that installs to prepare-handoff/ win over the granted built-in, and says so (#3344, D75)', async () => {
