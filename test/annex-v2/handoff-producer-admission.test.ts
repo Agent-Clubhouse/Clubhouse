@@ -107,18 +107,46 @@ beforeEach(async () => {
 });
 async function cleanupFixture(): Promise<void> {
   retiringFixture = true;
-  if (process.platform === 'win32' && toolWork.some((work) => work.state === 'pending')) {
-    console.error('Producer fixture teardown work:', toolWork.map((work) => ({ ...work, ageMs: Date.now() - work.started })));
+  try {
+    if (process.platform === 'win32') {
+      const recent = toolWork.slice(-8);
+      if (recent.some((work) => work.state === 'pending')) {
+        const now = Date.now();
+        console.error('Producer fixture teardown work:', recent.map((work) => ({
+          tool: work.tool.slice(0, 80), state: work.state, ageMs: now - work.started,
+        })));
+      }
+    }
+  } catch {
+    // Optional diagnostics must never strand owned fixture work.
   }
   for (const release of releases.splice(0)) release();
-  while (operations.length) await Promise.all(operations.splice(0));
-  await fixture?.hostApi.stopHandoffs();
-  fixture?.requests._resetGrantRequestsForTesting();
-  vi.restoreAllMocks();
-  vi.useRealTimers();
-  (await import('../../src/main/services/agent-config')).clearAgentConfigCache();
-  fixture = undefined;
-  await fs.rm(dir, { recursive: true, force: true });
+  const failures: unknown[] = [];
+  const drained = new Set<Promise<unknown>>();
+  while (operations.length) {
+    const batch = operations.splice(0).filter((pending) => {
+      if (drained.has(pending)) return false;
+      drained.add(pending);
+      return true;
+    });
+    for (const outcome of await Promise.allSettled(batch)) {
+      if (outcome.status === 'rejected') failures.push(outcome.reason);
+    }
+  }
+  const teardown: Array<() => void | Promise<void>> = [
+    async () => { await fixture?.hostApi.stopHandoffs(); },
+    () => { fixture?.requests._resetGrantRequestsForTesting(); },
+    () => { vi.restoreAllMocks(); },
+    () => { vi.useRealTimers(); },
+    async () => { (await import('../../src/main/services/agent-config')).clearAgentConfigCache(); },
+    () => { fixture = undefined; },
+    async () => { await fs.rm(dir, { recursive: true, force: true }); },
+  ];
+  for (const finish of teardown) {
+    try { await finish(); } catch (error) { failures.push(error); }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'Producer fixture work or teardown failed.');
 }
 afterEach(cleanupFixture);
 
