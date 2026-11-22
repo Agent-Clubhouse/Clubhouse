@@ -572,8 +572,9 @@ function headerInt(res: Pick<http.IncomingMessage, 'headers'>, name: string): nu
 }
 
 /** An icon through the satellite's authenticated icon route, as a data URL. */
-function fetchSatelliteIcon(sat: SatelliteConnectionInternal, kind: IconKind, id: string): Promise<IconFetchResult> {
-  if (sat.state !== 'connected' && reverseControllerReadReady(sat.fingerprint)) {
+function fetchSatelliteIcon(sat: SatelliteConnectionInternal, stream: SatelliteStream | undefined, kind: IconKind, id: string): Promise<IconFetchResult> {
+  if (!stream || !satelliteStreamCurrent(sat, stream)) return Promise.resolve({ status: 'failed' });
+  if (stream.via === 'reverse') {
     return requestSatelliteRaw(sat.fingerprint, {
       method: 'GET', path: `/api/v1/icons/${kind}/${encodeURIComponent(id)}`, timeoutMs: 10_000, maxResponseBytes: REMOTE_ICON_MAX_BYTES,
     }).then((response): IconFetchResult => {
@@ -618,7 +619,7 @@ function fetchSatelliteLeftOutIcons(sat: SatelliteConnectionInternal): void {
   void fetchLeftOutIcons(
     state,
     () => (stream && satelliteStreamCurrent(sat, stream) ? sat.snapshot : null),
-    (kind, id) => fetchSatelliteIcon(sat, kind, id),
+    (kind, id) => fetchSatelliteIcon(sat, stream, kind, id),
     () => {
       if (!stream || !satelliteStreamCurrent(sat, stream) || !sat.snapshot) return;
       applyFetchedIcons(state, sat.snapshot);
