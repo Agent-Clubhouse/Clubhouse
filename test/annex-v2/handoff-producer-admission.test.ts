@@ -243,7 +243,7 @@ function heldRelease(owner: FixtureOwner, release: () => void): () => void {
 
 function failureError(failures: readonly Failure[]): unknown {
   if (failures.length === 1) return failures[0].error;
-  if (failures.length > 1) return Object.assign(new Error('Producer fixture work or teardown failed.'), { errors: failures.map((failure) => failure.error) });
+  if (failures.length > 1) return Object.assign(new Error('Producer fixture work or teardown failed.'), { errors: Object.freeze(failures.map((failure) => failure.error)) });
   return undefined;
 }
 
@@ -305,6 +305,14 @@ async function acknowledgeExpected(owner: FixtureOwner, error: unknown): Promise
   expect(owner.expected.length).toBeGreaterThan(0);
   expect(record.failures).toHaveLength(owner.expected.length);
   expect(error).toBe(record.error);
+  if (record.failures.length > 1) {
+    if (!(error instanceof Error) || !('errors' in error) || !Array.isArray(error.errors)) {
+      throw new Error('Expected the complete original aggregate fixture error references.');
+    }
+    const originals: unknown[] = error.errors;
+    expect(originals).toHaveLength(owner.expected.length);
+    originals.forEach((original, index) => { expect(original).toBe(owner.expected[index]); });
+  }
   record.failures.forEach((failure, index) => {
     expect(failure.stage).toBe('work');
     expect(failure.error).toBe(owner.expected[index]);
@@ -716,8 +724,7 @@ describe('isolated real MCP producer domain admission', () => {
     expect(fx.requests.listGrantRequests()).toEqual([]);
   }));
 
-  async function sentinelOwner() {
-    const owner = newOwner();
+  async function sentinelOwner(owner = newOwner()) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'producer-owner-control-'));
     allocateDirectory(owner, directory);
     owner.teardown = [
@@ -751,7 +758,8 @@ describe('isolated real MCP producer domain admission', () => {
       activeOwner = original;
     }
     expect(owner.complete).toBe(true);
-    const next = await sentinelOwner();
+    activeOwner = owner;
+    const next = await sentinelOwner(admitOwner());
     try {
       let touched = 0;
       next.teardown.unshift(() => { touched++; });
@@ -762,6 +770,7 @@ describe('isolated real MCP producer domain admission', () => {
       expect(owner.final?.failures).toEqual([]);
       expect((await hookCompletion(next)).failures).toEqual([]);
     } finally {
+      await hookCompletion(next);
       activeOwner = original;
     }
   }));
@@ -830,6 +839,7 @@ describe('isolated real MCP producer domain admission', () => {
     if (stage === 'caller' || stage === 'teardown') {
       await expect(acknowledgeExpected(owner, record.error)).rejects.toThrow();
       expect(owner.acknowledged.size).toBe(0);
+      await observe(owner, 'body', async () => {});
     } else {
       await acknowledgeExpected(owner, record.error);
       if (stage === 'release') heldRelease(owner, () => { throw unexpected; });
@@ -840,6 +850,20 @@ describe('isolated real MCP producer domain admission', () => {
     expect(owner.final?.failures.some((failure) => failure.error === expected)).toBe(true);
     expect(final.failures.filter((failure) => failure.error === expected)).toHaveLength(stage === 'caller' || stage === 'teardown' ? 1 : 0);
     expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it('owner lifecycle rejects equal-message unregistered error references despite fulfilled body', async () => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), expected = new Error('Synthetic reference.'), actual = new Error('Synthetic reference.');
+    registerExpected(owner, [expected]);
+    owner.operations.push(Promise.reject(actual));
+    const record = await coreCompletion(owner);
+    await expect(acknowledgeExpected(owner, record.error)).rejects.toThrow();
+    await observe(owner, 'body', async () => {});
+    expect(owner.acknowledged.size).toBe(0);
+    const final = await hookCompletion(owner);
+    expect(final.failures).toHaveLength(1);
+    expect(final.failures[0].error).toBe(actual);
+    expect(final.failures[0].stage).toBe('work');
   }));
 
   it('owner lifecycle refuses incomplete actual setup and retains partial storage and late-install failure until settlement', async () => runFixtureBody(async () => {
