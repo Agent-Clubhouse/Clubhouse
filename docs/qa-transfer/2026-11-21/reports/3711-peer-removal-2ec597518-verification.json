@@ -1,0 +1,466 @@
+{
+  "schemaVersion": 1,
+  "reviewer": "auto-reset-policy-design",
+  "verdict": "APPROVE_SCOPED_PR_READY",
+  "reviewedUtc": "2026-11-22T02:08:13.459566+00:00",
+  "issue": 3711,
+  "base": "7dfc8b1541bc8c77980faaff782f573c2fa85a15",
+  "source": "2ec597518433a1aca5625e61d01b183a31c01b31",
+  "tree": "a6435fdb4bc205ade5c8ebc849d9534e675a869b",
+  "evidence": "227ecc483d7226c8d33e3777005485175a186b87",
+  "evidenceTree": "94f522c365e6afeefaaeaf8b0d0b6c80b8615fa7",
+  "manifestSha256": "6be22017a80c7b765fd6481263000452f055e9988572b3ad80e42eddf183a4d2",
+  "verifiedSources": 25,
+  "verifiedArtifacts": 20,
+  "verifiedBlobs": [
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/ipc/annex-handlers.ts",
+      "sha256": "7fddae8cc70697c7815358fc9fe1d4ad5658d2c06b541910f5056810d360cf21",
+      "gitBlob": "8a5ccf9527c6e4890734c949e41935b311fa659f",
+      "bytes": 14160
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/ipc/annex-handlers.test.ts",
+      "sha256": "624a6149d9ab05ddf875ba6952118119f0912cf0728a3a564e8b6c979121ea70",
+      "gitBlob": "e7131da22fbcbe17a2323ac4f4a1e2e331f71884",
+      "bytes": 22117
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/ipc/validation.ts",
+      "sha256": "a707b2e8460759abcacd142fa386a6f27543af2d0049fed921cffd3001c58b09",
+      "gitBlob": "8336e5ca024ad600517a7bbed6d42882cbc4b5cd",
+      "bytes": 7587
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98",
+      "gitBlob": "77cfe1328ce8b05ed4df5243a3683938e98a9670",
+      "bytes": 173595
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/annex-client.test.ts",
+      "sha256": "0d438fd55564f23a34a7ec0db7edd509a278e2ab0c8fb4b51b3910f5be9b36f6",
+      "gitBlob": "7ecb6894da0a1587df4a034fa22d6cadb17882b2",
+      "bytes": 295529
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/annex-server.ts",
+      "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+      "gitBlob": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b",
+      "bytes": 361313
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/annex-peers.ts",
+      "sha256": "92c62decad2d6da566065abef20611dbed75529b9f20a2230db35cc65cb8b503",
+      "gitBlob": "b85f7eece758f9d1bf400d6ab85bf1b51bbd764d",
+      "bytes": 26245
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/annex-devices.ts",
+      "sha256": "279f326f95cad34e65ffe3035900f5d67618bce961ebedaf08b0f0e0091a0b2a",
+      "gitBlob": "a03e862e2f389c8a252432c2a59c0c3fb123c4fb",
+      "bytes": 15458
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/annex-devices.test.ts",
+      "sha256": "098253ae7d6dcc2a051f48ca8e164a518a40e5476f234b57e0feebfb35d1f914",
+      "gitBlob": "41b88df093a7ed09195d7f6fc6a1e91a9f1d59dc",
+      "bytes": 27718
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/annex-device-signal.ts",
+      "sha256": "31e25abf98c78e7ce5721c9c9391e0d657ff9e670b9ac0939e9e0001f5cd04bf",
+      "gitBlob": "9b23750124ddfc79612a0bc87216b001fa995e81",
+      "bytes": 1990
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/annex-control.ts",
+      "sha256": "4d69cb8bd02dc20d00e03c7685878d09ab0e2c228e44217e477aa775539ffbba",
+      "gitBlob": "d398a97162e3eb4c554828dde82e863e0505bea9",
+      "bytes": 78498
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/annex-network-membership.ts",
+      "sha256": "313b1aa6ae0cd889112bfbfc67de51d378918e05324a651577db2beafbbc5c55",
+      "gitBlob": "4d4777ffaa3003f385db42efd6565ec08240cbed",
+      "bytes": 43610
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/annex-network-channel.ts",
+      "sha256": "a57bf637c67c04654c494431259c9a7715d4fc4cfec6ad20a7fae91396e1f684",
+      "gitBlob": "239df9e8f206c3bd15646c1389ac4652c561d4b8",
+      "bytes": 20467
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/main/services/settings-audit.ts",
+      "sha256": "a0890a817e2f95c66bddd2ffdc9d45b8adde1ed36a1ce05637a0bba18d2f6fb5",
+      "gitBlob": "3a1e8232b725dcb2d107d1fbca12ecc936b632b0",
+      "bytes": 9483
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/shared/types.ts",
+      "sha256": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+      "gitBlob": "d1b0d86fda1037c8262e12503bdfb0c8e63acde0",
+      "bytes": 76632
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/shared/ipc-channels.ts",
+      "sha256": "f4c5158c1573a361e48e7b9841459e85b148eea8b67f3d384f6ca4c91577f287",
+      "gitBlob": "94b3aea072c72996d4ecd5b921346e8037ae3a0a",
+      "bytes": 48129
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/__mocks__/electron.ts",
+      "sha256": "b3fa8e75740492dae26e51dfa6fa81f6d5aca90ecc53b1a1af1724d8c13c4ec4",
+      "gitBlob": "a5f6b589b27ec53af4369bace4f2be89c6d79817",
+      "bytes": 2809
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "src/__mocks__/ws.ts",
+      "sha256": "44a1a1a2622403d7b2bf6396efff56a539c923706bd3e15115969738458b3a60",
+      "gitBlob": "54afa363db970783a3e00bfd93f3e372d24e14e4",
+      "bytes": 1062
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "test/global-setup.ts",
+      "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "gitBlob": "f80eac131998f792ca0f271f80eb606215c942af",
+      "bytes": 658
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "test/standard-runtime-boundary.ts",
+      "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "gitBlob": "0a2d496ec59195a46b27a4b5394d4fab9111f62d",
+      "bytes": 379
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "vitest.config.ts",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "gitBlob": "e371e57159be74b4f5baf9aadcb0339fa6034025",
+      "bytes": 3220
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "gitBlob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef",
+      "bytes": 530
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "docs/annex-reverse-routes.tsconfig.json",
+      "sha256": "26b864ea875ec6db8bc65c0e514f6103314a7133639b44b2e185d62d06a3de4a",
+      "gitBlob": "31137e6846a46b3ad0f8890b2e10bc2b39620112",
+      "bytes": 921
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "package.json",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "gitBlob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8",
+      "bytes": 5782
+    },
+    {
+      "ref": "2ec597518433a1aca5625e61d01b183a31c01b31",
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "gitBlob": "7e45389f84ca58c5c7832cab169aa5674320d25d",
+      "bytes": 690814
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/01-red-original.txt",
+      "sha256": "bd5f4144955a0e535c961558f139fa1595e20744c6264dfabbcabdbe8f8e9062",
+      "gitBlob": "b1371a8f7c8e2e9805ecfa291f83b9d67d2a0bdf",
+      "bytes": 6539
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/01-red-source.txt",
+      "sha256": "acf5e1309cc761ea33fe52af85193b13a62f7b4487d44639d8e5223b125b87e3",
+      "gitBlob": "15562055e221ac45f97741b34f9e243f069972ce",
+      "bytes": 82
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/02-red-original.txt",
+      "sha256": "45c77c5c61270a4d5aabe0c0728741bbbdd072bf5d7be9e368d961d8829cdcaf",
+      "gitBlob": "f8ed3b7f6bfb4c55108546d92a805b5884d91659",
+      "bytes": 9409
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/02-red-source.txt",
+      "sha256": "d4838c42960596e7eaec3080f509f8c52b8a6064bef2543d011ddb09850076c9",
+      "gitBlob": "96b9d4e7634462ff1c211cb7819d6e70fae45115",
+      "bytes": 82
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/03-red-original.txt",
+      "sha256": "0b455d69c2685ce42ef87ea34e492eeb9acf49e005c18cba70b369621568b50d",
+      "gitBlob": "b9dea32f398931561c6fef792c15365b5bd8c02d",
+      "bytes": 10708
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/03-red-source.txt",
+      "sha256": "d9366884b646c84b9a5b00fe45553b367cb4eb056bc3594c59b9bf6fe0ddc0c7",
+      "gitBlob": "63f0d00613fe3be5bcfeb45f82a1f9ff5edb87a2",
+      "bytes": 82
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/04-green-original.txt",
+      "sha256": "a9d5d3620b9d238e14e260fe4de860d8c1ad8553d891f345c6d393d9c2904c76",
+      "gitBlob": "f914438a5f86928f6c5c92fcc78c84f3fd9eb91f",
+      "bytes": 1005
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/04-green-source.txt",
+      "sha256": "c061a59045fdff8f999325e6faeb4e6c090fc931e80c2dfa4bb143d8089c1186",
+      "gitBlob": "698356913138da79d9d7583c6c8535a91d73efea",
+      "bytes": 82
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/05-compiler-source.txt",
+      "sha256": "c061a59045fdff8f999325e6faeb4e6c090fc931e80c2dfa4bb143d8089c1186",
+      "gitBlob": "698356913138da79d9d7583c6c8535a91d73efea",
+      "bytes": 82
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/05-root-types-original.txt",
+      "sha256": "9ff4d5cdd3afe6c606dd013ec44b4da6aec304aa305c4ce1cead5b9159282607",
+      "gitBlob": "7fdfb2ff475dcb8866242b78b975ae110db13f33",
+      "bytes": 171
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/06-fixture-types-original.txt",
+      "sha256": "e72510f3fd741411001f372480cb1717118dc06e314650ed794a086ed41c9b48",
+      "gitBlob": "54f50ffc1b14472c828b31a7081de7c632578bf9",
+      "bytes": 8329
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/07-lint-original.txt",
+      "sha256": "676d5d3835b1d46ba3c473941ab20ff9a2f047081c79e49bcaee41d0ee431e1d",
+      "gitBlob": "0f84a31bf92613118c60a7fa90a3c1f2f8430482",
+      "bytes": 416582
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/08-final-source.txt",
+      "sha256": "942b6bc5f7871705b6b33821a0fc09c23b0e3b0cdd5bef0254957213f5edc9f5",
+      "gitBlob": "4d33d2e37dd5467ef0c33ae5725d97e7ceea1f15",
+      "bytes": 82
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/08-fixture-types-original.txt",
+      "sha256": "1ec620e44dff989449905d5b8f447f1281cdbbc589366386c39a29722a5a10ea",
+      "gitBlob": "70d383696fb48208d64562ae892d4a0804fa6b25",
+      "bytes": 221
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/09-final-vitest-original.txt",
+      "sha256": "5d61b67b6af8c8ff4be988bcb158fa4d4449ec97f76adcb7306a03c2a37041a7",
+      "gitBlob": "f6f56f9acc2cb67d0284617edca6acf14f0f2ec8",
+      "bytes": 1005
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/10-final-root-types-original.txt",
+      "sha256": "09ee52fe7010853415cdcaa43116cc7e5c341b5f1205a831d60b95f0a9f9cde7",
+      "gitBlob": "fe609b7d5434e6c75b912d3a3a2b37a407efc760",
+      "bytes": 171
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/11-final-lint-original.txt",
+      "sha256": "ede786e13a8797bdb2ae0b4237db805fabe2321224641b4740b88686b6444eb8",
+      "gitBlob": "e11516b496f1aec32b7175f6156fe7ad5881a3fe",
+      "bytes": 417008
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/12-lint-baseline-original.txt",
+      "sha256": "55c060d6012f6f8f13ab0adc6474d0523682f4b3f61257021cb1017d019df364",
+      "gitBlob": "d77330d8eb082e7985eb82be5caa37c0dd874f5c",
+      "bytes": 408877
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/13-lint-comparison-original.txt",
+      "sha256": "6355954ea3663fea95fa25153627dc7797942e7ce73beacad30037a799d0e54d",
+      "gitBlob": "8744ec6822a61cd5f998860bdc718e8a65774343",
+      "bytes": 266
+    },
+    {
+      "ref": "227ecc483d7226c8d33e3777005485175a186b87",
+      "path": "docs/evidence/3711-peer-removal/attempts/14-lint-line-bridge-original.txt",
+      "sha256": "5829839d7ddb6a1f0a3cd891f7305a149d0ca08f8c9b06002287a99f26df137d",
+      "gitBlob": "0adce874e0190589adebc4d0bf7212c8c219b764",
+      "bytes": 348
+    }
+  ],
+  "warningBridge": [
+    {
+      "path": "src/main/ipc/annex-handlers.test.ts",
+      "baselineErrors": 0,
+      "currentErrors": 0,
+      "baselineWarnings": 3,
+      "currentWarnings": 3,
+      "introduced": 0,
+      "baselineSourceSha256": "e6717d8deff743f50f22fb92c92f6ead4655abebb1172aaf3a8bf0cd769f9f90",
+      "finalSourceSha256": "624a6149d9ab05ddf875ba6952118119f0912cf0728a3a564e8b6c979121ea70"
+    },
+    {
+      "path": "src/main/ipc/annex-handlers.ts",
+      "baselineErrors": 0,
+      "currentErrors": 0,
+      "baselineWarnings": 0,
+      "currentWarnings": 0,
+      "introduced": 0,
+      "baselineSourceSha256": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b",
+      "finalSourceSha256": "7fddae8cc70697c7815358fc9fe1d4ad5658d2c06b541910f5056810d360cf21"
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "baselineErrors": 0,
+      "currentErrors": 0,
+      "baselineWarnings": 143,
+      "currentWarnings": 143,
+      "introduced": 0,
+      "baselineSourceSha256": "84fb3aa5a82204b62813b9a0691bf71962e74dfb4af8cff280fd5baa87bacb48",
+      "finalSourceSha256": "0d438fd55564f23a34a7ec0db7edd509a278e2ab0c8fb4b51b3910f5be9b36f6"
+    }
+  ],
+  "commandsObservedInRaw": [
+    {
+      "path": "attempts/01-red-original.txt",
+      "startedUtc": "2026-11-22T01:56:10Z",
+      "endedUtc": "2026-11-22T01:56:12Z",
+      "command": "npx vitest run --project main src/main/ipc/annex-handlers.test.ts src/main/services/annex-client.test.ts --maxWorkers=2 -t legacy peer-removal IPC|REMOVE_PEER|REMOVE_ALL_PEERS",
+      "exitCode": 1,
+      "rawSha256": "bd5f4144955a0e535c961558f139fa1595e20744c6264dfabbcabdbe8f8e9062"
+    },
+    {
+      "path": "attempts/02-red-original.txt",
+      "startedUtc": "2026-11-22T01:56:26Z",
+      "endedUtc": "2026-11-22T01:56:29Z",
+      "command": "npx vitest run --project main src/main/ipc/annex-handlers.test.ts src/main/services/annex-client.test.ts --maxWorkers=2 -t legacy peer-removal IPC|REMOVE_PEER|REMOVE_ALL_PEERS",
+      "exitCode": 1,
+      "rawSha256": "45c77c5c61270a4d5aabe0c0728741bbbdd072bf5d7be9e368d961d8829cdcaf"
+    },
+    {
+      "path": "attempts/03-red-original.txt",
+      "startedUtc": "2026-11-22T01:56:59Z",
+      "endedUtc": "2026-11-22T01:57:02Z",
+      "command": "npx vitest run --project main src/main/ipc/annex-handlers.test.ts src/main/services/annex-client.test.ts --maxWorkers=2 -t legacy peer-removal IPC|REMOVE_PEER|REMOVE_ALL_PEERS",
+      "exitCode": 1,
+      "rawSha256": "0b455d69c2685ce42ef87ea34e492eeb9acf49e005c18cba70b369621568b50d"
+    },
+    {
+      "path": "attempts/04-green-original.txt",
+      "startedUtc": "2026-11-22T01:57:40Z",
+      "endedUtc": "2026-11-22T01:57:47Z",
+      "command": "npx vitest run --project main src/main/ipc/annex-handlers.test.ts src/main/services/annex-client.test.ts src/main/services/annex-devices.test.ts --maxWorkers=2",
+      "exitCode": 0,
+      "rawSha256": "a9d5d3620b9d238e14e260fe4de860d8c1ad8553d891f345c6d393d9c2904c76"
+    },
+    {
+      "path": "attempts/05-root-types-original.txt",
+      "startedUtc": "2026-11-22T01:57:54Z",
+      "endedUtc": "2026-11-22T01:58:03Z",
+      "command": "npx tsc --noEmit",
+      "exitCode": 0,
+      "rawSha256": "9ff4d5cdd3afe6c606dd013ec44b4da6aec304aa305c4ce1cead5b9159282607"
+    },
+    {
+      "path": "attempts/06-fixture-types-original.txt",
+      "startedUtc": "2026-11-22T01:58:07Z",
+      "endedUtc": "2026-11-22T01:58:16Z",
+      "command": "npx tsc --noEmit --project docs/annex-reverse-routes.tsconfig.json",
+      "exitCode": 2,
+      "rawSha256": "e72510f3fd741411001f372480cb1717118dc06e314650ed794a086ed41c9b48"
+    },
+    {
+      "path": "attempts/07-lint-original.txt",
+      "startedUtc": "2026-11-22T01:58:45Z",
+      "endedUtc": "2026-11-22T01:58:46Z",
+      "command": "npx eslint src/main/ipc/annex-handlers.ts src/main/ipc/annex-handlers.test.ts src/main/services/annex-client.test.ts --format json",
+      "exitCode": 0,
+      "rawSha256": "676d5d3835b1d46ba3c473941ab20ff9a2f047081c79e49bcaee41d0ee431e1d"
+    },
+    {
+      "path": "attempts/08-fixture-types-original.txt",
+      "startedUtc": "2026-11-22T01:59:27Z",
+      "endedUtc": "2026-11-22T01:59:36Z",
+      "command": "npx tsc --noEmit --project docs/annex-reverse-routes.tsconfig.json",
+      "exitCode": 0,
+      "rawSha256": "1ec620e44dff989449905d5b8f447f1281cdbbc589366386c39a29722a5a10ea"
+    },
+    {
+      "path": "attempts/09-final-vitest-original.txt",
+      "startedUtc": "2026-11-22T02:00:03Z",
+      "endedUtc": "2026-11-22T02:00:09Z",
+      "command": "npx vitest run --project main src/main/ipc/annex-handlers.test.ts src/main/services/annex-client.test.ts src/main/services/annex-devices.test.ts --maxWorkers=2",
+      "exitCode": 0,
+      "rawSha256": "5d61b67b6af8c8ff4be988bcb158fa4d4449ec97f76adcb7306a03c2a37041a7"
+    },
+    {
+      "path": "attempts/10-final-root-types-original.txt",
+      "startedUtc": "2026-11-22T02:00:10Z",
+      "endedUtc": "2026-11-22T02:00:19Z",
+      "command": "npx tsc --noEmit",
+      "exitCode": 0,
+      "rawSha256": "09ee52fe7010853415cdcaa43116cc7e5c341b5f1205a831d60b95f0a9f9cde7"
+    },
+    {
+      "path": "attempts/11-final-lint-original.txt",
+      "startedUtc": "2026-11-22T02:00:20Z",
+      "endedUtc": "2026-11-22T02:00:21Z",
+      "command": "npx eslint src/main/ipc/annex-handlers.ts src/main/ipc/annex-handlers.test.ts src/main/services/annex-client.test.ts --format json",
+      "exitCode": 0,
+      "rawSha256": "ede786e13a8797bdb2ae0b4237db805fabe2321224641b4740b88686b6444eb8"
+    },
+    {
+      "path": "attempts/12-lint-baseline-original.txt",
+      "startedUtc": "2026-11-22T02:00:48Z",
+      "endedUtc": "2026-11-22T02:00:49Z",
+      "command": "node --input-type=module",
+      "exitCode": 0,
+      "rawSha256": "55c060d6012f6f8f13ab0adc6474d0523682f4b3f61257021cb1017d019df364"
+    }
+  ],
+  "negativeProductionDelta": [],
+  "qualification": "Head/tree source notes are adjacent owner execution attribution; no embedded per-command before/after source/status/gate seal is present, and this review does not retroactively create one. Manifest supplies supplemental immutable blob identities. Deterministic composition with mocked peer/socket/membership transport boundaries; no actual TCP/TLS/phone/current-app proof.",
+  "reviewerExecutedTests": false,
+  "q5PreservedHead": "079a257acf38b168b529fb7745dae97f686b72b8"
+}
