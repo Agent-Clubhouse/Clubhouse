@@ -196,12 +196,13 @@ describe('controller caller receive bound', () => {
   });
 });
 
-describe('route-budget disposition design (#3714)', () => {
+describe('route-budget disposition (#3714)', () => {
   it.each(['GET', 'POST'] as const)('refuses only the known %s response above its route budget before credit', async (method) => {
     const path = method === 'GET' ? '/api/v1/icons/agents/a' : '/api/v1/network/agent-call';
     const gates = new Map<string, (result: control.ControlResult) => void>();
     handler = async (_principal, request) => new Promise((resolve) => { gates.set(request.path, resolve); });
     const { requesterWs, targetWs } = await connected(['request', 'subscribe', 'ws-control', 'bulk']);
+    const linkEpoch = control.getAcceptedLinkEpoch(TARGET);
     const frames: Array<Record<string, unknown>> = [];
     const ends: string[] = [];
     const subscription = control.subscribe(TARGET, { onFrame: (frame) => frames.push(frame), onEnd: (code) => ends.push(code) });
@@ -254,6 +255,9 @@ describe('route-budget disposition design (#3714)', () => {
       expect(frames).toEqual([{ type: 'chat:event', payload: { id: 'still-live' }, seq: 1 }]);
       expect(served[0].receive).toHaveBeenCalledOnce();
       expect(dispatch).toHaveBeenCalledTimes(3);
+      expect(control.getAcceptedLinkEpoch(TARGET)).toBe(linkEpoch);
+      expect(ends).toEqual([]);
+      expect(served[0].close).not.toHaveBeenCalled();
     } finally {
       for (const release of gates.values()) release(ok('fixture-cleanup'));
       await flush();
@@ -286,6 +290,136 @@ describe('route-budget disposition design (#3714)', () => {
     expect(ws.closed?.code).toBe(guard === 'pin' ? CONTROL_CLOSE_REVOKED : CONTROL_CLOSE_PROTOCOL);
     expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(false);
     expect(sentOfType(ws, 'bulk').filter((frame) => frame.op === 'credit')).toHaveLength(0);
+  });
+
+  it.each([
+    { excess: 0, largerLocalBound: false },
+    { excess: 1, largerLocalBound: false },
+    { excess: 0, largerLocalBound: true },
+    { excess: 1, largerLocalBound: true },
+  ])('keeps the route bound with excess=$excess, largerLocalBound=$largerLocalBound', async ({ excess, largerLocalBound }) => {
+    const path = '/api/v1/icons/agents/a';
+    const limit = control.responseBodyLimit(path);
+    const body = Buffer.alloc(limit + excess, 0x41);
+    handler = async () => ({ status: 200, headers: {}, body });
+    const { requesterWs, targetWs } = await connected(['request', 'bulk']);
+    const pending = control.request(TARGET, { method: 'GET', path },
+      largerLocalBound ? { maxResponseBytes: limit + 1024 } : {});
+    if (excess) await expect(pending).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    else expect((await pending).body.equals(body)).toBe(true);
+    await flush();
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+    expect(sentOfType(targetWs, 'binary').length > 0).toBe(excess === 0);
+  });
+
+  it.each([0, 1])('honors a zero caller bound for a response of %i bytes', async (size) => {
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(size) });
+    const { requesterWs } = await connected(['request', 'bulk']);
+    const pending = control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/a' }, { maxResponseBytes: 0 });
+    if (size) await expect(pending).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    else expect((await pending).body.length).toBe(0);
+    expect(requesterWs.closed).toBeNull();
+  });
+
+  it.each(['uncapped', 'caller-bound'] as const)('preserves %s file-read response behavior', async (bound) => {
+    const body = Buffer.alloc(bound === 'uncapped' ? control.responseBodyLimit('/default-budget') + 1 : 65537, 0x42);
+    handler = async () => ({ status: 200, headers: {}, body });
+    const { requesterWs, targetWs } = await connected(['request', 'bulk']);
+    const pending = control.request(TARGET, { method: 'GET', path: '/api/v1/projects/p/files/read' },
+      bound === 'caller-bound' ? { maxResponseBytes: 65536 } : {});
+    if (bound === 'caller-bound') {
+      await expect(pending).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+      expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+    } else expect((await pending).body.equals(body)).toBe(true);
+    expect(requesterWs.closed).toBeNull();
+  });
+
+  it('drops a rejected token\'s late payload without effects and completes a fresh response on the same link', async () => {
+    const path = '/api/v1/icons/agents/a';
+    const freshBody = Buffer.from('fresh-body-not-old');
+    handler = async (_principal, request) => ({
+      status: 200, headers: {},
+      body: request.path === path ? Buffer.alloc(control.responseBodyLimit(path) + 1) : freshBody,
+    });
+    const { requesterWs, targetWs } = await connected(['request', 'subscribe', 'bulk']);
+    const linkEpoch = control.getAcceptedLinkEpoch(TARGET);
+    const onFrame = vi.fn();
+    const onEnd = vi.fn();
+    control.subscribe(TARGET, { onFrame, onEnd });
+    await flush();
+    let delivered = false;
+    const rejected = control.request(TARGET, { method: 'GET', path }, { requestId: 'rejected-response' })
+      .then(() => { delivered = true; }, (error: unknown) => {
+        if (!(error instanceof control.ControlRequestError)) throw error;
+        expect(error).toMatchObject({ code: 'response_too_large', indeterminate: false });
+      });
+    await rejected;
+    await flush();
+    const offered = sentOfType(targetWs, 'bulk').find((frame) => frame.op === 'start' && frame.id === 'rejected-response');
+    if (typeof offered?.transfer !== 'string') throw new Error('Missing original rejected transfer token');
+    targetWs.bufferedAmount = 256 * 1024;
+    const fresh = control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/fresh' }, { requestId: 'fresh-response' });
+    await flush();
+    const bytes = Buffer.alloc(41);
+    bytes.write(offered.transfer, 0, 36); bytes.writeUInt32BE(0, 36); bytes.write('x', 40);
+    requesterWs.emit('message', bytes, true);
+    requesterWs.deliver({ v: 1, type: 'bulk', op: 'finish', transfer: offered.transfer, id: 'rejected-response', digest: '0'.repeat(64) });
+    requesterWs.deliver({ v: 1, type: 'bulk', op: 'cancel', transfer: offered.transfer, id: 'rejected-response' });
+    expect(delivered).toBe(false);
+    expect(requesterWs.closed).toBeNull();
+    expect(onFrame).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
+    targetWs.bufferedAmount = 0;
+    expect((await fresh).body.equals(freshBody)).toBe(true);
+    expect(control.getAcceptedLinkEpoch(TARGET)).toBe(linkEpoch);
+    expect(served[0].close).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledTimes(2);
+  });
+
+  it('still closes on a rejected token replay into a currently-owned fresh request', async () => {
+    const path = '/api/v1/icons/agents/a';
+    let release!: (result: control.ControlResult) => void;
+    handler = async (_principal, request) => request.path === path
+      ? { status: 200, headers: {}, body: Buffer.alloc(control.responseBodyLimit(path) + 1) }
+      : new Promise((resolve) => { release = resolve; });
+    const { requesterWs, targetWs } = await connected(['request', 'bulk']);
+    await expect(control.request(TARGET, { method: 'GET', path }, { requestId: 'rejected-token-owner' }))
+      .rejects.toMatchObject({ code: 'response_too_large' });
+    await flush();
+    const offered = sentOfType(targetWs, 'bulk').find((frame) => frame.op === 'start' && frame.id === 'rejected-token-owner');
+    expect(offered).toBeDefined();
+    const fresh = control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/fresh' }, { requestId: 'current-fresh-owner' });
+    const refused = expect(fresh).rejects.toMatchObject({ code: 'transport_unavailable', indeterminate: false });
+    try {
+      await flush();
+      expect(release).toBeDefined();
+      requesterWs.deliver({ ...offered, id: 'current-fresh-owner' });
+      await refused;
+      expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+      expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(false);
+    } finally {
+      release(ok('fixture-cleanup'));
+      await flush();
+    }
+  });
+
+  it('retains write history after response refusal without automatic retry or reexecution', async () => {
+    const path = '/api/v1/network/agent-call';
+    handler = async (_principal, request) => request.path === path
+      ? { status: 200, headers: {}, body: Buffer.alloc(control.responseBodyLimit(path) + 1) }
+      : ok('fresh');
+    const { requesterWs } = await connected(['request', 'bulk']);
+    const input: ControlHttpRequest = { method: 'POST', path, body: '{}' };
+    await expect(control.request(TARGET, input, { requestId: 'budget-write-history' }))
+      .rejects.toMatchObject({ code: 'response_too_large', indeterminate: true, requestId: 'budget-write-history' });
+    expect(dispatch).toHaveBeenCalledOnce();
+    await expect(control.request(TARGET, input, { requestId: 'budget-write-history' }))
+      .rejects.toMatchObject({ code: 'replay_unavailable', indeterminate: true, requestId: 'budget-write-history' });
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect((await control.request(TARGET, { method: 'GET', path: '/budget-history-fresh' })).body.toString()).toBe(JSON.stringify('fresh'));
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(requesterWs.closed).toBeNull();
   });
 });
 

@@ -54,6 +54,14 @@ shared service entry point before decoding. Phone fixtures are unchanged.
 Route handlers enforce their field limits; the content response's transport
 budget includes room for its JSON metadata.
 
+A structurally valid bulk response start for the current request that exceeds
+its route budget or a stricter caller receive limit rejects only that request
+with `response_too_large`, before any credit or body delivery. The existing
+token-bound cancel releases the sender's response slot; unrelated requests and
+subscriptions keep their link. Writes remain indeterminate and are not retried.
+Malformed metadata, stale/unknown ownership, token replay, integrity/credit
+violations and lost pinned authority retain their existing fatal behavior.
+
 File reads retain **no reverse-only total cap**. The host still reads the whole
 text file before responding, exactly as on the direct path. The current HTTPS
 requester also buffers chunks and concatenates the complete response

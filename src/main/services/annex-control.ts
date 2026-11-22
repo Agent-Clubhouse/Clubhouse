@@ -526,7 +526,8 @@ function makeBulkLane(link: Link): ControlBulkLane {
       const message = bulkMeta(kind, id, meta);
       const pending = link.pending.get(id);
       if (kind === 'response' && message?.type === 'response' && link.direction === 'in' && link.features?.has('request')
-        && pending && size <= responseBodyLimit(pending.path) && pending.maxResponseBytes !== undefined && size > pending.maxResponseBytes) {
+        && pending && (size > responseBodyLimit(pending.path)
+          || (pending.maxResponseBytes !== undefined && size > pending.maxResponseBytes))) {
         link.pending.delete(id);
         pending.cleanup();
         pending.reject(new ControlRequestError('response_too_large', !isReadOnlyMethod(pending.method), id));
