@@ -734,6 +734,64 @@ describe('isolated real MCP producer domain admission', () => {
     return owner;
   }
 
+  it.each(['caller', 'body'] as const)('owner lifecycle closes automatic hook intake before synchronous release admission (%s)', async (kind) => runFixtureBody(async () => {
+    const fx = current(), owner = kind === 'caller' ? fixtureOwner() : await sentinelOwner();
+    const marker = path.join(fixtureDirectory(owner), 'hook-release-admission.txt');
+    let calls = 0, bodyBytes: string | undefined, presentAtTeardown = false;
+    const name = 'fixture_hook_release_admission';
+    if (kind === 'caller') {
+      const grant = fx.tools.listToolGrants().find((tool) => tool.kind === 'global' && tool.name === 'offer_handoff')?.grant;
+      if (!grant) throw new Error('Missing actual offer grant declaration.');
+      fx.tools.registerGlobalTool(name, {
+        description: 'Isolated actual hook-release caller admission control.',
+        inputSchema: { type: 'object', properties: { to: { type: 'string' } }, required: ['to'] },
+      }, async () => {
+        calls++;
+        await fs.writeFile(marker, 'actual registered caller');
+        return { content: [{ type: 'text', text: JSON.stringify({ bytes: await fs.readFile(marker, 'utf8') }) }] };
+      }, { grant });
+      const result = await fx.tools.callTool(caller, name, { to: receiver });
+      expect(result.isError).not.toBe(true);
+      expect(resultValue(result)).toEqual({ bytes: 'actual registered caller' });
+      await fs.unlink(marker);
+    }
+    owner.teardown.unshift(() => { presentAtTeardown = nativeFs.existsSync(marker); });
+    const stop = kind === 'caller' ? vi.spyOn(fx.hostApi, 'stopHandoffs') : undefined;
+    let admitted: Promise<unknown> | undefined, refusal: unknown;
+    let reenteredHook: Promise<Completion> | undefined, reenteredCore: Promise<CoreCompletion> | undefined;
+    heldRelease(owner, () => {
+      reenteredHook = hookCompletion(owner);
+      try {
+        admitted = kind === 'caller'
+          ? fx.tools.callTool(caller, name, { to: receiver })
+          : bodyOwner.run(owner, () => runFixtureBody(async () => {
+            await fs.writeFile(marker, 'actual registered body');
+            bodyBytes = await fs.readFile(marker, 'utf8');
+          }));
+        owner.operations.push(admitted);
+      } catch (error) { refusal = error; }
+      reenteredCore = coreCompletion(owner);
+    });
+    const joining = hookCompletion(owner);
+    expect(reenteredHook).toBe(joining);
+    expect(reenteredCore).toBe(coreCompletion(owner));
+    const core = await coreCompletion(owner);
+    expect(core.failures).toEqual([]);
+    expect.soft(admitted).toBeUndefined();
+    expect.soft(refusal).toBeInstanceOf(Error);
+    if (refusal instanceof Error) {
+      expect.soft(refusal.message).toBe(kind === 'caller'
+        ? 'Producer fixture is retiring; no new test calls may start.'
+        : 'Producer fixture body cannot be admitted.');
+    }
+    expect.soft(presentAtTeardown).toBe(false);
+    expect.soft(calls).toBe(kind === 'caller' ? 1 : 0);
+    expect.soft(bodyBytes).toBeUndefined();
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+    if (stop) expect(stop).toHaveBeenCalledOnce();
+    if (kind === 'body') expect((await joining).failures).toEqual([]);
+  }));
+
   it('owner lifecycle excludes later setup until the actual body finishes without a manual self-cycle', async () => runFixtureBody(async () => {
     const original = fixtureOwner(), owner = await sentinelOwner();
     const reached = deferred(), release = deferred();
