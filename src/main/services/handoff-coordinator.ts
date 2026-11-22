@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { isHandoffAgent, isTerminalHandoff, parseHandoff, sameHandoffAgent, type Handoff, type HandoffAgent, type HandoffOffer } from '../../shared/handoffs';
 import { scanHandoffSecrets } from '../../shared/handoff-secrets';
 import { assertHandoffExtension, type HandoffStorage } from './handoff-store';
-import { HANDOFF_OFFER_TTL_MS, HandoffOfferRefused, HandoffService } from './handoff-service';
+import { HANDOFF_OFFER_TTL_MS, HandoffOfferRefused, HandoffService, type HandoffReceiveGuard } from './handoff-service';
 
 export interface HandoffCancellation {
   id: string;
@@ -159,7 +159,8 @@ export class HandoffCoordinator {
     return this.options.store.get(id)!;
   }
 
-  private async applyCancellation(command: HandoffCancellation, machine: string): Promise<Handoff> {
+  private async applyCancellation(command: HandoffCancellation, machine: string, beforeAdopt?: HandoffReceiveGuard): Promise<Handoff> {
+    beforeAdopt?.();
     const current = this.options.store.get(command.id);
     if (!current) throw new Error('Unknown handoff.');
     if (current.to.machine !== this.options.machine || command.from.machine !== machine || !sameHandoffAgent(command.from, current.from)) throw new Error('Invalid handoff cancellation source.');
@@ -169,14 +170,15 @@ export class HandoffCoordinator {
       return current;
     }
     const record = await this.service.cancelAtReceiver(command.id, command.from, machine,
-      prior === -1 ? current.version : prior, command.reason, command.operationId);
+      prior === -1 ? current.version : prior, command.reason, command.operationId, ...(beforeAdopt ? [beforeAdopt] as const : []));
     await this.changed(record);
     if (machine === this.options.machine) await this.options.commands.remove(command.operationId);
     return record;
   }
 
   /** Called only after pinned membership/authentication checks, never an agent-selected origin. */
-  async receive(machine: string, raw: unknown): Promise<Handoff | { kind: 'refused'; record: Handoff }> {
+  async receive(machine: string, raw: unknown, beforeAdopt?: HandoffReceiveGuard): Promise<Handoff | { kind: 'refused'; record: Handoff }> {
+    beforeAdopt?.();
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid handoff request.');
     const body = raw as Record<string, unknown>;
     if (Object.keys(body).some((key) => !['op', 'record', 'command'].includes(key))) throw new Error('Invalid handoff request.');
@@ -184,7 +186,8 @@ export class HandoffCoordinator {
     if (body.op === 'offer' && body.command === undefined) {
       await this.service.expireOffers();
       await this.prune();
-      try { record = await this.service.receiveOffer(body.record, machine); }
+      beforeAdopt?.();
+      try { record = await this.service.receiveOffer(body.record, machine, ...(beforeAdopt ? [beforeAdopt] as const : [])); }
       catch (error) {
         // A typed refusal consumes no receiver store slots and cannot become an endless outbox retry.
         if (error instanceof HandoffOfferRefused) return { kind: 'refused', record: error.record };
@@ -197,20 +200,23 @@ export class HandoffCoordinator {
       // agreement or notice. Its receiving authority may still be awaiting ACK.
       if (!this.options.store.get(incoming.id) && isTerminalHandoff(incoming.state)
         && incoming.from.machine === this.options.machine && incoming.to.machine === machine
-        && !scanHandoffSecrets('handoff-record.json', new TextEncoder().encode(JSON.stringify(incoming))).length) return incoming;
-      record = await this.service.receiveSnapshot(incoming, machine);
+        && !scanHandoffSecrets('handoff-record.json', new TextEncoder().encode(JSON.stringify(incoming))).length) {
+        beforeAdopt?.();
+        return incoming;
+      }
+      record = await this.service.receiveSnapshot(incoming, machine, ...(beforeAdopt ? [beforeAdopt] as const : []));
     }
     else if (body.op === 'cancel') {
       const command = parseHandoffCancellation(body.command);
       if (body.record !== undefined) {
         const offer = parseHandoff(body.record);
         if (offer.id !== command.id) throw new Error('Invalid cancelled offer.');
-        try { record = await this.service.receiveCancelledOffer(offer, command.from, machine, command.operationId, command.reason); }
+        try { record = await this.service.receiveCancelledOffer(offer, command.from, machine, command.operationId, command.reason, ...(beforeAdopt ? [beforeAdopt] as const : [])); }
         catch (error) {
           if (error instanceof HandoffOfferRefused) return { kind: 'refused', record: error.record };
           throw error;
         }
-      } else record = await this.applyCancellation(command, machine);
+      } else record = await this.applyCancellation(command, machine, ...(beforeAdopt ? [beforeAdopt] as const : []));
     } else throw new Error('Invalid handoff request.');
     await this.changed(record);
     return record;

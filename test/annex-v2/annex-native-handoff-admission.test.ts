@@ -5,9 +5,10 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Duplex } from 'stream';
 import { TLSSocket } from 'tls';
-import { expect, it, vi } from 'vitest';
-import { parseHandoff, type Handoff } from '../../src/shared/handoffs';
+import { describe, expect, it, vi } from 'vitest';
+import { parseHandoff, transitionHandoff, type Handoff } from '../../src/shared/handoffs';
 import type { ControlRequestOptions } from '../../src/main/services/annex-control';
+import type { AnnexPrincipal } from '../../src/main/services/annex-authorizer';
 import { authority, close, desktop, listen, pairedPeer } from './reverse-desktop-fixture';
 
 function barrier() {
@@ -25,7 +26,7 @@ function outcome<T>(work: Promise<T>) {
 
 async function nativeDesktop(dir: string) {
   const dispatcher = { enabled: true, agentId: 'dispatcher', path: dir, config: { name: 'Fixture Dispatcher' } };
-  const principals: Array<{ fingerprint: string; pin?: string; via: string }> = [];
+  const principals: AnnexPrincipal[] = [];
   vi.doMock('../../src/main/services/annex-authorizer', async (original) => {
     const actual = await original<typeof import('../../src/main/services/annex-authorizer')>();
     return { ...actual, authorize: (...args: Parameters<typeof actual.authorize>) => {
@@ -87,6 +88,8 @@ async function nativePair() {
     target = await nativeDesktop(aDir); requester = await nativeDesktop(bDir);
     const destination = target, caller = requester;
     const peerA = pairedPeer(destination), peerB = pairedPeer(caller);
+    const requesterPin = peerB.tlsCertificateFingerprint;
+    if (!requesterPin) throw new Error('Expected an actual pinned requester certificate');
     destination.peers.addPeer(peerB);
     caller.peers.addPeer(peerA);
     await destination.server.startVerified();
@@ -124,10 +127,11 @@ async function nativePair() {
     vi.spyOn(host.coordinator, 'receive').mockImplementation((...args) => {
       const work = receive(...args); calls.push(own(work)); return work;
     });
-    const request = (record: Handoff, options?: ControlRequestOptions) => own(caller.control.request(peerA.fingerprint, {
+    const exchange = (body: Record<string, unknown>, options?: ControlRequestOptions) => own(caller.control.request(peerA.fingerprint, {
       method: 'POST', path: '/api/v1/network/handoffs', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ op: 'offer', record }),
+      body: JSON.stringify(body),
     }, options));
+    const request = (record: Handoff, options?: ControlRequestOptions) => exchange({ op: 'offer', record }, options);
     const holdQueue = (record: Handoff) => {
       const release = barrier(), entered = barrier(), queued = barrier();
       const unrelated = offered(peerA.fingerprint, peerA.fingerprint);
@@ -138,7 +142,7 @@ async function nativePair() {
         if (id !== record.id || held) return transact(id, change);
         held = true;
         own(transact(unrelated.id, async () => { entered.release(); await release.promise; return unrelated; }));
-        const work = transact(id, (current) => { callbackStarted = true; return change(current); });
+        const work = transact(id, (current: Handoff | undefined) => { callbackStarted = true; return change(current); });
         queued.release(); return work;
       });
       return { ...release, entered: entered.promise, queued: queued.promise, unrelated, started: () => callbackStarted };
@@ -149,7 +153,7 @@ async function nativePair() {
       const rename = fs.promises.rename;
       vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
         if (to === join(aDir, 'handoffs.json')) {
-          const prepared = JSON.parse(fs.readFileSync(from, 'utf8'));
+          const prepared = JSON.parse(await fs.promises.readFile(from, 'utf8'));
           if (prepared.records.some((item: { id: string }) => item.id === record.id)) {
             admitted.release(); await release.promise;
           }
@@ -169,12 +173,13 @@ async function nativePair() {
       })}\n`);
     };
     return { target: destination, requester: caller, host, aDir, peerA, peerB, calls, principals,
-      request, connect, holdQueue, holdRename, own, witness, cleanup };
+      request, exchange, connect, holdQueue, holdRename, own, witness, requesterPin, cleanup };
   } catch (error) {
     await cleanup(); throw error;
   }
 }
 
+describe('native incoming actual TLS and queue assembly', () => {
 it('admits a current native reverse offer through the real held history queue without receiver outbound readiness', async () => {
   const pair = await nativePair();
   try {
@@ -239,22 +244,110 @@ it('keeps an admitted real save truthful after actual cancellation and replays t
     const reply = pair.request(record, { requestId, signal: abort.signal });
     await held.admitted; pair.witness(record);
     expect(pair.host.store.get(record.id)).toBeUndefined();
+    expect(pair.host.incoming.size).toBe(1);
+    expect(pair.target.control._activeRunsForTesting(pair.peerB.fingerprint, pair.requesterPin)).toBe(1);
     const authorizations = pair.principals.length;
     abort.abort();
     expect(await reply).toMatchObject({ status: 'rejected', error: { code: 'cancelled', indeterminate: true } });
     const replay = pair.request(record, { requestId });
     await vi.waitFor(() => expect(pair.principals.length).toBeGreaterThan(authorizations));
     expect(pair.calls).toHaveLength(1);
+    expect(pair.host.incoming.size).toBe(1);
     held.release();
     expect(await replay).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
     expect(await pair.calls[0]).toMatchObject({ status: 'fulfilled', value: record });
     expect(pair.host.store.get(record.id)).toEqual(record);
-    expect(JSON.parse(fs.readFileSync(join(pair.aDir, 'handoffs.json'), 'utf8')).records).toEqual([record]);
+    expect(JSON.parse(await fs.promises.readFile(join(pair.aDir, 'handoffs.json'), 'utf8')).records).toEqual([record]);
     expect(await pair.request(record, { requestId })).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
     expect(pair.calls).toHaveLength(1);
+    const conflict = await pair.request({ ...record, task: { ...record.task, brief: 'Different immutable request body' } }, { requestId });
+    expect(conflict).toMatchObject({ status: 'fulfilled', value: { status: 409 } });
+    if (conflict.status !== 'fulfilled') throw new Error('Expected a bounded RPC conflict response');
+    expect(JSON.parse(conflict.value.body.toString('utf8'))).toMatchObject({ error: 'request_conflict' });
+    expect(pair.calls).toHaveLength(1);
+    expect(pair.host.incoming.size).toBe(0);
   } finally { await pair.cleanup(); }
 }, 30_000);
 
+it('handles current native history, cancellation and snapshots without reintroducing new-offer permission gates', async () => {
+  const pair = await nativePair();
+  try {
+    const record = offered(pair.peerB.fingerprint, pair.peerA.fingerprint);
+    expect(await pair.request(record)).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
+    pair.target.dispatcher.enabled = false;
+    expect(await pair.request(record)).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
+    const cancelled = await pair.exchange({ op: 'cancel', command: { id: record.id, operationId: randomUUID(), from: record.from } });
+    expect(cancelled).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
+    expect(pair.host.store.get(record.id)).toMatchObject({ state: 'cancelled', version: 2 });
+    pair.target.dispatcher.enabled = true;
+    const unsent = offered(pair.peerB.fingerprint, pair.peerA.fingerprint);
+    const command = { id: unsent.id, operationId: randomUUID(), from: unsent.from };
+    expect(await pair.exchange({ op: 'cancel', command, record: unsent })).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
+    const terminal = pair.host.store.get(unsent.id);
+    expect(terminal).toMatchObject({ state: 'cancelled', version: 2 });
+    pair.target.dispatcher.enabled = false;
+    expect(await pair.exchange({ op: 'cancel', command: { ...command, operationId: randomUUID() }, record: unsent }))
+      .toMatchObject({ status: 'fulfilled', value: { status: 200 } });
+    expect(pair.host.store.get(unsent.id)).toEqual(terminal);
+    const outgoing = offered(pair.peerA.fingerprint, pair.peerB.fingerprint);
+    await pair.host.store.transact(outgoing.id, () => outgoing);
+    const declined = transitionHandoff(outgoing, { state: 'declined', operationId: randomUUID(), at: outgoing.updatedAt + 1,
+      by: { kind: 'agent', address: { machine: outgoing.to.machine, agentId: 'fixture-remote-receiver' } } }, 1);
+    expect(await pair.exchange({ op: 'snapshot', record: declined })).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
+    expect(await pair.exchange({ op: 'snapshot', record: outgoing })).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
+    expect(pair.host.store.get(outgoing.id)).toEqual(declined);
+    expect(pair.host.incoming.size).toBe(0);
+  } finally { await pair.cleanup(); }
+}, 30_000);
+
+it('keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held', async () => {
+  const pair = await nativePair();
+  try {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    pair.target.control._setTargetTimeoutForTesting(200);
+    const record = offered(pair.peerB.fingerprint, pair.peerA.fingerprint), requestId = randomUUID();
+    const held = pair.holdRename(record), reply = pair.request(record, { requestId, timeoutMs: 10_000 });
+    await held.admitted; pair.witness(record);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await reply).toMatchObject({ status: 'rejected', error: { code: 'timeout', indeterminate: true } });
+    expect(pair.host.incoming.size).toBe(1);
+    expect(pair.target.control._activeRunsForTesting(pair.peerB.fingerprint, pair.requesterPin)).toBe(1);
+    const replay = pair.request(record, { requestId, timeoutMs: 10_000 });
+    held.release();
+    expect(await pair.calls[0]).toMatchObject({ status: 'fulfilled', value: record });
+    expect(await replay).toMatchObject({ status: 'rejected', error: { code: 'replay_unavailable' } });
+    expect(pair.calls).toHaveLength(1);
+    expect(pair.host.store.get(record.id)).toEqual(record);
+    expect(pair.host.incoming.size).toBe(0);
+    expect(pair.target.control._activeRunsForTesting(pair.peerB.fingerprint, pair.requesterPin)).toBe(0);
+  } finally {
+    pair.target.control._setTargetTimeoutForTesting(null);
+    vi.useRealTimers();
+    await pair.cleanup();
+  }
+}, 30_000);
+
+it.each(['before-rename', 'after-real-rename'] as const)(
+  'preserves the real native %s IO failure instead of inventing rollback or success', async (stage) => {
+    const pair = await nativePair();
+    try {
+      const record = offered(pair.peerB.fingerprint, pair.peerA.fingerprint), rename = fs.promises.rename;
+      vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+        if (to === join(pair.aDir, 'handoffs.json')) {
+          if (stage === 'after-real-rename') await rename(from, to);
+          throw Object.assign(new Error('Fixture native IO failure'), { code: 'EIO' });
+        }
+        return rename(from, to);
+      });
+      expect(await pair.request(record)).toMatchObject({ status: 'fulfilled', value: { status: 400 } });
+      expect(await pair.calls[0]).toMatchObject({ status: 'rejected', error: { code: 'EIO' } });
+      expect(pair.host.store.get(record.id)).toBeUndefined();
+      const file = join(pair.aDir, 'handoffs.json');
+      if (stage === 'after-real-rename') expect(JSON.parse(await fs.promises.readFile(file, 'utf8')).records).toEqual([record]);
+      else expect(fs.existsSync(file)).toBe(false);
+      expect(pair.host.incoming.size).toBe(0);
+    } finally { await pair.cleanup(); }
+  }, 30_000);
 it('normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles', async () => {
   const pair = await nativePair();
   try {
@@ -270,6 +363,70 @@ it('normal host stop retains an admitted incoming writer and refuses replacement
     expect(await reply).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
     expect(pair.host.store.get(record.id)).toEqual(record);
     expect(pair.target.handoff.handoffHost().store.get(record.id)).toEqual(record);
-    expect(JSON.parse(fs.readFileSync(join(pair.aDir, 'handoffs.json'), 'utf8')).records).toEqual([record]);
+    expect(JSON.parse(await fs.promises.readFile(join(pair.aDir, 'handoffs.json'), 'utf8')).records).toEqual([record]);
   } finally { await pair.cleanup(); }
 }, 30_000);
+
+it('normal host stop refuses queued native work and new admissions until actual queued ownership drains', async () => {
+  const pair = await nativePair();
+  try {
+    const record = offered(pair.peerB.fingerprint, pair.peerA.fingerprint), held = pair.holdQueue(record);
+    const reply = pair.request(record);
+    await held.queued; await held.entered; pair.witness(record);
+    const stopping = pair.own(pair.target.handoff.stopHandoffs());
+    expect(pair.host.incoming.size).toBe(1);
+    expect(() => pair.target.handoff.handoffHost()).toThrow('changed');
+    const unrelated = offered(pair.peerB.fingerprint, pair.peerA.fingerprint);
+    expect(await pair.request(unrelated)).toMatchObject({ status: 'fulfilled', value: { status: 400 } });
+    expect(pair.calls).toHaveLength(1);
+    held.release();
+    expect(await stopping).toMatchObject({ status: 'fulfilled' });
+    expect(await pair.calls[0]).toMatchObject({ status: 'rejected' });
+    expect(await reply).toMatchObject({ status: 'fulfilled', value: { status: 400 } });
+    expect(pair.host.store.get(record.id)).toBeUndefined();
+    expect(pair.host.store.get(held.unrelated.id)).toEqual(held.unrelated);
+    expect(await pair.request(unrelated)).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
+    expect(pair.target.handoff.handoffHost().store.get(unrelated.id)).toEqual(unrelated);
+  } finally { await pair.cleanup(); }
+}, 30_000);
+
+it.each(['pairing-scalar', 'pin-mismatch'] as const)(
+  'refuses an original native request after its saved %s changes while the actual queue is held', async (change) => {
+    const pair = await nativePair();
+    try {
+      const record = offered(pair.peerB.fingerprint, pair.peerA.fingerprint), held = pair.holdQueue(record);
+      const reply = pair.request(record);
+      await held.queued; await held.entered; pair.witness(record);
+      const pin = pair.requesterPin.startsWith('00:') ? `01:${pair.requesterPin.slice(3)}` : `00:${pair.requesterPin.slice(3)}`;
+      pair.target.peers.addPeer({ ...pair.peerB,
+        ...(change === 'pairing-scalar' ? { pairedAt: '2026-11-22T00:00:00.000Z' } : { tlsCertificateFingerprint: pin }) });
+      expect(pair.target.auth.stillAuthorized(pair.principals[0], authority(pair.target))).toBe(change === 'pairing-scalar');
+      held.release();
+      expect(await pair.calls[0]).toMatchObject({ status: 'rejected' });
+      expect(pair.host.store.get(record.id)).toBeUndefined();
+      pair.requester.control.closeAll();
+      await reply;
+      expect(pair.host.incoming.size).toBe(0);
+    } finally { await pair.cleanup(); }
+  }, 30_000);
+
+it('does not adopt an original native request across an owned TLS server generation restart', async () => {
+  const pair = await nativePair();
+  try {
+    const record = offered(pair.peerB.fingerprint, pair.peerA.fingerprint), held = pair.holdQueue(record);
+    const reply = pair.request(record);
+    await held.queued; await held.entered; pair.witness(record);
+    pair.target.server.stop();
+    expect(pair.host.incoming.size).toBe(1);
+    await pair.target.server.startVerified();
+    await pair.connect();
+    held.release();
+    expect(await pair.calls[0]).toMatchObject({ status: 'rejected' });
+    expect(pair.host.store.get(record.id)).toBeUndefined();
+    expect(await reply).toMatchObject({ status: 'rejected' });
+    const fresh = offered(pair.peerB.fingerprint, pair.peerA.fingerprint);
+    expect(await pair.request(fresh)).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
+    expect(pair.host.store.get(fresh.id)).toEqual(fresh);
+  } finally { await pair.cleanup(); }
+}, 30_000);
+});

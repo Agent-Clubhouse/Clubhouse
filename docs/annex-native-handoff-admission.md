@@ -6,13 +6,15 @@ This desktop-only contract specifies the [independently approved design](https:/
 
 Only the native **reverse** `/api/v1/network/handoffs` route opts in. Capture its original principal, request, TLS server/generation and existing pairing/trust scalars before reading the body. A pure synchronous check uses the original `reverseRequestLive(req)` link/cancel/deadline closure, authorization of that fixed principal, membership and captured server/trust. Retirement is sticky when observed. Never substitute an outbound-client observation, accepted-link epoch, cached snapshot or replacement principal.
 
-The planned private `HandoffReceiveGuard` is an optional synchronous callback in `handoff-service`: no argument checks original request/host admission; a new-offer argument additionally captures/checks new-work policy. It is not a grant or wire field. Propagate the same callback through the coordinator to actual incoming offer, cancelled-offer, cancellation and snapshot queues, including existing/older/idempotent decisions and the synchronous retired-terminal ACK sink.
+The private `HandoffReceiveGuard` is an optional synchronous callback in `handoff-service`: no argument checks original request/host admission; a new-offer argument additionally captures/checks new-work policy. It is not a grant or wire field. The same callback propagates through the coordinator to actual incoming offer, cancelled-offer, cancellation and snapshot queues, including existing/older/idempotent decisions and the synchronous retired-terminal ACK sink.
 
 New offers retain complete capacity, expiry, receiver and positive authorization checks. Check again after awaited authorization on both success and typed-refusal paths. Fresh-offer policy continuity uses existing config generation, relevant Dispatcher identity/path/enablement, connection-change evidence and current incoming settings. It does not impose new-work permission on retained history/cancellation or claim detection of every unobserved settings revoke-and-restore interval.
 
 ## Actual ownership and committed truth
 
 Register a host-local incoming owner before awaiting domain work. It holds the actual coordinator promise through queue waits, atomic save and normal committed-history callbacks, not the canceled waiter or a deadline race. Normal `stopHandoffs` retires new admissions and drains incoming and outgoing reverse owners; replacement cannot bypass either set. This is not a global server/app shutdown or drain of unrelated pre-capture local writers.
+
+Existing outgoing sync ownership remains distinct from its retired, still-settling POST/authority-listener lifetime. After the outer deadline, that sync can no longer adopt a late reply; its network operation need not block host replacement. This legacy behavior is unchanged. Incoming ownership cannot end early in that manner because its actual domain promise can still complete an admitted save.
 
 | Retirement point | Required outcome |
 |---|---|
@@ -36,4 +38,6 @@ Baseline attempt03 on unchanged production `70eff94e` produced **3 PASS / 2 FAIL
 
 Attempts01/02 failed at an incorrect fixture witness of the authorizer's result wrapper; no boundary proof is credited to them. Their raw originals, including attempt01's cleanup warning, remain preserved.
 
-Exact implementation/proof, queue/postauthorization mutants, lifetime/RPC controls, typing/lint and independent exact review remain required. There is no new worker/grant/preparation/Git/apply/wake/provider/human-gate, real two-host, full-handoff or full-duplex acceptance. The accepted `#3777` and lower `74d2ed4` proof remain unchanged, not rerun.
+The selected local candidate controls pass: 35 cases across real native TLS/RPC and private service/coordinator/host boundaries. The changed-fixture type graph passes with 3,960 compiler inputs; scoped lint has zero errors, preserving the independently measured 71 native-server baseline warnings. Queue/postauthorization mutants and independent exact source/proof review remain required. These counts are not acceptance of the excluded product paths.
+
+There is no new worker/grant/preparation/Git/apply/wake/provider/human-gate, real two-host, full-handoff or full-duplex acceptance. The accepted `#3777` and lower `74d2ed4` proof remain unchanged, not rerun.

@@ -2,9 +2,10 @@ import * as fs from 'fs';
 import { randomUUID } from 'crypto';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HandoffCoordinator } from './handoff-coordinator';
 import { HandoffService } from './handoff-service';
+import { HandoffAuthorizationChanged } from './handoff-worker';
 import type { HandoffStorage } from './handoff-store';
 import { parseHandoff, transitionHandoff, type Handoff } from '../../shared/handoffs';
 import type { HandoffOffer } from '../../shared/handoffs';
@@ -14,8 +15,10 @@ const state = vi.hoisted(() => ({
   reverseReady: false, revision: 1, snapshot: true, server: true,
   grantRevision: 0, generation: 0,
   lookup: undefined as (() => Promise<void>) | undefined,
+  projectLookup: undefined as (() => Promise<void>) | undefined,
   beforeOperation: undefined as ((signal: AbortSignal) => Promise<void> | void) | undefined,
   connectionListeners: new Set<() => void>(), bindingListeners: new Set<(id: string) => void>(),
+  dispatcherListeners: new Set<() => void>(),
   unsubscribed: vi.fn(),
   bindings: [] as Array<{ targetKind: 'agent'; targetId: string; enabledTools: string[]; disabledTools: string[] }>,
   send: vi.fn(async (_text: string, _options?: unknown) => ({})), create: vi.fn(), extraAgent: undefined as { id: string; name: string } | undefined, participant: (_id: string): boolean => false, post: vi.fn(),
@@ -44,8 +47,13 @@ vi.mock('./annex-agent-calls', () => ({ isNetworkComputer: () => state.member })
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: (): undefined => undefined } }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => ({ isRunning: () => state.running, sendMessage: state.send }) }));
 vi.mock('./agent-config', () => ({ agentConfigGeneration: () => state.generation, peekDurableConfigs: async () => [{ id: 'sender', name: 'Sender' }, { id: 'receiver', name: 'Receiver' }, ...(state.extraAgent ? [state.extraAgent] : [])] }));
-vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'project', name: 'Project', path: state.dir }] }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ enabled: true, agentId: 'dispatcher', path: state.dir, config: { name: 'Dispatcher' } }), isDispatcherAgentId: (id: string) => id === 'dispatcher' }));
+vi.mock('./project-store', () => ({ peekProjects: async () => {
+  if (state.projectLookup) await state.projectLookup();
+  return [{ id: 'project', name: 'Project', path: state.dir }];
+} }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ enabled: true, agentId: 'dispatcher', path: state.dir, config: { name: 'Dispatcher' } }), isDispatcherAgentId: (id: string) => id === 'dispatcher',
+  onDispatcherChanged: (listener: () => void) => { state.dispatcherListeners.add(listener); return () => { state.dispatcherListeners.delete(listener); }; },
+}));
 vi.mock('./agent-grants-store', () => ({ getAgentGrantChanges: () => state.grantRevision, getAgentGrantRevision: () => state.grantRevision }));
 vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async () => {
   await state.lookup?.();
@@ -89,12 +97,153 @@ beforeEach(() => {
   state.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-host-'));
   state.allowed = state.connected = state.online = state.member = state.accepting = state.running = true;
   state.reverseReady = false; state.revision = 1; state.snapshot = state.server = true;
-  state.grantRevision = state.generation = 0; state.lookup = state.beforeOperation = undefined;
+  state.grantRevision = state.generation = 0; state.lookup = state.projectLookup = state.beforeOperation = undefined;
   state.connectionListeners.clear(); state.bindingListeners.clear(); state.bindings = [];
+  state.dispatcherListeners.clear();
   vi.clearAllMocks();
   state.extraAgent = undefined;
 });
 afterEach(async () => { await stopHandoffs(); fs.rmSync(state.dir, { recursive: true, force: true }); });
+
+describe('native incoming host ownership and fresh policy', () => {
+  function incoming(): Handoff {
+    const from = { machine: state.peer, agentId: 'foreign-sender' }, at = Date.now();
+    return parseHandoff({ ...offer(), schemaVersion: 1, id: randomUUID(), from, createdAt: at, updatedAt: at, version: 1,
+      state: 'offered', history: [{ operationId: randomUUID(), at, by: { kind: 'agent', address: from }, state: 'offered' }] });
+  }
+
+  it.each(['incoming-setting', 'connection', 'connection-restored'] as const)(
+    'refuses a stale fresh-offer policy after held receiver lookup: %s', async (change) => {
+      const record = incoming(), entered = barrier(), held = barrier();
+      await handoffHost().ready;
+      state.projectLookup = async () => { entered.release(); await held.promise; };
+      const work = receiveNetworkHandoff(state.peer, { op: 'offer', record }, () => true);
+      try {
+        await entered.promise;
+        if (change === 'incoming-setting') state.accepting = false;
+        else {
+          state.connected = false;
+          for (const listener of state.connectionListeners) listener();
+          if (change === 'connection-restored') {
+            state.connected = true;
+            for (const listener of state.connectionListeners) listener();
+          }
+        }
+        held.release();
+        await expect(work).rejects.toThrow(HandoffAuthorizationChanged);
+        const active = handoffHost();
+        expect(active.store.get(record.id)).toBeUndefined();
+        expect(active.incoming.size).toBe(0);
+        expect(state.connectionListeners.size).toBe(0);
+        expect(state.dispatcherListeners.size).toBe(0);
+      } finally { held.release(); await Promise.allSettled([work]); }
+    });
+
+  it('drains an admitted native save and its normal committed-history notice before replacement', async () => {
+    const record = incoming(), active = handoffHost(), admitted = barrier(), held = barrier();
+    await active.ready;
+    const rename = fs.promises.rename;
+    const spy = vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === path.join(state.dir, 'handoffs.json')) { admitted.release(); await held.promise; }
+      return rename(from, to);
+    });
+    let live = true;
+    const work = receiveNetworkHandoff(state.peer, { op: 'offer', record }, () => live);
+    let stopping: Promise<void> | undefined;
+    try {
+      await admitted.promise;
+      expect(active.incoming.size).toBe(1);
+      live = false; stopping = stopHandoffs();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(() => handoffHost()).toThrow(HandoffAuthorizationChanged);
+      held.release();
+      expect(await work).toEqual(record);
+      await stopping;
+      expect(active.store.get(record.id)).toEqual(record);
+      expect(state.send).toHaveBeenCalledTimes(1);
+      expect(state.send.mock.calls[0][0]).toContain(record.id);
+      expect(handoffHost().store.get(record.id)).toEqual(record);
+      expect(state.connectionListeners.size).toBe(0);
+      expect(state.dispatcherListeners.size).toBe(0);
+    } finally { held.release(); await Promise.allSettled([work, stopping]); spy.mockRestore(); }
+  });
+
+  it('does not replace a host identity while its original native authorization operation remains owned', async () => {
+    const originalMachine = state.machine, record = incoming(), entered = barrier(), held = barrier();
+    await handoffHost().ready;
+    state.projectLookup = async () => { entered.release(); await held.promise; };
+    const work = receiveNetworkHandoff(state.peer, { op: 'offer', record }, () => true);
+    try {
+      await entered.promise;
+      state.machine = Array(16).fill('ef').join(':');
+      expect(() => handoffHost()).toThrow(HandoffAuthorizationChanged);
+      held.release();
+      await expect(work).rejects.toThrow(HandoffAuthorizationChanged);
+      expect(handoffHost().machine).toBe(state.machine);
+      expect(handoffHost().store.get(record.id)).toBeUndefined();
+    } finally {
+      held.release(); await Promise.allSettled([work]);
+      await stopHandoffs(); state.machine = originalMachine;
+    }
+  });
+
+  it('drains native writers without changing retired outgoing POST lifetime or permitting its late adoption', async () => {
+    reverse();
+    const active = handoffHost(); await active.ready;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const postEntered = barrier(), postHeld = barrier(), postSettled = barrier();
+    const authorizationEntered = barrier(), authorizationHeld = barrier();
+    let heldId: string | undefined, signal: AbortSignal | undefined;
+    state.post.mockImplementation(async (_peer, _route, body, options) => {
+      if (heldId && body.record.id !== heldId) return { status: 200, body: body.record };
+      heldId = body.record.id; signal = options.signal;
+      postEntered.release(); await postHeld.promise;
+      const response = { status: 200, body: acceptedCopy(body.record) };
+      postSettled.release(); return response;
+    });
+    const offering = active.coordinator.offer(remoteOffer(), localHandoffAgent('sender'));
+    let receiving: Promise<unknown> | undefined, stopping: Promise<void> | undefined;
+    try {
+      await postEntered.promise;
+      await vi.advanceTimersByTimeAsync(5000);
+      const original = await offering;
+      expect(signal?.aborted).toBe(true);
+      expect(active.reverseSyncs.size).toBe(0);
+      expect(state.connectionListeners.size).toBe(1);
+      state.projectLookup = async () => { authorizationEntered.release(); await authorizationHeld.promise; };
+      const incomingRecord = incoming();
+      receiving = receiveNetworkHandoff(state.peer, { op: 'offer', record: incomingRecord }, () => true);
+      const received = Promise.allSettled([receiving]);
+      await authorizationEntered.promise;
+      expect(active.incoming.size).toBe(1);
+      let stopped = false;
+      stopping = stopHandoffs().then(() => { stopped = true; });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stopped).toBe(false);
+      expect(() => handoffHost()).toThrow(HandoffAuthorizationChanged);
+      state.projectLookup = undefined; authorizationHeld.release();
+      expect((await received)[0]).toMatchObject({ status: 'rejected', reason: expect.any(HandoffAuthorizationChanged) });
+      await stopping;
+      expect(active.incoming.size).toBe(0);
+      expect(state.connectionListeners.size).toBe(1);
+      const replacement = handoffHost(); await replacement.ready;
+      const unrelated = await replacement.coordinator.offer(remoteOffer(), localHandoffAgent('sender'));
+      expect(unrelated.id).not.toBe(original.id);
+      expect(replacement.commands.isUndelivered(unrelated.id)).toBe(false);
+      postHeld.release(); await postSettled.promise; vi.useRealTimers();
+      await vi.waitFor(() => {
+        expect(state.connectionListeners.size).toBe(0);
+        expect(state.bindingListeners.size).toBe(0);
+      });
+      expect(active.store.get(original.id)).toEqual(original);
+      expect(replacement.store.get(original.id)).toEqual(original);
+      expect(state.send.mock.calls.some(([text]) => text.includes('State: accepted'))).toBe(false);
+    } finally {
+      authorizationHeld.release(); postHeld.release(); vi.useRealTimers();
+      await Promise.allSettled([offering, receiving, stopping]);
+    }
+  });
+});
 
 it('resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers', async () => {
   expect(await resolveHandoffTarget('Receiver')).toEqual(localHandoffAgent('receiver'));
