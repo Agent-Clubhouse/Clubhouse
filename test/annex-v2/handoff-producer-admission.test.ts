@@ -485,26 +485,29 @@ describe('isolated real MCP producer domain admission', () => {
       expect(JSON.parse(await catalog(fx))).toEqual(replacement);
     });
 
-    it('refuses an independently running preparation with a different mode before a remote marker', async () => {
+    it('prepares its own requested mode after an independently running preparation', async () => {
       const fx = current();
       await exec('git', ['add', 'fixture.txt'], { cwd: fx.repository });
       await exec('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Clean branch fixture'], { cwd: fx.repository });
-      const peer = await remote(fx), held = await heldStandalonePreparation(fx, 'branch');
-      const marker = vi.spyOn(fx.host.commands, 'markUndelivered');
-      const pending = fx.tools.callTool(caller, 'offer_handoff', { to: `machine:${peer}`, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
+      const held = await heldStandalonePreparation(fx, 'branch');
+      const pending = fx.tools.callTool(caller, 'offer_handoff', { to: receiver, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
       operations.push(pending);
       await held.selected;
       held.release();
       const prepared = resultValue(await held.pending);
       console.info('Independent preparation mode witness', JSON.stringify(prepared));
       expect(prepared).toMatchObject({ ready: true });
-      expect((await pending).isError).toBe(true);
-      expect(marker).not.toHaveBeenCalled();
-      expect(fx.host.store.list()).toEqual([]);
-      expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ mode: 'branch', boundTo: [] }] });
+      const result = await pending;
+      expect(result.isError).not.toBe(true);
+      const record = parseHandoff(resultValue(result));
+      expect(record.mode).toBe('worktree');
+      if (!prepared || typeof prepared !== 'object' || !('summary' in prepared)) throw new Error('Missing independent preparation summary.');
+      expect(record.manifest).not.toEqual(prepared.summary);
+      expect(fx.host.store.get(record.id)).toEqual(record);
+      expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ mode: 'worktree', boundTo: [record.id] }] });
     });
 
-    it('refuses an independently running preparation captured from a different original producer source', async () => {
+    it('prepares its original captured source after an independently running preparation on another source', async () => {
       const fx = current(), second = path.join(dir, 'second-repository');
       await fs.mkdir(second);
       await initializeRepository(second);
@@ -523,7 +526,32 @@ describe('isolated real MCP producer domain admission', () => {
         expect.objectContaining({ project: expect.objectContaining({ id: project.id }), worktreeRoot: second }), expect.any(Function));
       held.release();
       expect(resultValue(await held.pending)).toMatchObject({ ready: true });
+      const result = await pending;
+      expect(result.isError).not.toBe(true);
+      const record = parseHandoff(resultValue(result)), prepared = await fx.preparation.preparedSourceForRecord(record);
+      expect(prepared.source.project).toEqual(project);
+      expect(prepared.source.worktreeRoot).toBe(second);
+      expect(await fs.readFile(path.join(prepared.snapshot.root, 'files', 'fixture.txt'), 'utf8')).toBe(contents);
+      expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ project: project.id, mode: 'worktree', boundTo: [record.id] }] });
+    });
+
+    it('owns its await of separately admitted preparation without cancelling that independent read on stop', async () => {
+      const fx = current(), held = await heldStandalonePreparation(fx, 'worktree');
+      const pending = fx.tools.callTool(caller, 'offer_handoff', { to: receiver, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
+      operations.push(pending);
+      await held.selected;
+      let stopped = false;
+      const stopping = fx.hostApi.stopHandoffs().then(() => { stopped = true; });
+      operations.push(stopping);
+      await Promise.resolve();
+      expect(stopped).toBe(false);
+      expect(fx.host.producers.size).toBe(1);
+      expect(() => fx.hostApi.handoffHost()).toThrow();
+      held.release();
+      expect(resultValue(await held.pending)).toMatchObject({ ready: true });
       expect((await pending).isError).toBe(true);
+      await stopping;
+      expect(fx.host.producers.size).toBe(0);
       expect(fx.host.store.list()).toEqual([]);
       expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ project: fx.project.id, mode: 'worktree', boundTo: [] }] });
     });
