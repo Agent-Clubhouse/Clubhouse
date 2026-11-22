@@ -146,7 +146,7 @@ async function cleanupFixture(): Promise<void> {
     try { await finish(); } catch (error) { failures.push(error); }
   }
   if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) throw new AggregateError(failures, 'Producer fixture work or teardown failed.');
+  if (failures.length > 1) throw Object.assign(new Error('Producer fixture work or teardown failed.'), { errors: failures });
 }
 afterEach(cleanupFixture);
 
@@ -253,6 +253,17 @@ async function heldPostPositiveSource(fx: Fixture, args: Record<string, unknown>
 }
 
 describe('isolated real MCP producer domain admission', () => {
+  function windowsCleanup(): Promise<void> {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    if (!platform?.configurable) throw new Error('Cannot isolate the synchronous Windows diagnostic branch.');
+    try {
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+      return cleanupFixture();
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+    }
+  }
+
   async function heldFixturePreparation(fx: Fixture) {
     const entered = deferred(), release = deferred();
     const source = fx.source.callerHandoffSource;
@@ -267,28 +278,35 @@ describe('isolated real MCP producer domain admission', () => {
     return { pending, release: release.resolve };
   }
 
-  it('drains a real held preparation and completes teardown before reporting its original caller rejection', async () => {
+  it.each([1, 9])('drains a real held preparation and completes teardown before reporting its original caller rejection (%i failures)', async (count) => {
     const fx = current();
-    const failure = new Error('Original fixture caller rejection.');
+    const failures = Array.from({ length: count }, (_, index) => new Error(`Original fixture caller rejection ${index}.`));
+    let next = 0;
     const grant = fx.tools.listToolGrants().find((tool) => tool.kind === 'global' && tool.name === 'offer_handoff')?.grant;
     if (!grant) throw new Error('Missing actual offer grant declaration.');
-    fx.tools.registerGlobalTool('fixture_teardown_rejection', {
+    const name = `fixture_teardown_rejection_${'x'.repeat(80)}`;
+    fx.tools.registerGlobalTool(name, {
       description: 'Isolated fixture rejection control.',
       inputSchema: { type: 'object', properties: { to: { type: 'string' } }, required: ['to'] },
-    }, async () => { throw failure; }, { grant });
-    const rejection = await fx.tools.callTool(caller, 'fixture_teardown_rejection', { to: receiver }).then(
-      () => { throw new Error('Expected an actual registered caller rejection.'); },
-      (error: unknown) => error,
-    );
-    expect(rejection).toBe(failure);
+    }, async () => { throw failures[next++]; }, { grant });
+    for (const failure of failures) {
+      const rejection = await fx.tools.callTool(caller, name, { to: receiver }).then(
+        () => { throw new Error('Expected an actual registered caller rejection.'); },
+        (error: unknown) => error,
+      );
+      expect(rejection).toBe(failure);
+    }
     const held = await heldFixturePreparation(fx);
     const stop = vi.spyOn(fx.hostApi, 'stopHandoffs');
     const reset = vi.spyOn(fx.requests, '_resetGrantRequestsForTesting');
     let finished = false;
-    const cleaning = cleanupFixture().then(
+    let diagnostics: unknown;
+    const logging = count > 1 ? vi.spyOn(console, 'error').mockImplementation((_label, rows: unknown) => { diagnostics = rows; }) : undefined;
+    const cleaning = (count > 1 ? windowsCleanup() : cleanupFixture()).then(
       () => { finished = true; return { ok: true }; },
       (error: unknown) => { finished = true; return { ok: false, error }; },
     );
+    logging?.mockRestore();
     try {
       await new Promise((resolve) => setTimeout(resolve, 25));
       expect.soft(finished).toBe(false);
@@ -299,11 +317,39 @@ describe('isolated real MCP producer domain admission', () => {
       const prepared = await held.pending;
       const outcome = await cleaning;
       expect.soft(prepared.isError).not.toBe(true);
-      expect.soft(outcome).toEqual({ ok: false, error: failure });
+      if ('error' in outcome) {
+        if (count === 1) expect.soft(outcome.error).toBe(failures[0]);
+        else {
+          const error = outcome.error;
+          expect.soft(error).toBeInstanceOf(Error);
+          if (error && typeof error === 'object' && 'errors' in error && Array.isArray(error.errors)) {
+            const originals: unknown[] = error.errors;
+            expect.soft(originals).toHaveLength(count);
+            failures.forEach((failure, index) => expect.soft(originals[index]).toBe(failure));
+          } else expect.soft(false, 'Expected every original caller rejection after mandatory teardown.').toBe(true);
+        }
+      } else expect.soft(false, 'Expected original caller rejection after mandatory teardown.').toBe(true);
       expect.soft(stop).toHaveBeenCalledOnce();
       expect.soft(reset).toHaveBeenCalledOnce();
       expect.soft(nativeFs.existsSync(fx.userData)).toBe(false);
       expect.soft(current).toThrow('Producer fixture is not initialized.');
+      if (count > 1) {
+        expect.soft(Array.isArray(diagnostics)).toBe(true);
+        if (Array.isArray(diagnostics)) {
+          expect.soft(diagnostics).toHaveLength(8);
+          const rows: unknown[] = diagnostics;
+          const names: string[] = [];
+          for (const row of rows) {
+            if (row && typeof row === 'object' && 'tool' in row && typeof row.tool === 'string') {
+              expect.soft(Object.keys(row).sort()).toEqual(['ageMs', 'state', 'tool']);
+              expect.soft(row.tool.length).toBeLessThanOrEqual(80);
+              names.push(row.tool);
+            } else expect.soft(false, 'Expected bounded diagnostic metadata only.').toBe(true);
+          }
+          expect.soft(names).toHaveLength(8);
+          expect.soft(names[0]).toHaveLength(80);
+        }
+      }
     }
   });
 
@@ -319,14 +365,10 @@ describe('isolated real MCP producer domain admission', () => {
     const diagnostic = port === 'clock'
       ? vi.spyOn(Date, 'now').mockImplementationOnce(diagnosticFailure)
       : vi.spyOn(console, 'error').mockImplementationOnce(diagnosticFailure);
-    const platform = Object.getOwnPropertyDescriptor(process, 'platform');
-    if (!platform?.configurable) throw new Error('Cannot isolate the synchronous Windows diagnostic branch.');
     let cleaning: Promise<void>;
     try {
-      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
-      cleaning = cleanupFixture();
+      cleaning = windowsCleanup();
     } finally {
-      Object.defineProperty(process, 'platform', platform);
       diagnostic.mockRestore();
     }
     const observed = cleaning.then(
@@ -345,6 +387,36 @@ describe('isolated real MCP producer domain admission', () => {
       held.release();
       expect.soft((await held.pending).isError).not.toBe(true);
     }
+  });
+
+  it('forwards actual preparation once when its pre-forward diagnostic clock throws', async () => {
+    const fx = current();
+    const source = vi.spyOn(fx.source, 'callerHandoffSource');
+    let faulted = false;
+    const clock = vi.spyOn(Date, 'now').mockImplementationOnce(() => {
+      faulted = true;
+      throw new Error('Original pre-forward diagnostic clock fault.');
+    });
+    const pending = (async () => fx.tools.callTool(caller, 'prepare_handoff', { mode: 'worktree' }))();
+    clock.mockRestore();
+    const outcome = await pending.then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+    expect.soft(faulted).toBe(true);
+    expect.soft(source).toHaveBeenCalledOnce();
+    if ('result' in outcome) expect.soft(outcome.result.isError).not.toBe(true);
+    else expect.soft(false, 'Diagnostic failure masked the actual preparation.').toBe(true);
+    expect.soft(nativeFs.existsSync(path.join(fx.userData, 'handoff-preparations.json'))).toBe(true);
+  });
+
+  it('reports actual early offer settlement without entering an unreachable history hold', async () => {
+    const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
+    const before = await catalog(fx);
+    await fx.setGrant('off');
+    await expect(queuedOffer(fx, seed, summary)).rejects.toThrow('Offer settled before its actual history-queue hold:');
+    expect(fx.host.store.list()).toEqual([seed]);
+    expect(await catalog(fx)).toBe(before);
   });
 
   it('keeps actual fixture preparation alive until teardown settles it', async () => {
