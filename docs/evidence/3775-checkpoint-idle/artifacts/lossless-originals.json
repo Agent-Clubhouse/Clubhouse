@@ -1,0 +1,293 @@
+{
+  "kind": "First observed local gated outputs/config/overlays/source/input/graph receipts; no output overwritten; originals retained privately",
+  "artifacts": [
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/01-discriminator-exit-original.txt",
+      "originalName": "01-discriminator-exit-original.txt",
+      "compressed": false,
+      "originalBytes": 2,
+      "originalSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/01-discriminator-input-original.json",
+      "originalName": "01-discriminator-input-original.json",
+      "compressed": false,
+      "originalBytes": 665,
+      "originalSha256": "deb0faceb03ce1127d8c6096081eb7b5299baf4390ffe51eb6aaec0c30116a19",
+      "bytes": 665,
+      "sha256": "deb0faceb03ce1127d8c6096081eb7b5299baf4390ffe51eb6aaec0c30116a19"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/01-discriminator-original.log.gz",
+      "originalName": "01-discriminator-original.log",
+      "compressed": true,
+      "originalBytes": 1654,
+      "originalSha256": "8984e0e02b2bc28fb05e2a0042745ee99b5a1c2dbeac5c1fa8ef0ba71bae3352",
+      "bytes": 882,
+      "sha256": "e5a59f3c53fc8ca42c9b6b62ffc3bf655b2db032f4e834d2579f613035460b50"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/01-discriminator-original.xml",
+      "originalName": "01-discriminator-original.xml",
+      "compressed": false,
+      "originalBytes": 3579,
+      "originalSha256": "4a18cb2870eb4660cd61e3e713099c404b74e10be99bef708b74ed9a3f280a8a",
+      "bytes": 3579,
+      "sha256": "4a18cb2870eb4660cd61e3e713099c404b74e10be99bef708b74ed9a3f280a8a"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/02-readiness-mutant-exit-original.txt",
+      "originalName": "02-readiness-mutant-exit-original.txt",
+      "compressed": false,
+      "originalBytes": 2,
+      "originalSha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/02-readiness-mutant-input-original.json",
+      "originalName": "02-readiness-mutant-input-original.json",
+      "compressed": false,
+      "originalBytes": 762,
+      "originalSha256": "47e63f9db357bff2f58a15a853d5ed1441ee53db52a1653c3c97aa4cb8febc45",
+      "bytes": 762,
+      "sha256": "47e63f9db357bff2f58a15a853d5ed1441ee53db52a1653c3c97aa4cb8febc45"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/02-readiness-mutant-original.log.gz",
+      "originalName": "02-readiness-mutant-original.log",
+      "compressed": true,
+      "originalBytes": 6153,
+      "originalSha256": "1a241acc73de372d3998468d5f131969fc6535d804119ebe5315a51e53d4f3c0",
+      "bytes": 1789,
+      "sha256": "42c79a9081fb3ba49877b2d067c8435753729bc1c97abab6304613172549b5c3"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/02-readiness-mutant-original.xml",
+      "originalName": "02-readiness-mutant-original.xml",
+      "compressed": false,
+      "originalBytes": 6205,
+      "originalSha256": "ff5ff5e395d3557f42cbaf38bd63bdea07bd74dcf7a3945af0fcba5a22dad2f2",
+      "bytes": 6205,
+      "sha256": "ff5ff5e395d3557f42cbaf38bd63bdea07bd74dcf7a3945af0fcba5a22dad2f2"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/03-fixture-exit-original.txt",
+      "originalName": "03-fixture-exit-original.txt",
+      "compressed": false,
+      "originalBytes": 2,
+      "originalSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/03-fixture-original.log.gz",
+      "originalName": "03-fixture-original.log",
+      "compressed": true,
+      "originalBytes": 1822,
+      "originalSha256": "2518b365440beb333fa4f16462baf4fd665cc2dbce0dae217990904911f90ade",
+      "bytes": 977,
+      "sha256": "c22a1a1cd8ef7670553ba9bb7751d1cd79fad851588ea91765b7441ab88a741d"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/03-fixture-original.xml",
+      "originalName": "03-fixture-original.xml",
+      "compressed": false,
+      "originalBytes": 2888,
+      "originalSha256": "c0cfc38ae00e70f08de8669f573365129c52bde62c72aaad474152436d0fa0c0",
+      "bytes": 2888,
+      "sha256": "c0cfc38ae00e70f08de8669f573365129c52bde62c72aaad474152436d0fa0c0"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/04-fixture-types-exit-original.txt",
+      "originalName": "04-fixture-types-exit-original.txt",
+      "compressed": false,
+      "originalBytes": 2,
+      "originalSha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "bytes": 2,
+      "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/04-fixture-types-graph-original.json.gz",
+      "originalName": "04-fixture-types-graph-original.json",
+      "compressed": true,
+      "originalBytes": 1264960,
+      "originalSha256": "37b6904f5e2d2fee52c283b200525200c1599ca4c0d102bf337db2c29f5a36f9",
+      "bytes": 212260,
+      "sha256": "730f49b882f6a22122d1e9ab62a34cd2cdd481ea229f12f379dbf23ecc82b532"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/04-fixture-types-original.log.gz",
+      "originalName": "04-fixture-types-original.log",
+      "compressed": true,
+      "originalBytes": 735035,
+      "originalSha256": "4cb8d23567feec145876a4da723e60f2d77fe2690aec5887cf2509c221328195",
+      "bytes": 32772,
+      "sha256": "cdbdfd68e6ad8d766f32146563dd8296dbf1f7fc4bac352ddd666402f6d56151"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/05-fixture-lint-exit-original.txt",
+      "originalName": "05-fixture-lint-exit-original.txt",
+      "compressed": false,
+      "originalBytes": 2,
+      "originalSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/05-fixture-lint-original.log.gz",
+      "originalName": "05-fixture-lint-original.log",
+      "compressed": true,
+      "originalBytes": 602,
+      "originalSha256": "518f1e40e0b7e78459e30fc0023a1c974e20d31d71f98ff0a94cd1ac30c9ea90",
+      "bytes": 381,
+      "sha256": "236bc28bce4bfebdff3ce3e8d60c3760c2d85281d2ba238002c8b419ab0bdc25"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/06-baseline-types-exit-original.txt",
+      "originalName": "06-baseline-types-exit-original.txt",
+      "compressed": false,
+      "originalBytes": 2,
+      "originalSha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "bytes": 2,
+      "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/06-baseline-types-graph-original.json.gz",
+      "originalName": "06-baseline-types-graph-original.json",
+      "compressed": true,
+      "originalBytes": 1264959,
+      "originalSha256": "142a17783de5def2356b24d85696dc4dd55047be1ad9e483f69fec255f04c055",
+      "bytes": 212259,
+      "sha256": "6d756436872c66de086d843e195896e32274c9982157fc0d994c03d041d743cf"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/06-baseline-types-input-original.json",
+      "originalName": "06-baseline-types-input-original.json",
+      "compressed": false,
+      "originalBytes": 527,
+      "originalSha256": "abfdfdc0231bb85444d7fbd79d3a03c9009eda4a69d719b65c7bc38b95499824",
+      "bytes": 527,
+      "sha256": "abfdfdc0231bb85444d7fbd79d3a03c9009eda4a69d719b65c7bc38b95499824"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/06-baseline-types-original.log.gz",
+      "originalName": "06-baseline-types-original.log",
+      "compressed": true,
+      "originalBytes": 735035,
+      "originalSha256": "641d3623db50548b8c8d2e6ff0b77deda870faa2eb972ea49bc81b34faaf8170",
+      "bytes": 32767,
+      "sha256": "5beb04348ecba484fadac93ba1abca2738366bd17a7224ff214e631e191acbe2"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/discriminator-fixture-original.ts.txt",
+      "originalName": "discriminator-fixture-original.ts.txt",
+      "compressed": false,
+      "originalBytes": 17918,
+      "originalSha256": "6684fb11d9e2104458cff668c1f5e382d955ee4d27bb86b8def12fba9b34e084",
+      "bytes": 17918,
+      "sha256": "6684fb11d9e2104458cff668c1f5e382d955ee4d27bb86b8def12fba9b34e084"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/discriminator-overlay-original.diff",
+      "originalName": "discriminator-overlay-original.diff",
+      "compressed": false,
+      "originalBytes": 3158,
+      "originalSha256": "166c513bbb47e34a96d93d7851a94169db06d84dc3f27b48053ea92ae55dab34",
+      "bytes": 3158,
+      "sha256": "166c513bbb47e34a96d93d7851a94169db06d84dc3f27b48053ea92ae55dab34"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/final-source-restoration-original.json",
+      "originalName": "final-source-restoration-original.json",
+      "compressed": false,
+      "originalBytes": 266,
+      "originalSha256": "857eabab2de21821126a025195892d4bda84c6d0c1346bc2803a07efb7711bfd",
+      "bytes": 266,
+      "sha256": "857eabab2de21821126a025195892d4bda84c6d0c1346bc2803a07efb7711bfd"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/fixture-types-comparison-original.json",
+      "originalName": "fixture-types-comparison-original.json",
+      "compressed": false,
+      "originalBytes": 1466,
+      "originalSha256": "bdfec4c20aba0a91535ea12dd900c84609699eeefd363e69046dcb4dff291048",
+      "bytes": 1466,
+      "sha256": "bdfec4c20aba0a91535ea12dd900c84609699eeefd363e69046dcb4dff291048"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/fixture-types.json",
+      "originalName": "fixture-types.json",
+      "compressed": false,
+      "originalBytes": 134,
+      "originalSha256": "f96121b20e098b064e78796367cfd42459831eb7e5f42ad1ceebeee97d38e6f1",
+      "bytes": 134,
+      "sha256": "f96121b20e098b064e78796367cfd42459831eb7e5f42ad1ceebeee97d38e6f1"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/main-before-freeze-original.json",
+      "originalName": "main-before-freeze-original.json",
+      "compressed": false,
+      "originalBytes": 348,
+      "originalSha256": "0bbb3b9a0320075735d543962cf8b558d9c7ce003ca111a6e0ba9a9c3705cf12",
+      "bytes": 348,
+      "sha256": "0bbb3b9a0320075735d543962cf8b558d9c7ce003ca111a6e0ba9a9c3705cf12"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/pr-before-freeze-original.json",
+      "originalName": "pr-before-freeze-original.json",
+      "compressed": false,
+      "originalBytes": 175,
+      "originalSha256": "daa2663450a4ac7f699775cc1f0f3d7ad6d168e11ce8f56f63827277796871d5",
+      "bytes": 175,
+      "sha256": "daa2663450a4ac7f699775cc1f0f3d7ad6d168e11ce8f56f63827277796871d5"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/proof-attribution-original.json",
+      "originalName": "proof-attribution-original.json",
+      "compressed": false,
+      "originalBytes": 8000,
+      "originalSha256": "d84260cb91a0ed4c9c611fafe670345382a2c291639c9295f5b43d54a7eda29e",
+      "bytes": 8000,
+      "sha256": "d84260cb91a0ed4c9c611fafe670345382a2c291639c9295f5b43d54a7eda29e"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/readiness-mutant-fixture-original.ts.txt",
+      "originalName": "readiness-mutant-fixture-original.ts.txt",
+      "compressed": false,
+      "originalBytes": 17803,
+      "originalSha256": "d38958cf6fe20dbf7b8f67e1ac2d2a05f3ddce849663e249b7207dbf0ad76f10",
+      "bytes": 17803,
+      "sha256": "d38958cf6fe20dbf7b8f67e1ac2d2a05f3ddce849663e249b7207dbf0ad76f10"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/readiness-mutant-overlay-original.diff",
+      "originalName": "readiness-mutant-overlay-original.diff",
+      "compressed": false,
+      "originalBytes": 3923,
+      "originalSha256": "2c90e309a1fc074d0718661cd45ca7db117116a0773edd4e7bbd38441f087ff4",
+      "bytes": 3923,
+      "sha256": "2c90e309a1fc074d0718661cd45ca7db117116a0773edd4e7bbd38441f087ff4"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/restored-source-original.json",
+      "originalName": "restored-source-original.json",
+      "compressed": false,
+      "originalBytes": 190,
+      "originalSha256": "183eda2d55a9827fe0c77704a03f94ec1aae37bf8434776c3bf68bf9511e3f69",
+      "bytes": 190,
+      "sha256": "183eda2d55a9827fe0c77704a03f94ec1aae37bf8434776c3bf68bf9511e3f69"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/source-original.json",
+      "originalName": "source-original.json",
+      "compressed": false,
+      "originalBytes": 2340,
+      "originalSha256": "683e1078521e66222f8027309d2472d87d29e6c1016d98c4e968d4a24666e38c",
+      "bytes": 2340,
+      "sha256": "683e1078521e66222f8027309d2472d87d29e6c1016d98c4e968d4a24666e38c"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "HEAD": "adcb284b217030163574b2b094df2b482cdc8684",
+  "baselineSourceMatches": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+  "baselineFixtureBlob": "7fc9fa8d9071efeb54a776ae4724551bd45b3840",
+  "baselineFixtureSha256": "949e96e414a05fe0001e7a1e79f9507541668f9ed2976bbcb4eec7e0d9045d44",
+  "sameConfigSha256": "f96121b20e098b064e78796367cfd42459831eb7e5f42ad1ceebeee97d38e6f1",
+  "sameCompilerFlagsAndDependencyGraph": true,
+  "scope": "One exact baseline diagnostic comparison, not baseline runtime/speed/cause evidence"
+}

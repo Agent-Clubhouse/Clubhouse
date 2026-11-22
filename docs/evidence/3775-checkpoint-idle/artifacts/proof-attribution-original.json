@@ -1,0 +1,226 @@
+{
+  "source": "adcb284b217030163574b2b094df2b482cdc8684",
+  "JUnitResults": [
+    {
+      "attempt": "01-discriminator",
+      "pass": 2,
+      "fail": 0,
+      "skip": 11,
+      "cases": [
+        {
+          "name": "checkpoint tracker > names the pre-prompt snapshot as the turn start, checkpoints the end and reports the turn diff",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > works from a subdirectory, with paths relative to the repository root",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks turns shared when another agent works in the same worktree",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks a turn shared with a live terminal agent in the same worktree",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks and closes a turn that ends before its start checkpoint is written",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reports a revert in progress so new prompts can wait for it",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > does not mark turns shared for agents in other worktrees",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > refuses to revert while the agent is mid-turn",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > shows session changes against the working tree",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reports unavailable outside a git repository and refuses to revert an unfinished turn",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "runTurn producer-idle readiness discriminator > rejects a missing requested start before edit despite an unrelated complete turn",
+          "seconds": "0.479556417",
+          "status": "pass"
+        },
+        {
+          "name": "runTurn producer-idle readiness discriminator > rejects a missing requested end before continuation despite an unrelated complete turn",
+          "seconds": "0.582066583",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "attempt": "02-readiness-mutant",
+      "pass": 0,
+      "fail": 2,
+      "skip": 11,
+      "cases": [
+        {
+          "name": "checkpoint tracker > names the pre-prompt snapshot as the turn start, checkpoints the end and reports the turn diff",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > works from a subdirectory, with paths relative to the repository root",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks turns shared when another agent works in the same worktree",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks a turn shared with a live terminal agent in the same worktree",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks and closes a turn that ends before its start checkpoint is written",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reports a revert in progress so new prompts can wait for it",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > does not mark turns shared for agents in other worktrees",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > refuses to revert while the agent is mid-turn",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > shows session changes against the working tree",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reports unavailable outside a git repository and refuses to revert an unfinished turn",
+          "seconds": "0",
+          "status": "skip"
+        },
+        {
+          "name": "runTurn producer-idle readiness discriminator > rejects a missing requested start before edit despite an unrelated complete turn",
+          "seconds": "0.579364709",
+          "status": "fail"
+        },
+        {
+          "name": "runTurn producer-idle readiness discriminator > rejects a missing requested end before continuation despite an unrelated complete turn",
+          "seconds": "0.562352167",
+          "status": "fail"
+        }
+      ]
+    },
+    {
+      "attempt": "03-fixture",
+      "pass": 11,
+      "fail": 0,
+      "skip": 0,
+      "cases": [
+        {
+          "name": "checkpoint tracker > names the pre-prompt snapshot as the turn start, checkpoints the end and reports the turn diff",
+          "seconds": "0.354104",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+          "seconds": "0.644067917",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > works from a subdirectory, with paths relative to the repository root",
+          "seconds": "0.486864666",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > marks turns shared when another agent works in the same worktree",
+          "seconds": "0.372695292",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > marks a turn shared with a live terminal agent in the same worktree",
+          "seconds": "0.266411667",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > marks and closes a turn that ends before its start checkpoint is written",
+          "seconds": "0.261863083",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > reports a revert in progress so new prompts can wait for it",
+          "seconds": "0.444395917",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > does not mark turns shared for agents in other worktrees",
+          "seconds": "0.252759292",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > refuses to revert while the agent is mid-turn",
+          "seconds": "0.25938875",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > shows session changes against the working tree",
+          "seconds": "0.212491417",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > reports unavailable outside a git repository and refuses to revert an unfinished turn",
+          "seconds": "0.162867",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "lint": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "typeStatus": "FAIL1 on exact candidate and baseline full3958-input graph,0 observed changed-test/new-graph regression, NOT PASS",
+  "headUnchanged": {
+    "baseRefOid": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+    "headRefOid": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+    "isDraft": false,
+    "mergeStateStatus": "UNSTABLE",
+    "state": "OPEN"
+  }
+}

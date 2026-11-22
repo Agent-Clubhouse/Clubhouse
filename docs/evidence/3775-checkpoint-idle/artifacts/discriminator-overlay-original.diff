@@ -1,0 +1,53 @@
+diff --git a/src/main/services/agent-runtime/checkpoint-tracker.test.ts b/src/main/services/agent-runtime/checkpoint-tracker.test.ts
+index 8e3d7a7e0..9a7772bf3 100644
+--- a/src/main/services/agent-runtime/checkpoint-tracker.test.ts
++++ b/src/main/services/agent-runtime/checkpoint-tracker.test.ts
+@@ -7,6 +7,7 @@ import type { ChatEvent } from '../../../shared/chat';
+ import { CHAT_CONTRACT_VERSION } from '../../../shared/chat';
+ import { CheckpointFixtureLifetime } from '../../../../test/checkpoint-fixture-lifetime';
+ import { ownedRegistration } from '../../../../test/dispatcher-work-owner';
++import { checkpointRef } from './checkpoints';
+ 
+ const lifetime = vi.hoisted(() => ({ current: undefined as CheckpointFixtureLifetime | undefined }));
+ vi.mock('child_process', async (importOriginal) => {
+@@ -315,3 +316,40 @@ describe('checkpoint tracker', () => {
+     expect(await getChanges('agent-1', { turnId: 'turn-3' })).toEqual({ available: false, files: [] });
+   });
+ });
++
++describe('runTurn producer-idle readiness discriminator', () => {
++  it('rejects a missing requested start before edit despite an unrelated complete turn', async () => {
++    await runTurn('unrelated', () => {});
++    const lock = path.resolve(repo, `${git('rev-parse', '--git-path', checkpointRef('agent-1', 'sess', 'missing-start', 'start'))}.lock`);
++    fs.mkdirSync(path.dirname(lock), { recursive: true });
++    fs.writeFileSync(lock, '');
++    const edit = vi.fn(() => fs.writeFileSync(path.join(repo, 'a.txt'), 'two\n'));
++    const continuation = vi.fn();
++
++    await expect(runTurn('missing-start', edit).then(continuation)).rejects.toThrow(/expected false to be true/);
++    expect(edit).not.toHaveBeenCalled();
++    expect(continuation).not.toHaveBeenCalled();
++    expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf-8')).toBe('one\n');
++    const turns = await listTurns('agent-1');
++    expect(turns.some((turn) => turn.turnId === 'missing-start')).toBe(false);
++    expect(turns.find((turn) => turn.turnId === 'unrelated')?.end).toBeTruthy();
++  });
++
++  it('rejects a missing requested end before continuation despite an unrelated complete turn', async () => {
++    await runTurn('unrelated', () => {});
++    const lock = path.resolve(repo, `${git('rev-parse', '--git-path', checkpointRef('agent-1', 'sess', 'missing-end', 'end'))}.lock`);
++    fs.mkdirSync(path.dirname(lock), { recursive: true });
++    fs.writeFileSync(lock, '');
++    const edit = vi.fn(() => fs.writeFileSync(path.join(repo, 'a.txt'), 'two\n'));
++    const continuation = vi.fn();
++
++    await expect(runTurn('missing-end', edit).then(continuation)).rejects.toThrow(/expected false to be true/);
++    expect(edit).toHaveBeenCalledOnce();
++    expect(continuation).not.toHaveBeenCalled();
++    expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf-8')).toBe('two\n');
++    const turns = await listTurns('agent-1');
++    expect(turns.find((turn) => turn.turnId === 'missing-end')?.start).toBeTruthy();
++    expect(turns.find((turn) => turn.turnId === 'missing-end')?.end).toBeUndefined();
++    expect(turns.find((turn) => turn.turnId === 'unrelated')?.end).toBeTruthy();
++  });
++});

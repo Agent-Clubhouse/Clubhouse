@@ -1,0 +1,30 @@
+{
+  "candidate": "adcb284b217030163574b2b094df2b482cdc8684",
+  "baseline": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+  "actualFixtureExplicitlyIncluded": true,
+  "actualCompilerInputsEach": 3958,
+  "orderedInputPathSetsEqual": true,
+  "completeInputHashDifferences": [
+    {
+      "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+      "candidateSha256": "913d21b98b995c3867ec30a937e8819685e264f4c3989682dfc98b7ba59b1796",
+      "baselineSha256": "949e96e414a05fe0001e7a1e79f9507541668f9ed2976bbcb4eec7e0d9045d44"
+    }
+  ],
+  "identicalCompilerFlagsConfigAndRootFlags": true,
+  "fullDiagnosticContentCodeColumnLineMultiplicityEqual": true,
+  "exactDiagnostics": [
+    {
+      "file": "test/checkpoint-fixture-lifetime.ts",
+      "line": "175",
+      "column": "33",
+      "code": "TS7024",
+      "message": "Function implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions."
+    }
+  ],
+  "changedTestDiagnosticCount": 0,
+  "candidateResidualFailureCount": 1,
+  "baselineResidualFailureCount": 1,
+  "typeStatus": "Actual test-inclusive compiler FAIL1 on both, NOT PASS; zero observed changed-test/new-graph regression, independent scoped disposition pending",
+  "noCompilerRelaxationOrLifetimeHelperRepair": true
+}
