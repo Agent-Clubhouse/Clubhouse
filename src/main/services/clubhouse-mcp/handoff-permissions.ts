@@ -2,15 +2,16 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { resolveArgTargets } from './arg-targets';
 import { checkToolGrant } from './grant-check';
 import { callGrantIsApproved, grantApprovalContext } from './tool-registry';
+import { callApprovalVersion } from '../grant-requests';
 import type { ToolGrantDeclaration } from './tool-grants';
 
 export const HANDOFF_OFFER_GRANT: ToolGrantDeclaration = { actions: ['handoff.offer'], target: 'handoff_peer' };
 export const HANDOFF_ACCEPT_GRANT: ToolGrantDeclaration = { actions: ['handoff.accept'], target: 'handoff_peer' };
 type AgreementCall = { agentId: string; name: 'offer_handoff' | 'respond_to_handoff'; args: Record<string, unknown> };
-const agreementCalls = new AsyncLocalStorage<AgreementCall>();
+const agreementCalls = new AsyncLocalStorage<AgreementCall & { approvalVersion: number }>();
 
 export function withHandoffAgreementCall<T>(call: AgreementCall, work: () => Promise<T>): Promise<T> {
-  return agreementCalls.run(call, work);
+  return agreementCalls.run({ ...call, approvalVersion: callApprovalVersion(call.agentId) }, work);
 }
 
 /** Recheck the exact target, live policy and consumed approval at the durable write boundary. */
@@ -24,6 +25,8 @@ export async function handoffAgreementCallApproved(agentId: string, action: 'han
     if (resolved?.length !== 1 || resolved[0].kind !== 'agent' || resolved[0].agentId !== expectedRecipient) return false;
   }
   const check = checkToolGrant(agentId, grant, call.args, undefined, targets);
+  if (action === 'handoff.offer' && check.ok === false && check.reason === 'ask_first'
+    && callApprovalVersion(agentId) !== call.approvalVersion) return false;
   return callGrantIsApproved(agentId, call.name, call.args, check,
     grantApprovalContext(agentId, call.name, call.args, grant, targets));
 }

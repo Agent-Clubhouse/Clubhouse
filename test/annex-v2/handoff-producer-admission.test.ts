@@ -328,6 +328,32 @@ describe('isolated real MCP producer domain admission', () => {
       expect(await catalog(fx)).toBe(before);
     });
 
+    it('preserves consumed Ask approval when only the general MCP gate forgets the caller', async () => {
+      const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
+      await fx.setGrant('ask');
+      expect((await fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary))).isError).toBe(true);
+      fx.requests.takeGrantRequest(fx.requests.listGrantRequests()[0].requestId, true);
+      const queued = await queuedOffer(fx, seed, summary);
+      fx.gate.forgetMcpCaller(caller);
+      queued.release();
+      expect((await queued.pending).isError).not.toBe(true);
+      expect(fx.host.store.list()).toHaveLength(2);
+    });
+
+    it('does not borrow consumed Ask approval for a changed exact approval context', async () => {
+      const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
+      await fx.setGrant('ask');
+      expect((await fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary))).isError).toBe(true);
+      fx.requests.takeGrantRequest(fx.requests.listGrantRequests()[0].requestId, true);
+      const before = await catalog(fx);
+      const queued = await queuedOffer(fx, seed, summary);
+      fx.registry.agentRegistry.setRuntime(caller, 'chat');
+      queued.release();
+      expect((await queued.pending).isError).toBe(true);
+      expect(fx.host.store.list()).toEqual([seed]);
+      expect(await catalog(fx)).toBe(before);
+    });
+
     it('does not borrow a newly retargeted alias authorization for the frozen recipient', async () => {
       const fx = current();
       const config = await import('../../src/main/services/agent-config');

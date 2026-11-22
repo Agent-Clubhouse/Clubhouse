@@ -78,11 +78,13 @@ export function registerHandoffTools(): void {
       || !['branch', 'worktree'].includes(String(args.mode))) return text('Give to, task (1–256 characters), brief (1–16000), mode (branch/worktree), and an optional manifest summary.', true);
     const originalArgs = structuredClone(args);
     try {
-      const host = await import('../../handoff-host');
-      const record = await withHandoffAgreementCall({ agentId, name: 'offer_handoff', args: originalArgs }, () => host.offerCallerHandoff(agentId, {
-        reference: originalArgs.to as string, task: { title: originalArgs.task as string, brief: originalArgs.brief as string },
-        mode: originalArgs.mode as 'branch' | 'worktree', manifest: originalArgs.manifest as HandoffManifestSummary | undefined,
-      }));
+      const record = await withHandoffAgreementCall({ agentId, name: 'offer_handoff', args: originalArgs }, async () => {
+        const host = await import('../../handoff-host');
+        return host.offerCallerHandoff(agentId, {
+          reference: originalArgs.to as string, task: { title: originalArgs.task as string, brief: originalArgs.brief as string },
+          mode: originalArgs.mode as 'branch' | 'worktree', manifest: originalArgs.manifest as HandoffManifestSummary | undefined,
+        });
+      });
       return text(record);
     } catch (error) {
       // telemetry-exempt: bounded, sanitized preparation findings are returned to the caller
