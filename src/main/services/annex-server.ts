@@ -3819,7 +3819,7 @@ async function handleNetworkHandoffsRoute(ctx: AnnexRouteContext): Promise<void>
   const principal = { ...ctx.principal }, server = tlsServer, generation = serverGeneration;
   const trust = () => {
     const peer = annexPeers.getPeer(principal.fingerprint);
-    return peer && JSON.stringify([peer.publicKey, peer.pairedAt, peer.role, peer.kind, peer.networkPending, peer.tlsCertificateFingerprint]);
+    return peer && JSON.stringify([annexPeers.trustOf(peer), peer.kind]);
   };
   const originalTrust = trust();
   let retired = false;
