@@ -171,7 +171,8 @@ describe('GET Git diff envelope boundary', () => {
   });
 
   it.each(['', '?file=large%20file.txt&staged=false', '?file=/icons/a', '?file=/content', '?file=/chat/events/1'])('preserves a complete diff above the former boundary with query %s', async (query) => {
-    const body = diffBody(formerLimit + 1);
+    const size = query === '?file=/content' ? 32 * 1024 * 1024 : formerLimit + 1;
+    const body = diffBody(size);
     handler = async (_principal, request) => ({
       status: 200, headers: { 'content-type': 'application/json' },
       body: request.path === path + query ? body : Buffer.from('alive'),
@@ -192,7 +193,7 @@ describe('GET Git diff envelope boundary', () => {
     expect(outcome).not.toHaveProperty('error');
     if ('result' in outcome) {
       expect(outcome.result.body.equals(body)).toBe(true);
-      expect(JSON.parse(outcome.result.body.toString()).modified.length).toBe(formerLimit + 1 - 29);
+      expect(JSON.parse(outcome.result.body.toString()).modified.length).toBe(size - 29);
     }
     subscription.close();
   });
