@@ -1,0 +1,2828 @@
+{
+  "source": "9a5247cadf41756bc1c085a87c59493b34d5e99f",
+  "sourceTree": "38b3a1ca4ead8e6b664eef641676cb72838a3814",
+  "evidence": "868d8b53fdb20c23876c83538c855165761b40df",
+  "evidenceTree": "208fb893fcc36e7154efdb2df07206f85d65f6ed",
+  "manifestSHA256": "bf4ae2bed779aafbb8c766dbfa5d2ef617ba59c1a65041c2ff2f937d53d525b0",
+  "README_SHA256": "abcf7ac5e001c8f3c14c3237fc3920ed23654ed027a91b7abc3f01b502ccb3b7",
+  "sourceMapSHA256": "2b33859740eaa78750cbdf40e1541a7141101eb6855750c738feae757805a725",
+  "artifacts": [
+    {
+      "path": "artifacts/baseline01-head.txt.gz",
+      "rawName": "baseline01-head.txt",
+      "rawBytes": 41,
+      "rawSha256": "19e3c1a981cde29f83832adf779ddb192b9575fcfa940fd01a3394da641b9482",
+      "storedBytes": 58,
+      "storedSha256": "e85837479ecf6d996112d55f68418e0ff25bdc636c0f8fdca19a55b64c1a3892",
+      "blob": "97058e8e8d545e8497b8caa34070511034dd3a81"
+    },
+    {
+      "path": "artifacts/baseline01-original.log.gz",
+      "rawName": "baseline01-original.log",
+      "rawBytes": 3404,
+      "rawSha256": "6b5e9017c6b38497a83e551a674ea61f25a79e34029cfdd239a306149f2b8302",
+      "storedBytes": 1600,
+      "storedSha256": "95cb03a2db865879aa8e1001e18d4eba874a2b23c688faca270b397c8ae8c4a8",
+      "blob": "5ac2a7f6ea2f55c60be042c7813616a998541c7e"
+    },
+    {
+      "path": "artifacts/baseline01-original.xml.gz",
+      "rawName": "baseline01-original.xml",
+      "rawBytes": 3123,
+      "rawSha256": "a1822d2dc866be0488b8bc0256d55a54847034b7c69ce9f440adedd36655a064",
+      "storedBytes": 934,
+      "storedSha256": "38613e3972813af7f38180e4e83d813025ecf2622f29a6bf2ad306af106a86c8",
+      "blob": "63fd255fe9e7d0da48bd8dffcac7a2cdf4fdbae2"
+    },
+    {
+      "path": "artifacts/baseline01-source-sha256.txt.gz",
+      "rawName": "baseline01-source-sha256.txt",
+      "rawBytes": 205,
+      "rawSha256": "cee46bd1458ee3645183d69b629f4befa0979b5cfc79e5a38547a5bf089c41fa",
+      "storedBytes": 151,
+      "storedSha256": "7f3110fc6bc6f20064d7d006601d6d4e64dd64daf350afc4b51c27f48b54b5c6",
+      "blob": "dcdcc3caadd66244aca22d56a0f8af988b2c0188"
+    },
+    {
+      "path": "artifacts/baseline01-test-source.patch.gz",
+      "rawName": "baseline01-test-source.patch",
+      "rawBytes": 4579,
+      "rawSha256": "75c8e4c4c61beee9fab76301ecc8dfa4f7610003941ec560531abdd550d326b9",
+      "storedBytes": 1728,
+      "storedSha256": "f07b707d55a73873af08618b4b311fd7ab7bb4d9bb54435a885f887091bf601d",
+      "blob": "9b72ded5d28f6d5a913efdd726b36a749db33fc0"
+    },
+    {
+      "path": "artifacts/baseline06-command-fixture.patch.gz",
+      "rawName": "baseline06-command-fixture.patch",
+      "rawBytes": 5008,
+      "rawSha256": "a4f4d6733080006f9daaf634755128096977d938bf9aaa2f654a67ea4201f44f",
+      "storedBytes": 1484,
+      "storedSha256": "7fbf5d1b0bd1cb9d61da339945bb48d2d8fdacf143b785404b9bbd5fb70a3a00",
+      "blob": "f7dcea96848616ac7db3b5b59842f5c5cc7dedd3"
+    },
+    {
+      "path": "artifacts/baseline06-fixture-sha256.txt.gz",
+      "rawName": "baseline06-fixture-sha256.txt",
+      "rawBytes": 229,
+      "rawSha256": "aaf41c5f9b41a4536e067dda9833fd91f5a0fe2037f5a04a3705895db3e9bca5",
+      "storedBytes": 182,
+      "storedSha256": "ad5e02b068776a4645103a9c9b9bf233280e5dbe48c8a7a029b3002383d000fa",
+      "blob": "ee2fbda8deab231b743318dfcf6d9b3007754d51"
+    },
+    {
+      "path": "artifacts/baseline06-original.log.gz",
+      "rawName": "baseline06-original.log",
+      "rawBytes": 9268,
+      "rawSha256": "05e5e44bc2dd496b02d93498fb55e3bac404d921f6489b23d1ad7b7951f38f7b",
+      "storedBytes": 3194,
+      "storedSha256": "72ef99d52f2c991a41942579bde50aa8b708bf0a882a5056d486545867a41df2",
+      "blob": "59e443763280a6bdf66f38ab43c851796956fa19"
+    },
+    {
+      "path": "artifacts/baseline06-original.xml.gz",
+      "rawName": "baseline06-original.xml",
+      "rawBytes": 5846,
+      "rawSha256": "467fa47516fdb4d53d6ca45a92bdb55e07b5efab446cdd0d1d3ccacc42ebcdb6",
+      "storedBytes": 1605,
+      "storedSha256": "7d63bc155ecef7974bfd6d7b8fa0d072bb0764826a8b4e9c2cf094ae5632ba2e",
+      "blob": "96718438932ff41a8d9cea0fea6ab827f49bbae3"
+    },
+    {
+      "path": "artifacts/baseline08-command-fixture.patch.gz",
+      "rawName": "baseline08-command-fixture.patch",
+      "rawBytes": 5157,
+      "rawSha256": "809efd9ca1300bc732d1f9e9a92d9b1484bce7943894ba54f198465dce0b493d",
+      "storedBytes": 1533,
+      "storedSha256": "645b30b42562b4afb4d08226d1e8cf0c167cad6928d6fd3d1ca2eda02a3269d6",
+      "blob": "0c34344d908a965788a604f536d80faa1db892d2"
+    },
+    {
+      "path": "artifacts/baseline08-fixture-sha256.txt.gz",
+      "rawName": "baseline08-fixture-sha256.txt",
+      "rawBytes": 114,
+      "rawSha256": "2046473123fc9cc2d4b42fa4b99753f2edcff6cc6d09fb06b035466b66cbea21",
+      "storedBytes": 115,
+      "storedSha256": "cead415ac5ab2a2b81ab3ec097c7227da78a9b9f080460d7e4221ce11c4c9ca6",
+      "blob": "8893aecc132de04bcc74cb9eeb52a5af9a7dcb57"
+    },
+    {
+      "path": "artifacts/baseline08-original.log.gz",
+      "rawName": "baseline08-original.log",
+      "rawBytes": 3402,
+      "rawSha256": "8c7f86f1014f70fa3b7ea729611cbac06eb213eac1c497fb675266a07ea0e056",
+      "storedBytes": 1464,
+      "storedSha256": "f811695be683b787538b146c074d1a5dfec766624364f8b186d304d018551276",
+      "blob": "ef08cfcd218f78b6e59e6faa6f36c78271ee1892"
+    },
+    {
+      "path": "artifacts/baseline08-original.xml.gz",
+      "rawName": "baseline08-original.xml",
+      "rawBytes": 3492,
+      "rawSha256": "2962a207d93d64c475f5042f8cc82dcff7528988c12f37887650716029f6c3c7",
+      "storedBytes": 829,
+      "storedSha256": "cf52afdedefed9afc0796791512912925e39393f9c80b9d942d42ba67b058df9",
+      "blob": "149fc58037269a748d6960b906582a262ba79367"
+    },
+    {
+      "path": "artifacts/baseline11-head.txt.gz",
+      "rawName": "baseline11-head.txt",
+      "rawBytes": 41,
+      "rawSha256": "19e3c1a981cde29f83832adf779ddb192b9575fcfa940fd01a3394da641b9482",
+      "storedBytes": 58,
+      "storedSha256": "e85837479ecf6d996112d55f68418e0ff25bdc636c0f8fdca19a55b64c1a3892",
+      "blob": "97058e8e8d545e8497b8caa34070511034dd3a81"
+    },
+    {
+      "path": "artifacts/baseline11-original.log.gz",
+      "rawName": "baseline11-original.log",
+      "rawBytes": 4002,
+      "rawSha256": "1e1819bb6dd3bc6bd8486e5f23e06c5a3ce899e53c46ada1ea22729400e954d2",
+      "storedBytes": 1872,
+      "storedSha256": "b0a9af3cc31ecf3881cb3a8644e84ceb3083574ad35014ab0bbd75a0abf0107d",
+      "blob": "9232b7665892a8d34bbba5659316a609658d6bc0"
+    },
+    {
+      "path": "artifacts/baseline11-original.xml.gz",
+      "rawName": "baseline11-original.xml",
+      "rawBytes": 2193,
+      "rawSha256": "4024aa9e3f637a17757187f47f252e171758ca7560723ccd65bce0d03da17a8c",
+      "storedBytes": 879,
+      "storedSha256": "487a03b3ad865199e75f20d90a15246b77c0d329465eca7ac57ca929abe18fff",
+      "blob": "9a80220e4b9ee1680a0faed78436e1579cf81d55"
+    },
+    {
+      "path": "artifacts/baseline11-source-sha256.txt.gz",
+      "rawName": "baseline11-source-sha256.txt",
+      "rawBytes": 534,
+      "rawSha256": "081b486c9e7e62053b37d0db069093bd9190a053557a48c1783d6521fbb30edb",
+      "storedBytes": 315,
+      "storedSha256": "144a82a310fa4c2a7038e1f7808f3a24920fceacc43c08b365566fff0a39a12a",
+      "blob": "c0e9d0f4f3625eab49a8486fb8226e1b0042aee5"
+    },
+    {
+      "path": "artifacts/candidate02-original.log.gz",
+      "rawName": "candidate02-original.log",
+      "rawBytes": 16860,
+      "rawSha256": "d7c42f02968b6bc1245adea9374d3bd34511483d2ada036584cf623276981213",
+      "storedBytes": 3473,
+      "storedSha256": "94ad9b4676e125833875ac9c78fd374321e06db6e0aad74aa00c9c29b4c3729c",
+      "blob": "1a9e26194fb6ee49dd51177bf7ebb7fd8af4fcdb"
+    },
+    {
+      "path": "artifacts/candidate02-original.xml.gz",
+      "rawName": "candidate02-original.xml",
+      "rawBytes": 27030,
+      "rawSha256": "d3865f6138d949291c14aa4a6150645434b21fc7c37c20408b8e34abcf820e50",
+      "storedBytes": 4445,
+      "storedSha256": "ffb96f708074f44eb897a3b7f7582963c9155d752e4e6999511797a50714663b",
+      "blob": "85ebfb78561f5c17c197d8f1351ad86257a08678"
+    },
+    {
+      "path": "artifacts/candidate02-source-sha256.txt.gz",
+      "rawName": "candidate02-source-sha256.txt",
+      "rawBytes": 858,
+      "rawSha256": "a02acf3ee0e9ccf70c8de23b1791f996c81cbda4278998738d0d4255bc05cacf",
+      "storedBytes": 412,
+      "storedSha256": "09099ab4babe09783d96552ea1a90666cc08d102eae88f88ebf28a1d01f69ec2",
+      "blob": "ed8925bf1ec7ea99bbb4c2a1623eddb61c54a0f1"
+    },
+    {
+      "path": "artifacts/candidate02-source.patch.gz",
+      "rawName": "candidate02-source.patch",
+      "rawBytes": 64191,
+      "rawSha256": "228666bdacb8795720960aa27c2f18fbb317d78c7894467d0dec5906ef6df7c8",
+      "storedBytes": 13420,
+      "storedSha256": "cc997f6bfc612bd8ae0704ad8840665cadbad7e233014942087d9f1b48486ff5",
+      "blob": "ac496aef2e67506d35cb89806ad88787336de822"
+    },
+    {
+      "path": "artifacts/candidate03-original.log.gz",
+      "rawName": "candidate03-original.log",
+      "rawBytes": 7119,
+      "rawSha256": "0b807a9cfa7ff56f88a40660d9e5adf453eeb33a4919d8703e97bc9b239ef80c",
+      "storedBytes": 2373,
+      "storedSha256": "bbea82e0fa5019e52d081d3b654f187b05428adbd40b01566ef597ce548ace28",
+      "blob": "70bed08272d34ecea866af843f52d4d7110cb924"
+    },
+    {
+      "path": "artifacts/candidate03-original.xml.gz",
+      "rawName": "candidate03-original.xml",
+      "rawBytes": 12933,
+      "rawSha256": "2c42907d8c558cb099de9622c61b7398092c4b54cebab16c9d188109132c5030",
+      "storedBytes": 2545,
+      "storedSha256": "2e37f73c6e5d2062b7eaae78ae064c2df430dc316455aac583643f162a6f405f",
+      "blob": "6d2cc736b1cb022c5ca63cc5e6a430ff806fcf41"
+    },
+    {
+      "path": "artifacts/candidate03-source.patch.gz",
+      "rawName": "candidate03-source.patch",
+      "rawBytes": 64141,
+      "rawSha256": "57c39b6eb08388ecb404bcc545e5b561e0d7bf6290498f80266cf7ce1689608d",
+      "storedBytes": 13424,
+      "storedSha256": "1e05d504986659efe1d1213f2fc32092485669e710e769266b7029933c913b38",
+      "blob": "7e34166efcc26ea4fd8d65570a9b1287d78acb43"
+    },
+    {
+      "path": "artifacts/candidate04-original.log.gz",
+      "rawName": "candidate04-original.log",
+      "rawBytes": 2712,
+      "rawSha256": "e06c37a53db44642c500d9031be448af8424fe23374036bcfb82e56fe8268e4b",
+      "storedBytes": 1466,
+      "storedSha256": "87ebe0dbd5405f0b79042cadbf7ccc9bd302fd47aff194c9ff685b8e1224814c",
+      "blob": "449527a1e3315ef6198775824fa913755dd2db37"
+    },
+    {
+      "path": "artifacts/candidate04-original.xml.gz",
+      "rawName": "candidate04-original.xml",
+      "rawBytes": 7755,
+      "rawSha256": "79bf569af4d30c50a067e73b1c180441ae604e4827817ed55a966b479026af3d",
+      "storedBytes": 1455,
+      "storedSha256": "933ecb0967f596b5d04f3c223a9e3a97140336a888982d6b8efd0fa866408dbc",
+      "blob": "756a9b5cb15d07550b8a77f2cb52b8ef85692d2f"
+    },
+    {
+      "path": "artifacts/candidate04-pair-sha256.txt.gz",
+      "rawName": "candidate04-pair-sha256.txt",
+      "rawBytes": 115,
+      "rawSha256": "40be5774af37c4b7f39f1fcdb5517bfb3f14187dec7b97a7f2b8edc12af83a08",
+      "storedBytes": 116,
+      "storedSha256": "4be2e28f64c9f07933b81b72890f4b2367b4788c8348aaf5fb8481cc0c34fe58",
+      "blob": "0041f62339056cda8d52a64fc67773fadc5c6947"
+    },
+    {
+      "path": "artifacts/candidate04-source.patch.gz",
+      "rawName": "candidate04-source.patch",
+      "rawBytes": 64236,
+      "rawSha256": "1d000808e10572f992bbb1430c4bdca7560699cd584647f77b37a38123937a1d",
+      "storedBytes": 13446,
+      "storedSha256": "0dc3c12df379aabb8fbadd7531645fc7aa64a2b789a59fb2bd9667ec9ea7f4d0",
+      "blob": "2c497352afaebda543c5a28024561985b80835fd"
+    },
+    {
+      "path": "artifacts/candidate05-source.patch.gz",
+      "rawName": "candidate05-source.patch",
+      "rawBytes": 80578,
+      "rawSha256": "1792e0231e6c37cc6fb295e8ff18dd7bbfc9ffbe81cc7935d229532521712440",
+      "storedBytes": 18235,
+      "storedSha256": "c46ced9ecfccb4d3f35edab28041da534513f77780498d9074dc00946ae611af",
+      "blob": "87e358c4cda933c74ccbd979856394405f51e6a5"
+    },
+    {
+      "path": "artifacts/candidate07-fixture-cleanup.patch.gz",
+      "rawName": "candidate07-fixture-cleanup.patch",
+      "rawBytes": 5102,
+      "rawSha256": "ee42d736a9a957595a935d7ac40670d054432fb480e975323f77588856f80de3",
+      "storedBytes": 1558,
+      "storedSha256": "27f9bfc6395cd499ecb736b93b9e47525d67498218321c964808aa6f76ad1038",
+      "blob": "7a86de1ad3a69612fe85ff38f31e522b22211e3d"
+    },
+    {
+      "path": "artifacts/changed-fixture-types.json.gz",
+      "rawName": "changed-fixture-types.json",
+      "rawBytes": 363,
+      "rawSha256": "d3fcd1053b462eb159255b21c179fd5ad512ea272a6791206cfeca1db009fd05",
+      "storedBytes": 160,
+      "storedSha256": "d893476444046e04ad9ba2ddea21b8727085e2dea82ebc87f667fa66186675f9",
+      "blob": "4f1dc747462bd5c4fffed73a70a7df3a65f5d052"
+    },
+    {
+      "path": "artifacts/final-identity-audit.json.gz",
+      "rawName": "final-identity-audit.json",
+      "rawBytes": 62077,
+      "rawSha256": "85ea812a1f4c2ccae4c81215cd8c20ba0fc9969cd55b4a244bf6d6e249623a58",
+      "storedBytes": 12680,
+      "storedSha256": "307027eae6c7261db2481a31987dcfb0aeab4d72344a9ac40eabde9c01d4a164",
+      "blob": "be27b06a6e3dbbcb410e130551c74a8a4ff942d7"
+    },
+    {
+      "path": "artifacts/final-source-and-proof.json.gz",
+      "rawName": "final-source-and-proof.json",
+      "rawBytes": 20638,
+      "rawSha256": "2b33859740eaa78750cbdf40e1541a7141101eb6855750c738feae757805a725",
+      "storedBytes": 5016,
+      "storedSha256": "1522fcb50207f430d1c703fea90cd59ba0de68e86606d2afe5b21721ee8027ab",
+      "blob": "176f2ab2469fee8c5b48861d695bdabd5c0db0e9"
+    },
+    {
+      "path": "artifacts/final-source-sha256.txt.gz",
+      "rawName": "final-source-sha256.txt",
+      "rawBytes": 973,
+      "rawSha256": "5edec07e38765c26b38d072fc4f7f24872806ae930ad6635fc108a0181e08eab",
+      "storedBytes": 475,
+      "storedSha256": "47fd93bfcf3e93261b91831c34b94a8bbd40b30e1028539949908da80e3d473c",
+      "blob": "55232515229b3dd6ca24fc1c6b7d129ec9c01c6d"
+    },
+    {
+      "path": "artifacts/final-source.patch.gz",
+      "rawName": "final-source.patch",
+      "rawBytes": 83014,
+      "rawSha256": "1723dd7313d016a353ed493724553aa3695b15b639b5cfe42d44e4143964737b",
+      "storedBytes": 18693,
+      "storedSha256": "93d025d330b72ca6b362709abdd1eed9cee5b529af008c2ad4d463bc7e193708",
+      "blob": "851f76337c7b9b9a05fe10a84e59e3927f797203"
+    },
+    {
+      "path": "artifacts/final-validation-head.txt.gz",
+      "rawName": "final-validation-head.txt",
+      "rawBytes": 41,
+      "rawSha256": "14b73053d51f07873cf14c7293d7a4ba939e6cde7ef8cf1bd2be4881157723e7",
+      "storedBytes": 60,
+      "storedSha256": "6aa7b8487e30fb9febe92d85708efff6d54f238735907a74f01c37435991cfa6",
+      "blob": "a74be1d47d2f8538c703f256ca41eba2908905a3"
+    },
+    {
+      "path": "artifacts/final09-original.log.gz",
+      "rawName": "final09-original.log",
+      "rawBytes": 7895,
+      "rawSha256": "6a0df9c735d6177f8e01ae349f10a5d16e5c11d27117d3093d55c568a5350b1a",
+      "storedBytes": 2282,
+      "storedSha256": "35078e64cbdf6753a2cdca3d42a212cc8d2567106ea4fdfd42e5b15409ed4d46",
+      "blob": "a3c2e8a3509ceac014be37974597fbca1a28fc63"
+    },
+    {
+      "path": "artifacts/final09-original.xml.gz",
+      "rawName": "final09-original.xml",
+      "rawBytes": 26569,
+      "rawSha256": "2d6dbbeeda67333e1663fac5e6e3b67ae5f89bc026c32674df9ba33d132cabc3",
+      "storedBytes": 4544,
+      "storedSha256": "49b2c331c697d5c4928a666fa44a0b5565749925439a335538f08fab02842ed1",
+      "blob": "c515e8f618cabc07440b4f1468d5bc7cd6c36392"
+    },
+    {
+      "path": "artifacts/identity14-initial-wrong-wire-path.json.gz",
+      "rawName": "identity14-initial-wrong-wire-path.json",
+      "rawBytes": 36633,
+      "rawSha256": "786e67018a003ba8b6ae5ca65fa9e33d63482fa0f64de516f69874a50591cf42",
+      "storedBytes": 12194,
+      "storedSha256": "a7cef9e72e534b5b36e59cd5a3a4409de7cff5fa3ee9a37cfe1998e7430f49cc",
+      "blob": "0f256d11bee9626d2c39e28bef206fc4939ae9cb"
+    },
+    {
+      "path": "artifacts/lint13-original.json.gz",
+      "rawName": "lint13-original.json",
+      "rawBytes": 3107,
+      "rawSha256": "0e9565e34aeeb5d78537577982a9665ecfddbd23ea6a25eb11d5cc65cd407993",
+      "storedBytes": 316,
+      "storedSha256": "809cff27914d7b44533e8140827a26866639a39843ad0c3322bd59dfe6e471f6",
+      "blob": "ffcff0ff00f417870b99f098c26dfab2e999c636"
+    },
+    {
+      "path": "artifacts/lint13-original.log.gz",
+      "rawName": "lint13-original.log",
+      "rawBytes": 648,
+      "rawSha256": "06c5f119fed31a279ccd27613767ec3ea956bb0d07f6f1c08467c30741a490e1",
+      "storedBytes": 301,
+      "storedSha256": "4326b9f5915f3ef974816369dc0697a329481b8c9f4e996c7aed53bd5711943a",
+      "blob": "b89ba4f390b06df654abaf97649454ceafc3ed3a"
+    },
+    {
+      "path": "artifacts/mutant10-head.txt.gz",
+      "rawName": "mutant10-head.txt",
+      "rawBytes": 41,
+      "rawSha256": "14b73053d51f07873cf14c7293d7a4ba939e6cde7ef8cf1bd2be4881157723e7",
+      "storedBytes": 60,
+      "storedSha256": "6aa7b8487e30fb9febe92d85708efff6d54f238735907a74f01c37435991cfa6",
+      "blob": "a74be1d47d2f8538c703f256ca41eba2908905a3"
+    },
+    {
+      "path": "artifacts/mutant10-original.log.gz",
+      "rawName": "mutant10-original.log",
+      "rawBytes": 3402,
+      "rawSha256": "972412df7e6a168cbe1a669f76343457ee19c663509c89af439d86972d202eda",
+      "storedBytes": 1462,
+      "storedSha256": "e1540e47ed9bd43799e61fa528587ed7118969497f448dbf4edca6de5e437c2b",
+      "blob": "60e384130e043b91c8589470b10e97e6ecb813ee"
+    },
+    {
+      "path": "artifacts/mutant10-original.xml.gz",
+      "rawName": "mutant10-original.xml",
+      "rawBytes": 3492,
+      "rawSha256": "331fde6fd6dbe9b7c42d1fe6c62df4b501e09c88c6e34bfe166458cbc21e67ff",
+      "storedBytes": 828,
+      "storedSha256": "d6142837b55a4239ca03b33ca90c39b69b854966f19e892facabcb02647417d3",
+      "blob": "83d6d4456f2ca7e0466340edc0482cec00490755"
+    },
+    {
+      "path": "artifacts/mutant10-source-sha256.txt.gz",
+      "rawName": "mutant10-source-sha256.txt",
+      "rawBytes": 223,
+      "rawSha256": "6498d4b3dcf2ad5059d23f8a9d7aa49ee0f6c453cd7bdf6ba9894c9ad4f59808",
+      "storedBytes": 159,
+      "storedSha256": "87acd54d49934305d003242b6bc50d74d5245f384509424aa0ec0aae8bfc367a",
+      "blob": "a342b824314dfaf330dbbf45a3b6feb106a11b29"
+    },
+    {
+      "path": "artifacts/mutant10-source.patch.gz",
+      "rawName": "mutant10-source.patch",
+      "rawBytes": 595,
+      "rawSha256": "9296b452d990c2d2653b0d5c641976e0aacc0cc1121c83dfe2a8391537f98577",
+      "storedBytes": 313,
+      "storedSha256": "c17b25c5393d92bb67459db534e4b7d916205b5bf8e37fdc32f302e206069dba",
+      "blob": "1d4286d4b8e801c247697bd8f814d33e33fcc320"
+    },
+    {
+      "path": "artifacts/types05-original.log.gz",
+      "rawName": "types05-original.log",
+      "rawBytes": 2191,
+      "rawSha256": "c4fd35928968e0227172eb1b1654b083bd767bd5dd3ad39aaa71f78b51f46a9c",
+      "storedBytes": 539,
+      "storedSha256": "2dd6580720ebb88dee9d4e2b0f44c6c691d1c868cb5420a3e66eb4d94ad41384",
+      "blob": "12930ab6ed6687ec3adcbe6a6658f91fcb931b91"
+    },
+    {
+      "path": "artifacts/types07-original.log.gz",
+      "rawName": "types07-original.log",
+      "rawBytes": 278,
+      "rawSha256": "6d0b551992f72d2b0a92ee43ab171a78bc2f38d63284c62522f4ee9aed915232",
+      "storedBytes": 227,
+      "storedSha256": "74ae11f276166554aa4c36ec87db4b622c1507d8986aaaab46c50fc752fde256",
+      "blob": "000e8421b816dca0dbc164d2647633e912f99797"
+    },
+    {
+      "path": "artifacts/types12-inputs.json.gz",
+      "rawName": "types12-inputs.json",
+      "rawBytes": 762202,
+      "rawSha256": "f9e37cbcac91e9199482fa8a15f64e0af76c8faa6ad7f473c5d1daa5462459fb",
+      "storedBytes": 209834,
+      "storedSha256": "77828239ff8a8cf89a1d8704230841cc2da59b9304774146e0e6ae02ebafd54a",
+      "blob": "52e7550e58245314caa9bb7e137e827317dc5b44"
+    },
+    {
+      "path": "artifacts/types12-original.log.gz",
+      "rawName": "types12-original.log",
+      "rawBytes": 735352,
+      "rawSha256": "0925e08f07d94828e29f8a4871702656dc9dd60d93049d4110349f6ad770ce3e",
+      "storedBytes": 32681,
+      "storedSha256": "bbc226ff2de328277e574b644406ee8f141d459acc99913b488253a6e7c21a22",
+      "blob": "6bf8a8f4ae3d280ffd35f0ffae31dc4096f5f216"
+    }
+  ],
+  "changedSource": [
+    {
+      "path": "docs/annex-reverse-routes.md",
+      "bytes": 25462,
+      "sha256": "067ff774857169584b11ddd52222247d97ff38cae42445452587ae80bb006296",
+      "blob": "2d3b3f053647538624ca7ce6fd1006b4bd27fc79"
+    },
+    {
+      "path": "src/main/services/handoff-command-store.test.ts",
+      "bytes": 7796,
+      "sha256": "a791068501b277d55a16a4ac5a6a4a13c625d032d0613857dbd8096a1c987609",
+      "blob": "f6afadf6ae524be4d482b83fed554c54dd94c9dd"
+    },
+    {
+      "path": "src/main/services/handoff-command-store.ts",
+      "bytes": 6902,
+      "sha256": "708c1ffffedd49005661761143bdbaa84a62b07c48141c9c6e38e262e26f66a2",
+      "blob": "9d79d55142243e14ebd7ba2a526bfddbb631b0f6"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.test.ts",
+      "bytes": 19090,
+      "sha256": "e7bb22b884b3a9ab2a4afcb8e9158e7d024111976c35a2bd144b3307e75a5f81",
+      "blob": "ede50373d53db9d5152be5e466207e6d38dbd98b"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.ts",
+      "bytes": 21321,
+      "sha256": "63949fa8ce3913f0ff3c3b9f40798a7745cf70e846817fa4dbc76f9f6dc6d1a2",
+      "blob": "dfb28e612c7514a9056279c40e2926c3006b1aad"
+    },
+    {
+      "path": "src/main/services/handoff-host.test.ts",
+      "bytes": 32465,
+      "sha256": "0228633724b34f0477e4eb4cff35b2db76c7834c42337047c93246ae7a951d40",
+      "blob": "bad13a16bae382556a16f22696fa6f6436826aa6"
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "bytes": 44114,
+      "sha256": "c3382f3cfe1b677eeaebae67fbc92314ae13d1bd6b65d4c913d048fe7333cbda",
+      "blob": "c5a27d178161c3faeaf196e1112574e1c9922fc2"
+    },
+    {
+      "path": "src/main/services/handoff-service.test.ts",
+      "bytes": 18715,
+      "sha256": "f99002cbd6145da1e2dfcc7e93c513596b319e7dc6b7167a7b55d45bc8656915",
+      "blob": "59e995f750cc77065205e1f448c5be75100d4df2"
+    },
+    {
+      "path": "src/main/services/handoff-service.ts",
+      "bytes": 14312,
+      "sha256": "88b1a9b0562577879a54fcfc922bf66f78918b7c48cfed88f27edd699bf16363",
+      "blob": "2d885a737347f731aef0b60cfa3e0e769eecba90"
+    },
+    {
+      "path": "test/annex-v2/annex-reverse-handoff-sync.test.ts",
+      "bytes": 13079,
+      "sha256": "33a9b63fae20b88e358eec904dc0c0d479155fc0b810aadd912e5b51c9c1c734",
+      "blob": "f0c9bf9b9143706733af41be63391189a48a0bda"
+    }
+  ],
+  "unchanged": [
+    {
+      "path": "src/main/services/annex-client.ts",
+      "blob": "87dc6c769e81a1b5dd6e0a9e38948e1ceaceabd7",
+      "sha256": "1e518e2c5eb4ae0ca0130fd11c7eae345c957eed0a4e4c1002d031694ad964b4"
+    },
+    {
+      "path": "src/main/services/annex-control.ts",
+      "blob": "065b48063fed54a6114dbe5b1d316530b97517ce",
+      "sha256": "09d9dbf04a5e54265e3832a858c18cb18e3965238bb286722d7d02f938fecd2b"
+    },
+    {
+      "path": "src/main/services/annex-server.ts",
+      "blob": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b",
+      "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500"
+    },
+    {
+      "path": "src/main/services/handoff-store.ts",
+      "blob": "90ba5659b480bae13e1ccda31cd29b5293a2ccfd",
+      "sha256": "b31ef7baa59bcea292186a6ffc4caac31d4c0593c47708636f679580bc3fcde2"
+    },
+    {
+      "path": "src/main/services/settings-store.ts",
+      "blob": "83bc7d24a08ec3b8387f42e706e1966b472d7dfb",
+      "sha256": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3"
+    },
+    {
+      "path": "src/main/services/annex-control-bulk.ts",
+      "blob": "18ee308fc55d33e89523d840f584101eea189be0",
+      "sha256": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee"
+    },
+    {
+      "path": "src/shared/annex-control-protocol.ts",
+      "blob": "6ee5ef77a8d978da390838dde7e450ac05374d78",
+      "sha256": "572357f08535654bc6fe6ebffbe0bf6508363eab61c8c7170681d1efdd374f61"
+    },
+    {
+      "path": "src/shared/handoffs.ts",
+      "blob": "fe5519df70a45b040e4aae25db044e6d8ca3e36d",
+      "sha256": "4a9f8dd5815162f64decd0fd07f4e5335fe356661cbf6adc87136c0afc49af2f"
+    },
+    {
+      "path": "docs/annex-route-contract-3611.md",
+      "blob": "6e730374c6bc8c7e7c1a9c2afc453f0bc0cecfed",
+      "sha256": "0ef7005395de649ef67cd1f74348a4aea8984c1f11b39b82cacc89a7b72723cf"
+    },
+    {
+      "path": "package.json",
+      "blob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9"
+    },
+    {
+      "path": "package-lock.json",
+      "blob": "7e45389f84ca58c5c7832cab169aa5674320d25d",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+    },
+    {
+      "path": "tsconfig.json",
+      "blob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+    }
+  ],
+  "executions": [
+    {
+      "name": "baseline01",
+      "start": "2026-11-22T13:06:56Z START lane-p2 idle=87% unused=2979M avail=32838M freepct=87 comp=706M swap=3713M pid=17073 cmd=node_modules/.bin/vitest run --project main src/main/services/handoff-host.test.ts -t synchronizes an offered agreement through the original host --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/handoff-reverse-sync/baseline01-original.xml",
+      "end": "2026-11-22T13:06:56Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "candidate02",
+      "start": "2026-11-22T13:14:12Z START lane-p2 idle=88% unused=3338M avail=33012M freepct=87 comp=706M swap=3713M pid=19471 cmd=node_modules/.bin/vitest run --project main src/main/services/handoff-host.test.ts src/main/services/handoff-coordinator.test.ts src/main/services/handoff-service.test.ts src/main/services/handoff-command-store.test.ts src/main/services/handoff-retention.test.ts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/handoff-reverse-sync/candidate02-original.xml",
+      "end": "2026-11-22T13:14:18Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "candidate03",
+      "start": "2026-11-22T13:15:30Z START lane-p2 idle=90% unused=3302M avail=32979M freepct=87 comp=706M swap=3713M pid=19882 cmd=node_modules/.bin/vitest run --project main src/main/services/handoff-host.test.ts src/main/services/handoff-coordinator.test.ts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/handoff-reverse-sync/candidate03-original.xml",
+      "end": "2026-11-22T13:15:32Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "candidate04",
+      "start": "2026-11-22T13:17:50Z START lane-p2 idle=91% unused=3223M avail=32902M freepct=87 comp=706M swap=3713M pid=20519 cmd=node_modules/.bin/vitest run --project main --project integration src/main/services/handoff-host.test.ts test/annex-v2/annex-reverse-handoff-sync.test.ts -t drains an already-admitted|assembles actual hosts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/handoff-reverse-sync/candidate04-original.xml",
+      "end": "2026-11-22T13:17:52Z END lane-p2 rc=0",
+      "exit": 0
+    },
+    {
+      "name": "types05",
+      "start": "2026-11-22T13:19:51Z START lane-p2 idle=89% unused=3289M avail=32843M freepct=87 comp=706M swap=3713M pid=21119 cmd=node_modules/.bin/tsc --noEmit --pretty false --project node_modules/.cache/handoff-reverse-sync/changed-fixture-types.json",
+      "end": "2026-11-22T13:19:59Z END lane-p2 rc=2",
+      "exit": 2
+    },
+    {
+      "name": "baseline06",
+      "start": "2026-11-22T13:21:22Z START lane-p2 idle=90% unused=3433M avail=32990M freepct=87 comp=706M swap=3713M pid=21527 cmd=node_modules/.bin/vitest run --project main --project integration src/main/services/handoff-command-store.test.ts test/annex-v2/annex-reverse-handoff-sync.test.ts -t refuses reverse .* inside the actual queue|assembles actual hosts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=../baseline06-original.xml",
+      "end": "2026-11-22T13:21:23Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "types07",
+      "start": "2026-11-22T13:23:00Z START lane-p2 idle=89% unused=3238M avail=32797M freepct=87 comp=706M swap=3713M pid=22095 cmd=node_modules/.bin/tsc --noEmit --pretty false --project node_modules/.cache/handoff-reverse-sync/changed-fixture-types.json",
+      "end": "2026-11-22T13:23:08Z END lane-p2 rc=0",
+      "exit": 0
+    },
+    {
+      "name": "baseline08",
+      "start": "2026-11-22T13:23:17Z START lane-p2 idle=91% unused=3446M avail=33019M freepct=87 comp=706M swap=3713M pid=22233 cmd=node_modules/.bin/vitest run --project main src/main/services/handoff-command-store.test.ts -t refuses reverse .* inside the actual queue --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=../baseline08-original.xml",
+      "end": "2026-11-22T13:23:18Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "final09",
+      "start": "2026-11-22T13:24:07Z START lane-p2 idle=90% unused=3894M avail=32970M freepct=87 comp=706M swap=3713M pid=22534 cmd=node_modules/.bin/vitest run --project main --project integration src/main/services/handoff-host.test.ts src/main/services/handoff-coordinator.test.ts src/main/services/handoff-service.test.ts src/main/services/handoff-command-store.test.ts src/main/services/handoff-retention.test.ts test/annex-v2/annex-reverse-handoff-sync.test.ts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/handoff-reverse-sync/final09-original.xml",
+      "end": "2026-11-22T13:24:13Z END lane-p2 rc=0",
+      "exit": 0
+    },
+    {
+      "name": "mutant10",
+      "start": "2026-11-22T13:24:33Z START lane-p2 idle=90% unused=4220M avail=33221M freepct=87 comp=706M swap=3713M pid=22724 cmd=node_modules/.bin/vitest run --project main src/main/services/handoff-command-store.test.ts -t refuses reverse .* inside the actual queue --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=../mutant10-original.xml",
+      "end": "2026-11-22T13:24:33Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "baseline11",
+      "start": "2026-11-22T13:24:48Z START lane-p2 idle=90% unused=4207M avail=33209M freepct=87 comp=706M swap=3713M pid=22893 cmd=node_modules/.bin/vitest run --project integration test/annex-v2/annex-reverse-handoff-sync.test.ts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=../baseline11-original.xml",
+      "end": "2026-11-22T13:24:50Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "types12",
+      "start": "2026-11-22T13:25:37Z START lane-p2 idle=91% unused=4210M avail=33210M freepct=87 comp=706M swap=3713M pid=23162 cmd=node_modules/.bin/tsc --noEmit --pretty false --listFiles --project node_modules/.cache/handoff-reverse-sync/changed-fixture-types.json",
+      "end": "2026-11-22T13:25:45Z END lane-p2 rc=0",
+      "exit": 0
+    },
+    {
+      "name": "lint13",
+      "start": "2026-11-22T13:25:46Z START lane-p2 idle=91% unused=4145M avail=33146M freepct=87 comp=706M swap=3713M pid=23266 cmd=node_modules/.bin/eslint src/main/services/handoff-host.ts src/main/services/handoff-coordinator.ts src/main/services/handoff-service.ts src/main/services/handoff-command-store.ts src/main/services/handoff-host.test.ts src/main/services/handoff-coordinator.test.ts src/main/services/handoff-service.test.ts src/main/services/handoff-command-store.test.ts test/annex-v2/annex-reverse-handoff-sync.test.ts --format json --output-file node_modules/.cache/handoff-reverse-sync/lint13-original.json",
+      "end": "2026-11-22T13:25:47Z END lane-p2 rc=0",
+      "exit": 0
+    }
+  ],
+  "xmls": {
+    "baseline01-original.xml": {
+      "counts": {
+        "SKIP": 10,
+        "FAIL": 1
+      },
+      "cases": [
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks metadata before asking for approval and refuses a secret before any durable write",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains query access after revocation and delivers each notice once across host restart",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+          "status": "FAIL",
+          "failure": "\nAssertionError: expected \"vi.fn()\" to be called 1 times, but got 0 times\n \u276f src/main/services/handoff-host.test.ts:201:22\n            "
+        }
+      ],
+      "attributes": {
+        "name": "vitest tests",
+        "tests": "11",
+        "failures": "1",
+        "errors": "0",
+        "time": "0.024656334"
+      }
+    },
+    "baseline06-original.xml": {
+      "counts": {
+        "FAIL": 3,
+        "SKIP": 8
+      },
+      "cases": [
+        {
+          "class": "test/annex-v2/annex-reverse-handoff-sync.test.ts",
+          "name": "assembles actual hosts, durable agreement and command stores over pinned request-only reverse control",
+          "status": "FAIL",
+          "failure": "\nAssertionError: expected undefined to deeply equal { schemaVersion: 1, \u2026(10) }\n\n- Expected:\n{\n  \"createdAt\": 1795353683384,\n  \"from\": {\n    \"agentId\": \"sender\",\n    \"machine\": \"b4:f9:9f:d8:ee:48:27:d4:81:35:7d:00:aa:f8:67:c8\",\n  },\n  \"history\": [\n    {\n      \"at\": 1795353683384,\n      \"by\": {\n        \"address\": {\n          \"agentId\": \"sender\",\n          \"machine\": \"b4:f9:9f:d8:ee:48:27:d4:81:35:7d:00:aa:f8:67:c8\",\n        },\n        \"kind\": \"agent\",\n      },\n      \"operationId\": \"05baed28-f924-40de-a70d-1a86bd530134\",\n      \"state\": \"offered\",\n    },\n  ],\n  \"id\": \"777f7b62-e11a-4754-8f07-b88f2abc41e6\",\n  \"mode\": \"worktree\",\n  \"schemaVersion\": 1,\n  \"state\": \"offered\",\n  \"task\": {\n    \"brief\": \"Explicit finite agreement synchronization, not content transfer or apply.\",\n    \"title\": \"Paired sync fixture\",\n  },\n  \"to\": {\n    \"machine\": \"a1:4a:f6:12:a4:4d:78:73:41:8b:fb:61:e7:ae:a9:7f\",\n    \"via\": \"dispatcher\",\n  },\n  \"updatedAt\": 1795353683384,\n  \"version\": 1,\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/annex-reverse-handoff-sync.test.ts:144:47\n            "
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > keeps one pending cancellation across restart and removes only the acknowledged operation",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > serializes competing notice claims and retains a claim across restart and uncertain delivery",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > fails closed on malformed storage without overwriting evidence, and never stores secret reasons",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "persists attempts and acknowledgements and prunes retired notice metadata across restart",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "refuses reverse acknowledge inside the actual queue without starving unrelated commands",
+          "status": "FAIL",
+          "failure": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f src/main/services/handoff-command-store.test.ts:82:33\n            "
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "refuses reverse remove inside the actual queue without starving unrelated commands",
+          "status": "FAIL",
+          "failure": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f src/main/services/handoff-command-store.test.ts:82:33\n            "
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "publishes matching disk and memory for acknowledge admitted before retirement",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "publishes matching disk and memory for remove admitted before retirement",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "preserves actual before-rename ACK error semantics, not guessed IO rollback",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "preserves actual after-real-rename ACK error semantics, not guessed IO rollback",
+          "status": "SKIP",
+          "failure": null
+        }
+      ],
+      "attributes": {
+        "name": "vitest tests",
+        "tests": "11",
+        "failures": "3",
+        "errors": "0",
+        "time": "1.197380876"
+      }
+    },
+    "baseline08-original.xml": {
+      "counts": {
+        "SKIP": 8,
+        "FAIL": 2
+      },
+      "cases": [
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > keeps one pending cancellation across restart and removes only the acknowledged operation",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > serializes competing notice claims and retains a claim across restart and uncertain delivery",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > fails closed on malformed storage without overwriting evidence, and never stores secret reasons",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "persists attempts and acknowledgements and prunes retired notice metadata across restart",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "refuses reverse acknowledge inside the actual queue without starving unrelated commands",
+          "status": "FAIL",
+          "failure": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f src/main/services/handoff-command-store.test.ts:82:33\n            "
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "refuses reverse remove inside the actual queue without starving unrelated commands",
+          "status": "FAIL",
+          "failure": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f src/main/services/handoff-command-store.test.ts:82:33\n            "
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "publishes matching disk and memory for acknowledge admitted before retirement",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "publishes matching disk and memory for remove admitted before retirement",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "preserves actual before-rename ACK error semantics, not guessed IO rollback",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "preserves actual after-real-rename ACK error semantics, not guessed IO rollback",
+          "status": "SKIP",
+          "failure": null
+        }
+      ],
+      "attributes": {
+        "name": "vitest tests",
+        "tests": "10",
+        "failures": "2",
+        "errors": "0",
+        "time": "0.049698084"
+      }
+    },
+    "baseline11-original.xml": {
+      "counts": {
+        "FAIL": 1
+      },
+      "cases": [
+        {
+          "class": "test/annex-v2/annex-reverse-handoff-sync.test.ts",
+          "name": "assembles actual hosts, durable agreement and command stores over pinned request-only reverse control",
+          "status": "FAIL",
+          "failure": "\nAssertionError: expected undefined to deeply equal { schemaVersion: 1, \u2026(10) }\n\n- Expected:\n{\n  \"createdAt\": 1795353890185,\n  \"from\": {\n    \"agentId\": \"sender\",\n    \"machine\": \"bc:3f:18:3e:2a:f3:ff:32:65:37:ab:78:9e:37:52:89\",\n  },\n  \"history\": [\n    {\n      \"at\": 1795353890185,\n      \"by\": {\n        \"address\": {\n          \"agentId\": \"sender\",\n          \"machine\": \"bc:3f:18:3e:2a:f3:ff:32:65:37:ab:78:9e:37:52:89\",\n        },\n        \"kind\": \"agent\",\n      },\n      \"operationId\": \"cacc9b4d-128d-4024-b72a-2219e3bc4cba\",\n      \"state\": \"offered\",\n    },\n  ],\n  \"id\": \"6f99a977-c0cb-416c-acd4-d5e32e4889bc\",\n  \"mode\": \"worktree\",\n  \"schemaVersion\": 1,\n  \"state\": \"offered\",\n  \"task\": {\n    \"brief\": \"Explicit finite agreement synchronization, not content transfer or apply.\",\n    \"title\": \"Paired sync fixture\",\n  },\n  \"to\": {\n    \"machine\": \"91:76:96:4a:e5:d5:f6:8a:e0:a0:21:27:7d:70:85:2d\",\n    \"via\": \"dispatcher\",\n  },\n  \"updatedAt\": 1795353890185,\n  \"version\": 1,\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/annex-reverse-handoff-sync.test.ts:145:47\n            "
+        }
+      ],
+      "attributes": {
+        "name": "vitest tests",
+        "tests": "1",
+        "failures": "1",
+        "errors": "0",
+        "time": "1.168765084"
+      }
+    },
+    "candidate02-original.xml": {
+      "counts": {
+        "PASS": 77,
+        "FAIL": 9
+      },
+      "cases": [
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > keeps one pending cancellation across restart and removes only the acknowledged operation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > serializes competing notice claims and retains a claim across restart and uncertain delivery",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > fails closed on malformed storage without overwriting evidence, and never stores secret reasons",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "persists attempts and acknowledgements and prunes retired notice metadata across restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "refuses reverse acknowledge inside the actual queue without starving unrelated commands",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "refuses reverse remove inside the actual queue without starving unrelated commands",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "publishes matching disk and memory for acknowledge admitted before retirement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "publishes matching disk and memory for remove admitted before retirement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "preserves actual before-rename ACK error semantics, not guessed IO rollback",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "preserves actual after-real-rename ACK error semantics, not guessed IO rollback",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > offers, accepts and cancels locally without using a network transport",
+          "status": "FAIL",
+          "failure": "\nError: Calling the suite function inside test function is not allowed. It can be only called at the top level or inside another suite function.\n \u276f computer src/main/services/handoff-coordinator.test.ts:49:5\n \u276f fixture src/main/services/handoff-coordinator.test.ts:206:13\n \u276f src/main/services/handoff-coordinator.test.ts:213:19\n            "
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > synchronizes a receiver decision and preserves one response across retries and restart",
+          "status": "FAIL",
+          "failure": "\nError: Calling the suite function inside test function is not allowed. It can be only called at the top level or inside another suite function.\n \u276f computer src/main/services/handoff-coordinator.test.ts:49:5\n \u276f fixture src/main/services/handoff-coordinator.test.ts:206:13\n \u276f src/main/services/handoff-coordinator.test.ts:224:22\n            "
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > retains offline offers and sender cancellations until reconnect after restart",
+          "status": "FAIL",
+          "failure": "\nError: Calling the suite function inside test function is not allowed. It can be only called at the top level or inside another suite function.\n \u276f computer src/main/services/handoff-coordinator.test.ts:49:5\n \u276f fixture src/main/services/handoff-coordinator.test.ts:206:13\n \u276f src/main/services/handoff-coordinator.test.ts:236:15\n            "
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > refuses forged transport identity and does not deliver a queued offer after revocation",
+          "status": "FAIL",
+          "failure": "\nError: Calling the suite function inside test function is not allowed. It can be only called at the top level or inside another suite function.\n \u276f computer src/main/services/handoff-coordinator.test.ts:49:5\n \u276f fixture src/main/services/handoff-coordinator.test.ts:206:13\n \u276f src/main/services/handoff-coordinator.test.ts:254:15\n            "
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > lets only an addressed Dispatcher choose a receiver and preserves participant privacy",
+          "status": "FAIL",
+          "failure": "\nError: Calling the suite function inside test function is not allowed. It can be only called at the top level or inside another suite function.\n \u276f computer src/main/services/handoff-coordinator.test.ts:49:5\n \u276f fixture src/main/services/handoff-coordinator.test.ts:206:13\n \u276f src/main/services/handoff-coordinator.test.ts:265:22\n            "
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > recovers a same-machine cancellation intent committed just before a crash",
+          "status": "FAIL",
+          "failure": "\nError: Calling the suite function inside test function is not allowed. It can be only called at the top level or inside another suite function.\n \u276f computer src/main/services/handoff-coordinator.test.ts:49:5\n \u276f fixture src/main/services/handoff-coordinator.test.ts:206:13\n \u276f src/main/services/handoff-coordinator.test.ts:275:19\n            "
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > does not treat an unrelated participant as the author of an idempotent decline",
+          "status": "FAIL",
+          "failure": "\nError: Calling the suite function inside test function is not allowed. It can be only called at the top level or inside another suite function.\n \u276f computer src/main/services/handoff-coordinator.test.ts:49:5\n \u276f fixture src/main/services/handoff-coordinator.test.ts:206:13\n \u276f src/main/services/handoff-coordinator.test.ts:287:19\n            "
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > services an active agreement before retained terminal history after restart",
+          "status": "FAIL",
+          "failure": "\nError: Calling the suite function inside test function is not allowed. It can be only called at the top level or inside another suite function.\n \u276f computer src/main/services/handoff-coordinator.test.ts:49:5\n \u276f fixture src/main/services/handoff-coordinator.test.ts:206:13\n \u276f src/main/services/handoff-coordinator.test.ts:296:15\n            "
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks metadata before asking for approval and refuses a secret before any durable write",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains query access after revocation and delivers each notice once across host restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=false)",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=true)",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse grant-revision capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse configuration capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse connection-notification capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-membership capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-permissions capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse epoch capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse readiness capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse membership capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse direct-promotion capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not turn a valid reverse capture into a positive outgoing grant",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "still refuses an unconnected ordinary outgoing target even when reverse is ready",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the durable attempted marker if retirement follows its real save but precedes POST",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks the same capture inside the actual deadline microtask immediately before POST",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains the pending cancellation exception and original command ID after grant and connection revocation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps authoritative receiver history queryable and ACK-able without fresh outgoing or incoming permission",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "drains an already-admitted real history save on stop before replacement and retains normal committed-history notices",
+          "status": "FAIL",
+          "failure": "\nAssertionError: expected [Function] to throw error including 'authorization' but got 'Handoff receiver permissions or conne\u2026'\n\nExpected: \"authorization\"\nReceived: \"Handoff receiver permissions or connection changed. Selected agents must allow handoff acceptance; Dispatchers must allow waking and messaging them.\"\n\n \u276f src/main/services/handoff-host.test.ts:362:62\n            "
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-operation lease after outer deadline until real settlement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual scheduled-operation lease after outer deadline until real settlement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > settles an explicitly refused receiver offer locally, without storing or endlessly retrying it",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > cancels directly after grant revocation, without re-offering or requiring the old grant",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > expires offers at the receiver and refuses acceptance after TTL",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > locally cancels only an expired outbox entry known never to have attempted delivery, across restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > returns an expired refusal for an old offer that was never admitted, and enforces a per-peer active quota",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > prunes acknowledged terminal history and its journal before 1000 completed handoffs can exhaust the store",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "acknowledges a retired terminal snapshot without resurrecting its record or notice",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "cancels a never-attempted offer locally after revocation without posting any brief",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "refuses an unadmitted cancellation with the same authorization admission gate as an offer",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "refuses an unadmitted cancellation with the same expired admission gate as an offer",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "refuses an unadmitted cancellation with the same future admission gate as an offer",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "prunes removed-peer terminal decisions even without an acknowledgement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "keeps delivery proof during concurrent pruning before an offer becomes visible",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "settles and prunes attempted outgoing offers when their receiving peer is permanently removed",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > declines durably and rejects acceptance after decline",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+          "status": "PASS",
+          "failure": null
+        }
+      ],
+      "attributes": {
+        "name": "vitest tests",
+        "tests": "86",
+        "failures": "9",
+        "errors": "0",
+        "time": "4.187696291"
+      }
+    },
+    "candidate03-original.xml": {
+      "counts": {
+        "PASS": 49,
+        "FAIL": 1
+      },
+      "cases": [
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued receiver-ACK and refuses before its real mutation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued terminal-ACK and refuses before its real mutation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-ACK and refuses before its real mutation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued primary-remove and refuses before its real mutation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-remove and refuses before its real mutation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > does not advance reverse ACK memory after either deterministic precommit failure or ambiguous post-rename failure",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=false)",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=true)",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > commits history admitted before retirement but refuses the next secondary POST under the original capture",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > publishes a real ACK admitted before retirement but refuses the distinct primary removal",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > uses one original capture and cancellation ID through primary adoption and every secondary adoption/ACK/removal",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > offers, accepts and cancels locally without using a network transport",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > synchronizes a receiver decision and preserves one response across retries and restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > retains offline offers and sender cancellations until reconnect after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > refuses forged transport identity and does not deliver a queued offer after revocation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > lets only an addressed Dispatcher choose a receiver and preserves participant privacy",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > recovers a same-machine cancellation intent committed just before a crash",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > does not treat an unrelated participant as the author of an idempotent decline",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > services an active agreement before retained terminal history after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks metadata before asking for approval and refuses a secret before any durable write",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains query access after revocation and delivers each notice once across host restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=false)",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=true)",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse grant-revision capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse configuration capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse connection-notification capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-membership capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-permissions capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse epoch capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse readiness capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse membership capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse direct-promotion capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not turn a valid reverse capture into a positive outgoing grant",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "still refuses an unconnected ordinary outgoing target even when reverse is ready",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the durable attempted marker if retirement follows its real save but precedes POST",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks the same capture inside the actual deadline microtask immediately before POST",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains the pending cancellation exception and original command ID after grant and connection revocation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps authoritative receiver history queryable and ACK-able without fresh outgoing or incoming permission",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "drains an already-admitted real history save on stop before replacement and retains normal committed-history notices",
+          "status": "FAIL",
+          "failure": "\nAssertionError: expected false to be true // Object.is equality\n\n- Expected\n+ Received\n\n- true\n+ false\n\n \u276f src/main/services/handoff-host.test.ts:367:86\n            "
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-operation lease after outer deadline until real settlement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual scheduled-operation lease after outer deadline until real settlement",
+          "status": "PASS",
+          "failure": null
+        }
+      ],
+      "attributes": {
+        "name": "vitest tests",
+        "tests": "50",
+        "failures": "1",
+        "errors": "0",
+        "time": "1.255128333"
+      }
+    },
+    "candidate04-original.xml": {
+      "counts": {
+        "PASS": 2,
+        "SKIP": 30
+      },
+      "cases": [
+        {
+          "class": "test/annex-v2/annex-reverse-handoff-sync.test.ts",
+          "name": "assembles actual hosts, durable agreement and command stores over pinned request-only reverse control",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks metadata before asking for approval and refuses a secret before any durable write",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains query access after revocation and delivers each notice once across host restart",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=false)",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=true)",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse grant-revision capture across the actual outgoing authorization await",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse configuration capture across the actual outgoing authorization await",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse connection-notification capture across the actual outgoing authorization await",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-membership capture across the actual outgoing authorization await",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-permissions capture across the actual outgoing authorization await",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse epoch capture across the actual outgoing authorization await",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse readiness capture across the actual outgoing authorization await",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse membership capture across the actual outgoing authorization await",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse direct-promotion capture across the actual outgoing authorization await",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not turn a valid reverse capture into a positive outgoing grant",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "still refuses an unconnected ordinary outgoing target even when reverse is ready",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the durable attempted marker if retirement follows its real save but precedes POST",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks the same capture inside the actual deadline microtask immediately before POST",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains the pending cancellation exception and original command ID after grant and connection revocation",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps authoritative receiver history queryable and ACK-able without fresh outgoing or incoming permission",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "drains an already-admitted real history save on stop before replacement and retains normal committed-history notices",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-operation lease after outer deadline until real settlement",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual scheduled-operation lease after outer deadline until real settlement",
+          "status": "SKIP",
+          "failure": null
+        }
+      ],
+      "attributes": {
+        "name": "vitest tests",
+        "tests": "32",
+        "failures": "0",
+        "errors": "0",
+        "time": "1.31836425"
+      }
+    },
+    "final09-original.xml": {
+      "counts": {
+        "PASS": 100
+      },
+      "cases": [
+        {
+          "class": "test/annex-v2/annex-reverse-handoff-sync.test.ts",
+          "name": "assembles actual hosts, durable agreement and command stores over pinned request-only reverse control",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > keeps one pending cancellation across restart and removes only the acknowledged operation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > serializes competing notice claims and retains a claim across restart and uncertain delivery",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > fails closed on malformed storage without overwriting evidence, and never stores secret reasons",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "persists attempts and acknowledgements and prunes retired notice metadata across restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "refuses reverse acknowledge inside the actual queue without starving unrelated commands",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "refuses reverse remove inside the actual queue without starving unrelated commands",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "publishes matching disk and memory for acknowledge admitted before retirement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "publishes matching disk and memory for remove admitted before retirement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "preserves actual before-rename ACK error semantics, not guessed IO rollback",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "preserves actual after-real-rename ACK error semantics, not guessed IO rollback",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued receiver-ACK and refuses before its real mutation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued terminal-ACK and refuses before its real mutation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-ACK and refuses before its real mutation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued primary-remove and refuses before its real mutation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-remove and refuses before its real mutation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > does not advance reverse ACK memory after either deterministic precommit failure or ambiguous post-rename failure",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=false)",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=true)",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > commits history admitted before retirement but refuses the next secondary POST under the original capture",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > publishes a real ACK admitted before retirement but refuses the distinct primary removal",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > uses one original capture and cancellation ID through primary adoption and every secondary adoption/ACK/removal",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > offers, accepts and cancels locally without using a network transport",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > synchronizes a receiver decision and preserves one response across retries and restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > retains offline offers and sender cancellations until reconnect after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > refuses forged transport identity and does not deliver a queued offer after revocation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > lets only an addressed Dispatcher choose a receiver and preserves participant privacy",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > recovers a same-machine cancellation intent committed just before a crash",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > does not treat an unrelated participant as the author of an idempotent decline",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > services an active agreement before retained terminal history after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks metadata before asking for approval and refuses a secret before any durable write",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains query access after revocation and delivers each notice once across host restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=false)",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=true)",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse grant-revision capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse configuration capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse connection-notification capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-membership capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-permissions capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse epoch capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse readiness capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse membership capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse direct-promotion capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse host-instance capture across the actual outgoing authorization await",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not turn a valid reverse capture into a positive outgoing grant",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "still refuses an unconnected ordinary outgoing target even when reverse is ready",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the durable attempted marker if retirement follows its real save but precedes POST",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks the same capture inside the actual deadline microtask immediately before POST",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains the pending cancellation exception and original command ID after grant and connection revocation",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps authoritative receiver history queryable and ACK-able without fresh outgoing or incoming permission",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "drains an already-admitted real history save on stop before replacement and retains normal committed-history notices",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-operation lease after outer deadline until real settlement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual scheduled-operation lease after outer deadline until real settlement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-rejection lease after outer deadline until real settlement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > settles an explicitly refused receiver offer locally, without storing or endlessly retrying it",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > cancels directly after grant revocation, without re-offering or requiring the old grant",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > expires offers at the receiver and refuses acceptance after TTL",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > locally cancels only an expired outbox entry known never to have attempted delivery, across restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > returns an expired refusal for an old offer that was never admitted, and enforces a per-peer active quota",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "handoff refusal, expiry and bounded retention > prunes acknowledged terminal history and its journal before 1000 completed handoffs can exhaust the store",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "acknowledges a retired terminal snapshot without resurrecting its record or notice",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "cancels a never-attempted offer locally after revocation without posting any brief",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "refuses an unadmitted cancellation with the same authorization admission gate as an offer",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "refuses an unadmitted cancellation with the same expired admission gate as an offer",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "refuses an unadmitted cancellation with the same future admission gate as an offer",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "prunes removed-peer terminal decisions even without an acknowledgement",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "keeps delivery proof during concurrent pruning before an offer becomes visible",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-retention.test.ts",
+          "name": "settles and prunes attempted outgoing offers when their receiving peer is permanently removed",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > declines durably and rejects acceptance after decline",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+          "status": "PASS",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+          "status": "PASS",
+          "failure": null
+        }
+      ],
+      "attributes": {
+        "name": "vitest tests",
+        "tests": "100",
+        "failures": "0",
+        "errors": "0",
+        "time": "5.843409915"
+      }
+    },
+    "mutant10-original.xml": {
+      "counts": {
+        "SKIP": 8,
+        "FAIL": 2
+      },
+      "cases": [
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > keeps one pending cancellation across restart and removes only the acknowledged operation",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > serializes competing notice claims and retains a claim across restart and uncertain delivery",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "durable handoff cancellation and notification claims > fails closed on malformed storage without overwriting evidence, and never stores secret reasons",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "persists attempts and acknowledgements and prunes retired notice metadata across restart",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "refuses reverse acknowledge inside the actual queue without starving unrelated commands",
+          "status": "FAIL",
+          "failure": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f src/main/services/handoff-command-store.test.ts:82:33\n            "
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "refuses reverse remove inside the actual queue without starving unrelated commands",
+          "status": "FAIL",
+          "failure": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f src/main/services/handoff-command-store.test.ts:82:33\n            "
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "publishes matching disk and memory for acknowledge admitted before retirement",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "publishes matching disk and memory for remove admitted before retirement",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "preserves actual before-rename ACK error semantics, not guessed IO rollback",
+          "status": "SKIP",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-command-store.test.ts",
+          "name": "preserves actual after-real-rename ACK error semantics, not guessed IO rollback",
+          "status": "SKIP",
+          "failure": null
+        }
+      ],
+      "attributes": {
+        "name": "vitest tests",
+        "tests": "10",
+        "failures": "2",
+        "errors": "0",
+        "time": "0.049699083"
+      }
+    }
+  },
+  "pairReceipts": [
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_READY",
+      "value": {
+        "requester": "bd:9a:20:d3:42:83:ca:ef:43:63:8a:81:84:ba:44:e7",
+        "target": "84:19:0f:1a:0c:9f:f6:b6:6e:85:8f:07:6b:dc:c1:84",
+        "requesterPin": "33:32:7F:59:79:0A:A0:C7:DE:68:28:CF:5F:23:9B:83:CD:26:D1:24:F0:D7:91:55:19:43:B8:40:02:4F:2D:C3",
+        "targetPin": "F5:4B:FC:D4:8D:74:1A:50:C2:AB:E8:97:DB:19:11:F5:E4:1A:D3:01:3B:0C:0F:B3:07:E2:29:18:3A:EB:12:3E",
+        "epoch": 1,
+        "observation": {
+          "ready": true,
+          "revision": 2
+        },
+        "directConnected": false,
+        "acceptedSnapshot": false
+      }
+    },
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_FIRST_OFFER",
+      "value": {
+        "id": "f794666d-a24c-46ec-b26b-52f6657176b1",
+        "requests": 1,
+        "undelivered": false,
+        "destinationVersion": 1
+      }
+    },
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC",
+      "value": {
+        "requester": "bd:9a:20:d3:42:83:ca:ef:43:63:8a:81:84:ba:44:e7",
+        "target": "84:19:0f:1a:0c:9f:f6:b6:6e:85:8f:07:6b:dc:c1:84",
+        "requesterPin": "33:32:7F:59:79:0A:A0:C7:DE:68:28:CF:5F:23:9B:83:CD:26:D1:24:F0:D7:91:55:19:43:B8:40:02:4F:2D:C3",
+        "targetPin": "F5:4B:FC:D4:8D:74:1A:50:C2:AB:E8:97:DB:19:11:F5:E4:1A:D3:01:3B:0C:0F:B3:07:E2:29:18:3A:EB:12:3E",
+        "firstEpoch": 1,
+        "secondEpoch": 2,
+        "agreements": [
+          "f794666d-a24c-46ec-b26b-52f6657176b1",
+          "54105e73-3aa9-4afb-affe-b155cf1087e4"
+        ],
+        "terminalVersion": 2,
+        "requests": [
+          [
+            "offer",
+            "f794666d-a24c-46ec-b26b-52f6657176b1"
+          ],
+          [
+            "offer",
+            "f794666d-a24c-46ec-b26b-52f6657176b1"
+          ],
+          [
+            "offer",
+            "54105e73-3aa9-4afb-affe-b155cf1087e4"
+          ]
+        ],
+        "ordinaryHttp": 0,
+        "upgrades": [
+          "/control",
+          "/control"
+        ],
+        "directConnected": false,
+        "acceptedSnapshot": false,
+        "fixtureBoundaries": [
+          "positive grant callbacks",
+          "preparation binding",
+          "worker",
+          "provider delivery",
+          "route dispatch adapter"
+        ]
+      }
+    },
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_TEARDOWN",
+      "value": {
+        "sockets": 0,
+        "inFlight": 0,
+        "subscriptions": 0,
+        "listener": false,
+        "forward": false
+      }
+    }
+  ],
+  "basePairReceipts": [
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_READY",
+      "value": {
+        "requester": "bc:3f:18:3e:2a:f3:ff:32:65:37:ab:78:9e:37:52:89",
+        "target": "91:76:96:4a:e5:d5:f6:8a:e0:a0:21:27:7d:70:85:2d",
+        "requesterPin": "32:8B:55:76:E8:2A:8D:D1:AA:99:98:CB:96:BC:12:68:FE:D7:5F:19:D1:E6:3E:AC:50:32:85:EC:C0:8E:E9:D9",
+        "targetPin": "54:99:31:99:2B:9D:C6:EB:ED:3F:F2:47:D3:81:83:DE:3A:2F:F5:82:8E:99:D9:D5:50:C7:6F:BF:29:F1:AD:D0",
+        "epoch": 1,
+        "observation": {
+          "ready": true,
+          "revision": 2
+        },
+        "directConnected": false,
+        "acceptedSnapshot": false
+      }
+    },
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_FIRST_OFFER",
+      "value": {
+        "id": "6f99a977-c0cb-416c-acd4-d5e32e4889bc",
+        "requests": 0,
+        "undelivered": true,
+        "destinationVersion": null
+      }
+    },
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_TEARDOWN",
+      "value": {
+        "sockets": 0,
+        "inFlight": 0,
+        "subscriptions": 0,
+        "listener": false,
+        "forward": false
+      }
+    }
+  ],
+  "compiler": {
+    "exit": 0,
+    "diagnostics": 0,
+    "orderedInputs": 3961,
+    "fiveChangedFixtures": [
+      "src/main/services/handoff-host.test.ts",
+      "src/main/services/handoff-coordinator.test.ts",
+      "src/main/services/handoff-service.test.ts",
+      "src/main/services/handoff-command-store.test.ts",
+      "test/annex-v2/annex-reverse-handoff-sync.test.ts"
+    ],
+    "rootFilesEnumeratedPresent": 2465,
+    "shadowedImplementation": [
+      "src/main/vendor/framebriar/adapters/node/index.mjs"
+    ],
+    "trackedImmutableContentHashMatches": 2473,
+    "remainingOwnerObservedDependencyHashCount": 1488,
+    "atomicPerReadTracing": false
+  },
+  "lint": {
+    "files": 9,
+    "errors": 0,
+    "warnings": 0
+  },
+  "preservedIdentityCount": 144,
+  "phoneCount": 103,
+  "phoneBytes": 1529625,
+  "testFixtureJsonCount": 106,
+  "testFixtureJsonBytes": 1547788,
+  "lowerSourceFilesUnchanged": [
+    "test/annex-v2/annex-reverse-consumers.test.ts",
+    "test/annex-v2/annex-reverse-handoff.test.ts",
+    "test/annex-v2/reverse-desktop-fixture.ts",
+    "src/main/services/handoff-transfer-source.ts",
+    "src/main/services/handoff-transfer-receiver.ts",
+    "src/main/services/handoff-transfer-transport.ts"
+  ],
+  "lowerProofRerun": false,
+  "reviewerProductExecutions": false,
+  "remoteBranchReadback": {
+    "branch": "lane-3613-p2-routes/handoff-reverse-sync",
+    "head": "868d8b53fdb20c23876c83538c855165761b40df"
+  },
+  "baseline06Credit": "historical 3FAIL plus2cleanup errors; earlier fixture hash differs; no exact-final discriminator transfer"
+}
