@@ -486,13 +486,18 @@ describe('isolated real MCP producer domain admission', () => {
     });
 
     it('refuses an independently running preparation with a different mode before a remote marker', async () => {
-      const fx = current(), peer = await remote(fx), held = await heldStandalonePreparation(fx, 'branch');
+      const fx = current();
+      await exec('git', ['add', 'fixture.txt'], { cwd: fx.repository });
+      await exec('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Clean branch fixture'], { cwd: fx.repository });
+      const peer = await remote(fx), held = await heldStandalonePreparation(fx, 'branch');
       const marker = vi.spyOn(fx.host.commands, 'markUndelivered');
       const pending = fx.tools.callTool(caller, 'offer_handoff', { to: `machine:${peer}`, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
       operations.push(pending);
       await held.selected;
       held.release();
-      expect(resultValue(await held.pending)).toMatchObject({ ready: true });
+      const prepared = resultValue(await held.pending);
+      console.info('Independent preparation mode witness', JSON.stringify(prepared));
+      expect(prepared).toMatchObject({ ready: true });
       expect((await pending).isError).toBe(true);
       expect(marker).not.toHaveBeenCalled();
       expect(fx.host.store.list()).toEqual([]);
