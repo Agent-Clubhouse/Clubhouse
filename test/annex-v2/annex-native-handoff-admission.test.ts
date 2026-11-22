@@ -390,13 +390,14 @@ it('normal host stop refuses queued native work and new admissions until actual 
   } finally { await pair.cleanup(); }
 }, 30_000);
 
-it.each(['pairingId', 'certificatePem', 'unchanged', 'route', 'alias', 'lastSeen'] as const)(
+it.each(['pairingId', 'certificatePem', 'unchanged', 'legacy-undefined', 'route', 'alias', 'lastSeen'] as const)(
   'checks canonical native trust at the real held queue for %s-only updates', async (change) => {
     const pair = await nativePair();
     try {
-      pair.target.peers.addPeer({ ...pair.peerB, pairingId: 'native-pairing-original' });
+      if (change !== 'legacy-undefined') pair.target.peers.addPeer({ ...pair.peerB, pairingId: 'native-pairing-original' });
       const saved = pair.target.peers.getPeer(pair.peerB.fingerprint);
       if (!saved) throw new Error('Expected the actual saved requester pairing');
+      if (change === 'legacy-undefined') expect(saved.pairingId).toBeUndefined();
       const originalTrust = JSON.stringify([pair.target.peers.trustOf(saved), saved.kind]);
       const record = offered(pair.peerB.fingerprint, pair.peerA.fingerprint), held = pair.holdQueue(record);
       const reply = pair.request(record);
