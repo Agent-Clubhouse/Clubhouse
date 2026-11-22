@@ -110,9 +110,16 @@ Actual history-queue admission follows duplicate/capacity checks, fresh full
 authorization for the original call and canonical recipient, and synchronous
 original-source/authority/selection continuity. Ask first needs that exact consumed
 approval and its original version, captured before awaits; fresh Allow does not
-depend on an approval version. Cosmetic bindings do not retire a pending target
-capture. Admission precedes the first offer-specific delivery marker or catalog
-write, not just history visibility.
+depend on an approval version. The completed positive Ask check seals its exact
+original context; admission synchronously checks that context and original
+version after every source-verification await, without consuming another approval
+or substituting a new grant evaluation. Source verification captures the
+observation promise and revision before reading source/configuration. Any newer
+observation revision refuses that invocation rather than certifying pending work;
+benign work already appended before verification can settle and complete, and a
+fresh call after a benign refusal remains usable. Cosmetic bindings do not retire
+a pending target capture. Admission precedes the first offer-specific delivery
+marker or catalog write, not just history visibility.
 
 Command, preparation and history saves remain independent. Already-admitted
 saves may finish truthfully after retirement, publishing matching committed

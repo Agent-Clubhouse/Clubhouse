@@ -37,7 +37,7 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { notifyToolGateChange, onOrchestrationGateChange, isOrchestrationEnabled, isCrossProjectEnabled, orchestrationControl } from './clubhouse-mcp/orchestration-gate';
 import { callerGrants } from './clubhouse-mcp/grant-check';
 import { callTool, setHandoffParticipantCheck } from './clubhouse-mcp/tool-registry';
-import { handoffAgreementCallApproved } from './clubhouse-mcp/handoff-permissions';
+import { handoffAgreementCallApproved, handoffAgreementCallCurrent } from './clubhouse-mcp/handoff-permissions';
 import { withCapacityDeadline } from './handoff-capacity';
 import { HANDOFF_ACTIVE_LIMIT, HANDOFF_PEER_LIMIT, HandoffService, type HandoffAuthorization } from './handoff-service';
 import { HandoffStore } from './handoff-store';
@@ -377,7 +377,8 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
     }
   }
   async verify(): Promise<void> {
-    await this.observations;
+    const observations = this.observations, revision = this.sourceRevision;
+    await observations;
     if (this.source) {
       const current = await callerHandoffSource(this.agentId);
       const rows = await peekDurableConfigs(this.source.project.path);
@@ -386,12 +387,12 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
         || path.resolve(current.worktreeRoot) !== path.resolve(this.source.worktreeRoot)
         || JSON.stringify(current.bounds) !== JSON.stringify(this.source.bounds) || this.agentIdentity(rows) !== this.sourceAgent) this.retire();
     }
-    this.verifiedRevision = this.sourceRevision;
+    this.verifiedRevision = revision;
     this.check();
   }
   admit(record: Handoff): void {
     this.check();
-    if (this.admittedId || !this.selected || !sameHandoffAgent(record.from, this.actor)
+    if (this.admittedId || !this.selected || !handoffAgreementCallCurrent(this.agentId) || !sameHandoffAgent(record.from, this.actor)
       || JSON.stringify(record.to) !== JSON.stringify(this.target)) throw new HandoffAuthorizationChanged();
     this.admittedId = record.id;
   }
