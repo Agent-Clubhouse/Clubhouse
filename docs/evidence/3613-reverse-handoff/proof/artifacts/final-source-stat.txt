@@ -1,0 +1,5 @@
+docs/annex-reverse-routes.md                  |  38 ++-
+ test/annex-v2/annex-reverse-consumers.test.ts |  67 +----
+ test/annex-v2/annex-reverse-handoff.test.ts   | 372 ++++++++++++++++++++++++++
+ test/annex-v2/reverse-desktop-fixture.ts      |  68 +++++
+ 4 files changed, 469 insertions(+), 76 deletions(-)

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="6" failures="0" errors="0" time="3.674099333">
+    <testsuite name="test/annex-v2/annex-reverse-consumers.test.ts" timestamp="2026-11-22T12:27:42.610Z" hostname="Masons-MacBook-Pro-13346.local" tests="1" failures="0" errors="0" skipped="0" time="0.396509583">
+        <testcase classname="test/annex-v2/annex-reverse-consumers.test.ts" name="preserves binary bytes through one forward and retires the whole owned consumer stream" time="0.39596775">
+        </testcase>
+    </testsuite>
+    <testsuite name="test/annex-v2/annex-reverse-handoff.test.ts" timestamp="2026-11-22T12:27:42.610Z" hostname="Masons-MacBook-Pro-13346.local" tests="5" failures="0" errors="0" skipped="0" time="3.27758975">
+        <testcase classname="test/annex-v2/annex-reverse-handoff.test.ts" name="resumes exact agreement-bound bytes after an actual control cut at the fsynced chunk checkpoint" time="1.257297791">
+        </testcase>
+        <testcase classname="test/annex-v2/annex-reverse-handoff.test.ts" name="refuses a retired sender agreement after a durable chunk and leaves another agreement usable" time="0.694427833">
+        </testcase>
+        <testcase classname="test/annex-v2/annex-reverse-handoff.test.ts" name="refuses chunk corruption and removes receiving bytes" time="0.187288125">
+        </testcase>
+        <testcase classname="test/annex-v2/annex-reverse-handoff.test.ts" name="refuses final digest corruption and removes receiving bytes" time="0.233489084">
+        </testcase>
+        <testcase classname="test/annex-v2/annex-reverse-handoff.test.ts" name="never publishes a held old-link reply into a replacement and requires explicit receiver resume" time="0.904346417">
+        </testcase>
+    </testsuite>
+</testsuites>

@@ -1,0 +1,866 @@
+[
+  {
+    "path": "docs/evidence/3613-details-transport/proof/fixture-types-comparison-original.json",
+    "bytes": 19021,
+    "blob": "7eee961ab3ae4ea6ce8c2ae1d9db33d11df57c24",
+    "sha256": "32c082c118fc86a33e1581827250531893d961b24aa848bc33c2a32e1f615a29"
+  },
+  {
+    "path": "docs/evidence/3613-details-transport/proof/fixture-types-config-original.json",
+    "bytes": 114,
+    "blob": "7cae2cff2c1c017cb80ffa126d773499f1e65b5f",
+    "sha256": "5fdead47a3b5fe72d4c9fdcffa7a5070e49ff8bc2393c52441b0c85c408cac5a"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-final-fixture-types-31-receipt.json",
+    "bytes": 4709,
+    "blob": "d568990de7c74e8cad23bec06a8513462c2c9a70",
+    "sha256": "a9d103e3a583ef8cb7ed9ae4f8c6398c130099fe0e8a36b02e7744560c48cc6a"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-fixture-types-08-receipt.json",
+    "bytes": 5213,
+    "blob": "a2704809ff53ee76d4ae8a5746ca653f22c141a0",
+    "sha256": "92d44cf71b2c75ef375586f1557da705e4f05bd22704378caa64123d584f6cd1"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-fixture-types-09-receipt.json",
+    "bytes": 5213,
+    "blob": "7d282f1d87557c1f97fbb1a36800a695348c3719",
+    "sha256": "7a448ba21155c9f921a2341c645d249ff3539121a5426a24a59fecec41303ace"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-frozen-fixture-types-14-receipt.json",
+    "bytes": 4711,
+    "blob": "303b73de703f790cb7dcc4c6c19032bb932f0e07",
+    "sha256": "d73819865fdd7aaa2a118bdd0799be789e65e97d1dd85001df3464c31edbb7b2"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-pair-fixture-types-19-receipt.json",
+    "bytes": 5141,
+    "blob": "b3cd0fe65d0974892986f66ca54bc5273e8d069a",
+    "sha256": "a3591c3b16e63f573759f5c55114158a46a2d11813629a646944f4b1da57bc5c"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-pair-fixture-types-20-receipt.json",
+    "bytes": 5141,
+    "blob": "525f03324c86c234e09db542d50d9e9e84b64621",
+    "sha256": "f31d28b2041d900812b2d60f92f90b1b3d14bbfda16f69f262360111fbac6534"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-r1-final-fixture-types-40-receipt.json",
+    "bytes": 4715,
+    "blob": "3ae0d6c3052a8ec9965cc39b93ac88a6768a2d1b",
+    "sha256": "c2523fe4b43ca822e5edfa6877945f09a782bc351796248943eb0e8f5453b7d3"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-r1-fixture-types-36-receipt.json",
+    "bytes": 4703,
+    "blob": "22207a93539cadd60098d80f59bb5ae7e1e45574",
+    "sha256": "7dc1a3691b1e8d9c9d167104e43ab1ab2ec822830247290fe1c50aeaa80ef8b3"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-r1-owned-batch-fixture-types-50-receipt.json",
+    "bytes": 4727,
+    "blob": "208afa136835dd1d9180f58858c5f01367442b50",
+    "sha256": "1c4317cd391e07901a2fae3a72e9f2be5c7ba9a50386da923160c23d3f1a3590"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-r1-typed-fixture-types-43-receipt.json",
+    "bytes": 4715,
+    "blob": "cf87e9109bd62ff9bed789b392b723899c0a3d24",
+    "sha256": "f4401f5d5dc349bda0db433ca3259960360783885d0886c035d635a625f2cc17"
+  },
+  {
+    "path": "docs/evidence/3613-duplex-consumer-candidate/attempts/remaining-consumers-restored-fixture-types-27-receipt.json",
+    "bytes": 4715,
+    "blob": "df0f65970392bc9d416cca80a2ecb8a78548b0b1",
+    "sha256": "b12e5e5bb89c09a395be4904458281ca31562af56ca6a2c18a7a9671776d5a68"
+  },
+  {
+    "path": "docs/evidence/3613-gitdiff-envelope/attempts/04-full-fixture-baseline-receipt.json",
+    "bytes": 13400,
+    "blob": "f8bc9326487c84936fd6a6fb552038c58090caa9",
+    "sha256": "e0fd21b9e5e93400c13433d07ea3e82d606d38591962acb6c943198e4430bdb7"
+  },
+  {
+    "path": "docs/evidence/3613-gitdiff-envelope/attempts/06-full-fixture-diagnostic-comparison.json",
+    "bytes": 57523,
+    "blob": "9e53b0e25f455e0cb700ed89b161433f4414a524",
+    "sha256": "e5c6c49021108b1bcc368d07345526dc51f37e77a440f506b43039029ba26c71"
+  },
+  {
+    "path": "docs/evidence/3613-gitdiff-envelope/attempts/12-final-fixture-diagnostic-comparison.json",
+    "bytes": 57647,
+    "blob": "d315dc2be5db6f6551f008044b9b09e688d2bca7",
+    "sha256": "1b3ca3f00d487536b41b87f626cf14447623244d8e02230f6f51c985d7476b8f"
+  },
+  {
+    "path": "docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json",
+    "bytes": 471,
+    "blob": "2a1a53557d33b8a9466ac0308de89cbf49a123a1",
+    "sha256": "f02e261ae5e0621eca7b7e2097677ebeb58b16844dd3bfb68fd0e7c1e0740ed7"
+  },
+  {
+    "path": "docs/evidence/3714-route-budget/attempts/06-fixture-types-receipt.json",
+    "bytes": 9452,
+    "blob": "fd513bbbacb078f7080e5cb5bec98d87d3c9bd67",
+    "sha256": "ba30c482e2ae77d51b8d6f19f83cebfbf730a22bf0ac605e5a7363691b44297f"
+  },
+  {
+    "path": "docs/evidence/3714-route-budget/attempts/14-final-fixture-types-receipt.json",
+    "bytes": 9452,
+    "blob": "fdb377d77670940df97508e7ce99a48b04bbe512",
+    "sha256": "f83e1000ed0ee839d20239999184272bae6a07bb9903aa8668636ca764d40403"
+  },
+  {
+    "path": "docs/evidence/3774-phase-observation/attempts/01-fixture-observation-receipt.json",
+    "bytes": 22906,
+    "blob": "6214df03a632e6e9e3138b62a761c11712b03108",
+    "sha256": "8faf83a6d6d0cc95e0050ecc32f577d6bd4154caed41bdbf20272d653cfba661"
+  },
+  {
+    "path": "docs/evidence/3774-phase-observation/attempts/04-restored-fixture-types-receipt.json",
+    "bytes": 22727,
+    "blob": "eee7bfe5868cab7a91f84f5723e8e2ecde1dd026",
+    "sha256": "05b297f48d0e386eecc7f02667061bc18c0498d5d1833343af8439f39c23ba3b"
+  },
+  {
+    "path": "docs/evidence/3774-phase-observation/attempts/05-baseline-fixture-types-receipt.json",
+    "bytes": 22835,
+    "blob": "8ad26f81b926957fad2d0e81dbe1130cc1b2e36d",
+    "sha256": "6839fa4b45e5c5f32742f2310bf2f6eaa74783e449ccf388abd75e185e8a7b83"
+  },
+  {
+    "path": "docs/evidence/3774-phase-observation/attempts/06-typed-fixture-bridge-receipt.json",
+    "bytes": 23478,
+    "blob": "015e49bd04d6481645f0971b0f547003374a2d98",
+    "sha256": "782598ebe50ff9d913b0ae93924e028e26b38a2aab001eeb1a717bf2e2a6f39a"
+  },
+  {
+    "path": "docs/evidence/3774-phase-observation/attempts/07-exact-fixture-lint-receipt.json",
+    "bytes": 23620,
+    "blob": "8b51268f1b5a613aaa09d7a4d2d7463289ae19db",
+    "sha256": "5cf7a9c243b6dc999e8b134d505a2867095519d60b7bdcea6748d7a5de3bab4d"
+  },
+  {
+    "path": "docs/evidence/3774-phase-observation/fixture-tsconfig.json",
+    "bytes": 363,
+    "blob": "5bd0d14e89b8d119c8476d1d1a71a2d8ba1fd5b2",
+    "sha256": "e88f6820cd1109de3e7a83691f46ab4b9cf64e036c814a84fbe6432a4cf39ef5"
+  },
+  {
+    "path": "docs/evidence/3775-checkpoint-idle/artifacts/fixture-types-comparison-original.json",
+    "bytes": 1466,
+    "blob": "126d2a7d59738d39489e3eb19b0334225b63783d",
+    "sha256": "bdfec4c20aba0a91535ea12dd900c84609699eeefd363e69046dcb4dff291048"
+  },
+  {
+    "path": "docs/evidence/3775-checkpoint-idle/artifacts/fixture-types.json",
+    "bytes": 134,
+    "blob": "b89e2d45f97346dc5ce080482479cdd5e3103f15",
+    "sha256": "f96121b20e098b064e78796367cfd42459831eb7e5f42ad1ceebeee97d38e6f1"
+  },
+  {
+    "path": "docs/evidence/q5-runtime-p1/fixture-tsconfig.json",
+    "bytes": 146,
+    "blob": "f28dd8e94811c4ea7bdf4b1c0277313df6d1a605",
+    "sha256": "3b833584d6df0cd9dc24d5365853d5924b6df4d03f20a404f5e5c01e42922e88"
+  },
+  {
+    "path": "docs/evidence/q5-runtime-p1/q5-runtime-p1-diagnostics-fixture-tsc-01-receipt.json",
+    "bytes": 3359,
+    "blob": "f4147197315202a4cc000cb6b8b42b0ffdab06eb",
+    "sha256": "e51db6da3c881e99026f1efb65a3506e56f03294001861000fc3609dacb9847a"
+  },
+  {
+    "path": "docs/fixtures/annex-tracing-v1.json",
+    "bytes": 686,
+    "blob": "00301ee2e7d97bdafccb14b509f9cb9f22d70017",
+    "sha256": "c1cdcd7bed372c864a66daf0e293402a42bc933111ab0d2825b8e9dddeabf7e0"
+  },
+  {
+    "path": "e2e/fixtures/community-plugins/e2e-mcp-tools/manifest.json",
+    "bytes": 682,
+    "blob": "e15ddd96ba753a24652164d2b5eb89d36987d00f",
+    "sha256": "87d4243e3fb931ee89aefcb94cbcad9b9eb0f2a0d31973d450d5b7ad061ce180"
+  },
+  {
+    "path": "e2e/fixtures/community-plugins/e2e-multifile/manifest.json",
+    "bytes": 677,
+    "blob": "8053017f5a6a0a436eff4aa1f70797ff73e15ca0",
+    "sha256": "a5e8fdc9e872ffc951c65cbf220d12013c74780b0ba7b5d922fb773aeefa2d45"
+  },
+  {
+    "path": "src/main/services/framebriar/fixtures/held-reports-v1.json",
+    "bytes": 2372,
+    "blob": "8083353e76165ac56037d7d9b2a6c11d70053554",
+    "sha256": "2458d780eb577f33ba01777d48d71da8648dbb6d76adc1da73540f22d53b3184"
+  },
+  {
+    "path": "src/main/services/framebriar/fixtures/incident-report-v1.json",
+    "bytes": 1035,
+    "blob": "c3e82cb63fdec48db2e56ccf86804cce683d9c87",
+    "sha256": "05b4f69e5c6e3b757986b0e83b73449d31ed0d875b9f4062f81d9599db0db32a"
+  },
+  {
+    "path": "src/shared/__fixtures__/goobers/gaggles.json",
+    "bytes": 1337,
+    "blob": "2cc9378bf32155d62cebb865030b9f8a6a78de2a",
+    "sha256": "9eec5e375d1a4fd70756e71e784c59834869c49b79d2c00e6120de1b873a6e88"
+  },
+  {
+    "path": "src/shared/__fixtures__/goobers/health.json",
+    "bytes": 755,
+    "blob": "64ffb8ed740b7b1aee537425106225574b47c5ea",
+    "sha256": "ba768c0dd4c05eb6809c7f7d262b47516495e471215d1d079716cf71fc5d7c2d"
+  },
+  {
+    "path": "src/shared/__fixtures__/goobers/instance.json",
+    "bytes": 674,
+    "blob": "ef1ae438217f401d17f56095ffb0e427d71d8c15",
+    "sha256": "6f07bbfaeb4ee6931a729753786c3340c8091798e740f3582b3f8ccf88369ee6"
+  },
+  {
+    "path": "src/shared/fixtures/annex-member-names-v1.json",
+    "bytes": 15061,
+    "blob": "2f487a7b72fea4f61e39725ba0a1de572239b330",
+    "sha256": "81fb6abb1a824ed2b594e46154d7d25ac5d7576fcedbc0d0520a054a3d4f13b1"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/agent-address.json",
+    "bytes": 566,
+    "blob": "db11ea450050a2ea0bf2c86d3f1299cdbb2478e8",
+    "sha256": "9eaa8ebcb4425e6f9447f08c540134e78413b277f4d91e40b9bde0f8164d1907"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/agent-settings-context-window.json",
+    "bytes": 9101,
+    "blob": "b408f2d4581821b7a6cb685a48f7320add6331ac",
+    "sha256": "149bcec6a10c05c41d3238839a1c3a5c10b0a83337b9a2037480adb8750f7cbf"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/agent-settings-dispatcher.json",
+    "bytes": 8254,
+    "blob": "62d1d9a5478fa7b9405edfdf17bb6646820aeadb",
+    "sha256": "9d3142f54ee29643475719d400b4cd8b780c59019fccc1e44bff431b31471127"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/agent-settings-errors.json",
+    "bytes": 235,
+    "blob": "d4b4fef693cc0295c30720a9d2aed937686374c7",
+    "sha256": "cdc1ae1776242f2d9cb4bac962fad6573350a62b223f7fa574a463c12a821aff"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/agent-settings-helper.json",
+    "bytes": 8873,
+    "blob": "89c1e74415438d3552b256cb12935a2305d2c26d",
+    "sha256": "dba64b50b219e5ab63cfca0450d8c57b77edf658ce45a93abfc45d3a0b63fdba"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/agent-settings-running.json",
+    "bytes": 8884,
+    "blob": "3bca08128613a48c82cb4e34dfbe738becd803c2",
+    "sha256": "2fab91b523b43ff86cbc9dcfc13ba3f092141834d41ca7e3d53dfae2bbea6c4f"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/agent-settings.json",
+    "bytes": 8869,
+    "blob": "b2bbf29a613c6b9703bab9ac2875aff2f0b7601a",
+    "sha256": "7ac31ef62aaee7126a4ce339003797d12591ee23ea743e1f7ac57ca3c1d4b9d2"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/agent-sleep.json",
+    "bytes": 475,
+    "blob": "7617eeb69a4ef3c965ef04528746886017539f52",
+    "sha256": "3bc35928056547db1d4389a30ad162f8b62385e229b7e0ac11b8bae332c9b470"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/agent-state.json",
+    "bytes": 3317,
+    "blob": "2f4992f63ff30468beb7265743ea50a3846665ea",
+    "sha256": "eb5a4921c4d54352b78c1109b4ff0a49a3520469d86721f93048661aabc26c08"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/app-update-check-events.json",
+    "bytes": 1615,
+    "blob": "c675d94864fefb51b9f089914539410ab21019c9",
+    "sha256": "f06ec955807de1dd9523678366f4cd28fa453ef1256434c07528cbc3aed45a33"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/app-update-events.json",
+    "bytes": 4585,
+    "blob": "8ac1dad7f49748636830e83a3514ab3287b63f7f",
+    "sha256": "6451d7d4d7984b09f8e100a22f8aa674bb251f32ed36f191c67752dd8e81a81a"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/app-update-statuses.json",
+    "bytes": 3193,
+    "blob": "ecc22fccbbe441a2597a7cb2b69920674f8f4483",
+    "sha256": "035d87e7e7e231b47497e2fea4e1e6c1375d72d026537022439743eaa5956abf"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/attachments.json",
+    "bytes": 5453,
+    "blob": "bf85bb9c8d1096adc252b46d4b90bdaa92586fd1",
+    "sha256": "43543ec7bddfdacc654ca5264df44d585e19c12d7a9004ce1567a1b6b1e839be"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/canvas-route.json",
+    "bytes": 1282,
+    "blob": "a093a7c0cb63191d41c67a6d80991295ef9dff9a",
+    "sha256": "128c2a1db9627a24428a8cd40166ab5504b54729b0f0adb23c47e9d837233ec3"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/capabilities.json",
+    "bytes": 10359,
+    "blob": "ce887c015e2d1272e970d339f60d8dd9a89b4b2c",
+    "sha256": "66c96e8120f805f22a7c9f16258339398560c6f3e04182cbfdfcbef50f71b3c9"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-event-tool-call-preview.json",
+    "bytes": 1304,
+    "blob": "a2ec51d9e9eb95a44d82cd3c37cdf1ba68c7eb85",
+    "sha256": "fd5e93aa64c3107ac6a0c18f692b9aa146ead1ec1802b1a3630c81f54a948f2d"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-event-tool-output-preview.json",
+    "bytes": 1054,
+    "blob": "b75b7f14e35f1a73b744404755b7fc4a6a246695",
+    "sha256": "b2e2f781189f8ed614fee80dc1298aea9bf9d47eaf1f0e4605de7f6a61c70023"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-events.json",
+    "bytes": 24578,
+    "blob": "a054ac3e3f309bd6f1e5ea4db98a591a5d7fc2e4",
+    "sha256": "dd0646410ef35d9e59c499056658faeb90d5bba29a27f14434c3193f01fb20b8"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-full-event.json",
+    "bytes": 4536,
+    "blob": "5a05567435dbab81a19fcfbf002ca094bd39b21b",
+    "sha256": "33d544fdb0da7a166aa58953464752a44349f0d367068f2758a706fe9698ef20"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-links.json",
+    "bytes": 3877,
+    "blob": "7b06dd637a5d1f9e8d483adf6d98e17b12572d7f",
+    "sha256": "f9d7282aafa31f49c124a73638e2317309dbe1a890dc5d4df588e4394697af51"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-page.json",
+    "bytes": 6181,
+    "blob": "00b94bdff4839f1e3ce5a4a424fdd6db02d3d17f",
+    "sha256": "f2f1002ddf26e2df932c1d264d1311dabda7465efdbb0fb25630fc32adb0ae50"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-pages.json",
+    "bytes": 6554,
+    "blob": "4f07d630ae02321e35e21d705ae228e00ac26393",
+    "sha256": "8128e617f308ac4eed524fe261b8b34fbecbf6e201063d848d7ac24dcec7faee"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-permission-incomplete.json",
+    "bytes": 2252,
+    "blob": "4062a3c749d4b093128db61ba44e948f94b8ee4b",
+    "sha256": "2b699ae969438c91567d07ce28fa9d7c37f80230e3993b464cbec97b03e28f9d"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-sessions.json",
+    "bytes": 851,
+    "blob": "7a36ebeafc80a10303be0a89e7722d43193c2b0e",
+    "sha256": "e868bad80bfbccf1b95bcb928553f6abbca62380f75a24d9bf8d0ac0f64202b8"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-snapshot-errors.json",
+    "bytes": 469,
+    "blob": "103ce598e34c64957b8a41f1c00ce961998a6a13",
+    "sha256": "0a05de05da5d6d6582f740d3f0e80fc82d1f2a9daf517c4cf3dbd4a23c03c4a6"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-snapshot-sleeping.json",
+    "bytes": 1946,
+    "blob": "a3a5fa9c9b305d3137ed26133d6a7a5d9210c7f2",
+    "sha256": "79fb87b3fc03187228882080ce6a4dcf9351ec88161291039fd7c353e100bcc3"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-snapshot.json",
+    "bytes": 13380,
+    "blob": "671f4911df5197f27eb82c3e7161d416f1df9ba6",
+    "sha256": "41aaca08b94b89e514b92d657b3914e4ec7f506cbe7360978162865c503a7f46"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/chat-start-model.json",
+    "bytes": 20553,
+    "blob": "1dde422f28941a67b4aabe7e79e44b4198fdd34c",
+    "sha256": "b5681e2bb5f6a5daa3a82b6a524fde09ad97444e1fa2203861d0aee366c5e025"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/command-too-large.json",
+    "bytes": 1049,
+    "blob": "2f44f6c29f4eb3e8d1b22f2b3344516fbd2719be",
+    "sha256": "6429cc93b0fd4b9577929db541c42e73d7bd870703b2bba624e0eaaf9c055ad1"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/_common.json",
+    "bytes": 6796,
+    "blob": "43bb0829992f45c6020d65f8e4c7a76972b24d18",
+    "sha256": "822595fd115a2b4218bcca14a81e2b88a6ed230e70a8baec890f3d3160b805c1"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/_fields.json",
+    "bytes": 6518,
+    "blob": "cd7de7771f6361c0f562e6ff1466f9791be104f9",
+    "sha256": "33728ba9665e905758dac465f391609fabcc887fb59e42f417eb67a9ae9ce377"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/agent.create.json",
+    "bytes": 28730,
+    "blob": "a11f7c1abf1d0c3bca7ee7eae7862295304f397e",
+    "sha256": "de49a0611de5b89c006ca46753a09d5bf5c959b9ba3d82ac78f46edd66930c3e"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/agent.providerChange.json",
+    "bytes": 2981,
+    "blob": "a214bfd1c02091e2ae459fcfad071a77f0c19215",
+    "sha256": "63289a407276aca71e9b6ace82dbce8ffeadb3d39c10c04e637a3dd6bbba4050"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/agent.providerPreview.json",
+    "bytes": 4379,
+    "blob": "64e1ec253b12e357c3e25bd74ea0ced8614ed557",
+    "sha256": "7ef55f444999c279e0bd12b52644d8472225fe62e69817cdb855818a2d3352f1"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/agent.spawn.json",
+    "bytes": 2048,
+    "blob": "d29042da1e81a4483a22ee7b8868e8970a391763",
+    "sha256": "84f8764fa4bdf24da6011903d95538fd2d8c89fd450900e88a7ddd077539a278"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/agent.start.json",
+    "bytes": 5137,
+    "blob": "28e42b87f86d5ff8a04b90dcc96a85e295c93b50",
+    "sha256": "42207b898640cbc84453319df91302706214cd5b3e77bd32292fe4d4b139fbb4"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/agent.stop.json",
+    "bytes": 3760,
+    "blob": "eb23c24e0a493f351fbdf3922464b017b9192256",
+    "sha256": "e95baa00d2fa82c6734993726b36f8c486b09c80925c79f5b540275bd35cb3a9"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/agent.update.json",
+    "bytes": 155136,
+    "blob": "330cda6befa2248cf3711623a4243e4be6e079c0",
+    "sha256": "8de718ee973fa135ac219307532c3b12257cdaedd7b3e72b8ffdc241d614db21"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/app.update.cancel.json",
+    "bytes": 2787,
+    "blob": "9788020f682d23d5db1e52dae743c71b30ca8586",
+    "sha256": "01436dd81da37d2beee8e3281d29af35dddcb87d2f8226a09435bca5f5edde2e"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/app.update.check.json",
+    "bytes": 5519,
+    "blob": "e6d92ab0821cf5c9c2d1b2d2645dfbcaf662cdfc",
+    "sha256": "c103c431b0d9b237b0509a5338719d839b759d15391d2f8139cea918f7b45acf"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/app.update.request.json",
+    "bytes": 4798,
+    "blob": "8d6f2d28f7b437b37a60c510f36e1cb1371b8c11",
+    "sha256": "b811c9a9dc0d90671dd5273758c7272578814b718cbc40ab8cf4f198355ef436"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/chat.interrupt.json",
+    "bytes": 1231,
+    "blob": "d8c490dcb037215ee496c5042a39c27ec55d13a6",
+    "sha256": "8c122479b0332004b0708fb52bfafc58539486b68e03692c968e1554a335d991"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/chat.permission.json",
+    "bytes": 2126,
+    "blob": "829fbe2209aa6da205518eb7a6ea075207faf3cc",
+    "sha256": "4bfacd613ff163c1187d602f2361edb2e13d283dbc8b112b239c8b553920ddc8"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/chat.question.json",
+    "bytes": 3586,
+    "blob": "d81ab8822b5abf39c8316370d55e4d92a43eacdc",
+    "sha256": "532de580da309e1ef5d72b902b1008d35920517c1c6899d7b4bed2f1e0a7af8f"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/chat.queue.remove.json",
+    "bytes": 1433,
+    "blob": "5f8e95434a720d34c819f4f407803a82508b4469",
+    "sha256": "f435b94da75bb3f8103f1d3e79f5260a1fbd0853637d4f1e90efd9cf67c862b8"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/chat.send.json",
+    "bytes": 6761,
+    "blob": "607bb0e8eb56ee3ac62137e7ca13242c2219b77d",
+    "sha256": "03e9d882beec405d13ba9974f645698d82510df1989e19d6b378832d6ed3057e"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/chat.setLevel.json",
+    "bytes": 3279,
+    "blob": "a07bd9eb0d2c2bf1ba0dcd69ce8f820e69db1682",
+    "sha256": "ffcef29284b7ee32aef5cad74641dba1432681a4950827afc9b8ab1969f45bfa"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/chat.setModel.json",
+    "bytes": 5491,
+    "blob": "f6a2ff80b67585454d2ae87bd9693012a66aaa10",
+    "sha256": "574dc596d4d1913a5d9bd8fd87b8e5ca064cec02a20959b3c1bf6da350a9869e"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/dispatcher.clearChat.json",
+    "bytes": 3276,
+    "blob": "b2f3a0ffc6dfc370f68b8dbb2017cb5d23ace15d",
+    "sha256": "07bee692a6cabbda63da423e54b7f6585d2e019e88d43e13d91792a6e132957b"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/dispatcher.forgetEverything.json",
+    "bytes": 3327,
+    "blob": "33c70df21c1cdbb67d39237fc2066a0171fa093c",
+    "sha256": "3424688f0cfa75824f48d1d2368baec8d116faa8cc4bf66efb497c4909e013d3"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/dispatcher.setEnabled.json",
+    "bytes": 2696,
+    "blob": "b88a5cdefeb347323cf114bf1bd3330de053962f",
+    "sha256": "a4c4351661bb97f7f5aa32df6b96c05776076b68499e3c707d07f4d08ce34bba"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/dispatcher.setModels.json",
+    "bytes": 21776,
+    "blob": "cd9f3ed0494c760d67a61c460490d4e47a58e512",
+    "sha256": "845a182774e4a6e6b70a33696ba82c5b7c57fb66fc536077dedfd212adc90508"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/dispatcher.update.json",
+    "bytes": 16922,
+    "blob": "95c66b0e409c82725d6286032837030550f8da35",
+    "sha256": "5089bdb00ffd0011ad779db68e70589098cfa753e72842b944c7c66180480855"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/grant.answer.json",
+    "bytes": 9624,
+    "blob": "8803de41af0e89d2d15dca228afa5648cb9ded40",
+    "sha256": "a74d6589dfc8c3fac46cc766360a35c498fecfe72450270f71da4b95829dd3c8"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/helper.approve.json",
+    "bytes": 11726,
+    "blob": "d3723fe4602b8f314d2b79fd4c181a1875834de0",
+    "sha256": "f90523d4edea62c32394e5ea8f796030a19c437abaa826569c3c3e5b47c74763"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/helper.decline.json",
+    "bytes": 2036,
+    "blob": "e2b4767137375c203d119bae061bc1651be7f49c",
+    "sha256": "817623b9a8965fcaeab303a71332cace0f0e77e4535c3a9f940941fc297afa59"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/helperRouting.update.json",
+    "bytes": 254422,
+    "blob": "8625c80d7d4c702b370011569f7ea59b0f6b592e",
+    "sha256": "3bba56ad1da7d1e0498432318652f70b982ae767ee934b9b942f67ab3d8f6260"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/project.setInactive.json",
+    "bytes": 3418,
+    "blob": "6fdd155d8db3a8279740721375c412eadd0de9ef",
+    "sha256": "c7ca7bcfdcff2badfef4717b26ef954237c252b5dab9813aa0383dac0bf6fcab"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/project.setPinned.json",
+    "bytes": 3500,
+    "blob": "c28187e11bbd16865c515d073828a62af1e070e6",
+    "sha256": "014af2f34fb534c20fa0c4084b9c773e8d9650ad4371195fa13fe72f6f062746"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/quick.clear.json",
+    "bytes": 1861,
+    "blob": "cd27689ed58d2e6d429b5963cfdc98e4692f7f73",
+    "sha256": "1a71d3f322cbcfd72fb16991358678d08fe6924148942c5743fdac994b9ef87b"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/commands/quick.dismiss.json",
+    "bytes": 3232,
+    "blob": "64684d822febf0cf950efc9b711021da27d9e2ea",
+    "sha256": "9c4dee70185f259a96e60f02d04be9c1cdc1bf2005dd8c7caef37a1d04eef643"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/create-options-errors.json",
+    "bytes": 247,
+    "blob": "24d87578118343a8cd35bd014d2f80ef602fb886",
+    "sha256": "72c31f811b2989071ba4d6797dc943efe4a90edbea823c50f1ea5a6f08501486"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/create-options.json",
+    "bytes": 4350,
+    "blob": "19c822a369916022423d0c513def12ee88948945",
+    "sha256": "2a53c0585f2a5722dc9de797439b50ee6cdc3d65cec2754e3b309db592f21a0e"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/dispatcher-changed.json",
+    "bytes": 537,
+    "blob": "77174e1417fc8e8e258417efac803c4814564204",
+    "sha256": "5406c151cb4c5f446a494e746aa6a342af14729eccd55a18a8401e3e7b470a7f"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/dispatcher-group-chat.json",
+    "bytes": 27556,
+    "blob": "6dd4c54130c764cbc8ec46ee55dbcf1285e05f47",
+    "sha256": "959bd48de118aa6642931ffeddf69627b89c1789f6ce15080b2456515a9d16c8"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/dispatcher-off-routes.json",
+    "bytes": 10101,
+    "blob": "eaf1ca51376ccb1d9d68c8c6c6c5c5061e049251",
+    "sha256": "0d71b9c6d9c6043746d52eb2841a8eafe7b5155bcccd2b5667d1730d9243df04"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/dispatcher-off-states.json",
+    "bytes": 7180,
+    "blob": "e53b799d96a9e21e9863287cd0f01fdca2629e9a",
+    "sha256": "d5490def483fb9bfcbf63c89838f290d63a10f4d060cb4061251c40aa7bfb9d4"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/dispatcher-requests.json",
+    "bytes": 7066,
+    "blob": "be6a9664197ace2e820b8d9f06b6138d040b2ee2",
+    "sha256": "c8ff652a3bf60617eb30095799c5b66f9fa7ce2fa331a096ab370685df8b2cbe"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/dispatcher-routes.json",
+    "bytes": 2460,
+    "blob": "a42ad108552f91a8dbb79d2b59a0afa3f4334c20",
+    "sha256": "c12fa98cbe6829cd1d9f181e3713cd697355820a1848da11b53d5617c32af423"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/dispatcher-settings.json",
+    "bytes": 11899,
+    "blob": "f90cf14df679582a03493f2d2cc134ee7ea1d02a",
+    "sha256": "b6cd8206c16050d990bc2fd4d05225edc4d67519d8d7d6fb5674013698a43624"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/frames-over-limit.json",
+    "bytes": 1051,
+    "blob": "540960b7521b590be48c885711ec9993ba4b33dc",
+    "sha256": "5c5164ac10fb2545aed3e9e3f1e92a08f9e16ab8653964ea3f84bf7079b9e1cb"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/grant-request-events.json",
+    "bytes": 1180,
+    "blob": "7c4e001a80da6cb908fd4e051c5ca987dcc38b91",
+    "sha256": "8e4a5fdb6756e4274320a7edccc99d24e8c06c8920ae87ecd1ed79a48dbfe4b6"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/helper-routing-auto.json",
+    "bytes": 13972,
+    "blob": "c83254352f51843e9f120f2df3a698f498aff3c4",
+    "sha256": "541286ee1ba05ea8523451f900225b355e9be295937d776d7766fdc17eeef227"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/helper-routing-changed.json",
+    "bytes": 179,
+    "blob": "c9d8029a3a867a5827c3adafa368242ebee4a77d",
+    "sha256": "ebe85fcb73b1395061a6e6566f8d3d7260cf9d924696a3e725d44c136a4b52b0"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/helper-routing-helper.json",
+    "bytes": 5470,
+    "blob": "7e067dbda6c3da0bdcb092541404507aee35acbd",
+    "sha256": "fdc7d1ec833e4162ec626aba70a8870826eb7d83d987410a6cff6be3d512bf23"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/helper-routing-quota.json",
+    "bytes": 29157,
+    "blob": "89cc7f29aa49a50a3f384e8dbc450d1ce0564000",
+    "sha256": "ac99f98c6ec40101122ddd38d1410db8a6d9591c0291e92134ab275593f105d0"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/helper-routing.json",
+    "bytes": 166603,
+    "blob": "730f08568d7848a49e10b8151047b10a29f58e8d",
+    "sha256": "20a89b60cdafdb59915569ade9d7ccf48d702c5c991e37acbd44785c8155e7eb"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/icon-images.json",
+    "bytes": 1657,
+    "blob": "7a3e38ef5dc2a4d165b2f790dd22f27021a59590",
+    "sha256": "06e4474c2075db55847d8d9f2015ccd0c1ea092bc80bc515d85909850814749e"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/icon-refs-cases.json",
+    "bytes": 6723,
+    "blob": "ca57c2f2b9909c27d2c320302f0823da2555d8f0",
+    "sha256": "5fee407f2d7c31e19f6e9991fa863e5491d4c797751622f60487256a2cd3a1ea"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/icon-route.json",
+    "bytes": 2811,
+    "blob": "bfa61b45b4c613ca227c3aec2c4d669f5799846f",
+    "sha256": "cf6857b0089c6736f8752c98cfedd6e31a103671b6a0325255dc6afb0f836e5b"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/index.json",
+    "bytes": 3315,
+    "blob": "034fc2092d36d949c477dc3cc09496c6a102262e",
+    "sha256": "8ffb67aeb462eb4b9150945314fa255df48bcd74ce0b7e8c28b5c128456eb538"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/linked-project-state.json",
+    "bytes": 19055,
+    "blob": "0d065eca8ef27aaacebbfea5058be3d243094131",
+    "sha256": "abfac2c12616cd53b1cc64a4864429b3c9ed1d12a5f9b718022062142a02bd1f"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/network-changed.json",
+    "bytes": 2555,
+    "blob": "26effb7f9d1c39b815e2ad8eaf1e952409bec001",
+    "sha256": "3d646fa4ce647f8b9502fc0f54b241b7b9be55e5a178b9e381930ea950e47ba9"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/network-list.json",
+    "bytes": 3833,
+    "blob": "fa17d4a61c157b9eaaf839cc25ff81977ec841b0",
+    "sha256": "73884139cdd024f6543c2b6a8d380325957c59b170880a4a4eb7ddc4aa0cc473"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/network-members.json",
+    "bytes": 4908,
+    "blob": "12ffb8611f36513143892dcea2c00a933bc224ed",
+    "sha256": "9c78b3555beea262cba735507d57ac0912b690cf87665e9560fd25cfebefeb51"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/network-pairing.json",
+    "bytes": 1027,
+    "blob": "78be32883ade62c794494b4165a71cd13c906134",
+    "sha256": "17566ab889f9579a8c04a1e52fe265e37e8ecac1e9fdfe1870e962e4e30520f8"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/pairing-revoke.json",
+    "bytes": 239,
+    "blob": "376024ae76ca3b80e0ffa3fadf722ca2a1d173ec",
+    "sha256": "0787d963912257d99d32fa398ad0f35a4a9c3465741a74a6c1cc0a3f8c70cb02"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/pairing.json",
+    "bytes": 750,
+    "blob": "0cddfa9d95e0acb3e5e1969429d550d20c65f3fd",
+    "sha256": "8feaeb899c490c04cfa632fe7f353913642a0eb345e9e7d59540bcc6ab4f4e7a"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/project-links.json",
+    "bytes": 3667,
+    "blob": "e0488eb20d0995079b5eb29d0394091e95038a0e",
+    "sha256": "c76129240021e76d3f7890af313b8fc5cf6fcb20777c13fa8aeb771271556aa4"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/provider-control-v2.json",
+    "bytes": 291947,
+    "blob": "06e9ca9fd722041cafafcd27729bb65a86d075ba",
+    "sha256": "f512053386a79173a8fb638637d761435a7f65ddea9f578668b4a20b9f8ccce5"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/pty.json",
+    "bytes": 9569,
+    "blob": "960aee0c214044d5955ec5e0747daba2c6a30b46",
+    "sha256": "cf6430902f9488599c7dd662eb03e939e1921b655480b5f1857c82cd0b0512b1"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/queued-bursts.json",
+    "bytes": 16875,
+    "blob": "7cac47ee0e0958c8825a9c21e540c858f547bf61",
+    "sha256": "d682d8f647eb1ef08f265d724a9a51c3cb77dab6f06eb64dc2089978278d4fdc"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/replay.json",
+    "bytes": 1882,
+    "blob": "352e01b0f5513e694298e1b820f182bc3591c3ff",
+    "sha256": "acf7c7bc159527d3065611b11d9c020ce3db417413bb08a1b20266012a2f8c1b"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/rest-catalog.json",
+    "bytes": 10450,
+    "blob": "97ced8d8554f338691451edd6121b364c74c591a",
+    "sha256": "1083d2174366b6f27de52f39c28662bd1441c3a32eda5acd89d8593f93a82653"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/sender-identity.json",
+    "bytes": 81009,
+    "blob": "91dc500343ac50ae4d9a3844a2ce75b367526eba",
+    "sha256": "6c35ed270d52e0ca022351c3ec963a0279cf51c71ef9981de435c3a74651cb46"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/snapshot-app-update-approval.json",
+    "bytes": 1607,
+    "blob": "0daa92cc471212650ee8a113ae2b04a7f4ea3050",
+    "sha256": "a6b0e3bbc99d5920ac58a638508c7922eeeefa37f22dd297f1bf984d5ef82915"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/snapshot-dispatcher.json",
+    "bytes": 1086,
+    "blob": "e57779c36ec8355262f4d6e57dcf27afff3862c9",
+    "sha256": "b1c4578199cc56a614b439886f366cfdbf0f0d8ad586f39f511ca79129fc0ca9"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/snapshot-grant-requests.json",
+    "bytes": 2035,
+    "blob": "2b1fd0d4378ac6a766ccc3d8206093e1b7dd58a2",
+    "sha256": "4f7e2f07ead916a5d6457f4b69d6727897198b7f1934927bb6196c7371c7a87d"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/snapshot-helper-requests.json",
+    "bytes": 1562,
+    "blob": "82845fc7a50bc6b376bb6045691a6eeee5f7e02e",
+    "sha256": "9f04494d870dab328ac3a58cf1d21fad64f2f456d6072a4e50f36bad9d8bcd90"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/snapshot-icon-refs-changed.json",
+    "bytes": 564,
+    "blob": "0f27d819828076b9911d9625b020b32945470c5c",
+    "sha256": "6a543f77d63da1bf44763cb6c1912b6897ce2af711ebabb93fd960d5b542290a"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/snapshot-icon-refs.json",
+    "bytes": 1189,
+    "blob": "be4153be86786b3ff6843d8facb28dc60b00dd88",
+    "sha256": "936c6a1335355d42f73702beee9e73f8fc6127fb89ae651d4dfa9c3b2079c7a5"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/snapshot-truncated.json",
+    "bytes": 388,
+    "blob": "f1d9d1c2cf068efcf8b4a187d3f9fb52d571241b",
+    "sha256": "e9ee486e14776d376c447beb57f98cb28ef8370bd3f9800798b83986bf3e8c1d"
+  },
+  {
+    "path": "test/fixtures/annex-mobile/snapshot.json",
+    "bytes": 15957,
+    "blob": "ae7061145565c77ef444859471cf92f0ebf0f678",
+    "sha256": "5d1f727de11d2b7c7933a78093f7bb842498a12e4c8e2a550449ac34115109e1"
+  },
+  {
+    "path": "test/fixtures/dispatcher-federation/legacy-depth-trip.json",
+    "bytes": 4015,
+    "blob": "97f0b1c79c5fe3ba0013af86e3efaa621ecbe08e",
+    "sha256": "f63bccde0dc4e244ae5654e47f7320ebfd1b9967ca26373f457db8b9717338b6"
+  },
+  {
+    "path": "test/fixtures/dispatcher-federation/legacy-resource-trips.json",
+    "bytes": 5119,
+    "blob": "7b6719f40e7005c6d4e6b923247e0d7351efcf45",
+    "sha256": "73020b2387f8848e1fc8cde1898c6c10375e8f8e471e90dc45e208e9d5b8a74a"
+  },
+  {
+    "path": "test/fixtures/provider-control-v1-capabilities.json",
+    "bytes": 9029,
+    "blob": "6fb608b9eba38f42e7fdb5b697b377bd0bb4b9e9",
+    "sha256": "0dace08deb0cdc38f95616f6469877d7f5897d5dbb6d534ac8041d03cde2faa3"
+  }
+]
