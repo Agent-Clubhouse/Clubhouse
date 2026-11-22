@@ -1207,6 +1207,9 @@ describe('annex-client', () => {
         frame(socket, 1, `${fingerprint}-before`);
         expect(annexClient.isMachineConnected(fingerprint)).toBe(true);
         expect(annexClient.getSatellite(fingerprint)?.snapshot?.projects).toEqual([{ id: `${fingerprint}-before` }]);
+        expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX_CLIENT.SATELLITE_EVENT, expect.objectContaining({
+          satelliteId: fingerprint, type: 'snapshot',
+        }));
         expect(annexClient.sendToSatellite(fingerprint, { type: 'ping' })).toEqual({ sent: true });
         expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'ping' }));
       }
@@ -1239,7 +1242,7 @@ describe('annex-client', () => {
       await vi.advanceTimersByTimeAsync(120_000);
       expect({
         retired: observed,
-        lateEvents: vi.mocked(broadcastToAllWindows).mock.calls.filter(([event]) => event === IPC.ANNEX.SATELLITE_EVENT),
+        lateEvents: vi.mocked(broadcastToAllWindows).mock.calls.filter(([event]) => event === IPC.ANNEX_CLIENT.SATELLITE_EVENT),
         dials: WebSocketMock.mock.calls.length,
         retainedRemoved: removed.filter((fingerprint) => annexClient.getSatellite(fingerprint) !== null),
       }).toEqual({
