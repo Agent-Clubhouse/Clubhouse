@@ -1,0 +1,1269 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-11-22T22:36:27.559882+00:00",
+  "source": "76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2",
+  "sourceTree": "0526a2a05866a683981805b546365aaf3b98af69",
+  "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+  "publicationRef": "refs/heads/lane-3613-p2-routes/handoff-producer-ci-failure-45075711451",
+  "run": 45075711451,
+  "attempt": 1,
+  "event": "pull_request",
+  "conclusion": "failure",
+  "jobCounts": {
+    "success": 31,
+    "skipped": 4,
+    "failure": 2
+  },
+  "failedJobs": [
+    {
+      "id": 137372416601,
+      "name": "Unit + Component Tests (windows-latest, 1/2)",
+      "conclusion": "failure",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45075711451/job/137372416601"
+    },
+    {
+      "id": 137374914002,
+      "name": "Chat E2E Tests (windows-2022, 1/3)",
+      "conclusion": "failure",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45075711451/job/137374914002"
+    }
+  ],
+  "checkout": [
+    {
+      "job": "Plan the run",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 694,
+      "resultLine": 695
+    },
+    {
+      "job": "ESLint (errors only)",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 941,
+      "resultLine": 942
+    },
+    {
+      "job": "Unit + Component Tests (windows-latest, 1/2)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 5584,
+      "resultLine": 5585
+    },
+    {
+      "job": "Typecheck + API surface",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 62799,
+      "resultLine": 62800
+    },
+    {
+      "job": "Workflow lint (actionlint)",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 63087,
+      "resultLine": 63088
+    },
+    {
+      "job": "Unit + Component Tests (windows-latest, 2/2)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 63340,
+      "resultLine": 63341
+    },
+    {
+      "job": "Codex app-server schema drift",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 81593,
+      "resultLine": 81594
+    },
+    {
+      "job": "Build app (ubuntu-latest)",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 81787,
+      "resultLine": 81788
+    },
+    {
+      "job": "Unit + Component Tests (ubuntu-latest, 1/2)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 82121,
+      "resultLine": 82122
+    },
+    {
+      "job": "Copilot SDK chunk (windows-2022)",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 137491,
+      "resultLine": 137492
+    },
+    {
+      "job": "Unit + Component Tests (ubuntu-latest, 2/2)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 137805,
+      "resultLine": 137806
+    },
+    {
+      "job": "Copilot SDK chunk (ubuntu-latest)",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 155542,
+      "resultLine": 155543
+    },
+    {
+      "job": "Build app (windows-2022)",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 159530,
+      "resultLine": 159531
+    },
+    {
+      "job": "Classic layout E2E Tests (ubuntu-latest, 1/1)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 159929,
+      "resultLine": 159930
+    },
+    {
+      "job": "E2E Tests (ubuntu-latest, 1/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 160423,
+      "resultLine": 160424
+    },
+    {
+      "job": "Stable-mode E2E Tests (windows-2022)",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 160997,
+      "resultLine": 160998
+    },
+    {
+      "job": "Classic layout E2E Tests (windows-2022, 1/1)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 161556,
+      "resultLine": 161557
+    },
+    {
+      "job": "E2E Tests (ubuntu-latest, 2/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 162057,
+      "resultLine": 162058
+    },
+    {
+      "job": "Annex E2E Tests (windows-2022, 1/2)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 162722,
+      "resultLine": 162723
+    },
+    {
+      "job": "Annex E2E Tests (windows-2022, 2/2)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 163402,
+      "resultLine": 163403
+    },
+    {
+      "job": "E2E Tests (windows-2022, 1/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 164058,
+      "resultLine": 164059
+    },
+    {
+      "job": "Stable-mode E2E Tests (ubuntu-latest)",
+      "step": "Run actions/checkout@v7",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 164654,
+      "resultLine": 164655
+    },
+    {
+      "job": "Annex E2E Tests (ubuntu-latest, 1/2)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 165190,
+      "resultLine": 165191
+    },
+    {
+      "job": "Annex E2E Tests (ubuntu-latest, 2/2)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 165856,
+      "resultLine": 165857
+    },
+    {
+      "job": "E2E Tests (windows-2022, 3/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 166505,
+      "resultLine": 166506
+    },
+    {
+      "job": "E2E Tests (ubuntu-latest, 3/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 167115,
+      "resultLine": 167116
+    },
+    {
+      "job": "Chat E2E Tests (ubuntu-latest, 1/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 167700,
+      "resultLine": 167701
+    },
+    {
+      "job": "Chat E2E Tests (windows-2022, 2/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 168220,
+      "resultLine": 168221
+    },
+    {
+      "job": "Chat E2E Tests (ubuntu-latest, 3/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 168792,
+      "resultLine": 168793
+    },
+    {
+      "job": "Chat E2E Tests (ubuntu-latest, 2/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 169328,
+      "resultLine": 169329
+    },
+    {
+      "job": "Chat E2E Tests (windows-2022, 3/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 169869,
+      "resultLine": 169870
+    },
+    {
+      "job": "Chat E2E Tests (windows-2022, 1/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 170425,
+      "resultLine": 170426
+    },
+    {
+      "job": "E2E Tests (windows-2022, 2/3)",
+      "step": "UNKNOWN STEP",
+      "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "commandLine": 171063,
+      "resultLine": 171064
+    }
+  ],
+  "checkoutSources": [
+    {
+      "checkout": "f2a25a9272bd1bc0b832393731525e354aba7144",
+      "tree": "0526a2a05866a683981805b546365aaf3b98af69",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "fullApprovedTreeMatch": true,
+      "approvedSrcMatch": true
+    }
+  ],
+  "unitCheckoutCoverage": [
+    {
+      "id": 137372416601,
+      "name": "Unit + Component Tests (windows-latest, 1/2)",
+      "witnesses": [
+        {
+          "job": "Unit + Component Tests (windows-latest, 1/2)",
+          "step": "UNKNOWN STEP",
+          "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+          "commandLine": 5584,
+          "resultLine": 5585
+        }
+      ]
+    },
+    {
+      "id": 137372416614,
+      "name": "Unit + Component Tests (windows-latest, 2/2)",
+      "witnesses": [
+        {
+          "job": "Unit + Component Tests (windows-latest, 2/2)",
+          "step": "UNKNOWN STEP",
+          "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+          "commandLine": 63340,
+          "resultLine": 63341
+        }
+      ]
+    },
+    {
+      "id": 137372416643,
+      "name": "Unit + Component Tests (ubuntu-latest, 1/2)",
+      "witnesses": [
+        {
+          "job": "Unit + Component Tests (ubuntu-latest, 1/2)",
+          "step": "UNKNOWN STEP",
+          "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+          "commandLine": 82121,
+          "resultLine": 82122
+        }
+      ]
+    },
+    {
+      "id": 137372416649,
+      "name": "Unit + Component Tests (ubuntu-latest, 2/2)",
+      "witnesses": [
+        {
+          "job": "Unit + Component Tests (ubuntu-latest, 2/2)",
+          "step": "UNKNOWN STEP",
+          "sha": "f2a25a9272bd1bc0b832393731525e354aba7144",
+          "commandLine": 137805,
+          "resultLine": 137806
+        }
+      ]
+    }
+  ],
+  "missingFailedJobCheckout": [],
+  "junit": [
+    {
+      "file": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-ubuntu-latest-1/test-results.xml",
+      "bytes": 6884107,
+      "sha256": "6675810216f713780eae05523399a04bcf4ab9a6ac66dd758002f5deee5a8c7b",
+      "rows": 19634,
+      "counts": {
+        "pass": 19580,
+        "skip": 54
+      },
+      "failureNodes": 0
+    },
+    {
+      "file": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-ubuntu-latest-2/test-results.xml",
+      "bytes": 15975878,
+      "sha256": "3ceb7aa754844b57ad80b14134d3ec707280a145fb802398b5a5eb1a84543690",
+      "rows": 16981,
+      "counts": {
+        "pass": 16916,
+        "skip": 65
+      },
+      "failureNodes": 0
+    },
+    {
+      "file": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-windows-latest-1/test-results.xml",
+      "bytes": 6892797,
+      "sha256": "2daa0fc1410b6e1fdc9c71a0c8475ef0df3b56862af8718777ca94673b704253",
+      "rows": 19632,
+      "counts": {
+        "pass": 19482,
+        "skip": 93,
+        "fail": 57
+      },
+      "failureNodes": 72
+    },
+    {
+      "file": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-windows-latest-2/test-results.xml",
+      "bytes": 15931100,
+      "sha256": "8be7a4668fda5a3c48e258dff8ef237ec7b8df1e34ce366f0e6f4996c1fc2fad",
+      "rows": 16981,
+      "counts": {
+        "pass": 16805,
+        "skip": 176
+      },
+      "failureNodes": 0
+    },
+    {
+      "file": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/junit.xml",
+      "bytes": 32557,
+      "sha256": "cd605737edaf9d92bc63f6b542f04f601b50aa4544e95f8b083eeebbea8c7d5f",
+      "rows": 27,
+      "counts": {
+        "pass": 20,
+        "fail": 1,
+        "skip": 6
+      },
+      "failureNodes": 1
+    }
+  ],
+  "junitRows": 73255,
+  "exactUnitAttribution": {
+    "run": 45075711451,
+    "head": "76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2",
+    "attribution": "Exact classname source paths. Original161 heuristic prepare-skill includes three help-content/UI rows; preserve original collector packet, do not call9 broad matches9 skill cases.",
+    "artifacts": [
+      {
+        "file": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-ubuntu-latest-1/test-results.xml",
+        "sha256": "6675810216f713780eae05523399a04bcf4ab9a6ac66dd758002f5deee5a8c7b",
+        "groups": {
+          "producer": {
+            "sourcePath": "test/annex-v2/handoff-producer-admission.test.ts",
+            "cases": 58,
+            "counts": {
+              "pass": 58
+            },
+            "failureNodes": 0,
+            "passedNames": [
+              "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection (1 failures)",
+              "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection (9 failures)",
+              "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows clock diagnostic throws",
+              "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows logger diagnostic throws",
+              "isolated real MCP producer domain admission > forwards actual preparation once when its pre-forward diagnostic clock throws",
+              "isolated real MCP producer domain admission > reports actual early offer settlement without entering an unreachable history hold",
+              "isolated real MCP producer domain admission > keeps actual fixture preparation alive until teardown settles it",
+              "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains original grant retirement even when Allow is restored before the queue resumes",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > ignores cosmetic binding changes during the actual target-project capture await",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a replacement quick source with the same id and worktree",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a different registered caller worktree after preparation",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps a durable original source without a live runtime and ignores display name/color changes",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses a durable source replacement with only its original createdAt changed",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > rechecks retirement during the actual positive authorization await",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > uses a synthetic isolated exact-call approval without changing standing Ask grants",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves consumed Ask approval when only the general MCP gate forgets the caller",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow consumed Ask approval for a changed exact approval context",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick moved / ask",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick moved / allow",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick current / ask",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick current / allow",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable moved / ask",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable moved / allow",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable replaced / ask",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable replaced / allow",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable current / ask",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable current / allow",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable cosmetic / ask",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable cosmetic / allow",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable unrelated / ask",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable unrelated / allow",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow a newly retargeted alias authorization for the frozen recipient",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not substitute a new same-summary preparation for the captured catalog entry",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its own requested mode after an independently running preparation",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its original captured source after an independently running preparation on another source",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns its await of separately admitted preparation without cancelling that independent read on stop",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns the original host before implicit preparation and refuses stop-time replacement",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-commands.json save truthfully while stop waits actual work",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-preparations.json save truthfully while stop waits actual work",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoffs.json save truthfully while stop waits actual work",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes catalog-prewrite failure without retry or rollback fiction",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-prewrite failure without retry or rollback fiction",
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-after-rename failure without retry or rollback fiction",
+              "isolated real MCP producer domain admission > refuses original sender grant retirement before queued offer admission without adding history or binding",
+              "isolated real MCP producer domain admission > keeps explicit prepared source but refuses ask offer before handler admission",
+              "isolated real MCP producer domain admission > keeps explicit prepared source but refuses off offer before handler admission"
+            ]
+          },
+          "coupled-tools": {
+            "sourcePath": "src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+            "cases": 17,
+            "counts": {
+              "pass": 17
+            },
+            "failureNodes": 0,
+            "passedNames": [
+              "global handoff tools > declares agreement grants separately from orchestration and reserves queries for the caller",
+              "global handoff tools > offers normalized task metadata with the host-resolved sender and receiver identities",
+              "global handoff tools > reports automatic preparation ceilings and largest files before creating or posting an offer",
+              "global handoff tools > refuses malformed offer_handoff input before changing an agreement",
+              "global handoff tools > refuses malformed respond_to_handoff input before changing an agreement",
+              "global handoff tools > refuses malformed respond_to_handoff input before changing an agreement",
+              "global handoff tools > refuses malformed get_handoff input before changing an agreement",
+              "global handoff tools > refuses malformed list_handoffs input before changing an agreement",
+              "global handoff tools > refuses malformed cancel_handoff input before changing an agreement",
+              "global handoff tools > uses the Dispatcher matching-project selection before accepting without an explicit target",
+              "global handoff tools > does not accept while a fresh helper still needs creation approval",
+              "global handoff tools > forbids redirecting acceptance to another machine and keeps query/cancel actor local",
+              "global handoff tools > does not reflect private peer or storage diagnostics in any tool failure",
+              "preflights only the authenticated caller and refuses path, policy and rule overrides",
+              "prepares only the authenticated caller selection, returns frozen results, and rejects policy overrides",
+              "returns actionable repository prerequisites from prepare_handoff without an offer",
+              "returns actionable repository prerequisites from offer_handoff without an offer"
+            ]
+          },
+          "prepare-skill": {
+            "sourcePath": "src/main/services/prepare-handoff-skill.test.ts",
+            "cases": 6,
+            "counts": {
+              "pass": 6
+            },
+            "failureNodes": 0,
+            "passedNames": [
+              "the prepare-handoff skill (#3344) > names only registered tools, in the order a scripted agent follows",
+              "the prepare-handoff skill (#3344) > followed step by step on a fixture repository, produces a valid offer bound to its preparation",
+              "the prepare-handoff skill (#3344) > refuses the same prepared offer when its original agreement scope is bypassed",
+              "the prepare-handoff skill (#3344) > tells a too-big refusal apart from a secret finding, and a dirty branch from both",
+              "the prepare-handoff skill (#3344) > gets the repository reasons step 4 names from prepare_handoff itself",
+              "the prepare-handoff skill (#3344) > refuses the full manifest in place of the summary, as the skill warns"
+            ]
+          }
+        }
+      },
+      {
+        "file": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-ubuntu-latest-2/test-results.xml",
+        "sha256": "3ceb7aa754844b57ad80b14134d3ec707280a145fb802398b5a5eb1a84543690",
+        "groups": {
+          "producer": {
+            "sourcePath": "test/annex-v2/handoff-producer-admission.test.ts",
+            "cases": 0,
+            "counts": {},
+            "failureNodes": 0,
+            "passedNames": []
+          },
+          "coupled-tools": {
+            "sourcePath": "src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+            "cases": 0,
+            "counts": {},
+            "failureNodes": 0,
+            "passedNames": []
+          },
+          "prepare-skill": {
+            "sourcePath": "src/main/services/prepare-handoff-skill.test.ts",
+            "cases": 0,
+            "counts": {},
+            "failureNodes": 0,
+            "passedNames": []
+          }
+        }
+      },
+      {
+        "file": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-windows-latest-1/test-results.xml",
+        "sha256": "2daa0fc1410b6e1fdc9c71a0c8475ef0df3b56862af8718777ca94673b704253",
+        "groups": {
+          "producer": {
+            "sourcePath": "test/annex-v2/handoff-producer-admission.test.ts",
+            "cases": 58,
+            "counts": {
+              "fail": 57,
+              "pass": 1
+            },
+            "failureNodes": 72,
+            "passedNames": [
+              "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns the original host before implicit preparation and refuses stop-time replacement"
+            ]
+          },
+          "coupled-tools": {
+            "sourcePath": "src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+            "cases": 17,
+            "counts": {
+              "pass": 17
+            },
+            "failureNodes": 0,
+            "passedNames": [
+              "global handoff tools > declares agreement grants separately from orchestration and reserves queries for the caller",
+              "global handoff tools > offers normalized task metadata with the host-resolved sender and receiver identities",
+              "global handoff tools > reports automatic preparation ceilings and largest files before creating or posting an offer",
+              "global handoff tools > refuses malformed offer_handoff input before changing an agreement",
+              "global handoff tools > refuses malformed respond_to_handoff input before changing an agreement",
+              "global handoff tools > refuses malformed respond_to_handoff input before changing an agreement",
+              "global handoff tools > refuses malformed get_handoff input before changing an agreement",
+              "global handoff tools > refuses malformed list_handoffs input before changing an agreement",
+              "global handoff tools > refuses malformed cancel_handoff input before changing an agreement",
+              "global handoff tools > uses the Dispatcher matching-project selection before accepting without an explicit target",
+              "global handoff tools > does not accept while a fresh helper still needs creation approval",
+              "global handoff tools > forbids redirecting acceptance to another machine and keeps query/cancel actor local",
+              "global handoff tools > does not reflect private peer or storage diagnostics in any tool failure",
+              "preflights only the authenticated caller and refuses path, policy and rule overrides",
+              "prepares only the authenticated caller selection, returns frozen results, and rejects policy overrides",
+              "returns actionable repository prerequisites from prepare_handoff without an offer",
+              "returns actionable repository prerequisites from offer_handoff without an offer"
+            ]
+          },
+          "prepare-skill": {
+            "sourcePath": "src/main/services/prepare-handoff-skill.test.ts",
+            "cases": 6,
+            "counts": {
+              "pass": 6
+            },
+            "failureNodes": 0,
+            "passedNames": [
+              "the prepare-handoff skill (#3344) > names only registered tools, in the order a scripted agent follows",
+              "the prepare-handoff skill (#3344) > followed step by step on a fixture repository, produces a valid offer bound to its preparation",
+              "the prepare-handoff skill (#3344) > refuses the same prepared offer when its original agreement scope is bypassed",
+              "the prepare-handoff skill (#3344) > tells a too-big refusal apart from a secret finding, and a dirty branch from both",
+              "the prepare-handoff skill (#3344) > gets the repository reasons step 4 names from prepare_handoff itself",
+              "the prepare-handoff skill (#3344) > refuses the full manifest in place of the summary, as the skill warns"
+            ]
+          }
+        }
+      },
+      {
+        "file": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-windows-latest-2/test-results.xml",
+        "sha256": "8be7a4668fda5a3c48e258dff8ef237ec7b8df1e34ce366f0e6f4996c1fc2fad",
+        "groups": {
+          "producer": {
+            "sourcePath": "test/annex-v2/handoff-producer-admission.test.ts",
+            "cases": 0,
+            "counts": {},
+            "failureNodes": 0,
+            "passedNames": []
+          },
+          "coupled-tools": {
+            "sourcePath": "src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+            "cases": 0,
+            "counts": {},
+            "failureNodes": 0,
+            "passedNames": []
+          },
+          "prepare-skill": {
+            "sourcePath": "src/main/services/prepare-handoff-skill.test.ts",
+            "cases": 0,
+            "counts": {},
+            "failureNodes": 0,
+            "passedNames": []
+          }
+        }
+      }
+    ]
+  },
+  "chatAttribution": {
+    "file": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/junit.xml",
+    "bytes": 32557,
+    "sha256": "cd605737edaf9d92bc63f6b542f04f601b50aa4544e95f8b083eeebbea8c7d5f",
+    "rows": 27,
+    "counts": {
+      "pass": 20,
+      "fail": 1,
+      "skip": 6
+    },
+    "failedRows": [
+      {
+        "attributes": {
+          "name": "claude: file chips in one reply \u203a scratch files open in-app through Open in Files and supported Markdown links",
+          "classname": "chat-rich\\file-chips.spec.ts",
+          "time": "45.143"
+        },
+        "status": "fail",
+        "failures": [
+          {
+            "tag": "failure",
+            "attributes": {
+              "message": "expect(locator).toBeVisible() failed",
+              "type": "expect.toBeVisible"
+            },
+            "text": "\n  chat-rich\\file-chips.spec.ts:151:7 \u203a claude: file chips in one reply \u203a scratch files open in-app through Open in Files and supported Markdown links \n\n    Error: expect(locator).toBeVisible() failed\n\n    Locator: getByTestId('local-file-preview').getByTestId('chat-file-preview-pdf').getByLabel('Page 1 of 2')\n    Expected: visible\n    Timeout: 20000ms\n    Error: element(s) not found\n\n    Call log:\n      - Expect \"toBeVisible\" getByTestId('local-file-preview').getByTestId('chat-file-preview-pdf').getByLabel('Page 1 of 2') with timeout 20000ms\n      - waiting for getByTestId('local-file-preview').getByTestId('chat-file-preview-pdf').getByLabel('Page 1 of 2')\n\n\n      203 |       await expect(view).toBeVisible();\n      204 |       const canvas = view.getByTestId('chat-file-preview-pdf').getByLabel('Page 1 of 2');\n    > 205 |       await expect(canvas).toBeVisible({ timeout: TURN_TIMEOUT });\n          |                            ^\n      206 |       await expectCanvasPainted(canvas);\n      207 |     };\n      208 |\n        at pdfShown (D:\\a\\Clubhouse\\Clubhouse\\e2e\\chat-rich\\file-chips.spec.ts:205:28)\n        at D:\\a\\Clubhouse\\Clubhouse\\e2e\\chat-rich\\file-chips.spec.ts:222:5\n\n    attachment #2: outside-text-open-in-files (image/png) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    ..\\test-results\\chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links\\attachments\\outside-text-open-in-files-d2ee00cdbcde21e45fb0b49e86c928073a0fde36.png\n    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error Context: ..\\test-results\\chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links\\error-context.md\n\n    Error Context: ..\\test-results\\chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links\\error-context.md\n\n    attachment #5: trace (application/zip) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    ..\\test-results\\chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links\\trace.zip\n    Usage:\n\n        npx playwright show-trace ..\\test-results\\chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links\\trace.zip\n\n    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Retry #1 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(locator).toBeVisible() failed\n\n    Locator: getByTestId('local-file-preview').getByTestId('chat-file-preview-pdf').getByLabel('Page 1 of 2')\n    Expected: visible\n    Timeout: 20000ms\n    Error: element(s) not found\n\n    Call log:\n      - Expect \"toBeVisible\" getByTestId('local-file-preview').getByTestId('chat-file-preview-pdf').getByLabel('Page 1 of 2') with timeout 20000ms\n      - waiting for getByTestId('local-file-preview').getByTestId('chat-file-preview-pdf').getByLabel('Page 1 of 2')\n\n\n      203 |       await expect(view).toBeVisible();\n      204 |       const canvas = view.getByTestId('chat-file-preview-pdf').getByLabel('Page 1 of 2');\n    > 205 |       await expect(canvas).toBeVisible({ timeout: TURN_TIMEOUT });\n          |                            ^\n      206 |       await expectCanvasPainted(canvas);\n      207 |     };\n      208 |\n        at pdfShown (D:\\a\\Clubhouse\\Clubhouse\\e2e\\chat-rich\\file-chips.spec.ts:205:28)\n        at D:\\a\\Clubhouse\\Clubhouse\\e2e\\chat-rich\\file-chips.spec.ts:222:5\n\n    attachment #2: outside-text-open-in-files (image/png) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    ..\\test-results\\chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links-retry1\\attachments\\outside-text-open-in-files-298117b3c4636b3c27659f9b664d16306e0724f5.png\n    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error Context: ..\\test-results\\chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links-retry1\\error-context.md\n\n    Error Context: ..\\test-results\\chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links-retry1\\error-context.md\n\n    attachment #5: trace (application/zip) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    ..\\test-results\\chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links-retry1\\trace.zip\n    Usage:\n\n        npx playwright show-trace ..\\test-results\\chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links-retry1\\trace.zip\n\n    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+          }
+        ]
+      }
+    ]
+  },
+  "captures": [
+    {
+      "file": "160-ci-discovery-1-original.json",
+      "exit": 0
+    },
+    {
+      "file": "160-ci-run-initial-original.json",
+      "exit": 0
+    },
+    {
+      "file": "160-ci-merge-ref-initial-original.json",
+      "exit": 0
+    },
+    {
+      "file": "161-ci-run-final-original.json",
+      "exit": 0
+    },
+    {
+      "file": "161-ci-jobs-final-original.json",
+      "exit": 0
+    },
+    {
+      "file": "161-ci-pr-final-original.json",
+      "exit": 0
+    },
+    {
+      "file": "161-ci-logs-original.log",
+      "exit": 0
+    },
+    {
+      "file": "161-ci-artifacts-original.json",
+      "exit": 0
+    },
+    {
+      "file": "161-ci-refs-final-original.txt",
+      "exit": 0
+    },
+    {
+      "file": "161-ci-junit-download-original.txt",
+      "exit": 0
+    }
+  ],
+  "archives": [
+    {
+      "file": "001-126-producer-recipient-final-review-454-original.md.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/126-producer-recipient-final-review-454-original.md",
+      "bytes": 16134,
+      "sha256": "fb095f8d7a30d4508856c469a5e685f9459de78d0268df47d91234866b9e8183",
+      "gzipBytes": 6904,
+      "gzipSha256": "81a5c64563f48764ac22a3dd45aa7bd13ef6b8a4b225629bd60ab64bc303568c"
+    },
+    {
+      "file": "002-150-full-e08-review-original.md.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/150-full-e08-review-original.md",
+      "bytes": 17131,
+      "sha256": "0666100ec986b33fa6d24d0d7fac3f529c330362bae4dad2149de0585682c31d",
+      "gzipBytes": 7288,
+      "gzipSha256": "88d6d7e9308a3ea6edece5c551ba6675d1a9d1138f1f12278494b28ca8ed82ca"
+    },
+    {
+      "file": "003-157-4aa-review-blob-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/157-4aa-review-blob-original.json",
+      "bytes": 18760,
+      "sha256": "fa90379b4e923e0cc94b4cc5b7b8409be13865ad429c25d6a331a319eb541edc",
+      "gzipBytes": 9302,
+      "gzipSha256": "8bde9c2d1aa2139cddc5e8f2b74453cbb4b12c54723a549a187fda8c159c9614"
+    },
+    {
+      "file": "004-157-4aa-review-tree-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/157-4aa-review-tree-original.json",
+      "bytes": 1400691,
+      "sha256": "94e5855af2193a9584ea7cb601d8deb9aca8f24276ad021608480eeea828b5d7",
+      "gzipBytes": 218517,
+      "gzipSha256": "e00b2dfacc96706701a2058a80d61c32a5b1d710f0b1434c8c9d6818feffab2c"
+    },
+    {
+      "file": "005-157-full-4aa-review-original.md.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/157-full-4aa-review-original.md",
+      "bytes": 13403,
+      "sha256": "b91f7b807ee8a4fd631c42716ab204fbf6484f75163d004fcd69b4f600776a5e",
+      "gzipBytes": 5997,
+      "gzipSha256": "6bf85babfef0b4ac643de74106fa16510c17f1697261c16b9176fb92d7f6d2f2"
+    },
+    {
+      "file": "006-158-update-guards-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/158-update-guards-original.json",
+      "bytes": 2078,
+      "sha256": "1fdcb265431a450f26340c78033f15453796534ca564e23268c7089604bfc71a",
+      "gzipBytes": 698,
+      "gzipSha256": "dc9da6e3da809cd52d8aeb671fb745c55636deba36520a4748655ce0efe5a830"
+    },
+    {
+      "file": "007-159-pr-updated-readback-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/159-pr-updated-readback-original.json",
+      "bytes": 10138,
+      "sha256": "b5f4f6e5ee091086bdbcf8243950264ca0bbaf18615adcbcab7bdab904bf1be9",
+      "gzipBytes": 4312,
+      "gzipSha256": "2745c103e794a0848d7764989aa6abfd7bee0727ae82b79df3a024173ed6bf9c"
+    },
+    {
+      "file": "008-159-pr-updated-refs-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/159-pr-updated-refs-original.txt",
+      "bytes": 267,
+      "sha256": "25f5d4be16b523be656d32817be7e0c6a99ae1545670e45b3a09fd67f2d57d00",
+      "gzipBytes": 163,
+      "gzipSha256": "2c6e244b9bee2c6ccdd4661e0141612fb4723c733d52e64b0dcf467a441b43ca"
+    },
+    {
+      "file": "009-160-ci-capture-exits-original.tsv.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-capture-exits-original.tsv",
+      "bytes": 340,
+      "sha256": "16c50fc9eb5cd3979606c48cf8d1aa80bfebb27c4fe284bea9cfa65b7303b3d6",
+      "gzipBytes": 137,
+      "gzipSha256": "afd2b2678dd1e9897ff9e702066a179a89bbb85551eca843e34359403287095e"
+    },
+    {
+      "file": "010-160-ci-discovery-1-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-discovery-1-original.json",
+      "bytes": 447,
+      "sha256": "7397f45271996e32d813b7663a856c69874881801c174eafad093ce0c1a8ee18",
+      "gzipBytes": 254,
+      "gzipSha256": "a2dc1b6d99ede451a7662c7cba1397951a8ac6abfe8c14f01a52b121fe7d36ae"
+    },
+    {
+      "file": "011-160-ci-discovery-1-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-discovery-1-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "012-160-ci-merge-ref-initial-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-merge-ref-initial-original.json",
+      "bytes": 365,
+      "sha256": "5c904ff8370d1a995ef078e3fb9bc32ec701f0920e7f5bb4012399be45e32ee3",
+      "gzipBytes": 229,
+      "gzipSha256": "ed46123a7447c7798f3c2953187ac1c5b9313671f084cf4f130a20588e896a34"
+    },
+    {
+      "file": "013-160-ci-merge-ref-initial-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-merge-ref-initial-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "014-160-ci-owner-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-owner-original.txt",
+      "bytes": 81,
+      "sha256": "2d2b57432268de6d0a65ff71a3a6307efac5bc16020be43e621089e8a5f72d14",
+      "gzipBytes": 97,
+      "gzipSha256": "e6ee5dca43896b24e53e9f39c54464015f13ac65112c5d7ff1b0b5410eb42c8d"
+    },
+    {
+      "file": "015-160-ci-run-initial-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-run-initial-original.json",
+      "bytes": 13567,
+      "sha256": "bd5681192212bc4403fc39b79a830376f054ec98533aa6c5edbf4d1739331346",
+      "gzipBytes": 1942,
+      "gzipSha256": "e6245bf88b2702fdfe8bc762d6ae6e711dd496afce078995f61a1e1b45ab7999"
+    },
+    {
+      "file": "016-160-ci-run-initial-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-run-initial-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "017-160-ci-supervisor-exit-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-supervisor-exit-original.txt",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac"
+    },
+    {
+      "file": "018-160-ci-supervisor-original.log.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-supervisor-original.log",
+      "bytes": 1988,
+      "sha256": "e33f6f03f9bbe277175349edb0d8bd60c7aad483d19551f4baecc563e2a5f2cf",
+      "gzipBytes": 675,
+      "gzipSha256": "a8ca7536b07b32c23b2636955ea63eb1a99528d2eb783941f867098131267a86"
+    },
+    {
+      "file": "019-160-ci-watch-exit-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-watch-exit-original.txt",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac"
+    },
+    {
+      "file": "020-160-ci-watch-original.log.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-ci-watch-original.log",
+      "bytes": 265511,
+      "sha256": "c586adaea88092537e122f8b7d96cdb3b9a5881eb18cec383b06b93e38eaa98b",
+      "gzipBytes": 4444,
+      "gzipSha256": "8d6f4513c8dd698cff9e2d9af33e8a2ed0011cad93e17d705c5738953968aeb1"
+    },
+    {
+      "file": "021-160-watch-approved-producer.sh.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/160-watch-approved-producer.sh",
+      "bytes": 4674,
+      "sha256": "379eab61499f491f06281b5077cf5409ce3a2cb1e06ea90c52820a7db39c5384",
+      "gzipBytes": 1758,
+      "gzipSha256": "5594cd6682965e0d781d6321214a69e726fb155a6dfef4bb7ad16223ffdb05cb"
+    },
+    {
+      "file": "022-161-capture-approved-producer.py.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-capture-approved-producer.py",
+      "bytes": 7203,
+      "sha256": "25f6d33ecc2a3354d3dcdd74b2f60342b66db5dfb6fc60de1792e9d0a07770d2",
+      "gzipBytes": 2698,
+      "gzipSha256": "7029b55cb776b1c1579dc819bc632cd860a8cffa156f5dd742243fed416d9043"
+    },
+    {
+      "file": "023-161-ci-artifacts-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-artifacts-original.json",
+      "bytes": 20363,
+      "sha256": "5cf8e117dd278e4056309bec9e5dfe970c24b10af15f2caa5165382669c5a610",
+      "gzipBytes": 2791,
+      "gzipSha256": "f2b2ffdf18a44952d95de92453edc158ae3d482194509d287fc0324ff6bd4361"
+    },
+    {
+      "file": "024-161-ci-artifacts-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-artifacts-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "025-161-ci-checkout-f2a25a9272bd1bc0b832393731525e354aba7144-commit-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-checkout-f2a25a9272bd1bc0b832393731525e354aba7144-commit-original.json",
+      "bytes": 2654,
+      "sha256": "572db37209422cdf23db9b3070c181e5a25e1271d20d202e226c9a0eebd928fa",
+      "gzipBytes": 1244,
+      "gzipSha256": "e34f8f7d61a140d7c02ef35b26a96c38c47a4394cc371e47ab8770d40821b3d6"
+    },
+    {
+      "file": "026-161-ci-checkout-f2a25a9272bd1bc0b832393731525e354aba7144-tree-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-checkout-f2a25a9272bd1bc0b832393731525e354aba7144-tree-original.json",
+      "bytes": 9289,
+      "sha256": "aea03040f7d51931430a3a32dfd1335fda02a82b96ba31ab1870e98ba59e12a2",
+      "gzipBytes": 1970,
+      "gzipSha256": "c7211ad572a9f8f2cd4672faadc5605aab42a1fdb2f493961a80a6ec00ec32e4"
+    },
+    {
+      "file": "027-161-ci-jobs-final-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-jobs-final-original.json",
+      "bytes": 105106,
+      "sha256": "a2f5298a90146e726b613dbaed6888ded81d621392a71491f8c43c1284d3e305",
+      "gzipBytes": 5521,
+      "gzipSha256": "0b72b2984b20af54a00c867f2594ddfdd0e2f6884ac474ce6f8c2701946e69d2"
+    },
+    {
+      "file": "028-161-ci-jobs-final-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-jobs-final-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "029-161-ci-junit-download-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-junit-download-original.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "030-161-ci-junit-download-original.txt.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-junit-download-original.txt.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "031-test-results.xml.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-ubuntu-latest-1/test-results.xml",
+      "bytes": 6884107,
+      "sha256": "6675810216f713780eae05523399a04bcf4ab9a6ac66dd758002f5deee5a8c7b",
+      "gzipBytes": 621667,
+      "gzipSha256": "7bbca99c4e468bdd2fe0c35d5236a21b999148c25214e85b1371dbf285cf0af0"
+    },
+    {
+      "file": "032-test-results.xml.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-ubuntu-latest-2/test-results.xml",
+      "bytes": 15975878,
+      "sha256": "3ceb7aa754844b57ad80b14134d3ec707280a145fb802398b5a5eb1a84543690",
+      "gzipBytes": 572777,
+      "gzipSha256": "f12835cc2b640794f8e1325b9bb848d4012bc1ac27998ddacf2b00eb0a02bf6d"
+    },
+    {
+      "file": "033-test-results.xml.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-windows-latest-1/test-results.xml",
+      "bytes": 6892797,
+      "sha256": "2daa0fc1410b6e1fdc9c71a0c8475ef0df3b56862af8718777ca94673b704253",
+      "gzipBytes": 601454,
+      "gzipSha256": "7d88d28cb211560bb7a9d0e02a8b94be41b64b3ae19a96a8b59f077b9b04b407"
+    },
+    {
+      "file": "034-test-results.xml.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-junit-original/test-results-windows-latest-2/test-results.xml",
+      "bytes": 15931100,
+      "sha256": "8be7a4668fda5a3c48e258dff8ef237ec7b8df1e34ce366f0e6f4996c1fc2fad",
+      "gzipBytes": 551703,
+      "gzipSha256": "a6a574acf4a56161ee4b270de27a20912f4af438da4399f1a0be8d413726b7f5"
+    },
+    {
+      "file": "035-161-ci-logs-original.log.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-logs-original.log",
+      "bytes": 25452681,
+      "sha256": "af076533f24be2741daa98033ac1119ce73121da8ebec33be6b18df69efae4fc",
+      "gzipBytes": 1699266,
+      "gzipSha256": "9c03173084e52d81caf0e61190ff958e0816158951325827db5202c001fc61ee"
+    },
+    {
+      "file": "036-161-ci-logs-original.log.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-logs-original.log.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "037-161-ci-pr-final-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-pr-final-original.json",
+      "bytes": 11836,
+      "sha256": "7c9bde17ba9a3a28e117ce44414b1809abc21915900761ec94a8e06696d1eaa8",
+      "gzipBytes": 1123,
+      "gzipSha256": "686eb79fd807ad04d5ea301293754791bf83444fa9f1976cb7c9661cf666b243"
+    },
+    {
+      "file": "038-161-ci-pr-final-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-pr-final-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "039-161-ci-refs-final-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-refs-final-original.txt",
+      "bytes": 158,
+      "sha256": "7c2f9572892d9353828e801086760c77ae822e448ce01d4df652f65991410781",
+      "gzipBytes": 139,
+      "gzipSha256": "57895cc9a825a72c5c0186cbe87166bb87072d8123bef096e3435c4f4be2532b"
+    },
+    {
+      "file": "040-161-ci-refs-final-original.txt.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-refs-final-original.txt.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "041-161-ci-run-final-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-run-final-original.json",
+      "bytes": 13575,
+      "sha256": "808772b15665f85566026acd704c8c9b9311093e2daf46e55d595929ecd25a6c",
+      "gzipBytes": 1949,
+      "gzipSha256": "d6cbbc19128ff8424b59ecff22dfd2b7ed98b12fd78776dbf25c740f48eb55e4"
+    },
+    {
+      "file": "042-161-ci-run-final-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-run-final-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "043-161-ci-terminal-packet.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/161-ci-terminal-packet.json",
+      "bytes": 796714,
+      "sha256": "fb67489469dcddde3c83e52def0ba94ddadc2a55b964c28b05a197d19b699b2f",
+      "gzipBytes": 59896,
+      "gzipSha256": "612b9d3baf4c8ae88406caceed8ba58a593cbdb87fa79afcc2ba1839aa03ddb7"
+    },
+    {
+      "file": "044-162-exact-unit-family-attribution.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-exact-unit-family-attribution.json",
+      "bytes": 21048,
+      "sha256": "2a2ba8893f1ed5318646ac834d297a634637265a6b607aa2e912c6d6fb21a281",
+      "gzipBytes": 2953,
+      "gzipSha256": "f97c12711dcec8e3790a75af5a2954ce7775f9c711b50a96ce8123952ebc545b"
+    },
+    {
+      "file": "045-162-failed-chat-artifact-download-exit.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-download-exit.txt",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "046-162-failed-chat-artifact-download-original.log.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-download-original.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "047-162-failed-chat-artifact-download-original.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-download-original.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "048-image-target-json-a24024f0129755d81843117f5db61a874d217641.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-context-menu-nat-34ca5-image-and-selection-content/attachments/image-target-json-a24024f0129755d81843117f5db61a874d217641.json",
+      "bytes": 172,
+      "sha256": "7dcafe134bfae494f6448212e0f3b56ae4234093cb01cf924574505522d92b7c",
+      "gzipBytes": 141,
+      "gzipSha256": "2c9dc9b9546dbe78249fa0c1a71292cece36093e371047580548f94d047cc1e7"
+    },
+    {
+      "file": "049-native-copy-evidence-json-63fadc2f902dfa0ab6b74ed288be60efc36f854c.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-context-menu-nat-34ca5-image-and-selection-content/attachments/native-copy-evidence-json-63fadc2f902dfa0ab6b74ed288be60efc36f854c.json",
+      "bytes": 242,
+      "sha256": "132e36dd328f152d266adf7a73653292e020c12b3e9a0e8d0bd2e682b9662184",
+      "gzipBytes": 171,
+      "gzipSha256": "7be8e360bc04352a19260bab43714897e2b8d245dc1989ca9cfaca95a99797aa"
+    },
+    {
+      "file": "050-copy-content.png.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-context-menu-nat-34ca5-image-and-selection-content/copy-content.png",
+      "bytes": 48456,
+      "sha256": "a32d66eced1db5f70f6ff07d7057f71c75cd979789a46527ba472b6fcdb03f57",
+      "gzipBytes": 45570,
+      "gzipSha256": "80f8fcfaaca3b6624797b6c470428812d03a1f5baadcfe34314169d8300c815c"
+    },
+    {
+      "file": "051-image-target.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-context-menu-nat-34ca5-image-and-selection-content/image-target.json",
+      "bytes": 172,
+      "sha256": "7dcafe134bfae494f6448212e0f3b56ae4234093cb01cf924574505522d92b7c",
+      "gzipBytes": 141,
+      "gzipSha256": "2c9dc9b9546dbe78249fa0c1a71292cece36093e371047580548f94d047cc1e7"
+    },
+    {
+      "file": "052-native-copy-evidence.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-context-menu-nat-34ca5-image-and-selection-content/native-copy-evidence.json",
+      "bytes": 242,
+      "sha256": "132e36dd328f152d266adf7a73653292e020c12b3e9a0e8d0bd2e682b9662184",
+      "gzipBytes": 171,
+      "gzipSha256": "7be8e360bc04352a19260bab43714897e2b8d245dc1989ca9cfaca95a99797aa"
+    },
+    {
+      "file": "053-outside-text-open-in-files-d2ee00cdbcde21e45fb0b49e86c928073a0fde36.png.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links/attachments/outside-text-open-in-files-d2ee00cdbcde21e45fb0b49e86c928073a0fde36.png",
+      "bytes": 32708,
+      "sha256": "5b1b9ca9234473b6399907d40e1b3e5337d0f7469656ac22b4faf14ada474160",
+      "gzipBytes": 29705,
+      "gzipSha256": "a3813b3096c0b3b065d15303cf50c1e5c8aa7435e42f6f0a9e7b988471cd6425"
+    },
+    {
+      "file": "054-error-context.md.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links/error-context.md",
+      "bytes": 18598,
+      "sha256": "0157744fc3434a52ee5a4eb96ba7d422fbde201a801c0945c2fcf5448da499c7",
+      "gzipBytes": 5213,
+      "gzipSha256": "27ffa05c1a9e06975cc97b4539c46b3cd44cbe27602d92ddd9a0d04e173f9eba"
+    },
+    {
+      "file": "055-outside-text-open-in-files.png.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links/outside-text-open-in-files.png",
+      "bytes": 32708,
+      "sha256": "5b1b9ca9234473b6399907d40e1b3e5337d0f7469656ac22b4faf14ada474160",
+      "gzipBytes": 29705,
+      "gzipSha256": "a3813b3096c0b3b065d15303cf50c1e5c8aa7435e42f6f0a9e7b988471cd6425"
+    },
+    {
+      "file": "056-trace.zip.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links/trace.zip",
+      "bytes": 52255,
+      "sha256": "427862a2a9e50163c40e150c3e36c5408f73f2f6c9dda22187830e4ceab44a42",
+      "gzipBytes": 52032,
+      "gzipSha256": "0c140cdaded07b0a74c7516cf6a8fc490acb56a4a66f4c66ad0bd5e29339d482"
+    },
+    {
+      "file": "057-outside-text-open-in-files-298117b3c4636b3c27659f9b664d16306e0724f5.png.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links-retry1/attachments/outside-text-open-in-files-298117b3c4636b3c27659f9b664d16306e0724f5.png",
+      "bytes": 32792,
+      "sha256": "71faa05a6154789001c993205ff2db5e98a5ed9d73bd202a3a2a1cc205f6d17c",
+      "gzipBytes": 29773,
+      "gzipSha256": "f7824735207483b348dfa9918f242de354dc77f86dba32b0f4e67567c242a994"
+    },
+    {
+      "file": "058-error-context.md.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links-retry1/error-context.md",
+      "bytes": 18598,
+      "sha256": "ebfae35b6d4a4c378fc43953a8f9697adf0c6a31c91436f98cf7752db756f111",
+      "gzipBytes": 5213,
+      "gzipSha256": "56f882db71d11a78a7170c555825f77d71726d3beb52a8250057c763ed290915"
+    },
+    {
+      "file": "059-outside-text-open-in-files.png.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links-retry1/outside-text-open-in-files.png",
+      "bytes": 32792,
+      "sha256": "71faa05a6154789001c993205ff2db5e98a5ed9d73bd202a3a2a1cc205f6d17c",
+      "gzipBytes": 29773,
+      "gzipSha256": "f7824735207483b348dfa9918f242de354dc77f86dba32b0f4e67567c242a994"
+    },
+    {
+      "file": "060-trace.zip.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/chat-rich-file-chips-claud-e221a-nd-supported-Markdown-links-retry1/trace.zip",
+      "bytes": 52334,
+      "sha256": "3c8a5824aa42925263ba6e706def2dacb6833c9e90aa02fe879f777fc670b892",
+      "gzipBytes": 52109,
+      "gzipSha256": "b57907102754aa327bd56899264c5ea7a690aa8cf853e28191d42dd50b7343eb"
+    },
+    {
+      "file": "061-junit.xml.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-artifact-original/junit.xml",
+      "bytes": 32557,
+      "sha256": "cd605737edaf9d92bc63f6b542f04f601b50aa4544e95f8b083eeebbea8c7d5f",
+      "gzipBytes": 4220,
+      "gzipSha256": "b6d632f7ab7088bb53d75e75a73224273ecdb8ac4d67468e3ca68785421431d7"
+    },
+    {
+      "file": "062-162-failed-chat-job-exit.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-job-exit.txt",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "063-162-failed-chat-job-original.log.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-job-original.log",
+      "bytes": 99918,
+      "sha256": "fa5f345b8d413d300782c01c4c8aa9022e632762a28d3c559687062628923021",
+      "gzipBytes": 14402,
+      "gzipSha256": "a1b3d1b58b673d95d7a7dda05680b09b9eda709aa3ca15c4b27150c29f4efebf"
+    },
+    {
+      "file": "064-162-failed-chat-job-original.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-job-original.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "065-162-failed-chat-junit-attribution.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-failed-chat-junit-attribution.json",
+      "bytes": 8730,
+      "sha256": "9b4e634c4072ccb7405718960c5d3561424458f5fea351f522ee81f1a6f60ce4",
+      "gzipBytes": 1131,
+      "gzipSha256": "fd0c9902dd370711e8731dabc2df003871044841f93398ad134f8c6343d94237"
+    },
+    {
+      "file": "066-162-terminal-pr-readback-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-terminal-pr-readback-original.json",
+      "bytes": 143,
+      "sha256": "cb2470cd76c19fa43e0c41dfec81e1dabdca2171d7e8fbbd9be2ee3e9564ccc9",
+      "gzipBytes": 135,
+      "gzipSha256": "bcd346a1bc8e61057f25b804388909bf154c05d340dbff5313fd2701e6cf13e6"
+    },
+    {
+      "file": "067-162-terminal-refs-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/162-terminal-refs-original.txt",
+      "bytes": 367,
+      "sha256": "97c71ea37754c6cda61d72222e1ba4e704a7b8d5ca2c8ad39f56b7637562d116",
+      "gzipBytes": 196,
+      "gzipSha256": "6bd84c5646ad8ddea9a2417351c95a6f9649e0a9efd95789936f7dafa284528c"
+    },
+    {
+      "file": "068-163-freeze-approved-ci-failure.py.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/163-freeze-approved-ci-failure.py",
+      "bytes": 6542,
+      "sha256": "68353890f5b26fb0f6a4d30095d1ede7b4d8935bfa197a819fde3ac2ac77bf4f",
+      "gzipBytes": 2549,
+      "gzipSha256": "5323abb7ee1fda328efb31d129d45b8cc1486bd0015329ad5c7c112b09c7c665"
+    }
+  ],
+  "archiveCount": 68,
+  "originalPacket": {
+    "bytes": 796714,
+    "sha256": "fb67489469dcddde3c83e52def0ba94ddadc2a55b964c28b05a197d19b699b2f"
+  },
+  "originalLog": {
+    "file": "node_modules/.cache/native-handoff-ingress/161-ci-logs-original.log",
+    "bytes": 25452681,
+    "sha256": "af076533f24be2741daa98033ac1119ce73121da8ebec33be6b18df69efae4fc"
+  },
+  "collectorPrecision": "Original161 heuristic prepare-skill contains three help/UI rows per OS. Preserved unchanged; exact162 classname ledger records six actual skill cases per OS, not nine.",
+  "reviews": [
+    "4aa19cba49b84ba28c4286e497348e1347ed7e51",
+    "e08fa4e8c7753d9467db4829f723cd74eb5e9002",
+    "45495858a176a5971494cef2cfc5ae67ffbf9b18"
+  ],
+  "preservedOriginalFailure": {
+    "run": 45068217103,
+    "attempt": 1,
+    "proof": "ab853c28ab03472425279bf159c370e16c27cc57"
+  },
+  "acceptance": "Actual terminal FAILURE, no rerun/waiver/PR update/landing or aggregate local58/fullhandoff acceptance.",
+  "unresolved": "Windows first-delay/body-phase cause and subsequent continuation contamination require separate bounded attribution. Chat PDF-canvas failure is real and separate; no flake/preexisting/cause claim."
+}
