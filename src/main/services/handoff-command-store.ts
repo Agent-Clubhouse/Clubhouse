@@ -58,8 +58,9 @@ export class HandoffCommandStore implements HandoffCommandStorage {
     }
     return this.committed;
   }
-  private change(update: (file: CommandFile) => void): Promise<void> {
+  private change(update: (file: CommandFile) => void, beforeChange?: () => void): Promise<void> {
     const work = async () => {
+      beforeChange?.();
       const next = structuredClone(this.snapshot());
       update(next);
       const checked = parseFile(next);
@@ -79,14 +80,14 @@ export class HandoffCommandStore implements HandoffCommandStorage {
       if (!existing) file.commands.push(command);
     });
   }
-  remove(operationId: string): Promise<void> {
-    return this.change((file) => { file.commands = file.commands.filter((command) => command.operationId !== operationId); });
+  remove(operationId: string, beforeChange?: () => void): Promise<void> {
+    return this.change((file) => { file.commands = file.commands.filter((command) => command.operationId !== operationId); }, beforeChange);
   }
   isUndelivered(id: string): boolean { return this.snapshot().undelivered?.includes(id) ?? false; }
   markUndelivered(id: string): Promise<void> { return this.change((file) => { file.undelivered = [...new Set([...(file.undelivered ?? []), id])]; }); }
   markAttempted(id: string): Promise<void> { return this.change((file) => { file.undelivered = file.undelivered?.filter((entry) => entry !== id); }); }
   acknowledged(id: string): number | undefined { return this.snapshot().acknowledgements?.[id]; }
-  acknowledge(id: string, version: number): Promise<void> { return this.change((file) => { (file.acknowledgements ??= {})[id] = version; }); }
+  acknowledge(id: string, version: number, beforeChange?: () => void): Promise<void> { return this.change((file) => { (file.acknowledgements ??= {})[id] = version; }, beforeChange); }
   prune(retained: ReadonlySet<string>): Promise<void> {
     return this.change((file) => {
       file.notices = file.notices.filter((notice) => retained.has(notice.key.split(':')[0]));

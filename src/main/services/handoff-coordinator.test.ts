@@ -1,10 +1,18 @@
 import { randomUUID } from 'crypto';
-import { describe, expect, it } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Handoff, HandoffAgent, HandoffOffer } from '../../shared/handoffs';
-import { parseHandoff } from '../../shared/handoffs';
+import { parseHandoff, transitionHandoff } from '../../shared/handoffs';
 import { HandoffService } from './handoff-service';
-import { assertHandoffExtension, type HandoffStorage } from './handoff-store';
-import { HandoffCoordinator, type HandoffCancellation } from './handoff-coordinator';
+import { assertHandoffExtension, HandoffStore, type HandoffStorage } from './handoff-store';
+import { HandoffCoordinator, type HandoffCancellation, type HandoffCoordinatorOptions, type HandoffSyncAdmission } from './handoff-coordinator';
+import { HandoffCommandStore } from './handoff-command-store';
+
+const disk = vi.hoisted(() => ({ dir: '' }));
+vi.mock('electron', () => ({ app: { getPath: () => disk.dir } }));
+vi.mock('../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed: (_area: string, work: () => Promise<void>) => work() } }));
 
 const sender: HandoffAgent = { agentId: 'sender', machine: Array(16).fill('ab').join(':') };
 const receiver: HandoffAgent = { agentId: 'receiver', machine: Array(16).fill('cd').join(':') };
@@ -45,6 +53,160 @@ function fixture(sameMachine = false) {
   return { a, b, notices, posts, offline: () => { online = false; }, reconnect: () => { online = true; }, revoke: () => { allowed = false; } };
 }
 
+describe('reverse sync actual history and command queue assembly', () => {
+  beforeEach(() => { disk.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-sync-queue-')); });
+  afterEach(() => { fs.rmSync(disk.dir, { recursive: true, force: true }); });
+  function barrier() {
+    let release!: () => void;
+    const promise = new Promise<void>((resolve) => { release = resolve; });
+    return { promise, release };
+  }
+  async function queueFixture(sending = false, pending = false, terminal = false) {
+    const store = new HandoffStore(); const commands = new HandoffCommandStore();
+    const service = new HandoffService({ machine: sending ? sender.machine : receiver.machine, store,
+      authorize: async () => true, isDispatcher: () => false });
+    const at = Date.now();
+    const offered = parseHandoff({ ...input, schemaVersion: 1, id: randomUUID(), createdAt: at, updatedAt: at, version: 1,
+      from: sender, state: 'offered', history: [{ operationId: randomUUID(), at, state: 'offered', by: { kind: 'agent', address: sender } }] });
+    const accepted = transitionHandoff(offered, { state: 'accepted', target: receiver, operationId: randomUUID(), at: at + 1,
+      by: { kind: 'agent', address: receiver } }, 1);
+    const declined = transitionHandoff(offered, { state: 'declined', operationId: randomUUID(), at: at + 1,
+      by: { kind: 'agent', address: receiver } }, 1);
+    const command = { id: offered.id, operationId: randomUUID(), from: sender };
+    const cancelled = transitionHandoff(accepted, { state: 'cancelled', operationId: command.operationId, at: at + 2,
+      by: { kind: 'agent', address: sender } }, 2);
+    await store.transact(offered.id, () => sending ? offered : declined);
+    if (pending) await commands.put(command);
+    let live = true; let posts = 0;
+    const check = () => { if (!live) throw new Error('Original reverse admission retired'); };
+    const admission: HandoffSyncAdmission = { check, checkOutgoing: check, holdPost: () => () => {}, release: vi.fn() };
+    const post = vi.fn(async (_peer: string, _body: Record<string, unknown>, _admission?: HandoffSyncAdmission) =>
+      !sending || terminal ? declined : ++posts === 1 ? accepted : cancelled);
+    const changed = vi.fn(async (_record: Handoff) => {});
+    const options: HandoffCoordinatorOptions = { machine: sending ? sender.machine : receiver.machine, store, service, commands,
+      post, connected: () => false, captureSync: () => admission, authorizeOutgoing: async () => !pending,
+      changed, now: () => at + 8 * 24 * 60 * 60_000 };
+    const coordinator = new HandoffCoordinator(options);
+    return { store, commands, service, coordinator, options, admission, post, changed, offered, accepted, declined, cancelled, command,
+      retire: () => { live = false; } };
+  }
+
+  it.each(['receiver-ACK', 'terminal-ACK', 'secondary-ACK', 'primary-remove', 'secondary-remove'] as const)(
+    'carries the original capture into queued %s and refuses before its real mutation', async (stage) => {
+      const sending = stage !== 'receiver-ACK'; const terminal = stage === 'terminal-ACK' || stage === 'primary-remove';
+      const f = await queueFixture(sending, sending, terminal);
+      const entered = barrier(); const held = barrier(); const queued = barrier(); const unrelated = randomUUID();
+      const rename = fs.promises.rename;
+      vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+        if (String(to) === path.join(disk.dir, 'handoff-commands.json')
+          && JSON.parse(fs.readFileSync(String(from), 'utf8')).undelivered?.includes(unrelated)) {
+          entered.release(); await held.promise;
+        }
+        return rename(from, to);
+      });
+      let earlier: Promise<void> | undefined;
+      const enqueueEarlier = () => { earlier = f.commands.markUndelivered(unrelated); queued.release(); };
+      if (stage.endsWith('remove')) {
+        const original = f.commands.remove.bind(f.commands);
+        vi.spyOn(f.commands, 'remove').mockImplementation((id, guard) => { enqueueEarlier(); return original(id, guard); });
+      } else {
+        const original = f.commands.acknowledge.bind(f.commands);
+        vi.spyOn(f.commands, 'acknowledge').mockImplementation((id, version, guard) => { enqueueEarlier(); return original(id, version, guard); });
+      }
+      const syncing = f.coordinator.sync(f.offered.id);
+      const refusal = expect(syncing).rejects.toThrow('Original reverse admission retired');
+      try {
+        await Promise.all([entered.promise, queued.promise]); f.retire(); held.release(); await earlier; await refusal;
+        expect(f.commands.acknowledged(f.offered.id)).toBe(stage.endsWith('remove') ? terminal ? 2 : 3 : undefined);
+        expect(f.commands.list()).toEqual(sending ? [f.command] : []);
+        expect(new HandoffCommandStore().list()).toEqual(f.commands.list());
+        expect(f.post.mock.calls.every((call) => call[2] === f.admission)).toBe(true);
+        if (stage === 'receiver-ACK') {
+          await f.coordinator.flush();
+          expect(f.store.get(f.offered.id)).toEqual(f.declined);
+        }
+      } finally { held.release(); await earlier; await Promise.allSettled([syncing]); }
+    });
+
+  it('does not advance reverse ACK memory after either deterministic precommit failure or ambiguous post-rename failure', async () => {
+    for (const phase of ['before-rename', 'after-real-rename']) {
+      const f = await queueFixture(); const rename = fs.promises.rename;
+      const fault = vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+        if (phase === 'after-real-rename') await rename(from, to);
+        throw new Error(`Injected ${phase} ACK failure`);
+      });
+      await expect(f.coordinator.sync(f.offered.id)).rejects.toThrow(`Injected ${phase} ACK failure`);
+      expect(f.commands.acknowledged(f.offered.id)).toBeUndefined();
+      expect(new HandoffCommandStore().acknowledged(f.offered.id)).toBe(phase === 'before-rename' ? undefined : 2);
+      fault.mockRestore(); f.retire(); await f.coordinator.flush();
+      expect(f.store.get(f.offered.id)).toEqual(f.declined);
+    }
+  });
+
+  it.each([false, true])('requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=%s)', async (direct) => {
+    const f = await queueFixture();
+    f.options.connected = () => direct;
+    f.options.commands = { list: () => [], put: (command) => f.commands.put(command), remove: (id, guard) => f.commands.remove(id, guard) };
+    if (direct) await expect(f.coordinator.sync(f.offered.id)).resolves.toBeUndefined();
+    else await expect(f.coordinator.sync(f.offered.id)).rejects.toThrow('Durable reverse handoff acknowledgement is unavailable');
+    expect(f.commands.acknowledged(f.offered.id)).toBeUndefined();
+    if (!direct) { f.retire(); await f.coordinator.flush(); expect(f.store.get(f.offered.id)).toEqual(f.declined); }
+  });
+
+  it('commits history admitted before retirement but refuses the next secondary POST under the original capture', async () => {
+    const f = await queueFixture(true, true);
+    const entered = barrier(); const held = barrier(); const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === path.join(disk.dir, 'handoffs.json')) { entered.release(); await held.promise; }
+      return rename(from, to);
+    });
+    const syncing = f.coordinator.sync(f.offered.id);
+    const refusal = expect(syncing).rejects.toThrow('Original reverse admission retired');
+    try {
+      await entered.promise; f.retire(); held.release(); await refusal;
+      expect(f.store.get(f.offered.id)).toEqual(f.accepted); expect(new HandoffStore().get(f.offered.id)).toEqual(f.accepted);
+      expect(f.post).toHaveBeenCalledTimes(1); expect(f.commands.list()).toEqual([f.command]);
+      expect(f.changed).not.toHaveBeenCalled();
+    } finally { held.release(); await Promise.allSettled([syncing]); }
+  });
+
+  it('publishes a real ACK admitted before retirement but refuses the distinct primary removal', async () => {
+    const f = await queueFixture(true, true, true);
+    const entered = barrier(); const held = barrier(); const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === path.join(disk.dir, 'handoff-commands.json')
+        && JSON.parse(fs.readFileSync(String(from), 'utf8')).acknowledgements?.[f.offered.id] === 2) {
+        entered.release(); await held.promise;
+      }
+      return rename(from, to);
+    });
+    const syncing = f.coordinator.sync(f.offered.id);
+    const refusal = expect(syncing).rejects.toThrow('Original reverse admission retired');
+    try {
+      await entered.promise; f.retire(); held.release(); await refusal;
+      expect(f.commands.acknowledged(f.offered.id)).toBe(2); expect(new HandoffCommandStore().acknowledged(f.offered.id)).toBe(2);
+      expect(f.commands.list()).toEqual([f.command]); expect(f.store.get(f.offered.id)).toEqual(f.declined);
+      expect(f.post).toHaveBeenCalledTimes(1);
+    } finally { held.release(); await Promise.allSettled([syncing]); }
+  });
+
+  it('uses one original capture and cancellation ID through primary adoption and every secondary adoption/ACK/removal', async () => {
+    const f = await queueFixture(true, true);
+    const adopted = vi.spyOn(f.service, 'receiveSnapshot'), acknowledged = vi.spyOn(f.commands, 'acknowledge'), removed = vi.spyOn(f.commands, 'remove');
+    await f.coordinator.sync(f.offered.id);
+    expect(f.post).toHaveBeenCalledTimes(2);
+    expect(f.post.mock.calls.map((call) => call[2])).toEqual([f.admission, f.admission]);
+    expect(f.post.mock.calls.map((call) => call[1])).toEqual([
+      { op: 'cancel', command: f.command, record: f.offered }, { op: 'cancel', command: f.command },
+    ]);
+    expect(adopted).toHaveBeenCalledTimes(2); expect(adopted.mock.calls.every((call) => typeof call[2] === 'function')).toBe(true);
+    expect(acknowledged).toHaveBeenCalledWith(f.offered.id, 3, expect.any(Function));
+    expect(removed).toHaveBeenCalledWith(f.command.operationId, expect.any(Function));
+    expect(f.store.get(f.offered.id)).toEqual(f.cancelled); expect(new HandoffStore().get(f.offered.id)).toEqual(f.cancelled);
+    expect(f.commands.list()).toEqual([]); expect(f.commands.acknowledged(f.offered.id)).toBe(3);
+    expect(f.admission.release).toHaveBeenCalledTimes(1);
+  });
+});
 describe('handoff agreement synchronization', () => {
   it('offers, accepts and cancels locally without using a network transport', async () => {
     const { a } = fixture(true);

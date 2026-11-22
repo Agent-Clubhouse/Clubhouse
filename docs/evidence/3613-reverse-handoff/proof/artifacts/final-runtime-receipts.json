@@ -1,0 +1,1129 @@
+[
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_LINK",
+    "receipt": {
+      "epoch": 1,
+      "upgrades": [
+        "/control"
+      ],
+      "ordinaryHttp": 0,
+      "directConnected": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_AGREEMENT",
+    "receipt": {
+      "record": {
+        "schemaVersion": 1,
+        "id": "11111111-1111-4111-8111-000000000001",
+        "createdAt": 1795344000000,
+        "updatedAt": 1795344000000,
+        "version": 2,
+        "state": "accepted",
+        "history": [],
+        "from": {
+          "machine": "3b:41:dc:5b:2a:ee:fb:10:d3:e6:95:a5:95:b7:fb:0e",
+          "agentId": "sender"
+        },
+        "to": {
+          "machine": "32:d1:e0:4d:ef:0e:8b:43:71:1b:3a:ea:08:83:b8:8b",
+          "agentId": "receiver"
+        },
+        "acceptance": {
+          "by": {
+            "machine": "32:d1:e0:4d:ef:0e:8b:43:71:1b:3a:ea:08:83:b8:8b",
+            "agentId": "receiver"
+          },
+          "target": {
+            "machine": "32:d1:e0:4d:ef:0e:8b:43:71:1b:3a:ea:08:83:b8:8b",
+            "agentId": "receiver"
+          }
+        },
+        "mode": "worktree",
+        "task": {
+          "title": "Fixture transfer",
+          "brief": "Verify selected bytes"
+        },
+        "manifest": {
+          "fileCount": 1,
+          "totalBytes": 614417,
+          "sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+        }
+      },
+      "manifest": {
+        "v": 1,
+        "repo": {
+          "branch": "main",
+          "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "remote": null
+        },
+        "include": {
+          "tracked_changes": true,
+          "untracked": true,
+          "ignored": [
+            "fixtures/*.bin"
+          ]
+        },
+        "exclude": [
+          "**/node_modules/**"
+        ],
+        "files": [
+          {
+            "path": "fixtures/selected.bin",
+            "size": 614417,
+            "mode": "100644",
+            "sha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2"
+          }
+        ],
+        "deletions": [],
+        "total_bytes": 614417,
+        "manifest_sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+      },
+      "sourcePin": "EF:DA:E1:82:9A:1B:09:A4:4B:D1:3A:DC:F2:76:BB:95:78:0E:5C:24:27:21:79:FB:CC:29:DD:11:BB:2C:44:85",
+      "receiverPin": "33:B7:BE:59:2E:BD:6C:07:00:3F:66:15:46:A2:9B:2C:CE:38:EB:E4:7C:5F:3C:19:9C:23:38:21:33:AB:5C:67",
+      "operations": [
+        "manifest",
+        "read"
+      ],
+      "preparedAndAgentGrantsAreFixtures": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_CHECKPOINT",
+    "receipt": {
+      "id": "11111111-1111-4111-8111-000000000001",
+      "bytes": 262144,
+      "sha256": "2312394bd99545d9de131c24efb781e765ac1aec243f2ed9347597a793a415e9",
+      "epoch": 1,
+      "afterRealSyncProgress": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_LINK",
+    "receipt": {
+      "epoch": 2,
+      "upgrades": [
+        "/control",
+        "/control"
+      ],
+      "ordinaryHttp": 0,
+      "directConnected": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_COMPLETE",
+    "receipt": {
+      "id": "11111111-1111-4111-8111-000000000001",
+      "bytes": 614417,
+      "sha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2",
+      "manifestSha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548",
+      "originalEpoch": 1,
+      "resumedEpoch": 2,
+      "explicitResume": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_DISPATCH",
+    "receipt": {
+      "received": [
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 524288
+        }
+      ],
+      "published": [
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 524288
+        }
+      ],
+      "upgrades": [
+        "/control",
+        "/control"
+      ],
+      "ordinaryHttp": 0
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_TEARDOWN",
+    "receipt": {
+      "sockets": 0,
+      "inFlight": 0,
+      "artifacts": 0,
+      "serverListening": false,
+      "forwardListening": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_LINK",
+    "receipt": {
+      "epoch": 1,
+      "upgrades": [
+        "/control"
+      ],
+      "ordinaryHttp": 0,
+      "directConnected": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_AGREEMENT",
+    "receipt": {
+      "record": {
+        "schemaVersion": 1,
+        "id": "11111111-1111-4111-8111-000000000001",
+        "createdAt": 1795344000000,
+        "updatedAt": 1795344000000,
+        "version": 2,
+        "state": "accepted",
+        "history": [],
+        "from": {
+          "machine": "e7:2c:b8:e6:51:3e:24:24:3e:4c:06:02:a8:b7:92:35",
+          "agentId": "sender"
+        },
+        "to": {
+          "machine": "4e:f5:4f:f6:c2:5c:45:d8:58:b2:be:71:77:27:6f:4c",
+          "agentId": "receiver"
+        },
+        "acceptance": {
+          "by": {
+            "machine": "4e:f5:4f:f6:c2:5c:45:d8:58:b2:be:71:77:27:6f:4c",
+            "agentId": "receiver"
+          },
+          "target": {
+            "machine": "4e:f5:4f:f6:c2:5c:45:d8:58:b2:be:71:77:27:6f:4c",
+            "agentId": "receiver"
+          }
+        },
+        "mode": "worktree",
+        "task": {
+          "title": "Fixture transfer",
+          "brief": "Verify selected bytes"
+        },
+        "manifest": {
+          "fileCount": 1,
+          "totalBytes": 614417,
+          "sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+        }
+      },
+      "manifest": {
+        "v": 1,
+        "repo": {
+          "branch": "main",
+          "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "remote": null
+        },
+        "include": {
+          "tracked_changes": true,
+          "untracked": true,
+          "ignored": [
+            "fixtures/*.bin"
+          ]
+        },
+        "exclude": [
+          "**/node_modules/**"
+        ],
+        "files": [
+          {
+            "path": "fixtures/selected.bin",
+            "size": 614417,
+            "mode": "100644",
+            "sha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2"
+          }
+        ],
+        "deletions": [],
+        "total_bytes": 614417,
+        "manifest_sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+      },
+      "sourcePin": "8C:B5:E2:50:A3:6A:F5:1B:EE:A2:48:BC:92:E7:FB:FB:B7:CB:E4:FE:01:D1:2A:38:0A:B8:BE:CA:1F:5C:2B:72",
+      "receiverPin": "40:2D:53:7E:49:86:AE:22:26:9B:7B:FF:64:62:3E:CA:D6:82:C4:EF:85:8C:55:D0:5E:4C:97:5A:7F:95:D0:2D",
+      "operations": [
+        "manifest",
+        "read"
+      ],
+      "preparedAndAgentGrantsAreFixtures": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_AGREEMENT",
+    "receipt": {
+      "record": {
+        "schemaVersion": 1,
+        "id": "11111111-1111-4111-8111-000000000002",
+        "createdAt": 1795344000000,
+        "updatedAt": 1795344000000,
+        "version": 2,
+        "state": "accepted",
+        "history": [],
+        "from": {
+          "machine": "e7:2c:b8:e6:51:3e:24:24:3e:4c:06:02:a8:b7:92:35",
+          "agentId": "sender"
+        },
+        "to": {
+          "machine": "4e:f5:4f:f6:c2:5c:45:d8:58:b2:be:71:77:27:6f:4c",
+          "agentId": "receiver"
+        },
+        "acceptance": {
+          "by": {
+            "machine": "4e:f5:4f:f6:c2:5c:45:d8:58:b2:be:71:77:27:6f:4c",
+            "agentId": "receiver"
+          },
+          "target": {
+            "machine": "4e:f5:4f:f6:c2:5c:45:d8:58:b2:be:71:77:27:6f:4c",
+            "agentId": "receiver"
+          }
+        },
+        "mode": "worktree",
+        "task": {
+          "title": "Fixture transfer",
+          "brief": "Verify selected bytes"
+        },
+        "manifest": {
+          "fileCount": 1,
+          "totalBytes": 614417,
+          "sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+        }
+      },
+      "manifest": {
+        "v": 1,
+        "repo": {
+          "branch": "main",
+          "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "remote": null
+        },
+        "include": {
+          "tracked_changes": true,
+          "untracked": true,
+          "ignored": [
+            "fixtures/*.bin"
+          ]
+        },
+        "exclude": [
+          "**/node_modules/**"
+        ],
+        "files": [
+          {
+            "path": "fixtures/selected.bin",
+            "size": 614417,
+            "mode": "100644",
+            "sha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2"
+          }
+        ],
+        "deletions": [],
+        "total_bytes": 614417,
+        "manifest_sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+      },
+      "sourcePin": "8C:B5:E2:50:A3:6A:F5:1B:EE:A2:48:BC:92:E7:FB:FB:B7:CB:E4:FE:01:D1:2A:38:0A:B8:BE:CA:1F:5C:2B:72",
+      "receiverPin": "40:2D:53:7E:49:86:AE:22:26:9B:7B:FF:64:62:3E:CA:D6:82:C4:EF:85:8C:55:D0:5E:4C:97:5A:7F:95:D0:2D",
+      "operations": [
+        "manifest",
+        "read"
+      ],
+      "preparedAndAgentGrantsAreFixtures": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_RETIRED",
+    "receipt": {
+      "id": "11111111-1111-4111-8111-000000000001",
+      "diagnostic": "record_state",
+      "allocationRemoved": true,
+      "unrelatedId": "11111111-1111-4111-8111-000000000002",
+      "unrelatedBytes": 614417,
+      "unrelatedSha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2"
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_DISPATCH",
+    "receipt": {
+      "received": [
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000002"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 524288
+        }
+      ],
+      "published": [
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000002"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 524288
+        }
+      ],
+      "upgrades": [
+        "/control"
+      ],
+      "ordinaryHttp": 0
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_TEARDOWN",
+    "receipt": {
+      "sockets": 0,
+      "inFlight": 0,
+      "artifacts": 0,
+      "serverListening": false,
+      "forwardListening": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_LINK",
+    "receipt": {
+      "epoch": 1,
+      "upgrades": [
+        "/control"
+      ],
+      "ordinaryHttp": 0,
+      "directConnected": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_AGREEMENT",
+    "receipt": {
+      "record": {
+        "schemaVersion": 1,
+        "id": "11111111-1111-4111-8111-000000000001",
+        "createdAt": 1795344000000,
+        "updatedAt": 1795344000000,
+        "version": 2,
+        "state": "accepted",
+        "history": [],
+        "from": {
+          "machine": "7a:2c:0d:8f:d1:35:ee:3c:3b:fa:6f:1f:a6:1e:59:63",
+          "agentId": "sender"
+        },
+        "to": {
+          "machine": "03:b3:7c:91:8d:f8:e7:4c:4a:38:19:c3:2b:9c:36:84",
+          "agentId": "receiver"
+        },
+        "acceptance": {
+          "by": {
+            "machine": "03:b3:7c:91:8d:f8:e7:4c:4a:38:19:c3:2b:9c:36:84",
+            "agentId": "receiver"
+          },
+          "target": {
+            "machine": "03:b3:7c:91:8d:f8:e7:4c:4a:38:19:c3:2b:9c:36:84",
+            "agentId": "receiver"
+          }
+        },
+        "mode": "worktree",
+        "task": {
+          "title": "Fixture transfer",
+          "brief": "Verify selected bytes"
+        },
+        "manifest": {
+          "fileCount": 1,
+          "totalBytes": 614417,
+          "sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+        }
+      },
+      "manifest": {
+        "v": 1,
+        "repo": {
+          "branch": "main",
+          "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "remote": null
+        },
+        "include": {
+          "tracked_changes": true,
+          "untracked": true,
+          "ignored": [
+            "fixtures/*.bin"
+          ]
+        },
+        "exclude": [
+          "**/node_modules/**"
+        ],
+        "files": [
+          {
+            "path": "fixtures/selected.bin",
+            "size": 614417,
+            "mode": "100644",
+            "sha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2"
+          }
+        ],
+        "deletions": [],
+        "total_bytes": 614417,
+        "manifest_sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+      },
+      "sourcePin": "A8:99:61:E0:2D:E2:23:61:64:15:8C:AF:DF:5B:82:3F:EE:8E:D4:81:5E:5A:3A:F5:6F:86:D1:8B:8D:2B:CC:31",
+      "receiverPin": "E8:D4:BF:34:03:A4:86:67:DF:9A:5D:13:4A:E3:9F:DA:F4:B9:8A:BF:AB:B8:DA:09:10:28:57:13:91:2E:28:2C",
+      "operations": [
+        "manifest",
+        "read"
+      ],
+      "preparedAndAgentGrantsAreFixtures": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_CORRUPTION",
+    "receipt": {
+      "id": "11111111-1111-4111-8111-000000000001",
+      "kind": "chunk",
+      "code": "hash_mismatch",
+      "allocationRemoved": true,
+      "completedChunkReplies": 1,
+      "chunkDigestsValid": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_DISPATCH",
+    "receipt": {
+      "received": [
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        }
+      ],
+      "published": [
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        }
+      ],
+      "upgrades": [
+        "/control"
+      ],
+      "ordinaryHttp": 0
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_TEARDOWN",
+    "receipt": {
+      "sockets": 0,
+      "inFlight": 0,
+      "artifacts": 0,
+      "serverListening": false,
+      "forwardListening": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_LINK",
+    "receipt": {
+      "epoch": 1,
+      "upgrades": [
+        "/control"
+      ],
+      "ordinaryHttp": 0,
+      "directConnected": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_AGREEMENT",
+    "receipt": {
+      "record": {
+        "schemaVersion": 1,
+        "id": "11111111-1111-4111-8111-000000000001",
+        "createdAt": 1795344000000,
+        "updatedAt": 1795344000000,
+        "version": 2,
+        "state": "accepted",
+        "history": [],
+        "from": {
+          "machine": "38:6e:80:c1:36:d7:89:ae:b8:b4:6f:a8:e7:a9:a9:6a",
+          "agentId": "sender"
+        },
+        "to": {
+          "machine": "e1:3b:69:43:2b:b4:42:0d:78:85:f7:02:9f:66:89:65",
+          "agentId": "receiver"
+        },
+        "acceptance": {
+          "by": {
+            "machine": "e1:3b:69:43:2b:b4:42:0d:78:85:f7:02:9f:66:89:65",
+            "agentId": "receiver"
+          },
+          "target": {
+            "machine": "e1:3b:69:43:2b:b4:42:0d:78:85:f7:02:9f:66:89:65",
+            "agentId": "receiver"
+          }
+        },
+        "mode": "worktree",
+        "task": {
+          "title": "Fixture transfer",
+          "brief": "Verify selected bytes"
+        },
+        "manifest": {
+          "fileCount": 1,
+          "totalBytes": 614417,
+          "sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+        }
+      },
+      "manifest": {
+        "v": 1,
+        "repo": {
+          "branch": "main",
+          "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "remote": null
+        },
+        "include": {
+          "tracked_changes": true,
+          "untracked": true,
+          "ignored": [
+            "fixtures/*.bin"
+          ]
+        },
+        "exclude": [
+          "**/node_modules/**"
+        ],
+        "files": [
+          {
+            "path": "fixtures/selected.bin",
+            "size": 614417,
+            "mode": "100644",
+            "sha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2"
+          }
+        ],
+        "deletions": [],
+        "total_bytes": 614417,
+        "manifest_sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+      },
+      "sourcePin": "14:84:E1:B1:D6:E0:15:FB:CA:F0:D1:42:AA:79:94:AC:5F:D9:75:FC:B4:64:1C:28:D2:FC:22:20:94:A1:78:A5",
+      "receiverPin": "A6:25:A5:B0:A3:82:C5:65:41:23:40:70:D6:D0:1B:5A:04:04:D1:F0:29:A1:DF:4A:7F:EF:CF:EF:0E:F8:78:96",
+      "operations": [
+        "manifest",
+        "read"
+      ],
+      "preparedAndAgentGrantsAreFixtures": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_CORRUPTION",
+    "receipt": {
+      "id": "11111111-1111-4111-8111-000000000001",
+      "kind": "final digest",
+      "code": "hash_mismatch",
+      "allocationRemoved": true,
+      "completedChunkReplies": 3,
+      "chunkDigestsValid": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_DISPATCH",
+    "receipt": {
+      "received": [
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 524288
+        }
+      ],
+      "published": [
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 524288
+        }
+      ],
+      "upgrades": [
+        "/control"
+      ],
+      "ordinaryHttp": 0
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_TEARDOWN",
+    "receipt": {
+      "sockets": 0,
+      "inFlight": 0,
+      "artifacts": 0,
+      "serverListening": false,
+      "forwardListening": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_LINK",
+    "receipt": {
+      "epoch": 1,
+      "upgrades": [
+        "/control"
+      ],
+      "ordinaryHttp": 0,
+      "directConnected": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_AGREEMENT",
+    "receipt": {
+      "record": {
+        "schemaVersion": 1,
+        "id": "11111111-1111-4111-8111-000000000001",
+        "createdAt": 1795344000000,
+        "updatedAt": 1795344000000,
+        "version": 2,
+        "state": "accepted",
+        "history": [],
+        "from": {
+          "machine": "6f:7c:10:66:dd:f5:f9:68:2b:93:75:61:45:a9:f4:39",
+          "agentId": "sender"
+        },
+        "to": {
+          "machine": "d6:8c:72:c9:9d:1e:0b:29:ac:db:7d:b4:98:ff:ef:4c",
+          "agentId": "receiver"
+        },
+        "acceptance": {
+          "by": {
+            "machine": "d6:8c:72:c9:9d:1e:0b:29:ac:db:7d:b4:98:ff:ef:4c",
+            "agentId": "receiver"
+          },
+          "target": {
+            "machine": "d6:8c:72:c9:9d:1e:0b:29:ac:db:7d:b4:98:ff:ef:4c",
+            "agentId": "receiver"
+          }
+        },
+        "mode": "worktree",
+        "task": {
+          "title": "Fixture transfer",
+          "brief": "Verify selected bytes"
+        },
+        "manifest": {
+          "fileCount": 1,
+          "totalBytes": 614417,
+          "sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+        }
+      },
+      "manifest": {
+        "v": 1,
+        "repo": {
+          "branch": "main",
+          "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "remote": null
+        },
+        "include": {
+          "tracked_changes": true,
+          "untracked": true,
+          "ignored": [
+            "fixtures/*.bin"
+          ]
+        },
+        "exclude": [
+          "**/node_modules/**"
+        ],
+        "files": [
+          {
+            "path": "fixtures/selected.bin",
+            "size": 614417,
+            "mode": "100644",
+            "sha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2"
+          }
+        ],
+        "deletions": [],
+        "total_bytes": 614417,
+        "manifest_sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+      },
+      "sourcePin": "67:C9:12:E9:51:67:93:94:6C:0C:55:35:03:7D:92:C6:5F:80:C9:AE:26:EA:92:75:F6:5A:19:F0:96:84:72:D7",
+      "receiverPin": "BF:1B:31:E8:8E:CB:F5:09:BA:D1:F8:FD:40:02:BC:AB:B6:31:BB:BE:E6:C3:D3:37:70:5C:05:0C:21:7A:B3:F1",
+      "operations": [
+        "manifest",
+        "read"
+      ],
+      "preparedAndAgentGrantsAreFixtures": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_AGREEMENT",
+    "receipt": {
+      "record": {
+        "schemaVersion": 1,
+        "id": "11111111-1111-4111-8111-000000000002",
+        "createdAt": 1795344000000,
+        "updatedAt": 1795344000000,
+        "version": 2,
+        "state": "accepted",
+        "history": [],
+        "from": {
+          "machine": "6f:7c:10:66:dd:f5:f9:68:2b:93:75:61:45:a9:f4:39",
+          "agentId": "sender"
+        },
+        "to": {
+          "machine": "d6:8c:72:c9:9d:1e:0b:29:ac:db:7d:b4:98:ff:ef:4c",
+          "agentId": "receiver"
+        },
+        "acceptance": {
+          "by": {
+            "machine": "d6:8c:72:c9:9d:1e:0b:29:ac:db:7d:b4:98:ff:ef:4c",
+            "agentId": "receiver"
+          },
+          "target": {
+            "machine": "d6:8c:72:c9:9d:1e:0b:29:ac:db:7d:b4:98:ff:ef:4c",
+            "agentId": "receiver"
+          }
+        },
+        "mode": "worktree",
+        "task": {
+          "title": "Fixture transfer",
+          "brief": "Verify selected bytes"
+        },
+        "manifest": {
+          "fileCount": 1,
+          "totalBytes": 614417,
+          "sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+        }
+      },
+      "manifest": {
+        "v": 1,
+        "repo": {
+          "branch": "main",
+          "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "remote": null
+        },
+        "include": {
+          "tracked_changes": true,
+          "untracked": true,
+          "ignored": [
+            "fixtures/*.bin"
+          ]
+        },
+        "exclude": [
+          "**/node_modules/**"
+        ],
+        "files": [
+          {
+            "path": "fixtures/selected.bin",
+            "size": 614417,
+            "mode": "100644",
+            "sha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2"
+          }
+        ],
+        "deletions": [],
+        "total_bytes": 614417,
+        "manifest_sha256": "3b8a71ecda0deba7d7948cda37f1add54f7cb55ba7a55dead05a6c9a84107548"
+      },
+      "sourcePin": "67:C9:12:E9:51:67:93:94:6C:0C:55:35:03:7D:92:C6:5F:80:C9:AE:26:EA:92:75:F6:5A:19:F0:96:84:72:D7",
+      "receiverPin": "BF:1B:31:E8:8E:CB:F5:09:BA:D1:F8:FD:40:02:BC:AB:B6:31:BB:BE:E6:C3:D3:37:70:5C:05:0C:21:7A:B3:F1",
+      "operations": [
+        "manifest",
+        "read"
+      ],
+      "preparedAndAgentGrantsAreFixtures": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_LINK",
+    "receipt": {
+      "epoch": 2,
+      "upgrades": [
+        "/control",
+        "/control"
+      ],
+      "ordinaryHttp": 0,
+      "directConnected": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_HELD",
+    "receipt": {
+      "id": "11111111-1111-4111-8111-000000000001",
+      "oldSignalAborted": true,
+      "oldLinkOpen": false,
+      "oldReadRepliesPublished": 0,
+      "unrelatedId": "11111111-1111-4111-8111-000000000002",
+      "unrelatedSha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2",
+      "explicitResumeBytes": 614417,
+      "explicitResumeSha256": "0667d68f3d54649e11117d55ec5d2394f93f48d7ff1b0792212cf19b062225f2"
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_DISPATCH",
+    "receipt": {
+      "received": [
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000002"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 524288
+        },
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 524288
+        }
+      ],
+      "published": [
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000002"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000002",
+          "file": 0,
+          "offset": 524288
+        },
+        {
+          "op": "manifest",
+          "id": "11111111-1111-4111-8111-000000000001"
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 0
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 262144
+        },
+        {
+          "op": "read",
+          "id": "11111111-1111-4111-8111-000000000001",
+          "file": 0,
+          "offset": 524288
+        }
+      ],
+      "upgrades": [
+        "/control",
+        "/control"
+      ],
+      "ordinaryHttp": 0
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_HANDOFF_TEARDOWN",
+    "receipt": {
+      "sockets": 0,
+      "inFlight": 0,
+      "artifacts": 0,
+      "serverListening": false,
+      "forwardListening": false
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_CONSUMER",
+    "receipt": {
+      "binaryBytes": 81937,
+      "sha256": "f7da8be077ec14d7c37a9e717948bedebdc1b9e4ec14cde538646611e18b643b",
+      "iconBytes": 68,
+      "controlUpgrades": [
+        "/control"
+      ],
+      "ordinaryHttpRequests": 0,
+      "handoffRequests": 1,
+      "reverseDirectRefused": true,
+      "directConnected": false,
+      "subscriptionsAfterStop": 0,
+      "inFlightAfterStop": 0,
+      "headlessDisposed": true,
+      "lateIpc": 0,
+      "independentAcceptedControlRetained": true
+    }
+  },
+  {
+    "kind": "ANNEX_REVERSE_FIXTURE_TEARDOWN",
+    "receipt": {
+      "forwardSockets": 0,
+      "serverSockets": 0,
+      "forwardListening": false,
+      "serverListening": false
+    }
+  }
+]

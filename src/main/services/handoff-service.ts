@@ -198,11 +198,12 @@ export class HandoffService {
   }
 
   /** Only the receiver can send authoritative history back to the sender. */
-  async receiveSnapshot(raw: unknown, authenticatedMachine: string): Promise<Handoff> {
+  async receiveSnapshot(raw: unknown, authenticatedMachine: string, beforeAdopt?: () => void): Promise<Handoff> {
     const next = parseHandoff(raw);
     if (next.from.machine !== this.options.machine || next.to.machine !== authenticatedMachine
       || authenticatedMachine === this.options.machine) throw new Error('Invalid handoff snapshot source.');
     return this.options.store.transact(next.id, (current) => {
+      beforeAdopt?.();
       if (!current) throw new Error('Handoff offer is unknown.');
       if (next.version < current.version) {
         assertHandoffExtension(next, current);

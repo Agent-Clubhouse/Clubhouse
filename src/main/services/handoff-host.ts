@@ -40,7 +40,7 @@ import { handoffAgreementCallApproved } from './clubhouse-mcp/handoff-permission
 import { withCapacityDeadline } from './handoff-capacity';
 import { HANDOFF_ACTIVE_LIMIT, HANDOFF_PEER_LIMIT, HandoffService, type HandoffAuthorization } from './handoff-service';
 import { HandoffStore } from './handoff-store';
-import { HandoffCoordinator } from './handoff-coordinator';
+import { HandoffCoordinator, type HandoffSyncAdmission } from './handoff-coordinator';
 import { HandoffCommandStore } from './handoff-command-store';
 import { publishFederationHandoff } from './dispatcher-federation-policy';
 
@@ -145,7 +145,53 @@ function acceptsRemote(): boolean {
   return networkEnabled(settings) && settings.enableServer && !('acceptHandoffs' in settings && settings.acceptHandoffs === false);
 }
 
-interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator: HandoffCoordinator; machine: string; transfer: HandoffTransferSource; worker: HandoffWorker; ready: Promise<void> }
+class HandoffSyncOwner implements HandoffSyncAdmission {
+  private references = 1;
+  private retired = false;
+  private disposed = false;
+  readonly settled: Promise<void>;
+  private readonly complete: () => void;
+
+  constructor(private readonly current: () => boolean, private readonly outgoing: () => void,
+    private readonly dispose: () => void, private readonly released: () => void) {
+    let complete!: () => void;
+    this.settled = new Promise<void>((resolve) => { complete = resolve; });
+    this.complete = complete;
+  }
+
+  retire(): void { this.retired = true; }
+  check(): void {
+    if (this.retired || this.disposed || !this.current()) {
+      this.retire();
+      throw new HandoffAuthorizationChanged();
+    }
+  }
+  checkOutgoing(): void {
+    this.check();
+    try { this.outgoing(); }
+    catch (error) { this.retire(); throw error; }
+  }
+  holdPost(): () => void {
+    this.check();
+    this.references++;
+    return () => this.releaseReference();
+  }
+  release(): void {
+    // Ending a sync cannot release its still-settling POST references.
+    this.retire();
+    this.released();
+    this.complete();
+    this.releaseReference();
+  }
+  private releaseReference(): void {
+    if (--this.references === 0) {
+      this.disposed = true;
+      this.dispose();
+    }
+  }
+}
+
+interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator: HandoffCoordinator; machine: string; transfer: HandoffTransferSource; worker: HandoffWorker; ready: Promise<void>; reverseSyncs: Set<HandoffSyncOwner>; stopping: boolean }
 let host: Host | undefined;
 let sweep: ReturnType<typeof setInterval> | undefined;
 let offConnected: (() => void) | undefined;
@@ -309,7 +355,12 @@ async function notifyRecord(record: Handoff): Promise<void> {
 
 export function handoffHost(): Host {
   const machine = ownMachine();
+  if (host?.stopping) throw new HandoffAuthorizationChanged();
   if (host?.machine === machine) return host;
+  if (host?.reverseSyncs.size) {
+    for (const owner of host.reverseSyncs) owner.retire();
+    throw new HandoffAuthorizationChanged();
+  }
   void host?.worker.stop();
   void host?.transfer.close();
   const store = new HandoffStore();
@@ -324,8 +375,39 @@ export function handoffHost(): Host {
     bindOffer: bindPreparedHandoff, offerSettled: settleHandoffPreparationBinding,
     peerRemoved: (peer) => !isNetworkComputer(peer),
     connected: (peer) => isNetworkComputer(peer) && annexClient.isMachineConnected(peer),
-    post: async (peer, body) => {
-      const response = await withCapacityDeadline((signal) => annexClient.postToMachine(peer, '/api/v1/network/handoffs', body, { signal, maxResponseBytes: 512 * 1024 }));
+    captureSync: (record, peer) => {
+      const active = host;
+      if (!active || active.coordinator !== coordinator || active.stopping || !isNetworkComputer(peer) || annexClient.isMachineConnected(peer)) return;
+      const observation = annexClient.getControllerReadObservation(peer);
+      if (!observation.ready) return;
+      const freshOffer = record.from.machine === machine && record.to.machine !== machine && record.state === 'offered';
+      const cancelled = () => commands.list().some((command) => command.id === record.id);
+      const authority = freshOffer && !cancelled() ? transferAuthority(record, peer) : undefined;
+      const owner = new HandoffSyncOwner(() => {
+        const current = annexClient.getControllerReadObservation(peer);
+        return host === active && !active.stopping && ownMachine() === machine && isNetworkComputer(peer)
+          && !annexClient.isMachineConnected(peer) && current.ready && current.revision === observation.revision;
+      }, () => {
+        if (freshOffer && !cancelled()) {
+          if (!authority) throw new HandoffAuthorizationChanged();
+          authority.check();
+        }
+      }, () => authority?.dispose(), () => { active.reverseSyncs.delete(owner); });
+      active.reverseSyncs.add(owner);
+      return owner;
+    },
+    post: async (peer, body, admission) => {
+      const release = admission?.holdPost();
+      const response = await withCapacityDeadline(async (signal) => {
+        try {
+          if (admission) {
+            if (signal.aborted) throw new HandoffAuthorizationChanged();
+            if (body.op === 'offer') admission.checkOutgoing();
+            else admission.check();
+          }
+          return await annexClient.postToMachine(peer, '/api/v1/network/handoffs', body, { signal, maxResponseBytes: 512 * 1024 });
+        } finally { release?.(); }
+      });
       if (response.status !== 200) throw new Error('Handoff synchronization is unavailable.');
       return response.body;
     },
@@ -409,7 +491,7 @@ export function handoffHost(): Host {
       if (delivery !== 'delivered') throw new Error('Receiving agent did not receive its handoff.');
     },
   });
-  host = { machine, store, commands, coordinator, transfer, worker, ready };
+  host = { machine, store, commands, coordinator, transfer, worker, ready, reverseSyncs: new Set(), stopping: false };
   void ready.catch(() => { /* telemetry-exempt: tools and continuation fail closed if recovery/storage is unavailable */ });
   return host;
 }
@@ -452,11 +534,17 @@ export async function stopHandoffs(): Promise<void> {
   sweep = undefined;
   offConnected?.();
   offConnected = undefined;
+  const active = host;
+  if (active) {
+    active.stopping = true;
+    for (const owner of active.reverseSyncs) owner.retire();
+    await Promise.all([...active.reverseSyncs].map((owner) => owner.settled));
+  }
   await flushWork;
   setHandoffParticipantCheck(() => false);
-  await host?.worker.stop();
-  await host?.transfer.close();
-  host = undefined;
+  await active?.worker.stop();
+  await active?.transfer.close();
+  if (host === active) host = undefined;
   incomingRates.clear();
 }
 

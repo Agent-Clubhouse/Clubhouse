@@ -1,0 +1,8 @@
+{
+  "extends": "../../../tsconfig.json",
+  "files": [
+    "../../../test/annex-v2/annex-reverse-consumers.test.ts",
+    "../../../test/annex-v2/annex-reverse-handoff.test.ts",
+    "../../../test/annex-v2/reverse-desktop-fixture.ts"
+  ]
+}
