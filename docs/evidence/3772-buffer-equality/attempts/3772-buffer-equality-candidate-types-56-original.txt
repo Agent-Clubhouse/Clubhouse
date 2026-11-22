@@ -1,0 +1,62 @@
+2026-11-22T00:49:18Z START lane-p2 idle=83% unused=7417M avail=33978M freepct=87 comp=740M swap=3785M pid=46096 cmd=npx --no-install tsc --noEmit -p node_modules/.cache/3772-buffer-equality-fixture.tsconfig.json
+src/main/chat/copilot/driver.ts(33,32): error TS7016: Could not find a declaration file for module './sdk-loader'. '/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/main/chat/copilot/sdk-loader.js' implicitly has an 'any' type.
+src/main/services/dispatcher/dispatcher-service.ts(60,36): error TS2307: Cannot find module './dispatcher-instructions.md' or its corresponding type declarations.
+src/main/services/dispatcher/dispatcher-service.ts(61,40): error TS2307: Cannot find module './dispatcher-chat-instructions.md' or its corresponding type declarations.
+src/main/services/dispatcher/dispatcher-skills.ts(23,24): error TS2307: Cannot find module './skills/chat/catching-up/SKILL.md' or its corresponding type declarations.
+src/main/services/dispatcher/dispatcher-skills.ts(24,30): error TS2307: Cannot find module './skills/chat/what-else-can-you-do/SKILL.md' or its corresponding type declarations.
+src/main/services/dispatcher/dispatcher-skills.ts(25,24): error TS2307: Cannot find module './skills/work/agent-cards/SKILL.md' or its corresponding type declarations.
+src/main/services/dispatcher/dispatcher-skills.ts(26,22): error TS2307: Cannot find module './skills/work/check-ins/SKILL.md' or its corresponding type declarations.
+src/main/services/dispatcher/dispatcher-skills.ts(27,28): error TS2307: Cannot find module './skills/work/delegating-work/SKILL.md' or its corresponding type declarations.
+src/main/services/dispatcher/dispatcher-skills.ts(28,26): error TS2307: Cannot find module './skills/work/memory-upkeep/SKILL.md' or its corresponding type declarations.
+src/main/services/dispatcher/dispatcher-skills.ts(29,27): error TS2307: Cannot find module './skills/work/passing-on-news/SKILL.md' or its corresponding type declarations.
+src/main/services/handoff-snapshot.ts(352,59): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(predicate: (value: string, index: number, array: string[]) => value is string, thisArg?: any): string[]', gave the following error.
+    Argument of type 'Matcher' is not assignable to parameter of type '(value: string, index: number, array: string[]) => value is string'.
+      Types of parameters 'returnObject' and 'index' are incompatible.
+        Type 'number' is not assignable to type 'false'.
+  Overload 2 of 2, '(predicate: (value: string, index: number, array: string[]) => unknown, thisArg?: any): string[]', gave the following error.
+    Argument of type 'Matcher' is not assignable to parameter of type '(value: string, index: number, array: string[]) => unknown'.
+      Types of parameters 'returnObject' and 'index' are incompatible.
+        Type 'number' is not assignable to type 'false'.
+src/main/services/managed-agents/builtin-text/index.ts(2,26): error TS2307: Cannot find module './identity.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(3,32): error TS2307: Cannot find module './identity-helper.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(4,33): error TS2307: Cannot find module './clubhouse-basics.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(5,30): error TS2307: Cannot find module './orchestrator.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(6,30): error TS2307: Cannot find module './product-owner.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(7,32): error TS2307: Cannot find module './project-manager.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(8,34): error TS2307: Cannot find module './group-project-lead.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(9,34): error TS2307: Cannot find module './quality-assurance.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(10,27): error TS2307: Cannot find module './developer.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(11,36): error TS2307: Cannot find module './developer-full-merge.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(12,30): error TS2307: Cannot find module './pull-requests.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(13,25): error TS2307: Cannot find module './merging.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(14,34): error TS2307: Cannot find module './developer-no-merge.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(15,28): error TS2307: Cannot find module './researcher.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(16,30): error TS2307: Cannot find module './code-reviewer.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(17,24): error TS2307: Cannot find module './helper.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(18,31): error TS2307: Cannot find module './group-projects.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(19,35): error TS2307: Cannot find module './group-project-admin.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(20,28): error TS2307: Cannot find module './skills/build/SKILL.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(21,27): error TS2307: Cannot find module './skills/test/SKILL.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(22,27): error TS2307: Cannot find module './skills/lint/SKILL.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(23,31): error TS2307: Cannot find module './skills/validate/SKILL.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(24,39): error TS2307: Cannot find module './skills/post-result-parent/SKILL.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(25,38): error TS2307: Cannot find module './skills/post-result-board/SKILL.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(26,35): error TS2307: Cannot find module './skills/post-result-pr/SKILL.md' or its corresponding type declarations.
+src/main/services/managed-agents/builtin-text/index.ts(27,33): error TS2307: Cannot find module './skills/post-result/SKILL.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(37,30): error TS2307: Cannot find module './builtin-text/orchestrator.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(38,32): error TS2307: Cannot find module './builtin-text/project-manager.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(39,34): error TS2307: Cannot find module './builtin-text/group-project-lead.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(40,34): error TS2307: Cannot find module './builtin-text/quality-assurance.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(41,36): error TS2307: Cannot find module './builtin-text/developer-full-merge.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(42,34): error TS2307: Cannot find module './builtin-text/developer-no-merge.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(43,28): error TS2307: Cannot find module './builtin-text/researcher.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(44,30): error TS2307: Cannot find module './builtin-text/code-reviewer.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(45,24): error TS2307: Cannot find module './builtin-text/helper.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(46,24): error TS2307: Cannot find module './legacy-persona-text/ui-lead.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(47,32): error TS2307: Cannot find module './legacy-persona-text/quality-auditor.md' or its corresponding type declarations.
+src/main/services/managed-agents/legacy-migration.ts(48,28): error TS2307: Cannot find module './legacy-persona-text/doc-updater.md' or its corresponding type declarations.
+src/main/services/managed-agents/persona-copies.ts(21,24): error TS2307: Cannot find module './legacy-persona-text/ui-lead.md' or its corresponding type declarations.
+src/main/services/managed-agents/persona-copies.ts(22,32): error TS2307: Cannot find module './legacy-persona-text/quality-auditor.md' or its corresponding type declarations.
+src/main/services/managed-agents/persona-copies.ts(23,28): error TS2307: Cannot find module './legacy-persona-text/doc-updater.md' or its corresponding type declarations.
+2026-11-22T00:49:22Z END lane-p2 rc=2

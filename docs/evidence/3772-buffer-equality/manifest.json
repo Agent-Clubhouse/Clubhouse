@@ -1,0 +1,312 @@
+{
+  "additionalOriginals": [
+    {
+      "bytes": 2208,
+      "path": "attempts/cost-probe-original.test.ts.txt",
+      "sha256": "a94d2f6bc76f90ab3ebea6306a97a7d37d6c7e60b46e03a9a49f051244dcda0a"
+    },
+    {
+      "bytes": 154,
+      "path": "attempts/compiler-failed56-original.json",
+      "sha256": "62ea6e9bbefc89c776f93227c1964790c821f6b2cc2481d9acb58976a23dd966"
+    },
+    {
+      "bytes": 196,
+      "path": "attempts/compiler-passing58-original.json",
+      "sha256": "6efa051df8168e0cacf21eaaee3dcbffcf306bd6ee41de6d46d41c1339460bf2"
+    },
+    {
+      "bytes": 3510,
+      "path": "attempts/3772-buffer-equality-producer-cost-54.py",
+      "sha256": "8fe00f476635c8a58e09c33f5217ca36b14efdb0e0bd9cbc97748854f9758094"
+    },
+    {
+      "bytes": 3580,
+      "path": "attempts/3613-consumer-proof.py",
+      "sha256": "102df654c36706223b50c44eab20833303c0ca2e8c6d7276a895c8bd150628c6"
+    }
+  ],
+  "attempts": [
+    {
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "main",
+        "src/main/services/handoff-transfer-source.test.ts",
+        "src/main/services/handoff-transfer-source.assertion-cost.test.ts",
+        "--maxWorkers=2"
+      ],
+      "exitCode": 0,
+      "head": "0e779377f19e2c40347e983dd81ea752637a61d1",
+      "minimum": 4,
+      "number": 54,
+      "original": {
+        "bytes": 3443,
+        "path": "attempts/3772-buffer-equality-original-cost-54-original.txt",
+        "sha256": "61c09eabded4e06e1e178200ef55ba0f20ac9762ea6adaa3d45b2a54956f0c9f"
+      },
+      "receipt": {
+        "bytes": 7021,
+        "path": "attempts/3772-buffer-equality-original-cost-54-receipt.json",
+        "sha256": "9c9f3e906a2ae83bb11cf347d473f88c6a923f6386168ecebbb5f8c9b642e40f"
+      },
+      "status": "?? src/main/services/handoff-transfer-source.assertion-cost.test.ts\n",
+      "tree": "2c4f13a41473bece2f7e0c7c1a4a9ddf12e1a79e"
+    },
+    {
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "main",
+        "src/main/services/handoff-transfer-source.test.ts",
+        "--maxWorkers=2",
+        "--reporter=verbose"
+      ],
+      "exitCode": 0,
+      "head": "869b9d74670db3f3fcfda359e4b25177c9afcd33",
+      "minimum": 4,
+      "number": 55,
+      "original": {
+        "bytes": 2244,
+        "path": "attempts/3772-buffer-equality-candidate-tests-55-original.txt",
+        "sha256": "3d7138f56d56de59e29f51aba3798de9ed7f02aaaebe6bfd7ab639a3d0f649a1"
+      },
+      "receipt": {
+        "bytes": 6837,
+        "path": "attempts/3772-buffer-equality-candidate-tests-55-receipt.json",
+        "sha256": "a4792ee39de9329733f1b817bc107d52ca6ee26d90648e43ff66b6495e0cbf32"
+      },
+      "status": "",
+      "tree": "8444e6f88e46d519b78c85fbb04b0df85a49be5d"
+    },
+    {
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "node_modules/.cache/3772-buffer-equality-fixture.tsconfig.json"
+      ],
+      "exitCode": 2,
+      "head": "869b9d74670db3f3fcfda359e4b25177c9afcd33",
+      "minimum": 6,
+      "number": 56,
+      "original": {
+        "bytes": 9722,
+        "path": "attempts/3772-buffer-equality-candidate-types-56-original.txt",
+        "sha256": "5795029235a9aee3c47aa79acfae54aea51f8d2d9e5700ba4241a78e2828f0ba"
+      },
+      "receipt": {
+        "bytes": 6808,
+        "path": "attempts/3772-buffer-equality-candidate-types-56-receipt.json",
+        "sha256": "666768e4bfb5a551c0a063bf2b926e276a7c5e097df7841605b73f1911131d06"
+      },
+      "status": "",
+      "tree": "8444e6f88e46d519b78c85fbb04b0df85a49be5d"
+    },
+    {
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "node_modules/.cache/3772-buffer-equality-fixture.tsconfig.json"
+      ],
+      "exitCode": 0,
+      "head": "869b9d74670db3f3fcfda359e4b25177c9afcd33",
+      "minimum": 6,
+      "number": 58,
+      "original": {
+        "bytes": 250,
+        "path": "attempts/3772-buffer-equality-candidate-types-58-original.txt",
+        "sha256": "df62a23131bb85004be166501716f1c1ea25c9d7a59ab179160aee2f644e5a42"
+      },
+      "receipt": {
+        "bytes": 6808,
+        "path": "attempts/3772-buffer-equality-candidate-types-58-receipt.json",
+        "sha256": "b1e1e5fbe295dab0e1e85f1c069e5f03115b2faff58a2af2542111de88141696"
+      },
+      "status": "",
+      "tree": "8444e6f88e46d519b78c85fbb04b0df85a49be5d"
+    },
+    {
+      "command": [
+        "npx",
+        "--no-install",
+        "eslint",
+        "src/main/services/handoff-transfer-source.test.ts",
+        "--max-warnings=0"
+      ],
+      "exitCode": 0,
+      "head": "869b9d74670db3f3fcfda359e4b25177c9afcd33",
+      "minimum": 4,
+      "number": 59,
+      "original": {
+        "bytes": 245,
+        "path": "attempts/3772-buffer-equality-candidate-lint-59-original.txt",
+        "sha256": "8c4d1b94e6219ed187a3e310a846a70004a0a26f5b8d4e6ed85ed2cf4106dc29"
+      },
+      "receipt": {
+        "bytes": 6794,
+        "path": "attempts/3772-buffer-equality-candidate-lint-59-receipt.json",
+        "sha256": "874bd168263b4e575a629bcd0c9edbbf61330bad81ffcfcc8da5ff8ef9de0f2c"
+      },
+      "status": "",
+      "tree": "8444e6f88e46d519b78c85fbb04b0df85a49be5d"
+    }
+  ],
+  "candidatePatch": {
+    "bytes": 1044,
+    "path": "attempts/candidate-source869.patch",
+    "sha256": "f6af02e29084cfde23fd0b42288609af0892feb05c85f919acd0f2e8256a2dee"
+  },
+  "executedCandidateSource": "869b9d74670db3f3fcfda359e4b25177c9afcd33",
+  "executedCandidateTree": "8444e6f88e46d519b78c85fbb04b0df85a49be5d",
+  "fixtureAfterSha256": "dc8cddff8055f4eb609eff7cd5f76b674a82091fc0341ee429d99717f7c0455b",
+  "fixtureBeforeSha256": "d96313b36efcf0679250ec7836268d658814ac40da8d0d61a58e47936c6c8b3e",
+  "hostedOriginalFailure": {
+    "checkoutMerge": "e755594650524ee522dc1cfe846de2b8fbbe7537",
+    "checkoutTree": "2c4f13a41473bece2f7e0c7c1a4a9ddf12e1a79e",
+    "failedCases": [
+      {
+        "classname": "src/main/services/handoff-transfer-source.test.ts",
+        "name": "resumes an artifact larger than 512 KiB in independently hashed bounded chunks",
+        "time": "5.3225339"
+      }
+    ],
+    "failedLogExcerpt": {
+      "bytes": 3942,
+      "path": "attempts/hosted-failure-excerpt.log",
+      "sha256": "3095d6e647d1150270728e15bef0d8c41ba5e974091eec2048f75fe6c67f1921"
+    },
+    "fullOriginalLogDisposition": "Official original run and persistent session original retained; excerpt explicitly partial.",
+    "fullOriginalLogSha256": "1d6f88543d64aecd5c4c435dd6600d8d493a8b0191ad76f3c4227dbe93725f36",
+    "head": "0e779377f19e2c40347e983dd81ea752637a61d1",
+    "junitSha256": "bbd729303795d94d62afc9f3612f437b182cdceb9acd89ddc238b40d90c0daed",
+    "junitZip": {
+      "bytes": 612726,
+      "path": "attempts/hosted-junit-original.zip",
+      "sha256": "7dce5c3ddab2dcd6ae105df93ed865569da325174b06e3248cc31cc61b83d4fe"
+    },
+    "metadata": {
+      "bytes": 79427,
+      "path": "attempts/hosted-terminal-original.json",
+      "sha256": "c17fc48dd1661469fc5e0651b8e104485d8fff0c9cdd552337e0942286e4fcb3"
+    },
+    "officialArtifactId": 14732446194,
+    "officialFailedJobUrl": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44966571904/job/137036894874",
+    "runId": 44966571904
+  },
+  "measurements": [
+    {
+      "actualSha256": "15e1627a43db0ef74fb503bf82a157091b125c711d5cdadb276fe31fb5b22745",
+      "arch": "arm64",
+      "bytes": 614400,
+      "case": "match",
+      "chunks": 3,
+      "deepMedianMs": 455.054167,
+      "deepMs": [
+        466.28412500000013,
+        455.054167,
+        450.83683300000007
+      ],
+      "expectedEqual": true,
+      "expectedSha256": "15e1627a43db0ef74fb503bf82a157091b125c711d5cdadb276fe31fb5b22745",
+      "medianSpeedup": 7600.069594999721,
+      "nativeMedianMs": 0.059874999999919964,
+      "nativeMs": [
+        0.10854199999994307,
+        0.024833999999827938,
+        0.059874999999919964
+      ],
+      "node": "v24.22.1",
+      "platform": "darwin"
+    },
+    {
+      "actualSha256": "110d0320d81416f78060269ee14f9d975464748fe2f2fbdd960c7ba88fada749",
+      "arch": "arm64",
+      "bytes": 614400,
+      "case": "first-byte-mismatch",
+      "chunks": 3,
+      "deepMedianMs": 0.009459000000106244,
+      "deepMs": [
+        0.01308300000005147,
+        0.009459000000106244,
+        0.007167000000208645
+      ],
+      "expectedEqual": false,
+      "expectedSha256": "15e1627a43db0ef74fb503bf82a157091b125c711d5cdadb276fe31fb5b22745",
+      "medianSpeedup": 1.170233824096713,
+      "nativeMedianMs": 0.00808299999994233,
+      "nativeMs": [
+        0.00808299999994233,
+        0.008209000000078959,
+        0.007875000000012733
+      ],
+      "node": "v24.22.1",
+      "platform": "darwin"
+    },
+    {
+      "actualSha256": "dded7ef70d385549947009f0fb56395b260c5440dfa3f3514bb90e23bae966f9",
+      "arch": "arm64",
+      "bytes": 614400,
+      "case": "middle-byte-mismatch",
+      "chunks": 3,
+      "deepMedianMs": 10.73324999999977,
+      "deepMs": [
+        10.746958000000177,
+        10.73324999999977,
+        10.437374999999975
+      ],
+      "expectedEqual": false,
+      "expectedSha256": "15e1627a43db0ef74fb503bf82a157091b125c711d5cdadb276fe31fb5b22745",
+      "medianSpeedup": 535.5378704813925,
+      "nativeMedianMs": 0.020041999999648397,
+      "nativeMs": [
+        0.03712499999983265,
+        0.013417000000117696,
+        0.020041999999648397
+      ],
+      "node": "v24.22.1",
+      "platform": "darwin"
+    },
+    {
+      "actualSha256": "73a77f482533a40bcb46896bed18dde5d3d71fc281ffcbead20171a9188d2ac1",
+      "arch": "arm64",
+      "bytes": 614400,
+      "case": "last-byte-mismatch",
+      "chunks": 3,
+      "deepMedianMs": 20.373833000000104,
+      "deepMs": [
+        20.349499999999807,
+        20.373833000000104,
+        20.687291999999616
+      ],
+      "expectedEqual": false,
+      "expectedSha256": "15e1627a43db0ef74fb503bf82a157091b125c711d5cdadb276fe31fb5b22745",
+      "medianSpeedup": 892.2976831781956,
+      "nativeMedianMs": 0.022832999999991443,
+      "nativeMs": [
+        0.03845899999987523,
+        0.018708000000060565,
+        0.022832999999991443
+      ],
+      "node": "v24.22.1",
+      "platform": "darwin"
+    }
+  ],
+  "notExecuted": [
+    57
+  ],
+  "priorConsumerHead": "0e779377f19e2c40347e983dd81ea752637a61d1",
+  "productionDelta": [],
+  "qualification": "Darwin controlled comparison identifies material removable cost, not proven cause of Windows timeout. Original CI remains failed. Independent review required before same-PR update. Task-local compiler failure56 retained; unchanged repository ambient/JS roots restore its context, without option relaxation. Excerpt archival originally stopped on ANSI-separated 5323/ms; resumed only after inspecting raw bytes, no originals overwritten.",
+  "schemaVersion": 1,
+  "verifiedOnlyDifference": "One final aggregate Buffer equality expression; every other fixture byte and tracked input unchanged."
+}

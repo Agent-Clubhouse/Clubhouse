@@ -1,0 +1,5 @@
+{
+  "extends": "../../docs/annex-reverse-routes.tsconfig.json",
+  "files": ["../../src/main/services/handoff-transfer-source.test.ts"],
+  "include": ["../../src/**/*.d.ts", "../../src/**/*.js"]
+}
