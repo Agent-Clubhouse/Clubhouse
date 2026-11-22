@@ -1,0 +1,108 @@
+{
+  "issue": 3714,
+  "base": "e68536e2d292ed0b824230e158e54ff79b2f027d",
+  "historicalDesignSource": "1dcfae229ff0a2eb07b6d3a2e42f31f118f3dc32",
+  "historicalManifestSha256": "3df2265b0df1073c084cde915d49eed5add1220c0e6875f14030853ab2309ef0",
+  "designOnlyApproval": "93472ec24648696672e4138b91891a2227b0510b",
+  "designOnlyApprovalPath": "docs/qa-transfer/2026-11-21/reports/3714-route-budget-1dcfae229-independent-review.md",
+  "initialSource": {
+    "head": "a3f46ae17a11974e9aab6c9b716f7c3f5f7f0ef6",
+    "tree": "38063115ae78876332de731b3d2f8306ce35566c"
+  },
+  "finalSource": {
+    "head": "7207ed4cd4d0a6d5fba443450bed049c8283a02e",
+    "tree": "55f4982865d75fe05ff1393651b2b39b516918e7"
+  },
+  "implementationPath": "implementation.md",
+  "implementationSha256": "0367b8bc1eec192bdf368e37b1d4745308eb13a5c2e35a9232c910431e19e955",
+  "productionPolicyImplemented": true,
+  "independentFinalSourceApproval": false,
+  "productionChangedPaths": ["src/main/services/annex-control.ts"],
+  "changedNonEvidencePaths": [
+    "src/main/services/annex-control.ts",
+    "src/main/services/annex-control.test.ts",
+    "docs/annex-reverse-binary.md"
+  ],
+  "finalSelectedInputs": {
+    "receipt": "attempts/12-final-restored-regression-receipt.json",
+    "jsonPointer": "/before/inputs",
+    "count": 27,
+    "verifiedCommittedBytes": true,
+    "sameAcrossFinalRestoredRuns12Through15": true
+  },
+  "gateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+  "receipts": [
+    {"key": "08-implementation-boundary", "source": "initialSource", "exit": 0, "modifiedTrackedInput": []},
+    {"key": "09-old-predicate-mutant", "source": "initialSource", "exit": 1, "modifiedTrackedInput": ["src/main/services/annex-control.ts"]},
+    {"key": "10-restored-regression", "source": "initialSource", "exit": 1, "modifiedTrackedInput": []},
+    {"key": "11-final-old-predicate-mutant", "source": "finalSource", "exit": 1, "modifiedTrackedInput": ["src/main/services/annex-control.ts"]},
+    {"key": "12-final-restored-regression", "source": "finalSource", "exit": 0, "modifiedTrackedInput": []},
+    {"key": "13-final-root-types", "source": "finalSource", "exit": 0, "modifiedTrackedInput": []},
+    {"key": "14-final-fixture-types", "source": "finalSource", "exit": 0, "modifiedTrackedInput": []},
+    {"key": "15-final-source-lint", "source": "finalSource", "exit": 0, "modifiedTrackedInput": []}
+  ],
+  "verifiedReceiptBridges": [
+    "before equals after for each original execution; head/tree/status/diff/gate/27 selected input seals unchanged during command",
+    "every raw original stream matches its receipt logSha256; every receipt selected input matches its stated committed source except the explicit mutant control input",
+    "mutant09 and11 each have only control.ts modified; the captured binary diff hash equals the saved patch hash and the mutated control bytes equal the original base predicate bytes",
+    "restored12-15 each have clean tracked status, empty tracked diff, final source head/tree and committed selected input bytes",
+    "initial08-10 test source is not relabeled as final720 execution; final720 includes the coupled P6 expectation correction and sender-release fixture",
+    "historical manifest/README/design/capture bytes are unchanged from design1dc; original refusals and admitted red remain historical, not retrosealed"
+  ],
+  "artifacts": [
+    {"path": "attempts/08-implementation-boundary-original.txt", "bytes": 966, "sha256": "4bb091d1cc6805477c20db65e90eb5198412aefa1911e298f8cca45f4a2f8831"},
+    {"path": "attempts/08-implementation-boundary-receipt.json", "bytes": 9526, "sha256": "2047331a69c10e67acd8859d69ee67994e4cd1d90cbd71932993660d91c5d380"},
+    {"path": "attempts/09-old-predicate-mutant-original.txt", "bytes": 9514, "sha256": "aca2468da70eb1d4ff04f4ac05917cd7649848c4112650d548880050b7452ddc"},
+    {"path": "attempts/09-old-predicate-mutant-receipt.json", "bytes": 9604, "sha256": "ed3bdbef8d68177d4809c60c317e37b13ecc7260132cde4b5da6051179699836"},
+    {"path": "attempts/09-old-predicate-mutant.patch", "bytes": 964, "sha256": "3ecc6a647f13d1b2ea3867a178dbacd5a0c75da4da8e1632b9cad9e8f050f389"},
+    {"path": "attempts/10-restored-regression-original.txt", "bytes": 2566, "sha256": "5c5c4e88e5db9949967ab5edcf6ebee0f19a37176bce235b139aa914b73a16b7"},
+    {"path": "attempts/10-restored-regression-receipt.json", "bytes": 9616, "sha256": "1236baeb4c59e4e79c593356a5b9b955f5c9cb88b046c2e7812cdc0b085078ed"},
+    {"path": "attempts/11-final-old-predicate-mutant-original.txt", "bytes": 10753, "sha256": "2e6fe888a7e91d82f359afe604e09629ab4dac7ab77d2d3aea01af598cb42d44"},
+    {"path": "attempts/11-final-old-predicate-mutant-receipt.json", "bytes": 9604, "sha256": "e74187b059022818187019d8820083a67336d37026796b01db8f202e82fbf82a"},
+    {"path": "attempts/11-final-old-predicate-mutant.patch", "bytes": 964, "sha256": "3ecc6a647f13d1b2ea3867a178dbacd5a0c75da4da8e1632b9cad9e8f050f389"},
+    {"path": "attempts/12-final-restored-regression-original.txt", "bytes": 1033, "sha256": "b04feecf53dbe903accbf102c19d84bcc57eb60b6a719c52579dbd4f434713f2"},
+    {"path": "attempts/12-final-restored-regression-receipt.json", "bytes": 9616, "sha256": "ee2cb2af398526d7b22c7a5bdf6eadfdcbe414689bb907e1609c98a91063a26d"},
+    {"path": "attempts/13-final-root-types-original.txt", "bytes": 170, "sha256": "6fdfe587f921c63de57c56e99dd0a3abafe73fbc0566e4f1f62d430dbc51f52f"},
+    {"path": "attempts/13-final-root-types-receipt.json", "bytes": 9388, "sha256": "cb55b08256062624e64a6aba4ddbba1ee3e41de8803bcefbff29928c4821ff51"},
+    {"path": "attempts/14-final-fixture-types-original.txt", "bytes": 220, "sha256": "bcd824502c0e1b8a4931a3799b5cc2dcc351846c97b43d1ca7f7816466cbb7c0"},
+    {"path": "attempts/14-final-fixture-types-receipt.json", "bytes": 9452, "sha256": "f83e1000ed0ee839d20239999184272bae6a07bb9903aa8668636ca764d40403"},
+    {"path": "attempts/15-final-source-lint-original.txt", "bytes": 81483, "sha256": "0e40d174c4fa076b9e72a2aeecaa9e58b65d970aaf5e2a7113603d3cbd9087bb"},
+    {"path": "attempts/15-final-source-lint-receipt.json", "bytes": 9492, "sha256": "60d8d8f3fc8abf0e6e19e1f67ba549df10af09197e16cd4af40fee108f652c62"}
+  ],
+  "outcomes": {
+    "08": {"passed": 20, "skipped": 169},
+    "09": {"failed": 7, "passed": 13, "skipped": 169},
+    "10": {"failed": 2, "passed": 221, "total": 223, "reason": "two directly coupled old P6 cap expectations; original preserved"},
+    "11": {"failed": 8, "passed": 13, "skipped": 169},
+    "12": {"passed": 224, "skipped": 0, "files": 3, "minimumGiB": 4},
+    "13": {"rootTypes": "PASS", "minimumGiB": 6},
+    "14": {"completeFixtureTypes": "PASS", "minimumGiB": 6},
+    "15": {"scopedLint": "PASS", "errors": 0, "warnings": 1, "minimumGiB": 4}
+  },
+  "lintWarning": {
+    "rule": "clubhouse-telemetry/catch-must-report",
+    "file": "src/main/services/annex-control.ts",
+    "baseLine": 562,
+    "finalLine": 563,
+    "column": 47,
+    "catchLineByteIdentical": true,
+    "newBaselineLintExecution": false
+  },
+  "unchangedPhoneInputs": {
+    "fixturePath": "test/fixtures/annex-mobile",
+    "directoryTree": "f12d9b4ce20b2c7094aa9852afeec3d1f46723d5",
+    "files": 103,
+    "baseFinalCurrentBytesIdentical": true,
+    "routeContractPath": "docs/annex-route-contract-3611.md",
+    "routeContractSha256": "0ef7005395de649ef67cd1f74348a4aea8984c1f11b39b82cacc89a7b72723cf",
+    "fixtureRegenerationOrPhoneExecution": false
+  },
+  "limits": [
+    "design-only934 approval is not final-source approval; no PR before exact independent successor review",
+    "deterministic socket wires and fixture target dispatch/subscriptions, actual control/bulk/authorizer callbacks; not real TCP/TLS/server confinement/native shells/current-app/phone/whole-duplex proof",
+    "selected input seals are not exhaustive transitive-runtime or untracked-input seals",
+    "both mutant receipts describe explicit tracked WIP, not clean-head execution",
+    "historical75 NOT RUN receipts,52.5s retry violation and original failed assertions remain; no retrospective proof credit",
+    "no local full suite/E2E, installation, release, deletion, workflow change, blind rerun, new route/grant/field, or federation422 expansion"
+  ]
+}

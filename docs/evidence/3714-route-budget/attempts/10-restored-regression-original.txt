@@ -1,0 +1,44 @@
+2026-11-22T03:20:27Z START lane-p2 idle=87% unused=7720M avail=35072M freepct=87 comp=718M swap=3769M pid=939 cmd=npx vitest run --project main --project shared src/main/services/annex-control.test.ts src/main/services/annex-control-bulk.test.ts src/shared/annex-control-protocol.test.ts --maxWorkers=2
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ❯ |main| src/main/services/annex-control.test.ts (189 tests | 2 failed) 618ms
+   × P6 /api/v1/icons/agents/a: existing cap is accepted, cap+1 is refused before any binary frame 5ms
+   × P6 /api/v1/network/handoffs/transfer: existing cap is accepted, cap+1 is refused before any binary frame 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-control.test.ts > P6 /api/v1/icons/agents/a: existing cap is accepted, cap+1 is refused before any binary frame
+ FAIL  |main| src/main/services/annex-control.test.ts > P6 /api/v1/network/handoffs/transfer: existing cap is accepted, cap+1 is refused before any binary frame
+AssertionError: expected ControlRequestError: response_too_large { …(3) } to match object { code: 'transport_unavailable' }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "transport_unavailable",
++ ControlRequestError {
++   "code": "response_too_large",
+  }
+
+ ❯ src/main/services/annex-control.test.ts:1608:67
+    1606|     const written = sentOfType(targetWs, 'binary').length;
+    1607|     handler = async () => ({ status: 200, headers: {}, body: Buffer.al…
+    1608|     await expect(control.request(TARGET, { method: 'GET', path })).rej…
+       |                                                                   ^
+    1609|     expect(sentOfType(targetWs, 'binary')).toHaveLength(written);
+    1610|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  2 failed | 221 passed (223)
+   Start at  22:20:28
+   Duration  813ms (transform 140ms, setup 11ms, import 181ms, tests 627ms, environment 0ms)
+
+2026-11-22T03:20:28Z END lane-p2 rc=1
