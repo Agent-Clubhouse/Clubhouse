@@ -1,0 +1,733 @@
+{
+  "schemaVersion": 1,
+  "reviewer": "auto-reset-policy-design",
+  "verdict": "BLOCK",
+  "reviewScope": "one reverse snapshot/icon/text consumer increment with owned cleanup; no full duplex acceptance",
+  "reviewedUtc": "2026-11-22T00:09:56.685818+00:00",
+  "base": "c43ffb37d20650c542e449a8a04a9fd84e65b655",
+  "production": "41354e82025320809b4a8bc954b7053a4f05c33e",
+  "executedFinalFixture": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+  "evidence": "740aa5050fb870c971fef95a7dcb06ad785d1bae",
+  "reviewExecution": "read-only gh source/receipt/blob inspection; no tests, compiler, lint or fixture rerun",
+  "pairedManifestSha256": "9f9c6db95e4f5007d7d232a8c565f5f8f4438f6f230f5db66ee207d260b5afc6",
+  "pairedArchiveEntriesVerified": 16,
+  "pairedArchiveBlobsVerified": 32,
+  "allArchivedReceiptAndRawPairsVerified": 32,
+  "finalSourceInputBlobsVerified": [
+    {
+      "path": "docs/annex-reverse-routes.tsconfig.json",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "66aac46469c58af723b9bcec405793a8c9c3da50",
+      "sha256": "5a61ad41c0545c82ef042da1c5a5422206f09a11ceb6365ed439cf5c5409e782",
+      "bytes": 875,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "976d18982b0d82dad5e924939921613aca8b29d3",
+      "sha256": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+      "bytes": 9710,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "package-lock.json",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "7e45389f84ca58c5c7832cab169aa5674320d25d",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "bytes": 690814,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "package.json",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "bytes": 5782,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "src/main/ipc/annex-handlers.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "4213cb7848e6371334024e713f5b9b6714acc5b6",
+      "sha256": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b",
+      "bytes": 13943,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "src/main/services/annex-client-buffer.test.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "d1f620d3d2b20b1be58e85bcfc4495a8ae6f833a",
+      "sha256": "7836616401742b5b0b5bfe5812c1fb783e1dfb1e1d5a4c228856e70264e9f3d1",
+      "bytes": 21828,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "38b167b511a6dd0f6e92d14b10da0ed797d45245",
+      "sha256": "8c79a3273cdb3681a3fb2f4922743e29f14df3febf420e484f8a41073e7e84a0",
+      "bytes": 285849,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "src/main/services/annex-client.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "50b5c1c98ea90339d2c406d2404087b968855eca",
+      "sha256": "81ec2f07313ad58f6bd7aae4297ac3eee842ca8b71b3c731f23fdcb3f4c14833",
+      "bytes": 173468,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "src/main/services/annex-control-bulk.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "18ee308fc55d33e89523d840f584101eea189be0",
+      "sha256": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee",
+      "bytes": 8912,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "src/main/services/annex-control.test.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "270892506f05588d5d8ea0a704a5c08ff4879732",
+      "sha256": "6f81ce8c236fc5d94a704fe51c0716c21bba640eb956af74e9332126356248c0",
+      "bytes": 84008,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "src/main/services/annex-control.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "d398a97162e3eb4c554828dde82e863e0505bea9",
+      "sha256": "4d69cb8bd02dc20d00e03c7685878d09ab0e2c228e44217e477aa775539ffbba",
+      "bytes": 78498,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "src/main/services/annex-devices.test.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "41b88df093a7ed09195d7f6fc6a1e91a9f1d59dc",
+      "sha256": "098253ae7d6dcc2a051f48ca8e164a518a40e5476f234b57e0feebfb35d1f914",
+      "bytes": 27718,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "src/main/services/annex-devices.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "a03e862e2f389c8a252432c2a59c0c3fb123c4fb",
+      "sha256": "279f326f95cad34e65ffe3035900f5d67618bce961ebedaf08b0f0e0091a0b2a",
+      "bytes": 15458,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "tsconfig.json",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "bytes": 530,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "vitest.config.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "e371e57159be74b4f5baf9aadcb0339fa6034025",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "bytes": 3220,
+      "binding": "original receipt SHA list"
+    },
+    {
+      "path": "test/annex-v2/annex-reverse-consumers.test.ts",
+      "ref": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "gitBlob": "3846a8f4976485d0829a23c559bdd2e9fd755899",
+      "sha256": "1041472d3e778a6d81a2a8fca90b2ea430c67da8b39d698b315fdb02d9638c16",
+      "bytes": 15843,
+      "binding": "clean head/tree supplemental bridge only"
+    }
+  ],
+  "originalReceiptChecks": [
+    {
+      "attempt": "remaining-consumers-baseline-01",
+      "exitCode": 1,
+      "minimum": 4,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": true,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "main",
+        "src/main/services/annex-client.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "remaining reverse consumers"
+      ],
+      "stable": true,
+      "rawSha256": "ef257fa68822d808ce0356e691fa89e710a552b4dc916e522983b332c44b8d7f"
+    },
+    {
+      "attempt": "remaining-consumers-candidate-02",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": false,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "main",
+        "src/main/services/annex-client.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "remaining reverse consumers"
+      ],
+      "stable": true,
+      "rawSha256": "0553312fb6f860076777381f36a3d0754240c60280a8ac8b715755a0303b7223"
+    },
+    {
+      "attempt": "remaining-consumers-eslint-10",
+      "exitCode": 1,
+      "minimum": 4,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": false,
+      "command": [
+        "npx",
+        "--no-install",
+        "eslint",
+        "src/main/services/annex-client.ts",
+        "src/main/services/annex-client.test.ts",
+        "src/main/services/annex-client-buffer.test.ts",
+        "src/main/services/annex-devices.ts",
+        "src/main/services/annex-devices.test.ts",
+        "--max-warnings=0"
+      ],
+      "stable": true,
+      "rawSha256": "66d8bc901ea0e613647ca1d80941dc4a5c452d53097f9e3318f8c15f444fb631"
+    },
+    {
+      "attempt": "remaining-consumers-eslint-baseline-11",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": false,
+      "command": [
+        "node",
+        "docs/evidence/3613-duplex-consumer-candidate/lint-baseline.mjs"
+      ],
+      "stable": true,
+      "rawSha256": "bcc96de25d8c8eb18af03cdbb47a184bcc26297704dea1a3990f99fd224eb3ba"
+    },
+    {
+      "attempt": "remaining-consumers-final-fixture-types-31",
+      "exitCode": 0,
+      "minimum": 6,
+      "head": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "tree": "3196f2477ddfe3224d324e69b1cff85c70a52ad1",
+      "clean": true,
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "docs/annex-reverse-routes.tsconfig.json"
+      ],
+      "stable": true,
+      "rawSha256": "a65bb6662d1fe0901b46df9cace8c32635d22f568b0c0fa3df28659fbbb9d0a3"
+    },
+    {
+      "attempt": "remaining-consumers-final-pair-30",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "tree": "3196f2477ddfe3224d324e69b1cff85c70a52ad1",
+      "clean": true,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "integration",
+        "test/annex-v2/annex-reverse-consumers.test.ts",
+        "--maxWorkers=2"
+      ],
+      "stable": true,
+      "rawSha256": "de9e5ee160ffd555524c737354d62105633fea17a37b8ad5950941f0bf47a251"
+    },
+    {
+      "attempt": "remaining-consumers-final-pair-eslint-32",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "6d7aec19dbc11489633a0a3d52629e41341c6548",
+      "tree": "3196f2477ddfe3224d324e69b1cff85c70a52ad1",
+      "clean": true,
+      "command": [
+        "npx",
+        "--no-install",
+        "eslint",
+        "test/annex-v2/annex-reverse-consumers.test.ts",
+        "--max-warnings=0"
+      ],
+      "stable": true,
+      "rawSha256": "c7c3c39f01fa0085ee7e47daa47c59522a2c784b744a686e3e194544c95c29b0"
+    },
+    {
+      "attempt": "remaining-consumers-fixture-types-08",
+      "exitCode": 2,
+      "minimum": 6,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": false,
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "docs/annex-reverse-routes.tsconfig.json"
+      ],
+      "stable": true,
+      "rawSha256": "baf95e69594b568953975eaa28508b4bd019f2eaa827bb0d36243f3ec5b0772f"
+    },
+    {
+      "attempt": "remaining-consumers-fixture-types-09",
+      "exitCode": 0,
+      "minimum": 6,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": false,
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "docs/annex-reverse-routes.tsconfig.json"
+      ],
+      "stable": true,
+      "rawSha256": "c875a1157c91f9b3b1d0fbc065153450dcfd7c30c73187d51c4308277310d091"
+    },
+    {
+      "attempt": "remaining-consumers-frozen-eslint-15",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "41354e82025320809b4a8bc954b7053a4f05c33e",
+      "tree": "8f47585f68ccf9356be0d984a3780de2b9bc3d26",
+      "clean": true,
+      "command": [
+        "node",
+        "docs/evidence/3613-duplex-consumer-candidate/lint-baseline.mjs"
+      ],
+      "stable": true,
+      "rawSha256": "4d40d5def89f313e1515fae47f2e0f0cd5cfaff42124b3d488794f61af631049"
+    },
+    {
+      "attempt": "remaining-consumers-frozen-fixture-types-14",
+      "exitCode": 0,
+      "minimum": 6,
+      "head": "41354e82025320809b4a8bc954b7053a4f05c33e",
+      "tree": "8f47585f68ccf9356be0d984a3780de2b9bc3d26",
+      "clean": true,
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "docs/annex-reverse-routes.tsconfig.json"
+      ],
+      "stable": true,
+      "rawSha256": "f4d7a8683f0bac0879c53ed73bfdcb70e9ceae7ea1ea2e7b532f92fc7db054b7"
+    },
+    {
+      "attempt": "remaining-consumers-frozen-phone-check-16",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "41354e82025320809b4a8bc954b7053a4f05c33e",
+      "tree": "8f47585f68ccf9356be0d984a3780de2b9bc3d26",
+      "clean": true,
+      "command": [
+        "npm",
+        "run",
+        "fixtures:annex-mobile",
+        "--",
+        "--check"
+      ],
+      "stable": true,
+      "rawSha256": "c36bd9d49f00676b49e4bb05026085d6a48f5429924fc71337979fe2bdf21ed4"
+    },
+    {
+      "attempt": "remaining-consumers-frozen-production-types-13",
+      "exitCode": 0,
+      "minimum": 6,
+      "head": "41354e82025320809b4a8bc954b7053a4f05c33e",
+      "tree": "8f47585f68ccf9356be0d984a3780de2b9bc3d26",
+      "clean": true,
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "stable": true,
+      "rawSha256": "40f3ed9ad16d88b0765310c1914474d8499e94c179820f67954f4597dbc84807"
+    },
+    {
+      "attempt": "remaining-consumers-frozen-real-pair-22",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "6039da94c3385f5c8f2371d7b2ffa180113113aa",
+      "tree": "a5b2f61ba8c0a0cfa2281d2bf19900a4c29a9868",
+      "clean": true,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "integration",
+        "test/annex-v2/annex-reverse-consumers.test.ts",
+        "--maxWorkers=2"
+      ],
+      "stable": true,
+      "rawSha256": "d341357762aafdc2bf77fae927057306b1df6ed798ea7d54b7f7ac0ae32806f0"
+    },
+    {
+      "attempt": "remaining-consumers-frozen-tests-12",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "41354e82025320809b4a8bc954b7053a4f05c33e",
+      "tree": "8f47585f68ccf9356be0d984a3780de2b9bc3d26",
+      "clean": true,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "main",
+        "src/main/services/annex-client.test.ts",
+        "src/main/services/annex-client-buffer.test.ts",
+        "src/main/services/annex-control.test.ts",
+        "src/main/services/annex-devices.test.ts",
+        "--maxWorkers=2"
+      ],
+      "stable": true,
+      "rawSha256": "ff4fcb7eeb88e088feae3d90280082cc5f4c9f3dd77c5f7950a3eb1c97ee33c4"
+    },
+    {
+      "attempt": "remaining-consumers-mutant-real-owned-close-23",
+      "exitCode": 1,
+      "minimum": 4,
+      "head": "6039da94c3385f5c8f2371d7b2ffa180113113aa",
+      "tree": "a5b2f61ba8c0a0cfa2281d2bf19900a4c29a9868",
+      "clean": false,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "integration",
+        "test/annex-v2/annex-reverse-consumers.test.ts",
+        "--maxWorkers=2"
+      ],
+      "stable": true,
+      "rawSha256": "4f2c92119b3ecb6bfce9dbe59661061735c0a27ab5e5bf2bf88bccf25188ad35"
+    },
+    {
+      "attempt": "remaining-consumers-mutant-stream-dedup-24",
+      "exitCode": 1,
+      "minimum": 4,
+      "head": "6039da94c3385f5c8f2371d7b2ffa180113113aa",
+      "tree": "a5b2f61ba8c0a0cfa2281d2bf19900a4c29a9868",
+      "clean": false,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "main",
+        "src/main/services/annex-client.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "does not resubscribe a refused stream"
+      ],
+      "stable": true,
+      "rawSha256": "76ea9d973521298b6696faa4f9e86dd60581cbb67fb9f0e8e7daf737923da617"
+    },
+    {
+      "attempt": "remaining-consumers-mutant-stream-sequence-17",
+      "exitCode": 1,
+      "minimum": 4,
+      "head": "99083ca0d44930fa7e2287c9d824cb4042ed9b50",
+      "tree": "34a0ab1c5c033b91d3242c1607c55a13a5840aef",
+      "clean": false,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "main",
+        "src/main/services/annex-client.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "owns one reverse subscription"
+      ],
+      "stable": true,
+      "rawSha256": "f7bd2a3186c2527b5b20de41dc522bc030f1bb8da3fa11ed0a6cb86e412d84a7"
+    },
+    {
+      "attempt": "remaining-consumers-pair-eslint-21",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "99083ca0d44930fa7e2287c9d824cb4042ed9b50",
+      "tree": "34a0ab1c5c033b91d3242c1607c55a13a5840aef",
+      "clean": false,
+      "command": [
+        "npx",
+        "--no-install",
+        "eslint",
+        "test/annex-v2/annex-reverse-consumers.test.ts",
+        "--max-warnings=0"
+      ],
+      "stable": true,
+      "rawSha256": "3d12da6d5c0e6c970c50182f776bc30696091e1039f4c909e021f2ead2cf2104"
+    },
+    {
+      "attempt": "remaining-consumers-pair-fixture-types-19",
+      "exitCode": 2,
+      "minimum": 6,
+      "head": "99083ca0d44930fa7e2287c9d824cb4042ed9b50",
+      "tree": "34a0ab1c5c033b91d3242c1607c55a13a5840aef",
+      "clean": false,
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "docs/annex-reverse-routes.tsconfig.json"
+      ],
+      "stable": true,
+      "rawSha256": "b403d9f602bc2ac887f630756862dba15e4f18ebda3c457efb882d72b7a5f44b"
+    },
+    {
+      "attempt": "remaining-consumers-pair-fixture-types-20",
+      "exitCode": 0,
+      "minimum": 6,
+      "head": "99083ca0d44930fa7e2287c9d824cb4042ed9b50",
+      "tree": "34a0ab1c5c033b91d3242c1607c55a13a5840aef",
+      "clean": false,
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "docs/annex-reverse-routes.tsconfig.json"
+      ],
+      "stable": true,
+      "rawSha256": "39865e9346454826a1218e3e2e3e78e894e981a5e3e9a7b8691a81c314b643f0"
+    },
+    {
+      "attempt": "remaining-consumers-production-types-05",
+      "exitCode": 2,
+      "minimum": 6,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": false,
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "stable": true,
+      "rawSha256": "f79f469511be82fb3bb069651a096fd60c1c4edfacc56cf8789c80d543eda8fd"
+    },
+    {
+      "attempt": "remaining-consumers-production-types-07",
+      "exitCode": 0,
+      "minimum": 6,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": false,
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "stable": true,
+      "rawSha256": "67ffef273b9236f0b1d3181f07fb421ed04089641705209561b31ed00335d5f1"
+    },
+    {
+      "attempt": "remaining-consumers-real-pair-18",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "99083ca0d44930fa7e2287c9d824cb4042ed9b50",
+      "tree": "34a0ab1c5c033b91d3242c1607c55a13a5840aef",
+      "clean": false,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "integration",
+        "test/annex-v2/annex-reverse-consumers.test.ts",
+        "--maxWorkers=2"
+      ],
+      "stable": true,
+      "rawSha256": "948da937d5d19421d499b7eed02c5267a8145828a7e5a13568ee84923eede10d"
+    },
+    {
+      "attempt": "remaining-consumers-regression-03",
+      "exitCode": 1,
+      "minimum": 4,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": false,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "main",
+        "src/main/services/annex-client.test.ts",
+        "src/main/services/annex-client-buffer.test.ts",
+        "src/main/services/annex-control.test.ts",
+        "src/main/services/annex-devices.test.ts",
+        "--maxWorkers=2"
+      ],
+      "stable": true,
+      "rawSha256": "c8a4c6459096d359161549a8c21e0db962504981b2a29cdda28bd2dadb788bfe"
+    },
+    {
+      "attempt": "remaining-consumers-regression-04",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": false,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "main",
+        "src/main/services/annex-client.test.ts",
+        "src/main/services/annex-client-buffer.test.ts",
+        "src/main/services/annex-control.test.ts",
+        "src/main/services/annex-devices.test.ts",
+        "--maxWorkers=2"
+      ],
+      "stable": true,
+      "rawSha256": "9dc3551db299e4b2ffee57c33f03d30a8f6ef19e2618a1cf249e812326cfb845"
+    },
+    {
+      "attempt": "remaining-consumers-restored-eslint-baseline-28",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "6039da94c3385f5c8f2371d7b2ffa180113113aa",
+      "tree": "a5b2f61ba8c0a0cfa2281d2bf19900a4c29a9868",
+      "clean": true,
+      "command": [
+        "node",
+        "docs/evidence/3613-duplex-consumer-candidate/lint-baseline.mjs"
+      ],
+      "stable": true,
+      "rawSha256": "926e2447de56a9c5a7ef4091a7565f488683c7a3ac46c5ba25938d70c16bdcb5"
+    },
+    {
+      "attempt": "remaining-consumers-restored-five-files-25",
+      "exitCode": 0,
+      "minimum": 4,
+      "head": "6039da94c3385f5c8f2371d7b2ffa180113113aa",
+      "tree": "a5b2f61ba8c0a0cfa2281d2bf19900a4c29a9868",
+      "clean": true,
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--project",
+        "main",
+        "--project",
+        "integration",
+        "src/main/services/annex-client.test.ts",
+        "src/main/services/annex-client-buffer.test.ts",
+        "src/main/services/annex-control.test.ts",
+        "src/main/services/annex-devices.test.ts",
+        "test/annex-v2/annex-reverse-consumers.test.ts",
+        "--maxWorkers=2"
+      ],
+      "stable": true,
+      "rawSha256": "43ffe962268e23896079838e1b6bf085423712d7acf045cfbde99be33a658ab8"
+    },
+    {
+      "attempt": "remaining-consumers-restored-fixture-types-27",
+      "exitCode": 0,
+      "minimum": 6,
+      "head": "6039da94c3385f5c8f2371d7b2ffa180113113aa",
+      "tree": "a5b2f61ba8c0a0cfa2281d2bf19900a4c29a9868",
+      "clean": true,
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "docs/annex-reverse-routes.tsconfig.json"
+      ],
+      "stable": true,
+      "rawSha256": "84a2ecf0bf60b33bec2020b741f4817f375b7c3fcdb90303dc723ebbc4d0f651"
+    },
+    {
+      "attempt": "remaining-consumers-restored-pair-eslint-29",
+      "exitCode": 1,
+      "minimum": 4,
+      "head": "6039da94c3385f5c8f2371d7b2ffa180113113aa",
+      "tree": "a5b2f61ba8c0a0cfa2281d2bf19900a4c29a9868",
+      "clean": true,
+      "command": [
+        "npx",
+        "--no-install",
+        "eslint",
+        "test/annex-v2/annex-reverse-consumers.test.ts",
+        "--max-warnings=0"
+      ],
+      "stable": true,
+      "rawSha256": "9c4643ec479d3905b85717948097b5aab52df35a75a43bf68589cfc6a580d16e"
+    },
+    {
+      "attempt": "remaining-consumers-restored-production-types-26",
+      "exitCode": 0,
+      "minimum": 6,
+      "head": "6039da94c3385f5c8f2371d7b2ffa180113113aa",
+      "tree": "a5b2f61ba8c0a0cfa2281d2bf19900a4c29a9868",
+      "clean": true,
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "stable": true,
+      "rawSha256": "82022d8705172b999cd8881195c5c87f7b397c4212904fdf6e69c53a4154ad9d"
+    },
+    {
+      "attempt": "remaining-consumers-task-local-npm-ci-06",
+      "exitCode": 0,
+      "minimum": 6,
+      "head": "ff4a0949c933da4c4d4cec35ac67c00f89211876",
+      "tree": "fa5442c76f8c94a2bb95dc4417a57c2a1fbdcb7e",
+      "clean": false,
+      "command": [
+        "npm",
+        "ci"
+      ],
+      "stable": true,
+      "rawSha256": "dcf5f29f05c950fbccd36f1b19597475655ae392fe3eef26744835e5e957e1c5"
+    }
+  ],
+  "qualification": "Supplemental inspection only, not a retroactive execution seal. Newly tracked fixture is bound in original executions by clean immutable HEAD/tree, absent from fixed SHA input list. Mutant receipts retain changed source hashes and diff digests; this review does not reconstruct unpublished mutant patches.",
+  "q5PreservedHead": "079a257acf38b168b529fb7745dae97f686b72b8",
+  "q5PreservedTree": "89e942aabd42c8ec93fe47794f2eef95b0b61980"
+}
