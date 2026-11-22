@@ -162,6 +162,34 @@ async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestS
   return { pending, release: release.resolve };
 }
 
+async function heldPostPositiveSource(fx: Fixture, args: Record<string, unknown>) {
+  const permissions = await import('../../src/main/services/clubhouse-mcp/handoff-permissions');
+  const approve = permissions.handoffAgreementCallApproved, source = fx.source.callerHandoffSource;
+  const entered = deferred(), release = deferred();
+  releases.push(release.resolve);
+  let positive = false, held = false, returned = false, positiveCalls = 0;
+  vi.spyOn(permissions, 'handoffAgreementCallApproved').mockImplementation(async (...input) => {
+    const allowed = await approve(...input);
+    if (input[1] === 'handoff.offer') { positive = allowed; if (allowed) positiveCalls++; }
+    return allowed;
+  });
+  vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...input) => {
+    const selected = await source(...input);
+    if (positive && !held && input[0] === caller) {
+      held = true;
+      entered.resolve();
+      await release.promise;
+      returned = true;
+    }
+    return selected;
+  });
+  const pending = fx.tools.callTool(caller, 'offer_handoff', args);
+  operations.push(pending);
+  await Promise.race([entered.promise, pending.then(() => { throw new Error('Offer settled before postpositive source verification.'); })]);
+  expect(positiveCalls).toBe(1);
+  return { pending, release: release.resolve, returned: () => returned };
+}
+
 describe('isolated real MCP producer domain admission', () => {
   it('keeps current sender authority, source bytes and durable binding through a held history queue', async () => {
     const fx = current(), summary = await prepare(fx);
@@ -446,6 +474,134 @@ describe('isolated real MCP producer domain admission', () => {
       expect(fx.host.store.list()).toEqual([seed]);
       expect(await catalog(fx)).toBe(before);
     });
+
+    it.each(['dropped Ask approval', 'changed Ask context', 'current Ask', 'fresh Allow with changed approval/context', 'forget-only Ask'] as const)(
+      'fences %s during real postpositive source verification', async (change) => {
+        const fx = current(), summary = await prepare(fx), peer = await remote(fx);
+        const mode = change.startsWith('fresh Allow') ? 'allow' : 'ask';
+        await fx.grants.updateAgentGrantChanges(caller, () => ({
+          changes: [{ action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode }],
+        }));
+        const args = { ...offerArgs(summary), to: `machine:${peer}` };
+        if (mode === 'ask') {
+          expect((await fx.tools.callTool(caller, 'offer_handoff', args)).isError).toBe(true);
+          fx.requests.takeGrantRequest(fx.requests.listGrantRequests()[0].requestId, true);
+        }
+        const before = await catalog(fx), grants = fx.grants.getAgentGrantChanges(caller);
+        const version = fx.requests.callApprovalVersion(caller);
+        const mark = vi.spyOn(fx.host.commands, 'markUndelivered'), post = vi.spyOn(fx.machine.client, 'postToMachine');
+        const notice = vi.spyOn(await import('../../src/main/services/dispatcher-federation-policy'), 'publishFederationHandoff');
+        const held = await heldPostPositiveSource(fx, args);
+        expect(fx.gate.mcpCallAccess(caller, fx.repository)).toBe('open');
+        expect(fx.host.store.list()).toEqual([]);
+        expect(await catalog(fx)).toBe(before);
+        expect(mark).not.toHaveBeenCalled();
+        expect(post).not.toHaveBeenCalled();
+        expect(notice).not.toHaveBeenCalled();
+        if (change === 'dropped Ask approval' || mode === 'allow') {
+          fx.requests.dropCallApprovalsFor(caller);
+          expect(fx.requests.callApprovalVersion(caller)).toBe(version + 1);
+        }
+        if (change === 'changed Ask context' || mode === 'allow') fx.registry.agentRegistry.setRuntime(caller, 'chat');
+        if (change === 'forget-only Ask') fx.gate.forgetMcpCaller(caller);
+        expect(fx.grants.getAgentGrantChanges(caller)).toEqual(grants);
+        expect(await fx.source.callerHandoffSource(caller)).toMatchObject({ project: fx.project, worktreeRoot: fx.repository });
+        expect(fx.hostApi.handoffHost()).toBe(fx.host);
+        held.release();
+        const result = await held.pending;
+        if (change === 'dropped Ask approval' || change === 'changed Ask context') {
+          expect.soft(result.isError).toBe(true);
+          expect.soft(fx.host.store.list()).toEqual([]);
+          expect.soft(await catalog(fx)).toBe(before);
+          expect.soft(mark).not.toHaveBeenCalled();
+          expect.soft(post).not.toHaveBeenCalled();
+          expect.soft(notice).not.toHaveBeenCalled();
+          await expect.soft(fs.access(path.join(fx.userData, 'handoffs.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+        } else {
+          expect(result.isError).not.toBe(true);
+          const record = parseHandoff(resultValue(result));
+          await verifySource(fx, record, summary);
+          expect(mark).toHaveBeenCalledExactlyOnceWith(record.id);
+          expect(post).toHaveBeenCalledTimes(1);
+          expect(notice).toHaveBeenCalledExactlyOnceWith(record);
+          expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ boundTo: [record.id] }] });
+        }
+      },
+    );
+
+    it.each(['pending incompatible', 'pending benign', 'settled benign'] as const)(
+      'verifies only the awaited source observation revision: %s', async (change) => {
+        const fx = current(), configured = await configuredSource(fx), summary = await prepare(fx, ['.clubhouse/**']);
+        const config = await import('../../src/main/services/agent-config');
+        const listen = config.onAgentConfigChanged, peek = config.peekDurableConfigs;
+        const listeners = new Set<Parameters<typeof listen>[0]>();
+        vi.spyOn(config, 'onAgentConfigChanged').mockImplementation((listener) => {
+          listeners.add(listener);
+          const unsubscribe = listen(listener);
+          return () => { listeners.delete(listener); unsubscribe(); };
+        });
+        const before = await catalog(fx);
+        const mark = vi.spyOn(fx.host.commands, 'markUndelivered'), post = vi.spyOn(fx.machine.client, 'postToMachine');
+        const notice = vi.spyOn(fx.host.commands, 'claimNotice');
+        const held = await heldPostPositiveSource(fx, offerArgs(summary));
+        const producer = fx.host.producers.values().next().value;
+        if (!producer) throw new Error('Missing original source producer.');
+        expect(listeners.size).toBe(1);
+        const entered = deferred(), release = deferred();
+        releases.push(release.resolve);
+        let scheduled = false, observing = false, pendingObservation = false, released = false, fenceChecks = 0;
+        const check: typeof producer.check = producer.check.bind(producer);
+        vi.spyOn(producer, 'check').mockImplementation(() => {
+          if (pendingObservation && !released) fenceChecks++;
+          check();
+        });
+        vi.spyOn(config, 'peekDurableConfigs').mockImplementation(async (...input) => {
+          if (observing) {
+            observing = false;
+            pendingObservation = true;
+            entered.resolve();
+            await release.promise;
+          }
+          const rows = await peek(...input);
+          if (change !== 'settled benign' && held.returned() && !scheduled) {
+            scheduled = true;
+            // The second microtask appends real callback work after verify snapshots its settled promise.
+            queueMicrotask(() => queueMicrotask(() => {
+              observing = true;
+              for (const listener of listeners) listener(fx.repository);
+            }));
+          }
+          return rows;
+        });
+        if (change === 'settled benign') {
+          configured.row.name = 'Cosmetic source'; configured.row.color = 'blue';
+          await configured.write();
+          for (const listener of listeners) listener(fx.repository);
+        }
+        held.release();
+        if (change !== 'settled benign') await entered.promise;
+        const result = await held.pending;
+        if (change === 'settled benign') {
+          expect(result.isError).not.toBe(true);
+          await verifySource(fx, parseHandoff(resultValue(result)), summary);
+        } else {
+          expect(fenceChecks).toBeGreaterThan(0);
+          expect.soft(result.isError).toBe(true);
+          expect.soft(fx.host.store.list()).toEqual([]);
+          expect.soft(await catalog(fx)).toBe(before);
+          expect.soft(mark).not.toHaveBeenCalled();
+          expect.soft(post).not.toHaveBeenCalled();
+          expect.soft(notice).not.toHaveBeenCalled();
+          await expect.soft(fs.access(path.join(fx.userData, 'handoffs.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+          if (change === 'pending incompatible') configured.row.createdAt = '2026-01-01T00:00:01.000Z';
+          else { configured.row.name = 'Cosmetic source'; configured.row.color = 'blue'; }
+          await configured.write();
+          released = true; release.resolve();
+          await producer.settled;
+          if (change === 'pending benign') await verifySource(fx, await offer(fx, summary), summary);
+        }
+      },
+    );
 
     it('does not borrow a newly retargeted alias authorization for the frozen recipient', async () => {
       const fx = current();
