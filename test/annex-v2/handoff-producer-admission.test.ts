@@ -23,7 +23,7 @@ function deferred() {
 
 function resultValue(result: McpToolResult): unknown {
   const content = result.content[0];
-  if (!content || content.type !== 'text') throw new Error('Expected a text tool result.');
+  if (!content || content.type !== 'text' || typeof content.text !== 'string') throw new Error('Expected a text tool result.');
   return JSON.parse(content.text);
 }
 
@@ -209,7 +209,12 @@ describe('isolated real MCP producer domain admission', () => {
     expect(await catalog(fx)).toBe(before);
     const requests = fx.requests.listGrantRequests();
     expect(requests).toHaveLength(mode === 'ask' ? 1 : 0);
-    if (mode === 'ask') expect(requests[0]).toMatchObject({ agentId: caller, toolName: 'offer_handoff', args: offerArgs(summary) });
+    if (mode === 'ask') {
+      const request = requests[0];
+      expect(request).toMatchObject({ agentId: caller, toolName: 'offer_handoff' });
+      if (!request.argumentsText) throw new Error('Missing exact Ask-first arguments.');
+      expect(JSON.parse(request.argumentsText)).toEqual(offerArgs(summary));
+    }
     expect(fx.gate.mcpCallAccess(caller, fx.repository)).toBe('open');
   });
 });
