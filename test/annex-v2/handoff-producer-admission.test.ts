@@ -30,16 +30,20 @@ function resultValue(result: McpToolResult): unknown {
   return JSON.parse(content.text);
 }
 
-async function setup(dir: string) {
-  const userData = path.join(dir, 'user-data');
-  const repository = path.join(dir, 'repository');
-  await fs.mkdir(userData);
-  await fs.mkdir(repository);
+async function initializeRepository(repository: string): Promise<void> {
   await exec('git', ['init', '--quiet', '--initial-branch=fixture'], { cwd: repository });
   await fs.writeFile(path.join(repository, 'fixture.txt'), 'original\n');
   await exec('git', ['add', 'fixture.txt'], { cwd: repository });
   await exec('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Fixture'], { cwd: repository });
   await fs.writeFile(path.join(repository, 'fixture.txt'), contents);
+}
+
+async function setup(dir: string) {
+  const userData = path.join(dir, 'user-data');
+  const repository = path.join(dir, 'repository');
+  await fs.mkdir(userData);
+  await fs.mkdir(repository);
+  await initializeRepository(repository);
   const machine = await desktop(userData);
   const projects = await import('../../src/main/services/project-store');
   const project = await projects.add(repository);
@@ -236,6 +240,30 @@ describe('isolated real MCP producer domain admission', () => {
     fx.gate.forgetMcpCaller(caller);
     fx.gate.setMcpCaller(caller, fx.repository, row);
     return { row, write };
+  }
+
+  async function heldStandalonePreparation(fx: Fixture, mode: 'branch' | 'worktree') {
+    const entered = deferred(), release = deferred(), selected = deferred();
+    releases.push(release.resolve);
+    const originalSource = fx.source.callerHandoffSource, select = fx.preparation.selectPreparedHandoff;
+    let first = true;
+    vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
+      const source = await originalSource(...args);
+      if (first) {
+        first = false; entered.resolve();
+        await release.promise;
+      }
+      return source;
+    });
+    vi.spyOn(fx.preparation, 'selectPreparedHandoff').mockImplementation((...args) => {
+      const pending = select(...args);
+      selected.resolve();
+      return pending;
+    });
+    const pending = fx.tools.callTool(caller, 'prepare_handoff', { mode });
+    operations.push(pending);
+    await entered.promise;
+    return { pending, release: release.resolve, selected: selected.promise };
   }
 
   describe('original producer continuity and admitted persistence', () => {
@@ -455,6 +483,44 @@ describe('isolated real MCP producer domain admission', () => {
       expect((await held.pending).isError).toBe(true);
       expect(fx.host.store.list()).toEqual([]);
       expect(JSON.parse(await catalog(fx))).toEqual(replacement);
+    });
+
+    it('refuses an independently running preparation with a different mode before a remote marker', async () => {
+      const fx = current(), peer = await remote(fx), held = await heldStandalonePreparation(fx, 'branch');
+      const marker = vi.spyOn(fx.host.commands, 'markUndelivered');
+      const pending = fx.tools.callTool(caller, 'offer_handoff', { to: `machine:${peer}`, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
+      operations.push(pending);
+      await held.selected;
+      held.release();
+      expect(resultValue(await held.pending)).toMatchObject({ ready: true });
+      expect((await pending).isError).toBe(true);
+      expect(marker).not.toHaveBeenCalled();
+      expect(fx.host.store.list()).toEqual([]);
+      expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ mode: 'branch', boundTo: [] }] });
+    });
+
+    it('refuses an independently running preparation captured from a different original producer source', async () => {
+      const fx = current(), second = path.join(dir, 'second-repository');
+      await fs.mkdir(second);
+      await initializeRepository(second);
+      const project = await (await import('../../src/main/services/project-store')).add(second);
+      const held = await heldStandalonePreparation(fx, 'worktree');
+      for (const agent of [caller, receiver]) {
+        const original = fx.registry.agentRegistry.get(agent);
+        if (!original) throw new Error('Missing original fixture registration.');
+        fx.registry.agentRegistry.register(agent, { ...original, projectPath: second, cwd: second });
+        fx.gate.setMcpCallerQuick(agent, second);
+      }
+      const pending = fx.tools.callTool(caller, 'offer_handoff', { to: receiver, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
+      operations.push(pending);
+      await held.selected;
+      expect(fx.preparation.selectPreparedHandoff).toHaveBeenCalledWith(caller, 'worktree', undefined,
+        expect.objectContaining({ project: expect.objectContaining({ id: project.id }), worktreeRoot: second }), expect.any(Function));
+      held.release();
+      expect(resultValue(await held.pending)).toMatchObject({ ready: true });
+      expect((await pending).isError).toBe(true);
+      expect(fx.host.store.list()).toEqual([]);
+      expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ project: fx.project.id, mode: 'worktree', boundTo: [] }] });
     });
 
     it('owns the original host before implicit preparation and refuses stop-time replacement', async () => {
