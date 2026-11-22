@@ -326,9 +326,10 @@ function hookCompletion(owner: FixtureOwner): Promise<Completion> {
     let reject!: (error: unknown) => void;
     owner.hook = new Promise<Completion>((complete, failed) => { resolve = complete; reject = failed; });
     owner.hookRequested = true;
+    const retiring = coreCompletion(owner);
     releaseOwned(owner, owner.holds);
     (async () => {
-      const core = await coreCompletion(owner);
+      const core = await retiring;
       const body = await owner.body;
       const all = [...core.failures, ...owner.releaseFailures.filter((failure) => !core.failures.includes(failure)), ...body?.failures ?? []];
       owner.final = Object.freeze({ failures: Object.freeze(all) });
