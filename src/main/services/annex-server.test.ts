@@ -8512,7 +8512,7 @@ describe('annex-server', () => {
     const PROJECT = { id: 'proj_1', name: 'test', path: '/tmp/test-project' };
 
     beforeEach(() => {
-      vi.mocked(projectStore.list).mockResolvedValue([PROJECT]);
+      vi.mocked(projectStore.list).mockReturnValue([PROJECT]);
     });
 
     describe('GET /api/v1/projects/:id/files/tree', () => {
@@ -9997,7 +9997,7 @@ describe('annex-server', () => {
     it.each([9 * 1024 * 1024, 32 * 1024 * 1024, 32 * 1024 * 1024 + 1])('GET Git diff envelope real target dispatch preserves the finite boundary at %i bytes', async (size) => {
       await startAndPair();
       const link = await bulkLink();
-      vi.mocked(projectStore.list).mockReturnValue([PROJECT]);
+      vi.mocked(projectStore.list).mockResolvedValue([PROJECT]);
       const original = 'old\n';
       const base = { original, modified: 'é' };
       const value = { original, modified: 'é' + 'x'.repeat(size - Buffer.byteLength(JSON.stringify(base))) };
