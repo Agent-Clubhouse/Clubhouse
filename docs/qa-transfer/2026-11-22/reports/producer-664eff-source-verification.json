@@ -1,0 +1,148 @@
+{
+  "source": "664effcd1d6d10858c0c7904983628a0393a0780",
+  "tree": "3afd6bcbc9937350f9cecaa23e332f23feace597",
+  "base": "50c474b48f57e0256661244bd29b9343ec112bc4",
+  "boundaryBlob": "7bd733d1a3decce60192bda09463ffd115ff02b1",
+  "boundarySha256": "4b6c62ff0bf6db44fe57b618b060ddd6924e229ee28b078e1de18fa876235907",
+  "manifestSourceFiles": [
+    {
+      "file": "src/main/services/handoff-service.ts",
+      "blob": "72e02b6700ad5cce8d3667822c2abec386924617",
+      "bytes": 14799,
+      "sha256": "3e8cb1f3cd92c1a2eb6add2039869977505b79d85c18ba3a414391717e90f04f"
+    },
+    {
+      "file": "src/main/services/handoff-coordinator.ts",
+      "blob": "185ab771d3a14becc89b54e55bf832b854c12ba9",
+      "bytes": 21765,
+      "sha256": "62570ff20f6f44c9c1f6e0ee9d94b153b991221351adac771dd555330e38d602"
+    },
+    {
+      "file": "src/main/services/handoff-preparations.ts",
+      "blob": "7d61608768d90ffd25f221b17da3cbf2f2f0eb91",
+      "bytes": 11076,
+      "sha256": "668d02f5a22dcb59728d425c57d0c5e60b9d726f59dc39b843c7033faeeef673"
+    },
+    {
+      "file": "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+      "blob": "7f166c49620880c32f2547d649591320b8e02df3",
+      "bytes": 1619,
+      "sha256": "3b3eac031a37891fedaa65edc7e4e186da6af663b5b1cd52e88a9736f2a39cc9"
+    },
+    {
+      "file": "src/main/services/handoff-host.ts",
+      "blob": "0c4cc42034ade17e8dcc05dd53d0cec4f0df3969",
+      "bytes": 46004,
+      "sha256": "8323fe2b1df1931feea68bb7e8fa6bf35ac2a28bd1776105c30bccf3adaa310d"
+    },
+    {
+      "file": "src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+      "blob": "01686457ccb06e2a7a17968b0b090603d1768684",
+      "bytes": 10779,
+      "sha256": "71e673b6c04f0a075958409ca8499235da63f7576441c1104dcb3d8636aa0c62"
+    },
+    {
+      "file": "src/main/services/handoff-preparations.test.ts",
+      "blob": "00e4a6490439813712bef08452c1fcee2a6a4d0b",
+      "bytes": 6848,
+      "sha256": "e38a56e7bd6a746ae716feba0796309de72191e1c7e80ad89c0bfd54ddfac956"
+    },
+    {
+      "file": "src/main/services/clubhouse-mcp/tools/handoff-tools.ts",
+      "blob": "7537824fa207e516b87a78555bc8e63ab4c24027",
+      "bytes": 15878,
+      "sha256": "de94ab80d324008662d26631d652aac70ea8b778b3c35489b7b0573628409f1a"
+    },
+    {
+      "file": "src/main/services/clubhouse-mcp/tool-registry.ts",
+      "blob": "e1e733db5022b81e1e9da581d33e2e8420dd086f",
+      "bytes": 57843,
+      "sha256": "21fc05c002a6744176dce8bdb911ad2f3008aa3835a8bc269b7c62f0909f2ed2"
+    },
+    {
+      "file": "src/main/services/handoff-preflight-host.ts",
+      "blob": "72dd6b3a42f11aa877c8b830a715e06756239c7a",
+      "bytes": 1635,
+      "sha256": "3825c33cca45c21619f88b7d22239e3a131a4c8f9ff3dd3a34f338b0a446f99f"
+    },
+    {
+      "file": "src/main/services/handoff-worker.ts",
+      "blob": "f1fd348162a8684eb314dd4c1a092192805d898b",
+      "bytes": 11195,
+      "sha256": "2bffe1111b820791b5d5ef7e0852ac08a7575e0e3c83f841e5b49b10b5ff724f"
+    }
+  ],
+  "additionalSourceFiles": [
+    {
+      "file": "src/main/services/clubhouse-mcp/mcp-call-gate.ts",
+      "blob": "1e9c4e99e2700082b5946a88d6b4adf18cb60f37",
+      "bytes": 4423,
+      "sha256": "0e180efe48bd3ccaa0a63785d002affa68559f2a34bc1e9cc7910d9c540fdc51"
+    },
+    {
+      "file": "src/main/services/clubhouse-mcp/grant-check.ts",
+      "blob": "388e1a91be52ca9286c8520b4019e85433b8b5c4",
+      "bytes": 19745,
+      "sha256": "2ce31561055f5e70b1081b105b0eff23b1f6970513a88ab164a5490757873f4a"
+    },
+    {
+      "file": "src/main/services/clubhouse-mcp/ask-first.ts",
+      "blob": "8591852229491f658dccf406a76658163b93ea0e",
+      "bytes": 5848,
+      "sha256": "517f714aac1da83fb4d5c73d8662a1a2d43fa10f9dcd21fd8760ed94518473ed"
+    },
+    {
+      "file": "src/main/services/handoff-store.ts",
+      "blob": "90ba5659b480bae13e1ccda31cd29b5293a2ccfd",
+      "bytes": 5222,
+      "sha256": "b31ef7baa59bcea292186a6ffc4caac31d4c0593c47708636f679580bc3fcde2"
+    },
+    {
+      "file": "src/main/services/handoff-command-store.ts",
+      "blob": "9d79d55142243e14ebd7ba2a526bfddbb631b0f6",
+      "bytes": 6902,
+      "sha256": "708c1ffffedd49005661761143bdbaa84a62b07c48141c9c6e38e262e26f66a2"
+    },
+    {
+      "file": "src/main/services/settings-store.ts",
+      "blob": "83bc7d24a08ec3b8387f42e706e1966b472d7dfb",
+      "bytes": 24841,
+      "sha256": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3"
+    },
+    {
+      "file": "src/main/services/grant-requests.ts",
+      "blob": "91de716c91d77ac7f43abaeb8c895e8d40daf1e5",
+      "bytes": 11248,
+      "sha256": "30ad9d34980a634b02ded55674bed68d4fd036f5f59c6a7a422d68ce02b8f0b3"
+    },
+    {
+      "file": "src/main/services/handoff-capacity.ts",
+      "blob": "b5bc7b27855635238d47415ca2244d39cbec06ed",
+      "bytes": 10807,
+      "sha256": "201a0482495f4c1ca6df347f3862252af314d9a0a10fa889cb6261a3de350f76"
+    },
+    {
+      "file": "src/shared/handoff-manifest.ts",
+      "blob": "fb84e75a2611a153744c8890515e7bce72a8de5f",
+      "bytes": 9635,
+      "sha256": "858c26d74c4880274b37519cc2773896d55672224ff82ebe2690e37b30213a3a"
+    }
+  ],
+  "productionDelta": [
+    "docs/evidence/3613-real-handoff-producer/boundary.json"
+  ],
+  "reviewerExecution": "source/blob/document inspection only; no product tests/compiler/lint/CI",
+  "localPrivateHead": "079a257acf38b168b529fb7745dae97f686b72b8",
+  "localPrivateTree": "89e942aabd42c8ec93fe47794f2eef95b0b61980",
+  "remoteReadback": {
+    "commit": "664effcd1d6d10858c0c7904983628a0393a0780",
+    "tree": "3afd6bcbc9937350f9cecaa23e332f23feace597",
+    "parent": "50c474b48f57e0256661244bd29b9343ec112bc4",
+    "advertisedBranch": "lane-3613-p2-routes/handoff-usable-path",
+    "advertisedBranchResult": "GET refs/heads returned HTTP404 once; actual owner ref pending; no fallback or repeated probe"
+  },
+  "disposition": "bounded design ready with required original invocation/host/source/preparation/target capture and one queued pre-first-write admission; not unseen source approval",
+  "actualExecutionResult": "none by reviewer; source-only design document executedProof:false",
+  "mcpGateSemantics": "running calls finish; no mcpCallAccess/forget-only generic cancellation",
+  "privateWorkspaceClean": true
+}
