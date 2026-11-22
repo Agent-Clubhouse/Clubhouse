@@ -1,0 +1,257 @@
+{
+  "evidence": "b086335005cf8f9801170691d2ed870cc116b8f5",
+  "manifestSha256": "990630ad7b9b1f39f2eecc22d9eaebad3415492b86047eff88d27571cac7542e",
+  "verifiedArtifacts": [
+    {
+      "path": "docs/evidence/3775-hosted-failure/README.md",
+      "bytes": 7650,
+      "sha256": "cb5e275529662001f6558ee75aa2818dcca1e62087255560507e054138f4f9c0",
+      "gitBlob": "59aabb6bba71ecb033484f028e14f9e1d26a7eae",
+      "gitBlobVerified": "59aabb6bba71ecb033484f028e14f9e1d26a7eae"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/artifacts-original.json",
+      "bytes": 20037,
+      "sha256": "b161435c12335a28d44f9721bdfd18412be180d2694ac1b369ff3b717f6259dc",
+      "gitBlob": "fc6edd4e7a23f17f3b46afccadc49f07cf4d4f10",
+      "gitBlobVerified": "fc6edd4e7a23f17f3b46afccadc49f07cf4d4f10"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/automatic-run-original.json",
+      "bytes": 1012,
+      "sha256": "c1494b446111d65ff1638c5fcecb9b67d11c25ccb8be97bdcd50157ae309feb9",
+      "gitBlob": "d6d87f635f602736dfeea4a495e1024e2b10bc71",
+      "gitBlobVerified": "d6d87f635f602736dfeea4a495e1024e2b10bc71"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/checkout-original.commit",
+      "bytes": 1172,
+      "sha256": "428a99698ebd02209f96965cb52395daa8008a0fe6629ccfa9fea5865bac2522",
+      "gitBlob": "cdadefaca64cc141f40399d43dd4ca4231be0261",
+      "gitBlobVerified": "cdadefaca64cc141f40399d43dd4ca4231be0261"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/checkout-original.json",
+      "bytes": 2857,
+      "sha256": "8c8bb08218ef44d12f872ca3e2279d301a1d2412eba086448e8ba6339988b3ff",
+      "gitBlob": "f9bf42c20ddc06b3430a5c23e08b0e9460a03ef3",
+      "gitBlobVerified": "f9bf42c20ddc06b3430a5c23e08b0e9460a03ef3"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/checkpoint-failure-witness.json",
+      "bytes": 2070,
+      "sha256": "85cb88a167f2c3a615f84accecac591a7ac31e502441bc6dce3b28bb60046bfc",
+      "gitBlob": "086d01c01ae7b4a2641e3f7600f74cd6575800e8",
+      "gitBlobVerified": "086d01c01ae7b4a2641e3f7600f74cd6575800e8"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/fresh-pr-main-guards.json",
+      "bytes": 448,
+      "sha256": "11196f1b2556070d6954117fab072cba5a656188795681d96c4bedc5a2c977d1",
+      "gitBlob": "6a6e64f04408027b240e25347059f10351434326",
+      "gitBlobVerified": "6a6e64f04408027b240e25347059f10351434326"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/lossless-originals.json",
+      "bytes": 4342,
+      "sha256": "67e695be0b73523c1cbd4828b50ed1e78b534f35c8db9946c571505683f3eb23",
+      "gitBlob": "c688a48b557acbfbc1d682a7efd5ec883beeeeb3",
+      "gitBlobVerified": "c688a48b557acbfbc1d682a7efd5ec883beeeeb3"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/pr-open-original.json",
+      "bytes": 6140,
+      "sha256": "8d4a00739990740c9e18cd8362ae08994f4659cf0f9ab98a9518165561e6bb48",
+      "gitBlob": "aad9f09d93d758325d2960e9f15705e5111e5c86",
+      "gitBlobVerified": "aad9f09d93d758325d2960e9f15705e5111e5c86"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/source-phase-attribution-original.json",
+      "bytes": 2784,
+      "sha256": "f6e6481137cf7d93b574a0d52b990ea7378dcc67be4b6cc86f76a966e80d4365",
+      "gitBlob": "8b447424f1d2e0c1d3f0b98ba5fbcfda4eacf5db",
+      "gitBlobVerified": "8b447424f1d2e0c1d3f0b98ba5fbcfda4eacf5db"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/terminal-original.json",
+      "bytes": 79573,
+      "sha256": "8e403eaae7eb62ffa01115c72ca51859cbb3101d69b608a8154f52c35fb45b0c",
+      "gitBlob": "b81cbfbc702e721d3ede7a447b8335d309e77a5e",
+      "gitBlobVerified": "b81cbfbc702e721d3ede7a447b8335d309e77a5e"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/watch-original.log.gz",
+      "bytes": 4272,
+      "sha256": "3207c3539ea68b3d803180a9932b1c8cbec80c4dad8a86e02368ab330f53945f",
+      "gitBlob": "166362a9a4cc87a135e7199a9f6564b2b37f3f99",
+      "gitBlobVerified": "166362a9a4cc87a135e7199a9f6564b2b37f3f99"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/windows-junit-attribution-original.json",
+      "bytes": 9645,
+      "sha256": "e7a489c2173c1441ee8dd44d50fef2463b91c42b6ce14a9b5afd85cbcacab8c4",
+      "gitBlob": "73d22daa4d1e2669aca782a051b04ea99926a309",
+      "gitBlobVerified": "73d22daa4d1e2669aca782a051b04ea99926a309"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/windows-shard-one-original.log.gz",
+      "bytes": 404059,
+      "sha256": "b685b812c8d1fbda5982ea05f83adaaeeec07c6f01d1a157f2fc98cd33133f8d",
+      "gitBlob": "1fede42951b832a9a3eeb13e422990fcc9a6dc10",
+      "gitBlobVerified": "1fede42951b832a9a3eeb13e422990fcc9a6dc10"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/windows-shard-one-original.zip",
+      "bytes": 612579,
+      "sha256": "f5a80a3e1f81bc99c6811777eee25c6966bf8a49d4169c42bf9378da20181b62",
+      "gitBlob": "2f54e6fb671cef523870e253a1ba9885a3bac9ef",
+      "gitBlobVerified": "2f54e6fb671cef523870e253a1ba9885a3bac9ef"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/windows-shard-two-original.log.gz",
+      "bytes": 188222,
+      "sha256": "3a19fcb27c307e0ac35203bbbe62abd303109d42ffc369fe610cb0d7355f277c",
+      "gitBlob": "1a7f9413c1456655e380f6ad1ea657e23f79a27f",
+      "gitBlobVerified": "1a7f9413c1456655e380f6ad1ea657e23f79a27f"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/artifacts/windows-shard-two-original.zip",
+      "bytes": 562663,
+      "sha256": "4e7f025e2e047eb8603f023438bcacf9c7a86b5fa72138dbdc2b7272e8342b26",
+      "gitBlob": "597baf653a30a5b80ff13f4b0dd1d409ee3b8e66",
+      "gitBlobVerified": "597baf653a30a5b80ff13f4b0dd1d409ee3b8e66"
+    },
+    {
+      "path": "docs/evidence/3775-hosted-failure/checkpoint-assessment.md",
+      "bytes": 6007,
+      "sha256": "77cfedee2062d956a847b83777650bbe297b16fb92ebe4291402d020c49d1cbf",
+      "gitBlob": "3a4e79762af2766111d3a7b13b9b598d284b96ea",
+      "gitBlobVerified": "3a4e79762af2766111d3a7b13b9b598d284b96ea"
+    }
+  ],
+  "verifiedSourceObjects": [
+    {
+      "path": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+      "baselineAndHeadBlob": "7fc9fa8d9071efeb54a776ae4724551bd45b3840",
+      "sha256": "949e96e414a05fe0001e7a1e79f9507541668f9ed2976bbcb4eec7e0d9045d44"
+    },
+    {
+      "path": "src/main/services/agent-runtime/checkpoint-tracker.ts",
+      "baselineAndHeadBlob": "842812a9e99db57ebb1a2f392ae7d8dff6998247",
+      "sha256": "f71f8ab65d759d717e3e805e60db84fe4576666b20733f9d037f080bc01ecffb"
+    },
+    {
+      "path": "src/main/services/agent-runtime/checkpoints.ts",
+      "baselineAndHeadBlob": "cff3c44046fd81418a7006b6a2416a5b03ec5b1c",
+      "sha256": "219a0194154b42c9a6eb615e0e3d8b9cbe3c5e2587158ceb8d061fb27613d5fe"
+    },
+    {
+      "path": "test/checkpoint-fixture-lifetime.ts",
+      "baselineAndHeadBlob": "41775d08eb87c00b0d940fd92b9e4f61939cf68b",
+      "sha256": "1595e7895bb714cd68a673cc5602da8343276bdfb4d63c30197638425f69fc5d"
+    },
+    {
+      "path": "test/dispatcher-work-owner.ts",
+      "baselineAndHeadBlob": "867ac3c4b6f382f032cf439826d9585267142da0",
+      "sha256": "cffdfa8407a32eec3b6d8a4161e7e1baa956152d9c4e03809787a26fef8b2acb"
+    }
+  ],
+  "canonicalCheckoutSha1": "2d958bcc3071560a7d78b90c66342ce7d806ec64",
+  "signatureTrustVerification": false,
+  "hostedArchivedXmlAndRaw": [
+    {
+      "shard": "one",
+      "pass": 19389,
+      "fail": 1,
+      "skip": 93,
+      "zipSha256": "f5a80a3e1f81bc99c6811777eee25c6966bf8a49d4169c42bf9378da20181b62",
+      "xmlSha256": "bbb81498d8a7caf8bf0291de6b00dd4e7f58bdc4b9abebef0a06d897a94b0bd9",
+      "rawSha256": "a1b0c0303b390ee72f5ea6d3dda66a99f672792f1dbf1baed06008f16fbb717d",
+      "checkoutInActualRaw": true,
+      "failedCase": {
+        "classname": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+        "time": "6.3991128"
+      },
+      "failureMessage": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".",
+      "checkpointSuite": {
+        "name": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "timestamp": "2026-11-22T07:57:52.352Z",
+        "hostname": "runnervmbpeip",
+        "tests": "11",
+        "failures": "1",
+        "errors": "0",
+        "skipped": "0",
+        "time": "26.3959611"
+      },
+      "packets": [
+        [
+          "[checkpoint-fixture-failure]",
+          {
+            "reason": "abort",
+            "phase": "undo",
+            "phaseComplete": false,
+            "elapsedMs": 6194,
+            "rawPending": 1,
+            "directPending": 1,
+            "childPending": 1,
+            "callbackPending": 1,
+            "closePending": 1,
+            "accountingKnown": true,
+            "closing": false,
+            "retired": false,
+            "teardownOutcome": "not-started"
+          }
+        ],
+        [
+          "[checkpoint-fixture-teardown]",
+          {
+            "reason": "teardown",
+            "phase": "teardown",
+            "phaseComplete": true,
+            "elapsedMs": 6398,
+            "rawPending": 0,
+            "directPending": 0,
+            "childPending": 0,
+            "callbackPending": 0,
+            "closePending": 0,
+            "accountingKnown": true,
+            "closing": true,
+            "retired": true,
+            "teardownOutcome": "retired"
+          }
+        ]
+      ],
+      "packetsIdenticalRawAndJunit": true
+    },
+    {
+      "shard": "two",
+      "pass": 16751,
+      "fail": 0,
+      "skip": 176,
+      "zipSha256": "4e7f025e2e047eb8603f023438bcacf9c7a86b5fa72138dbdc2b7272e8342b26",
+      "xmlSha256": "c30f1d453c324bd5428fc101b482b67fd0bba88100203cb19e45ecd0519a2045",
+      "rawSha256": "c2e341f27e1dc4c7846a8f0ce91f92f005bcf0dc4c17a5d3c184b6b19b742b5c",
+      "checkoutInActualRaw": true
+    }
+  ],
+  "designVerdict": "APPROVE bounded runTurn producer-idle plus one-read explicit readiness substitution; not implementation or timeout-cause/fix acceptance.",
+  "sourceFindings": {
+    "trackedEventWorkRegisteredSynchronouslyBeforeReturn": true,
+    "startWaitIncludesStartAndSharedMarking": true,
+    "endWaitIncludesStartDependencySharedEndAndPrune": true,
+    "idleUsesAllSettledNotErrorPropagation": true,
+    "singleReadReadinessStillRequired": true,
+    "childCallbackCloseRetirementRemainsSeparate": true,
+    "raceTestDirectCallsOutsideRunTurnUnchanged": true,
+    "settleHelperOtherCallersRemain": true
+  },
+  "reviewerExecution": "Read-only gh/git source/artifact fetch and hash/XML inspection. No test/compiler/lint/application/CI rerun or source edit.",
+  "limits": [
+    "Historic5000ms undo-envelope timeout remains real/unexplained.",
+    "Lifecycle6194ms origin includes six synchronous setup Git commands and is not undo duration.",
+    "Idle barrier may wait longer for shared/pruning or other tracked work; no speed/deadline guarantee.",
+    "Direct/native callback and close completion are not guaranteed solely by producer idle.",
+    "4f6 and residual full-fixture139FAIL unchanged."
+  ]
+}
