@@ -1,0 +1,223 @@
+[
+  {
+    "shard": "one",
+    "archiveBytes": 612579,
+    "archiveSha256": "f5a80a3e1f81bc99c6811777eee25c6966bf8a49d4169c42bf9378da20181b62",
+    "xmlMember": "test-results.xml",
+    "xmlBytes": 6798076,
+    "xmlSha256": "bbb81498d8a7caf8bf0291de6b00dd4e7f58bdc4b9abebef0a06d897a94b0bd9",
+    "total": 19483,
+    "pass": 19389,
+    "fail": 1,
+    "skip": 93,
+    "failures": [
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+        "seconds": "6.3991128",
+        "failure": {
+          "message": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".",
+          "type": "Error"
+        },
+        "text": "\nError: Test timed out in 5000ms.\nIf this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".\n \u276f Object.apply test/dispatcher-work-owner.ts:165:29\n \u276f src/main/services/agent-runtime/checkpoint-tracker.test.ts:196:3\n            "
+      }
+    ],
+    "gitdiffCases": [
+      {
+        "class": "src/main/services/annex-client.test.ts",
+        "name": "annex-client > GET Git diff envelope desktop adapter > returns complete enlarged JSON through the actual single-route adapter and control pair",
+        "seconds": "0.2596373",
+        "status": "pass"
+      }
+    ]
+  },
+  {
+    "shard": "two",
+    "archiveBytes": 562663,
+    "archiveSha256": "4e7f025e2e047eb8603f023438bcacf9c7a86b5fa72138dbdc2b7272e8342b26",
+    "xmlMember": "test-results.xml",
+    "xmlBytes": 15916194,
+    "xmlSha256": "c30f1d453c324bd5428fc101b482b67fd0bba88100203cb19e45ecd0519a2045",
+    "total": 16927,
+    "pass": 16751,
+    "fail": 0,
+    "skip": 176,
+    "failures": [],
+    "gitdiffCases": [
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > accepts the exact former envelope boundary",
+        "seconds": "0.0706622",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ",
+        "seconds": "0.0667454",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=large%20file.txt&staged=false",
+        "seconds": "0.067732",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=/icons/a",
+        "seconds": "0.0731207",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=/content",
+        "seconds": "0.2793416",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=/chat/events/1",
+        "seconds": "0.065608",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'POST' '/api/v1/projects/project%20name/git/d\u2026'",
+        "seconds": "0.0100037",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects/project%20name/git/d\u2026'",
+        "seconds": "0.005568",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'DELETE' '/api/v1/projects/project%20name/git/d\u2026'",
+        "seconds": "0.0069316",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects/project%20name/git/d\u2026'",
+        "seconds": "0.0090725",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects/project%20name/git/d\u2026'",
+        "seconds": "0.0081298",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects//git/diff?file=f'",
+        "seconds": "0.0068715",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/other?file=/api/v1/projects/project%\u2026'",
+        "seconds": "0.0066261",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects/p?file=x/git/diff'",
+        "seconds": "0.0071323",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains caller limit 0 before credit for an authorized diff",
+        "seconds": "0.001266",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains caller limit 65536 before credit for an authorized diff",
+        "seconds": "0.0008005",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > enforces the exact finite32MiB envelope with excess=false before credit",
+        "seconds": "0.223035",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > enforces the exact finite32MiB envelope with excess=true before credit",
+        "seconds": "0.0244682",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > preserves an equal caller limit on the enlarged route",
+        "seconds": "0.0557369",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > does not infer GET from a missing or different method undefined",
+        "seconds": "0.0005032",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > does not infer GET from a missing or different method PATCH",
+        "seconds": "0.0002784",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > does not infer GET from a missing or different method POST",
+        "seconds": "0.0003546",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retires a held enlarged diff on cancel without late credit or body delivery",
+        "seconds": "0.0613614",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retires a held enlarged diff on revoke without late credit or body delivery",
+        "seconds": "0.0599941",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retires a held enlarged diff on replace without late credit or body delivery",
+        "seconds": "0.064158",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-control.test.ts",
+        "name": "GET Git diff envelope boundary > retains the frame bound for a peer without bulk capability",
+        "seconds": "0.0435783",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-server.test.ts",
+        "name": "annex-server > reverse requests over the control connection (#3613 P3) > GET Git diff envelope real target dispatch preserves the finite boundary at 9437184 bytes",
+        "seconds": "0.2802141",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-server.test.ts",
+        "name": "annex-server > reverse requests over the control connection (#3613 P3) > GET Git diff envelope real target dispatch preserves the finite boundary at 33554432 bytes",
+        "seconds": "0.691477",
+        "status": "pass"
+      },
+      {
+        "class": "src/main/services/annex-server.test.ts",
+        "name": "annex-server > reverse requests over the control connection (#3613 P3) > GET Git diff envelope real target dispatch preserves the finite boundary at 33554433 bytes",
+        "seconds": "0.4607494",
+        "status": "pass"
+      }
+    ]
+  }
+]

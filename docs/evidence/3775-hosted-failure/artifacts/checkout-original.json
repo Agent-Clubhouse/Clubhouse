@@ -1,0 +1,40 @@
+{
+  "sha": "2d958bcc3071560a7d78b90c66342ce7d806ec64",
+  "node_id": "C_kwDORQYUldoAKDJkOTU4YmNjMzA3MTU2MGE3ZDc4YjkwYzY2MzQyY2U3ZDgwNmVjNjQ",
+  "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/git/commits/2d958bcc3071560a7d78b90c66342ce7d806ec64",
+  "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/commit/2d958bcc3071560a7d78b90c66342ce7d806ec64",
+  "author": {
+    "name": "Mason Allen",
+    "email": "masra91@gmail.com",
+    "date": "2026-11-22T07:44:53Z"
+  },
+  "committer": {
+    "name": "GitHub",
+    "email": "noreply@github.com",
+    "date": "2026-11-22T07:44:53Z"
+  },
+  "tree": {
+    "sha": "bf2f0e9f284e9acb107ac6454a23081a0099cf56",
+    "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/git/trees/bf2f0e9f284e9acb107ac6454a23081a0099cf56"
+  },
+  "message": "Merge 30bf4c2d11ad8027b1e408a423794bccbc52c9d5 into 63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+  "parents": [
+    {
+      "sha": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/git/commits/63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/commit/63f140b2a0ba00e686fb727a931d6b340fc3ee7e"
+    },
+    {
+      "sha": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/git/commits/30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+      "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/commit/30bf4c2d11ad8027b1e408a423794bccbc52c9d5"
+    }
+  ],
+  "verification": {
+    "verified": true,
+    "reason": "valid",
+    "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJrAp11CRC1aQ7uu5UhlAAAv6oQAF7lmqd8IZNsmPly/uvyp/Nh\n8C+JuNQVruGAI2PE88fOPtb5uDSRj6AUCC/6O7SipqjhHNdgcDdioyEJpvEbI9es\n6A9VwQzgAzXTN24N0MlaqPoCvm4xzvvk3ii5Yyu/IFRVsvy9VFZJB2xmr5m/7x/c\nQv15Mq56PgtT+HMAtYT2sD9LCmZAa3A7HitII+NbWQiWsTZEDXMh2ic/n4/oIHWc\nk1mDMykwK3DwEdlm6BxGxSJJsOA9yo0FMChslZtlQWFc/nBDBVDrUWB6c/9lr6Hm\n3228jv5Njjoa3d+M5ZdF7VILN+9MvyQlIHB/x7v/pYv1TXWk10nzjFWpg3su0h8i\nDaQnlEPCrm49Uk5JoOQKXUg4M/ZsunAwUulL5T1f85fjyfefjgObL+AUPRA1SRiu\nWpy+dz1R0V5xlY4e7AZ/RNnAXG5JiSLUH0lhiRNGR6fCAROKl9efAGOqnzvvAyTK\n59k3ErfAhjk0BmFP+aRE8ZNcasevq2uhktHGfr43R6R37sqxJCoKCWYRgAkUvSxO\nIfhkAbprIY74Xil2Y729W4lip8cFa5BQMIODE1HtOr2viSAhOUwB5827BvHtiJXO\nW/FCqBcRP1SYPTBtOy7WkB1oGaUgSVQPRc86zgzZ3eBnDmB8CwmHULtmf/E0I4DT\njO/odT8rQm+ObfC/MEdS\n=nKQp\n-----END PGP SIGNATURE-----\n",
+    "payload": "tree bf2f0e9f284e9acb107ac6454a23081a0099cf56\nparent 63f140b2a0ba00e686fb727a931d6b340fc3ee7e\nparent 30bf4c2d11ad8027b1e408a423794bccbc52c9d5\nauthor Mason Allen <masra91@gmail.com> 1795333493 -0800\ncommitter GitHub <noreply@github.com> 1795333493 -0800\n\nMerge 30bf4c2d11ad8027b1e408a423794bccbc52c9d5 into 63f140b2a0ba00e686fb727a931d6b340fc3ee7e\n",
+    "verified_at": "2026-11-22T07:44:53Z"
+  }
+}

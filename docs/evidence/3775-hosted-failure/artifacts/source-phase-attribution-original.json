@@ -1,0 +1,74 @@
+{
+  "observedAt": "2026-11-22T08:15:32.497353+00:00",
+  "head": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+  "base": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+  "checkout": "2d958bcc3071560a7d78b90c66342ce7d806ec64",
+  "checkoutTree": "bf2f0e9f284e9acb107ac6454a23081a0099cf56",
+  "checkoutParents": [
+    "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+    "30bf4c2d11ad8027b1e408a423794bccbc52c9d5"
+  ],
+  "windowsJobOne": 137138153724,
+  "windowsJobTwo": 137138153702,
+  "unchangedCheckpointSources": [
+    {
+      "path": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+      "baselineAndHeadBlob": "7fc9fa8d9071efeb54a776ae4724551bd45b3840",
+      "sha256": "949e96e414a05fe0001e7a1e79f9507541668f9ed2976bbcb4eec7e0d9045d44"
+    },
+    {
+      "path": "src/main/services/agent-runtime/checkpoint-tracker.ts",
+      "baselineAndHeadBlob": "842812a9e99db57ebb1a2f392ae7d8dff6998247",
+      "sha256": "f71f8ab65d759d717e3e805e60db84fe4576666b20733f9d037f080bc01ecffb"
+    },
+    {
+      "path": "src/main/services/agent-runtime/checkpoints.ts",
+      "baselineAndHeadBlob": "cff3c44046fd81418a7006b6a2416a5b03ec5b1c",
+      "sha256": "219a0194154b42c9a6eb615e0e3d8b9cbe3c5e2587158ceb8d061fb27613d5fe"
+    },
+    {
+      "path": "test/checkpoint-fixture-lifetime.ts",
+      "baselineAndHeadBlob": "41775d08eb87c00b0d940fd92b9e4f61939cf68b",
+      "sha256": "1595e7895bb714cd68a673cc5602da8343276bdfb4d63c30197638425f69fc5d"
+    },
+    {
+      "path": "test/dispatcher-work-owner.ts",
+      "baselineAndHeadBlob": "867ac3c4b6f382f032cf439826d9585267142da0",
+      "sha256": "cffdfa8407a32eec3b6d8a4161e7e1baa956152d9c4e03809787a26fef8b2acb"
+    }
+  ],
+  "packets": {
+    "failure": {
+      "reason": "abort",
+      "phase": "undo",
+      "phaseComplete": false,
+      "elapsedMs": 6194,
+      "rawPending": 1,
+      "directPending": 1,
+      "childPending": 1,
+      "callbackPending": 1,
+      "closePending": 1,
+      "accountingKnown": true,
+      "closing": false,
+      "retired": false,
+      "teardownOutcome": "not-started"
+    },
+    "teardown": {
+      "reason": "teardown",
+      "phase": "teardown",
+      "phaseComplete": true,
+      "elapsedMs": 6398,
+      "rawPending": 0,
+      "directPending": 0,
+      "childPending": 0,
+      "callbackPending": 0,
+      "closePending": 0,
+      "accountingKnown": true,
+      "closing": true,
+      "retired": true,
+      "teardownOutcome": "retired"
+    }
+  },
+  "causation": "UNRESOLVED; unchanged source is not accepted baseline/causal proof",
+  "durationLimits": "elapsedMs begins at fixture construction before setup; phase is label only; JUnit duration includes lifecycle effects, not a measured undo/child/body duration;204ms snapshot delta includes late body plus retirement, not isolated teardown timing."
+}

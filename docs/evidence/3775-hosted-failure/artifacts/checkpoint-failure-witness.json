@@ -1,0 +1,55 @@
+{
+  "run": 44999624534,
+  "attempt": 1,
+  "head": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+  "job": 137138153724,
+  "case": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+  "JunitReportedSeconds": "6.3991128",
+  "primaryMessage": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".",
+  "fixtureTotal": 11,
+  "fixturePass": 10,
+  "fixtureFail": 1,
+  "fixtureSkip": 0,
+  "rawAndJunitPacketsIdentical": true,
+  "rawAndJunitPackets": {
+    "failure": {
+      "reason": "abort",
+      "phase": "undo",
+      "phaseComplete": false,
+      "elapsedMs": 6194,
+      "rawPending": 1,
+      "directPending": 1,
+      "childPending": 1,
+      "callbackPending": 1,
+      "closePending": 1,
+      "accountingKnown": true,
+      "closing": false,
+      "retired": false,
+      "teardownOutcome": "not-started"
+    },
+    "teardown": {
+      "reason": "teardown",
+      "phase": "teardown",
+      "phaseComplete": true,
+      "elapsedMs": 6398,
+      "rawPending": 0,
+      "directPending": 0,
+      "childPending": 0,
+      "callbackPending": 0,
+      "closePending": 0,
+      "accountingKnown": true,
+      "closing": true,
+      "retired": true,
+      "teardownOutcome": "retired"
+    }
+  },
+  "snapshotDeltaMs": 204,
+  "limits": [
+    "Phase undo spans undoRevert and later assertions/post-undo listTurns, not a specific child/operation",
+    "Counters are fixture-owned pending receipts, not proof of native OS process state or all-host quiescence",
+    "Elapsed starts at fixture construction before synchronous setup; no isolated setup/body/undo/child durations recorded",
+    "204ms between snapshots includes late body and retirement; not isolated cleanup or undo duration",
+    "Raw receipts release for success and rejection, so retired does not credit abandoned post-timeout assertions",
+    "No command/PID/native start/end timeline, polling-attempt count, scheduling/load/RSS or causal baseline measured"
+  ]
+}

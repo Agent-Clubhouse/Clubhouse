@@ -1,0 +1,15 @@
+{
+  "observedAt": "2026-11-22T08:20:07.293463+00:00",
+  "pr": {
+    "baseRefOid": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+    "headRefOid": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+    "isDraft": false,
+    "mergeStateStatus": "UNSTABLE",
+    "mergeable": "MERGEABLE",
+    "number": 3775,
+    "state": "OPEN"
+  },
+  "actualMain": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+  "originalPRHeadRetained": true,
+  "landingHeldOnFailure": true
+}

@@ -1,0 +1,31 @@
+{
+  "observedAt": "2026-11-22T07:45:29.341760+00:00",
+  "pr": 3775,
+  "head": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+  "base": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+  "run": {
+    "conclusion": "",
+    "databaseId": 44999624534,
+    "event": "pull_request",
+    "headSha": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+    "status": "in_progress",
+    "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44999624534",
+    "workflowName": "Validate"
+  },
+  "allObservedExactHeadRuns": [
+    {
+      "conclusion": "",
+      "databaseId": 44999624534,
+      "event": "pull_request",
+      "headSha": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+      "status": "in_progress",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44999624534",
+      "workflowName": "Validate"
+    }
+  ],
+  "startupReads": 1,
+  "prBodySha256": "cf5f5b628db969bc54eaa8867baf4a4a099cf031fd0a7eb11a462a979c031f4a",
+  "owner": "lane-3613-p2-routes",
+  "manualDispatch": false,
+  "rerun": false
+}

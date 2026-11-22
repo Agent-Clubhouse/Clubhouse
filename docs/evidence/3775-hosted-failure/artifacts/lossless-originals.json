@@ -1,0 +1,103 @@
+{
+  "artifacts": [
+    {
+      "originalName": "pr-open-original.json",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/pr-open-original.json",
+      "bytes": 6140,
+      "sha256": "8d4a00739990740c9e18cd8362ae08994f4659cf0f9ab98a9518165561e6bb48",
+      "compressed": false
+    },
+    {
+      "originalName": "automatic-run-original.json",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/automatic-run-original.json",
+      "bytes": 1012,
+      "sha256": "c1494b446111d65ff1638c5fcecb9b67d11c25ccb8be97bdcd50157ae309feb9",
+      "compressed": false
+    },
+    {
+      "originalName": "terminal-original.json",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/terminal-original.json",
+      "bytes": 79573,
+      "sha256": "8e403eaae7eb62ffa01115c72ca51859cbb3101d69b608a8154f52c35fb45b0c",
+      "compressed": false
+    },
+    {
+      "originalName": "artifacts-original.json",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/artifacts-original.json",
+      "bytes": 20037,
+      "sha256": "b161435c12335a28d44f9721bdfd18412be180d2694ac1b369ff3b717f6259dc",
+      "compressed": false
+    },
+    {
+      "originalName": "checkout-original.json",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/checkout-original.json",
+      "bytes": 2857,
+      "sha256": "8c8bb08218ef44d12f872ca3e2279d301a1d2412eba086448e8ba6339988b3ff",
+      "compressed": false
+    },
+    {
+      "originalName": "windows-junit-attribution-original.json",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/windows-junit-attribution-original.json",
+      "bytes": 9645,
+      "sha256": "e7a489c2173c1441ee8dd44d50fef2463b91c42b6ce14a9b5afd85cbcacab8c4",
+      "compressed": false
+    },
+    {
+      "originalName": "source-phase-attribution-original.json",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/source-phase-attribution-original.json",
+      "bytes": 2784,
+      "sha256": "f6e6481137cf7d93b574a0d52b990ea7378dcc67be4b6cc86f76a966e80d4365",
+      "compressed": false
+    },
+    {
+      "originalName": "windows-shard-one-original.zip",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/windows-shard-one-original.zip",
+      "bytes": 612579,
+      "sha256": "f5a80a3e1f81bc99c6811777eee25c6966bf8a49d4169c42bf9378da20181b62",
+      "compressed": false
+    },
+    {
+      "originalName": "windows-shard-two-original.zip",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/windows-shard-two-original.zip",
+      "bytes": 562663,
+      "sha256": "4e7f025e2e047eb8603f023438bcacf9c7a86b5fa72138dbdc2b7272e8342b26",
+      "compressed": false
+    },
+    {
+      "originalName": "watch-original.log",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/watch-original.log.gz",
+      "bytes": 4272,
+      "sha256": "3207c3539ea68b3d803180a9932b1c8cbec80c4dad8a86e02368ab330f53945f",
+      "compressed": true,
+      "originalBytes": 259555,
+      "originalSha256": "b6c4631ebe280e2fa22df5f1fd3fc285b4d1835db38ba85e912cf6643ea3402d",
+      "streamDecompressedSha256": "b6c4631ebe280e2fa22df5f1fd3fc285b4d1835db38ba85e912cf6643ea3402d",
+      "losslessVerified": true
+    },
+    {
+      "originalName": "windows-shard-one-original.log",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/windows-shard-one-original.log.gz",
+      "bytes": 404059,
+      "sha256": "b685b812c8d1fbda5982ea05f83adaaeeec07c6f01d1a157f2fc98cd33133f8d",
+      "compressed": true,
+      "originalBytes": 4191714,
+      "originalSha256": "a1b0c0303b390ee72f5ea6d3dda66a99f672792f1dbf1baed06008f16fbb717d",
+      "streamDecompressedSha256": "a1b0c0303b390ee72f5ea6d3dda66a99f672792f1dbf1baed06008f16fbb717d",
+      "losslessVerified": true
+    },
+    {
+      "originalName": "windows-shard-two-original.log",
+      "path": "docs/evidence/3775-hosted-failure/artifacts/windows-shard-two-original.log.gz",
+      "bytes": 188222,
+      "sha256": "3a19fcb27c307e0ac35203bbbe62abd303109d42ffc369fe610cb0d7355f277c",
+      "compressed": true,
+      "originalBytes": 1576991,
+      "originalSha256": "c2e341f27e1dc4c7846a8f0ce91f92f005bcf0dc4c17a5d3c184b6b19b742b5c",
+      "streamDecompressedSha256": "c2e341f27e1dc4c7846a8f0ce91f92f005bcf0dc4c17a5d3c184b6b19b742b5c",
+      "losslessVerified": true
+    }
+  ],
+  "originalPrivateCopiesRetained": true,
+  "rerun": false,
+  "normalization": false
+}
