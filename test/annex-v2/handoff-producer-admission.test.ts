@@ -162,7 +162,7 @@ async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestS
   return { pending, release: release.resolve };
 }
 
-async function heldPostPositiveSource(fx: Fixture, args: Record<string, unknown>) {
+async function heldPostPositiveSource(fx: Fixture, args: Record<string, unknown>, beforeVerification = false) {
   const permissions = await import('../../src/main/services/clubhouse-mcp/handoff-permissions');
   const approve = permissions.handoffAgreementCallApproved, source = fx.source.callerHandoffSource;
   const entered = deferred(), release = deferred();
@@ -170,12 +170,18 @@ async function heldPostPositiveSource(fx: Fixture, args: Record<string, unknown>
   let positive = false, held = false, returned = false, positiveCalls = 0;
   vi.spyOn(permissions, 'handoffAgreementCallApproved').mockImplementation(async (...input) => {
     const allowed = await approve(...input);
-    if (input[1] === 'handoff.offer') { positive = allowed; if (allowed) positiveCalls++; }
+    if (input[1] === 'handoff.offer') {
+      positive = allowed;
+      if (allowed) {
+        positiveCalls++;
+        if (beforeVerification) { entered.resolve(); await release.promise; }
+      }
+    }
     return allowed;
   });
   vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...input) => {
     const selected = await source(...input);
-    if (positive && !held && input[0] === caller) {
+    if (positive && !held && !beforeVerification && input[0] === caller) {
       held = true;
       entered.resolve();
       await release.promise;
@@ -543,7 +549,7 @@ describe('isolated real MCP producer domain admission', () => {
         const before = await catalog(fx);
         const mark = vi.spyOn(fx.host.commands, 'markUndelivered'), post = vi.spyOn(fx.machine.client, 'postToMachine');
         const notice = vi.spyOn(fx.host.commands, 'claimNotice');
-        const held = await heldPostPositiveSource(fx, offerArgs(summary));
+        const held = await heldPostPositiveSource(fx, offerArgs(summary), change === 'settled benign');
         const producer = fx.host.producers.values().next().value;
         if (!producer) throw new Error('Missing original source producer.');
         expect(listeners.size).toBe(1);
