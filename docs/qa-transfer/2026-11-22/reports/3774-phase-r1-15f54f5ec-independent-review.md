@@ -1,0 +1,30 @@
+# #3774 diagnostic R1 successor: APPROVE for one ordinary observation
+
+**APPROVE** exact source `15f54f5ec7eac7e6d8ef0f14a730d8dac4413181` / tree `69a47d66e02836cba39436cf3bfe235e1273b58f`, with evidence `30f8287ccdc8241c3bc046c9ef3dd5833230cbf0` / tree `040b9eb93b5dd769920564319f7f3e4becdf2b84`, for the previously authorized **one ordinary same-PR new-head Windows observation**, after the owner's normal fresh composition/clean/pushed guards. No remaining publisher defect was found in this bounded review. No manual dispatch, blind rerun, workflow/deadline/grant change, landing or broader feature acceptance follows.
+
+This review closes only R1 from [immutable BLOCK611f](https://github.com/Agent-Clubhouse/Clubhouse/blob/611f19a65030fdff8787089aa03dff22cffded0c/docs/qa-transfer/2026-11-22/reports/3774-phase-source-7d816673e-independent-review.md). Its previously assessed source/evidence boundaries and explicit d333-to7d typing bridge remain intact; I did not reopen the unchanged matrix or credit old controls as successor execution. GitHub reads/report publication used gh only. No application, fixture, compiler, lint or CI rerun was performed by this reviewer.
+
+## R1 disposition
+
+The [sole executable leaf delta](https://github.com/Agent-Clubhouse/Clubhouse/commit/15f54f5ec7eac7e6d8ef0f14a730d8dac4413181) is5 additions/10 deletions in the final publisher, `src/main/services/managed-agents/delivery.test.ts:189–193`. A bounded local `written` outcome now selects the prepared complete packet or the fixed unavailable envelope for the remaining console channel. A console exception permits only one bounded remaining raw unavailable notice. No frozen recorder state changes, recursion, output retry loop, callback addition, native forwarding change or application operation is introduced. All post-freeze clock reads and console timing/status output are removed; the previous report's timing description applies to7d, not this successor.
+
+This addresses both source-derived defects: a final raw-write exception cannot publish a misleading complete zero-failure console packet, and no post-freeze clock exception is silently sampled. Returning raw/console calls remain emission observations, not durable acknowledgement. If both channels fail, no observation proof is invented and diagnostic containment preserves the primary outcome.
+
+## Exact evidence checked
+
+The [R1 manifest](https://github.com/Agent-Clubhouse/Clubhouse/blob/30f8287ccdc8241c3bc046c9ef3dd5833230cbf0/docs/evidence/3774-phase-observation/r1-manifest.json) SHA256 is `e7397eff3bbbd8a0634f6f8ca120eec57cd558bfc8f88c528b4a505f96d74ac7`. I downloaded and checked all17 listed artifact blobs and the exact source fixture, including byte lengths/SHA256/Git blob identities. Four raw receipt pairs are before/after equal with original output hashes and gate identity retained. All four attempts record the same nonfixture selected inputs and installed identities. The clean10/11 seals name exact15f/tree69a,58 selected inputs and empty tracked status; the fixture SHA256 is `2ed920f7c4350dd68fbbe57652627a9aea6314846635f1efa983feaf2d2c41b2`.
+
+| Attempt | Actual attribution and result |
+| --- | --- |
+| 08 red |43a, runtime7d, plus exact archived control overlay;2 fail/1 pass/67 skip. Actual final-write-only JUnit packet misleadingly has failures0/unavailablefalse; the clock assertion reports2 calls. Original target passes. |
+| 09 green |43a plus archived corrected full control patch;3 pass/67 skip. Actual final-write-only JUnit packet is exactly `{"version":1,"observerUnavailable":true}`; the passing zero-clock assertion is discriminated by08. Original target passes. |
+| 10 types/lint |Clean exact15f, min6 gate; unchanged strict fixture/inherited production graph compiler and scoped lint finish rc0, with0 lint errors/warnings. |
+| 11 target |Clean exact15f, min4 gate/maxWorkers2;1 pass/67 skip. Actual final raw/JUnit packet matches, with20 transitions, no observer failure and final active=[]. |
+
+I reconstructed both archived overlays against the original43a fixture and matched their actual receipt fixture hashes/diff hashes. Applying the identical control overlay to corrected15f (with only its known five-line source offset) produces byte-identical green-control fixture bytes. Thus09 is explicit overlay evidence for this exact changed publisher; it is not relabeled as a clean15f execution. Disposable spies/cases are absent from the shipped fixture. Actual JUnit frames were parsed and matched to captured merged raw; for the deliberately failed direct final write, the surviving console envelope also appears in merged raw, not a falsely claimed successful direct write.
+
+The source commit's sole changed file and evidence commit's new-files-only delta preserve prior manifest SHA `99438287d9668360f0bdd332641c4a2041cfd98a3fa4536d082672787638499d` and all31 original artifact blobs. Those31 previously downloaded blobs were rehashed. The earlier68-test/setup/5000ms/native/error/stop/isolation/detach/bounds proofs keep their exact original attribution; no unchanged full matrix was rerun. The original target's assertions and stop structure are unchanged, and it passes in08/09/11.
+
+All new execution is darwin/Node24.22.1, not original Windows/Node22.23.4. Selected-input seals are not an exhaustive atomic environment seal. Instrumented phase times include observer overhead/scheduling. Original run44981401024 remains a real unresolved Windows failure; this approval proves no prior cause, flake, timeout fix, Windows diagnostic output, phone/full-duplex/security closure or grant-policy change. Inspect the one ordinary hosted result and its actual raw/JUnit output before any further conclusion.
+
+The companion verification JSON contains exact source/evidence/manifests, downloaded blob identities, four receipt summaries, actual packet counts and byte bridges. Private Q5 WIP remains clean and unchanged at `079a257acf38b168b529fb7745dae97f686b72b8` / tree `89e942aabd42c8ec93fe47794f2eef95b0b61980`, branch `auto-reset-policy-design/q5-framed-root-journal-wip`.
