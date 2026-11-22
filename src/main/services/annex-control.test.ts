@@ -421,6 +421,24 @@ describe('route-budget disposition (#3714)', () => {
     expect(dispatch).toHaveBeenCalledTimes(2);
     expect(requesterWs.closed).toBeNull();
   });
+
+  it('releases cancelled sender transfers and response slots across more than one full request window', async () => {
+    const path = '/api/v1/icons/agents/a';
+    const body = Buffer.alloc(control.responseBodyLimit(path) + 1);
+    handler = async (_principal, request) => request.path === path ? { status: 200, headers: {}, body } : ok('fresh');
+    const { requesterWs, targetWs } = await connected(['request', 'bulk']);
+    for (let index = 0; index <= control.MAX_IN_FLIGHT; index++) {
+      await expect(control.request(TARGET, { method: 'GET', path }, { requestId: `budget-slot-${index}` }))
+        .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+      await flush();
+    }
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+    expect(control._activeRunsForTesting(REQUESTER, REQUESTER_PIN)).toBe(0);
+    expect((await control.request(TARGET, { method: 'GET', path: '/budget-slot-fresh' })).body.toString()).toBe(JSON.stringify('fresh'));
+    expect(dispatch).toHaveBeenCalledTimes(control.MAX_IN_FLIGHT + 2);
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+  });
 });
 
 describe('capability hello and mixed versions', () => {
@@ -1605,8 +1623,9 @@ for (const [path, cap] of [['/api/v1/icons/agents/a', 72 * 1024], ['/api/v1/netw
     expect((await control.request(TARGET, { method: 'GET', path })).body.length).toBe(cap);
     const written = sentOfType(targetWs, 'binary').length;
     handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(cap + 1, 0xff) });
-    await expect(control.request(TARGET, { method: 'GET', path })).rejects.toMatchObject({ code: 'transport_unavailable' });
+    await expect(control.request(TARGET, { method: 'GET', path })).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
     expect(sentOfType(targetWs, 'binary')).toHaveLength(written);
+    expect(targetWs.closed).toBeNull();
   });
 }
 
