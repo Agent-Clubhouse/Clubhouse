@@ -1,0 +1,35 @@
+{
+  "head": "61e64c099b05ccfc663adbe5432f46faa2909359",
+  "tree": "2de3f331a138bf7395e3ec46922477a04c534939",
+  "productionBase": "edcd915763a2ec73f0e8149917b4683ced06ecd6",
+  "map": "db46fc6eae9ecd1153dbb9c97b816f002ba5ad86",
+  "productionClientMatchesMap": true,
+  "inputs": [
+    {
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98"
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "sha256": "6fccf3e4cb452d9ca1f7668e7f5ddccc2b197a52a699989775d91df6d621ede0"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+    },
+    {
+      "path": "vitest.config.ts",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    },
+    {
+      "path": "package.json",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+    }
+  ],
+  "command": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npx vitest run --project main src/main/services/annex-client.test.ts -t \"reverse Details admission\" --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/details-transport/01-baseline-original.xml",
+  "scope": "Test-only genuine reader/receipt boundary; no production edits, no unrelated Gitdiff rerun"
+}
