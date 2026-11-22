@@ -1,0 +1,7 @@
+{
+  "status": "Metadata parser assertion failed before attribution publication",
+  "expected": 33,
+  "observed": 66,
+  "cause": "Suffix filter included both real Run checkout and Post Run cleanup entries; not hosted/product failure",
+  "correction": "Exact basename pattern excludes Post Run cleanup; no test rerun"
+}

@@ -1,0 +1,189 @@
+{
+  "run": 45017029171,
+  "attempt": 1,
+  "head": "364c111bdb384c89218f77c6e8be1d25ee56d286",
+  "actualCheckout": "a936bd948bcb46e1907efb55fb7d80764c370002",
+  "files": [
+    {
+      "original": "artifacts-official-original.json",
+      "stored": "artifacts-official-original.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 20064,
+      "originalSHA256": "a3fa54367da6e15d0def5b6f8e5ad24a22b6d2aa37c2c56e60630d2a746f7c14",
+      "storedBytes": 2772,
+      "storedSHA256": "4ee450a7863a9f15ddd61870b107e09c9f02318ef0933e54f07c786d76fc0fbc"
+    },
+    {
+      "original": "checkout-commit-official-original.json",
+      "stored": "checkout-commit-official-original.json",
+      "encoding": "identity",
+      "originalBytes": 2654,
+      "originalSHA256": "74c99c5a5996e180be4e24108bc2c6a9b7244b56db924b2a8f7eb99ec914647d",
+      "storedBytes": 2654,
+      "storedSHA256": "74c99c5a5996e180be4e24108bc2c6a9b7244b56db924b2a8f7eb99ec914647d"
+    },
+    {
+      "original": "checkout-final-attribution.json",
+      "stored": "checkout-final-attribution.json",
+      "encoding": "identity",
+      "originalBytes": 15443,
+      "originalSHA256": "f056491cc67f55eb44c6bf0299050f83814ec5dc892b56f6cc5eb70ea19a6205",
+      "storedBytes": 15443,
+      "storedSHA256": "f056491cc67f55eb44c6bf0299050f83814ec5dc892b56f6cc5eb70ea19a6205"
+    },
+    {
+      "original": "checkout-observations-original.json",
+      "stored": "checkout-observations-original.json",
+      "encoding": "identity",
+      "originalBytes": 15879,
+      "originalSHA256": "ed419d7c4e13cd16189e9f7a4c18d9500fddbea29ff6871789ed1eaa46f03942",
+      "storedBytes": 15879,
+      "storedSHA256": "ed419d7c4e13cd16189e9f7a4c18d9500fddbea29ff6871789ed1eaa46f03942"
+    },
+    {
+      "original": "checkout-parser-attempt01-receipt.json",
+      "stored": "checkout-parser-attempt01-receipt.json",
+      "encoding": "identity",
+      "originalBytes": 318,
+      "originalSHA256": "29df598148e43570c176d4efb778ee141b7a3ccc7a083d23619ee6f59007608f",
+      "storedBytes": 318,
+      "storedSHA256": "29df598148e43570c176d4efb778ee141b7a3ccc7a083d23619ee6f59007608f"
+    },
+    {
+      "original": "client-junit-final-attribution.json",
+      "stored": "client-junit-final-attribution.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 62928,
+      "originalSHA256": "f26d8c5ef9feae2260532f2f873006e9e1f4d459e69f7098c86fbaad5ef4d8a8",
+      "storedBytes": 4051,
+      "storedSHA256": "e6e17f5f88fbac01b5ef23f48817774d353dbdf62d5cf8307cec9ad6e000beb0"
+    },
+    {
+      "original": "client-junit-initial-attribution.json",
+      "stored": "client-junit-initial-attribution.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 279305,
+      "originalSHA256": "2c60cd207d43dc18c5ebc40f022ed55c4e48682bbdcac14dec1cc3ccb5b697a0",
+      "storedBytes": 27598,
+      "storedSHA256": "c962f396f172cc90d3ab85cf050f03e31c8e90d9b29f2acc3bb3c372bc3d9be3"
+    },
+    {
+      "original": "run-logs-original.zip",
+      "stored": "run-logs-original.zip",
+      "encoding": "identity",
+      "originalBytes": 3491220,
+      "originalSHA256": "20b8841301b7cc2cc61f7d230047e04c5da5f96bd46b1f003a154bfa11ab19ac",
+      "storedBytes": 3491220,
+      "storedSHA256": "20b8841301b7cc2cc61f7d230047e04c5da5f96bd46b1f003a154bfa11ab19ac"
+    },
+    {
+      "original": "run-official-original.json",
+      "stored": "run-official-original.json",
+      "encoding": "identity",
+      "originalBytes": 13764,
+      "originalSHA256": "28a3f92f19a96f60059acbb1c35f79a327858827e4850567fdbe7ed7da5ef614",
+      "storedBytes": 13764,
+      "storedSHA256": "28a3f92f19a96f60059acbb1c35f79a327858827e4850567fdbe7ed7da5ef614"
+    },
+    {
+      "original": "test-results-ubuntu-latest-1-original.zip",
+      "stored": "test-results-ubuntu-latest-1-original.zip",
+      "encoding": "identity",
+      "originalBytes": 635619,
+      "originalSHA256": "0c3f5520f84a59b5eb4c7cdc9331f259ab92e37f3977faecb4b6765ec5e2c4f9",
+      "storedBytes": 635619,
+      "storedSHA256": "0c3f5520f84a59b5eb4c7cdc9331f259ab92e37f3977faecb4b6765ec5e2c4f9"
+    },
+    {
+      "original": "test-results-ubuntu-latest-2-original.zip",
+      "stored": "test-results-ubuntu-latest-2-original.zip",
+      "encoding": "identity",
+      "originalBytes": 583646,
+      "originalSHA256": "93d1a4a48305ff6c61d32f04b58b7b5c7472f8f513da72931460ba24e4c95135",
+      "storedBytes": 583646,
+      "storedSHA256": "93d1a4a48305ff6c61d32f04b58b7b5c7472f8f513da72931460ba24e4c95135"
+    },
+    {
+      "original": "test-results-windows-latest-1-original.zip",
+      "stored": "test-results-windows-latest-1-original.zip",
+      "encoding": "identity",
+      "originalBytes": 613059,
+      "originalSHA256": "a11e8c64d233751bc3e2bf014f341410f1ffd5ede01fd5ed86c88b3b95886988",
+      "storedBytes": 613059,
+      "storedSHA256": "a11e8c64d233751bc3e2bf014f341410f1ffd5ede01fd5ed86c88b3b95886988"
+    },
+    {
+      "original": "test-results-windows-latest-2-original.zip",
+      "stored": "test-results-windows-latest-2-original.zip",
+      "encoding": "identity",
+      "originalBytes": 562615,
+      "originalSHA256": "1977c4265e78da7b37de723f320594352fae197ce404acbcdf4054ab2d6d5141",
+      "storedBytes": 562615,
+      "storedSHA256": "1977c4265e78da7b37de723f320594352fae197ce404acbcdf4054ab2d6d5141"
+    },
+    {
+      "original": "automatic-run-selected-original.json",
+      "stored": "automatic-run-selected-original.json",
+      "encoding": "identity",
+      "originalBytes": 306,
+      "originalSHA256": "6770f97d41b8732665e15148d8936637ebc9b3d849b1561f68c967e31945291d",
+      "storedBytes": 306,
+      "storedSHA256": "6770f97d41b8732665e15148d8936637ebc9b3d849b1561f68c967e31945291d"
+    },
+    {
+      "original": "automatic-run-terminal-original.json",
+      "stored": "automatic-run-terminal-original.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 119703,
+      "originalSHA256": "a6118b6624b383866d810787d6d033f97250a0cc96c8c937957e146e6fd3951a",
+      "storedBytes": 4738,
+      "storedSHA256": "f86a97304b84abb9b9e9437f87b3b4adad2069a34af06d0359f12d6cbbe46e54"
+    },
+    {
+      "original": "automatic-run-watch-original.log",
+      "stored": "automatic-run-watch-original.log.gz",
+      "encoding": "gzip",
+      "originalBytes": 458078,
+      "originalSHA256": "597f843394805dedfc751d0f7f1de63c675d083787b0802b46d183279de371cd",
+      "storedBytes": 5516,
+      "storedSHA256": "f60c0d8e47a871ca431908710d376ec40ab9e6962709ab8bb1230640d417d0b0"
+    },
+    {
+      "original": "pr-terminal-guard-original.json",
+      "stored": "pr-terminal-guard-original.json",
+      "encoding": "identity",
+      "originalBytes": 11852,
+      "originalSHA256": "d9cf72b841b20680b8b4e6ab0f0fc2cde633c1c0c37ff5ebaf66025bb7beca63",
+      "storedBytes": 11852,
+      "storedSHA256": "d9cf72b841b20680b8b4e6ab0f0fc2cde633c1c0c37ff5ebaf66025bb7beca63"
+    },
+    {
+      "original": "main-terminal-guard-original.json",
+      "stored": "main-terminal-guard-original.json",
+      "encoding": "identity",
+      "originalBytes": 101,
+      "originalSHA256": "bbdd19af4da4985f3fb861de699e6940ca0078f323412e24ef0c2aaea1c80c28",
+      "storedBytes": 101,
+      "storedSHA256": "bbdd19af4da4985f3fb861de699e6940ca0078f323412e24ef0c2aaea1c80c28"
+    },
+    {
+      "original": "pr-composition-guard-original.json",
+      "stored": "pr-composition-guard-original.json",
+      "encoding": "identity",
+      "originalBytes": 7151,
+      "originalSHA256": "764470eb3ce27325f64cfc74147f485b7446936daec79a25cefdda3bfb61d7e0",
+      "storedBytes": 7151,
+      "storedSHA256": "764470eb3ce27325f64cfc74147f485b7446936daec79a25cefdda3bfb61d7e0"
+    },
+    {
+      "original": "README.md",
+      "stored": "README.md",
+      "encoding": "identity",
+      "originalBytes": 3664,
+      "originalSHA256": "0b87e62a463d9d14c7b1220d89abd6465eb051d5f3b812e16fba71abcc60f3c7",
+      "storedBytes": 3664,
+      "storedSHA256": "0b87e62a463d9d14c7b1220d89abd6465eb051d5f3b812e16fba71abcc60f3c7"
+    }
+  ],
+  "artifactCount": 20
+}

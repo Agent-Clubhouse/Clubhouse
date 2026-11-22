@@ -1,0 +1,408 @@
+[
+  {
+    "entry": "0_Annex E2E Tests (ubuntu-latest, 2_2).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:19.9295549Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:19.9323313Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:32:19.9633629Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Annex E2E Tests (ubuntu-latest, 2_2)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:19.9295107Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:19.9323293Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "1_E2E Tests (windows-2022, 3_3).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "E2E Tests (windows-2022, 3_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "2_Chat E2E Tests (windows-2022, 2_3).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Chat E2E Tests (windows-2022, 2_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "3_Chat E2E Tests (windows-2022, 3_3).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Chat E2E Tests (windows-2022, 3_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "4_E2E Tests (ubuntu-latest, 1_3).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:19.2228485Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:19.2254306Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:32:19.2505147Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "E2E Tests (ubuntu-latest, 1_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:19.2228453Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:19.2254269Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "5_E2E Tests (ubuntu-latest, 2_3).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.4982243Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.5003564Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:32:18.5234476Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "E2E Tests (ubuntu-latest, 2_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.4982233Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.5003519Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "6_Classic layout E2E Tests (ubuntu-latest, 1_1).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.4730850Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.4754097Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:32:18.4994847Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Classic layout E2E Tests (ubuntu-latest, 1_1)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.4730836Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.4754075Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "7_Chat E2E Tests (ubuntu-latest, 3_3).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.4566277Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.4592515Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:32:18.4807736Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Chat E2E Tests (ubuntu-latest, 3_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.4565813Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.4592468Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "8_Chat E2E Tests (ubuntu-latest, 2_3).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:19.2756620Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:19.2778856Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:32:19.3024634Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Chat E2E Tests (ubuntu-latest, 2_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:19.2756336Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:19.2778825Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "9_Classic layout E2E Tests (windows-2022, 1_1).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Classic layout E2E Tests (windows-2022, 1_1)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "10_Chat E2E Tests (ubuntu-latest, 1_3).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:21.9043570Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:21.9065848Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:32:21.9256533Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Chat E2E Tests (ubuntu-latest, 1_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:21.9043343Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:21.9065836Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "11_Stable-mode E2E Tests (windows-2022).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Stable-mode E2E Tests (windows-2022)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "12_Annex E2E Tests (windows-2022, 2_2).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Annex E2E Tests (windows-2022, 2_2)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "13_E2E Tests (windows-2022, 1_3).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "E2E Tests (windows-2022, 1_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "14_Annex E2E Tests (windows-2022, 1_2).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Annex E2E Tests (windows-2022, 1_2)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "15_Stable-mode E2E Tests (ubuntu-latest).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.8336391Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.8361243Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:32:18.8694159Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Stable-mode E2E Tests (ubuntu-latest)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.8336333Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.8360753Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "16_Chat E2E Tests (windows-2022, 1_3).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Chat E2E Tests (windows-2022, 1_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "17_E2E Tests (ubuntu-latest, 3_3).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.7781159Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.7804833Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:32:18.8036231Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "E2E Tests (ubuntu-latest, 3_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.7781142Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.7804810Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "18_E2E Tests (windows-2022, 2_3).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "E2E Tests (windows-2022, 2_3)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "19_Annex E2E Tests (ubuntu-latest, 1_2).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.4135875Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.4160221Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:32:18.4371238Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Annex E2E Tests (ubuntu-latest, 1_2)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:32:18.4135574Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:32:18.4160197Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "20_Unit + Component Tests (windows-latest, 1_2).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Unit + Component Tests (windows-latest, 1_2)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "21_Unit + Component Tests (ubuntu-latest, 1_2).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:05.7734377Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:05.7768952Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:23:05.8135169Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Unit + Component Tests (ubuntu-latest, 1_2)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:05.7734301Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:05.7768048Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "22_Build app (ubuntu-latest).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:06.0198442Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:06.0221746Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:23:06.1219675Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Build app (ubuntu-latest)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:06.0198418Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:06.0221702Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "23_Copilot SDK chunk (windows-2022).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Copilot SDK chunk (windows-2022)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "24_Copilot SDK chunk (ubuntu-latest).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:06.9066830Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:06.9067433Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:23:06.9252904Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": true
+  },
+  {
+    "entry": "Copilot SDK chunk (ubuntu-latest)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:06.9066779Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:06.9067422Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "25_Unit + Component Tests (windows-latest, 2_2).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Unit + Component Tests (windows-latest, 2_2)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "26_Unit + Component Tests (ubuntu-latest, 2_2).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:05.7703773Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:05.7740053Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:23:05.8138129Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Unit + Component Tests (ubuntu-latest, 2_2)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:05.7703725Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:05.7739273Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "27_Workflow lint (actionlint).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:05.6873949Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:05.6899211Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:23:05.7162261Z ##[group]Run actions/cache@v6"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Workflow lint (actionlint)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:05.6873348Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:05.6899168Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "28_Typecheck + API surface.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:06.3387549Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:06.3412997Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:23:06.3650061Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Typecheck + API surface/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:06.3387534Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:06.3412976Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "29_Build app (windows-2022).txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Build app (windows-2022)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "30_ESLint (errors only).txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:05.4153006Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:05.4181719Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:23:05.4549563Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "ESLint (errors only)/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:05.4152985Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:05.4181273Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "31_Codex app-server schema drift.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:06.4577502Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:06.4604246Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:23:06.4847942Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Codex app-server schema drift/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:23:06.4577485Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:23:06.4604230Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "35_Plan the run.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:22:52.4118650Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:22:52.4143665Z a936bd948bcb46e1907efb55fb7d80764c370002\n2026-11-22T11:22:52.4344679Z ##[group]Run actions/setup-node@v7"
+    ],
+    "mergeRefSeen": false
+  },
+  {
+    "entry": "Plan the run/2_Run actions_checkout@v7.txt",
+    "gitLogObservations": [
+      "2026-11-22T11:22:52.4118626Z [command]/usr/bin/git log -1 --format=%H\n2026-11-22T11:22:52.4143641Z a936bd948bcb46e1907efb55fb7d80764c370002"
+    ],
+    "mergeRefSeen": false
+  }
+]

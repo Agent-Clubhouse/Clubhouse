@@ -1,0 +1,468 @@
+{
+  "scope": "All33 jobs with real Run checkout steps; four skipped jobs have no execution; Post Run cleanup not counted",
+  "actualCheckout": "a936bd948bcb46e1907efb55fb7d80764c370002",
+  "jobs": [
+    {
+      "entry": "Annex E2E Tests (ubuntu-latest, 2_2)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:19.9295107Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:19.9323293Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "E2E Tests (windows-2022, 3_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:24.6087101Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:24.6391914Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Chat E2E Tests (windows-2022, 2_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:25.0261290Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:25.0546707Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Chat E2E Tests (windows-2022, 3_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:22.2780473Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:22.3019205Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "E2E Tests (ubuntu-latest, 1_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:19.2228453Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:19.2254269Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "E2E Tests (ubuntu-latest, 2_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:18.4982233Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:18.5003519Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Classic layout E2E Tests (ubuntu-latest, 1_1)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:18.4730836Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:18.4754075Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Chat E2E Tests (ubuntu-latest, 3_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:18.4565813Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:18.4592468Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Chat E2E Tests (ubuntu-latest, 2_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:19.2756336Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:19.2778825Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Classic layout E2E Tests (windows-2022, 1_1)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:23.8492854Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:23.8729436Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Chat E2E Tests (ubuntu-latest, 1_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:21.9043343Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:21.9065836Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Stable-mode E2E Tests (windows-2022)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:22.1485763Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:22.1718170Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Annex E2E Tests (windows-2022, 2_2)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:24.1089053Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:24.1353077Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "E2E Tests (windows-2022, 1_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:24.4864770Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:24.5135824Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Annex E2E Tests (windows-2022, 1_2)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:25.6049844Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:25.6320393Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Stable-mode E2E Tests (ubuntu-latest)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:18.8336333Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:18.8360753Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Chat E2E Tests (windows-2022, 1_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:24.1909207Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:24.2141013Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "E2E Tests (ubuntu-latest, 3_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:18.7781142Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:18.7804810Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "E2E Tests (windows-2022, 2_3)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:23.1779602Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:23.2050999Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Annex E2E Tests (ubuntu-latest, 1_2)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:32:18.4135574Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:32:18.4160197Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Unit + Component Tests (windows-latest, 1_2)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:10.6859600Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:10.7156237Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Unit + Component Tests (ubuntu-latest, 1_2)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:05.7734301Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:05.7768048Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Build app (ubuntu-latest)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:06.0198418Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:06.0221702Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Copilot SDK chunk (windows-2022)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:10.6654356Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:10.6887080Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Copilot SDK chunk (ubuntu-latest)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:06.9066779Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:06.9067422Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Unit + Component Tests (windows-latest, 2_2)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:14.1542614Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:14.1911107Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Unit + Component Tests (ubuntu-latest, 2_2)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:05.7703725Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:05.7739273Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Workflow lint (actionlint)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:05.6873348Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:05.6899168Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Typecheck + API surface/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:06.3387534Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:06.3412976Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Build app (windows-2022)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:10.2415381Z [command]\"C:\\Program Files\\Git\\bin\\git.exe\" log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:10.2687052Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "ESLint (errors only)/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:05.4152985Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:05.4181273Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Codex app-server schema drift/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:23:06.4577485Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:23:06.4604230Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    },
+    {
+      "entry": "Plan the run/2_Run actions_checkout@v7.txt",
+      "observations": [
+        {
+          "command": "2026-11-22T11:22:52.4118626Z [command]/usr/bin/git log -1 --format=%H",
+          "following": [
+            "2026-11-22T11:22:52.4143641Z a936bd948bcb46e1907efb55fb7d80764c370002"
+          ],
+          "shas": [
+            "a936bd948bcb46e1907efb55fb7d80764c370002"
+          ]
+        }
+      ]
+    }
+  ]
+}
