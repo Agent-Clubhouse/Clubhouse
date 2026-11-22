@@ -29,6 +29,7 @@ inputs = [
     "src/main/services/annex-authorizer.ts", "src/shared/annex-control-protocol.ts",
     "src/shared/annex-control-protocol.test.ts", "src/main/services/annex-client.ts",
     "src/main/services/annex-client.test.ts", "src/main/services/annex-server.ts",
+    "src/main/services/annex-server.test.ts",
     "src/main/services/git-service.ts", "src/shared/annex-binary-limits.ts",
     "src/shared/icon-limits.ts", "src/shared/chat/index.ts", "src/shared/chat/attachments.ts",
     "src/main/services/annex-full-events.ts", "src/shared/handoff-transfer.ts",

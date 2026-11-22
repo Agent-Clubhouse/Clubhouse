@@ -1,6 +1,6 @@
 # #3613 existing GET Git-diff envelope: RED and design only
 
-**Production policy is unchanged.** The proposed bounded envelope below requires the existing independent security/delta reviewer before implementation. Details ownership and held query/page/receipt hunks are untouched.
+**Historical baseline/design record:** production was unchanged at the frozen b784 design. Independent [DESIGN APPROVE3046](https://github.com/Agent-Clubhouse/Clubhouse/blob/3046c2cf93acbd16b92e07316216e0d593241835/docs/qa-transfer/2026-11-22/reports/gitdiff-envelope-b784-design-review.md) authorizes the bounded candidate, with the corrected backing-allocation qualification below. Exact implementation proof/review is separate; Details held query/page/receipt hunks remain untouched.
 
 Baseline is actual main `63f140b2a0ba00e686fb727a931d6b340fc3ee7e`, tree `040b9eb93b5dd769920564319f7f3e4becdf2b84`, verified through GitHub and origin. Test-only source `9eff428ebeb70c6b7d0996b6600713a50b4928ed`, tree `2bc1e5b37e8e8f89898982641359c47b580b59d6`, adds seven focused cases and an evidence capture helper; every production source remains byte-identical to main.
 
@@ -28,7 +28,7 @@ The existing desktop `requestGitOperation('diff')` uses the captured single-rout
 
 **Recommended narrow disposition:** permit the existing GET Git-diff response up to a finite **32MiB encoded JSON envelope**, rather than Infinity. This is a bounded usable increment, not arbitrary-size direct/reverse parity. Larger diffs remain explicitly refused with existing `response_too_large`; no new pagination, route family, source-file read, filesystem policy or permission.
 
-Proposed implementation, not applied:
+Implementation boundary proposed at the b784 freeze:
 
 1. A module-private `GIT_DIFF_RESPONSE_MAX_BYTES = 32 * 1024 * 1024` names this finite local policy. It is the same size already supported for full-event responses, but is independently named for its different route/meaning. No wire field, configuration or exported permission.
 2. Extend `responseBodyLimit(path, method?: ControlMethod)` only to identify the new route when `method === 'GET'`. Missing method remains the existing default for Git-diff paths; existing special routes retain their current behavior.
@@ -51,7 +51,7 @@ The finite32MiB limit is **encoded response bytes**, not each decoded string. Th
 
 `ControlBulkLane` retains no buffer sized from a declared start. It checks ownership/size before recording an incoming transfer or issuing credit; each accepted credit admits at most64KiB. Up to4 incoming transfers are retained per link, chunks are kept through verified finish, and `Buffer.concat` constructs a complete body after digest/size/currentness checks. At this route cap that permits up to128MiB of accumulated incoming chunks on one lane; completion transiently adds another body copy. This is an accounting bound for this route, **not** a process/global RSS limit. Other already-supported transfers, socket copies and consumer decoding also consume memory.
 
-The target already reads and JSON-serializes complete original/modified strings before `ReverseResponse` can clip to its envelope. `ReverseResponse.write` first creates a Buffer, then retains at most cap+1; raising its cap increases retained target output from8MiB+64KiB to32MiB+1. It does **not** bound preexisting disk/string/serialization allocation. Up to16 target runs/replies and64 pending requests exist;4 bulk sends and16MiB queued-socket budget are separate controls. Queued-body and decoded-string memory are not reduced to the credit window.
+The target already reads and JSON-serializes complete original/modified strings before `ReverseResponse` can clip to its envelope. `ReverseResponse.write` first creates the full Buffer, then retains a logical view of at most cap+1 bytes. Its `Buffer.subarray` retains the original full backing allocation; clipping does **not** release the excess allocation. Raising this route cap increases the accepted logical output from8MiB+64KiB to32MiB, but neither cap bounds physical target output retention or preexisting disk/string/serialization allocation. Up to16 target runs/replies and64 pending requests exist;4 bulk sends and16MiB queued-socket budget are separate controls. Queued-body and decoded-string memory are not reduced to the credit window.
 
 Cancellation/close releases incoming chunks, outbound ownership and timers through existing cancel/done paths; continued authorization is rechecked before chunks and delivery. A stalled transfer retains its existing30s idle deadline. No per-chunk credit accumulation, request concurrency, retry, timeout or queue policy is changed. Independent review must assess this explicit bounded increase rather than infer safety from the historical direct API or chunk size alone.
 
@@ -68,4 +68,4 @@ Risk-targeted acceptance:
 - No-bulk/old-peer and direct-priority/no-fallback behavior unchanged. No extra unchanged #3772/#3773/#3774 proof or full suite/E2E.
 - Exact-head targeted Vitest <=2workers/min4, production and actual fixture types/min6, scoped lint/min4; byte-identical phone fixtures and independent exact source/delta review before one ordinary PR/CI.
 
-The current milestone is **test-only RED plus this frozen design**, not implementation approval or parity closure. Details selected-board/query/page reservations, provider login, refused federation, Q5, current-app/P8, phone/release and whole-duplex acceptance remain separate.
+The b784 milestone was **test-only RED plus frozen design**. DESIGN APPROVE3046 is not exact implementation acceptance or parity closure. Details selected-board/query/page reservations, provider login, refused federation, Q5, current-app/P8, phone/release and whole-duplex acceptance remain separate.

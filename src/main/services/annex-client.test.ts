@@ -297,6 +297,60 @@ describe('annex-client', () => {
     vi.unstubAllEnvs();
   });
 
+  describe('GET Git diff envelope desktop adapter', () => {
+    it('returns complete enlarged JSON through the actual single-route adapter and control pair', async () => {
+      const fingerprint = 'gitdiff-peer';
+      const peer: AnnexPeer = {
+        fingerprint, publicKey: 'gitdiff-key', alias: 'Git diff', icon: 'computer', color: 'indigo',
+        pairedAt: '', lastSeen: '', role: 'member', kind: 'desktop', tlsCertificateFingerprint: 'gitdiff-pin',
+      };
+      vi.mocked(annexPeers.getPeer).mockImplementation((key) => key === fingerprint ? peer : undefined);
+      vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+      const value = { original: 'é\n', modified: 'x'.repeat(9 * 1024 * 1024) };
+      const body = Buffer.from(JSON.stringify(value));
+      const dispatch = vi.fn(async () => ({ complete: true, status: 200, headers: { 'content-type': 'application/json' }, body }));
+      const deps = { findPeer: (key: string) => key === fingerprint ? peer : undefined, isSessionOnly: () => false, networkEnabled: () => true };
+      annexControl.setControlTarget({
+        authorize: (caller) => authorize(caller, deps), stillAuthorized: (principal) => stillAuthorized(principal, deps), dispatch,
+      });
+      annexControl.setInboundAuthority({ accept: () => ({ ok: false, status: 401, error: 'unauthorized', message: '' }), stillAllowed: () => true });
+      class Socket extends EventEmitter {
+        readyState = 1;
+        bufferedAmount = 0;
+        peer?: Socket;
+        send(data: string | Buffer, written?: () => void) {
+          queueMicrotask(() => { written?.(); if (this.peer?.readyState === 1) this.peer.emit('message', Buffer.from(data), Buffer.isBuffer(data)); });
+        }
+        ping() {}
+        close(code: number) {
+          if (this.readyState !== 1) return;
+          this.readyState = 3; this.emit('close', code);
+          if (this.peer?.readyState === 1) { this.peer.readyState = 3; this.peer.emit('close', code); }
+        }
+        terminate() { this.close(1006); }
+      }
+      const incoming = new Socket(), outgoing = new Socket();
+      incoming.peer = outgoing; outgoing.peer = incoming;
+      annexClient.startClient();
+      try {
+        annexControl._attachForTesting(incoming as never, fingerprint, peer.tlsCertificateFingerprint!, 'in');
+        annexControl._attachForTesting(outgoing as never, fingerprint, peer.tlsCertificateFingerprint!, 'out');
+        annexControl._sendHelloForTesting(fingerprint, ['request', 'bulk']);
+        await vi.waitFor(() => expect(annexControl.hasReverseLink(fingerprint, 'bulk')).toBe(true));
+        const result = await annexClient.requestGitOperation(fingerprint, 'project /name', { operation: 'diff', file: 'src/icons/notes.ts', staged: true });
+        expect(result).toEqual(value);
+        expect(dispatch).toHaveBeenCalledOnce();
+        expect(dispatch.mock.calls[0]).toEqual([
+          expect.objectContaining({ fingerprint, via: 'reverse' }),
+          expect.objectContaining({ method: 'GET', path: '/api/v1/projects/project%20%2Fname/git/diff?file=src%2Ficons%2Fnotes.ts&staged=true' }),
+          expect.objectContaining({ responseLimit: 32 * 1024 * 1024 }),
+        ]);
+        expect(https.get).not.toHaveBeenCalled();
+        expect(https.request).not.toHaveBeenCalled();
+      } finally { annexClient.stopClient(); annexControl.resetControlForTests(); }
+    });
+  });
+
   describe('remaining reverse consumers', () => {
     const fingerprint = 'remaining-peer';
     const iconSnapshot = (): Record<string, unknown> => ({

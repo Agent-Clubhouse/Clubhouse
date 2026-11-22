@@ -170,7 +170,7 @@ describe('GET Git diff envelope boundary', () => {
     expect(result.body.equals(body)).toBe(true);
   });
 
-  it.each(['', '?file=large%20file.txt&staged=false'])('preserves a complete diff above the former boundary with query %s', async (query) => {
+  it.each(['', '?file=large%20file.txt&staged=false', '?file=/icons/a', '?file=/content', '?file=/chat/events/1'])('preserves a complete diff above the former boundary with query %s', async (query) => {
     const body = diffBody(formerLimit + 1);
     handler = async (_principal, request) => ({
       status: 200, headers: { 'content-type': 'application/json' },
@@ -200,6 +200,12 @@ describe('GET Git diff envelope boundary', () => {
   it.each([
     { method: 'POST' as const, path },
     { method: 'GET' as const, path: path + '-extra?file=f' },
+    { method: 'HEAD' as const, path },
+    { method: 'GET' as const, path: path + '/?file=f' },
+    { method: 'GET' as const, path: path + '/extra?file=f' },
+    { method: 'GET' as const, path: '/api/v1/projects//git/diff?file=f' },
+    { method: 'GET' as const, path: '/other?file=' + path },
+    { method: 'GET' as const, path: '/api/v1/projects/p?file=x/git/diff' },
   ])('retains the ordinary route budget for $method $path', async (input) => {
     handler = async () => ({ status: 200, headers: {}, body: diffBody(formerLimit + 1) });
     const { requesterWs } = await connected(['request', 'bulk']);
@@ -209,12 +215,75 @@ describe('GET Git diff envelope boundary', () => {
     expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(false);
   });
 
-  it('retains a stricter caller limit before credit for an authorized diff', async () => {
+  it.each([0, 65536])('retains caller limit %i before credit for an authorized diff', async (maxResponseBytes) => {
     handler = async () => ({ status: 200, headers: {}, body: diffBody(65537) });
     const { requesterWs } = await connected(['request', 'bulk']);
-    await expect(control.request(TARGET, { method: 'GET', path }, { maxResponseBytes: 65536 }))
+    await expect(control.request(TARGET, { method: 'GET', path }, { maxResponseBytes }))
       .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
     expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(false);
+  });
+
+  it.each([false, true])('enforces the exact finite32MiB envelope with excess=%s before credit', async (excess) => {
+    const body = diffBody(32 * 1024 * 1024 + Number(excess));
+    handler = async () => ({ status: 200, headers: {}, body });
+    const { requesterWs, targetWs } = await connected(['request', 'bulk']);
+    const pending = control.request(TARGET, { method: 'GET', path });
+    if (excess) {
+      await expect(pending).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+      expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(false);
+    } else {
+      const result = await pending;
+      expect(result.body.equals(body)).toBe(true);
+      expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(true);
+    }
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+  });
+
+  it('preserves an equal caller limit on the enlarged route', async () => {
+    const body = diffBody(formerLimit + 1);
+    handler = async () => ({ status: 200, headers: {}, body });
+    await connected(['request', 'bulk']);
+    const result = await control.request(TARGET, { method: 'GET', path }, { maxResponseBytes: body.length });
+    expect(result.body.equals(body)).toBe(true);
+  });
+
+  it.each([undefined, 'HEAD' as const, 'POST' as const])('does not infer GET from a missing or different method %s', (method) => {
+    expect(control.responseBodyLimit(path, method)).toBe(formerLimit);
+    expect(control.responseBodyLimit(path + '#fragment', 'GET')).toBe(formerLimit);
+  });
+
+  it.each(['cancel', 'revoke', 'replace'] as const)('retires a held enlarged diff on %s without late credit or body delivery', async (reason) => {
+    const body = diffBody(formerLimit + 1);
+    handler = async (_principal, request) => ({
+      status: 200, headers: {},
+      body: request.path === path ? body : Buffer.from('fresh'),
+    });
+    const { requesterWs, targetWs } = await connected(['request', 'bulk']);
+    targetWs.holdWrites = true;
+    const abort = new AbortController();
+    const pending = control.request(TARGET, { method: 'GET', path }, { signal: abort.signal });
+    const observed = pending.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(sentOfType(targetWs, 'binary')).toHaveLength(1));
+    const credits = sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit').length;
+    if (reason === 'cancel') abort.abort();
+    else if (reason === 'revoke') world.peer = undefined;
+    else await connected(['request', 'bulk']);
+    await flush();
+    targetWs.drain();
+    await flush();
+    expect(await observed).toBeInstanceOf(control.ControlRequestError);
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(1);
+    expect(sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit')).toHaveLength(credits);
+    expect(sentOfType(targetWs, 'bulk').some((frame) => frame.op === 'finish')).toBe(false);
+    expect(control._activeRunsForTesting(REQUESTER, REQUESTER_PIN)).toBe(0);
+    if (reason === 'cancel') targetWs.holdWrites = false;
+    if (reason === 'revoke') {
+      world.peer = peer();
+      await connected(['request', 'bulk']);
+    }
+    const fresh = await control.request(TARGET, { method: 'GET', path: '/fresh' });
+    expect(fresh.body.toString()).toBe('fresh');
   });
 
   it('retains the frame bound for a peer without bulk capability', async () => {
