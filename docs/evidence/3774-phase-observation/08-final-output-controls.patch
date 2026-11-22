@@ -1,0 +1,79 @@
+diff --git a/src/main/services/managed-agents/delivery.test.ts b/src/main/services/managed-agents/delivery.test.ts
+index 9342f4da8..826587ea2 100644
+--- a/src/main/services/managed-agents/delivery.test.ts
++++ b/src/main/services/managed-agents/delivery.test.ts
+@@ -75,6 +75,23 @@ import {
+ import type { OrchestratorProvider } from '../../orchestrators/types';
+ 
+ const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
++let finalOutputProof: {
++  kind: 'write' | 'clock'; line: string | undefined; postFreeze: boolean; postClocks: number;
++  restore(): void;
++} | undefined;
++afterEach(() => {
++  const proof = finalOutputProof;
++  finalOutputProof = undefined;
++  if (!proof) return;
++  try {
++    if (proof.kind === 'write') {
++      expect(proof.line).toBe('CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"observerUnavailable":true}');
++    } else {
++      expect(proof.postClocks).toBe(0);
++      expect(proof.line?.includes('"observerUnavailable":false')).toBe(true);
++    }
++  } finally { proof.restore(); }
++});
+ 
+ const PHASE_CASE = 'does not claim installation of a grant-gated skill left to the project (#3517)';
+ const PHASE_PREFIX = 'CLUBHOUSE_MANAGED_PHASE_V1 ';
+@@ -1315,3 +1332,50 @@ describe('isSameFolder', () => {
+     expect(await isSameFolder(a, b, 'linux')).toBe(false);
+   });
+ });
++
++describe('disposable final-output R1 controls', () => {
++  function arrange(context: TestContext, kind: 'write' | 'clock') {
++    const recorder = createPhaseRecorder(context);
++    const key = recorder.begin('body');
++    recorder.end(key, false);
++    deliveryPhases.active = recorder;
++    const originalConsole = console.error;
++    const originalWriter = process.stderr.write;
++    const originalClock = performance.now;
++    const proof = {
++      kind, line: undefined as string | undefined, postFreeze: false, postClocks: 0,
++      restore: () => {},
++    };
++    const consoleSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
++      if (typeof args[0] === 'string') proof.line = args[0];
++      Reflect.apply(originalConsole, console, args);
++    });
++    let failedFinal = false;
++    const writer = vi.spyOn(process.stderr, 'write').mockImplementation((...args) => {
++      const text = args[0];
++      if (typeof text === 'string' && text.startsWith(PHASE_PREFIX) && text.includes('"transitions"')) {
++        proof.postFreeze = true;
++        if (kind === 'write' && !failedFinal) {
++          failedFinal = true;
++          throw new Error('proof final raw write only failure');
++        }
++      }
++      return Reflect.apply(originalWriter, process.stderr, args);
++    });
++    const clock = vi.spyOn(performance, 'now').mockImplementation(() => {
++      if (kind === 'clock' && proof.postFreeze) {
++        proof.postClocks++;
++        throw new Error('proof post-freeze clock must not be sampled');
++      }
++      return Reflect.apply(originalClock, performance, []);
++    });
++    proof.restore = () => { clock.mockRestore(); writer.mockRestore(); consoleSpy.mockRestore(); };
++    finalOutputProof = proof;
++  }
++  it('phase r1 final raw write only failure reaches remaining channel', (context) => {
++    arrange(context, 'write');
++  });
++  it('phase r1 no post-freeze clock reads or misleading timing', (context) => {
++    arrange(context, 'clock');
++  });
++});
