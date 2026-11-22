@@ -85,7 +85,7 @@ beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'handoff-producer-admission-'));
   fixture = await setup(dir);
 });
-afterEach(async () => {
+async function cleanupFixture(): Promise<void> {
   for (const release of releases.splice(0)) release();
   await Promise.all(operations.splice(0));
   await fixture?.hostApi.stopHandoffs();
@@ -95,7 +95,8 @@ afterEach(async () => {
   (await import('../../src/main/services/agent-config')).clearAgentConfigCache();
   fixture = undefined;
   await fs.rm(dir, { recursive: true, force: true });
-});
+}
+afterEach(cleanupFixture);
 
 function current(): Fixture {
   if (!fixture) throw new Error('Producer fixture is not initialized.');
@@ -197,6 +198,31 @@ async function heldPostPositiveSource(fx: Fixture, args: Record<string, unknown>
 }
 
 describe('isolated real MCP producer domain admission', () => {
+  it('keeps actual fixture preparation alive until teardown settles it', async () => {
+    const fx = current(), entered = deferred(), release = deferred();
+    const source = fx.source.callerHandoffSource;
+    vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
+      const selected = await source(...args);
+      entered.resolve();
+      await release.promise;
+      return selected;
+    });
+    const pending = fx.tools.callTool(caller, 'prepare_handoff', { mode: 'worktree' });
+    await entered.promise;
+    let settled = false;
+    const cleaning = cleanupFixture().then(() => { settled = true; });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect.soft(settled).toBe(false);
+      expect.soft(nativeFs.existsSync(fx.userData)).toBe(true);
+    } finally {
+      release.resolve();
+      const result = await pending;
+      await cleaning;
+      expect.soft(result.isError).not.toBe(true);
+    }
+  });
+
   it('keeps current sender authority, source bytes and durable binding through a held history queue', async () => {
     const fx = current(), summary = await prepare(fx);
     const seed = await offer(fx, summary);
