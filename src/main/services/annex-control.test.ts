@@ -154,6 +154,78 @@ afterEach(() => {
   control.resetControlForTests();
 });
 
+describe('GET Git diff envelope boundary', () => {
+  const path = '/api/v1/projects/project%20name/git/diff';
+  const formerLimit = CONTROL_FRAME_MAX_BYTES + 64 * 1024;
+  const diffBody = (size: number) => {
+    const prefix = '{"original":"","modified":"';
+    return Buffer.from(prefix + 'x'.repeat(size - Buffer.byteLength(prefix) - 2) + '"}');
+  };
+
+  it('accepts the exact former envelope boundary', async () => {
+    const body = diffBody(formerLimit);
+    handler = async () => ({ status: 200, headers: { 'content-type': 'application/json' }, body });
+    await connected(['request', 'bulk']);
+    const result = await control.request(TARGET, { method: 'GET', path });
+    expect(result.body.equals(body)).toBe(true);
+  });
+
+  it.each(['', '?file=large%20file.txt&staged=false'])('preserves a complete diff above the former boundary with query %s', async (query) => {
+    const body = diffBody(formerLimit + 1);
+    handler = async (_principal, request) => ({
+      status: 200, headers: { 'content-type': 'application/json' },
+      body: request.path === path + query ? body : Buffer.from('alive'),
+    });
+    const { requesterWs, targetWs } = await connected(['request', 'bulk', 'subscribe']);
+    const onFrame = vi.fn();
+    const subscription = control.subscribe(TARGET, { onFrame, onEnd: () => {} });
+    await flush();
+    const outcome = await control.request(TARGET, { method: 'GET', path: path + query })
+      .then((result) => ({ result }), (error: unknown) => ({ error }));
+    const fresh = await control.request(TARGET, { method: 'GET', path: '/fresh' });
+    expect(served[0].sink.send(JSON.stringify({ type: 'theme:changed', payload: { themeId: 'still-live' } }))).toBe(true);
+    await flush();
+    expect(fresh.body.toString()).toBe('alive');
+    expect(onFrame).toHaveBeenCalledWith({ type: 'theme:changed', payload: { themeId: 'still-live' } });
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+    expect(outcome).not.toHaveProperty('error');
+    if ('result' in outcome) {
+      expect(outcome.result.body.equals(body)).toBe(true);
+      expect(JSON.parse(outcome.result.body.toString()).modified.length).toBe(formerLimit + 1 - 29);
+    }
+    subscription.close();
+  });
+
+  it.each([
+    { method: 'POST' as const, path },
+    { method: 'GET' as const, path: path + '-extra?file=f' },
+  ])('retains the ordinary route budget for $method $path', async (input) => {
+    handler = async () => ({ status: 200, headers: {}, body: diffBody(formerLimit + 1) });
+    const { requesterWs } = await connected(['request', 'bulk']);
+    await expect(control.request(TARGET, input)).rejects.toMatchObject({
+      code: 'response_too_large', indeterminate: input.method === 'POST',
+    });
+    expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(false);
+  });
+
+  it('retains a stricter caller limit before credit for an authorized diff', async () => {
+    handler = async () => ({ status: 200, headers: {}, body: diffBody(65537) });
+    const { requesterWs } = await connected(['request', 'bulk']);
+    await expect(control.request(TARGET, { method: 'GET', path }, { maxResponseBytes: 65536 }))
+      .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(false);
+  });
+
+  it('retains the frame bound for a peer without bulk capability', async () => {
+    handler = async () => ({ status: 200, headers: {}, body: diffBody(CONTROL_FRAME_MAX_BYTES + 1) });
+    const { targetWs } = await connected(['request']);
+    await expect(control.request(TARGET, { method: 'GET', path }))
+      .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    expect(sentOfType(targetWs, 'bulk')).toHaveLength(0);
+  });
+});
+
 describe('controller caller receive bound', () => {
   it('accepts the complete exact 8 MiB controller body on negotiated bulk', async () => {
     const body = Buffer.alloc(CONTROL_FRAME_MAX_BYTES, 0x61);
