@@ -180,6 +180,34 @@ async function nativePair() {
 }
 
 describe('native incoming actual TLS and queue assembly', () => {
+it('does not complete a reconnect against an unchanged old accepted link', async () => {
+  const pair = await nativePair();
+  let releaseDial: (() => void) | undefined;
+  try {
+    const previousEpoch = pair.requester.control.getAcceptedLinkEpoch(pair.peerA.fingerprint);
+    expect(previousEpoch).toBeGreaterThan(0);
+    const connectTo = pair.target.control.connectTo;
+    const dial = vi.spyOn(pair.target.control, 'connectTo').mockImplementation((...args) => {
+      releaseDial = () => connectTo(...args);
+    });
+    let settled = false;
+    const reconnect = pair.own(pair.connect());
+    void reconnect.then(() => { settled = true; });
+    await new Promise<void>((resolve) => { setImmediate(resolve); });
+    expect(dial).toHaveBeenCalledOnce();
+    expect(pair.requester.control.getAcceptedLinkEpoch(pair.peerA.fingerprint)).toBe(previousEpoch);
+    expect(settled).toBe(false);
+    dial.mockRestore();
+    if (!releaseDial) throw new Error('Expected the actual reconnect dial to be held');
+    releaseDial(); releaseDial = undefined;
+    expect(await reconnect).toMatchObject({ status: 'fulfilled' });
+    expect(pair.requester.control.getAcceptedLinkEpoch(pair.peerA.fingerprint)).not.toBe(previousEpoch);
+    const fresh = offered(pair.peerB.fingerprint, pair.peerA.fingerprint);
+    expect(await pair.request(fresh)).toMatchObject({ status: 'fulfilled', value: { status: 200 } });
+    expect(pair.host.store.get(fresh.id)).toEqual(fresh);
+  } finally { releaseDial?.(); await pair.cleanup(); }
+}, 30_000);
+
 it('admits a current native reverse offer through the real held history queue without receiver outbound readiness', async () => {
   const pair = await nativePair();
   try {
