@@ -1,0 +1,926 @@
+{
+  "reviewedSource": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+  "sourceTree": "f634dc9d32b9a1b9d426318ad3dbf326c9c75b1d",
+  "evidenceHead": "43a20457f8091ebe5d450b6e52953ec30d005554",
+  "evidenceTree": "cd38fa3598b83506fa0e96b542fd10f8545a4e94",
+  "manifestSha256": "99438287d9668360f0bdd332641c4a2041cfd98a3fa4536d082672787638499d",
+  "downloadedAndRehashed": [
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/delivery.test.ts",
+      "sha256": "d9bd4ada93db1d42e4e44ccb6aa553efc89c21f5782a0d4c76032e226859bacb",
+      "bytes": 85129,
+      "gitBlob": "9342f4da8741c02a01c810134e27826aaf3078cb"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/delivery.ts",
+      "sha256": "2d829f93782657d365cf2a32bc6756e1206e8263406c53465058ec281f18dd5b",
+      "bytes": 61966,
+      "gitBlob": "a4f3c6771d56e909205556327067f949382fc297"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/service.ts",
+      "sha256": "8a1158566c312e16f1254a56683ec186314c35b1517aaa7ef7672b41833885a9",
+      "bytes": 97140,
+      "gitBlob": "28ae0d8af3f63f1021e696ee8634bb753b6cc34b"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/state-store.ts",
+      "sha256": "a7020a9dc983d2cd57a0c2ab372dc6583c28d835d4257b410c4654beb9d0804c",
+      "bytes": 6546,
+      "gitBlob": "199f3197e2c77800cede3a72633987bab2d85ae5"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtins.ts",
+      "sha256": "8dda80c7aeae68271bbe7a9f3bfde21e9b493e434a30188ec293989085b2e824",
+      "bytes": 7496,
+      "gitBlob": "e29b831116e623183e589d357dfb2dad0188ced5"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/app-skills/prepare-handoff.ts",
+      "sha256": "60edffccec315fa71760a4649e8d784b9bcc596d35e12367920cafda6c1021a2",
+      "bytes": 228,
+      "gitBlob": "3dc73a857e0784a63a9a806b2b9e2b9aa33bd879"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/asset-catalog/store.ts",
+      "sha256": "c2e94e37616244b64b0b215da08673a555e285713d54148bedf17cb87e24e072",
+      "bytes": 81289,
+      "gitBlob": "bf5639ad6b6640e67f0233cf13c9b6935d6d685b"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/asset-catalog/planner.ts",
+      "sha256": "40f8c07b1f7cd46455b34db84e0461a390653a48783146a51100e54018b78258",
+      "bytes": 63132,
+      "gitBlob": "db2eeb371b8af0d0d87b880868ebd7646585bc35"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/asset-catalog/composer.ts",
+      "sha256": "3be6d73545cbdcb9815c11e90e273bb9fba8c8a6fc33f0eb9bc10d528798c954",
+      "bytes": 1612,
+      "gitBlob": "a7edd561f24ab6c8bc3e5892f1e1ac3567187001"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/asset-catalog/validation.ts",
+      "sha256": "245ec115f7275fd6617523d6f039227e9201d579248f8ac01bcf511c2094e685",
+      "bytes": 51670,
+      "gitBlob": "c1c1f5f22d0f969fc1621a46b340c81b4d8cd124"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/settings-audit.ts",
+      "sha256": "a0890a817e2f95c66bddd2ffdc9d45b8adde1ed36a1ce05637a0bba18d2f6fb5",
+      "bytes": 9483,
+      "gitBlob": "3a1e8232b725dcb2d107d1fbca12ecc936b632b0"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/settings-store.ts",
+      "sha256": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3",
+      "bytes": 24841,
+      "gitBlob": "83bc7d24a08ec3b8387f42e706e1966b472d7dfb"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/base-dir.ts",
+      "sha256": "8f1f8fdae9e966d639fc0a5b1df56b30b585d2bd658e7a0a921cdd1ccf3b7d9e",
+      "bytes": 325,
+      "gitBlob": "e3c6db64bc506a33c91fc652133ca92bfec925b5"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/agent-wildcards.ts",
+      "sha256": "6d4151eb8e724a096706c12825ed1b8239cf94428d885195f3e19fafd54cbfc6",
+      "bytes": 2557,
+      "gitBlob": "58826855e0a432dadf243cd3fe2944bc27ec9b54"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/free-agent-settings.ts",
+      "sha256": "1858f41983a807fdea017bd768fd6f8b7b5b8bca591e5aff695af384c9464577",
+      "bytes": 6339,
+      "gitBlob": "670b31262441c296a7fe4b9b0a7ba2104b454a27"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/chat-runtime-settings.ts",
+      "sha256": "deced6e010fab1aed01c6a78451fc89411506c8691a45399b2679bcae562faed",
+      "bytes": 5269,
+      "gitBlob": "6ea2e56980e17d355d8653e1a6d4222455b91c40"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/shared/managed-agents-types.ts",
+      "sha256": "c11cce9e345d962e6f87991cdf8479e45ecf746a6d31892fa83cf1fb42af0d89",
+      "bytes": 25670,
+      "gitBlob": "e1888fc570432d9d77680db497a20d3bf9bdfed6"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/shared/skills-folder.ts",
+      "sha256": "99eaafecd962193b75a99b8449b97910ba4861ed8a40b50f143224447a6bf206",
+      "bytes": 785,
+      "gitBlob": "b91f01b7d143ae32ffb6874c12d3f4343d4f6375"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/__mocks__/electron.ts",
+      "sha256": "b3fa8e75740492dae26e51dfa6fa81f6d5aca90ecc53b1a1af1724d8c13c4ec4",
+      "bytes": 2809,
+      "gitBlob": "a5f6b589b27ec53af4369bace4f2be89c6d79817"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "test/global-setup.ts",
+      "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "bytes": 658,
+      "gitBlob": "f80eac131998f792ca0f271f80eb606215c942af"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "test/standard-runtime-boundary.ts",
+      "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "bytes": 379,
+      "gitBlob": "0a2d496ec59195a46b27a4b5394d4fab9111f62d"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "vitest.config.ts",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "bytes": 3220,
+      "gitBlob": "e371e57159be74b4f5baf9aadcb0339fa6034025"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "bytes": 530,
+      "gitBlob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "docs/annex-reverse-routes.tsconfig.json",
+      "sha256": "26b864ea875ec6db8bc65c0e514f6103314a7133639b44b2e185d62d06a3de4a",
+      "bytes": 921,
+      "gitBlob": "31137e6846a46b3ad0f8890b2e10bc2b39620112"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "package.json",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "bytes": 5782,
+      "gitBlob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "bytes": 690814,
+      "gitBlob": "7e45389f84ca58c5c7832cab169aa5674320d25d"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "docs/evidence/3774-phase-observation/capture.py",
+      "sha256": "216038262d00e025c86a1f2bde7a29a22d63f0560f06eb852c215992fe4fb5c4",
+      "bytes": 4681,
+      "gitBlob": "f7daf61febec819c39ea5cf4d9075d3e89752daf"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "docs/evidence/3774-phase-observation/fixture-tsconfig.json",
+      "sha256": "e88f6820cd1109de3e7a83691f46ab4b9cf64e036c814a84fbe6432a4cf39ef5",
+      "bytes": 363,
+      "gitBlob": "5bd0d14e89b8d119c8476d1d1a71a2d8ba1fd5b2"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "docs/evidence/3774-phase-observation/emission-bridge.cjs",
+      "sha256": "02079c430136c2255638b93881575e41e2b6f0c203a78880eb96671b08a84042",
+      "bytes": 1045,
+      "gitBlob": "499a863e690887b5a67aacf65f88c29f816bb893"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "docs/evidence/3774-phase-observation/verify.py",
+      "sha256": "38e868490655b799e6fa3b283361393fc971d311109e18c3af8a0ed99c590687",
+      "bytes": 6052,
+      "gitBlob": "66a69461a2502a6c40a8ad766f7ce30803a31b08"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/clubhouse-basics.md",
+      "sha256": "5a4f4b9e34bf068e5760ab96abf9782e74dfbdd93980841da3f04d0ca0e84e25",
+      "bytes": 4718,
+      "gitBlob": "4434109fbc5330458935b9cd55bc28f138a821ea"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/code-reviewer.md",
+      "sha256": "5d93825dcaf476ff05342b152845a1beea6878fe911614a05f8534d23b21426c",
+      "bytes": 1266,
+      "gitBlob": "5f605aedfc54e9751494214f38bbee5942c5364d"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/developer-full-merge.md",
+      "sha256": "fb0a146b7f3ed8d94ee3c40e08b4cae789134efd68de8576038368115c06a367",
+      "bytes": 1768,
+      "gitBlob": "b036522982749bbab9b3218e68a976c96f3bd6c8"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/developer-no-merge.md",
+      "sha256": "9c8bc55186620b9c521f1d0c811e427ef032958738a4d1ebb0b9a38907ea5c9f",
+      "bytes": 1427,
+      "gitBlob": "b2ce933656847a775d510fa489f825714e61710c"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/developer.md",
+      "sha256": "768d8524e2f063a83bd63f7576a2858cc66793f0d7aca8ef263528ab220ef7db",
+      "bytes": 693,
+      "gitBlob": "10e49e0e7b54cb38bd43c0f7d568e252e97c8794"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/group-project-admin.md",
+      "sha256": "36dec74b8ff51b2b08f4a7a0d186f4aacd92ba8d664569f0e619c4e9635b4c89",
+      "bytes": 1351,
+      "gitBlob": "d91ab2e8d4709e76bcfc61eb797eac5e33f5efcf"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/group-project-lead.md",
+      "sha256": "d0f728db9ea017410f3f8c67aebddd411e4921915a623ef89103f1269db4da2a",
+      "bytes": 1242,
+      "gitBlob": "6a1284e8a152f2e3180438cea4f18749fcb79951"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/group-projects.md",
+      "sha256": "29aa24a09edf01b253bf1c9726fe6fb5050cb35f28aa75d71862313e76149d5f",
+      "bytes": 988,
+      "gitBlob": "9b60719d915fa24b9b34176c833045f77a6bc228"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/helper.md",
+      "sha256": "82e567e589a73feb385985788f3494e187d3c075e682511dd68fbc8448a9197b",
+      "bytes": 2101,
+      "gitBlob": "2de90e966d8da5a577ae9ee5bd1e36929f0cd754"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/identity-helper.md",
+      "sha256": "55c5aaa682c6d7bfddec0e294e047a319e6107b1418f09b43391a00c177dbac2",
+      "bytes": 113,
+      "gitBlob": "624d33674c429c1abac0ff88aeabff8878d51ffb"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/identity.md",
+      "sha256": "ebc7845fb133551add2e4dd71b9eeb03451cea1c68f0ab88bd3688d9a9f1aada",
+      "bytes": 260,
+      "gitBlob": "956f5112d3111ef5a9a6cbe31e3a32f8b6aeca8f"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/index.ts",
+      "sha256": "b00b6ebd97e63c6a58645d4c7c4c96b0acd3598ec37f03d77ad8afda804d11fa",
+      "bytes": 2959,
+      "gitBlob": "ce9daf25f0cc0212c9c437c12e23d5dbb2bdda1a"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/manifest.json",
+      "sha256": "f8a8c841db31160b2c80b8166f7f2001e46bed09a80438e1af71c09f2610bf80",
+      "bytes": 13031,
+      "gitBlob": "8fe1f4ebf72c9a0a740cc96bdc82c5a212fbecc4"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/merging.md",
+      "sha256": "d96f3bf781989b8e5e33fd17391316be34e7e8ce1cb3394063816f6d64287957",
+      "bytes": 848,
+      "gitBlob": "38155015204218e195cdfde9afb963bbf702ec81"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/orchestrator.md",
+      "sha256": "c694de1f903e1bdeb79250fe346b290f38b22d9879bb95a04d8c155db10e46c6",
+      "bytes": 5880,
+      "gitBlob": "65136c3aadefeac8ed025e81b3e6fc3916f8ec13"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/product-owner.md",
+      "sha256": "1427680b58511456f3364dfbea4b8e4c6694b0302b282fc5e8ef99969cebcce7",
+      "bytes": 1132,
+      "gitBlob": "a4dfb3da71d4202ac915b08d8a8d657581f2c1c1"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/project-manager.md",
+      "sha256": "a83a0e44f51281a0ba28e1423b06e46f8bcb3de31dc7361a132edf9ba9fca6c8",
+      "bytes": 1615,
+      "gitBlob": "c0b244aa73bd3fad2d1cd93460f938a00c1e9fa8"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/pull-requests.md",
+      "sha256": "a3816e724fd6f404a41e0ef215c95abf813e3c3df9b2e6368cf7cdd2878fb622",
+      "bytes": 668,
+      "gitBlob": "7e88ddd9b7baa3c62e293e137997fd13dabe2c81"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/quality-assurance.md",
+      "sha256": "293ea6493caca9487895e98bdca6d29e0a301f91ffb019f799f494de34a43044",
+      "bytes": 1697,
+      "gitBlob": "942d6331046f4003d52fbfe0220c0c36cea77477"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/researcher.md",
+      "sha256": "73fb2fec17bd8a3a609e6f6fd381f9bf8e5454b87a3b7d7a7deeec0e2ae1ae9b",
+      "bytes": 1668,
+      "gitBlob": "889cce44d8975445007a22043d7cb415ccb9e997"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/skills/build/SKILL.md",
+      "sha256": "98a7ff2737e373ba68a3ff891d3f8923e2c44df5cb9458640237c1c082bdc667",
+      "bytes": 510,
+      "gitBlob": "918986b640b6a5249e64969af564361524b47e46"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/skills/lint/SKILL.md",
+      "sha256": "75fc0a3c9e28702d3946b7c384d5ce78d3cf1e4dcb754da14b009cc30892c16b",
+      "bytes": 529,
+      "gitBlob": "b00f03d4762d6571486b8146d4816e5ac75e268f"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/skills/post-result-board/SKILL.md",
+      "sha256": "120746a56d9425a275aed5595d315f2963bf450136b8f99177431aecc7d6132d",
+      "bytes": 1391,
+      "gitBlob": "1f0d7463f7ff83e285974eae87203d9917063270"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/skills/post-result-parent/SKILL.md",
+      "sha256": "ce33463b9c4ae09f1f15a678898bc0e2e601bf99fc8ae28ca3a864b943782e29",
+      "bytes": 755,
+      "gitBlob": "dc2349e292e28a09bddfd88ce1b502f3268b374a"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/skills/post-result-pr/SKILL.md",
+      "sha256": "78c2d94fdde8b40d47d04d73a0a7e981f43a523ffd4b6641a0e5cab0e79738eb",
+      "bytes": 1847,
+      "gitBlob": "6ac8619b806f516917685c2c47757510dcca7738"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/skills/post-result/SKILL.md",
+      "sha256": "ce6f92e43d545b734b145896600d9ddd78d1249caa4cad64ba795b341245b1ed",
+      "bytes": 2106,
+      "gitBlob": "3535568e6434f13de69fd9e23a7230803f596fe1"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/skills/test/SKILL.md",
+      "sha256": "52f4f9172308da4015b3d88082ae9cbdb41ebd6739f97eb4d0eac2cb3bb5c16d",
+      "bytes": 620,
+      "gitBlob": "dc09f561d6d2daf0e065c2798382c8b6a0a31a2c"
+    },
+    {
+      "ref": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "path": "src/main/services/managed-agents/builtin-text/skills/validate/SKILL.md",
+      "sha256": "92dcccd8ae1491b59953c5faae77b9cd70dd3d5ad9993e159567f64d2b4c7292",
+      "bytes": 618,
+      "gitBlob": "5052f95287fe7976cc96340df34177691a573315"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/02-disposable-controls.patch",
+      "sha256": "1520124317490c66ba79e49bd23d1b200c04e386588fe6e14224d6fefe92ef5e",
+      "bytes": 10987,
+      "gitBlob": "17ccaf19c95e2cd05e70f1c16749084de14dee93"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/03-missing-console-mutant.patch",
+      "sha256": "111c44b092a40b3ca5bf621a1fe71ad131a7a93c6bbc61aac174d3439d779bdb",
+      "bytes": 11532,
+      "gitBlob": "7dfe1a7258690470d2bf53a0b1fc1eea7ada81f9"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/01-fixture-observation-original.txt",
+      "sha256": "88fd8accc1af20847db253c3ddf6eaeb39f6e51a11589e824499b67ec12de90d",
+      "bytes": 8259,
+      "gitBlob": "f02fa3fc7abd490bb076ec2d9c8c8eace2cb5a4a"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/01-fixture-observation-receipt.json",
+      "sha256": "8faf83a6d6d0cc95e0050ecc32f577d6bd4154caed41bdbf20272d653cfba661",
+      "bytes": 22906,
+      "gitBlob": "6214df03a632e6e9e3138b62a761c11712b03108"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/01-fixture-observation.xml",
+      "sha256": "3fe482b74c6d565c670ea3eb3d121724d09228cdd962a145019ecbe44ea89892",
+      "bytes": 20604,
+      "gitBlob": "7a56c2b1a7c4dd6688a26ae54750f3acc813be95"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/01-verification.json",
+      "sha256": "11633775689fad3e855fbc885320a31441175ab776f30214084dd3ad5214fa44",
+      "bytes": 372,
+      "gitBlob": "af47ff90a81bfdd9323c14cf39775457f29e4a3c"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/02-disposable-controls-original.txt",
+      "sha256": "1a918d4bd220e90ad6ceab802d508c389b9784305d8614b992912de578683627",
+      "bytes": 47988,
+      "gitBlob": "8d219ceafb6da6ed3e4261ebd92ed4a115ad7dc8"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/02-disposable-controls-receipt.json",
+      "sha256": "df604bcfcf549fdcbe945af89f9d5ec2e1c45799d04c7f04f211bc3fd742e65e",
+      "bytes": 23114,
+      "gitBlob": "db8d3f4133f5cb317ae089fbae2cf7b1be402860"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/02-disposable-controls.xml",
+      "sha256": "a48216aedf02261c4c6165bf18a7047615c10c11ec7b0b73c6241c5d770deadb",
+      "bytes": 40511,
+      "gitBlob": "8795fbdac38444da6042a1bd82eea58a16fd323c"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/02-verification.json",
+      "sha256": "b4d76707eb6fe464dbbd44969cb413475f9d177c6cb1e0b3e64baa5497a597d7",
+      "bytes": 372,
+      "gitBlob": "fd344ab1a72a38027e284fa4aeef7b90b2645d63"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/03-missing-console-mutant-original.txt",
+      "sha256": "94a676e3434a525f9caebd366553a7ca5d04bbf0038e916a17684f8a5997a879",
+      "bytes": 28787,
+      "gitBlob": "21a5bb8e8a4b880cf53c49a3999f243b8bdc2a5c"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/03-missing-console-mutant-receipt.json",
+      "sha256": "ceccd266496873097f657adb1e646b37bf1892590c3655cfbdad3d6892644ce5",
+      "bytes": 23117,
+      "gitBlob": "f3c469c4318dbeb7fcad23749dc2c00d97838be4"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/03-missing-console-mutant.xml",
+      "sha256": "7a4418aae84ac1ed614e9d164c67f92909c328390fd38e741b7f84a9a239e63b",
+      "bytes": 20489,
+      "gitBlob": "133281cbc31f2776dcc5cc2801f5888fc8210a1c"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/03-validator-original.txt",
+      "sha256": "8cde356dd4ed3f6a56952beef7f1707f2b3ec65b79e96b4a0bd99532763cea87",
+      "bytes": 355,
+      "gitBlob": "698da982dc2e1a45414c0aaa87503983470c38c8"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/04-restored-fixture-types-original.txt",
+      "sha256": "80bca848096ea3f016f7aa686748df9ad9c606355d8edc2863dc90c4356a2c60",
+      "bytes": 960,
+      "gitBlob": "fcb7a6d7213decb640318ddec7ac944ba08f2fc8"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/04-restored-fixture-types-receipt.json",
+      "sha256": "05b297f48d0e386eecc7f02667061bc18c0498d5d1833343af8439f39c23ba3b",
+      "bytes": 22727,
+      "gitBlob": "eee7bfe5868cab7a91f84f5723e8e2ecde1dd026"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/05-baseline-fixture-types-original.txt",
+      "sha256": "d90e2f2bb94bd195fb0e95e1013ffd8e484f48ad54d356ba6c2b080743e1cafe",
+      "bytes": 960,
+      "gitBlob": "2992c81d7803f982aaac2ca5e534540019acf82a"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/05-baseline-fixture-types-receipt.json",
+      "sha256": "6839fa4b45e5c5f32742f2310bf2f6eaa74783e449ccf388abd75e185e8a7b83",
+      "bytes": 22835,
+      "gitBlob": "8ad26f81b926957fad2d0e81dbe1130cc1b2e36d"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/06-typed-fixture-bridge-original.txt",
+      "sha256": "3932a731a788931b6283cedb7c6c6679e83e1f77a28d02751aba9162ca895cfb",
+      "bytes": 489,
+      "gitBlob": "a6fa4d60ffe3599d577364712970b5fd2545c9c4"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/06-typed-fixture-bridge-receipt.json",
+      "sha256": "782598ebe50ff9d913b0ae93924e028e26b38a2aab001eeb1a717bf2e2a6f39a",
+      "bytes": 23478,
+      "gitBlob": "015e49bd04d6481645f0971b0f547003374a2d98"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/07-exact-fixture-lint-original.txt",
+      "sha256": "c6df9c43343b2eb2c9e7829fa4768d8bc33195a7c7ecb31fbb7bb81d5a1f0ed9",
+      "bytes": 8344,
+      "gitBlob": "36e22579816af3427aab5c3cda15f784a876815e"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/07-exact-fixture-lint-receipt.json",
+      "sha256": "5cf7a9c243b6dc999e8b134d505a2867095519d60b7bdcea6748d7a5de3bab4d",
+      "bytes": 23620,
+      "gitBlob": "8b51268f1b5a613aaa09d7a4d2d7463289ae19db"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/07-exact-fixture-lint.xml",
+      "sha256": "26619701fa4798e81b4b1731482a181ad4a127cca659980ba5871e8529a446f4",
+      "bytes": 20621,
+      "gitBlob": "e11e4f93ef67cb731088d37f9bca6c5737c670f5"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/attempts/07-verification.json",
+      "sha256": "2da1a78dec57e216562f2c52dac442c2c3947d74f89c8ff95c624980a8ab6020",
+      "bytes": 371,
+      "gitBlob": "3ed0c5d98b6d19031f243e185dd02449d026237f"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/capture.py",
+      "sha256": "216038262d00e025c86a1f2bde7a29a22d63f0560f06eb852c215992fe4fb5c4",
+      "bytes": 4681,
+      "gitBlob": "f7daf61febec819c39ea5cf4d9075d3e89752daf"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/design.md",
+      "sha256": "a465579faa215757393311ac9301b109dca844aef0418496c8ee446e11a61feb",
+      "bytes": 12318,
+      "gitBlob": "dbe95f3b8fbfce2b74b33ed2f863dce674fb99e7"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/emission-bridge.cjs",
+      "sha256": "02079c430136c2255638b93881575e41e2b6f0c203a78880eb96671b08a84042",
+      "bytes": 1045,
+      "gitBlob": "499a863e690887b5a67aacf65f88c29f816bb893"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/fixture-tsconfig.json",
+      "sha256": "e88f6820cd1109de3e7a83691f46ab4b9cf64e036c814a84fbe6432a4cf39ef5",
+      "bytes": 363,
+      "gitBlob": "5bd0d14e89b8d119c8476d1d1a71a2d8ba1fd5b2"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/implementation.md",
+      "sha256": "0cb1126b2b318d8c5fe5137963c1d6905b60c1e71425ab7d97524d09a3bf1c19",
+      "bytes": 7337,
+      "gitBlob": "98e740966def33881659e72d93ac9544b635c679"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/source-candidate-from-e566.patch",
+      "sha256": "cba8c35f6d473af7b42a50b31d6996e237fbd36baff1751833cac6a4d51f957d",
+      "bytes": 13320,
+      "gitBlob": "d7e9c531465e4b625fd9be4da0524a117e233b62"
+    },
+    {
+      "ref": "43a20457f8091ebe5d450b6e52953ec30d005554",
+      "path": "docs/evidence/3774-phase-observation/verify.py",
+      "sha256": "38e868490655b799e6fa3b283361393fc971d311109e18c3af8a0ed99c590687",
+      "bytes": 6052,
+      "gitBlob": "66a69461a2502a6c40a8ad766f7ce30803a31b08"
+    }
+  ],
+  "receiptChecks": [
+    {
+      "key": "01-fixture-observation-receipt.json",
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/managed-agents/delivery.test.ts",
+        "--maxWorkers=2",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3774-phase-observation/attempts/01-fixture-observation.xml"
+      ],
+      "minimumGiB": 4,
+      "head": "d333225e04312a8d5862a7b505decf72aa58a775",
+      "tree": "2b4509c1dc5e9433c6b9f69a917ffb4c524c2e43",
+      "status": "",
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "logSha256": "88fd8accc1af20847db253c3ddf6eaeb39f6e51a11589e824499b67ec12de90d",
+      "exit": 0,
+      "runtime": {
+        "node": "v24.22.1",
+        "platform": "darwin"
+      },
+      "inputCount": 56,
+      "beforeAfterEqual": true
+    },
+    {
+      "key": "02-disposable-controls-receipt.json",
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/managed-agents/delivery.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "phase proof|does not claim installation of a grant-gated skill left to the project",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3774-phase-observation/attempts/02-disposable-controls.xml"
+      ],
+      "minimumGiB": 4,
+      "head": "d333225e04312a8d5862a7b505decf72aa58a775",
+      "tree": "2b4509c1dc5e9433c6b9f69a917ffb4c524c2e43",
+      "status": " M src/main/services/managed-agents/delivery.test.ts\n",
+      "diffSha256": "1520124317490c66ba79e49bd23d1b200c04e386588fe6e14224d6fefe92ef5e",
+      "logSha256": "1a918d4bd220e90ad6ceab802d508c389b9784305d8614b992912de578683627",
+      "exit": 1,
+      "runtime": {
+        "node": "v24.22.1",
+        "platform": "darwin"
+      },
+      "inputCount": 56,
+      "beforeAfterEqual": true
+    },
+    {
+      "key": "03-missing-console-mutant-receipt.json",
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/managed-agents/delivery.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "phase proof|does not claim installation of a grant-gated skill left to the project",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3774-phase-observation/attempts/03-missing-console-mutant.xml"
+      ],
+      "minimumGiB": 4,
+      "head": "d333225e04312a8d5862a7b505decf72aa58a775",
+      "tree": "2b4509c1dc5e9433c6b9f69a917ffb4c524c2e43",
+      "status": " M src/main/services/managed-agents/delivery.test.ts\n",
+      "diffSha256": "111c44b092a40b3ca5bf621a1fe71ad131a7a93c6bbc61aac174d3439d779bdb",
+      "logSha256": "94a676e3434a525f9caebd366553a7ca5d04bbf0038e916a17684f8a5997a879",
+      "exit": 1,
+      "runtime": {
+        "node": "v24.22.1",
+        "platform": "darwin"
+      },
+      "inputCount": 56,
+      "beforeAfterEqual": true
+    },
+    {
+      "key": "04-restored-fixture-types-receipt.json",
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "6",
+        "--",
+        "npx",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "docs/evidence/3774-phase-observation/fixture-tsconfig.json"
+      ],
+      "minimumGiB": 6,
+      "head": "d333225e04312a8d5862a7b505decf72aa58a775",
+      "tree": "2b4509c1dc5e9433c6b9f69a917ffb4c524c2e43",
+      "status": "",
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "logSha256": "80bca848096ea3f016f7aa686748df9ad9c606355d8edc2863dc90c4356a2c60",
+      "exit": 2,
+      "runtime": {
+        "node": "v24.22.1",
+        "platform": "darwin"
+      },
+      "inputCount": 56,
+      "beforeAfterEqual": true
+    },
+    {
+      "key": "05-baseline-fixture-types-receipt.json",
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "6",
+        "--",
+        "npx",
+        "tsc",
+        "--noEmit",
+        "-p",
+        "docs/evidence/3774-phase-observation/fixture-tsconfig.json"
+      ],
+      "minimumGiB": 6,
+      "head": "d333225e04312a8d5862a7b505decf72aa58a775",
+      "tree": "2b4509c1dc5e9433c6b9f69a917ffb4c524c2e43",
+      "status": " M src/main/services/managed-agents/delivery.test.ts\n",
+      "diffSha256": "b4889a1080ecb33f28c02626846fe15cd48dde416821c61a3ab74ab34bbc97a9",
+      "logSha256": "d90e2f2bb94bd195fb0e95e1013ffd8e484f48ad54d356ba6c2b080743e1cafe",
+      "exit": 2,
+      "runtime": {
+        "node": "v24.22.1",
+        "platform": "darwin"
+      },
+      "inputCount": 56,
+      "beforeAfterEqual": true
+    },
+    {
+      "key": "06-typed-fixture-bridge-receipt.json",
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "6",
+        "--",
+        "bash",
+        "-c",
+        "npx tsc --noEmit -p docs/evidence/3774-phase-observation/fixture-tsconfig.json && node docs/evidence/3774-phase-observation/emission-bridge.cjs"
+      ],
+      "minimumGiB": 6,
+      "head": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "tree": "f634dc9d32b9a1b9d426318ad3dbf326c9c75b1d",
+      "status": "",
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "logSha256": "3932a731a788931b6283cedb7c6c6679e83e1f77a28d02751aba9162ca895cfb",
+      "exit": 0,
+      "runtime": {
+        "node": "v24.22.1",
+        "platform": "darwin"
+      },
+      "inputCount": 58,
+      "beforeAfterEqual": true
+    },
+    {
+      "key": "07-exact-fixture-lint-receipt.json",
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "bash",
+        "-c",
+        "npx vitest run --project main src/main/services/managed-agents/delivery.test.ts --maxWorkers=2 --reporter=default --reporter=junit --outputFile.junit=docs/evidence/3774-phase-observation/attempts/07-exact-fixture-lint.xml && npx eslint src/main/services/managed-agents/delivery.test.ts"
+      ],
+      "minimumGiB": 4,
+      "head": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+      "tree": "f634dc9d32b9a1b9d426318ad3dbf326c9c75b1d",
+      "status": "",
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "logSha256": "c6df9c43343b2eb2c9e7829fa4768d8bc33195a7c7ecb31fbb7bb81d5a1f0ed9",
+      "exit": 0,
+      "runtime": {
+        "node": "v24.22.1",
+        "platform": "darwin"
+      },
+      "inputCount": 58,
+      "beforeAfterEqual": true
+    }
+  ],
+  "xmlChecks": [
+    {
+      "key": "01-fixture-observation",
+      "cases": 68,
+      "skips": 0,
+      "failures": 0,
+      "junitPackets": 1,
+      "allJunitFramesIdenticalToActualRaw": true
+    },
+    {
+      "key": "02-disposable-controls",
+      "cases": 75,
+      "skips": 67,
+      "failures": 2,
+      "junitPackets": 11,
+      "allJunitFramesIdenticalToActualRaw": true,
+      "primaryFailures": [
+        "proof primary setup failure",
+        "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\"."
+      ],
+      "deadlineAbortSnapshot": {
+        "event": "abort",
+        "offsetMs": 5012.416417,
+        "aborted": true,
+        "active": [
+          {
+            "beginSeq": 7,
+            "phase": "body",
+            "startMs": 9.712875000000167,
+            "elapsedMs": 5002.703542
+          },
+          {
+            "beginSeq": 8,
+            "phase": "proof.await",
+            "startMs": 9.717375000000175,
+            "elapsedMs": 5002.699042
+          }
+        ]
+      },
+      "deadlineFinalSnapshot": {
+        "event": "final",
+        "offsetMs": 5013.128499999999,
+        "aborted": true,
+        "active": []
+      }
+    },
+    {
+      "key": "03-missing-console-mutant",
+      "cases": 75,
+      "skips": 67,
+      "failures": 3,
+      "junitPackets": 0,
+      "allJunitFramesIdenticalToActualRaw": true
+    },
+    {
+      "key": "07-exact-fixture-lint",
+      "cases": 68,
+      "skips": 0,
+      "failures": 0,
+      "junitPackets": 1,
+      "allJunitFramesIdenticalToActualRaw": true
+    }
+  ],
+  "findings": [
+    {
+      "id": "R1",
+      "severity": "Medium (diagnostic fidelity only)",
+      "path": "src/main/services/managed-agents/delivery.test.ts",
+      "lines": "188-198",
+      "confidence": "High, source-derived; no reviewer execution",
+      "summary": "Post-freeze final raw-write failure is discarded; surviving console channel can report observerFailures=0/observerUnavailable=false. Post-freeze clock failures are likewise silent.",
+      "controlGap": "Existing writer fault is at git.async begin, before freeze; no final-write-only fault control."
+    }
+  ],
+  "reviewerExecution": "No application/fixture/compiler/lint tests rerun; read-only gh downloads, local hash/patch/XML/source inspection only.",
+  "scopeLimits": [
+    "Selected repo inputs and recorded installed hashes, not exhaustive atomic process/environment seal.",
+    "Controls executed on dirty d333 with archived patch, not on typed 7d.",
+    "Three erased type annotations plus admitted TypeScript emitted-JS equality bridge; no cross-transpiler equivalence claim.",
+    "Strict baseline failure restored e566 fixture bytes on d333, not execution at e566 head.",
+    "macOS Node24.22.1 only; no Windows cause/flake/fix proof."
+  ],
+  "workspacePreserved": {
+    "head": "079a257acf38b168b529fb7745dae97f686b72b8",
+    "tree": "89e942aabd42c8ec93fe47794f2eef95b0b61980",
+    "branch": "auto-reset-policy-design/q5-framed-root-journal-wip",
+    "trackedStatus": ""
+  }
+}
