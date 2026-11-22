@@ -1,0 +1,578 @@
+{
+  "candidate": "b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58",
+  "baseline": "61e64c099b05ccfc663adbe5432f46faa2909359",
+  "candidateTree": "ed679c48ad8bd12dcbc9af562053761329643a5b",
+  "compilerInputsEach": 3956,
+  "rawListFilesMatchedOrderedRecords": true,
+  "orderedPathListsEqual": true,
+  "absoluteRawListsEqual": true,
+  "sameCwdPrefix": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work",
+  "relativeRecordNormalization": "Removed only the identical compiler cwd prefix; no case/realpath/alias normalization.",
+  "otherInputHashRecordsEqual": 3954,
+  "onlyTwoGitBoundSourceDifferences": [
+    {
+      "candidate": {
+        "path": "src/main/services/annex-client.ts",
+        "sha256": "1e518e2c5eb4ae0ca0130fd11c7eae345c957eed0a4e4c1002d031694ad964b4"
+      },
+      "baseline": {
+        "path": "src/main/services/annex-client.ts",
+        "sha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98"
+      }
+    },
+    {
+      "candidate": {
+        "path": "src/main/services/annex-client.test.ts",
+        "sha256": "136506b035ec088b98e84ba8cf98044fe7e97b4691f94c96ca73c3c1c095bfd6"
+      },
+      "baseline": {
+        "path": "src/main/services/annex-client.test.ts",
+        "sha256": "6fccf3e4cb452d9ca1f7668e7f5ddccc2b197a52a699989775d91df6d621ede0"
+      }
+    }
+  ],
+  "config": {
+    "extends": "../../../tsconfig.json",
+    "files": [
+      "../../../src/main/services/annex-client.test.ts"
+    ]
+  },
+  "configSha256": "5fdead47a3b5fe72d4c9fdcffa7a5070e49ff8bc2393c52441b0c85c408cac5a",
+  "rootConfigSha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+  "compilerCommandsIdentical": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 6 -- npx tsc --noEmit --pretty false --listFiles --project node_modules/.cache/details-transport/fixture-types.json",
+  "explicitTestAndProductionClientPresent": true,
+  "fullDiagnosticCountEach": 54,
+  "candidateAndBaselineExit": 2,
+  "allFullMessagesCodesColumnsMultiplicityEqualAfterGitHunkMapping": true,
+  "changedHunkOrOtherFileDiagnostics": 0,
+  "normalizedDiagnosticSha256": "e07695cb2ab8317fdef0d2a1482fcfcb3d7d9fafe718771d644e00d41b8ff249",
+  "zeroContextDiffSha256": "0b7bf341ed9ba9fe77f0c5ad402355d8b88cea06d1bafe0706b47a0ff7aa1e0f",
+  "gitChangedHunks": [
+    {
+      "oldStart": 544,
+      "oldCount": 0,
+      "newStart": 545,
+      "newCount": 1
+    },
+    {
+      "oldStart": 547,
+      "oldCount": 0,
+      "newStart": 549,
+      "newCount": 230
+    },
+    {
+      "oldStart": 560,
+      "oldCount": 1,
+      "newStart": 791,
+      "newCount": 1
+    },
+    {
+      "oldStart": 3435,
+      "oldCount": 0,
+      "newStart": 3667,
+      "newCount": 11
+    },
+    {
+      "oldStart": 4902,
+      "oldCount": 3,
+      "newStart": 5144,
+      "newCount": 2
+    },
+    {
+      "oldStart": 4905,
+      "oldCount": 0,
+      "newStart": 5147,
+      "newCount": 2
+    }
+  ],
+  "diagnosticMapping": [
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 925,
+      "baselineLine": 694,
+      "column": 45,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '[source: ControlConnectionSource][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1929,
+      "baselineLine": 1698,
+      "column": 54,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1930,
+      "baselineLine": 1699,
+      "column": 31,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1937,
+      "baselineLine": 1706,
+      "column": 54,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1944,
+      "baselineLine": 1713,
+      "column": 31,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1945,
+      "baselineLine": 1714,
+      "column": 31,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1953,
+      "baselineLine": 1722,
+      "column": 31,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1966,
+      "baselineLine": 1735,
+      "column": 54,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1979,
+      "baselineLine": 1748,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1984,
+      "baselineLine": 1753,
+      "column": 45,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1994,
+      "baselineLine": 1763,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 1999,
+      "baselineLine": 1768,
+      "column": 40,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2010,
+      "baselineLine": 1779,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2011,
+      "baselineLine": 1780,
+      "column": 45,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2043,
+      "baselineLine": 1812,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2053,
+      "baselineLine": 1822,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2054,
+      "baselineLine": 1823,
+      "column": 33,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2076,
+      "baselineLine": 1845,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2077,
+      "baselineLine": 1846,
+      "column": 33,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2086,
+      "baselineLine": 1855,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2087,
+      "baselineLine": 1856,
+      "column": 33,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2101,
+      "baselineLine": 1870,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2110,
+      "baselineLine": 1879,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2111,
+      "baselineLine": 1880,
+      "column": 33,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2122,
+      "baselineLine": 1891,
+      "column": 33,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2155,
+      "baselineLine": 1924,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2165,
+      "baselineLine": 1934,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2177,
+      "baselineLine": 1946,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2193,
+      "baselineLine": 1962,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2207,
+      "baselineLine": 1976,
+      "column": 33,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2223,
+      "baselineLine": 1992,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2238,
+      "baselineLine": 2007,
+      "column": 56,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 2248,
+      "baselineLine": 2017,
+      "column": 31,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 3508,
+      "baselineLine": 3277,
+      "column": 15,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ handlers: Record<string, (...args: any[]) => void>; terminate: Mock<Procedure | Constructable>; ping: Mock<Procedure | Constructable>; close: Mock<...>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 3518,
+      "baselineLine": 3287,
+      "column": 152,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '[channel: string, ...args: unknown[]][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 3619,
+      "baselineLine": 3388,
+      "column": 17,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ handlers: Record<string, (...args: any[]) => void>; terminate: Mock<Procedure | Constructable>; ping: Mock<Procedure | Constructable>; close: Mock<...>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 3725,
+      "baselineLine": 3483,
+      "column": 41,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 3786,
+      "baselineLine": 3544,
+      "column": 41,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 3970,
+      "baselineLine": 3728,
+      "column": 55,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4017,
+      "baselineLine": 3775,
+      "column": 15,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ handlers: Record<string, (...args: any[]) => void>; terminate: Mock<Procedure | Constructable>; ping: Mock<Procedure | Constructable>; close: Mock<...>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4088,
+      "baselineLine": 3846,
+      "column": 39,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4134,
+      "baselineLine": 3892,
+      "column": 39,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4135,
+      "baselineLine": 3893,
+      "column": 39,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4301,
+      "baselineLine": 4059,
+      "column": 15,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4317,
+      "baselineLine": 4075,
+      "column": 22,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4540,
+      "baselineLine": 4298,
+      "column": 17,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4545,
+      "baselineLine": 4303,
+      "column": 24,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4546,
+      "baselineLine": 4304,
+      "column": 17,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4598,
+      "baselineLine": 4356,
+      "column": 22,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4807,
+      "baselineLine": 4565,
+      "column": 25,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ url: string; method: string; body?: any; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4830,
+      "baselineLine": 4588,
+      "column": 25,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ url: string; method: string; body?: any; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4860,
+      "baselineLine": 4618,
+      "column": 25,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ url: string; method: string; body?: any; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 4871,
+      "baselineLine": 4629,
+      "column": 48,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '{ url: string; method: string; body?: any; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "file": "src/main/services/annex-client.test.ts",
+      "candidateLine": 5649,
+      "baselineLine": 5406,
+      "column": 68,
+      "code": "TS2550",
+      "fullMessage": "Property 'at' does not exist on type '[peer: AnnexPeer][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    }
+  ],
+  "captureLimit": "Compared actual compiler-listed paths and captured file-hash identities; baseline other3954 identity is bracketed by owner observations, not a per-read filesystem trace or reviewer recompile.",
+  "typingDisposition": "Accept scoped zero-regression if source/proof review otherwise passes; actual graph FAIL54 remains, independent of prior139/1."
+}
