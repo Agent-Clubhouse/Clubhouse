@@ -1,0 +1,204 @@
+{
+  "rawLogSha256": "1d932edb4c013bca09c1313a3316a0367e6e4158180cc55643fe09b2a5716605",
+  "checkouts": [
+    {
+      "job": "Plan the run",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 678,
+      "resultLine": 679
+    },
+    {
+      "job": "Build app (windows-2022)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 912,
+      "resultLine": 913
+    },
+    {
+      "job": "ESLint (errors only)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 1307,
+      "resultLine": 1308
+    },
+    {
+      "job": "Workflow lint (actionlint)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 5922,
+      "resultLine": 5923
+    },
+    {
+      "job": "Codex app-server schema drift",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 6125,
+      "resultLine": 6126
+    },
+    {
+      "job": "Copilot SDK chunk (windows-2022)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 6305,
+      "resultLine": 6306
+    },
+    {
+      "job": "Build app (ubuntu-latest)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 6617,
+      "resultLine": 6618
+    },
+    {
+      "job": "Unit + Component Tests (ubuntu-latest, 2/2)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 6947,
+      "resultLine": 6948
+    },
+    {
+      "job": "Unit + Component Tests (windows-latest, 1/2)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 25297,
+      "resultLine": 25298
+    },
+    {
+      "job": "Typecheck + API surface",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 81411,
+      "resultLine": 81412
+    },
+    {
+      "job": "Unit + Component Tests (windows-latest, 2/2)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 81728,
+      "resultLine": 81729
+    },
+    {
+      "job": "Copilot SDK chunk (ubuntu-latest)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 100612,
+      "resultLine": 100613
+    },
+    {
+      "job": "Unit + Component Tests (ubuntu-latest, 1/2)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 104612,
+      "resultLine": 104613
+    },
+    {
+      "job": "Stable-mode E2E Tests (windows-2022)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 160001,
+      "resultLine": 160002
+    },
+    {
+      "job": "Classic layout E2E Tests (ubuntu-latest, 1/1)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 160557,
+      "resultLine": 160558
+    },
+    {
+      "job": "Classic layout E2E Tests (windows-2022, 1/1)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 161039,
+      "resultLine": 161040
+    },
+    {
+      "job": "Chat E2E Tests (ubuntu-latest, 1/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 161540,
+      "resultLine": 161541
+    },
+    {
+      "job": "Annex E2E Tests (ubuntu-latest, 1/2)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 162043,
+      "resultLine": 162044
+    },
+    {
+      "job": "Chat E2E Tests (windows-2022, 2/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 162764,
+      "resultLine": 162765
+    },
+    {
+      "job": "Annex E2E Tests (windows-2022, 2/2)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 163331,
+      "resultLine": 163332
+    },
+    {
+      "job": "E2E Tests (ubuntu-latest, 2/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 164002,
+      "resultLine": 164003
+    },
+    {
+      "job": "Annex E2E Tests (ubuntu-latest, 2/2)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 164677,
+      "resultLine": 164678
+    },
+    {
+      "job": "Chat E2E Tests (ubuntu-latest, 3/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 165337,
+      "resultLine": 165338
+    },
+    {
+      "job": "Chat E2E Tests (ubuntu-latest, 2/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 165873,
+      "resultLine": 165874
+    },
+    {
+      "job": "Annex E2E Tests (windows-2022, 1/2)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 166434,
+      "resultLine": 166435
+    },
+    {
+      "job": "Stable-mode E2E Tests (ubuntu-latest)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 167120,
+      "resultLine": 167121
+    },
+    {
+      "job": "Chat E2E Tests (windows-2022, 1/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 167660,
+      "resultLine": 167661
+    },
+    {
+      "job": "Chat E2E Tests (windows-2022, 3/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 168181,
+      "resultLine": 168182
+    },
+    {
+      "job": "E2E Tests (windows-2022, 3/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 168714,
+      "resultLine": 168715
+    },
+    {
+      "job": "E2E Tests (windows-2022, 1/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 169299,
+      "resultLine": 169300
+    },
+    {
+      "job": "E2E Tests (windows-2022, 2/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 169919,
+      "resultLine": 169920
+    },
+    {
+      "job": "E2E Tests (ubuntu-latest, 1/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 170606,
+      "resultLine": 170607
+    },
+    {
+      "job": "E2E Tests (ubuntu-latest, 3/3)",
+      "sha": "99fee0f0149e2ba0f83735aa947b52c9fef1873f",
+      "commandLine": 171192,
+      "resultLine": 171193
+    }
+  ],
+  "note": "Separate complete Windows/Unix derivation from same original logs; initial Linux-only packet preserved."
+}
