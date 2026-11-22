@@ -535,6 +535,98 @@ describe('isolated real MCP producer domain admission', () => {
       },
     );
 
+    it.each([
+      ['quick moved', 'ask'], ['quick moved', 'allow'], ['quick current', 'ask'], ['quick current', 'allow'],
+      ['durable moved', 'ask'], ['durable moved', 'allow'], ['durable replaced', 'ask'], ['durable replaced', 'allow'],
+      ['durable current', 'ask'], ['durable current', 'allow'], ['durable cosmetic', 'ask'], ['durable cosmetic', 'allow'],
+      ['durable unrelated', 'ask'], ['durable unrelated', 'allow'],
+    ] as const)(
+      'keeps original recipient project and identity through postpositive verification: %s / %s', async (change, mode) => {
+        const fx = current(), projectStore = await import('../../src/main/services/project-store');
+        const config = await import('../../src/main/services/agent-config');
+        const projectB = path.join(dir, 'recipient-B'), projectC = path.join(dir, 'recipient-C');
+        await fs.mkdir(projectB); await fs.mkdir(projectC);
+        await projectStore.add(projectB); await projectStore.add(projectC);
+        const row: DurableAgentConfig = { id: receiver, name: 'Original recipient', color: 'indigo',
+          createdAt: '2026-01-01T00:00:00.000Z', worktreePath: projectB };
+        const durable = change.startsWith('durable');
+        const write = async (project: string, rows: DurableAgentConfig[]) => {
+          await fs.mkdir(path.join(project, '.clubhouse'), { recursive: true });
+          await fs.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify(rows));
+          config.clearAgentConfigCache(project);
+        };
+        const registration = fx.registry.agentRegistry.get(receiver);
+        if (!registration) throw new Error('Missing original recipient registration.');
+        fx.registry.agentRegistry.register(receiver, { ...registration, projectPath: projectB, cwd: projectB });
+        fx.gate.forgetMcpCaller(receiver);
+        if (durable) { await write(projectB, [row]); fx.gate.setMcpCaller(receiver, projectB, row); }
+        else fx.gate.setMcpCallerQuick(receiver, projectB);
+        (await import('../../src/main/services/clubhouse-mcp/orchestration-gate'))
+          .setOrchestrationEnabled(caller, true, { crossProject: true });
+        await fx.grants.updateAgentGrantChanges(caller, () => ({
+          changes: [{ action: 'handoff.offer', target: { kind: 'project', project: { path: projectB } }, mode }],
+        }));
+        const summary = await prepare(fx), args = offerArgs(summary);
+        if (mode === 'ask') {
+          expect((await fx.tools.callTool(caller, 'offer_handoff', args)).isError).toBe(true);
+          fx.requests.takeGrantRequest(fx.requests.listGrantRequests()[0].requestId, true);
+        }
+        const permissions = await import('../../src/main/services/clubhouse-mcp/handoff-permissions');
+        const target = await fx.hostApi.resolveHandoffGrantTarget(caller, args);
+        expect(target).toMatchObject({ agentId: receiver, projectPath: projectB });
+        const context = fx.tools.grantApprovalContext(caller, 'offer_handoff', args, permissions.HANDOFF_OFFER_GRANT,
+          new Map([[permissions.HANDOFF_OFFER_GRANT, [target]]]));
+        const before = await catalog(fx), grants = fx.grants.getAgentGrantChanges(caller), version = fx.requests.callApprovalVersion(caller);
+        const mark = vi.spyOn(fx.host.commands, 'markUndelivered'), post = vi.spyOn(fx.machine.client, 'postToMachine');
+        const notice = vi.spyOn(fx.host.commands, 'claimNotice');
+        const held = await heldPostPositiveSource(fx, args);
+        if (change.endsWith('moved')) {
+          if (durable) { await write(projectB, []); row.worktreePath = projectC; await write(projectC, [row]); }
+          fx.registry.agentRegistry.register(receiver, { ...registration, projectPath: projectC, cwd: projectC });
+          if (durable) fx.gate.setMcpCaller(receiver, projectC, row);
+          else fx.gate.setMcpCallerQuick(receiver, projectC);
+          const freshTarget = await fx.hostApi.resolveHandoffGrantTarget(caller, args);
+          expect(freshTarget).toMatchObject({ agentId: receiver, projectPath: projectC });
+          const targets = new Map([[permissions.HANDOFF_OFFER_GRANT, [freshTarget]]]);
+          expect((await import('../../src/main/services/clubhouse-mcp/grant-check'))
+            .checkToolGrant(caller, permissions.HANDOFF_OFFER_GRANT, args, undefined, targets)).toMatchObject({ ok: false });
+          expect(fx.tools.grantApprovalContext(caller, 'offer_handoff', args, permissions.HANDOFF_OFFER_GRANT, targets)).not.toBe(context);
+        } else if (change === 'durable replaced') {
+          row.createdAt = '2026-01-01T00:00:01.000Z'; await write(projectB, [row]);
+        } else if (change === 'durable cosmetic') {
+          row.name = 'Cosmetic recipient'; row.color = 'blue'; await write(projectB, [row]);
+          fx.binding.bindingManager.bind(caller, { targetKind: 'agent', targetId: receiver, label: 'Cosmetic label' });
+        } else if (change === 'durable unrelated') {
+          await write(projectC, [{ ...row, id: 'unrelated-recipient', name: 'Unrelated metadata', worktreePath: projectC }]);
+        }
+        expect(fx.grants.getAgentGrantChanges(caller)).toEqual(grants);
+        if (mode === 'allow' && change.endsWith('current')) fx.requests.dropCallApprovalsFor(caller);
+        expect(fx.requests.callApprovalVersion(caller)).toBe(version + (mode === 'allow' && change.endsWith('current') ? 1 : 0));
+        expect(fx.gate.mcpCallAccess(caller, fx.repository)).toBe('open');
+        expect(await fx.source.callerHandoffSource(caller)).toMatchObject({ project: fx.project, worktreeRoot: fx.repository });
+        expect(fx.hostApi.handoffHost()).toBe(fx.host);
+        expect(fx.host.store.list()).toEqual([]);
+        expect(await catalog(fx)).toBe(before);
+        held.release();
+        const result = await held.pending;
+        if (change.endsWith('moved') || change === 'durable replaced') {
+          expect.soft(result.isError).toBe(true);
+          expect.soft(fx.host.store.list()).toEqual([]);
+          expect.soft(await catalog(fx)).toBe(before);
+          expect.soft(mark).not.toHaveBeenCalled();
+          expect.soft(post).not.toHaveBeenCalled();
+          expect.soft(notice).not.toHaveBeenCalled();
+          await expect.soft(fs.access(path.join(fx.userData, 'handoffs.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+        } else {
+          expect(result.isError).not.toBe(true);
+          const record = parseHandoff(resultValue(result));
+          expect(record.to).toEqual({ agentId: receiver, machine: fx.host.machine });
+          await verifySource(fx, record, summary);
+          expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ boundTo: [record.id] }] });
+        }
+      },
+    );
+
     it.each(['pending incompatible', 'pending benign', 'settled benign'] as const)(
       'verifies only the awaited source observation revision: %s', async (change) => {
         const fx = current(), configured = await configuredSource(fx), summary = await prepare(fx, ['.clubhouse/**']);
