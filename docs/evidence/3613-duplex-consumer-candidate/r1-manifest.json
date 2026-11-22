@@ -1,0 +1,444 @@
+{
+  "archive": [
+    {
+      "attempt": "remaining-consumers-r1-original-discriminator-33",
+      "attemptNumber": 33,
+      "diffSha256": "ad9a5a3a46bba561a1067a749216574ab3197a0988e0dd8a27e898e6c11fbfb2",
+      "exitCode": 1,
+      "head": "740aa5050fb870c971fef95a7dcb06ad785d1bae",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-original-discriminator-33-original.txt",
+        "sha256": "66d5daf4a820dfe13298364f02c8ba75baf15f6f950f881c7e8bef4fe75b7d9b"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-original-discriminator-33-receipt.json",
+        "sha256": "f227e883731acb5d9b8c74798026cb10f7396a594945c43525487ad5045178d0"
+      },
+      "status": " M src/main/services/annex-client.test.ts\n",
+      "tree": "68db8ab30d86658d09b8f3aae42fbb4837e94e23"
+    },
+    {
+      "attempt": "remaining-consumers-r1-six-files-34",
+      "attemptNumber": 34,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "a4f8f1b8d8624400045bb723bb56e30285cfba03",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-six-files-34-original.txt",
+        "sha256": "f0d670ce8e6bcc2e65f189e7fe852b8496ace14b9184df80cd838480d0218265"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-six-files-34-receipt.json",
+        "sha256": "87d1da3bc8e4c9c761776d00ce8aac541030f413d65e9dd67fd2c75b0f8a598c"
+      },
+      "status": "",
+      "tree": "a58c641d26790493f917ef0e233fdb24c7c5ccfa"
+    },
+    {
+      "attempt": "remaining-consumers-r1-production-types-35",
+      "attemptNumber": 35,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "a4f8f1b8d8624400045bb723bb56e30285cfba03",
+      "minimum": 6,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-production-types-35-original.txt",
+        "sha256": "43a3038ecf71ffbdac602aa66f77c0550075aa3eb0c1cc055555f6ffe2052f02"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-production-types-35-receipt.json",
+        "sha256": "347de837c27b7f80c96704e0257656be974f74e76a0d1b966174ac8847581af3"
+      },
+      "status": "",
+      "tree": "a58c641d26790493f917ef0e233fdb24c7c5ccfa"
+    },
+    {
+      "attempt": "remaining-consumers-r1-fixture-types-36",
+      "attemptNumber": 36,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 2,
+      "head": "a4f8f1b8d8624400045bb723bb56e30285cfba03",
+      "minimum": 6,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-fixture-types-36-original.txt",
+        "sha256": "28c1c1f4f28cb78e097596845ec612d5faa8b9252e8a8e9a5aa70fcde8447689"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-fixture-types-36-receipt.json",
+        "sha256": "7dc1a3691b1e8d9c9d167104e43ab1ab2ec822830247290fe1c50aeaa80ef8b3"
+      },
+      "status": "",
+      "tree": "a58c641d26790493f917ef0e233fdb24c7c5ccfa"
+    },
+    {
+      "attempt": "remaining-consumers-r1-final-six-files-38",
+      "attemptNumber": 38,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "4b08fbfd0c7c1bb487638fe69f013a8af70462f6",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-final-six-files-38-original.txt",
+        "sha256": "c26b38a873b3a840098b92c57e240b2609d388a63e4e5bb6fa902231009c5fac"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-final-six-files-38-receipt.json",
+        "sha256": "4067f909c413b08047659649d868e915954dd41b9fb19952550abcc775f3445d"
+      },
+      "status": "",
+      "tree": "e8baa2bf155b6e83896d7c7c5b40aa5e179e2ad2"
+    },
+    {
+      "attempt": "remaining-consumers-r1-final-production-types-39",
+      "attemptNumber": 39,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "4b08fbfd0c7c1bb487638fe69f013a8af70462f6",
+      "minimum": 6,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-final-production-types-39-original.txt",
+        "sha256": "826f3ebf0c1d4847442ca65a32333087ffe2c77f845ac6fe7f98cf9d1c417f16"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-final-production-types-39-receipt.json",
+        "sha256": "c2200fa53334e88ae65d554bab4b85274f5a898f0de6df2ef608db518a7312f3"
+      },
+      "status": "",
+      "tree": "e8baa2bf155b6e83896d7c7c5b40aa5e179e2ad2"
+    },
+    {
+      "attempt": "remaining-consumers-r1-final-fixture-types-40",
+      "attemptNumber": 40,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 2,
+      "head": "4b08fbfd0c7c1bb487638fe69f013a8af70462f6",
+      "minimum": 6,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-final-fixture-types-40-original.txt",
+        "sha256": "c735af8690931b10a5cbc26f2293bfa7611ce2e8ce17d74e2cad7393e064b55b"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-final-fixture-types-40-receipt.json",
+        "sha256": "c2523fe4b43ca822e5edfa6877945f09a782bc351796248943eb0e8f5453b7d3"
+      },
+      "status": "",
+      "tree": "e8baa2bf155b6e83896d7c7c5b40aa5e179e2ad2"
+    },
+    {
+      "attempt": "remaining-consumers-r1-typed-discriminators-42",
+      "attemptNumber": 42,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "806a5c0c25c4fe9b74c5af99e7c0b3d25298b2f6",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-typed-discriminators-42-original.txt",
+        "sha256": "0713d072717713360c296250aa9c2cbeea00cb7ab41cdf109150977ed364d88b"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-typed-discriminators-42-receipt.json",
+        "sha256": "192d83bd3538d9d4b7077e5b2bf74c4dbc64638798843b3d25c371fc6fba8463"
+      },
+      "status": "",
+      "tree": "32a3003d4feaf9606e493a58da81dbf3225f4c5d"
+    },
+    {
+      "attempt": "remaining-consumers-r1-typed-fixture-types-43",
+      "attemptNumber": 43,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "806a5c0c25c4fe9b74c5af99e7c0b3d25298b2f6",
+      "minimum": 6,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-typed-fixture-types-43-original.txt",
+        "sha256": "e578b8ec19d5532a349b07b4f6af44df176d2dbe448bebcc710233ddf598dd92"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-typed-fixture-types-43-receipt.json",
+        "sha256": "f4401f5d5dc349bda0db433ca3259960360783885d0886c035d635a625f2cc17"
+      },
+      "status": "",
+      "tree": "32a3003d4feaf9606e493a58da81dbf3225f4c5d"
+    },
+    {
+      "attempt": "remaining-consumers-r1-typed-eslint-baseline-44",
+      "attemptNumber": 44,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "806a5c0c25c4fe9b74c5af99e7c0b3d25298b2f6",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-typed-eslint-baseline-44-original.txt",
+        "sha256": "770b88cb7bc171ee756d2a2ae6bb45b3f78f7681d433e0d77b2319c303fbf1e1"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-typed-eslint-baseline-44-receipt.json",
+        "sha256": "551f35bd33ce2a4fb8d2d403e3bc38c06621ad1cc0265828673bd6242ee39685"
+      },
+      "status": "",
+      "tree": "32a3003d4feaf9606e493a58da81dbf3225f4c5d"
+    },
+    {
+      "attempt": "remaining-consumers-r1-currentness-mutant-45",
+      "attemptNumber": 45,
+      "diffSha256": "54e755a4bd0c179e43495312c975ae7c8cc7b5b3b33e61529837c1b01459aa20",
+      "exitCode": 1,
+      "head": "806a5c0c25c4fe9b74c5af99e7c0b3d25298b2f6",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-currentness-mutant-45-original.txt",
+        "sha256": "c62566a814537f4814a7c3e99e56c11274a8ddf239ffc30d7e0c50016a512955"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-currentness-mutant-45-receipt.json",
+        "sha256": "726582b9e35a66030bc61887d796eab9d49d258a8a46fe8342be5e4c378bab37"
+      },
+      "status": " M src/main/services/annex-client.ts\n M src/main/services/remote-icon-fetch.ts\n",
+      "tree": "32a3003d4feaf9606e493a58da81dbf3225f4c5d"
+    },
+    {
+      "attempt": "remaining-consumers-r1-restored-discriminators-46",
+      "attemptNumber": 46,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "806a5c0c25c4fe9b74c5af99e7c0b3d25298b2f6",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-restored-discriminators-46-original.txt",
+        "sha256": "7f3ee11579e0ebf80e63b7b287171acab7a93fad0b0e58058772e032e3054701"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-restored-discriminators-46-receipt.json",
+        "sha256": "95a38f20228294b7ec06fe6648fb1e3070af757d5dd19e6bd776bf4200d2cfbc"
+      },
+      "status": "",
+      "tree": "32a3003d4feaf9606e493a58da81dbf3225f4c5d"
+    },
+    {
+      "attempt": "remaining-consumers-r1-overlapping-fresh-stream-47",
+      "attemptNumber": 47,
+      "diffSha256": "076b268653eabae8b9c8ac32f3095bd0e78e5f14b90a5cc54a2d944c94ac9681",
+      "exitCode": 1,
+      "head": "806a5c0c25c4fe9b74c5af99e7c0b3d25298b2f6",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-overlapping-fresh-stream-47-original.txt",
+        "sha256": "e9e278b97a42641b637b5469e32593d25fedff300af51e88a14c91b70202d1de"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-overlapping-fresh-stream-47-receipt.json",
+        "sha256": "c322b75db617cc494ec70af20a8de4b0ad55f56a4e0960b3fd8591879a828430"
+      },
+      "status": " M src/main/services/annex-client.test.ts\n",
+      "tree": "32a3003d4feaf9606e493a58da81dbf3225f4c5d"
+    },
+    {
+      "attempt": "remaining-consumers-r1-owned-batch-six-files-48",
+      "attemptNumber": 48,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "7156788458e0a391b5fdb402e427895af46ebf1c",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-owned-batch-six-files-48-original.txt",
+        "sha256": "0504321fb9b7df7bd1ba5a4ce5b79d77b3bbf2ad236e85a6059e03c1eb6473bd"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-owned-batch-six-files-48-receipt.json",
+        "sha256": "b7283eb9708e3ee2b23af9b96113eccd8c5b03e899f4f26be12cc337e9539fc8"
+      },
+      "status": "",
+      "tree": "31fefadbfcfa5bdf0705d444238cee75875ada35"
+    },
+    {
+      "attempt": "remaining-consumers-r1-owned-batch-production-types-49",
+      "attemptNumber": 49,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "7156788458e0a391b5fdb402e427895af46ebf1c",
+      "minimum": 6,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-owned-batch-production-types-49-original.txt",
+        "sha256": "df88c6fbf3409b384acf7fd0032c5cba266dc521cd6ffa742e91f8e7dd769c9b"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-owned-batch-production-types-49-receipt.json",
+        "sha256": "7d3028f74c187e9d5f3e25f5605b85d7523d92690c27f6de45689da40a1b6246"
+      },
+      "status": "",
+      "tree": "31fefadbfcfa5bdf0705d444238cee75875ada35"
+    },
+    {
+      "attempt": "remaining-consumers-r1-owned-batch-fixture-types-50",
+      "attemptNumber": 50,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "7156788458e0a391b5fdb402e427895af46ebf1c",
+      "minimum": 6,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-owned-batch-fixture-types-50-original.txt",
+        "sha256": "55bb41564ccb00d39a288cb145746d92e34ac941f714f8e557952bd612f0210a"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-owned-batch-fixture-types-50-receipt.json",
+        "sha256": "1c4317cd391e07901a2fae3a72e9f2be5c7ba9a50386da923160c23d3f1a3590"
+      },
+      "status": "",
+      "tree": "31fefadbfcfa5bdf0705d444238cee75875ada35"
+    },
+    {
+      "attempt": "remaining-consumers-r1-owned-batch-eslint-baseline-51",
+      "attemptNumber": 51,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "7156788458e0a391b5fdb402e427895af46ebf1c",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-owned-batch-eslint-baseline-51-original.txt",
+        "sha256": "e4043433a61cf2c586e794934371a6607383e957bb1c21022ca775f37d07e2d8"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-owned-batch-eslint-baseline-51-receipt.json",
+        "sha256": "d3d3e487c6a16c37eb17529ae7fab194be2e96916e61b6c7e278b87ae6f46a32"
+      },
+      "status": "",
+      "tree": "31fefadbfcfa5bdf0705d444238cee75875ada35"
+    },
+    {
+      "attempt": "remaining-consumers-r1-final-currentness-mutant-52",
+      "attemptNumber": 52,
+      "diffSha256": "dfa882e2e0a81dae09fe0331ec37a65e1f66502e676e394db13bd80035b7c2e5",
+      "exitCode": 1,
+      "head": "7156788458e0a391b5fdb402e427895af46ebf1c",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-final-currentness-mutant-52-original.txt",
+        "sha256": "7bd76d8b8417319713a9cb48226fd6bd5cd7fc4303c2a5c6d8746711efe53850"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-final-currentness-mutant-52-receipt.json",
+        "sha256": "c5927c5b89b4460d995f425213c08802261cab64561f25f5354bcce55d9b57be"
+      },
+      "status": " M src/main/services/annex-client.ts\n M src/main/services/remote-icon-fetch.ts\n",
+      "tree": "31fefadbfcfa5bdf0705d444238cee75875ada35"
+    },
+    {
+      "attempt": "remaining-consumers-r1-final-restored-discriminators-53",
+      "attemptNumber": 53,
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exitCode": 0,
+      "head": "7156788458e0a391b5fdb402e427895af46ebf1c",
+      "minimum": 4,
+      "original": {
+        "path": "attempts/remaining-consumers-r1-final-restored-discriminators-53-original.txt",
+        "sha256": "4bbcecc31dc2fc6de7f3f44a072196305ade357513456d4d5091532eb13916ca"
+      },
+      "receipt": {
+        "path": "attempts/remaining-consumers-r1-final-restored-discriminators-53-receipt.json",
+        "sha256": "2d1cd7a8e0d7edd4b2fa2b7ee654a8c5c7f8cb8c32facee6b7f1aab32321553d"
+      },
+      "status": "",
+      "tree": "31fefadbfcfa5bdf0705d444238cee75875ada35"
+    }
+  ],
+  "changedBlobs": {
+    "docs/evidence/3613-duplex-consumer-candidate/lint-baseline.mjs": {
+      "finalSha256": "05afbbbaafca84e17902fd3dde6dfaf0f622d6fe68ef74fc1bdae31a9e4eebcd",
+      "reviewedSha256": "eb337b930803b0a4a589c7f3797d2535cffd83c1cbf3d83820b56680510dd17c"
+    },
+    "src/main/services/annex-client.test.ts": {
+      "finalSha256": "84fb3aa5a82204b62813b9a0691bf71962e74dfb4af8cff280fd5baa87bacb48",
+      "reviewedSha256": "8c79a3273cdb3681a3fb2f4922743e29f14df3febf420e484f8a41073e7e84a0"
+    },
+    "src/main/services/annex-client.ts": {
+      "finalSha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98",
+      "reviewedSha256": "81ec2f07313ad58f6bd7aae4297ac3eee842ca8b71b3c731f23fdcb3f4c14833"
+    },
+    "src/main/services/remote-icon-fetch.ts": {
+      "finalSha256": "fbfc8e5ce474b7814e10d5f6a343d1a323584c6f4cc04060a7979bdba7d28ba7",
+      "reviewedSha256": "ad35b352039b36302c30a1cb808a13125e7575e56b98899342c60f81675f2c6e"
+    }
+  },
+  "executedFinalSourceHead": "7156788458e0a391b5fdb402e427895af46ebf1c",
+  "executedFinalSourceTree": "31fefadbfcfa5bdf0705d444238cee75875ada35",
+  "finalMeasurements": {
+    "baselineLintWarnings": 161,
+    "currentLintErrors": 0,
+    "currentLintWarnings": 160,
+    "introducedLintDiagnostics": 0,
+    "passedTests": 624,
+    "restoredR1Cases": 6,
+    "testFiles": 6
+  },
+  "finalRestorationExplicitInputSeals": {
+    "docs/annex-reverse-routes.tsconfig.json": "5a61ad41c0545c82ef042da1c5a5422206f09a11ceb6365ed439cf5c5409e782",
+    "docs/evidence/3613-duplex-consumer-candidate/lint-baseline.mjs": "05afbbbaafca84e17902fd3dde6dfaf0f622d6fe68ef74fc1bdae31a9e4eebcd",
+    "eslint.config.mjs": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+    "package-lock.json": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+    "package.json": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+    "src/main/ipc/annex-handlers.ts": "4cc213756bfdc6b9f802e3c008c4a1ba3a6abf3c06fb250f9ffa1a737752500b",
+    "src/main/services/annex-client-buffer.test.ts": "7836616401742b5b0b5bfe5812c1fb783e1dfb1e1d5a4c228856e70264e9f3d1",
+    "src/main/services/annex-client.test.ts": "84fb3aa5a82204b62813b9a0691bf71962e74dfb4af8cff280fd5baa87bacb48",
+    "src/main/services/annex-client.ts": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98",
+    "src/main/services/annex-control-bulk.ts": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee",
+    "src/main/services/annex-control.test.ts": "6f81ce8c236fc5d94a704fe51c0716c21bba640eb956af74e9332126356248c0",
+    "src/main/services/annex-control.ts": "4d69cb8bd02dc20d00e03c7685878d09ab0e2c228e44217e477aa775539ffbba",
+    "src/main/services/annex-devices.test.ts": "098253ae7d6dcc2a051f48ca8e164a518a40e5476f234b57e0feebfb35d1f914",
+    "src/main/services/annex-devices.ts": "279f326f95cad34e65ffe3035900f5d67618bce961ebedaf08b0f0e0091a0b2a",
+    "src/main/services/remote-icon-fetch.test.ts": "bb9c0e3c35f276874e61873de87a02a882e028aa56cbbc01944d86ed97cdd865",
+    "src/main/services/remote-icon-fetch.ts": "fbfc8e5ce474b7814e10d5f6a343d1a323584c6f4cc04060a7979bdba7d28ba7",
+    "test/annex-v2/annex-reverse-consumers.test.ts": "1041472d3e778a6d81a2a8fca90b2ea430c67da8b39d698b315fdb02d9638c16",
+    "tsconfig.json": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+  },
+  "independentBlockReport": {
+    "commit": "c8b7d9b757b0bd1e44bb2119ab20e582ddf77c41",
+    "reportPath": "docs/qa-transfer/2026-11-21/reports/3613-consumer-41354e820-independent-review.md",
+    "verificationPath": "docs/qa-transfer/2026-11-21/reports/3613-consumer-41354e820-verification.json"
+  },
+  "notExecutedChainTails": [
+    37,
+    41
+  ],
+  "patches": [
+    {
+      "attemptNumber": 45,
+      "path": "attempts/remaining-consumers-r1-currentness-mutant-45.patch",
+      "qualification": "Actual preserved command patch; never committed as product code.",
+      "sha256": "54e755a4bd0c179e43495312c975ae7c8cc7b5b3b33e61529837c1b01459aa20"
+    },
+    {
+      "attemptNumber": 52,
+      "path": "attempts/remaining-consumers-r1-final-currentness-mutant-52.patch",
+      "qualification": "Actual preserved command patch; never committed as product code.",
+      "sha256": "dfa882e2e0a81dae09fe0331ec37a65e1f66502e676e394db13bd80035b7c2e5"
+    },
+    {
+      "attemptNumber": 33,
+      "path": "attempts/remaining-consumers-r1-original-discriminator-33.patch",
+      "qualification": "Reconstructed from immutable committed test blobs after execution; SHA256 exactly matches original WIP diff seal.",
+      "sha256": "ad9a5a3a46bba561a1067a749216574ab3197a0988e0dd8a27e898e6c11fbfb2"
+    },
+    {
+      "attemptNumber": 47,
+      "path": "attempts/remaining-consumers-r1-overlapping-fresh-stream-47.patch",
+      "qualification": "Reconstructed from immutable committed test blobs after execution; SHA256 exactly matches original WIP diff seal.",
+      "sha256": "076b268653eabae8b9c8ac32f3095bd0e78e5f14b90a5cc54a2d944c94ac9681"
+    }
+  ],
+  "producerArchives": [
+    {
+      "path": "attempts/3613-consumer-proof-original-inputs-through-51.py",
+      "sha256": "cc7d94ac9c13b299806c50fdf5b48a2fab2589667a3cedd91774d3480aac47c2"
+    },
+    {
+      "path": "attempts/3613-consumer-proof.py",
+      "sha256": "d023e4f8e4f6355e806579a34c39b271db5c1c50a42b2dd815f884c9fe3bf72d"
+    }
+  ],
+  "qualification": "Original command receipts are byte-preserved. Expanded producer applies from 52 only. Earlier newly touched shared-worker and paired-fixture list omissions are qualified by immutable clean HEAD/tree or actual WIP diff plus supplemental committed-blob comparisons, not retroactively added input entries. Evidence successors are not relabeled as executed source heads.",
+  "reviewedCheckpoint": "740aa5050fb870c971fef95a7dcb06ad785d1bae",
+  "schemaVersion": 1
+}

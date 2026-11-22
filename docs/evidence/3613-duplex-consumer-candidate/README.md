@@ -13,7 +13,85 @@ and separate-gate inventory. The initial checkpoint was subsequently authorized,
 pushed and read back at `99083ca0d44930fa7e2287c9d824cb4042ed9b50`.
 No PR or merge accompanies this record.
 
-## Finite paired consumer delivery
+## R1 ownership successor (awaiting independent review)
+
+Independent reviewer BLOCK R1 is immutable at
+[`c8b7d9b757b0bd1e44bb2119ab20e582ddf77c41`](https://github.com/Agent-Clubhouse/Clubhouse/blob/c8b7d9b757b0bd1e44bb2119ab20e582ddf77c41/docs/qa-transfer/2026-11-21/reports/3613-consumer-41354e820-independent-review.md);
+its companion is `3613-consumer-41354e820-verification.json` in the same
+directory. This successor fixes that finding, not the separately deferred
+features. The unchanged inspected authority/receipt/route boundaries are not
+submitted for duplicate broad review.
+
+Executed final source: `7156788458e0a391b5fdb402e427895af46ebf1c`,
+tree `31fefadbfcfa5bdf0705d444238cee75875ada35`.
+Exact `740aa5050…` to this source delta is four files, +73/-3:
+the client (+5/-3), existing client tests (+65), shared icon worker (+2),
+and baseline runner (+1). The final evidence successor changes documentation and
+archival artifacts only; it is not relabeled as an executed source.
+
+The client passes the original captured stream into every icon fetch, checks its
+object/trust/link currentness immediately before dispatch, and chooses transport
+from that stream instead of current readiness. The shared worker checks the
+captured snapshot before each fetch and before recording the result. Canceled
+or never-sent icons therefore do not consume retry state. Retiring the stream
+also retires its batch/cache state, preventing a still-running old batch from
+absorbing the first legitimate replacement snapshot. Offline snapshots remain.
+There are no new wire fields, route fallbacks, permissions or handler changes.
+
+The discriminator names **nine** omitted icons and holds the first **four**
+reverse reads. Stop, disconnect, forget, pin replacement and accepted-link loss
+must abort all four, close the original stream, dispatch no additional direct
+**or** reverse request, and publish no late IPC. The separate recovery case
+delivers the same nine-icon snapshot on the new stream **before** old abort
+promises settle; exactly nine new reads (13 including the old four) complete and
+populate all nine icons without a direct request.
+
+| Attempts | Actual credit and retained failures |
+|---|---|
+| 33 | Untouched reviewed production, test-only sealed diff: **5 FAIL / 363 skips**. Stop/disconnect/forget/link invoked direct HTTPS five times; pin attached four extra reverse reads (8 instead of 4) |
+| 34 / 35 / 36 | Clean intermediate a4f: six files **623 PASS**, production types min6 PASS; fixture types genuinely FAILed one missing mock request-id argument |
+| 37 | Not executed: the previous chain stopped at 36; no receipt or lint credit |
+| 38 / 39 / 40 | Clean intermediate 4b08: six files **624 PASS**, production types min6 PASS; fixture types genuinely FAILed two invalid mock `aborted` codes |
+| 41 | Not executed: the previous chain stopped at 40; no receipt or lint credit |
+| 42 / 43 / 44 | Clean mock-only 806a: six R1 cases PASS, complete fixture types min6 PASS, scoped baseline lint min4 PASS |
+| 45 / 46 | Intermediate guard-removal mutant: **2 FAIL / 4 PASS / 363 skips** (pin 8 instead of 4; serial fresh recovery 4 instead of 13), then clean restored 806a six R1 cases PASS |
+| 47 | Strengthened overlapping recovery on 806a production: **1 FAIL / 368 skips**, fresh work stranded at 4 instead of 13; exact test-only patch retained |
+| 48 / 49 / 50 / 51 | Clean final 715: six files **624 PASS**, production and complete fixture types min6 PASS, baseline lint min4 **0 errors / 160 existing warnings vs 161 / 0 introduced diagnostics** |
+| 52 | Exact-final guard-removal mutant: **2 FAIL / 4 PASS / 363 skips**. Pin attached stale work (8 instead of 4); overlapping replacement attached five stale reads (18 instead of 13) |
+| 53 | Exact clean restored final 715: all **six R1 cases PASS / 363 skips**, with explicit shared-worker, worker-test, paired-fixture and runner SHA256 input seals |
+
+The final mutant removes only the client currentness check and the two worker
+snapshot checks. Captured transport and batch-state retirement remain intact.
+Thus its four direct-retirement cases still pass; the five direct attempts are
+the genuine original-red33 result, not invented mutant behavior. Both mutant
+patches and the original-red33/overlap47 test patches are preserved and their
+hashes match the actual command diff seals. No mutation is committed.
+
+Final six-file48 reruns the real pinned pair and records the same byte/cleanup
+measurements as the historical section below: 81,937 decoded bytes with SHA256
+`f7da8be077ec14d7c37a9e717948bedebdc1b9e4ec14cde538646611e18b643b`,
+68 PNG bytes, only `/control`, zero ordinary HTTP, zero owned subscriptions and
+pending reads after stop, owned headless handle disposed, zero late IPC, and the
+independent accepted control retained. Fixture network teardown remains separate.
+This is still one worker/two desktop module contexts with fixture target handlers,
+not native PTY/process-tree, real handoff/grant/confinement, full app or phone proof.
+
+[R1 manifest](r1-manifest.json) binds all 19 executed attempts (38 original/receipt
+files), both mutants, both reconstructed test-only red patches and final source
+blobs. Attempts 01–32 and their initial manifests are not overwritten. The original
+producer/input list through 51 is preserved byte-identically; from 52 the producer
+explicitly seals the shared worker, its unchanged test, the paired fixture and the
+lint runner, and records its own SHA256. Earlier omitted-list entries remain bound
+by their clean immutable HEAD/tree or actual WIP diff; supplemental committed-blob
+comparisons do not retroactively augment those receipts.
+
+Final source 715 introduces no dependency/manifest/phone-fixture or control-server
+delta. Earlier phone compatibility evidence is an unchanged-input bridge, not a
+new phone execution or acceptance. All original failures, intermediate compiler
+failures and meaningful mutant failures remain failures. R1 still awaits exact
+independent successor review; no PR, hosted CI, merge or release is claimed.
+
+## Historical finite paired consumer delivery before R1
 
 Smallest usable behavior: an existing remote-project consumer can receive its
 compatible snapshot, fetch binary icons and read current text files through one
@@ -25,7 +103,8 @@ Paired fixture source: `6039da94c3385f5c8f2371d7b2ffa180113113aa`,
 tree `a5b2f61ba8c0a0cfa2281d2bf19900a4c29a9868`.
 Final fixture-only lint correction: `6d7aec19dbc11489633a0a3d52629e41341c6548`,
 tree `3196f2477ddfe3224d324e69b1cff85c70a52ad1`.
-The initial production blobs remain byte-identical to `41354e820…`.
+At that earlier 6d7 checkpoint, production blobs remained byte-identical to
+`41354e820…`; the R1 successor above changes only the named icon ownership hunks.
 
 `test/annex-v2/annex-reverse-consumers.test.ts` uses two isolated desktop module
 contexts in one Node worker, real generated identities and the existing pinned

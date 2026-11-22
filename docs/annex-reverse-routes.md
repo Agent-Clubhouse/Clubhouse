@@ -20,6 +20,12 @@ their direct implementations and can use reverse requests when direct is absent.
 This text-read API is not an arbitrary binary decoder. Current binary content and
 handoff verification still require their separate byte-exact acceptance evidence.
 
+Each missing-icon worker rechecks its originally captured stream before sending
+and before recording a result. Retired reverse work cannot become a direct request
+or attach to a replacement accepted link. Retirement also retires the icon batch
+state, so a fresh stream's first snapshot can fetch the same icons immediately,
+even before old abort promises settle; the cached offline snapshot is retained.
+
 A subscription belongs to one current stream and original accepted-link epoch.
 Its first compatible snapshot starts a fresh sequence; old frames and asynchronous
 icon/canvas completions cannot modify a replacement. Direct availability retires

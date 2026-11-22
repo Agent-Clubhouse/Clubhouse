@@ -1,0 +1,44 @@
+diff --git a/src/main/services/annex-client.test.ts b/src/main/services/annex-client.test.ts
+index 38b167b51..2cf2d86df 100644
+--- a/src/main/services/annex-client.test.ts
++++ b/src/main/services/annex-client.test.ts
+@@ -468,6 +468,39 @@ describe('annex-client', () => {
+       devicesChanged();
+       expect(annexControl.subscribe).toHaveBeenCalledTimes(3);
+     });
++
++    it.each(['stop', 'disconnect', 'forget', 'pin', 'link'] as const)('never sends queued reverse icons directly after %s retirement', async (reason) => {
++      const signals: AbortSignal[] = [];
++      vi.mocked(annexControl.request).mockImplementation((_key, _request, options) => new Promise((_resolve, reject) => {
++        const signal = options?.signal;
++        if (!signal) throw new Error('Expected an owned icon request signal');
++        signals.push(signal);
++        signal.addEventListener('abort', () => reject(new annexControl.ControlRequestError('aborted', false)), { once: true });
++      }));
++      subscriptionCapable = true;
++      devicesChanged();
++      subscriptions[0].handlers.onFrame({
++        type: 'snapshot', payload: {
++          protocolVersion: 2, lastSeq: 1,
++          projects: Array.from({ length: 9 }, (_, index) => ({ id: `icon-${index}`, icon: `${index}.png` })),
++          agents: {}, quickAgents: {},
++        },
++      });
++      expect(annexControl.request).toHaveBeenCalledTimes(4);
++      expect(signals.every((signal) => !signal.aborted)).toBe(true);
++      expect(https.get).not.toHaveBeenCalled();
++      if (reason === 'stop') annexClient.stopClient();
++      if (reason === 'disconnect') annexClient.disconnect(fingerprint);
++      if (reason === 'forget') annexClient.forgetSatellite(fingerprint);
++      if (reason === 'pin') { peer = { ...peer, tlsCertificateFingerprint: 'replacement-pin' }; devicesChanged(); }
++      if (reason === 'link') { accepted = false; devicesChanged(); }
++      expect(subscriptions[0].close).toHaveBeenCalledOnce();
++      expect(signals.every((signal) => signal.aborted)).toBe(true);
++      await new Promise((resolve) => setTimeout(resolve, 0));
++      expect(https.get).not.toHaveBeenCalled();
++      expect(https.request).not.toHaveBeenCalled();
++      expect(annexControl.request).toHaveBeenCalledTimes(4);
++    });
+   });
+ 
+   describe('independent control connection lifecycle', () => {
