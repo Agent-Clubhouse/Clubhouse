@@ -1,0 +1,258 @@
+2026-11-22T01:56:26Z START lane-p2 idle=90% unused=6129M avail=33671M freepct=87 comp=722M swap=3777M pid=68604 cmd=npx vitest run --project main src/main/ipc/annex-handlers.test.ts src/main/services/annex-client.test.ts --maxWorkers=2 -t legacy peer-removal IPC|REMOVE_PEER|REMOVE_ALL_PEERS
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ❯ |main| src/main/ipc/annex-handlers.test.ts (39 tests | 3 failed | 36 skipped) 6ms
+     × REMOVE_PEER revokes before forgetting the outgoing connection and broadcasting the list 3ms
+     × REMOVE_PEER forgets retained outgoing state even when its pairing is already absent 0ms
+     × REMOVE_ALL_PEERS captures the pairings before revocation and forgets each outgoing owner 2ms
+ ❯ |main| src/main/services/annex-client.test.ts (371 tests | 2 failed | 369 skipped) 1372ms
+       × REMOVE_PEER retires sends and late frames without reviving its outgoing owner 1369ms
+       × REMOVE_ALL_PEERS retires sends and late frames without reviving its outgoing owner 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/ipc/annex-handlers.test.ts > annex-handlers > REMOVE_PEER revokes before forgetting the outgoing connection and broadcasting the list
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'fp:phone' ]
+
+Number of calls: 0
+
+ ❯ src/main/ipc/annex-handlers.test.ts:281:41
+    279|     expect(handler({}, 'fp:phone')).toBe(true);
+    280|     expect(annexServer.revokePeer).toHaveBeenCalledWith('fp:phone');
+    281|     expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:phone…
+       |                                         ^
+    282|     expect(vi.mocked(annexServer.revokePeer).mock.invocationCallOrder[…
+    283|     expect(annexPeers.removePeer).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |main| src/main/ipc/annex-handlers.test.ts > annex-handlers > REMOVE_PEER forgets retained outgoing state even when its pairing is already absent
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'fp:gone' ]
+
+Number of calls: 0
+
+ ❯ src/main/ipc/annex-handlers.test.ts:290:41
+    288|     vi.mocked(annexServer.revokePeer).mockReturnValueOnce(false);
+    289|     expect(handlers.get(IPC.ANNEX.REMOVE_PEER)!({}, 'fp:gone')).toBe(f…
+    290|     expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:gone'…
+       |                                         ^
+    291|     expect(broadcastToAllWindows).not.toHaveBeenCalled();
+    292|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |main| src/main/ipc/annex-handlers.test.ts > annex-handlers > REMOVE_ALL_PEERS captures the pairings before revocation and forgets each outgoing owner
+AssertionError: expected [] to deeply equal [ [ 'fp:one' ], [ 'fp:two' ], …(1) ]
+
+- Expected
++ Received
+
+- [
+-   [
+-     "fp:one",
+-   ],
+-   [
+-     "fp:two",
+-   ],
+-   [
+-     "fp:phone",
+-   ],
+- ]
++ []
+
+ ❯ src/main/ipc/annex-handlers.test.ts:348:63
+    346|     handlers.get(IPC.ANNEX.REMOVE_ALL_PEERS)!({});
+    347|     expect(annexServer.revokeAllPeers).toHaveBeenCalled();
+    348|     expect(vi.mocked(annexClient.forgetSatellite).mock.calls).toEqual(…
+       |                                                               ^
+    349|     expect(vi.mocked(annexServer.revokeAllPeers).mock.invocationCallOr…
+    350|     expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.PEERS…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > legacy peer-removal IPC outgoing retirement (#3711) > REMOVE_PEER retires sends and late frames without reviving its outgoing owner
+AssertionError: expected { retired: [ { …(6) } ], …(3) } to deeply equal { retired: [ { …(6) } ], …(3) }
+
+- Expected
++ Received
+
+  {
+    "dials": 2,
+    "lateEvents": [],
+-   "retainedRemoved": [],
++   "retainedRemoved": [
++     "remove-one",
++   ],
+    "retired": [
+      {
+-       "connected": false,
+-       "extraWrites": 0,
++       "connected": true,
++       "extraWrites": 1,
++       "fingerprint": "remove-one",
++       "satellite": {
++         "alias": "remove-one",
++         "color": "indigo",
++         "connectionGeneration": 0,
+          "fingerprint": "remove-one",
+-       "satellite": null,
++         "host": "satellite.local",
++         "icon": "computer",
++         "id": "remove-one",
++         "lastError": null,
++         "mainPort": 9000,
++         "pairingPort": 0,
++         "snapshot": {
++           "agents": {},
++           "lastSeq": 2,
++           "projects": [
++             {
++               "id": "remove-one-late",
++             },
++           ],
++           "protocolVersion": 2,
++           "quickAgents": {},
++         },
++         "snapshotReceipt": "4197236d-4bb4-4591-af2a-9b156c7a0f1c",
++         "state": "connected",
++       },
+        "sent": {
+-         "error": "not_connected",
+-         "sent": false,
++         "sent": true,
+        },
+-       "socketClosed": 1,
++       "socketClosed": 0,
+      },
+    ],
+  }
+
+ ❯ src/main/services/annex-client.test.ts:1245:10
+    1243|         dials: WebSocketMock.mock.calls.length,
+    1244|         retainedRemoved: removed.filter((fingerprint) => annexClient.g…
+    1245|       }).toEqual({
+       |          ^
+    1246|         retired: removed.map((fingerprint) => ({
+    1247|           fingerprint, connected: false, satellite: null, sent: { sent…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > legacy peer-removal IPC outgoing retirement (#3711) > REMOVE_ALL_PEERS retires sends and late frames without reviving its outgoing owner
+AssertionError: expected { …(4) } to deeply equal { …(4) }
+
+- Expected
++ Received
+
+  {
+    "dials": 2,
+    "lateEvents": [],
+-   "retainedRemoved": [],
++   "retainedRemoved": [
++     "remove-one",
++     "remove-two",
++   ],
+    "retired": [
+      {
+-       "connected": false,
+-       "extraWrites": 0,
++       "connected": true,
++       "extraWrites": 1,
++       "fingerprint": "remove-one",
++       "satellite": {
++         "alias": "remove-one",
++         "color": "indigo",
++         "connectionGeneration": 2,
+          "fingerprint": "remove-one",
+-       "satellite": null,
++         "host": "satellite.local",
++         "icon": "computer",
++         "id": "remove-one",
++         "lastError": null,
++         "mainPort": 9000,
++         "pairingPort": 0,
++         "snapshot": {
++           "agents": {},
++           "lastSeq": 2,
++           "projects": [
++             {
++               "id": "remove-one-late",
++             },
++           ],
++           "protocolVersion": 2,
++           "quickAgents": {},
++         },
++         "snapshotReceipt": "10e97243-7048-42e3-87b7-ccc8e3ff8b35",
++         "state": "connected",
++       },
+        "sent": {
+-         "error": "not_connected",
+-         "sent": false,
++         "sent": true,
+        },
+-       "socketClosed": 1,
++       "socketClosed": 0,
+      },
+      {
+-       "connected": false,
+-       "extraWrites": 0,
++       "connected": true,
++       "extraWrites": 1,
++       "fingerprint": "remove-two",
++       "satellite": {
++         "alias": "remove-two",
++         "color": "indigo",
++         "connectionGeneration": 3,
+          "fingerprint": "remove-two",
+-       "satellite": null,
++         "host": "satellite.local",
++         "icon": "computer",
++         "id": "remove-two",
++         "lastError": null,
++         "mainPort": 9001,
++         "pairingPort": 0,
++         "snapshot": {
++           "agents": {},
++           "lastSeq": 2,
++           "projects": [
++             {
++               "id": "remove-two-late",
++             },
++           ],
++           "protocolVersion": 2,
++           "quickAgents": {},
++         },
++         "snapshotReceipt": "4cbee1b4-eae1-4589-9dc1-90b2cdfbcfee",
++         "state": "connected",
++       },
+        "sent": {
+-         "error": "not_connected",
+-         "sent": false,
++         "sent": true,
+        },
+-       "socketClosed": 1,
++       "socketClosed": 0,
+      },
+    ],
+  }
+
+ ❯ src/main/services/annex-client.test.ts:1245:10
+    1243|         dials: WebSocketMock.mock.calls.length,
+    1244|         retainedRemoved: removed.filter((fingerprint) => annexClient.g…
+    1245|       }).toEqual({
+       |          ^
+    1246|         retired: removed.map((fingerprint) => ({
+    1247|           fingerprint, connected: false, satellite: null, sent: { sent…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  5 failed | 405 skipped (410)
+   Start at  20:56:27
+   Duration  1.81s (transform 2.17s, setup 12ms, import 1.47s, tests 1.38s, environment 0ms)
+
+2026-11-22T01:56:29Z END lane-p2 rc=1
