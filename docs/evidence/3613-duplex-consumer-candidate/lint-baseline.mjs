@@ -10,6 +10,7 @@ const files = [
   'src/main/services/annex-client-buffer.test.ts',
   'src/main/services/annex-devices.ts',
   'src/main/services/annex-devices.test.ts',
+  'src/main/services/remote-icon-fetch.ts',
 ];
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' });
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');

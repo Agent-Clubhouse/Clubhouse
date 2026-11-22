@@ -298,6 +298,13 @@ describe('annex-client', () => {
 
   describe('remaining reverse consumers', () => {
     const fingerprint = 'remaining-peer';
+    const iconSnapshot = (): Record<string, unknown> => ({
+      type: 'snapshot', payload: {
+        protocolVersion: 2, lastSeq: 1,
+        projects: Array.from({ length: 9 }, (_, index) => ({ id: `icon-${index}`, icon: `${index}.png` })),
+        agents: {}, quickAgents: {},
+      },
+    });
     let peer: AnnexPeer;
     let accepted: boolean;
     let epoch: number;
@@ -475,17 +482,11 @@ describe('annex-client', () => {
         const signal = options?.signal;
         if (!signal) throw new Error('Expected an owned icon request signal');
         signals.push(signal);
-        signal.addEventListener('abort', () => reject(new annexControl.ControlRequestError('aborted', false)), { once: true });
+        signal.addEventListener('abort', () => reject(new annexControl.ControlRequestError('aborted', false, 'retired-icon')), { once: true });
       }));
       subscriptionCapable = true;
       devicesChanged();
-      subscriptions[0].handlers.onFrame({
-        type: 'snapshot', payload: {
-          protocolVersion: 2, lastSeq: 1,
-          projects: Array.from({ length: 9 }, (_, index) => ({ id: `icon-${index}`, icon: `${index}.png` })),
-          agents: {}, quickAgents: {},
-        },
-      });
+      subscriptions[0].handlers.onFrame(iconSnapshot());
       expect(annexControl.request).toHaveBeenCalledTimes(4);
       expect(signals.every((signal) => !signal.aborted)).toBe(true);
       expect(https.get).not.toHaveBeenCalled();
@@ -496,10 +497,42 @@ describe('annex-client', () => {
       if (reason === 'link') { accepted = false; devicesChanged(); }
       expect(subscriptions[0].close).toHaveBeenCalledOnce();
       expect(signals.every((signal) => signal.aborted)).toBe(true);
+      const published = vi.mocked(broadcastToAllWindows).mock.calls.length;
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(https.get).not.toHaveBeenCalled();
       expect(https.request).not.toHaveBeenCalled();
       expect(annexControl.request).toHaveBeenCalledTimes(4);
+      expect(broadcastToAllWindows).toHaveBeenCalledTimes(published);
+    });
+
+    it('keeps the same omitted icons live on a fresh stream after link retirement', async () => {
+      vi.mocked(annexControl.request).mockImplementation((_key, _request, options) => new Promise((_resolve, reject) => {
+        const signal = options?.signal;
+        if (!signal) throw new Error('Expected an owned icon request signal');
+        signal.addEventListener('abort', () => reject(new annexControl.ControlRequestError('aborted', false, 'retired-icon')), { once: true });
+      }));
+      subscriptionCapable = true;
+      devicesChanged();
+      subscriptions[0].handlers.onFrame(iconSnapshot());
+      expect(annexControl.request).toHaveBeenCalledTimes(4);
+      accepted = false;
+      devicesChanged();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(annexControl.request).toHaveBeenCalledTimes(4);
+      vi.mocked(annexControl.request).mockResolvedValue({
+        status: 200, headers: { 'content-type': 'image/png' }, body: Buffer.from([0, 255]),
+      });
+      accepted = true;
+      epoch++;
+      devicesChanged();
+      expect(annexControl.subscribe).toHaveBeenCalledTimes(2);
+      subscriptions[1].handlers.onFrame(iconSnapshot());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(annexControl.request).toHaveBeenCalledTimes(13);
+      expect(https.get).not.toHaveBeenCalled();
+      expect(annexClient.getSatellite(fingerprint)?.snapshot).toMatchObject({
+        projectIcons: Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`icon-${index}`, 'data:image/png;base64,AP8='])),
+      });
     });
   });
 
