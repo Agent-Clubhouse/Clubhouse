@@ -11,6 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpToolResult } from './clubhouse-mcp/types';
+import type { DurableAgentConfig } from '../../shared/types';
 
 const state = vi.hoisted(() => ({
   dir: '', sender: '', receiver: '', machine: Array(16).fill('ab').join(':'), peer: Array(16).fill('cd').join(':'),
@@ -26,14 +27,14 @@ vi.mock('./annex-agent-calls', () => ({ isNetworkComputer: () => true }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => ({ isRunning: () => false, sendMessage: vi.fn(async () => ({})) }) }));
 vi.mock('./project-store', () => ({
   peekProjects: async () => [{ id: 'source-project', name: 'example-project', path: state.sender }, { id: 'destination-project', name: 'Destination', path: state.receiver }],
-  onProjectsChanged: () => () => {},
+  onProjectsChanged: (): (() => void) => () => {},
 }));
 vi.mock('./dispatcher/dispatcher-service', () => ({
   getDispatcherState: () => ({ enabled: true, agentId: 'dispatcher', path: state.dir, config: { name: 'Dispatcher' } }),
-  isDispatcherAgentId: (id: string) => id === 'dispatcher', onDispatcherChanged: () => () => {},
+  isDispatcherAgentId: (id: string) => id === 'dispatcher', onDispatcherChanged: (): (() => void) => () => {},
 }));
-vi.mock('./connection-grants-store', () => ({ getConnectionDirection: () => ({ link: true }), onConnectionGrantsChanged: () => () => {} }));
-vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [], getBindingsForAgent: () => [], onChange: () => () => {} } }));
+vi.mock('./connection-grants-store', () => ({ getConnectionDirection: () => ({ link: true }), onConnectionGrantsChanged: (): (() => void) => () => {} }));
+vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: (): [] => [], getBindingsForAgent: (): [] => [], onChange: (): (() => void) => () => {} } }));
 vi.mock('./clubhouse-mcp/tool-registry', async (original) => {
   const actual = await original<typeof import('./clubhouse-mcp/tool-registry')>();
   return {
@@ -80,7 +81,7 @@ beforeEach(async () => {
   const configStore = await import('./agent-config');
   const callerGate = await import('./clubhouse-mcp/mcp-call-gate');
   for (const [agent, project] of [['sender', state.sender], ['receiver', state.receiver]]) {
-    const row = { id: agent, name: agent === 'sender' ? 'Sender' : 'Receiver', color: 'indigo',
+    const row: DurableAgentConfig = { id: agent, name: agent === 'sender' ? 'Sender' : 'Receiver', color: 'indigo',
       createdAt: '2026-01-01T00:00:00.000Z', worktreePath: project };
     fs.mkdirSync(path.join(project, '.clubhouse'), { recursive: true });
     fs.writeFileSync(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([row]));
