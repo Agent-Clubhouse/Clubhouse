@@ -1,0 +1,6 @@
+2026-11-22T03:06:20Z
+CURRENT NODE TEST HOLDERS (pid/ppid/comm/args)
+ATOMIC SLOT
+no lock directory
+ADVISORY ONLY
+DRY_RUN: advisory only; guards=pass baseline_age_s=3932; locked sampling/revalidation required; no slot/baseline/child changes

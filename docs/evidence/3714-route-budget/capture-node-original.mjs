@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 
@@ -14,6 +14,12 @@ const log = `${prefix}-original.txt`;
 const receipt = `${prefix}-receipt.json`;
 if (existsSync(log) || existsSync(receipt)) throw new Error(`Refusing to replace evidence: ${prefix}`);
 mkdirSync(dirname(log), { recursive: true });
+for (const name of readdirSync(dirname(log)).filter((name) => name.endsWith('-receipt.json'))) {
+  const prior = JSON.parse(readFileSync(resolve(dirname(log), name), 'utf8'));
+  if (prior.exit === 75 && Date.now() - Date.parse(prior.finishedAt) < 60_000) {
+    throw new Error('Gate refusal retry is held for at least 60 seconds; no command was started.');
+  }
+}
 const gate = resolve(homedir(), '.clubhouse/orch/desktop-test-gate.sh');
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
