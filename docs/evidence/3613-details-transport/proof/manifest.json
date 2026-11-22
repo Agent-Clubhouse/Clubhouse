@@ -1,0 +1,613 @@
+{
+  "source": "b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58",
+  "base": "edcd915763a2ec73f0e8149917b4683ced06ecd6",
+  "baselineSource": "61e64c099b05ccfc663adbe5432f46faa2909359",
+  "baselinePacket": "f4688dfeed2181bc0dc3522ddb0ab5966d00e349",
+  "candidateStatus": "Frozen for independent exact source review and new54FAIL nonregression disposition; not accepted",
+  "artifactCount": 67,
+  "artifacts": [
+    {
+      "logicalOriginal": "02-candidate-attribution-original.json",
+      "stored": "02-candidate-attribution-original.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 27566,
+      "originalSHA256": "c2a3a8e5134c28ff6423fcb9e1afeb4e9712b99ebf49ed6e9e0597fcadb43148",
+      "storedBytes": 2938,
+      "storedSHA256": "82923e04795f71bd38da2feffab981a971e55bb37ac6755bf95163a8c26b008d"
+    },
+    {
+      "logicalOriginal": "02-candidate-exit-original.txt",
+      "stored": "02-candidate-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "storedBytes": 2,
+      "storedSHA256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "logicalOriginal": "02-candidate-input-original.json",
+      "stored": "02-candidate-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 1816,
+      "originalSHA256": "bf168fea4a732e88644d0090e901fd220c0a437c7f6e20d611ed83d216a74fac",
+      "storedBytes": 1816,
+      "storedSHA256": "bf168fea4a732e88644d0090e901fd220c0a437c7f6e20d611ed83d216a74fac"
+    },
+    {
+      "logicalOriginal": "02-candidate-original.log",
+      "stored": "02-candidate-original.log",
+      "encoding": "identity",
+      "originalBytes": 1974,
+      "originalSHA256": "9b6421cbd7fb3391a0c3bbcb73d846d715ab9e1aad5f760c0c4ba11697a23a97",
+      "storedBytes": 1974,
+      "storedSHA256": "9b6421cbd7fb3391a0c3bbcb73d846d715ab9e1aad5f760c0c4ba11697a23a97"
+    },
+    {
+      "logicalOriginal": "02-candidate-original.xml",
+      "stored": "02-candidate-original.xml.gz",
+      "encoding": "gzip",
+      "originalBytes": 115200,
+      "originalSHA256": "9eb32bb11e3be5d74204ee743d8776b3802ac9a21586650d2dd5cdf093877e0a",
+      "storedBytes": 11220,
+      "storedSHA256": "50ea34716365e227dc748218c81e8f91963e44d683f57cbe7b5cc7e19262a3cc"
+    },
+    {
+      "logicalOriginal": "03-candidate-types-exit-original.txt",
+      "stored": "03-candidate-types-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 3,
+      "originalSHA256": "84b9bb077be0d8a29d0d01ef350d718b77c2ec5f40c3ab90502b1b4b5016c550",
+      "storedBytes": 3,
+      "storedSHA256": "84b9bb077be0d8a29d0d01ef350d718b77c2ec5f40c3ab90502b1b4b5016c550"
+    },
+    {
+      "logicalOriginal": "03-candidate-types-input-original.json",
+      "stored": "03-candidate-types-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 1999,
+      "originalSHA256": "cc8365227490e959fb14ab5097e12459711485fa0230b999a621068c6f3af365",
+      "storedBytes": 1999,
+      "storedSHA256": "cc8365227490e959fb14ab5097e12459711485fa0230b999a621068c6f3af365"
+    },
+    {
+      "logicalOriginal": "03-candidate-types-original.log",
+      "stored": "03-candidate-types-original.log",
+      "encoding": "identity",
+      "originalBytes": 30,
+      "originalSHA256": "9130b598145a09383963b09fad4786199630d8488e33441a7c3dd91df88e7284",
+      "storedBytes": 30,
+      "storedSHA256": "9130b598145a09383963b09fad4786199630d8488e33441a7c3dd91df88e7284"
+    },
+    {
+      "logicalOriginal": "04-candidate-lint-exit-original.txt",
+      "stored": "04-candidate-lint-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "storedBytes": 2,
+      "storedSHA256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "logicalOriginal": "04-candidate-lint-original.log",
+      "stored": "04-candidate-lint-original.log",
+      "encoding": "identity",
+      "originalBytes": 18178,
+      "originalSHA256": "54085c20f920b7d6e2dfbe33013103d224314278c68647aeee85439b049576d1",
+      "storedBytes": 18178,
+      "storedSHA256": "54085c20f920b7d6e2dfbe33013103d224314278c68647aeee85439b049576d1"
+    },
+    {
+      "logicalOriginal": "05-candidate-types-exit-original.txt",
+      "stored": "05-candidate-types-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "storedBytes": 2,
+      "storedSHA256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+    },
+    {
+      "logicalOriginal": "05-candidate-types-graph-original.json",
+      "stored": "05-candidate-types-graph-original.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 692885,
+      "originalSHA256": "5deaa81120ea16dcf8e44b381d117cd7b288731a2f3dd457ad0b7d53cc65475c",
+      "storedBytes": 195217,
+      "storedSHA256": "eec7cf966b3c2798972fed69cb5363ba2d8c14c2ab7ac71a0c5d4c4cd2764d3c"
+    },
+    {
+      "logicalOriginal": "05-candidate-types-input-original.json",
+      "stored": "05-candidate-types-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 2100,
+      "originalSHA256": "56f2bf089e63d4b55e869fb451487b165fbd226eadbfb9ab34e06afcb53e5580",
+      "storedBytes": 2100,
+      "storedSHA256": "56f2bf089e63d4b55e869fb451487b165fbd226eadbfb9ab34e06afcb53e5580"
+    },
+    {
+      "logicalOriginal": "05-candidate-types-original.log",
+      "stored": "05-candidate-types-original.log.gz",
+      "encoding": "gzip",
+      "originalBytes": 748003,
+      "originalSHA256": "1f1533b73b3a473c29909341bd6e82880cfb4e653a99e508f0625757cd6713d2",
+      "storedBytes": 33533,
+      "storedSHA256": "c7bcb777669d896f6d61eb046cdd58eca9d952c8a1aecec8c35303d8135bec6d"
+    },
+    {
+      "logicalOriginal": "06-corrected-types-exit-original.txt",
+      "stored": "06-corrected-types-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "storedBytes": 2,
+      "storedSHA256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+    },
+    {
+      "logicalOriginal": "06-corrected-types-graph-original.json",
+      "stored": "06-corrected-types-graph-original.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 691923,
+      "originalSHA256": "06d539f0571c2115ccf72a7197dfad00b8edfac0b1b07af31877ef9ecb9ddebe",
+      "storedBytes": 195125,
+      "storedSHA256": "3e334d9b314078907212c02d561936b3d18bc3314372ee660c27e66278f2139c"
+    },
+    {
+      "logicalOriginal": "06-corrected-types-input-original.json",
+      "stored": "06-corrected-types-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 1192,
+      "originalSHA256": "0888fde1940bd87284a798db39f0d2b609877408455a6ab5516fd97780a85a4c",
+      "storedBytes": 1192,
+      "storedSHA256": "0888fde1940bd87284a798db39f0d2b609877408455a6ab5516fd97780a85a4c"
+    },
+    {
+      "logicalOriginal": "06-corrected-types-original.log",
+      "stored": "06-corrected-types-original.log.gz",
+      "encoding": "gzip",
+      "originalBytes": 747071,
+      "originalSHA256": "100cab6bf9fb624cab105ca1be5010fc8c3668a8e70d58d7119b7cec025ce8f8",
+      "storedBytes": 33436,
+      "storedSHA256": "d0dd1cda9f9509f58011514239903a682a065c57e549c3b4e4d95ecab9bf91a8"
+    },
+    {
+      "logicalOriginal": "07-baseline-types-exit-original.txt",
+      "stored": "07-baseline-types-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "storedBytes": 2,
+      "storedSHA256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+    },
+    {
+      "logicalOriginal": "07-baseline-types-graph-original.json",
+      "stored": "07-baseline-types-graph-original.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 692150,
+      "originalSHA256": "9b653bdfcd0946ae73c959094b65dc0bf3fe09a15adbf7aed1d9a9dd15cf6557",
+      "storedBytes": 195287,
+      "storedSHA256": "4e1bb6d8a1f042da4bce015a9bece674cfb697a6097e1fed4114e6e277a5a7e6"
+    },
+    {
+      "logicalOriginal": "07-baseline-types-input-original.json",
+      "stored": "07-baseline-types-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 1239,
+      "originalSHA256": "d62a8180af03424b967dd56545185bd6d1193e68e0f49a1591151aa5b0777c93",
+      "storedBytes": 1239,
+      "storedSHA256": "d62a8180af03424b967dd56545185bd6d1193e68e0f49a1591151aa5b0777c93"
+    },
+    {
+      "logicalOriginal": "07-baseline-types-original.log",
+      "stored": "07-baseline-types-original.log.gz",
+      "encoding": "gzip",
+      "originalBytes": 747071,
+      "originalSHA256": "fa2fa475a913ea183d5a695acd9d543fb6b3e2340df25a3b714a5c9018090e55",
+      "storedBytes": 33439,
+      "storedSHA256": "7dd3e4adca98b390d03a0a6b72cf3a4b70e123fd980623da27f386dd93d1e50c"
+    },
+    {
+      "logicalOriginal": "08-readiness-mutant-diff-original.txt",
+      "stored": "08-readiness-mutant-diff-original.txt",
+      "encoding": "identity",
+      "originalBytes": 1418,
+      "originalSHA256": "7baf2a4ea7943c49772276399f65953cc276f89ac8e85554e533d44352f71747",
+      "storedBytes": 1418,
+      "storedSHA256": "7baf2a4ea7943c49772276399f65953cc276f89ac8e85554e533d44352f71747"
+    },
+    {
+      "logicalOriginal": "08-readiness-mutant-exit-original.txt",
+      "stored": "08-readiness-mutant-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "storedBytes": 2,
+      "storedSHA256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "logicalOriginal": "08-readiness-mutant-input-original.json",
+      "stored": "08-readiness-mutant-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 851,
+      "originalSHA256": "9736045ff67f37eea0067f2f1f9a99eb414bb5dbb7025cf7dea61a04069cc211",
+      "storedBytes": 851,
+      "storedSHA256": "9736045ff67f37eea0067f2f1f9a99eb414bb5dbb7025cf7dea61a04069cc211"
+    },
+    {
+      "logicalOriginal": "08-readiness-mutant-original.log",
+      "stored": "08-readiness-mutant-original.log.gz",
+      "encoding": "gzip",
+      "originalBytes": 68094,
+      "originalSHA256": "17b7c1d5124cce32045a37ac0ca93ae4085c1d75367e95021a9451990d170050",
+      "storedBytes": 11179,
+      "storedSHA256": "013c025ccbc4e4963ae8686bf5a496531c7e93effe7849fdb2c470bbf1adf8ed"
+    },
+    {
+      "logicalOriginal": "08-readiness-mutant-original.xml",
+      "stored": "08-readiness-mutant-original.xml.gz",
+      "encoding": "gzip",
+      "originalBytes": 149887,
+      "originalSHA256": "8677d51251b0eb84ce8438b2614e9c101baef0da65e16bf7c286c2e88733bf4b",
+      "storedBytes": 12051,
+      "storedSHA256": "f10040aafc5a9c274c7fe441d1ed462b5b79a30d55fbe2bf4ba9959c43877d3d"
+    },
+    {
+      "logicalOriginal": "09-admission-mutant-diff-original.txt",
+      "stored": "09-admission-mutant-diff-original.txt",
+      "encoding": "identity",
+      "originalBytes": 863,
+      "originalSHA256": "ea357b320366388b3eb6dea9b01dc8ff111daa2a48c7221bbba587f71e196b96",
+      "storedBytes": 863,
+      "storedSHA256": "ea357b320366388b3eb6dea9b01dc8ff111daa2a48c7221bbba587f71e196b96"
+    },
+    {
+      "logicalOriginal": "09-admission-mutant-exit-original.txt",
+      "stored": "09-admission-mutant-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "storedBytes": 2,
+      "storedSHA256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "logicalOriginal": "09-admission-mutant-input-original.json",
+      "stored": "09-admission-mutant-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 844,
+      "originalSHA256": "4f25312299306915d7e10736d3fbdb2f6643d9048e2aa0450793b4a4c8ba60ce",
+      "storedBytes": 844,
+      "storedSHA256": "4f25312299306915d7e10736d3fbdb2f6643d9048e2aa0450793b4a4c8ba60ce"
+    },
+    {
+      "logicalOriginal": "09-admission-mutant-original.log",
+      "stored": "09-admission-mutant-original.log.gz",
+      "encoding": "gzip",
+      "originalBytes": 40186,
+      "originalSHA256": "053d64be4e8cdf2a688eb94b8d75e76482899f7fd0b24e8989a4a04860cc75a5",
+      "storedBytes": 9985,
+      "storedSHA256": "59da9e3ee36eee5d32535944098f1af6351b3ccefc3d339ed7ceabb343edd46d"
+    },
+    {
+      "logicalOriginal": "09-admission-mutant-original.xml",
+      "stored": "09-admission-mutant-original.xml.gz",
+      "encoding": "gzip",
+      "originalBytes": 117477,
+      "originalSHA256": "44689074660a974b67eea6d04ee7cdd1f8c9afab78c726c7e3ac7189a8ce5d68",
+      "storedBytes": 10927,
+      "storedSHA256": "96c00304af055aa751f0863f6cfbd530a8e68224b815bb64b5105a55ace0a26e"
+    },
+    {
+      "logicalOriginal": "10-wire-mutant-diff-original.txt",
+      "stored": "10-wire-mutant-diff-original.txt",
+      "encoding": "identity",
+      "originalBytes": 939,
+      "originalSHA256": "151999be347c997f2cb7f1b370709bde5f675e59d054f21910a87d4e6acaab4d",
+      "storedBytes": 939,
+      "storedSHA256": "151999be347c997f2cb7f1b370709bde5f675e59d054f21910a87d4e6acaab4d"
+    },
+    {
+      "logicalOriginal": "10-wire-mutant-exit-original.txt",
+      "stored": "10-wire-mutant-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "storedBytes": 2,
+      "storedSHA256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "logicalOriginal": "10-wire-mutant-input-original.json",
+      "stored": "10-wire-mutant-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 857,
+      "originalSHA256": "117cbe673dfefc55a8953869867997643336707497fcd06ca20a812e68cdd0da",
+      "storedBytes": 857,
+      "storedSHA256": "117cbe673dfefc55a8953869867997643336707497fcd06ca20a812e68cdd0da"
+    },
+    {
+      "logicalOriginal": "10-wire-mutant-original.log",
+      "stored": "10-wire-mutant-original.log.gz",
+      "encoding": "gzip",
+      "originalBytes": 39282,
+      "originalSHA256": "aace18ee144ae9b58e2134c9924f57586a7380b73e3365f30df3eebd2ccf4c77",
+      "storedBytes": 9855,
+      "storedSHA256": "771509e49233080f229c6aa0b572e0a297011501dc6bfbfd6a93d313163037f8"
+    },
+    {
+      "logicalOriginal": "10-wire-mutant-original.xml",
+      "stored": "10-wire-mutant-original.xml.gz",
+      "encoding": "gzip",
+      "originalBytes": 117171,
+      "originalSHA256": "4180a811da29de231e95165ae385db54a53a2780b7b13c066bbbff13a774aa37",
+      "storedBytes": 10815,
+      "storedSHA256": "bcfdb97ec2cb424f33fc8230d399cd8d2482c8de916ac3eeb4d2ca57d53b5b55"
+    },
+    {
+      "logicalOriginal": "11-direct-open-mutant-diff-original.txt",
+      "stored": "11-direct-open-mutant-diff-original.txt",
+      "encoding": "identity",
+      "originalBytes": 1004,
+      "originalSHA256": "1c043ba5c16cb856e2af64c99b54920a37230bb53b545aa0509756517e8adce6",
+      "storedBytes": 1004,
+      "storedSHA256": "1c043ba5c16cb856e2af64c99b54920a37230bb53b545aa0509756517e8adce6"
+    },
+    {
+      "logicalOriginal": "11-direct-open-mutant-exit-original.txt",
+      "stored": "11-direct-open-mutant-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "storedBytes": 2,
+      "storedSHA256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "logicalOriginal": "11-direct-open-mutant-input-original.json",
+      "stored": "11-direct-open-mutant-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 853,
+      "originalSHA256": "98c7b3ba8ee048701be3e3f15c126192b8f66a8f85945f17d8a2307dc0cf4abe",
+      "storedBytes": 853,
+      "storedSHA256": "98c7b3ba8ee048701be3e3f15c126192b8f66a8f85945f17d8a2307dc0cf4abe"
+    },
+    {
+      "logicalOriginal": "11-direct-open-mutant-original.log",
+      "stored": "11-direct-open-mutant-original.log.gz",
+      "encoding": "gzip",
+      "originalBytes": 41601,
+      "originalSHA256": "e16a2a7a589f3815a7323294a2e3f7dadf6b31f98e6770fb64663cbbc816556e",
+      "storedBytes": 10117,
+      "storedSHA256": "a2c2926d7987a64186c96fd8ff44c3a4b3d73ae7f76eefdf743d81334f1b5bda"
+    },
+    {
+      "logicalOriginal": "11-direct-open-mutant-original.xml",
+      "stored": "11-direct-open-mutant-original.xml.gz",
+      "encoding": "gzip",
+      "originalBytes": 120832,
+      "originalSHA256": "654468acb7cf83f4b4d1b5c17041316c79171ffa8fd2268b7f5f7d35f2667ddc",
+      "storedBytes": 11154,
+      "storedSHA256": "976481fd962b0a53eef381c95105a3bc1bff9ed110a555a75f5659c6604bb5c8"
+    },
+    {
+      "logicalOriginal": "12-ordinary-equality-mutant-diff-original.txt",
+      "stored": "12-ordinary-equality-mutant-diff-original.txt",
+      "encoding": "identity",
+      "originalBytes": 1042,
+      "originalSHA256": "f56e5be860bc7c73cb755022726a4dc7ec10168066e2076aee3cfe26d6dbc295",
+      "storedBytes": 1042,
+      "storedSHA256": "f56e5be860bc7c73cb755022726a4dc7ec10168066e2076aee3cfe26d6dbc295"
+    },
+    {
+      "logicalOriginal": "12-ordinary-equality-mutant-exit-original.txt",
+      "stored": "12-ordinary-equality-mutant-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "storedBytes": 2,
+      "storedSHA256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "logicalOriginal": "12-ordinary-equality-mutant-input-original.json",
+      "stored": "12-ordinary-equality-mutant-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 873,
+      "originalSHA256": "56a791e341cd1d5cd52b1e740817f14ebfe96bf0f7f2af37e527816dbf3d8aeb",
+      "storedBytes": 873,
+      "storedSHA256": "56a791e341cd1d5cd52b1e740817f14ebfe96bf0f7f2af37e527816dbf3d8aeb"
+    },
+    {
+      "logicalOriginal": "12-ordinary-equality-mutant-original.log",
+      "stored": "12-ordinary-equality-mutant-original.log.gz",
+      "encoding": "gzip",
+      "originalBytes": 42463,
+      "originalSHA256": "0f342370dbccb06c101aeffb22da0592ee16e2fa4142227d6d32752327f87eba",
+      "storedBytes": 10300,
+      "storedSHA256": "6c6af058447ea8229bfb71e58e521b3492c428e8b7d1036c60c06f6c27e98682"
+    },
+    {
+      "logicalOriginal": "12-ordinary-equality-mutant-original.xml",
+      "stored": "12-ordinary-equality-mutant-original.xml.gz",
+      "encoding": "gzip",
+      "originalBytes": 121261,
+      "originalSHA256": "8c3f8c9a0476339d77f4d82c0e732dd79f97ab7fc2f316720920335fe3e25805",
+      "storedBytes": 11171,
+      "storedSHA256": "fbe635b9e16ffdc61a0e8752e6f60b1bf573870ece7fe2511e5bbd285c4490bb"
+    },
+    {
+      "logicalOriginal": "13-final-proof-attribution-original.json",
+      "stored": "13-final-proof-attribution-original.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 32360,
+      "originalSHA256": "93c5f5f9a8cb0d6828b37fd9b7528c7247800ae3cf94b65285fa93a39315074d",
+      "storedBytes": 2952,
+      "storedSHA256": "63e4812648e4755774f3750eea29e646c180a19b50ac608906657de8eea569fe"
+    },
+    {
+      "logicalOriginal": "13-restored-final-exit-original.txt",
+      "stored": "13-restored-final-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "storedBytes": 2,
+      "storedSHA256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "logicalOriginal": "13-restored-final-input-original.json",
+      "stored": "13-restored-final-input-original.json",
+      "encoding": "identity",
+      "originalBytes": 1163,
+      "originalSHA256": "8a976459bcc44b75ce39ac517f2a8c7fadf8d0ff8beab106834b7e64f5ab8447",
+      "storedBytes": 1163,
+      "storedSHA256": "8a976459bcc44b75ce39ac517f2a8c7fadf8d0ff8beab106834b7e64f5ab8447"
+    },
+    {
+      "logicalOriginal": "13-restored-final-original.log",
+      "stored": "13-restored-final-original.log",
+      "encoding": "identity",
+      "originalBytes": 1984,
+      "originalSHA256": "6d399ac2b3a5afb5d0b561b03d33a9bfa6395373cd4732f709121a27e8328584",
+      "storedBytes": 1984,
+      "storedSHA256": "6d399ac2b3a5afb5d0b561b03d33a9bfa6395373cd4732f709121a27e8328584"
+    },
+    {
+      "logicalOriginal": "13-restored-final-original.xml",
+      "stored": "13-restored-final-original.xml.gz",
+      "encoding": "gzip",
+      "originalBytes": 115473,
+      "originalSHA256": "0662cfe12484ffb07973f89bf6353362cfc5606f260d268e2e49344d6651835d",
+      "storedBytes": 11232,
+      "storedSHA256": "dd0de68af71c2db21c14235b06dc60cb1e8958e74aa6e6161fea6c532239fcf3"
+    },
+    {
+      "logicalOriginal": "14-restored-final-lint-exit-original.txt",
+      "stored": "14-restored-final-lint-exit-original.txt",
+      "encoding": "identity",
+      "originalBytes": 2,
+      "originalSHA256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "storedBytes": 2,
+      "storedSHA256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "logicalOriginal": "14-restored-final-lint-original.log",
+      "stored": "14-restored-final-lint-original.log",
+      "encoding": "identity",
+      "originalBytes": 18178,
+      "originalSHA256": "059124063bbf347b6b273307447947f97539def6945cd4b932a2ea4ac1575f19",
+      "storedBytes": 18178,
+      "storedSHA256": "059124063bbf347b6b273307447947f97539def6945cd4b932a2ea4ac1575f19"
+    },
+    {
+      "logicalOriginal": "fixture-line-map-diff-original.txt",
+      "stored": "fixture-line-map-diff-original.txt",
+      "encoding": "identity",
+      "originalBytes": 17452,
+      "originalSHA256": "0b7bf341ed9ba9fe77f0c5ad402355d8b88cea06d1bafe0706b47a0ff7aa1e0f",
+      "storedBytes": 17452,
+      "storedSHA256": "0b7bf341ed9ba9fe77f0c5ad402355d8b88cea06d1bafe0706b47a0ff7aa1e0f"
+    },
+    {
+      "logicalOriginal": "fixture-types-comparison-original.json",
+      "stored": "fixture-types-comparison-original.json",
+      "encoding": "identity",
+      "originalBytes": 19021,
+      "originalSHA256": "32c082c118fc86a33e1581827250531893d961b24aa848bc33c2a32e1f615a29",
+      "storedBytes": 19021,
+      "storedSHA256": "32c082c118fc86a33e1581827250531893d961b24aa848bc33c2a32e1f615a29"
+    },
+    {
+      "logicalOriginal": "fixture-types.json",
+      "stored": "fixture-types-config-original.json",
+      "encoding": "identity",
+      "originalBytes": 114,
+      "originalSHA256": "5fdead47a3b5fe72d4c9fdcffa7a5070e49ff8bc2393c52441b0c85c408cac5a",
+      "storedBytes": 114,
+      "storedSHA256": "5fdead47a3b5fe72d4c9fdcffa7a5070e49ff8bc2393c52441b0c85c408cac5a"
+    },
+    {
+      "logicalOriginal": "main-drift-guard-original.json",
+      "stored": "main-drift-guard-original.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 26050,
+      "originalSHA256": "b3a6da995a4a2c132a32942146388b0b0e868e26858c4698bd1c0c429fb7316e",
+      "storedBytes": 6698,
+      "storedSHA256": "b92b53742cf162c60efa172f388ca2d204652faac27da06f103f01c49654ec2e"
+    },
+    {
+      "logicalOriginal": "phone-fixture-identity-original.json",
+      "stored": "phone-fixture-identity-original.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 26773,
+      "originalSHA256": "f5b362a4ec7996cf93c73284254e8290c6766e7fbd005dc45986a82a0c77ce10",
+      "storedBytes": 6156,
+      "storedSHA256": "e83b41771a31bf7c11aa8b5425e670c9715e59cefb1c782961d26f44d36441b0"
+    },
+    {
+      "logicalOriginal": "phone-identity-attempt01-receipt.json",
+      "stored": "phone-identity-attempt01-receipt.json",
+      "encoding": "identity",
+      "originalBytes": 623,
+      "originalSHA256": "65bb8424e6475d3d47bc6c93b3c01260057017eb22b4af92ecd859b305240f25",
+      "storedBytes": 623,
+      "storedSHA256": "65bb8424e6475d3d47bc6c93b3c01260057017eb22b4af92ecd859b305240f25"
+    },
+    {
+      "logicalOriginal": "phone-identity-inspection-original.json",
+      "stored": "phone-identity-inspection-original.json.gz",
+      "encoding": "gzip",
+      "originalBytes": 26473,
+      "originalSHA256": "75ffa30e662d184a57c888d75535f7b32e45e9090c8742599c288dae2aecd034",
+      "storedBytes": 5964,
+      "storedSHA256": "fd982138bcc34d19dcdc5edd3d13ca491394ad10b57f62e67b96270b268e28b2"
+    },
+    {
+      "logicalOriginal": "protected-final-source-original.json",
+      "stored": "protected-final-source-original.json",
+      "encoding": "identity",
+      "originalBytes": 2667,
+      "originalSHA256": "6bf514f146d6fcc1eea560a88a8fd63857c0fcde7a6a255c4f997d61614d81f5",
+      "storedBytes": 2667,
+      "storedSHA256": "6bf514f146d6fcc1eea560a88a8fd63857c0fcde7a6a255c4f997d61614d81f5"
+    },
+    {
+      "logicalOriginal": "protected-subhunks-original.json",
+      "stored": "protected-subhunks-original.json",
+      "encoding": "identity",
+      "originalBytes": 1161,
+      "originalSHA256": "a5c5615f55502f45e1b68694ac32f5f979808b7b1e71246e9042d581d7c501b6",
+      "storedBytes": 1161,
+      "storedSHA256": "a5c5615f55502f45e1b68694ac32f5f979808b7b1e71246e9042d581d7c501b6"
+    },
+    {
+      "logicalOriginal": "tool-versions-original.json",
+      "stored": "tool-versions-original.json",
+      "encoding": "identity",
+      "originalBytes": 94,
+      "originalSHA256": "7f6233cc896029539b22c91cdb4af3725a3fb44b37dafcefc6a3a7ffaf5348c7",
+      "storedBytes": 94,
+      "storedSHA256": "7f6233cc896029539b22c91cdb4af3725a3fb44b37dafcefc6a3a7ffaf5348c7"
+    },
+    {
+      "logicalOriginal": "README.md",
+      "stored": "README.md",
+      "encoding": "identity",
+      "originalBytes": 9648,
+      "originalSHA256": "18de8dc6fbc1bb664f1286875e785baff3484dd36781bc86a1b84b13d5f51da5",
+      "storedBytes": 9648,
+      "storedSHA256": "18de8dc6fbc1bb664f1286875e785baff3484dd36781bc86a1b84b13d5f51da5"
+    },
+    {
+      "logicalOriginal": "final-source-bridge.json",
+      "stored": "final-source-bridge.json",
+      "encoding": "identity",
+      "originalBytes": 1744,
+      "originalSHA256": "073a0d7cc3b73a1f9de34ceafc1e5a603af1b90c5f661d8a02b15fc2716507e8",
+      "storedBytes": 1744,
+      "storedSHA256": "073a0d7cc3b73a1f9de34ceafc1e5a603af1b90c5f661d8a02b15fc2716507e8"
+    },
+    {
+      "logicalOriginal": "main-final-guard-original.json",
+      "stored": "main-final-guard-original.json",
+      "encoding": "identity",
+      "originalBytes": 101,
+      "originalSHA256": "bbdd19af4da4985f3fb861de699e6940ca0078f323412e24ef0c2aaea1c80c28",
+      "storedBytes": 101,
+      "storedSHA256": "bbdd19af4da4985f3fb861de699e6940ca0078f323412e24ef0c2aaea1c80c28"
+    }
+  ]
+}

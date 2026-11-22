@@ -111,7 +111,7 @@ export interface SatelliteConnection {
   mainPort: number;
   pairingPort: number;
   snapshot: SatelliteSnapshot | null;
-  /** Minted only by an accepted snapshot on the current pinned socket; never restored from cache. */
+  /** Minted only by an accepted snapshot on the current owned pinned stream; never restored from cache. */
   snapshotReceipt?: string;
   /** Existing main-process connection epoch; no role data is retained here. */
   connectionGeneration?: number;
@@ -803,6 +803,14 @@ function broadcastSatelliteEvent(satelliteId: string, type: string, payload: unk
   );
 }
 
+function snapshotAdmissionCurrent(sat: SatelliteConnectionInternal): boolean {
+  const stream = sat.stream;
+  return !!stream && stream.snapshotAccepted && satelliteStreamCurrent(sat, stream)
+    && (stream.via === 'reverse' || sat.ws?.readyState === WebSocket.OPEN)
+    && !sat.needsPairing && !sat.snapshotUnavailable
+    && sat.snapshot?.protocolVersion === ANNEX_PROTOCOL_VERSION && !sat.snapshot.sessionPaused;
+}
+
 function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection {
   const liveStream = s.stream && s.stream.snapshotAccepted && satelliteStreamCurrent(s, s.stream);
   return {
@@ -817,7 +825,7 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
     pairingPort: s.pairingPort,
     snapshot: s.snapshot,
     connectionGeneration: connectionEpochs.get(s.id) ?? 0,
-    ...(s.snapshotReceipt && s.state === 'connected' && s.ws?.readyState === WebSocket.OPEN && !s.needsPairing && !s.snapshotUnavailable && !s.snapshot?.sessionPaused && { snapshotReceipt: s.snapshotReceipt }),
+    ...(s.snapshotReceipt && snapshotAdmissionCurrent(s) && { snapshotReceipt: s.snapshotReceipt }),
     lastError: s.lastError,
     ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
     ...(s.needsPairing && { needsPairing: true }),
@@ -1360,7 +1368,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         });
         sat.snapshot = incoming;
         stream.snapshotAccepted = true;
-        sat.snapshotReceipt = sat.ws?.readyState === WebSocket.OPEN && sat.state === 'connected' && !sat.needsPairing && !incoming.sessionPaused ? randomUUID() : undefined;
+        sat.snapshotReceipt = snapshotAdmissionCurrent(sat) ? randomUUID() : undefined;
         void import('./connection-card').then((m) => {
           if (satelliteStreamCurrent(sat, stream)) return m.rememberConnectionSnapshot(sat.fingerprint, incoming);
         }).catch((error) => {
@@ -2856,12 +2864,33 @@ async function controllerChatRead<T>(machine: string, path: string): Promise<Con
   } finally { controllerReads.delete(lease); }
 }
 
+function captureDetailsRead(sat: SatelliteConnectionInternal): (() => boolean) | undefined {
+  const fingerprint = sat.fingerprint;
+  const via = directSatelliteReady(fingerprint) ? 'direct' : reverseControllerReadReady(fingerprint) ? 'reverse' : undefined;
+  if (!via) return undefined;
+  const epoch = connectionEpochs.get(sat.id) ?? 0, stream = sat.stream, ws = sat.ws;
+  const trust = controllerReadTrust(fingerprint), peer = annexPeers.getPeer(fingerprint);
+  const role = peer?.role, kind = peer?.kind, pending = peer?.networkPending;
+  const observation = via === 'reverse' ? getControllerReadObservation(fingerprint) : undefined;
+  const linkEpoch = via === 'reverse' ? annexControl.getAcceptedLinkEpoch(fingerprint) : undefined;
+  return () => {
+    const now = annexPeers.getPeer(fingerprint);
+    if (satelliteFor(fingerprint) !== sat || sat.stream !== stream || sat.ws !== ws || sat.needsPairing
+      || (connectionEpochs.get(sat.id) ?? 0) !== epoch || controllerReadTrust(fingerprint) !== trust
+      || now?.role !== role || now?.kind !== kind || now?.networkPending !== pending) return false;
+    if (via === 'direct') return sat.state === 'connected';
+    const current = getControllerReadObservation(fingerprint);
+    return sat.state !== 'connected' && current.ready && current.revision === observation?.revision
+      && annexControl.getAcceptedLinkEpoch(fingerprint) === linkEpoch;
+  };
+}
+
 /** A read-only host summary. Older hosts have no route; never fall back to local files or a write. */
 export async function requestAgentSettings(machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentSettings>> {
   const sat = satelliteFor(machine);
-  if (!sat || sat.state !== 'connected') return { status: 'offline' };
-  const epoch = connectionEpochs.get(sat.id) ?? 0;
-  const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
+  if (!sat) return { status: 'offline' };
+  const current = captureDetailsRead(sat);
+  if (!current || !current()) return { status: 'offline' };
   try {
     const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/settings-details`, undefined, { maxResponseBytes: REMOTE_SETTINGS_MAX_BYTES });
     if (!current()) return { status: 'offline' };
@@ -2896,16 +2925,13 @@ export async function requestDispatcherDetails(machine: string, query?: Selected
     ? Object.freeze({ card: valid.card, source: valid.source, offset: valid.offset ?? 0, ...(valid.selection !== undefined && { selection: valid.selection }) })
     : Object.freeze({ card: valid.card, source: valid.source, offset: valid.offset ?? 0, projectOffset: valid.projectOffset ?? 0 });
   const sat = satelliteFor(machine);
-  if (!sat || sat.state !== 'connected' || sat.needsPairing) return { status: 'offline' };
+  if (!sat) return { status: 'offline' };
+  const transportCurrent = captureDetailsRead(sat);
+  if (!transportCurrent || !transportCurrent()) return { status: 'offline' };
   const peer = annexPeers.getPeer(sat.fingerprint), pin = peer?.tlsCertificateFingerprint;
   if (!peer || !pin || peer.networkPending || !annexPeers.controlledFromHere(peer)) return { status: 'forbidden' };
-  const epoch = connectionEpochs.get(sat.id) ?? 0, receipt = sat.snapshotReceipt, role = peer.role, kind = peer.kind;
-  const current = () => {
-    const now = annexPeers.getPeer(sat.fingerprint);
-    return satelliteFor(machine) === sat && sat.state === 'connected' && !sat.needsPairing
-      && (connectionEpochs.get(sat.id) ?? 0) === epoch && sat.snapshotReceipt === receipt
-      && !!now && now.tlsCertificateFingerprint === pin && now.role === role && now.kind === kind && !now.networkPending;
-  };
+  const receipt = sat.snapshotReceipt;
+  const current = () => transportCurrent() && sat.snapshotReceipt === receipt;
   try {
     const params = page && new URLSearchParams(page.card === 'actions'
       ? { card: page.card, source: page.source, offset: String(page.offset ?? 0), ...(page.selection !== undefined && { selection: page.selection }) }
@@ -2933,10 +2959,11 @@ export async function requestAgentDetails(machine: string, agentId: string, quer
   const page = query && { ...query };
   const params = page ? new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset ?? 0), ...((page.card === 'skills-mcp' || page.card === 'actions' || page.card === 'canvases') ? page.selection ? { selection: page.selection } : {} : { projectOffset: String(page.projectOffset ?? 0) }) }) : undefined;
   const sat = satelliteFor(machine);
-  if (!sat || sat.state !== 'connected') return { status: 'offline' };
+  if (!sat) return { status: 'offline' };
+  const current = captureDetailsRead(sat);
+  if (!current || !current()) return { status: 'offline' };
   // A late denial may revoke only the receipt it was read under, never one minted by a newer snapshot.
-  const epoch = connectionEpochs.get(sat.id) ?? 0, receipt = sat.snapshotReceipt;
-  const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
+  const receipt = sat.snapshotReceipt;
   try {
     const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/details${params ? `?${params}` : ''}`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
     if (!current()) return { status: 'offline' };
@@ -2970,9 +2997,9 @@ export async function requestAgentDetails(machine: string, agentId: string, quer
 export async function requestAgentChanges(machine: string, agentId: string, query: unknown): Promise<ControllerReadResult<RemoteAgentChanges>> {
   if (!isRemoteChangesQuery(query)) return { status: 'error' };
   const sat = satelliteFor(machine);
-  if (!sat || sat.state !== 'connected') return { status: 'offline' };
-  const epoch = connectionEpochs.get(sat.id) ?? 0;
-  const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
+  if (!sat) return { status: 'offline' };
+  const current = captureDetailsRead(sat);
+  if (!current || !current()) return { status: 'offline' };
   const params = new URLSearchParams({ scope: query.scope });
   if (query.offset !== undefined) params.set('offset', String(query.offset));
   if (query.fileKey) params.set('fileKey', query.fileKey);

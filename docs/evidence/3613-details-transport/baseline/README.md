@@ -1,0 +1,7 @@
+# Genuine Details boundary baseline
+
+Test-only source `61e64c099b05ccfc663adbe5432f46faa2909359` runs on landed production `edcd915763a2ec73f0e8149917b4683ced06ecd6`. The complete production client remains SHA256 `aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98`, identical to the client in the authorized `db46fc6eae9ecd1153dbb9c97b816f002ba5ad86` continuity map. No production, protected query/import/validator, phone, DTO or renderer edits precede this observation.
+
+The gated selected nine cases produce **9 FAIL / 0 PASS / 372 SKIP**, exit1. Four valid200 reader cases and four old-host404 cases return the old `offline` state; the accepted current reverse snapshot is present/publicly connected but has no local receipt. These are the intended unchanged-production failures, not startup, timeout or fixture errors. The original default log, JUnit, source/config hashes, exact command and exit are retained without rewriting.
+
+The first eight cases fail at their primary result assertions. Their subsequent route/count/cap assertions did **not** execute and supply no baseline proof of those properties. The snapshot case fails at local receipt presence; the later forged-receipt comparison and export equality did **not** execute. The existing scaffold uses mocked reverse request/readiness/subscription adapters; this baseline does not prove actual server dispatch, phone interoperability or hosted behavior. Compiler, lint and candidate execution are not yet claimed.

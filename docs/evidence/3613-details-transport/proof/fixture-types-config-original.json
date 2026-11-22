@@ -1,0 +1,6 @@
+{
+  "extends": "../../../tsconfig.json",
+  "files": [
+    "../../../src/main/services/annex-client.test.ts"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "head": "bdc305e898521419f4ec98b9e9d30f0fda5d0800",
+  "tree": "f0876463d75791721a01c701742d3da1bbccb138",
+  "productionBase": "edcd915763a2ec73f0e8149917b4683ced06ecd6",
+  "selector": "reverse Details admission|owns one reverse subscription|retires the owned stream before late frames|keeps bounded controller reads separate|local positive snapshot receipts|discards .*responses across an in-place disconnect|fences a role response across an in-place reconnect|reads only the fixed Settings route|represents an older Settings host|reads bounded exact-agent Details|reads only an exact selected-agent Changes|binds bounded selected-source Details|binds managed inventory pages|binds helper-only Details|binds Actions inventory GETs|binds Canvas inventory GETs|withholds a schema-valid prior Details",
+  "files": [
+    {
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "e2f883f35a204a7abe5b135153ec98a3170452278049bca840beaa5b701c5b25"
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "sha256": "6f0e5fda51364540f0c4420a6dfd62cc4938facac1d58e09dfdfaa305eb3af2b"
+    },
+    {
+      "path": "docs/annex-reverse-routes.md",
+      "sha256": "9a207ee8c0b2e72d49d2ca05afa137664019d36bf6dd2d4b4e94ee991ab59717"
+    },
+    {
+      "path": "vitest.config.ts",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+    },
+    {
+      "path": "package.json",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+    }
+  ],
+  "workers": 1,
+  "gateMinimumGiB": 4
+}

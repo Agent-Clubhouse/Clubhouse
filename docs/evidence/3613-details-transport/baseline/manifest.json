@@ -1,0 +1,31 @@
+{
+  "source": "61e64c099b05ccfc663adbe5432f46faa2909359",
+  "productionBase": "edcd915763a2ec73f0e8149917b4683ced06ecd6",
+  "artifacts": [
+    {
+      "path": "01-baseline-exit-original.txt",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "path": "01-baseline-input-original.json",
+      "bytes": 1505,
+      "sha256": "93a1133c6a54146bc4f19f9be5247a67f735c443b27fcbda85de77ad3cfee0f9"
+    },
+    {
+      "path": "01-baseline-original.log",
+      "bytes": 46351,
+      "sha256": "94d8da58dc031b630f49aa262f6d559d995156c4a047c36f687a5e838fc8b1ae"
+    },
+    {
+      "path": "01-baseline-original.xml",
+      "bytes": 117007,
+      "sha256": "236378e61106a88e862b68afe5752f846e21976f89c9c8e690ebb0ddda4db0a3"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1493,
+      "sha256": "e8e0d67af8fedd6cbd7d694477a892823c8896594cd820246e250ce81f1159a1"
+    }
+  ]
+}

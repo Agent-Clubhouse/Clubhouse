@@ -1,0 +1,28 @@
+{
+  "head": "b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58",
+  "tree": "ed679c48ad8bd12dcbc9af562053761329643a5b",
+  "command": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 6 -- npx tsc --noEmit --pretty false --listFiles --project node_modules/.cache/details-transport/fixture-types.json",
+  "files": [
+    {
+      "path": "node_modules/.cache/details-transport/fixture-types.json",
+      "sha256": "5fdead47a3b5fe72d4c9fdcffa7a5070e49ff8bc2393c52441b0c85c408cac5a"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+    },
+    {
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "1e518e2c5eb4ae0ca0130fd11c7eae345c957eed0a4e4c1002d031694ad964b4"
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "sha256": "136506b035ec088b98e84ba8cf98044fe7e97b4691f94c96ca73c3c1c095bfd6"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+    }
+  ],
+  "scope": "Actual changed test plus original full production roots; original root/config options; fixes only introduced diagnostics and direct read policy"
+}

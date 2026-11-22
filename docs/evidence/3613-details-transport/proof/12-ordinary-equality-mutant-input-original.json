@@ -1,0 +1,8 @@
+{
+  "parent": "b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58",
+  "mutation": "Incorrectly impose role-style receipt equality on ordinary AgentDetails post-await status/body handling; captured currentness, localmint/export and raw direct admission restored",
+  "sourceSHA256": "db3faeef97675606254ba05abb540642eb1a5d8750d06d2254ed0e5897a12494",
+  "fixtureSHA256": "136506b035ec088b98e84ba8cf98044fe7e97b4691f94c96ca73c3c1c095bfd6",
+  "selector": "a late same-stream agent 403|keeps agent receipt equality semantics",
+  "command": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npx vitest run --project main src/main/services/annex-client.test.ts -t \"a late same-stream agent 403|keeps agent receipt equality semantics\" --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/details-transport/12-ordinary-equality-mutant-original.xml"
+}

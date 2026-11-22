@@ -1,0 +1,28 @@
+{
+  "head": "61e64c099b05ccfc663adbe5432f46faa2909359",
+  "tree": "2de3f331a138bf7395e3ec46922477a04c534939",
+  "command": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 6 -- npx tsc --noEmit --pretty false --listFiles --project node_modules/.cache/details-transport/fixture-types.json",
+  "files": [
+    {
+      "path": "node_modules/.cache/details-transport/fixture-types.json",
+      "sha256": "5fdead47a3b5fe72d4c9fdcffa7a5070e49ff8bc2393c52441b0c85c408cac5a"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+    },
+    {
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98"
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "sha256": "6fccf3e4cb452d9ca1f7668e7f5ddccc2b197a52a699989775d91df6d621ede0"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+    }
+  ],
+  "scope": "Exact published test-only baseline on edcd; same actual changed-test/full production graph/config/cwd as candidate; temporary clean detached checkout, no input substitutions or flags changes"
+}

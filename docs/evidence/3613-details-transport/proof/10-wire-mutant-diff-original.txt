@@ -1,0 +1,16 @@
+diff --git a/src/main/services/annex-client.ts b/src/main/services/annex-client.ts
+index 87dc6c769..de7aa1197 100644
+--- a/src/main/services/annex-client.ts
++++ b/src/main/services/annex-client.ts
+@@ -1368,7 +1368,10 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
+         });
+         sat.snapshot = incoming;
+         stream.snapshotAccepted = true;
+-        sat.snapshotReceipt = snapshotAdmissionCurrent(sat) ? randomUUID() : undefined;
++        sat.snapshotReceipt = snapshotAdmissionCurrent(sat) ? (
++          typeof msg.payload === 'object' && msg.payload !== null && 'snapshotReceipt' in msg.payload
++            ? String(msg.payload.snapshotReceipt) : randomUUID()
++        ) : undefined;
+         void import('./connection-card').then((m) => {
+           if (satelliteStreamCurrent(sat, stream)) return m.rememberConnectionSnapshot(sat.fingerprint, incoming);
+         }).catch((error) => {
