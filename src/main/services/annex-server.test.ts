@@ -8512,7 +8512,7 @@ describe('annex-server', () => {
     const PROJECT = { id: 'proj_1', name: 'test', path: '/tmp/test-project' };
 
     beforeEach(() => {
-      vi.mocked(projectStore.list).mockReturnValue([PROJECT]);
+      vi.mocked(projectStore.list).mockResolvedValue([PROJECT]);
     });
 
     describe('GET /api/v1/projects/:id/files/tree', () => {
