@@ -1,0 +1,25 @@
+{
+  "head": "a9e3717944a75425dd6feacb5a32848cae110d83",
+  "oldhead": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+  "main": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+  "compositionTree": "9eac5a872e38ab7510d81e82e2d5ed0ed1030e48",
+  "ordinaryFFAncestors": true,
+  "clean": true,
+  "pushedCandidate": true,
+  "sourceExecutionBridgeEmpty": true,
+  "refs": {
+    "refs/heads/lane-3613-p2-routes/checkpoint-idle-review": "a9e3717944a75425dd6feacb5a32848cae110d83",
+    "refs/heads/lane-3613-p2-routes/gitdiff-envelope": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+    "refs/heads/main": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e"
+  },
+  "pr": {
+    "baseRefOid": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+    "headRefOid": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+    "isDraft": false,
+    "state": "OPEN"
+  },
+  "reviewBlob": "377c5708fd7ff34b8709b86ef819a4764488eb59",
+  "reviewSHA256": "c9bd5cb3826d994c4fbc75f2b0c050d27ecd0c6ad536eef41326805734af67c4",
+  "updatedBodySHA256": "3231eff4fc32627fd88312cdefd0d3d3e8ad057102b5dbdd95a5a21ca028f541",
+  "bodyEditedEventNotInWorkflowTriggers": true
+}

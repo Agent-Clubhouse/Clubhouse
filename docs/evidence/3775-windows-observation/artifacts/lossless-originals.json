@@ -1,0 +1,248 @@
+{
+  "kind": "First promotion/ownedwatch/terminal/official job-log output/JUnit/canonical checkout receipts; unmodified originals retained privately",
+  "artifacts": [
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/artifacts-original.json",
+      "originalName": "artifacts-original.json",
+      "compressed": false,
+      "originalBytes": 20039,
+      "originalSha256": "47ba4849943fab90c82e105ebb7ce3aa2c59c65e3611983ae1862970e9cd4305",
+      "bytes": 20039,
+      "sha256": "47ba4849943fab90c82e105ebb7ce3aa2c59c65e3611983ae1862970e9cd4305"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/automatic-run-discovery-02-original.json",
+      "originalName": "automatic-run-discovery-02-original.json",
+      "compressed": false,
+      "originalBytes": 318,
+      "originalSha256": "8b2e1e98ceace53664c07e09d51b10093309f775f46bb1263329c329daf4ae1b",
+      "bytes": 318,
+      "sha256": "8b2e1e98ceace53664c07e09d51b10093309f775f46bb1263329c329daf4ae1b"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/automatic-run-original.json",
+      "originalName": "automatic-run-original.json",
+      "compressed": false,
+      "originalBytes": 25002,
+      "originalSha256": "ad6a8e8bb14c2481ea6d075656d6d0a064741fb23eb1068418baf2b7fde22d8d",
+      "bytes": 25002,
+      "sha256": "ad6a8e8bb14c2481ea6d075656d6d0a064741fb23eb1068418baf2b7fde22d8d"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/automatic-runs-original.json",
+      "originalName": "automatic-runs-original.json",
+      "compressed": false,
+      "originalBytes": 3,
+      "originalSha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/checkout-original.commit.gz",
+      "originalName": "checkout-original.commit",
+      "compressed": true,
+      "originalBytes": 1172,
+      "originalSha256": "6d550109a7831cde731f2866d13a3b16977b236b3cb3241a4d34f528072c3a75",
+      "bytes": 859,
+      "sha256": "be7c2c59a8f1b4cf1264a5ebbc2bb605a7688765878240100b180d985e8270c3"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/checkout-original.json",
+      "originalName": "checkout-original.json",
+      "compressed": false,
+      "originalBytes": 2654,
+      "originalSha256": "ae00128b7f4ffc629e0a1431a7e19cb3f26af7992183538ded78201df66438f5",
+      "bytes": 2654,
+      "sha256": "ae00128b7f4ffc629e0a1431a7e19cb3f26af7992183538ded78201df66438f5"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/composition-original.txt",
+      "originalName": "composition-original.txt",
+      "compressed": false,
+      "originalBytes": 41,
+      "originalSha256": "ac9fec442a5aa3a32c65f55104edb335cd83b9be17f7f728f8e5806a12d5352e",
+      "bytes": 41,
+      "sha256": "ac9fec442a5aa3a32c65f55104edb335cd83b9be17f7f728f8e5806a12d5352e"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/main-before-original.json",
+      "originalName": "main-before-original.json",
+      "compressed": false,
+      "originalBytes": 348,
+      "originalSha256": "0bbb3b9a0320075735d543962cf8b558d9c7ce003ca111a6e0ba9a9c3705cf12",
+      "bytes": 348,
+      "sha256": "0bbb3b9a0320075735d543962cf8b558d9c7ce003ca111a6e0ba9a9c3705cf12"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/main-terminal-original.json",
+      "originalName": "main-terminal-original.json",
+      "compressed": false,
+      "originalBytes": 348,
+      "originalSha256": "0bbb3b9a0320075735d543962cf8b558d9c7ce003ca111a6e0ba9a9c3705cf12",
+      "bytes": 348,
+      "sha256": "0bbb3b9a0320075735d543962cf8b558d9c7ce003ca111a6e0ba9a9c3705cf12"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/open-pr-guard-original.json",
+      "originalName": "open-pr-guard-original.json",
+      "compressed": false,
+      "originalBytes": 137,
+      "originalSha256": "b253ff2c32e1c4d4d134a979f0f21e97aba80dca3c607dbc825a8aba99d940d3",
+      "bytes": 137,
+      "sha256": "b253ff2c32e1c4d4d134a979f0f21e97aba80dca3c607dbc825a8aba99d940d3"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/owned-watch-pid-original.txt",
+      "originalName": "owned-watch-pid-original.txt",
+      "compressed": false,
+      "originalBytes": 6,
+      "originalSha256": "0afeb34ef0dbbe3b475f00451eee7368eb1325f32d579641b11821f34843b3ac",
+      "bytes": 6,
+      "sha256": "0afeb34ef0dbbe3b475f00451eee7368eb1325f32d579641b11821f34843b3ac"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/pr-after-original.json",
+      "originalName": "pr-after-original.json",
+      "compressed": false,
+      "originalBytes": 10661,
+      "originalSha256": "b42ad5da8c4db0d085a7db4deb4770a2d4712bc066ca1d2b98cf8aec31c6777a",
+      "bytes": 10661,
+      "sha256": "b42ad5da8c4db0d085a7db4deb4770a2d4712bc066ca1d2b98cf8aec31c6777a"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/pr-before-original.json",
+      "originalName": "pr-before-original.json",
+      "compressed": false,
+      "originalBytes": 17824,
+      "originalSha256": "06cbaced25736e139109455c25abcd7992f763e9b9787519b4fd7527b259a56f",
+      "bytes": 17824,
+      "sha256": "06cbaced25736e139109455c25abcd7992f763e9b9787519b4fd7527b259a56f"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/pr-body-before-original.txt",
+      "originalName": "pr-body-before-original.txt",
+      "compressed": false,
+      "originalBytes": 5774,
+      "originalSha256": "cf5f5b628db969bc54eaa8867baf4a4a099cf031fd0a7eb11a462a979c031f4a",
+      "bytes": 5774,
+      "sha256": "cf5f5b628db969bc54eaa8867baf4a4a099cf031fd0a7eb11a462a979c031f4a"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/pr-body-updated.txt",
+      "originalName": "pr-body-updated.txt",
+      "compressed": false,
+      "originalBytes": 10334,
+      "originalSha256": "3231eff4fc32627fd88312cdefd0d3d3e8ad057102b5dbdd95a5a21ca028f541",
+      "bytes": 10334,
+      "sha256": "3231eff4fc32627fd88312cdefd0d3d3e8ad057102b5dbdd95a5a21ca028f541"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/pr-terminal-original.json",
+      "originalName": "pr-terminal-original.json",
+      "compressed": false,
+      "originalBytes": 11772,
+      "originalSha256": "393240c4cd762b26ebad4ab154554d06749c3d48444c821caf194055626a0ebe",
+      "bytes": 11772,
+      "sha256": "393240c4cd762b26ebad4ab154554d06749c3d48444c821caf194055626a0ebe"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/promotion-guards-original.json",
+      "originalName": "promotion-guards-original.json",
+      "compressed": false,
+      "originalBytes": 1099,
+      "originalSha256": "0fe6efa6e7edf4ad8f9b4d97da0a4c1fd5c0c374613e678adf9ae22d0a31ee1a",
+      "bytes": 1099,
+      "sha256": "0fe6efa6e7edf4ad8f9b4d97da0a4c1fd5c0c374613e678adf9ae22d0a31ee1a"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/review-original.md",
+      "originalName": "review-original.md",
+      "compressed": false,
+      "originalBytes": 8372,
+      "originalSha256": "c9bd5cb3826d994c4fbc75f2b0c050d27ecd0c6ad536eef41326805734af67c4",
+      "bytes": 8372,
+      "sha256": "c9bd5cb3826d994c4fbc75f2b0c050d27ecd0c6ad536eef41326805734af67c4"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/review-verification-original.json",
+      "originalName": "review-verification-original.json",
+      "compressed": false,
+      "originalBytes": 24089,
+      "originalSha256": "a00e55a92977c0e1003f7a4ba76d46b6a3e02a03a676b22c33776e85edbc6bc9",
+      "bytes": 24089,
+      "sha256": "a00e55a92977c0e1003f7a4ba76d46b6a3e02a03a676b22c33776e85edbc6bc9"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/terminal-original.json",
+      "originalName": "terminal-original.json",
+      "compressed": false,
+      "originalBytes": 79460,
+      "originalSha256": "ab633642ab793206df11447b8807bf88d65af701819613f08cc9555b310eaede",
+      "bytes": 79460,
+      "sha256": "ab633642ab793206df11447b8807bf88d65af701819613f08cc9555b310eaede"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/watch-exit-original.txt",
+      "originalName": "watch-exit-original.txt",
+      "compressed": false,
+      "originalBytes": 2,
+      "originalSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/watch-original.log.gz",
+      "originalName": "watch-original.log",
+      "compressed": true,
+      "originalBytes": 153499,
+      "originalSha256": "5c646304225ef4bcbc4f723f9e7a6337da72942e4e7c84958424e3df9f999d19",
+      "bytes": 3352,
+      "sha256": "7135b90ed7b3928813c0099ead9451be5590809b47ff54a7910cf116d9e0e923"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/windows-attribution-original.json",
+      "originalName": "windows-attribution-original.json",
+      "compressed": false,
+      "originalBytes": 14272,
+      "originalSha256": "771ecfd668d23cd60623eb335f8738e373a0b92a82fea0a05df4180deae03729",
+      "bytes": 14272,
+      "sha256": "771ecfd668d23cd60623eb335f8738e373a0b92a82fea0a05df4180deae03729"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/windows-shard-one-original.log.gz",
+      "originalName": "windows-shard-one-original.log",
+      "compressed": true,
+      "originalBytes": 7329837,
+      "originalSha256": "c132bf132909346c42b4aaccc1ff4d074bfc73042cef4974453977d75aeb1bf2",
+      "bytes": 407491,
+      "sha256": "a5391c20c1dc478944f60bf548ab0ad31c2dfedd13594a5f2eae7c03e5dfc790"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/windows-shard-one-original.zip",
+      "originalName": "windows-shard-one-original.zip",
+      "compressed": false,
+      "originalBytes": 610969,
+      "originalSha256": "1f8bbd835682f20135bd00a5bdece583bb9dcc02341e75e89bdfe2f17248d552",
+      "bytes": 610969,
+      "sha256": "1f8bbd835682f20135bd00a5bdece583bb9dcc02341e75e89bdfe2f17248d552"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/windows-shard-two-original.log.gz",
+      "originalName": "windows-shard-two-original.log",
+      "compressed": true,
+      "originalBytes": 2566689,
+      "originalSha256": "8692567bcb700d4069ad78e0d543d412bcf744a3c9cbb55e398bd6dc473404ce",
+      "bytes": 183171,
+      "sha256": "abb78e2d93b070f0f274331d6f23264835dbf70b26adc6f79a40289651b19525"
+    },
+    {
+      "path": "docs/evidence/3775-windows-observation/artifacts/windows-shard-two-original.zip",
+      "originalName": "windows-shard-two-original.zip",
+      "compressed": false,
+      "originalBytes": 560022,
+      "originalSha256": "409ab6a95b10503ae9de7cc7c42319c7a2df53db0714ae9b0bc0f9bb3c0b57f4",
+      "bytes": 560022,
+      "sha256": "409ab6a95b10503ae9de7cc7c42319c7a2df53db0714ae9b0bc0f9bb3c0b57f4"
+    }
+  ]
+}

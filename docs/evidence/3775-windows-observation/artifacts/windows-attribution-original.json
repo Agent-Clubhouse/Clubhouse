@@ -1,0 +1,339 @@
+{
+  "kind": "Official new-head job-log outputs and JUnit ZIP attribution; no rerun/local test/cause proof",
+  "run": 45005668220,
+  "attempt": 1,
+  "PRHead": "a9e3717944a75425dd6feacb5a32848cae110d83",
+  "checkout": "149af636086df12e47e367fc6d4643e46adbec5b",
+  "shards": [
+    {
+      "shard": "one",
+      "job": 137156664866,
+      "artifact": 14747833793,
+      "checkout": "149af636086df12e47e367fc6d4643e46adbec5b",
+      "node": "22.23.4",
+      "pass": 19390,
+      "fail": 0,
+      "skip": 93,
+      "total": 19483,
+      "archiveSha256": "1f8bbd835682f20135bd00a5bdece583bb9dcc02341e75e89bdfe2f17248d552",
+      "archiveBytes": 610969,
+      "xmlMember": "test-results.xml",
+      "xmlBytes": 6793753,
+      "xmlSha256": "e62224858db68cdc224121f9e694d040bc64263462cc470ec667993024878c46",
+      "rawBytes": 7329837,
+      "rawSha256": "c132bf132909346c42b4aaccc1ff4d074bfc73042cef4974453977d75aeb1bf2",
+      "gitdiffCases": [
+        {
+          "class": "src/main/services/annex-client.test.ts",
+          "name": "annex-client > GET Git diff envelope desktop adapter > returns complete enlarged JSON through the actual single-route adapter and control pair",
+          "seconds": "0.2150083",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "shard": "two",
+      "job": 137156664834,
+      "artifact": 14747789619,
+      "checkout": "149af636086df12e47e367fc6d4643e46adbec5b",
+      "node": "22.23.4",
+      "pass": 16751,
+      "fail": 0,
+      "skip": 176,
+      "total": 16927,
+      "archiveSha256": "409ab6a95b10503ae9de7cc7c42319c7a2df53db0714ae9b0bc0f9bb3c0b57f4",
+      "archiveBytes": 560022,
+      "xmlMember": "test-results.xml",
+      "xmlBytes": 15917569,
+      "xmlSha256": "3f1297b5f2730bc09eaeb0d11f93a1c96251a764f2834d9f22d17c0191c9c827",
+      "rawBytes": 2566689,
+      "rawSha256": "8692567bcb700d4069ad78e0d543d412bcf744a3c9cbb55e398bd6dc473404ce",
+      "gitdiffCases": [
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > accepts the exact former envelope boundary",
+          "seconds": "0.0495784",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ",
+          "seconds": "0.0443888",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=large%20file.txt&staged=false",
+          "seconds": "0.0407193",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=/icons/a",
+          "seconds": "0.0335001",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=/content",
+          "seconds": "0.1391841",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=/chat/events/1",
+          "seconds": "0.0350159",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'POST' '/api/v1/projects/project%20name/git/d\u2026'",
+          "seconds": "0.0069632",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects/project%20name/git/d\u2026'",
+          "seconds": "0.0032339",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'DELETE' '/api/v1/projects/project%20name/git/d\u2026'",
+          "seconds": "0.0035946",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects/project%20name/git/d\u2026'",
+          "seconds": "0.0044971",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects/project%20name/git/d\u2026'",
+          "seconds": "0.0031909",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects//git/diff?file=f'",
+          "seconds": "0.0032419",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/other?file=/api/v1/projects/project%\u2026'",
+          "seconds": "0.0046439",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects/p?file=x/git/diff'",
+          "seconds": "0.0031077",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains caller limit 0 before credit for an authorized diff",
+          "seconds": "0.0009049",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains caller limit 65536 before credit for an authorized diff",
+          "seconds": "0.0004879",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > enforces the exact finite32MiB envelope with excess=false before credit",
+          "seconds": "0.1344894",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > enforces the exact finite32MiB envelope with excess=true before credit",
+          "seconds": "0.0154432",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > preserves an equal caller limit on the enlarged route",
+          "seconds": "0.0264969",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > does not infer GET from a missing or different method undefined",
+          "seconds": "0.0002768",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > does not infer GET from a missing or different method PATCH",
+          "seconds": "0.0000727",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > does not infer GET from a missing or different method POST",
+          "seconds": "0.0000488",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retires a held enlarged diff on cancel without late credit or body delivery",
+          "seconds": "0.0626487",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retires a held enlarged diff on revoke without late credit or body delivery",
+          "seconds": "0.0597729",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retires a held enlarged diff on replace without late credit or body delivery",
+          "seconds": "0.0604594",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-control.test.ts",
+          "name": "GET Git diff envelope boundary > retains the frame bound for a peer without bulk capability",
+          "seconds": "0.0235163",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-server.test.ts",
+          "name": "annex-server > reverse requests over the control connection (#3613 P3) > GET Git diff envelope real target dispatch preserves the finite boundary at 9437184 bytes",
+          "seconds": "0.1811504",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-server.test.ts",
+          "name": "annex-server > reverse requests over the control connection (#3613 P3) > GET Git diff envelope real target dispatch preserves the finite boundary at 33554432 bytes",
+          "seconds": "0.3596118",
+          "status": "pass"
+        },
+        {
+          "class": "src/main/services/annex-server.test.ts",
+          "name": "annex-server > reverse requests over the control connection (#3613 P3) > GET Git diff envelope real target dispatch preserves the finite boundary at 33554433 bytes",
+          "seconds": "0.2493575",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "checkpointFixture": {
+    "pass": 11,
+    "fail": 0,
+    "skip": 0,
+    "cases": [
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > names the pre-prompt snapshot as the turn start, checkpoints the end and reports the turn diff",
+        "seconds": "1.3068488",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      },
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+        "seconds": "2.7319935",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      },
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > works from a subdirectory, with paths relative to the repository root",
+        "seconds": "2.3259973",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      },
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > marks turns shared when another agent works in the same worktree",
+        "seconds": "1.6365707",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      },
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > marks a turn shared with a live terminal agent in the same worktree",
+        "seconds": "1.3982551",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      },
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > marks and closes a turn that ends before its start checkpoint is written",
+        "seconds": "1.2441374",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      },
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > reports a revert in progress so new prompts can wait for it",
+        "seconds": "2.0994621",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      },
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > does not mark turns shared for agents in other worktrees",
+        "seconds": "1.2570174",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      },
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > refuses to revert while the agent is mid-turn",
+        "seconds": "1.1755114",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      },
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > shows session changes against the working tree",
+        "seconds": "1.1335534",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      },
+      {
+        "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "name": "checkpoint tracker > reports unavailable outside a git repository and refuses to revert an unfinished turn",
+        "seconds": "0.9064736",
+        "status": "pass",
+        "job": 137156664866,
+        "artifact": 14747833793
+      }
+    ],
+    "previouslyFailedCase": {
+      "class": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+      "name": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+      "seconds": "2.7319935",
+      "status": "pass",
+      "job": 137156664866,
+      "artifact": 14747833793
+    }
+  },
+  "hostedGitdiffCases": {
+    "pass": 30,
+    "fail": 0,
+    "skip": 0,
+    "exactOriginalCaseMultisetMatched": true
+  },
+  "limits": "New healthy Windows sample only; neither historical cause/speed/universalfix nor actual failed1/139 compilerPASS inferred"
+}
