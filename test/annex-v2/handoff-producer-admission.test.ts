@@ -83,6 +83,12 @@ const operations: Promise<unknown>[] = [];
 let retiringFixture = false;
 const toolWork: Array<{ tool: string; started: number; state: 'pending' | 'completed' | 'failed' }> = [];
 
+function fixtureDiagnostic(observe: () => void): void {
+  try { observe(); } catch {
+    // Optional metadata must not mask actual caller outcomes or strand owned work.
+  }
+}
+
 beforeEach(async () => {
   retiringFixture = false;
   toolWork.length = 0;
@@ -92,13 +98,17 @@ beforeEach(async () => {
   vi.spyOn(fixture.tools, 'callTool').mockImplementation((...args) => {
     if (args[0] !== caller) return callTool(...args);
     if (retiringFixture) throw new Error('Producer fixture is retiring; no new test calls may start.');
-    const trace: (typeof toolWork)[number] = { tool: args[1], started: Date.now(), state: 'pending' };
-    toolWork.push(trace);
+    let trace: (typeof toolWork)[number] | undefined;
+    fixtureDiagnostic(() => {
+      trace = { tool: args[1].slice(0, 80), started: Date.now(), state: 'pending' };
+      toolWork.splice(0, Math.max(0, toolWork.length - 7));
+      toolWork.push(trace);
+    });
     const pending = callTool(...args).then((result) => {
-      trace.state = 'completed';
+      fixtureDiagnostic(() => { if (trace) trace.state = 'completed'; });
       return result;
     }, (error) => {
-      trace.state = 'failed';
+      fixtureDiagnostic(() => { if (trace) trace.state = 'failed'; });
       throw error;
     });
     operations.push(pending);
@@ -107,7 +117,7 @@ beforeEach(async () => {
 });
 async function cleanupFixture(): Promise<void> {
   retiringFixture = true;
-  try {
+  fixtureDiagnostic(() => {
     if (process.platform === 'win32') {
       const recent = toolWork.slice(-8);
       if (recent.some((work) => work.state === 'pending')) {
@@ -117,9 +127,7 @@ async function cleanupFixture(): Promise<void> {
         })));
       }
     }
-  } catch {
-    // Optional diagnostics must never strand owned fixture work.
-  }
+  });
   for (const release of releases.splice(0)) release();
   const failures: unknown[] = [];
   const drained = new Set<Promise<unknown>>();
