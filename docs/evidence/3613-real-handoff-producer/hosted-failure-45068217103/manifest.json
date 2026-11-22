@@ -1,0 +1,522 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-11-22T21:08:57.891352+00:00",
+  "pr": 3779,
+  "source": "7d244fcd153df00668ecac3d0709cece054801e3",
+  "sourceTree": "e17f6a5b0607d95bead22e266f879bcaa65e0da2",
+  "srcTree": "2327da993691b55ac2d8fab1e33d6bc6b49f41ab",
+  "publicationRef": "refs/heads/lane-3613-p2-routes/handoff-producer-ci-failure",
+  "run": 45068217103,
+  "attempt": 1,
+  "event": "pull_request",
+  "conclusion": "failure",
+  "jobCounts": {
+    "success": 31,
+    "skipped": 4,
+    "failure": 2
+  },
+  "failedJobs": [
+    {
+      "id": 137349145716,
+      "name": "Unit + Component Tests (ubuntu-latest, 1/2)",
+      "conclusion": "failure",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45068217103/job/137349145716"
+    },
+    {
+      "id": 137349145736,
+      "name": "Unit + Component Tests (windows-latest, 1/2)",
+      "conclusion": "failure",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45068217103/job/137349145736"
+    }
+  ],
+  "checkout": [
+    {
+      "job": "Plan the run",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 689,
+      "resultLine": 690
+    },
+    {
+      "job": "Build app (ubuntu-latest)",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 936,
+      "resultLine": 937
+    },
+    {
+      "job": "ESLint (errors only)",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 1265,
+      "resultLine": 1266
+    },
+    {
+      "job": "Typecheck + API surface",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 6438,
+      "resultLine": 6439
+    },
+    {
+      "job": "Workflow lint (actionlint)",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 6727,
+      "resultLine": 6728
+    },
+    {
+      "job": "Copilot SDK chunk (windows-2022)",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 136005,
+      "resultLine": 136006
+    },
+    {
+      "job": "Build app (windows-2022)",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 136309,
+      "resultLine": 136310
+    },
+    {
+      "job": "Copilot SDK chunk (ubuntu-latest)",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 136714,
+      "resultLine": 136715
+    },
+    {
+      "job": "Codex app-server schema drift",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 158629,
+      "resultLine": 158630
+    },
+    {
+      "job": "Stable-mode E2E Tests (ubuntu-latest)",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 158826,
+      "resultLine": 158827
+    },
+    {
+      "job": "Stable-mode E2E Tests (windows-2022)",
+      "step": "Run actions/checkout@v7",
+      "sha": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "commandLine": 162333,
+      "resultLine": 162334
+    }
+  ],
+  "checkoutSources": [
+    {
+      "checkout": "556a86b3ee4bf20b6392333c1b87ec6cafb4adea",
+      "tree": "e17f6a5b0607d95bead22e266f879bcaa65e0da2",
+      "srcTree": "2327da993691b55ac2d8fab1e33d6bc6b49f41ab"
+    }
+  ],
+  "junit": [
+    {
+      "file": "node_modules/.cache/native-handoff-ingress/129-ci-junit-original/test-results-ubuntu-latest-1/test-results.xml",
+      "rows": 19626,
+      "counts": {
+        "pass": 19571,
+        "skip": 54,
+        "fail": 1
+      },
+      "selectedCounts": {
+        "pass": 68
+      },
+      "sha256": "6d8a4dd91803c69dbd5d569a12d428e68dc079bdb54e9c7bc9f0d08858ec5640"
+    },
+    {
+      "file": "node_modules/.cache/native-handoff-ingress/129-ci-junit-original/test-results-ubuntu-latest-2/test-results.xml",
+      "rows": 16981,
+      "counts": {
+        "pass": 16916,
+        "skip": 65
+      },
+      "selectedCounts": {},
+      "sha256": "738f9051ffbe930528d62bfdbd9cbcd30575b5d3be449031ce406cf0dd9e2108"
+    },
+    {
+      "file": "node_modules/.cache/native-handoff-ingress/129-ci-junit-original/test-results-windows-latest-1/test-results.xml",
+      "rows": 19624,
+      "counts": {
+        "pass": 19494,
+        "skip": 93,
+        "fail": 37
+      },
+      "selectedCounts": {
+        "fail": 36,
+        "pass": 32
+      },
+      "sha256": "2f0503a89287ef9c36e17bcb7de29534bb08d44725da4aada0dceb72c6ef3deb"
+    },
+    {
+      "file": "node_modules/.cache/native-handoff-ingress/129-ci-junit-original/test-results-windows-latest-2/test-results.xml",
+      "rows": 16981,
+      "counts": {
+        "pass": 16805,
+        "skip": 176
+      },
+      "selectedCounts": {},
+      "sha256": "6477ee3a8150ee81fc9684474e076ddd1b6768810aefc080a04740c8adf3d4fc"
+    }
+  ],
+  "captures": [
+    {
+      "file": "128-ci-discovery-1-original.json",
+      "exit": 0
+    },
+    {
+      "file": "128-ci-run-initial-original.json",
+      "exit": 0
+    },
+    {
+      "file": "128-ci-merge-ref-initial-original.json",
+      "exit": 0
+    },
+    {
+      "file": "129-ci-run-final-original.json",
+      "exit": 0
+    },
+    {
+      "file": "129-ci-jobs-final-original.json",
+      "exit": 0
+    },
+    {
+      "file": "129-ci-pr-final-original.json",
+      "exit": 0
+    },
+    {
+      "file": "129-ci-logs-original.log",
+      "exit": 0
+    },
+    {
+      "file": "129-ci-artifacts-original.json",
+      "exit": 0
+    },
+    {
+      "file": "129-ci-refs-final-original.txt",
+      "exit": 0
+    },
+    {
+      "file": "129-ci-junit-download-original.txt",
+      "exit": 0
+    }
+  ],
+  "archives": [
+    {
+      "file": "126-producer-recipient-final-review-454-original.md.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/126-producer-recipient-final-review-454-original.md",
+      "bytes": 16134,
+      "sha256": "fb095f8d7a30d4508856c469a5e685f9459de78d0268df47d91234866b9e8183",
+      "gzipBytes": 6904,
+      "gzipSha256": "81a5c64563f48764ac22a3dd45aa7bd13ef6b8a4b225629bd60ab64bc303568c"
+    },
+    {
+      "file": "127-pr-guards-before-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/127-pr-guards-before-original.json",
+      "bytes": 809,
+      "sha256": "d264827f1840df1c03aa47cc85a126a416b37b3fbc72fed83d6d1bdaee08f8b5",
+      "gzipBytes": 389,
+      "gzipSha256": "803e8425d88091caeaef2c7eaceedf11f3933111bce850531df9e769eaab83c5"
+    },
+    {
+      "file": "127-pr-readback-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/127-pr-readback-original.json",
+      "bytes": 13526,
+      "sha256": "f47a5b43fccbd7cbfcfcf82c1346a08de8c91bda10f590f414032d0011db08f0",
+      "gzipBytes": 4242,
+      "gzipSha256": "140855f9cc62f2e3f7723ed05aa180b8f0adeca01f5b69955f38e07060889669"
+    },
+    {
+      "file": "128-ci-capture-exits-original.tsv.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-capture-exits-original.tsv",
+      "bytes": 340,
+      "sha256": "e63699fe8d6b57769f68c89e1195c8aaab3fce570b283a2a3b73b2f1c74690b9",
+      "gzipBytes": 138,
+      "gzipSha256": "1e26f13bdfb663f82564769f63427e2fb9a581a230e54e3495881ab7ede052e0"
+    },
+    {
+      "file": "128-ci-discovery-1-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-discovery-1-original.json",
+      "bytes": 222,
+      "sha256": "aa0b934ce6e05b814b6c4d1eef392e752e252ea4e60040c2336ad2f0a643f868",
+      "gzipBytes": 191,
+      "gzipSha256": "416dbba73a58edf8179bb5c80fec219d457ae5ac089315cec9d9b4996a57b7d2"
+    },
+    {
+      "file": "128-ci-discovery-1-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-discovery-1-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "128-ci-merge-ref-initial-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-merge-ref-initial-original.json",
+      "bytes": 365,
+      "sha256": "e3904d7f54cf24dc351a5d3f0d1fb39df4f3ddbb773093e7be44a2cd77cb39e4",
+      "gzipBytes": 229,
+      "gzipSha256": "a40084434ca43b15c20561f56fa50c4df16c36ffab86f0bf6388c74e6f909f48"
+    },
+    {
+      "file": "128-ci-merge-ref-initial-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-merge-ref-initial-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "128-ci-owner-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-owner-original.txt",
+      "bytes": 81,
+      "sha256": "aeea92cb58152b01f94448ad3262a20068853a22ac1040966b0a7b3b5a88ee7a",
+      "gzipBytes": 97,
+      "gzipSha256": "bcdc44bcf9426f97016d48b505993eb18eff6840ed095da6a4ed47211c14f146"
+    },
+    {
+      "file": "128-ci-run-initial-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-run-initial-original.json",
+      "bytes": 13392,
+      "sha256": "af682434430d001503a43893039c5cb66720c735c9e226855541ad6649d681de",
+      "gzipBytes": 1809,
+      "gzipSha256": "5e2d6f8fda7fc0c3a1d4fa79848df35e8d4b7118131f3e3b22a61ad367c5a8de"
+    },
+    {
+      "file": "128-ci-run-initial-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-run-initial-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "128-ci-supervisor-original.log.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-supervisor-original.log",
+      "bytes": 1126,
+      "sha256": "4ada9d6c9ad959883f88d4ec5e29828af4e17bdf362601c2253a6520785030f1",
+      "gzipBytes": 455,
+      "gzipSha256": "41a7f578603a2d539070306261025672674377266f7905d837ec147b26fc8791"
+    },
+    {
+      "file": "128-ci-watch-exit-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-watch-exit-original.txt",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac"
+    },
+    {
+      "file": "128-ci-watch-original.log.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-ci-watch-original.log",
+      "bytes": 183054,
+      "sha256": "b886d1e787e3548e47025da92815dfca64adb89be370039e8f38d1920882f9bd",
+      "gzipBytes": 3687,
+      "gzipSha256": "022992cdb045bbf51ef2f14811a8888732dc171a17efe230b6aca9f885d73393"
+    },
+    {
+      "file": "128-watch-producer-admission.sh.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/128-watch-producer-admission.sh",
+      "bytes": 9864,
+      "sha256": "d34c33a798f6cba1e0354f83e1f8478719fc26f493cf62b3cf0ae16ad6abbc0e",
+      "gzipBytes": 3599,
+      "gzipSha256": "c2b6961c3faebb2eaaf678bb1285e685b53a04b773599a8e9c4c8aa20c87e7e7"
+    },
+    {
+      "file": "129-ci-artifacts-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-artifacts-original.json",
+      "bytes": 20363,
+      "sha256": "6476206058c8684b8198856aa5e816f6b3098fdc21f2ae62183511358487cd3b",
+      "gzipBytes": 2819,
+      "gzipSha256": "df59bde2d1601a2183ff0fc1ee96397d59bc1a25215d40f945ea4134bf2f1a50"
+    },
+    {
+      "file": "129-ci-artifacts-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-artifacts-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "129-ci-checkout-556a86b3ee4bf20b6392333c1b87ec6cafb4adea-commit-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-checkout-556a86b3ee4bf20b6392333c1b87ec6cafb4adea-commit-original.json",
+      "bytes": 2654,
+      "sha256": "d403acb0bf97b4ed6e14d8ead4161acb34b682d2caede0f0924fd8b17a1bf639",
+      "gzipBytes": 1246,
+      "gzipSha256": "b670a2f87b5f6b7ed008c0ffb19a412e98a9c30fc92ff02244f462146b890dee"
+    },
+    {
+      "file": "129-ci-checkout-556a86b3ee4bf20b6392333c1b87ec6cafb4adea-tree-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-checkout-556a86b3ee4bf20b6392333c1b87ec6cafb4adea-tree-original.json",
+      "bytes": 9289,
+      "sha256": "5897402f69f240c6662f97367ca0a4002d7b3ec12a9a6a935d023c8421cf1123",
+      "gzipBytes": 1970,
+      "gzipSha256": "fdbf609e02ec79db02a6d9209b7f92c2728b00299754a7c03b537c4c1d7038e9"
+    },
+    {
+      "file": "129-ci-jobs-final-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-jobs-final-original.json",
+      "bytes": 105106,
+      "sha256": "0371e6a9ce7a2103d0f65e23e7c879cfdec0bedbd097169b6332b8f1c5750125",
+      "gzipBytes": 5519,
+      "gzipSha256": "8c5bcbf199ce1ad22f26b97fad3a454f01c6c4f43ba480799d8cf1d059f16c2d"
+    },
+    {
+      "file": "129-ci-jobs-final-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-jobs-final-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "129-ci-junit-download-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-junit-download-original.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "129-ci-junit-download-original.txt.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-junit-download-original.txt.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "129-ci-junit-original__test-results-ubuntu-latest-1__test-results.xml.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-junit-original/test-results-ubuntu-latest-1/test-results.xml",
+      "bytes": 6876636,
+      "sha256": "6d8a4dd91803c69dbd5d569a12d428e68dc079bdb54e9c7bc9f0d08858ec5640",
+      "gzipBytes": 621110,
+      "gzipSha256": "c0803107ae0d4780ff865d866d45958ea8966cafe7c9e966789bf8830f2ef4bf"
+    },
+    {
+      "file": "129-ci-junit-original__test-results-ubuntu-latest-2__test-results.xml.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-junit-original/test-results-ubuntu-latest-2/test-results.xml",
+      "bytes": 15975564,
+      "sha256": "738f9051ffbe930528d62bfdbd9cbcd30575b5d3be449031ce406cf0dd9e2108",
+      "gzipBytes": 572791,
+      "gzipSha256": "fccfacd81e9fa1a2459c0ce0cb4ed113ba4f4f860a26cbeee223ca5268f13b23"
+    },
+    {
+      "file": "129-ci-junit-original__test-results-windows-latest-1__test-results.xml.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-junit-original/test-results-windows-latest-1/test-results.xml",
+      "bytes": 6882141,
+      "sha256": "2f0503a89287ef9c36e17bcb7de29534bb08d44725da4aada0dceb72c6ef3deb",
+      "gzipBytes": 597593,
+      "gzipSha256": "bf41533ac1ad9f60bb7c176ce25b7fa1f8867cfae34f3a942d4bcc05d99e418c"
+    },
+    {
+      "file": "129-ci-junit-original__test-results-windows-latest-2__test-results.xml.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-junit-original/test-results-windows-latest-2/test-results.xml",
+      "bytes": 15931839,
+      "sha256": "6477ee3a8150ee81fc9684474e076ddd1b6768810aefc080a04740c8adf3d4fc",
+      "gzipBytes": 548578,
+      "gzipSha256": "4c63b71047c9d8c836ff30044ed5b1aef64c4814eea4e932346cf55a488760e2"
+    },
+    {
+      "file": "129-ci-logs-original.log.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-logs-original.log",
+      "bytes": 25243515,
+      "sha256": "0e8e92dc8af0a2ea2ea2b73cacf35ca9b102e169ab16a07ec81a7563c7f54272",
+      "gzipBytes": 1652811,
+      "gzipSha256": "8d5258226bf4fb65d7f25b3552643224cab6f8c4d3ef9cdd4580175880e55037"
+    },
+    {
+      "file": "129-ci-logs-original.log.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-logs-original.log.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "129-ci-pr-final-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-pr-final-original.json",
+      "bytes": 11836,
+      "sha256": "ab110a2820ad26e620cf4204148735c165a7765ac69fec838f5b2b0f92d1e838",
+      "gzipBytes": 1113,
+      "gzipSha256": "2bfa497737567b439a4bc7ddedccfefd504152489c84dd0b707f94388a3eddf4"
+    },
+    {
+      "file": "129-ci-pr-final-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-pr-final-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "129-ci-refs-final-original.txt.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-refs-final-original.txt",
+      "bytes": 158,
+      "sha256": "84a55cd13f751f2751a50439ff03952750923db8f583b964eee25f137f55116c",
+      "gzipBytes": 139,
+      "gzipSha256": "d5f01bbb669268c8471112ad3704b850ebacb7af23d5775bdb1e3c05def5eebe"
+    },
+    {
+      "file": "129-ci-refs-final-original.txt.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-refs-final-original.txt.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "129-ci-run-final-original.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-run-final-original.json",
+      "bytes": 13395,
+      "sha256": "9d15f6e08297c4e2ee60b404fbdee272ea0ed6d3d5eb8201b22f8f1049c15383",
+      "gzipBytes": 1815,
+      "gzipSha256": "c035552597c5e0a071c8694e8f030ddd5db001d4ebca9d6893a18802b001b9ab"
+    },
+    {
+      "file": "129-ci-run-final-original.json.stderr.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-run-final-original.json.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "129-ci-terminal-packet.json.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/129-ci-terminal-packet.json",
+      "bytes": 193711,
+      "sha256": "c136086842c2206eb676c69b28d7711ed09758aca5b09321029bfe5a67bc325b",
+      "gzipBytes": 11352,
+      "gzipSha256": "e51910a51d6a8e61b2de2cb726c56e6a5818d5b1eea7e47412b43afe5ce3ce01"
+    },
+    {
+      "file": "130-freeze-producer-hosted-failure.py.gz",
+      "originalPath": "node_modules/.cache/native-handoff-ingress/130-freeze-producer-hosted-failure.py",
+      "bytes": 5300,
+      "sha256": "ac3e8b9c21a58bd48517ea6d41f4651406eca901cb65d7f20553b6058bbebcfc",
+      "gzipBytes": 2181,
+      "gzipSha256": "34e4c9742e60bc0caecc6b3b7bec691be3878f58735ff639dcf524b71b652066"
+    }
+  ],
+  "archiveCount": 37,
+  "terminalPacketSha256": "c136086842c2206eb676c69b28d7711ed09758aca5b09321029bfe5a67bc325b",
+  "originalLogSha256": "0e8e92dc8af0a2ea2ea2b73cacf35ca9b102e169ab16a07ec81a7563c7f54272",
+  "originalLogBytes": 25243515,
+  "review": "45495858a176a5971494cef2cfc5ae67ffbf9b18",
+  "preservedOriginalFailure": {
+    "run": 45046385831,
+    "proofPrefix": "13703",
+    "cause": "unknown"
+  },
+  "acceptance": "FAILURE, not a waiver/rerun or transferred local51-case/fullhandoff acceptance. Separate evidence ref; PR head/source unchanged.",
+  "unresolved": [
+    "Prepare-handoff skill valid-offer assertion fails both platforms; fixture/real agreement-scope root cause not yet executed.",
+    "Windows36 producer testcases time out5000ms with cleanupEBUSY nodes; first-failure/held-work/cleanup cause remains unproven."
+  ]
+}
