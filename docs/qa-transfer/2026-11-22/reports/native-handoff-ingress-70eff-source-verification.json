@@ -1,0 +1,76 @@
+{
+  "checkpoint": "70eff94e9042ccc304e68282e76afc9065497858",
+  "tree": "208fb893fcc36e7154efdb2df07206f85d65f6ed",
+  "sourceIdentities": [
+    {
+      "path": "src/main/services/annex-server.ts",
+      "blob": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b",
+      "bytes": 361313,
+      "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500"
+    },
+    {
+      "path": "src/main/services/annex-control.ts",
+      "blob": "065b48063fed54a6114dbe5b1d316530b97517ce",
+      "bytes": 78767,
+      "sha256": "09d9dbf04a5e54265e3832a858c18cb18e3965238bb286722d7d02f938fecd2b"
+    },
+    {
+      "path": "src/main/services/annex-authorizer.ts",
+      "blob": "b88180d9ac2c9f855691e731bc71eec0903cd824",
+      "bytes": 5807,
+      "sha256": "e1a98c503ac0bddb45b70436155c6936b75ed75dbdc259fec09b28ac8d912483"
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "blob": "c5a27d178161c3faeaf196e1112574e1c9922fc2",
+      "bytes": 44114,
+      "sha256": "c3382f3cfe1b677eeaebae67fbc92314ae13d1bd6b65d4c913d048fe7333cbda"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.ts",
+      "blob": "dfb28e612c7514a9056279c40e2926c3006b1aad",
+      "bytes": 21321,
+      "sha256": "63949fa8ce3913f0ff3c3b9f40798a7745cf70e846817fa4dbc76f9f6dc6d1a2"
+    },
+    {
+      "path": "src/main/services/handoff-service.ts",
+      "blob": "2d885a737347f731aef0b60cfa3e0e769eecba90",
+      "bytes": 14312,
+      "sha256": "88b1a9b0562577879a54fcfc922bf66f78918b7c48cfed88f27edd699bf16363"
+    },
+    {
+      "path": "src/main/services/handoff-store.ts",
+      "blob": "90ba5659b480bae13e1ccda31cd29b5293a2ccfd",
+      "bytes": 5222,
+      "sha256": "b31ef7baa59bcea292186a6ffc4caac31d4c0593c47708636f679580bc3fcde2"
+    },
+    {
+      "path": "src/main/services/handoff-command-store.ts",
+      "blob": "9d79d55142243e14ebd7ba2a526bfddbb631b0f6",
+      "bytes": 6902,
+      "sha256": "708c1ffffedd49005661761143bdbaa84a62b07c48141c9c6e38e262e26f66a2"
+    },
+    {
+      "path": "src/main/services/annex-peers.ts",
+      "blob": "b85f7eece758f9d1bf400d6ab85bf1b51bbd764d",
+      "bytes": 26245,
+      "sha256": "92c62decad2d6da566065abef20611dbed75529b9f20a2230db35cc65cb8b503"
+    },
+    {
+      "path": "src/main/services/annex-agent-calls.ts",
+      "blob": "7a00e1e6bdf97f4b784afca691bd13a4b7472772",
+      "bytes": 76017,
+      "sha256": "ebd29c2160476ec50105326e57fccd952a99a1c456c0da7a9fceda2b41e85b86"
+    }
+  ],
+  "priorAcceptedSource": "9a5247cadf41756bc1c085a87c59493b34d5e99f",
+  "priorAcceptedProductionByteBridge": [
+    "src/main/services/handoff-host.ts",
+    "src/main/services/handoff-coordinator.ts",
+    "src/main/services/handoff-service.ts",
+    "src/main/services/handoff-command-store.ts"
+  ],
+  "reviewScope": "native server ingress, host incoming actual owner, coordinator propagation and service incoming queue/postauthorization admission only",
+  "reviewerExecutedProductTestsOrCompilersOrCI": false,
+  "protectedWorkspaceChanged": false
+}
