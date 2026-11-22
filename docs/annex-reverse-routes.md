@@ -38,9 +38,53 @@ Only a compatible current stream snapshot projects live renderer consumer state.
 Request capability alone does not mint a snapshot or live state. The existing
 direct connectivity/publication predicate remains direct-only, and device reach
 uses that observation rather than treating reverse consumer state as a direct
-route. Reverse snapshots do not mint the existing Details snapshot receipt.
-Details read/positive-receipt hunks remain held for their owner; Naming's pure
-alias getter is separate, and its full-list label notification is held.
+route. The narrow Details continuation below separately extends its request
+transport and positive snapshot receipts. Selected-board query/import/inventory
+hunks remain reserved; Naming's pure alias getter is separate, and its full-list
+label notification is held.
+
+### Details transport and positive admission candidate (not accepted)
+
+The four existing Settings, selected dispatcher, agent Details and Changes GET
+readers can use an already-authorized accepted reverse request link when direct
+is absent. Existing endpoints, encoded targets, caller caps, statuses, body/page
+validators and the common one-route/no-fallback request implementation are
+unchanged. Old-host route refusals remain unavailable; successful request-only
+responses neither mint nor restore a snapshot receipt or populate snapshot cache.
+
+Two private helpers implement this bounded continuation. `captureDetailsRead`
+captures the original satellite, selected direct/reverse transport, socket,
+stream (including absence), connection generation, pinned trust, role, kind and
+pending state before the first await. Reverse reads additionally retain accepted
+link epoch and local readiness revision. The same capture is checked before send
+and before post-await statuses/body/receipt effects; replacements cannot be
+recaptured as the original. Legacy connected records without a socket retain
+direct reader behavior; an actual closing socket does not remain current.
+
+The selected dispatcher reader retains its existing receipt-equality fence.
+Ordinary agent Details intentionally does **not** acquire that fence: its captured
+receipt is only the exact target for denial invalidation. A late403 cannot revoke
+a newer same-stream receipt; a new same-stream snapshot does not alone invalidate
+an ordinary successful Details body. Shared structured401 pairing revocation is
+unchanged.
+
+`snapshotAdmissionCurrent` requires an owned current `snapshotAccepted` stream,
+a compatible nonpaused snapshot, and no pairing/unavailable condition. Direct
+admission also requires the existing socket `OPEN` guard. Only the existing
+accepted snapshot handler can generate a local UUID; public export only checks
+provenance and cannot mint. Wire receipts, request readiness, cached serialization,
+resume, retired frames and replacement streams cannot attest retained cache.
+Existing retirement clears stream and receipt before close/disposal/publication.
+
+This is the host-authorized transport/currentness and mint/export continuation
+mapped in `db46fc6eae9ecd1153dbb9c97b816f002ba5ad86`, not whole-function or
+selected-board clearance. No producer, DTO, renderer, Naming, phone/wire, grant,
+shared authorization/retirement helper or release changes are included.
+The [genuine test-only baseline](evidence/3613-details-transport/baseline/README.md)
+retains9FAIL/0PASS/372SKIP on landed `edcd915763a2ec73f0e8149917b4683ced06ecd6`.
+Its downstream assertions remain unexecuted. Candidate proof, changed-fixture
+typing disposition and independent exact-delta review are still required;
+neither full-duplex nor hosted acceptance is inferred.
 
 ### Existing GET Git diff response envelope
 
