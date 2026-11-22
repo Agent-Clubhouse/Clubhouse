@@ -1,4 +1,5 @@
 import * as selectedDispatcherDetails from './selected-dispatcher-details';
+import * as gitService from './git-service';
 import { app } from 'electron';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import { createSettingsStore } from './settings-store';
@@ -9992,6 +9993,35 @@ describe('annex-server', () => {
       await vi.waitFor(() => expect(annexControl.hasReverseLink(MEMBER.fingerprint, 'bulk')).toBe(true));
       return { incoming, outgoing };
     }
+
+    it.each([9 * 1024 * 1024, 32 * 1024 * 1024, 32 * 1024 * 1024 + 1])('GET Git diff envelope real target dispatch preserves the finite boundary at %i bytes', async (size) => {
+      await startAndPair();
+      const link = await bulkLink();
+      vi.mocked(projectStore.list).mockResolvedValue([PROJECT]);
+      const original = 'old\n';
+      const base = { original, modified: 'é' };
+      const value = { original, modified: 'é' + 'x'.repeat(size - Buffer.byteLength(JSON.stringify(base))) };
+      const body = Buffer.from(JSON.stringify(value));
+      expect(body.length).toBe(size);
+      const read = vi.spyOn(gitService, 'getFileDiff').mockResolvedValue(value);
+      try {
+        const pending = annexControl.request(MEMBER.fingerprint, {
+          method: 'GET', path: '/api/v1/projects/proj_r/git/diff?file=src%2Fnotes.ts&staged=true',
+        });
+        if (size > 32 * 1024 * 1024) {
+          await expect(pending).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+          expect(link.incoming.sent.some((frame) => frame.type === 'bulk' && frame.op === 'credit')).toBe(false);
+        } else {
+          const result = await pending;
+          expect(result.status).toBe(200);
+          expect(result.body.equals(body)).toBe(true);
+          expect(link.outgoing.sent.some((frame) => frame.binary)).toBe(true);
+        }
+        expect(read).toHaveBeenCalledExactlyOnceWith(PROJECT.path, 'src/notes.ts', true);
+        expect(link.incoming.readyState).toBe(1);
+        expect(link.outgoing.readyState).toBe(1);
+      } finally { read.mockRestore(); }
+    }, 15_000);
 
     it('P6 bulk reaches real attachment staging and retains the uploader identity for chat.send', async () => {
       await startAndPair(); await bulkLink();

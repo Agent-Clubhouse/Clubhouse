@@ -1,0 +1,660 @@
+2026-11-22T07:16:05Z START lane-p2 idle=90% unused=6114M avail=34012M freepct=87 comp=711M swap=3745M pid=82367 cmd=bash -c npx vitest run --project main src/main/services/annex-server.test.ts --maxWorkers=2 -t "GET Git diff envelope" --reporter=default --reporter=junit --outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/05-corrected-target-types-lint.xml && npx eslint src/main/services/annex-control.ts src/main/services/annex-control.test.ts src/main/services/annex-client.test.ts src/main/services/annex-server.test.ts && echo SCOPED_LINT_PASS && echo FIXTURE_TYPES_BEGIN && npx tsc --noEmit -p docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json; status=$?; echo "FIXTURE_TYPES_END rc=$status"; exit "$status"
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ✓ |main| src/main/services/annex-server.test.ts (661 tests | 658 skipped) 614ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 658 skipped (661)
+   Start at  02:16:05
+   Duration  2.11s (transform 1.15s, setup 5ms, import 1.42s, tests 614ms, environment 0ms)
+
+JUNIT report written to /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/docs/evidence/3613-gitdiff-envelope/attempts/05-corrected-target-types-lint.xml
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/main/services/annex-client.test.ts
+    33:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+    38:57   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+    41:55   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+    41:64   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   215:88   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   221:52   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   221:95   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   226:62   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   243:48   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   261:55   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   262:49   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   262:64   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   262:73   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   265:63   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   271:52   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1354:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1371:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1391:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1394:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1448:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1451:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1454:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1508:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1511:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1514:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1565:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1570:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1573:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1583:43   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1587:45   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1611:48   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1671:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1716:73   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1725:68   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1832:45   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1836:47   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1854:82   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1854:121  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1916:40   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1951:46   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1962:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1966:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2015:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2226:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2229:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2239:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2272:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2275:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2285:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2306:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2309:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2319:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2376:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2377:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2380:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2391:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2443:23   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2445:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2450:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2460:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2502:22   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2503:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2507:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2514:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2560:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2563:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2573:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2624:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2627:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2637:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2648:54   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2648:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2648:76   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2650:62   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2657:23   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2662:54   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2662:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2662:75   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2666:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2674:23   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2765:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2768:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2778:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2791:53   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2791:65   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2791:74   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2796:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2803:91   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2899:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2902:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2912:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2978:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2981:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2991:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3007:54   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3007:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3007:76   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3009:62   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3016:23   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3038:54   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3038:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3038:76   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3040:62   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3047:23   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3089:30   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3091:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3094:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3105:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3183:61   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3187:56   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3188:50   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3190:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3194:113  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3794:94   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3802:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3847:74   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3853:56   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3854:50   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3856:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3860:113  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3861:81   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4178:94   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4294:107  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4354:107  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4429:63   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4435:75   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4435:84   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4436:19   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4453:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4946:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4950:146  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5030:379  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5052:379  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5085:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5088:146  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5261:47   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5261:58   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5264:75   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5264:84   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5276:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5480:163  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5516:96   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5520:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/main/services/annex-control.ts
+  565:47  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/main/services/annex-server.test.ts
+    547:95   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+    552:153  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+    558:167  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+    569:79   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+    576:10   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+    580:10   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+    584:147  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+    585:129  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+    951:85   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+    967:87   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1747:72   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1779:94   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1780:107  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1783:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1787:95   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1787:131  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1805:91   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1808:57   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1836:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1866:94   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1870:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1872:121  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1959:94   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   1960:138  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2045:78   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2112:85   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2123:65   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2127:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2141:50   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2142:74   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2575:88   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2578:76   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2600:104  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2603:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2611:50   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2612:74   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2634:50   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2642:62   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2704:50   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   2935:92   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3264:109  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3265:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3286:109  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3287:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3296:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3313:109  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3314:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3325:109  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3338:109  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3339:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3349:130  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3359:109  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3360:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3363:88   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3367:76   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3374:76   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3416:109  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3417:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3419:113  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3427:41   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3430:38   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3471:45   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3483:109  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3484:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3488:109  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3501:90   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3547:89   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3590:148  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3626:117  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3627:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3628:114  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3695:55   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3696:61   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3702:58   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3703:64   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3724:134  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3731:37   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3740:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3743:100  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3770:43   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   3840:152  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4197:197  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4205:220  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4280:142  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4759:81   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4772:76   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4788:76   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4802:91   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4803:99   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4834:72   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4849:81   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4864:91   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4866:106  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4894:14   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4938:14   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4960:109  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   4979:86   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5101:14   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5195:94   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5210:107  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5324:14   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5354:91   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5389:14   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5420:14   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5447:91   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5736:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5754:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5757:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5801:91   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5818:91   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5835:91   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5880:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5952:96   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5954:117  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5964:94   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5991:96   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5992:117  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   5994:126  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   6096:110  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   6122:140  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   6258:130  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   6307:132  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   6321:133  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   6363:96   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   6604:16   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   6607:16   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   6670:94   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   7351:91   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   7352:134  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   7721:94   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8061:115  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8205:56   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8222:68   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8342:81   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8346:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8364:81   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8387:58   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8396:81   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8409:62   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8422:62   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8444:62   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8465:62   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8471:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8524:77   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8660:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   8677:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   8692:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   8716:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   8742:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   8773:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   8995:91   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   8997:68   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9121:69   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9136:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   9145:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   9160:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   9248:94   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9270:51   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9282:51   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9297:49   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9308:51   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9318:51   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9329:49   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9340:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   9364:14   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9407:14   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9443:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   9487:7    warning  Unused eslint-disable directive (no problems were reported from 'no-restricted-syntax')
+   9518:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9521:125  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9547:12   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9550:125  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9580:36   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9582:21   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9590:13   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9616:188  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9618:108  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9630:114  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9633:75   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9666:36   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9668:21   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9673:42   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9679:75   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9703:77   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9724:111  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9742:77   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9801:131  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9806:193  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9815:131  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9838:151  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9854:29   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9863:29   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9866:149  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9874:131  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9877:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9881:149  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9883:98   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9892:117  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9893:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9894:128  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9898:98   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9899:92   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9912:127  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9941:127  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9948:45   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9956:36   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9982:55   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   9982:81   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10028:65   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10029:136  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10031:235  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10047:65   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10049:76   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10052:38   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10066:79   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10068:143  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10079:65   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10088:65   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10112:69   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10159:114  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10166:65   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10171:140  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10185:65   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10187:153  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10205:67   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10222:67   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10226:119  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10244:67   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10248:125  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10276:96   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10381:69   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10458:35   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10459:118  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10491:55   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10492:58   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10580:58   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10581:61   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10633:58   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10634:61   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10690:68   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10756:87   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10797:16   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10806:16   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10814:14   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10926:67   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  10933:32   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  11040:10   warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+
+✖ 391 problems (0 errors, 391 warnings)
+  0 errors and 12 warnings potentially fixable with the `--fix` option.
+
+SCOPED_LINT_PASS
+FIXTURE_TYPES_BEGIN
+src/main/services/annex-server.test.ts(69,50): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any[]' return type.
+src/main/services/annex-server.test.ts(533,58): error TS2345: Argument of type '{ enabled: false; deviceName: string; alias: string; icon: string; color: string; autoReconnect: false; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enabled: false; deviceName: string; alias: string; icon: string; color: string; autoReconnect: false; }' is missing the following properties from type 'AnnexSettings': enableServer, enableClient
+src/main/services/annex-server.test.ts(550,50): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(551,62): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(615,69): error TS2345: Argument of type '{ agentId: string; sessionId: string; seq: number; ts: number; type: "agent_message"; data: { messageId: string; text: string; }; }[]' is not assignable to parameter of type 'ChatEvent[]'.
+  Type '{ agentId: string; sessionId: string; seq: number; ts: number; type: "agent_message"; data: { messageId: string; text: string; }; }' is not assignable to type 'ChatEvent'.
+    Property 'v' is missing in type '{ agentId: string; sessionId: string; seq: number; ts: number; type: "agent_message"; data: { messageId: string; text: string; }; }' but required in type 'ChatEnvelopeBase<"agent_message">'.
+src/main/services/annex-server.test.ts(667,166): error TS7018: Object literal's property 'rows' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(667,176): error TS7018: Object literal's property 'notes' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(773,141): error TS7018: Object literal's property 'next' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(1144,81): error TS7018: Object literal's property 'error' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(1144,120): error TS7018: Object literal's property 'value' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(1787,24): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ agents: Record<string, any[]>; quickAgents: Record<string, any[]>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'quickAgents' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ agents: Record<string, any[]>; quickAgents: Record<string, any[]>; }'.
+src/main/services/annex-server.test.ts(1889,24): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ projectState: Record<string, unknown>; idleDays: number; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' is missing the following properties from type '{ projectState: Record<string, unknown>; idleDays: number; }': projectState, idleDays
+src/main/services/annex-server.test.ts(1910,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1912,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1918,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1921,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1924,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1930,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1933,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1978,24): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ finishedQuickAgents: Record<string, unknown[]>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'finishedQuickAgents' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ finishedQuickAgents: Record<string, unknown[]>; }'.
+src/main/services/annex-server.test.ts(1998,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2002,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2008,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2010,24): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ finishedQuickAgents: Record<string, unknown[]>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'finishedQuickAgents' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ finishedQuickAgents: Record<string, unknown[]>; }'.
+src/main/services/annex-server.test.ts(2016,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2019,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2034,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(2050,26): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ theme: Record<string, unknown>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'theme' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ theme: Record<string, unknown>; }'.
+src/main/services/annex-server.test.ts(2068,26): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ theme: Record<string, unknown>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'theme' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ theme: Record<string, unknown>; }'.
+src/main/services/annex-server.test.ts(2113,24): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ theme: Record<string, unknown>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'theme' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ theme: Record<string, unknown>; }'.
+src/main/services/annex-server.test.ts(2896,88): error TS7018: Object literal's property 'lastSeen' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(2944,22): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ helperRequests: unknown; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'helperRequests' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ helperRequests: unknown; }'.
+src/main/services/annex-server.test.ts(2948,13): error TS2352: Conversion of type 'Readonly<Record<string, readonly DurableAgentConfig[]>>' to type 'Record<string, { id: string; }[]>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  'string' index signatures are incompatible.
+    The type 'readonly DurableAgentConfig[]' is 'readonly' and cannot be assigned to the mutable type '{ id: string; }[]'.
+src/main/services/annex-server.test.ts(2996,18): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2998,18): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(3000,18): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(3003,11): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(3037,89): error TS7018: Object literal's property 'options' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(3203,18): error TS7018: Object literal's property 'events' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(3234,99): error TS2367: This comparison appears to be unintentional because the types 'AgentRuntime' and '{ kind: "chat"; agentId: string; isRunning: () => boolean; getState: () => "idle"; getSessionId: () => string; getNativeSessionId: () => string; getDisplayRunId: () => string; sendMessage: Mock<Procedure>; readTranscript: Mock<...>; }' have no overlap.
+src/main/services/annex-server.test.ts(3289,108): error TS7018: Object literal's property 'options' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(3488,90): error TS7018: Object literal's property 'events' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(4758,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4848,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4884,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4887,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4929,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4932,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4956,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4959,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4975,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4978,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4990,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5007,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5035,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5064,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5092,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5095,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5133,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5196,64): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5215,34): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(5317,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5320,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5350,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5353,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5382,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5385,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5412,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5415,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5443,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5446,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5797,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5800,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5814,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5817,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5831,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5834,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5853,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5856,64): error TS2345: Argument of type '{ id: string; name: string; color: string; branch: string; model: null; orchestrator: null; freeAgentMode: boolean; icon: null; }[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type '{ id: string; name: string; color: string; branch: string; model: null; orchestrator: null; freeAgentMode: boolean; icon: null; }[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5952,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5985,22): error TS7018: Object literal's property 'provider' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(5985,38): error TS7018: Object literal's property 'model' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(5985,51): error TS7018: Object literal's property 'effort' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(5991,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6096,54): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6097,66): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6123,66): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6258,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6307,54): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6321,54): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6363,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6671,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6674,32): error TS2554: Expected 1 arguments, but got 2.
+src/main/services/annex-server.test.ts(7285,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(7313,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(7334,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(7351,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(7722,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(7986,34): error TS2554: Expected 1 arguments, but got 2.
+src/main/services/annex-server.test.ts(8061,26): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ pendingPermissions: Record<string, any>[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'pendingPermissions' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ pendingPermissions: Record<string, any>[]; }'.
+src/main/services/annex-server.test.ts(8075,34): error TS2554: Expected 1 arguments, but got 2.
+src/main/services/annex-server.test.ts(8341,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8363,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8377,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8386,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8395,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8408,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8421,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8443,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8455,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8464,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8485,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8515,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9243,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9262,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9265,64): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9304,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9357,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9360,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9400,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9403,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9801,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9811,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9815,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9823,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9870,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9874,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9887,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9904,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9905,64): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9945,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(10031,216): error TS7018: Object literal's property 'events' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(10051,224): error TS7018: Object literal's property 'events' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(10069,71): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(10338,21): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any' return type.
+src/main/services/annex-server.test.ts(10437,46): error TS2339: Property 'mock' does not exist on type '(id: string, projectPath: string, opts?: { beforeSpawn?: () => void; }) => Promise<void>'.
+src/main/services/annex-server.test.ts(10731,29): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any' return type.
+src/main/services/annex-server.test.ts(10755,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(10779,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+FIXTURE_TYPES_END rc=2
+2026-11-22T07:16:18Z END lane-p2 rc=2

@@ -1,0 +1,652 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="216" failures="0" errors="0" time="0.073527417">
+    <testsuite name="src/main/services/annex-control.test.ts" timestamp="2026-11-22T07:23:52.870Z" hostname="Masons-MacBook-Pro-13346.local" tests="216" failures="0" errors="0" skipped="215" time="0.073527417">
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; accepts the exact former envelope boundary" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; preserves a complete diff above the former boundary with query " time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; preserves a complete diff above the former boundary with query ?file=large%20file.txt&amp;staged=false" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; preserves a complete diff above the former boundary with query ?file=/icons/a" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; preserves a complete diff above the former boundary with query ?file=/content" time="0.072754458">
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; preserves a complete diff above the former boundary with query ?file=/chat/events/1" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains the ordinary route budget for &apos;POST&apos; &apos;/api/v1/projects/project%20name/git/d…&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains the ordinary route budget for &apos;GET&apos; &apos;/api/v1/projects/project%20name/git/d…&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains the ordinary route budget for &apos;DELETE&apos; &apos;/api/v1/projects/project%20name/git/d…&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains the ordinary route budget for &apos;GET&apos; &apos;/api/v1/projects/project%20name/git/d…&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains the ordinary route budget for &apos;GET&apos; &apos;/api/v1/projects/project%20name/git/d…&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains the ordinary route budget for &apos;GET&apos; &apos;/api/v1/projects//git/diff?file=f&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains the ordinary route budget for &apos;GET&apos; &apos;/other?file=/api/v1/projects/project%…&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains the ordinary route budget for &apos;GET&apos; &apos;/api/v1/projects/p?file=x/git/diff&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains caller limit 0 before credit for an authorized diff" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains caller limit 65536 before credit for an authorized diff" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; enforces the exact finite32MiB envelope with excess=false before credit" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; enforces the exact finite32MiB envelope with excess=true before credit" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; preserves an equal caller limit on the enlarged route" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; does not infer GET from a missing or different method undefined" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; does not infer GET from a missing or different method PATCH" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; does not infer GET from a missing or different method POST" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retires a held enlarged diff on cancel without late credit or body delivery" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retires a held enlarged diff on revoke without late credit or body delivery" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retires a held enlarged diff on replace without late credit or body delivery" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="GET Git diff envelope boundary &gt; retains the frame bound for a peer without bulk capability" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="controller caller receive bound &gt; accepts the complete exact 8 MiB controller body on negotiated bulk" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="controller caller receive bound &gt; rejects bound+1 at bulk start before credit or allocation without retiring the valid link" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="controller caller receive bound &gt; checks decoded utf8 inline bytes before answering" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="controller caller receive bound &gt; checks decoded base64 inline bytes before answering" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="controller caller receive bound &gt; rejects an invalid local receive limit without dispatching a request" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; refuses only the known GET response above its route budget before credit" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; refuses only the known POST response above its route budget before credit" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps a route-oversize unknown offer link-fatal before credit or completion" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps a route-oversize expired offer link-fatal before credit or completion" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps a route-oversize cancelled offer link-fatal before credit or completion" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps a route-oversize metadata offer link-fatal before credit or completion" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps a route-oversize size offer link-fatal before credit or completion" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps a route-oversize pin offer link-fatal before credit or completion" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps a route-oversize feature offer link-fatal before credit or completion" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps the route bound with excess=+0, largerLocalBound=false" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps the route bound with excess=1, largerLocalBound=false" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps the route bound with excess=+0, largerLocalBound=true" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; keeps the route bound with excess=1, largerLocalBound=true" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; honors a zero caller bound for a response of 0 bytes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; honors a zero caller bound for a response of 1 bytes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; preserves uncapped file-read response behavior" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; preserves caller-bound file-read response behavior" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; drops a rejected token&apos;s late payload without effects and completes a fresh response on the same link" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; still closes on a rejected token replay into a currently-owned fresh request" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; retains write history after response refusal without automatic retry or reexecution" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="route-budget disposition (#3714) &gt; releases cancelled sender transfers and response slots across more than one full request window" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="capability hello and mixed versions &gt; the accepting side sends nothing until the opener says hello, then only what both support" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="capability hello and mixed versions &gt; an opener that offers nothing this side knows gets nothing new: no request frame is ever sent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="capability hello and mixed versions &gt; a target that agreed to no features answers a request not_supported and never runs it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="capability hello and mixed versions &gt; the opener refuses an answer that claims more than it offered" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="capability hello and mixed versions &gt; closes a connection that never says hello" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="capability hello and mixed versions &gt; negotiates per connection: a new connection starts with nothing agreed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="capability hello and mixed versions &gt; nothing is opened while this machine is not serving" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="read-only direction readiness (#3613 P7) &gt; distinguishes accepted-link ownership across replacement without adding any wire metadata" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="read-only direction readiness (#3613 P7) &gt; reports the negotiated physical direction without dialing, sending frames or dispatching requests" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="read-only direction readiness (#3613 P7) &gt; uses the request authority for a revoked peer even while both sockets remain OPEN" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="read-only direction readiness (#3613 P7) &gt; uses the request authority for a re-pinned peer even while both sockets remain OPEN" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="read-only direction readiness (#3613 P7) &gt; uses the request authority for a network-off peer even while both sockets remain OPEN" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="read-only direction readiness (#3613 P7) &gt; uses the request authority for a role-changed peer even while both sockets remain OPEN" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="read-only direction readiness (#3613 P7) &gt; uses the request authority for a session-only peer even while both sockets remain OPEN" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="read-only direction readiness (#3613 P7) &gt; notifies once on negotiated readiness and once on close, never for heartbeats or ordinary frames" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="protocol: anything out of place closes the connection &gt; a request sent to the side that accepted (only the target takes requests)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="protocol: anything out of place closes the connection &gt; a cancel sent to the side that accepted" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="protocol: anything out of place closes the connection &gt; a response sent to the target" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="protocol: anything out of place closes the connection &gt; an error sent to the target" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="protocol: anything out of place closes the connection &gt; a second hello" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="protocol: anything out of place closes the connection &gt; a binary frame" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="protocol: anything out of place closes the connection &gt; not JSON" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="protocol: anything out of place closes the connection &gt; another version" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="protocol: anything out of place closes the connection &gt; a first frame that is not hello" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="protocol: anything out of place closes the connection &gt; a malformed request on a negotiated connection is answered invalid_request, not run" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse request and response &gt; carries a request to the target, which runs it as the requester via reverse, and the answer back" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse request and response &gt; carries binary bodies byte for byte both ways" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse request and response &gt; refuses locally a request that cannot fit in a frame, without sending it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse request and response &gt; answers response_too_large for an answer that cannot fit in a frame" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse request and response &gt; answers busy beyond the in-flight limit, and runs none of the extra" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse request and response &gt; a handler that throws answers 500, not a hang" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; active desktop member: runs" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; unknown or removed peer: 401 peer_not_paired" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; older pairing with no role: 401 needs_pairing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; older pairing with no pin: 401 needs_pairing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; pin mismatch (re-pinned): 401 peer_not_paired" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; pending member: 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; one-to-one satellite (this machine controls it): 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; one-to-one controller (keeps its direction): 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; phone network member: 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; member with no kind: 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; session-only entry: 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; desktop member with Annex Network off: 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="refusal matrix over the control connection &gt; a refused request leaves nothing for a retry to replay once access returns" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="mid-session revocation &gt; target: a requester removed while its request runs gets no answer, and the connection closes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="mid-session revocation &gt; target: a requester re-pinned while its request runs gets no answer, and the connection closes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="mid-session revocation &gt; target: a requester made pending while its request runs gets no answer, and the connection closes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="mid-session revocation &gt; target: a requester re-paired as a satellite while its request runs gets no answer, and the connection closes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="mid-session revocation &gt; target: a requester became a phone while its request runs gets no answer, and the connection closes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="mid-session revocation &gt; target: a requester network turned off while its request runs gets no answer, and the connection closes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="mid-session revocation &gt; target: a requester revoked between requests is refused on its next one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="mid-session revocation &gt; requester: a target no longer allowed here ends the connection on its next frame, and waiting requests fail as revoked" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="mid-session revocation &gt; requester: no request goes to a target no longer allowed here" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="mid-session revocation &gt; removal closes the connection both ways, failing what was waiting as revoked and aborting what was running" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; a retry with the same id after a lost answer gets the original answer without running again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; the same id with a different request is a conflict, and does not run" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; a retry while the original is still running waits for it, and it runs once" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; reads are not remembered: the same id runs again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; an answer too large to keep goes out once; a retry is told it cannot be replayed, and nothing runs again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; remembers a finished request for a limited time" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; keys by the requester and its certificate: another peer or a new pin never gets an earlier answer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; keeps a bounded number per requester, dropping the oldest finished first" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; forgets a revoked requester" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; forgets every remembered request when the server stops" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="request ids, dedup and replay &gt; refuses a second request with an id already in flight on the connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="cancellation, timeouts and indeterminate outcomes &gt; cancelling sends cancel, aborts the handler, and a non-read request is indeterminate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="cancellation, timeouts and indeterminate outcomes &gt; a cancelled read is not indeterminate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="cancellation, timeouts and indeterminate outcomes &gt; cancel after completion is a no-op, and cancel for an unknown id too" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="cancellation, timeouts and indeterminate outcomes &gt; a request cancelled on the requester still runs to its end on the target, so a retry learns what happened" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="cancellation, timeouts and indeterminate outcomes &gt; closing the connection fails everything waiting as transport_unavailable, indeterminate only for non-reads" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="cancellation, timeouts and indeterminate outcomes &gt; times out on the requester, sending cancel; a non-read is indeterminate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="cancellation, timeouts and indeterminate outcomes &gt; the target bounds how long one request may run, and says so" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="cancellation, timeouts and indeterminate outcomes &gt; an answer that arrives after the requester stopped waiting is dropped" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="cancellation, timeouts and indeterminate outcomes &gt; an error that says the request never ran is not indeterminate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="bounds on lingering work, unfinished answers and unread output (#3613 P3 QA) &gt; a cancelled run that ignores its signal keeps its slot: unique POST and cancel cycles hit busy, then free once handlers finish" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="bounds on lingering work, unfinished answers and unread output (#3613 P3 QA) &gt; closing or replacing the connection frees no slot while the old work still runs" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="bounds on lingering work, unfinished answers and unread output (#3613 P3 QA) &gt; unfinished entries count toward the remembered bound and are never dropped: at the bound a new non-read is busy" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="bounds on lingering work, unfinished answers and unread output (#3613 P3 QA) &gt; a response cut off before end() is never replayed: a retry gets replay_unavailable, indeterminate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="bounds on lingering work, unfinished answers and unread output (#3613 P3 QA) &gt; a handler that never ends gets timeout at the deadline, and nothing is remembered as an answer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="bounds on lingering work, unfinished answers and unread output (#3613 P3 QA) &gt; holds the slot until the route&apos;s own work settles, even after its answer went out" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="bounds on lingering work, unfinished answers and unread output (#3613 P3 QA) &gt; closes the connection when the other side stops reading, failing what waits as transport_unavailable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="bounds on lingering work, unfinished answers and unread output (#3613 P3 QA) &gt; closes as soon as one answer would take the unwritten bytes past the bound" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="bounds on lingering work, unfinished answers and unread output (#3613 P3 QA) &gt; holds a connection&apos;s answer slot until the answer is written, not just queued" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; subscribes as the requester via reverse, and carries each /ws frame as it was serialized, in order" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; sends nothing for a subscription the other side did not agree to" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; a target that agreed to no subscribe answers not_supported and starts nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; one subscription per connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; refuses a pending member, and the server starts nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; refuses a one-to-one controller, and the server starts nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; refuses a phone member, and the server starts nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; refuses a removed, and the server starts nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; checks every frame: once the subscriber loses access, nothing more goes and the connection closes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; ends a subscription whose frame is too large for the connection, and the subscriber may subscribe again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; carries a frame up to the event cap, past the request/response cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; the server ending it tells the subscriber why" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; unsubscribing stops the server side and is not reported back" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; the connection closing ends both sides" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; a subscriber that stops reading has its connection closed (4429), not frames dropped" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; a target that serves no stream answers unavailable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse subscription (P4) &gt; frames in the wrong direction close the connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="inbound frame caps by type (P4 QA) &gt; the target refuses a request over 8 MiB and closes 1009, running nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="inbound frame caps by type (P4 QA) &gt; the requester refuses a response over 8 MiB and closes 1009; what waited fails as transport_unavailable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="inbound frame caps by type (P4 QA) &gt; the requester takes a subscription event up to the event cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="inbound frame caps by type (P4 QA) &gt; the target refuses even an event-shaped frame over 8 MiB: events only go the other way" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse /ws control frames over a subscription (P5) &gt; hands an allowed control frame to the server for the subscription, as /ws text" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse /ws control frames over a subscription (P5) &gt; sends no control frame unless the other side agreed to ws-control, and a target that did not closes on one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse /ws control frames over a subscription (P5) &gt; only the /ws control set: anything else is not sent, and a target answers it on the subscription without running it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse /ws control frames over a subscription (P5) &gt; a subscriber that lost access: its control frame never reaches the server, the subscription ends and the connection closes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse /ws control frames over a subscription (P5) &gt; drops a control frame for a subscription that is not the live one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="reverse /ws control frames over a subscription (P5) &gt; a control frame over 8 MiB closes the connection 1009 before it is parsed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; attachment bytes round trip with digest at size 0" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; attachment bytes round trip with digest at size 1" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; attachment bytes round trip with digest at size 65535" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; attachment bytes round trip with digest at size 65536" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; attachment bytes round trip with digest at size 65537" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; attachment bytes round trip with digest at size 3932160" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; clipboard at the existing 10 MiB base64 cap travels on bulk for its subscription" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; clipboard over cap is refused before allocating or sending bulk, with the direct error" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; full event at 32 MiB and an uncapped text file above it round trip without a JSON body envelope" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; bulk waits behind queued control traffic while small requests continue" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; revocation at a pending binary write stops that write and rejects its requester" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="binary bulk lane (P6) &gt; cancelling a body in flight prevents dispatch and releases its transfer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 bulk negative controls &gt; attachment cap+1 returns the direct 413 without reading or dispatching bytes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 bulk negative controls &gt; refuses forged bulk clipboard-owner before credit or dispatch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 bulk negative controls &gt; refuses forged bulk clipboard-size before credit or dispatch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 bulk negative controls &gt; refuses forged bulk request-size before credit or dispatch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 bulk negative controls &gt; refuses forged bulk direction before credit or dispatch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 bulk negative controls &gt; refuses forged bulk feature before credit or dispatch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 bulk negative controls &gt; cancels a bulk response while a socket write is waiting and frees all in-flight work" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/network/handoffs/transfer: exact bytes and digest at size 0" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/network/handoffs/transfer: exact bytes and digest at size 1" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/network/handoffs/transfer: exact bytes and digest at size 65535" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/network/handoffs/transfer: exact bytes and digest at size 65536" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/network/handoffs/transfer: exact bytes and digest at size 65537" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/mobile/agents/a/content?ref=r: exact bytes and digest at size 0" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/mobile/agents/a/content?ref=r: exact bytes and digest at size 1" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/mobile/agents/a/content?ref=r: exact bytes and digest at size 65535" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/mobile/agents/a/content?ref=r: exact bytes and digest at size 65536" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/mobile/agents/a/content?ref=r: exact bytes and digest at size 65537" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/icons/agents/a: exact bytes and digest at size 0" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/icons/agents/a: exact bytes and digest at size 1" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/icons/agents/a: exact bytes and digest at size 65535" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/icons/agents/a: exact bytes and digest at size 65536" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/icons/agents/a: exact bytes and digest at size 65537" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/network/handoffs/transfer carries its existing cap without a tighter frame cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/mobile/agents/a/content?ref=r carries its existing cap without a tighter frame cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; /api/v1/icons/agents/a carries its existing cap without a tighter frame cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; negotiated binary flows cannot bypass the digest with a legacy JSON client frame" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; negotiated binary flows cannot bypass the digest with a legacy JSON request body" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 existing binary response families &gt; negotiated binary flows cannot bypass the digest with a legacy successful JSON answer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 concurrent clipboard images retain distinct transfer tokens on the same subscription" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 rich content preserves the existing 8 MiB raw cap after base64 and JSON encoding" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 /api/v1/icons/agents/a: existing cap is accepted, cap+1 is refused before any binary frame" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 /api/v1/network/handoffs/transfer: existing cap is accepted, cap+1 is refused before any binary frame" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 bulk progress refreshes request inactivity without extending unrelated request timers" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="QA adversarial: a completed clipboard transfer UUID cannot be replayed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="QA adversarial: a cancelled UUID cannot rebind old bytes to a new operation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 late chunks and cancels for a completed UUID never dispatch or damage a fresh transfer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 late chunks and cancels for a cancelled UUID never dispatch or damage a fresh transfer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 used UUIDs from the opposite direction cannot become incoming transfers" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 lifetime tombstone capacity closes without evicting history" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 a fresh connection has isolated UUID history and old socket bytes cannot reach it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 late cancel unknown cannot alter UUID ownership" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-control.test.ts" name="P6 late cancel wrong-operation cannot alter UUID ownership" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+</testsuites>

@@ -42,6 +42,24 @@ route. Reverse snapshots do not mint the existing Details snapshot receipt.
 Details read/positive-receipt hunks remain held for their owner; Naming's pure
 alias getter is separate, and its full-list label notification is held.
 
+### Existing GET Git diff response envelope
+
+With negotiated bulk, the exact existing GET
+`/api/v1/projects/:projectId/git/diff` route admits up to **32 MiB of encoded
+JSON response bytes**, including its ordinary query string. This rule uses the
+original request method/path, before legacy query-sensitive response rules.
+Other methods/routes and no-bulk frame limits are unchanged. A stricter caller
+receive limit still refuses the owned response before credit; no error retries
+or switches routes. Larger responses remain explicitly refused, so this is not
+arbitrary-size direct/reverse parity.
+
+Credit bounds each chunk, not the complete process allocation. Four transfers,
+complete finish buffers, JSON decoding and target disk/string/serialization
+have separate costs. Target clipping retains a logical subarray that can keep
+the full backing allocation alive; the route cap is not a target/global RSS
+guarantee. Current targeted implementation/proof is subject to independent
+exact-source review.
+
 This candidate changes no handler permissions, phone/control/network fields,
 P5/P6 fence or grant. #3711 is documented separately below; #3714's narrow security gate, current-app/P8 cleanup
 and confinement acceptance, #3760 and the release hold remain separate. Historical

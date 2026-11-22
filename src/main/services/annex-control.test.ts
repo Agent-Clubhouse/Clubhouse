@@ -154,6 +154,152 @@ afterEach(() => {
   control.resetControlForTests();
 });
 
+describe('GET Git diff envelope boundary', () => {
+  const path = '/api/v1/projects/project%20name/git/diff';
+  const formerLimit = CONTROL_FRAME_MAX_BYTES + 64 * 1024;
+  const diffBody = (size: number) => {
+    const prefix = '{"original":"","modified":"';
+    return Buffer.from(prefix + 'x'.repeat(size - Buffer.byteLength(prefix) - 2) + '"}');
+  };
+
+  it('accepts the exact former envelope boundary', async () => {
+    const body = diffBody(formerLimit);
+    handler = async () => ({ status: 200, headers: { 'content-type': 'application/json' }, body });
+    await connected(['request', 'bulk']);
+    const result = await control.request(TARGET, { method: 'GET', path });
+    expect(result.body.equals(body)).toBe(true);
+  });
+
+  it.each(['', '?file=large%20file.txt&staged=false', '?file=/icons/a', '?file=/content', '?file=/chat/events/1'])('preserves a complete diff above the former boundary with query %s', async (query) => {
+    const size = query === '?file=/content' ? 32 * 1024 * 1024 : formerLimit + 1;
+    const body = diffBody(size);
+    handler = async (_principal, request) => ({
+      status: 200, headers: { 'content-type': 'application/json' },
+      body: request.path === path + query ? body : Buffer.from('alive'),
+    });
+    const { requesterWs, targetWs } = await connected(['request', 'bulk', 'subscribe']);
+    const onFrame = vi.fn();
+    const subscription = control.subscribe(TARGET, { onFrame, onEnd: () => {} });
+    await flush();
+    const outcome = await control.request(TARGET, { method: 'GET', path: path + query })
+      .then((result) => ({ result }), (error: unknown) => ({ error }));
+    const fresh = await control.request(TARGET, { method: 'GET', path: '/fresh' });
+    expect(served[0].sink.send(JSON.stringify({ type: 'theme:changed', payload: { themeId: 'still-live' } }))).toBe(true);
+    await flush();
+    expect(fresh.body.toString()).toBe('alive');
+    expect(onFrame).toHaveBeenCalledWith({ type: 'theme:changed', payload: { themeId: 'still-live' } });
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+    expect(outcome).not.toHaveProperty('error');
+    if ('result' in outcome) {
+      expect(outcome.result.body.equals(body)).toBe(true);
+      expect(JSON.parse(outcome.result.body.toString()).modified.length).toBe(size - 29);
+    }
+    subscription.close();
+  });
+
+  it.each([
+    { method: 'POST' as const, path },
+    { method: 'GET' as const, path: path + '-extra?file=f' },
+    { method: 'DELETE' as const, path },
+    { method: 'GET' as const, path: path + '/?file=f' },
+    { method: 'GET' as const, path: path + '/extra?file=f' },
+    { method: 'GET' as const, path: '/api/v1/projects//git/diff?file=f' },
+    { method: 'GET' as const, path: '/other?file=' + path },
+    { method: 'GET' as const, path: '/api/v1/projects/p?file=x/git/diff' },
+  ])('retains the ordinary route budget for $method $path', async (input) => {
+    handler = async () => ({ status: 200, headers: {}, body: diffBody(formerLimit + 1) });
+    const { requesterWs } = await connected(['request', 'bulk']);
+    await expect(control.request(TARGET, input)).rejects.toMatchObject({
+      code: 'response_too_large', indeterminate: input.method !== 'GET',
+    });
+    expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(false);
+  });
+
+  it.each([0, 65536])('retains caller limit %i before credit for an authorized diff', async (maxResponseBytes) => {
+    handler = async () => ({ status: 200, headers: {}, body: diffBody(65537) });
+    const { requesterWs } = await connected(['request', 'bulk']);
+    await expect(control.request(TARGET, { method: 'GET', path }, { maxResponseBytes }))
+      .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(false);
+  });
+
+  it.each([false, true])('enforces the exact finite32MiB envelope with excess=%s before credit', async (excess) => {
+    const body = diffBody(32 * 1024 * 1024 + Number(excess));
+    handler = async () => ({ status: 200, headers: {}, body });
+    const { requesterWs, targetWs } = await connected(['request', 'bulk']);
+    const pending = control.request(TARGET, { method: 'GET', path });
+    if (excess) {
+      await expect(pending).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+      expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(false);
+    } else {
+      const result = await pending;
+      expect(result.body.equals(body)).toBe(true);
+      expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(true);
+    }
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+  });
+
+  it('preserves an equal caller limit on the enlarged route', async () => {
+    const body = diffBody(formerLimit + 1);
+    handler = async () => ({ status: 200, headers: {}, body });
+    await connected(['request', 'bulk']);
+    const result = await control.request(TARGET, { method: 'GET', path }, { maxResponseBytes: body.length });
+    expect(result.body.equals(body)).toBe(true);
+  });
+
+  it.each([undefined, 'PATCH' as const, 'POST' as const])('does not infer GET from a missing or different method %s', (method) => {
+    expect(control.responseBodyLimit(path, method)).toBe(formerLimit);
+    expect(control.responseBodyLimit(path + '#fragment', 'GET')).toBe(formerLimit);
+  });
+
+  it.each(['cancel', 'revoke', 'replace'] as const)('retires a held enlarged diff on %s without late credit or body delivery', async (reason) => {
+    const body = diffBody(formerLimit + 1);
+    handler = async (_principal, request) => ({
+      status: 200, headers: {},
+      body: request.path === path ? body : Buffer.from('fresh'),
+    });
+    const { requesterWs, targetWs } = await connected(['request', 'bulk']);
+    targetWs.holdWrites = true;
+    const abort = new AbortController();
+    const pending = control.request(TARGET, { method: 'GET', path }, { signal: abort.signal });
+    const observed = pending.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(sentOfType(targetWs, 'binary')).toHaveLength(1));
+    const credits = sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit').length;
+    if (reason === 'cancel') abort.abort();
+    else if (reason === 'revoke') world.peer = undefined;
+    else {
+      control.closeFor(TARGET, 'in');
+      await flush();
+      await connected(['request', 'bulk']);
+    }
+    await flush();
+    targetWs.drain();
+    await flush();
+    expect(await observed).toBeInstanceOf(control.ControlRequestError);
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(1);
+    expect(sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit')).toHaveLength(credits);
+    expect(sentOfType(targetWs, 'bulk').some((frame) => frame.op === 'finish')).toBe(false);
+    expect(control._activeRunsForTesting(REQUESTER, REQUESTER_PIN)).toBe(0);
+    if (reason === 'cancel') targetWs.holdWrites = false;
+    if (reason === 'revoke') {
+      world.peer = peer();
+      await connected(['request', 'bulk']);
+    }
+    const fresh = await control.request(TARGET, { method: 'GET', path: '/fresh' });
+    expect(fresh.body.toString()).toBe('fresh');
+  });
+
+  it('retains the frame bound for a peer without bulk capability', async () => {
+    handler = async () => ({ status: 200, headers: {}, body: diffBody(CONTROL_FRAME_MAX_BYTES + 1) });
+    const { targetWs } = await connected(['request']);
+    await expect(control.request(TARGET, { method: 'GET', path }))
+      .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    expect(sentOfType(targetWs, 'bulk')).toHaveLength(0);
+  });
+});
+
 describe('controller caller receive bound', () => {
   it('accepts the complete exact 8 MiB controller body on negotiated bulk', async () => {
     const body = Buffer.alloc(CONTROL_FRAME_MAX_BYTES, 0x61);

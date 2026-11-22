@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom/vitest"],
+    "typeRoots": ["../../../node_modules/@types", "../../../node_modules"]
+  },
+  "files": [
+    "../../../src/main/services/annex-control.test.ts",
+    "../../../src/main/services/annex-client.test.ts",
+    "../../../src/main/services/annex-server.test.ts"
+  ]
+}

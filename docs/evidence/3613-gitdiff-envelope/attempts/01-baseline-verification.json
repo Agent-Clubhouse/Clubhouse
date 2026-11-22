@@ -1,0 +1,30 @@
+{
+  "base": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+  "baseTree": "040b9eb93b5dd769920564319f7f3e4becdf2b84",
+  "testOnlyHead": "9eff428ebeb70c6b7d0996b6600713a50b4928ed",
+  "testOnlyTree": "2bc1e5b37e8e8f89898982641359c47b580b59d6",
+  "beforeAfterEqual": true,
+  "productionBytesUnchanged": true,
+  "selectedInputs": 31,
+  "actualFailures": 2,
+  "actualPasses": 5,
+  "selectorSkips": 190,
+  "failedCases": [
+    "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ",
+    "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=large%20file.txt&staged=false"
+  ],
+  "passedCases": [
+    "GET Git diff envelope boundary > accepts the exact former envelope boundary",
+    "GET Git diff envelope boundary > retains the ordinary route budget for 'POST' '/api/v1/projects/project%20name/git/d\u2026'",
+    "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects/project%20name/git/d\u2026'",
+    "GET Git diff envelope boundary > retains a stricter caller limit before credit for an authorized diff",
+    "GET Git diff envelope boundary > retains the frame bound for a peer without bulk capability"
+  ],
+  "actualFailureCode": "response_too_large",
+  "indeterminate": false,
+  "formerCapBytes": 8454144,
+  "redBodyBytes": 8454145,
+  "rawSha256": "230eb07eeb391521667119db630834e7c80ce29b581c42193bb129ccdfbfb7c7",
+  "postFailureLargeBytesAssertionsCredited": false,
+  "fixtureLimit": "production control/authorizer/bulk; paired in-memory one-module sockets and response handler; no realserver/Git/native/TLS/adapter proof"
+}
