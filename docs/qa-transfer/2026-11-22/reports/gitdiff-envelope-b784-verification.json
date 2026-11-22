@@ -1,0 +1,316 @@
+{
+  "designHead": "b7843d9889cd004098590a1aac5578518b19c788",
+  "designTree": "014f75de3c78dc3969da8f3dd09eb4111bbaa24f",
+  "readmeSha256": "0db91d139800e1ab808c64eafd612a5a200ef89f208f36d38d3bf3bea6c60a11",
+  "manifestSha256": "6aa0a97b476d1f98672d80c579576d3308de300bdc0fca2b378bfa9829290761",
+  "verifiedInputsAndArtifacts": {
+    "artifacts": [
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/README.md",
+        "bytes": 9939,
+        "sha256": "0db91d139800e1ab808c64eafd612a5a200ef89f208f36d38d3bf3bea6c60a11",
+        "gitBlob": "1ffc19712fdfb1f659a7607abf752d31e8e06f0c"
+      },
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-baseline-verification.json",
+        "bytes": 1656,
+        "sha256": "4eb1c1a40d94c0ef6ce3893385dbf16668ba15c5feabd79057b16956b1485155",
+        "gitBlob": "4774ac821ecd93cd6fc927f7727f769e2a4a637a"
+      },
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red-original.txt",
+        "bytes": 19169,
+        "sha256": "230eb07eeb391521667119db630834e7c80ce29b581c42193bb129ccdfbfb7c7",
+        "gitBlob": "5b3a031eb6ee214e55d6ab28b40cb6aacf266dc1"
+      },
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red-receipt.json",
+        "bytes": 12766,
+        "sha256": "73777453a611d34b018282f0b3de075814eb69dfe62ae82a2d27ee7305e071c9",
+        "gitBlob": "e82266ccc03924ce1ab8fee8d779540f36581e2a"
+      },
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red.xml",
+        "bytes": 48865,
+        "sha256": "0439934f9a76cd436a299cc7ea9b57a3203bf35d313c53d89e44c13ab41f362e",
+        "gitBlob": "e676b748c0e1f1e556441f7adebdca885fd267d2"
+      },
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/capture.py",
+        "bytes": 4268,
+        "sha256": "f9675e82c45eb877400611b9738028c0d7896700ef26b98788692d4ff7b6017a",
+        "gitBlob": "335deacfdde2838b091f9754dcab0b2765870a25"
+      }
+    ],
+    "inputs": [
+      {
+        "path": "src/main/services/annex-control.ts",
+        "sha256": "9236241c8cda0698d479fdfedc42e6abaffec11235e22166133eb48546c156ba",
+        "bytes": 78511,
+        "gitBlob": "af98145ffef9ce740faa28ad61f3770673e5c0ac"
+      },
+      {
+        "path": "src/main/services/annex-control.test.ts",
+        "sha256": "e5043bd7ffb326c6720cf715e8f3706c43f9a5945d04823d107c2b73ebae0785",
+        "bytes": 102764,
+        "gitBlob": "7dc40e5c5174a874e0211912015b2670778f66c1"
+      },
+      {
+        "path": "src/main/services/annex-control-bulk.ts",
+        "sha256": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee",
+        "bytes": 8912,
+        "gitBlob": "18ee308fc55d33e89523d840f584101eea189be0"
+      },
+      {
+        "path": "src/main/services/annex-control-bulk.test.ts",
+        "sha256": "80f634f00a2754568be5519556137f0728ef2e0adf488a2246f90a008c84c8d2",
+        "bytes": 6891,
+        "gitBlob": "0e70e901d855fac04e42ff39508840186cbc53ae"
+      },
+      {
+        "path": "src/main/services/annex-authorizer.ts",
+        "sha256": "e1a98c503ac0bddb45b70436155c6936b75ed75dbdc259fec09b28ac8d912483",
+        "bytes": 5807,
+        "gitBlob": "b88180d9ac2c9f855691e731bc71eec0903cd824"
+      },
+      {
+        "path": "src/shared/annex-control-protocol.ts",
+        "sha256": "572357f08535654bc6fe6ebffbe0bf6508363eab61c8c7170681d1efdd374f61",
+        "bytes": 15458,
+        "gitBlob": "6ee5ef77a8d978da390838dde7e450ac05374d78"
+      },
+      {
+        "path": "src/shared/annex-control-protocol.test.ts",
+        "sha256": "629dd1740f0b0784ae8cd0516b376cde30e2a84281f382da3602be4d89e889bc",
+        "bytes": 7114,
+        "gitBlob": "0c9cf1f050c4cb30218ecd81f32342474e2dfa3b"
+      },
+      {
+        "path": "src/main/services/annex-client.ts",
+        "sha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98",
+        "bytes": 173595,
+        "gitBlob": "77cfe1328ce8b05ed4df5243a3683938e98a9670"
+      },
+      {
+        "path": "src/main/services/annex-client.test.ts",
+        "sha256": "0d438fd55564f23a34a7ec0db7edd509a278e2ab0c8fb4b51b3910f5be9b36f6",
+        "bytes": 295529,
+        "gitBlob": "7ecb6894da0a1587df4a034fa22d6cadb17882b2"
+      },
+      {
+        "path": "src/main/services/annex-server.ts",
+        "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+        "bytes": 361313,
+        "gitBlob": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b"
+      },
+      {
+        "path": "src/main/services/git-service.ts",
+        "sha256": "5e991c7f519a1a00823a40200d90fc175627b687895f2196e5189cd3791a13c7",
+        "bytes": 44977,
+        "gitBlob": "26abc474f1455721718c496bc6d937f8dd0ed35a"
+      },
+      {
+        "path": "src/shared/annex-binary-limits.ts",
+        "sha256": "471d2d33525218a1017c05b60a7da065bcb7295f787c685ae1fa4a6a484c8a6c",
+        "bytes": 431,
+        "gitBlob": "f9015fabed6d83cd82071c8a101f67c6b5865372"
+      },
+      {
+        "path": "src/shared/icon-limits.ts",
+        "sha256": "4088b925aaa66bc8e0b5164c6ceb75456be028f6b45d68a6921bd2804f9eccab",
+        "bytes": 1954,
+        "gitBlob": "d440bcd0def61724a4792888ededa3c4723f7fd1"
+      },
+      {
+        "path": "src/shared/chat/index.ts",
+        "sha256": "c9b6cf0df080130c9d4778a1048cb3546380fc82ab42244d8c64edfb8bcbcf94",
+        "bytes": 305,
+        "gitBlob": "0b029abb9461174d0d31facb84b26131aa4cb091"
+      },
+      {
+        "path": "src/shared/chat/attachments.ts",
+        "sha256": "0afe904b534ee5a12e3a34b4d3cf2e89546814758984b7dd160559db82573898",
+        "bytes": 1892,
+        "gitBlob": "bcee1a73f0eac05e36e7493a6e84b80a92d0c9bf"
+      },
+      {
+        "path": "src/main/services/annex-full-events.ts",
+        "sha256": "a479f7f1e154dedb395bacfb6e9d4a2d961a4141414579d6489b1d424d1a715c",
+        "bytes": 3943,
+        "gitBlob": "a9b9c8875cabe561a171e38bd868c8389a962f06"
+      },
+      {
+        "path": "src/shared/handoff-transfer.ts",
+        "sha256": "657663ef9c6836a0b0b3ae59b0e92679c2a070d1cbfbcf6609f8ef45d104ef82",
+        "bytes": 1521,
+        "gitBlob": "7927b7731a6a0303e5a75699fdc25a811fab10c2"
+      },
+      {
+        "path": "src/main/services/annex-routes.ts",
+        "sha256": "e676e222b543b11e6978a86fd1c0916e510c8ed3cea526a030164bb25fcc72b8",
+        "bytes": 3399,
+        "gitBlob": "40900d393e8c66b27e11883a3e7677dc9ddd1bd3"
+      },
+      {
+        "path": "src/shared/annex-problems.ts",
+        "sha256": "f87cdb5a347bf1f3b2f28146459d98d44e4cd07b3c7d4015fb08e1880a05803e",
+        "bytes": 8137,
+        "gitBlob": "ffe01e149cf5838d7ce9c13587838a1daa511cc3"
+      },
+      {
+        "path": "src/shared/types.ts",
+        "sha256": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+        "bytes": 76632,
+        "gitBlob": "d1b0d86fda1037c8262e12503bdfb0c8e63acde0"
+      },
+      {
+        "path": "src/main/services/annex-tls.ts",
+        "sha256": "138761ee7b60e65d7dd3b282f5926a754efc068abfa14186a26a086fdc511cea",
+        "bytes": 13601,
+        "gitBlob": "dad106486d21d16f65beb9b9edbb357d8bb809e8"
+      },
+      {
+        "path": "src/main/services/annex-device-signal.ts",
+        "sha256": "31e25abf98c78e7ce5721c9c9391e0d657ff9e670b9ac0939e9e0001f5cd04bf",
+        "bytes": 1990,
+        "gitBlob": "9b23750124ddfc79612a0bc87216b001fa995e81"
+      },
+      {
+        "path": "src/main/services/log-service.ts",
+        "sha256": "0e6c8c53c69597eebf8d3db43d34b2c47a9fabd14f9552e0a99aba387a752c9a",
+        "bytes": 3644,
+        "gitBlob": "050e6f105d2ebdbd84ca3af9e29e8e37cc6c1e19"
+      },
+      {
+        "path": "test/global-setup.ts",
+        "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+        "bytes": 658,
+        "gitBlob": "f80eac131998f792ca0f271f80eb606215c942af"
+      },
+      {
+        "path": "test/standard-runtime-boundary.ts",
+        "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+        "bytes": 379,
+        "gitBlob": "0a2d496ec59195a46b27a4b5394d4fab9111f62d"
+      },
+      {
+        "path": "vitest.config.ts",
+        "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+        "bytes": 3220,
+        "gitBlob": "e371e57159be74b4f5baf9aadcb0339fa6034025"
+      },
+      {
+        "path": "tsconfig.json",
+        "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+        "bytes": 530,
+        "gitBlob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef"
+      },
+      {
+        "path": "docs/annex-reverse-routes.tsconfig.json",
+        "sha256": "26b864ea875ec6db8bc65c0e514f6103314a7133639b44b2e185d62d06a3de4a",
+        "bytes": 921,
+        "gitBlob": "31137e6846a46b3ad0f8890b2e10bc2b39620112"
+      },
+      {
+        "path": "package.json",
+        "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+        "bytes": 5782,
+        "gitBlob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8"
+      },
+      {
+        "path": "package-lock.json",
+        "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+        "bytes": 690814,
+        "gitBlob": "7e45389f84ca58c5c7832cab169aa5674320d25d"
+      },
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/capture.py",
+        "sha256": "f9675e82c45eb877400611b9738028c0d7896700ef26b98788692d4ff7b6017a",
+        "bytes": 4268,
+        "gitBlob": "335deacfdde2838b091f9754dcab0b2765870a25"
+      }
+    ]
+  },
+  "actualBaseline": {
+    "head": "9eff428ebeb70c6b7d0996b6600713a50b4928ed",
+    "tree": "2bc1e5b37e8e8f89898982641359c47b580b59d6",
+    "stableBeforeAfter": true,
+    "selectedInputs": 31,
+    "command": [
+      "~/.clubhouse/orch/desktop-test-gate.sh",
+      "lane-p2",
+      "4",
+      "--",
+      "npx",
+      "vitest",
+      "run",
+      "--project",
+      "main",
+      "src/main/services/annex-control.test.ts",
+      "--maxWorkers=2",
+      "-t",
+      "GET Git diff envelope boundary",
+      "--reporter=default",
+      "--reporter=junit",
+      "--outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red.xml"
+    ],
+    "minimumGiB": 4,
+    "exit": 1,
+    "rawSha256": "230eb07eeb391521667119db630834e7c80ce29b581c42193bb129ccdfbfb7c7",
+    "pass": 5,
+    "fail": 2,
+    "skip": 190,
+    "selectedCases": [
+      {
+        "name": "GET Git diff envelope boundary > accepts the exact former envelope boundary",
+        "failed": false
+      },
+      {
+        "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ",
+        "failed": true
+      },
+      {
+        "name": "GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=large%20file.txt&staged=false",
+        "failed": true
+      },
+      {
+        "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'POST' '/api/v1/projects/project%20name/git/d\u2026'",
+        "failed": false
+      },
+      {
+        "name": "GET Git diff envelope boundary > retains the ordinary route budget for 'GET' '/api/v1/projects/project%20name/git/d\u2026'",
+        "failed": false
+      },
+      {
+        "name": "GET Git diff envelope boundary > retains a stricter caller limit before credit for an authorized diff",
+        "failed": false
+      },
+      {
+        "name": "GET Git diff envelope boundary > retains the frame bound for a peer without bulk capability",
+        "failed": false
+      }
+    ],
+    "allProductionFilesUnchangedByParentAndTwoFileDiff": true
+  },
+  "sites": [
+    {
+      "path": "src/main/services/annex-control.ts",
+      "line": 517,
+      "originalIdentity": "pending.path + pending.method for accept"
+    },
+    {
+      "path": "src/main/services/annex-control.ts",
+      "line": 529,
+      "originalIdentity": "pending.path + pending.method for rejectStart"
+    },
+    {
+      "path": "src/main/services/annex-control.ts",
+      "line": 860,
+      "originalIdentity": "request.path + request.method for dispatch ctx responseLimit"
+    }
+  ],
+  "requiredResourceQualification": "annex-server.ts5055-5057 clips with Buffer.subarray: logical cap+1 view can retain entire backing buffer. No target-allocation/RSS bound is proved. Preexisting disk/string/JSON materialization also unchanged.",
+  "matcherRequirement": "Raw original request path and exact GET; anchored matcher precedes loose legacy special-case regexes so query text cannot shadow intended git-diff policy. No URL normalization/decoding for budget lookup.",
+  "reviewerExecution": "No local test/compiler/lint/application/CI rerun. Read-only source, receipt, hash and XML analysis.",
+  "verdict": "APPROVE finite GET-only boundary for bounded implementation, with explicit resource qualification and source/proof conditions; no implementation acceptance."
+}
