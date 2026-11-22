@@ -80,14 +80,38 @@ let dir: string;
 let fixture: Fixture | undefined;
 const releases: Array<() => void> = [];
 const operations: Promise<unknown>[] = [];
+let retiringFixture = false;
+const toolWork: Array<{ tool: string; started: number; state: 'pending' | 'completed' | 'failed' }> = [];
 
 beforeEach(async () => {
+  retiringFixture = false;
+  toolWork.length = 0;
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'handoff-producer-admission-'));
   fixture = await setup(dir);
+  const callTool = fixture.tools.callTool;
+  vi.spyOn(fixture.tools, 'callTool').mockImplementation((...args) => {
+    if (args[0] !== caller) return callTool(...args);
+    if (retiringFixture) throw new Error('Producer fixture is retiring; no new test calls may start.');
+    const trace: (typeof toolWork)[number] = { tool: args[1], started: Date.now(), state: 'pending' };
+    toolWork.push(trace);
+    const pending = callTool(...args).then((result) => {
+      trace.state = 'completed';
+      return result;
+    }, (error) => {
+      trace.state = 'failed';
+      throw error;
+    });
+    operations.push(pending);
+    return pending;
+  });
 });
 async function cleanupFixture(): Promise<void> {
+  retiringFixture = true;
+  if (process.platform === 'win32' && toolWork.some((work) => work.state === 'pending')) {
+    console.error('Producer fixture teardown work:', toolWork.map((work) => ({ ...work, ageMs: Date.now() - work.started })));
+  }
   for (const release of releases.splice(0)) release();
-  await Promise.all(operations.splice(0));
+  while (operations.length) await Promise.all(operations.splice(0));
   await fixture?.hostApi.stopHandoffs();
   fixture?.requests._resetGrantRequestsForTesting();
   vi.restoreAllMocks();
@@ -159,7 +183,10 @@ async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestS
   });
   const pending = fx.tools.callTool(caller, 'offer_handoff', args);
   operations.push(pending);
-  await Promise.all([entered.promise, queued.promise]);
+  await Promise.race([
+    Promise.all([entered.promise, queued.promise]),
+    pending.then((result) => { throw new Error(`Offer settled before its actual history-queue hold: ${JSON.stringify(result)}`); }),
+  ]);
   return { pending, release: release.resolve };
 }
 
