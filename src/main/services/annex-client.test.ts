@@ -108,6 +108,7 @@ vi.mock('./annex-peers', () => ({
   removePeer: vi.fn(),
   removeAllPeers: vi.fn(),
   listPeers: vi.fn().mockReturnValue([]),
+  listPeersForDisplay: vi.fn().mockReturnValue([]),
   // Peers in these tests are pinned unless a test says otherwise.
   peerNeedsPairing: vi.fn().mockReturnValue(false),
   trustOf: vi.fn((p: Record<string, unknown>) => ({ fingerprint: p.fingerprint, tlsCertificateFingerprint: p.tlsCertificateFingerprint, pairingId: p.pairingId })),
