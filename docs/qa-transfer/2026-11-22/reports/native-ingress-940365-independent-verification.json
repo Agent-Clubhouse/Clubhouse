@@ -1,0 +1,3511 @@
+{
+  "source": "940365ecde7ca2e9fb31abf48362a938445e1fe5",
+  "sourceTree": "b3fb94c3b7bf94bb30a934d4d39b42a8850500aa",
+  "proof": "0da6a65fa4973658efe9964a4971ad9bc85d1912",
+  "proofTree": "b42ede3a96fa08b3d6fb5ce01b8d8daeaab2fc9b",
+  "manifestSha256": "1238141e78d13e9ed916c3a94c57b25046aeddb7b6cbeaf9e9a3ff77cc687f59",
+  "READMESha256": "00d8e0b72cf1e3b5737ecee97282dfc06946361aa6622c4191b8bac13f26c594",
+  "sourceInputs": [
+    {
+      "path": "src/main/services/annex-server.ts",
+      "bytes": 362159,
+      "sha256": "4c184cce14ca25804d6f45092937587d19bf50e50b6e2cd1b37ada9794a0a91c",
+      "gitBlob": "d7c406f124bb2344e8354669bbad7502f44139d1"
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "bytes": 46004,
+      "sha256": "8323fe2b1df1931feea68bb7e8fa6bf35ac2a28bd1776105c30bccf3adaa310d",
+      "gitBlob": "0c4cc42034ade17e8dcc05dd53d0cec4f0df3969"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.ts",
+      "bytes": 21765,
+      "sha256": "62570ff20f6f44c9c1f6e0ee9d94b153b991221351adac771dd555330e38d602",
+      "gitBlob": "185ab771d3a14becc89b54e55bf832b854c12ba9"
+    },
+    {
+      "path": "src/main/services/handoff-service.ts",
+      "bytes": 14799,
+      "sha256": "3e8cb1f3cd92c1a2eb6add2039869977505b79d85c18ba3a414391717e90f04f",
+      "gitBlob": "72e02b6700ad5cce8d3667822c2abec386924617"
+    },
+    {
+      "path": "src/main/services/handoff-host.test.ts",
+      "bytes": 40336,
+      "sha256": "fd0d33bea848ee876098ddf6b2a4e7a4d69e813d47023483eebdc52e2e6d2369",
+      "gitBlob": "36f84eb6d6c64d4cce4a1a60059b7a85c3e2e25c"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.test.ts",
+      "bytes": 24096,
+      "sha256": "e7a92226a032a31f067a128dcedb5ea3baa53c95a531fc3656f0d3fc1064311a",
+      "gitBlob": "cd422d780c3ed3f58f57f91b1b30083afe59d51b"
+    },
+    {
+      "path": "src/main/services/handoff-service.test.ts",
+      "bytes": 22929,
+      "sha256": "941ba76f7c841965f44427f267c5ffbcd9763f97752b4bf80cd1a949a34352f6",
+      "gitBlob": "f0670aabcd2d7f68fed6bc8460f070286819a44b"
+    },
+    {
+      "path": "test/annex-v2/annex-native-handoff-admission.test.ts",
+      "bytes": 25245,
+      "sha256": "47f7c7cf7a8f3ee11fcd7b957f4860fd3e21f3f66136a882f5337c6caf1056ff",
+      "gitBlob": "5890ddc124ac17e6b4a5efc422f5c1c0ae00497f"
+    },
+    {
+      "path": "docs/annex-native-handoff-admission.md",
+      "bytes": 6369,
+      "sha256": "7bf21ee34cd19c4ee8032c3d7d5aab56c30584e9cf01430d89d459ff31a141d5",
+      "gitBlob": "ab7561197058b325eb6074238aa8034381e2edfd"
+    }
+  ],
+  "candidateArtifactCount": 31,
+  "baselineArtifacts": [
+    {
+      "file": "01-native-baseline-original.log.gz",
+      "rawBytes": 7341,
+      "rawSha256": "e840dcbe841982fd3d62138dfb6dfcf5719505df0507bce0b16db9810101b803",
+      "storedBytes": 2056,
+      "storedSha256": "c796744d0a6ce87d5f2b7501d7dfaf11fe71207eff7c6772904539f040666a29",
+      "result": "5FAIL incorrect fixture authority witness; no semantic credit"
+    },
+    {
+      "file": "02-native-baseline-original.log.gz",
+      "rawBytes": 6806,
+      "rawSha256": "a908eb3d709327d7c6361f874fa1252719302986df43ecdc20d472e6e31d465c",
+      "storedBytes": 1895,
+      "storedSha256": "024453328f5cfceb3a258c06211a959d004eb094a74d25b574b4fab5f651e9ac",
+      "result": "5FAIL incorrect fixture authority witness; no semantic credit"
+    },
+    {
+      "file": "03-native-baseline-original.log.gz",
+      "rawBytes": 6424,
+      "rawSha256": "91244d7c4955b81dc3c7e30e87c3c46fe5606ae252e37fcd64fe8d73aa036523",
+      "storedBytes": 2860,
+      "storedSha256": "bb001947483de7329de0da025a61fd8c22bf8a0cad0442a1148cec7ca208e6bc",
+      "result": "3PASS/2FAIL meaningful native queue and stop failures"
+    }
+  ],
+  "baselineFixture": {
+    "file": "test/annex-v2/annex-native-handoff-admission.test.ts",
+    "blob": "a4bbbba418561c6f4718a0bb1d6bfdf179f22c95",
+    "sha256": "6aa21c76a3b600e4c7ba98cd9698f1283be2d0cf5dde5bcd73be7e8983693e23",
+    "bytes": 15274,
+    "identity": "after-execution observation for attempt03 only; attempts01/02 historical fixture identities not claimed"
+  },
+  "xmls": {
+    "06-host-risk-original.xml": {
+      "counts": {
+        "pass": 5,
+        "skipped": 33
+      },
+      "cases": [
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: incoming-setting",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection-restored",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > drains an admitted native save and its normal committed-history notice before replacement",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > does not replace a host identity while its original native authorization operation remains owned",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks metadata before asking for approval and refuses a secret before any durable write",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains query access after revocation and delivers each notice once across host restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=false)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=true)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse grant-revision capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse configuration capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse connection-notification capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-membership capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-permissions capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse epoch capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse readiness capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse membership capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse direct-promotion capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse host-instance capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not turn a valid reverse capture into a positive outgoing grant",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "still refuses an unconnected ordinary outgoing target even when reverse is ready",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the durable attempted marker if retirement follows its real save but precedes POST",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks the same capture inside the actual deadline microtask immediately before POST",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains the pending cancellation exception and original command ID after grant and connection revocation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps authoritative receiver history queryable and ACK-able without fresh outgoing or incoming permission",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "drains an already-admitted real history save on stop before replacement and retains normal committed-history notices",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-operation lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual scheduled-operation lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-rejection lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        }
+      ]
+    },
+    "16-postauth-mutant-original.xml": {
+      "counts": {
+        "pass": 1,
+        "skipped": 39,
+        "fail": 4
+      },
+      "cases": [
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=true",
+          "status": "fail",
+          "failure": "\nAssertionError: promise resolved \"{ schemaVersion: 1, \u2026(11) }\" instead of rejecting\n\n- Expected\n+ Received\n\n- Error {\n-   \"message\": \"rejected promise\",\n+ {\n+   \"createdAt\": 1795364208308,\n+   \"from\": {\n+     \"agentId\": \"sender\",\n+     \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+   },\n+   \"history\": [\n+     {\n+       \"at\": 1795364208308,\n+       \"by\": {\n+         \"address\": {\n+           \"agentId\": \"sender\",\n+           \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+         },\n+         \"kind\": \"agent\",\n+       },\n+       \"operationId\": \"789affd7-4b3a-4291-9dca-14336ae9cd8a\",\n+       \"state\": \"offered\",\n+     },\n+   ],\n+   \"id\": \"2dfd21eb-0883-4f73-af9e-122e99bf4dca\",\n+   \"manifest\": {\n+     \"fileCount\": 1,\n+     \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n+     \"totalBytes\": 10,\n+   },\n+   \"mode\": \"worktree\",\n+   \"schemaVersion\": 1,\n+   \"state\": \"offered\",\n+   \"task\": {\n+     \"brief\": \"Goal, done, remaining, verification.\",\n+     \"title\": \"Example task\",\n+   },\n+   \"to\": {\n+     \"agentId\": \"receiver\",\n+     \"machine\": \"bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb\",\n+   },\n+   \"updatedAt\": 1795364208308,\n+   \"version\": 1,\n  }\n\n \u276f src/main/services/handoff-service.test.ts:76:25\n            "
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=false",
+          "status": "fail",
+          "failure": "\nAssertionError: expected [Function] to throw error including 'Original native request retired' but got 'Handoff offer refused.'\n\nExpected: \"Original native request retired\"\nReceived: \"Handoff offer refused.\"\n\n \u276f src/main/services/handoff-service.test.ts:76:25\n            "
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=true",
+          "status": "fail",
+          "failure": "\nAssertionError: promise resolved \"{ schemaVersion: 1, \u2026(11) }\" instead of rejecting\n\n- Expected\n+ Received\n\n- Error {\n-   \"message\": \"rejected promise\",\n+ {\n+   \"createdAt\": 1795364208323,\n+   \"from\": {\n+     \"agentId\": \"sender\",\n+     \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+   },\n+   \"history\": [\n+     {\n+       \"at\": 1795364208323,\n+       \"by\": {\n+         \"address\": {\n+           \"agentId\": \"sender\",\n+           \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+         },\n+         \"kind\": \"agent\",\n+       },\n+       \"operationId\": \"d04bfa8f-c6a2-4ea2-a1f3-ae4b45f4335f\",\n+       \"state\": \"offered\",\n+     },\n+     {\n+       \"at\": 1795364208324,\n+       \"by\": {\n+         \"address\": {\n+           \"agentId\": \"sender\",\n+           \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+         },\n+         \"kind\": \"agent\",\n+       },\n+       \"operationId\": \"1384b78f-983e-4a6e-a368-51c7ee9dd7b2\",\n+       \"state\": \"cancelled\",\n+     },\n+   ],\n+   \"id\": \"ac5803f0-02b0-4ede-9da1-7cb68ba40252\",\n+   \"manifest\": {\n+     \"fileCount\": 1,\n+     \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n+     \"totalBytes\": 10,\n+   },\n+   \"mode\": \"worktree\",\n+   \"schemaVersion\": 1,\n+   \"state\": \"cancelled\",\n+   \"task\": {\n+     \"brief\": \"Goal, done, remaining, verification.\",\n+     \"title\": \"Example task\",\n+   },\n+   \"to\": {\n+     \"agentId\": \"receiver\",\n+     \"machine\": \"bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb\",\n+   },\n+   \"updatedAt\": 1795364208324,\n+   \"version\": 2,\n  }\n\n \u276f src/main/services/handoff-service.test.ts:76:25\n            "
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=false",
+          "status": "fail",
+          "failure": "\nAssertionError: expected [Function] to throw error including 'Original native request retired' but got 'Handoff offer refused.'\n\nExpected: \"Original native request retired\"\nReceived: \"Handoff offer refused.\"\n\n \u276f src/main/services/handoff-service.test.ts:76:25\n            "
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the existing-offer decision",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the terminal-cancelled-offer decision",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the cancellation decision",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > retains known history and cancellation exceptions while new incoming permission is withdrawn",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > declines durably and rejects acceptance after decline",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+          "status": "skipped",
+          "failure": null
+        }
+      ]
+    },
+    "05-native-risk-original.xml": {
+      "counts": {
+        "pass": 29,
+        "skipped": 75,
+        "fail": 5
+      },
+      "cases": [
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real existing-offer queue",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real cancel-with-offer queue",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real cancel queue",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real newer-snapshot queue",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real older-snapshot queue",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > checks original admission before its synchronous terminal-ACK decision",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > checks original admission before its synchronous terminal-cancel decision",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > retains separately admitted local expiry but refuses the retired incoming message afterwards",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued receiver-ACK and refuses before its real mutation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued terminal-ACK and refuses before its real mutation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-ACK and refuses before its real mutation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued primary-remove and refuses before its real mutation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-remove and refuses before its real mutation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > does not advance reverse ACK memory after either deterministic precommit failure or ambiguous post-rename failure",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=false)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=true)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > commits history admitted before retirement but refuses the next secondary POST under the original capture",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > publishes a real ACK admitted before retirement but refuses the distinct primary removal",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > uses one original capture and cancellation ID through primary adoption and every secondary adoption/ACK/removal",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > offers, accepts and cancels locally without using a network transport",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > synchronizes a receiver decision and preserves one response across retries and restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > retains offline offers and sender cancellations until reconnect after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > refuses forged transport identity and does not deliver a queued offer after revocation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > lets only an addressed Dispatcher choose a receiver and preserves participant privacy",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > recovers a same-machine cancellation intent committed just before a crash",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > does not treat an unrelated participant as the author of an idempotent decline",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > services an active agreement before retained terminal history after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: incoming-setting",
+          "status": "fail",
+          "failure": "\nAssertionError: promise resolved \"{ kind: 'refused', record: { \u2026(12) } }\" instead of rejecting\n\n- Expected\n+ Received\n\n- Error {\n-   \"message\": \"rejected promise\",\n+ {\n+   \"kind\": \"refused\",\n+   \"record\": {\n+     \"createdAt\": 1795363504181,\n+     \"failure\": {\n+       \"code\": \"refused\",\n+       \"step\": \"authorization\",\n+     },\n+     \"from\": {\n+       \"agentId\": \"foreign-sender\",\n+       \"machine\": \"cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795363504181,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"foreign-sender\",\n+             \"machine\": \"cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"147485c6-7417-4971-b95d-8f143158821a\",\n+         \"state\": \"offered\",\n+       },\n+       {\n+         \"at\": 1795363504192,\n+         \"by\": {\n+           \"kind\": \"machine\",\n+           \"machine\": \"ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab\",\n+         },\n+         \"failure\": {\n+           \"code\": \"refused\",\n+           \"step\": \"authorization\",\n+         },\n+         \"operationId\": \"4df0242d-49d2-4364-a29f-253ac6d3a0f6\",\n+         \"state\": \"failed\",\n+       },\n+     ],\n+     \"id\": \"bc6f9a12-c483-4127-8ad6-d7434367b8d0\",\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"state\": \"failed\",\n+     \"task\": {\n+       \"brief\": \"Goal and remaining checks.\",\n+       \"title\": \"Continue task\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"receiver\",\n+       \"machine\": \"ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab\",\n+     },\n+     \"updatedAt\": 1795363504192,\n+     \"version\": 2,\n+   },\n  }\n\n \u276f src/main/services/handoff-host.test.ts:131:27\n            "
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection",
+          "status": "fail",
+          "failure": "\nAssertionError: promise resolved \"{ kind: 'refused', record: { \u2026(12) } }\" instead of rejecting\n\n- Expected\n+ Received\n\n- Error {\n-   \"message\": \"rejected promise\",\n+ {\n+   \"kind\": \"refused\",\n+   \"record\": {\n+     \"createdAt\": 1795363504197,\n+     \"failure\": {\n+       \"code\": \"refused\",\n+       \"step\": \"authorization\",\n+     },\n+     \"from\": {\n+       \"agentId\": \"foreign-sender\",\n+       \"machine\": \"cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795363504197,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"foreign-sender\",\n+             \"machine\": \"cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"52b5c755-59d9-404f-87f6-30a229e78fac\",\n+         \"state\": \"offered\",\n+       },\n+       {\n+         \"at\": 1795363504203,\n+         \"by\": {\n+           \"kind\": \"machine\",\n+           \"machine\": \"ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab\",\n+         },\n+         \"failure\": {\n+           \"code\": \"refused\",\n+           \"step\": \"authorization\",\n+         },\n+         \"operationId\": \"ea256dab-80e9-425b-9acb-02127bcbeb47\",\n+         \"state\": \"failed\",\n+       },\n+     ],\n+     \"id\": \"ceafab05-30fd-4300-b27d-e3304a7d33ff\",\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"state\": \"failed\",\n+     \"task\": {\n+       \"brief\": \"Goal and remaining checks.\",\n+       \"title\": \"Continue task\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"receiver\",\n+       \"machine\": \"ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab\",\n+     },\n+     \"updatedAt\": 1795363504203,\n+     \"version\": 2,\n+   },\n  }\n\n \u276f src/main/services/handoff-host.test.ts:131:27\n            "
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection-restored",
+          "status": "fail",
+          "failure": "\nAssertionError: promise resolved \"{ schemaVersion: 1, \u2026(10) }\" instead of rejecting\n\n- Expected\n+ Received\n\n- Error {\n-   \"message\": \"rejected promise\",\n+ {\n+   \"createdAt\": 1795363504204,\n+   \"from\": {\n+     \"agentId\": \"foreign-sender\",\n+     \"machine\": \"cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd\",\n+   },\n+   \"history\": [\n+     {\n+       \"at\": 1795363504204,\n+       \"by\": {\n+         \"address\": {\n+           \"agentId\": \"foreign-sender\",\n+           \"machine\": \"cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd:cd\",\n+         },\n+         \"kind\": \"agent\",\n+       },\n+       \"operationId\": \"0c3b3d36-2db3-4fb2-8cbe-86cc767a0565\",\n+       \"state\": \"offered\",\n+     },\n+   ],\n+   \"id\": \"b2cbc4b8-7dce-4525-a2e7-f56309dfe1f3\",\n+   \"mode\": \"worktree\",\n+   \"schemaVersion\": 1,\n+   \"state\": \"offered\",\n+   \"task\": {\n+     \"brief\": \"Goal and remaining checks.\",\n+     \"title\": \"Continue task\",\n+   },\n+   \"to\": {\n+     \"agentId\": \"receiver\",\n+     \"machine\": \"ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab:ab\",\n+   },\n+   \"updatedAt\": 1795363504204,\n+   \"version\": 1,\n  }\n\n \u276f src/main/services/handoff-host.test.ts:131:27\n            "
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > drains an admitted native save and its normal committed-history notice before replacement",
+          "status": "fail",
+          "failure": "\nAssertionError: expected [Function] to throw error including 'authorization changed' but got 'Handoff receiver permissions or conne\u2026'\n\nExpected: \"authorization changed\"\nReceived: \"Handoff receiver permissions or connection changed. Selected agents must allow handoff acceptance; Dispatchers must allow waking and messaging them.\"\n\n \u276f src/main/services/handoff-host.test.ts:155:35\n            "
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > does not replace a host identity while its original native authorization operation remains owned",
+          "status": "fail",
+          "failure": "\nAssertionError: expected [Function] to throw error including 'authorization changed' but got 'Handoff receiver permissions or conne\u2026'\n\nExpected: \"authorization changed\"\nReceived: \"Handoff receiver permissions or connection changed. Selected agents must allow handoff acceptance; Dispatchers must allow waking and messaging them.\"\n\n \u276f src/main/services/handoff-host.test.ts:175:35\n            "
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks metadata before asking for approval and refuses a secret before any durable write",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains query access after revocation and delivers each notice once across host restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=false)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=true)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse grant-revision capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse configuration capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse connection-notification capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-membership capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-permissions capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse epoch capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse readiness capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse membership capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse direct-promotion capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse host-instance capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not turn a valid reverse capture into a positive outgoing grant",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "still refuses an unconnected ordinary outgoing target even when reverse is ready",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the durable attempted marker if retirement follows its real save but precedes POST",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks the same capture inside the actual deadline microtask immediately before POST",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains the pending cancellation exception and original command ID after grant and connection revocation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps authoritative receiver history queryable and ACK-able without fresh outgoing or incoming permission",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "drains an already-admitted real history save on stop before replacement and retains normal committed-history notices",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-operation lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual scheduled-operation lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-rejection lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=true",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=false",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=true",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=false",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the existing-offer decision",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the terminal-cancelled-offer decision",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the cancellation decision",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > retains known history and cancellation exceptions while new incoming permission is withdrawn",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > declines durably and rejects acceptance after decline",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+          "status": "skipped",
+          "failure": null
+        }
+      ]
+    },
+    "07-mixed-lifetime-original.xml": {
+      "counts": {
+        "skipped": 38,
+        "pass": 1
+      },
+      "cases": [
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: incoming-setting",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection-restored",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > drains an admitted native save and its normal committed-history notice before replacement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > does not replace a host identity while its original native authorization operation remains owned",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > drains native writers without changing retired outgoing POST lifetime or permitting its late adoption",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks metadata before asking for approval and refuses a secret before any durable write",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains query access after revocation and delivers each notice once across host restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=false)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=true)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse grant-revision capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse configuration capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse connection-notification capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-membership capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-permissions capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse epoch capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse readiness capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse membership capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse direct-promotion capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse host-instance capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not turn a valid reverse capture into a positive outgoing grant",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "still refuses an unconnected ordinary outgoing target even when reverse is ready",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the durable attempted marker if retirement follows its real save but precedes POST",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks the same capture inside the actual deadline microtask immediately before POST",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains the pending cancellation exception and original command ID after grant and connection revocation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps authoritative receiver history queryable and ACK-able without fresh outgoing or incoming permission",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "drains an already-admitted real history save on stop before replacement and retains normal committed-history notices",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-operation lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual scheduled-operation lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-rejection lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        }
+      ]
+    },
+    "14-native-final-original.xml": {
+      "counts": {
+        "pass": 35,
+        "skipped": 75
+      },
+      "cases": [
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real existing-offer queue",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real cancel-with-offer queue",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real cancel queue",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real newer-snapshot queue",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real older-snapshot queue",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > checks original admission before its synchronous terminal-ACK decision",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > checks original admission before its synchronous terminal-cancel decision",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > native incoming coordinator admission > retains separately admitted local expiry but refuses the retired incoming message afterwards",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued receiver-ACK and refuses before its real mutation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued terminal-ACK and refuses before its real mutation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-ACK and refuses before its real mutation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued primary-remove and refuses before its real mutation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-remove and refuses before its real mutation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > does not advance reverse ACK memory after either deterministic precommit failure or ambiguous post-rename failure",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=false)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=true)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > commits history admitted before retirement but refuses the next secondary POST under the original capture",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > publishes a real ACK admitted before retirement but refuses the distinct primary removal",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "reverse sync actual history and command queue assembly > uses one original capture and cancellation ID through primary adoption and every secondary adoption/ACK/removal",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > offers, accepts and cancels locally without using a network transport",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > synchronizes a receiver decision and preserves one response across retries and restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > retains offline offers and sender cancellations until reconnect after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > refuses forged transport identity and does not deliver a queued offer after revocation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > lets only an addressed Dispatcher choose a receiver and preserves participant privacy",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > recovers a same-machine cancellation intent committed just before a crash",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > does not treat an unrelated participant as the author of an idempotent decline",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-coordinator.test.ts",
+          "name": "handoff agreement synchronization > services an active agreement before retained terminal history after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: incoming-setting",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection-restored",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > drains an admitted native save and its normal committed-history notice before replacement",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > does not replace a host identity while its original native authorization operation remains owned",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "native incoming host ownership and fresh policy > drains native writers without changing retired outgoing POST lifetime or permitting its late adoption",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks metadata before asking for approval and refuses a secret before any durable write",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains query access after revocation and delivers each notice once across host restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=false)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "preserves old no-control behavior and the existing direct route (direct=true)",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse grant-revision capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse configuration capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse connection-notification capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-membership capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse binding-permissions capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse epoch capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse readiness capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse membership capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse direct-promotion capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retires the original reverse host-instance capture across the actual outgoing authorization await",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "does not turn a valid reverse capture into a positive outgoing grant",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "still refuses an unconnected ordinary outgoing target even when reverse is ready",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the durable attempted marker if retirement follows its real save but precedes POST",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "checks the same capture inside the actual deadline microtask immediately before POST",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "retains the pending cancellation exception and original command ID after grant and connection revocation",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps authoritative receiver history queryable and ACK-able without fresh outgoing or incoming permission",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "drains an already-admitted real history save on stop before replacement and retains normal committed-history notices",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-operation lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual scheduled-operation lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-host.test.ts",
+          "name": "keeps the actual posted-rejection lease after outer deadline until real settlement",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=true",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=false",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=true",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=false",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the existing-offer decision",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the terminal-cancelled-offer decision",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the cancellation decision",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > retains known history and cancellation exceptions while new incoming permission is withdrawn",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > declines durably and rejects acceptance after decline",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+          "status": "skipped",
+          "failure": null
+        }
+      ]
+    },
+    "15-queue-mutant-original.xml": {
+      "counts": {
+        "skipped": 27,
+        "fail": 3,
+        "pass": 1
+      },
+      "cases": [
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=true",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=false",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=true",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=false",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the existing-offer decision",
+          "status": "fail",
+          "failure": "\nAssertionError: promise resolved \"{ schemaVersion: 1, \u2026(11) }\" instead of rejecting\n\n- Expected\n+ Received\n\n- Error {\n-   \"message\": \"rejected promise\",\n+ {\n+   \"createdAt\": 1795364205193,\n+   \"from\": {\n+     \"agentId\": \"sender\",\n+     \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+   },\n+   \"history\": [\n+     {\n+       \"at\": 1795364205193,\n+       \"by\": {\n+         \"address\": {\n+           \"agentId\": \"sender\",\n+           \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+         },\n+         \"kind\": \"agent\",\n+       },\n+       \"operationId\": \"b70887d7-993c-42e3-8b7f-0916fd2bcbf3\",\n+       \"state\": \"offered\",\n+     },\n+   ],\n+   \"id\": \"88296442-8d28-4c21-af70-b4446c462b58\",\n+   \"manifest\": {\n+     \"fileCount\": 1,\n+     \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n+     \"totalBytes\": 10,\n+   },\n+   \"mode\": \"worktree\",\n+   \"schemaVersion\": 1,\n+   \"state\": \"offered\",\n+   \"task\": {\n+     \"brief\": \"Goal, done, remaining, verification.\",\n+     \"title\": \"Example task\",\n+   },\n+   \"to\": {\n+     \"agentId\": \"receiver\",\n+     \"machine\": \"bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb\",\n+   },\n+   \"updatedAt\": 1795364205193,\n+   \"version\": 1,\n  }\n\n \u276f src/main/services/handoff-service.test.ts:105:27\n            "
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the terminal-cancelled-offer decision",
+          "status": "fail",
+          "failure": "\nAssertionError: promise resolved \"{ schemaVersion: 1, \u2026(11) }\" instead of rejecting\n\n- Expected\n+ Received\n\n- Error {\n-   \"message\": \"rejected promise\",\n+ {\n+   \"createdAt\": 1795364205206,\n+   \"from\": {\n+     \"agentId\": \"sender\",\n+     \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+   },\n+   \"history\": [\n+     {\n+       \"at\": 1795364205206,\n+       \"by\": {\n+         \"address\": {\n+           \"agentId\": \"sender\",\n+           \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+         },\n+         \"kind\": \"agent\",\n+       },\n+       \"operationId\": \"3dc392eb-8aa6-4411-90cc-786dcd1f419d\",\n+       \"state\": \"offered\",\n+     },\n+     {\n+       \"at\": 1795364205207,\n+       \"by\": {\n+         \"address\": {\n+           \"agentId\": \"receiver\",\n+           \"machine\": \"bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb\",\n+         },\n+         \"kind\": \"agent\",\n+       },\n+       \"operationId\": \"00ce1f86-1d86-4f6a-aec3-7f964bcb79c4\",\n+       \"state\": \"declined\",\n+     },\n+   ],\n+   \"id\": \"15ee8b2e-bd9c-446f-ace2-633ec47e2d61\",\n+   \"manifest\": {\n+     \"fileCount\": 1,\n+     \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n+     \"totalBytes\": 10,\n+   },\n+   \"mode\": \"worktree\",\n+   \"schemaVersion\": 1,\n+   \"state\": \"declined\",\n+   \"task\": {\n+     \"brief\": \"Goal, done, remaining, verification.\",\n+     \"title\": \"Example task\",\n+   },\n+   \"to\": {\n+     \"agentId\": \"receiver\",\n+     \"machine\": \"bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb\",\n+   },\n+   \"updatedAt\": 1795364205207,\n+   \"version\": 2,\n  }\n\n \u276f src/main/services/handoff-service.test.ts:105:27\n            "
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > checks inside the actual held queue before the cancellation decision",
+          "status": "fail",
+          "failure": "\nAssertionError: promise resolved \"{ schemaVersion: 1, \u2026(11) }\" instead of rejecting\n\n- Expected\n+ Received\n\n- Error {\n-   \"message\": \"rejected promise\",\n+ {\n+   \"createdAt\": 1795364205214,\n+   \"from\": {\n+     \"agentId\": \"sender\",\n+     \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+   },\n+   \"history\": [\n+     {\n+       \"at\": 1795364205214,\n+       \"by\": {\n+         \"address\": {\n+           \"agentId\": \"sender\",\n+           \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+         },\n+         \"kind\": \"agent\",\n+       },\n+       \"operationId\": \"8a9e82fe-bee9-43c8-9f8e-13a002f6cc79\",\n+       \"state\": \"offered\",\n+     },\n+     {\n+       \"at\": 1795364205220,\n+       \"by\": {\n+         \"address\": {\n+           \"agentId\": \"sender\",\n+           \"machine\": \"aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa\",\n+         },\n+         \"kind\": \"agent\",\n+       },\n+       \"operationId\": \"3259ddb5-5f68-460a-83a8-2b7151b8927b\",\n+       \"state\": \"cancelled\",\n+     },\n+   ],\n+   \"id\": \"6d42e446-73f2-4fa0-99b9-4596a184965e\",\n+   \"manifest\": {\n+     \"fileCount\": 1,\n+     \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n+     \"totalBytes\": 10,\n+   },\n+   \"mode\": \"worktree\",\n+   \"schemaVersion\": 1,\n+   \"state\": \"cancelled\",\n+   \"task\": {\n+     \"brief\": \"Goal, done, remaining, verification.\",\n+     \"title\": \"Example task\",\n+   },\n+   \"to\": {\n+     \"agentId\": \"receiver\",\n+     \"machine\": \"bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb\",\n+   },\n+   \"updatedAt\": 1795364205220,\n+   \"version\": 2,\n  }\n\n \u276f src/main/services/handoff-service.test.ts:105:27\n            "
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "native incoming decision admission > retains known history and cancellation exceptions while new incoming permission is withdrawn",
+          "status": "pass",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > declines durably and rejects acceptance after decline",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+          "status": "skipped",
+          "failure": null
+        },
+        {
+          "class": "src/main/services/handoff-service.test.ts",
+          "name": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+          "status": "skipped",
+          "failure": null
+        }
+      ]
+    }
+  },
+  "manifestNameErrors": [
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 0,
+      "actualName": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 1,
+      "actualName": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 2,
+      "actualName": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 3,
+      "actualName": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 4,
+      "actualName": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 5,
+      "actualName": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 6,
+      "actualName": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 7,
+      "actualName": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 8,
+      "actualName": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 9,
+      "actualName": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 10,
+      "actualName": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 11,
+      "actualName": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 12,
+      "actualName": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 13,
+      "actualName": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real existing-offer queue",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 14,
+      "actualName": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real cancel-with-offer queue",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 15,
+      "actualName": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real cancel queue",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 16,
+      "actualName": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real newer-snapshot queue",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 17,
+      "actualName": "reverse sync actual history and command queue assembly > native incoming coordinator admission > carries the original callback into the real older-snapshot queue",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 18,
+      "actualName": "reverse sync actual history and command queue assembly > native incoming coordinator admission > checks original admission before its synchronous terminal-ACK decision",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 19,
+      "actualName": "reverse sync actual history and command queue assembly > native incoming coordinator admission > checks original admission before its synchronous terminal-cancel decision",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 20,
+      "actualName": "reverse sync actual history and command queue assembly > native incoming coordinator admission > retains separately admitted local expiry but refuses the retired incoming message afterwards",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 21,
+      "actualName": "reverse sync actual history and command queue assembly > carries the original capture into queued receiver-ACK and refuses before its real mutation",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 22,
+      "actualName": "reverse sync actual history and command queue assembly > carries the original capture into queued terminal-ACK and refuses before its real mutation",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 23,
+      "actualName": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-ACK and refuses before its real mutation",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 24,
+      "actualName": "reverse sync actual history and command queue assembly > carries the original capture into queued primary-remove and refuses before its real mutation",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 25,
+      "actualName": "reverse sync actual history and command queue assembly > carries the original capture into queued secondary-remove and refuses before its real mutation",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 26,
+      "actualName": "reverse sync actual history and command queue assembly > does not advance reverse ACK memory after either deterministic precommit failure or ambiguous post-rename failure",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 27,
+      "actualName": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=false)",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 28,
+      "actualName": "reverse sync actual history and command queue assembly > requires actual durable ACK only for reverse, preserving legacy direct defaults (direct=true)",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 29,
+      "actualName": "reverse sync actual history and command queue assembly > commits history admitted before retirement but refuses the next secondary POST under the original capture",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 30,
+      "actualName": "reverse sync actual history and command queue assembly > publishes a real ACK admitted before retirement but refuses the distinct primary removal",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 31,
+      "actualName": "reverse sync actual history and command queue assembly > uses one original capture and cancellation ID through primary adoption and every secondary adoption/ACK/removal",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 32,
+      "actualName": "handoff agreement synchronization > offers, accepts and cancels locally without using a network transport",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 33,
+      "actualName": "handoff agreement synchronization > synchronizes a receiver decision and preserves one response across retries and restart",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 34,
+      "actualName": "handoff agreement synchronization > retains offline offers and sender cancellations until reconnect after restart",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 35,
+      "actualName": "handoff agreement synchronization > refuses forged transport identity and does not deliver a queued offer after revocation",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 36,
+      "actualName": "handoff agreement synchronization > lets only an addressed Dispatcher choose a receiver and preserves participant privacy",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 37,
+      "actualName": "handoff agreement synchronization > recovers a same-machine cancellation intent committed just before a crash",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 38,
+      "actualName": "handoff agreement synchronization > does not treat an unrelated participant as the author of an idempotent decline",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 39,
+      "actualName": "handoff agreement synchronization > services an active agreement before retained terminal history after restart",
+      "manifestName": "src/main/services/handoff-coordinator.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 40,
+      "actualName": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: incoming-setting",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 41,
+      "actualName": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 42,
+      "actualName": "native incoming host ownership and fresh policy > refuses a stale fresh-offer policy after held receiver lookup: connection-restored",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 43,
+      "actualName": "native incoming host ownership and fresh policy > drains an admitted native save and its normal committed-history notice before replacement",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 44,
+      "actualName": "native incoming host ownership and fresh policy > does not replace a host identity while its original native authorization operation remains owned",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 45,
+      "actualName": "native incoming host ownership and fresh policy > drains native writers without changing retired outgoing POST lifetime or permitting its late adoption",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 46,
+      "actualName": "resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 47,
+      "actualName": "checks metadata before asking for approval and refuses a secret before any durable write",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 48,
+      "actualName": "retains query access after revocation and delivers each notice once across host restart",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 49,
+      "actualName": "blocks new incoming work while disabled but still synchronizes retained decisions and cancellation",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 50,
+      "actualName": "prepares one asleep managed helper using the normal creation boundary and reuses it after restart",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 51,
+      "actualName": "routes machine:<name> to a remote Dispatcher that accepts with Receiver",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 52,
+      "actualName": "routes machine:<name> to a remote Dispatcher that accepts with new_helper",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 53,
+      "actualName": "publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 54,
+      "actualName": "does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 55,
+      "actualName": "sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 56,
+      "actualName": "synchronizes an offered agreement through the original host with reverse readiness but no direct connection or snapshot",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 57,
+      "actualName": "preserves old no-control behavior and the existing direct route (direct=false)",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 58,
+      "actualName": "preserves old no-control behavior and the existing direct route (direct=true)",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 59,
+      "actualName": "retires the original reverse grant-revision capture across the actual outgoing authorization await",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 60,
+      "actualName": "retires the original reverse configuration capture across the actual outgoing authorization await",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 61,
+      "actualName": "retires the original reverse connection-notification capture across the actual outgoing authorization await",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 62,
+      "actualName": "retires the original reverse binding-membership capture across the actual outgoing authorization await",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 63,
+      "actualName": "retires the original reverse binding-permissions capture across the actual outgoing authorization await",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 64,
+      "actualName": "retires the original reverse epoch capture across the actual outgoing authorization await",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 65,
+      "actualName": "retires the original reverse readiness capture across the actual outgoing authorization await",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 66,
+      "actualName": "retires the original reverse membership capture across the actual outgoing authorization await",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 67,
+      "actualName": "retires the original reverse direct-promotion capture across the actual outgoing authorization await",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 68,
+      "actualName": "retires the original reverse host-instance capture across the actual outgoing authorization await",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 69,
+      "actualName": "does not turn a valid reverse capture into a positive outgoing grant",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 70,
+      "actualName": "still refuses an unconnected ordinary outgoing target even when reverse is ready",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 71,
+      "actualName": "keeps the durable attempted marker if retirement follows its real save but precedes POST",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 72,
+      "actualName": "checks the same capture inside the actual deadline microtask immediately before POST",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 73,
+      "actualName": "retains the pending cancellation exception and original command ID after grant and connection revocation",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 74,
+      "actualName": "keeps authoritative receiver history queryable and ACK-able without fresh outgoing or incoming permission",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 75,
+      "actualName": "drains an already-admitted real history save on stop before replacement and retains normal committed-history notices",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 76,
+      "actualName": "keeps the actual posted-operation lease after outer deadline until real settlement",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 77,
+      "actualName": "keeps the actual scheduled-operation lease after outer deadline until real settlement",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 78,
+      "actualName": "keeps the actual posted-rejection lease after outer deadline until real settlement",
+      "manifestName": "src/main/services/handoff-host.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 79,
+      "actualName": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=true",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 80,
+      "actualName": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=false",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 81,
+      "actualName": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=true",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 82,
+      "actualName": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=false",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 83,
+      "actualName": "native incoming decision admission > checks inside the actual held queue before the existing-offer decision",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 84,
+      "actualName": "native incoming decision admission > checks inside the actual held queue before the terminal-cancelled-offer decision",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 85,
+      "actualName": "native incoming decision admission > checks inside the actual held queue before the cancellation decision",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 86,
+      "actualName": "native incoming decision admission > retains known history and cancellation exceptions while new incoming permission is withdrawn",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 87,
+      "actualName": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 88,
+      "actualName": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 89,
+      "actualName": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 90,
+      "actualName": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 91,
+      "actualName": "durable handoff agreement > declines durably and rejects acceptance after decline",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 92,
+      "actualName": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 93,
+      "actualName": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 94,
+      "actualName": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 95,
+      "actualName": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 96,
+      "actualName": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 97,
+      "actualName": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 98,
+      "actualName": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 99,
+      "actualName": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 100,
+      "actualName": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 101,
+      "actualName": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 102,
+      "actualName": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 103,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 104,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 105,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 106,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 107,
+      "actualName": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 108,
+      "actualName": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "14-native-final-original.xml",
+      "index": 109,
+      "actualName": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 0,
+      "actualName": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=true",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 1,
+      "actualName": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=false",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 2,
+      "actualName": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=true",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 3,
+      "actualName": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=false",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 4,
+      "actualName": "native incoming decision admission > checks inside the actual held queue before the existing-offer decision",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 5,
+      "actualName": "native incoming decision admission > checks inside the actual held queue before the terminal-cancelled-offer decision",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 6,
+      "actualName": "native incoming decision admission > checks inside the actual held queue before the cancellation decision",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 7,
+      "actualName": "native incoming decision admission > retains known history and cancellation exceptions while new incoming permission is withdrawn",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 8,
+      "actualName": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 9,
+      "actualName": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 10,
+      "actualName": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 11,
+      "actualName": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 12,
+      "actualName": "durable handoff agreement > declines durably and rejects acceptance after decline",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 13,
+      "actualName": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 14,
+      "actualName": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 15,
+      "actualName": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 16,
+      "actualName": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 17,
+      "actualName": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 18,
+      "actualName": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 19,
+      "actualName": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 20,
+      "actualName": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 21,
+      "actualName": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 22,
+      "actualName": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 23,
+      "actualName": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 24,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 25,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 26,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 27,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 28,
+      "actualName": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 29,
+      "actualName": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "15-queue-mutant-original.xml",
+      "index": 30,
+      "actualName": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 0,
+      "actualName": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 1,
+      "actualName": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 2,
+      "actualName": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 3,
+      "actualName": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 4,
+      "actualName": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 5,
+      "actualName": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 6,
+      "actualName": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 7,
+      "actualName": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 8,
+      "actualName": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 9,
+      "actualName": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 10,
+      "actualName": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 11,
+      "actualName": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 12,
+      "actualName": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+      "manifestName": "test/annex-v2/annex-native-handoff-admission.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 13,
+      "actualName": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=true",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 14,
+      "actualName": "native incoming decision admission > checks original retirement after held offer authorization, including allowed=false",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 15,
+      "actualName": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=true",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 16,
+      "actualName": "native incoming decision admission > checks original retirement after held cancelled-offer authorization, including allowed=false",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 17,
+      "actualName": "native incoming decision admission > checks inside the actual held queue before the existing-offer decision",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 18,
+      "actualName": "native incoming decision admission > checks inside the actual held queue before the terminal-cancelled-offer decision",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 19,
+      "actualName": "native incoming decision admission > checks inside the actual held queue before the cancellation decision",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 20,
+      "actualName": "native incoming decision admission > retains known history and cancellation exceptions while new incoming permission is withdrawn",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 21,
+      "actualName": "durable handoff agreement > persists offers and acceptance across restart and restricts queries to participants",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 22,
+      "actualName": "durable handoff agreement > requires grants on offer and response, and never starts transfer on acceptance",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 23,
+      "actualName": "durable handoff agreement > blocks secrets in task metadata and response reasons without echoing values or persisting them",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 24,
+      "actualName": "durable handoff agreement > lets only the machine Dispatcher select a local target, without authorizing unrelated responders",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 25,
+      "actualName": "durable handoff agreement > declines durably and rejects acceptance after decline",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 26,
+      "actualName": "durable handoff agreement > reconciles an unacknowledged response or cancellation by operation id after restart",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 27,
+      "actualName": "durable handoff agreement > serializes competing accept/cancel decisions and forbids unilateral sender transitions",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 28,
+      "actualName": "durable handoff agreement > fails closed on sender or receiver grant revocation at the next worker boundary",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 29,
+      "actualName": "durable handoff agreement > retains the exact apply checkpoint and reports indeterminate recovery without retry or claiming rollback",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 30,
+      "actualName": "durable handoff agreement > leaves interrupted transfer resumable but rechecks grants after restart",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 31,
+      "actualName": "handoff synchronization > authenticates offer/snapshot sources, tolerates duplicates and stale prefixes, rejects rewritten history",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 32,
+      "actualName": "handoff synchronization > checks reverse newer adoption inside the actual held history queue",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 33,
+      "actualName": "handoff synchronization > checks reverse older-prefix adoption inside the actual held history queue",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 34,
+      "actualName": "handoff synchronization > truthfully commits already-admitted history after retirement while a real atomic rename is held",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 35,
+      "actualName": "handoff synchronization > surfaces before-rename IO failure without inventing history rollback or commit success",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 36,
+      "actualName": "handoff synchronization > surfaces after-real-rename IO failure without inventing history rollback or commit success",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 37,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {broken",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 38,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {}",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 39,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":2,\"records\":[]}",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 40,
+      "actualName": "handoff durable storage faults > refuses to overwrite an unreadable or unsupported store: {\"schemaVersion\":1,\"records\":[{}]}",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 41,
+      "actualName": "handoff durable storage faults > does not expose or acknowledge a transition when its atomic disk replacement fails",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 42,
+      "actualName": "handoff durable storage faults > hands out detached records and refuses lower-level history rewrites",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    },
+    {
+      "artifact": "16-postauth-mutant-original.xml",
+      "index": 43,
+      "actualName": "handoff durable storage faults > keeps queries at the committed version while a disk write is still in flight",
+      "manifestName": "src/main/services/handoff-service.test.ts"
+    }
+  ],
+  "compiler": {
+    "exit": 0,
+    "orderedInputs": 3960,
+    "parsedConfigRoots": 2469,
+    "explicitChangedFixtureRoots": 4,
+    "productionRoots": 2465,
+    "trackedHashMatches": 2472,
+    "ownerObservedDependencyHashes": 1488,
+    "atomicPerReadTracing": false
+  },
+  "lint": {
+    "errors": 0,
+    "warnings": 71,
+    "independentlyMappedServerBaselineWarnings": 71,
+    "normalizedWarningSha256": "eefbfc214975147e91301601998c789fd4ef03b01fa0ec9fb8e736ae3977483f"
+  },
+  "protectedInputsCount": 59,
+  "lowerProofCount": 87,
+  "fixtureCount": 106,
+  "fixtureBytes": 1547788,
+  "sourceFinding": "original native trust capture omits pairingId; current pairing test changes pairedAt only",
+  "reviewerProductExecutions": false
+}
