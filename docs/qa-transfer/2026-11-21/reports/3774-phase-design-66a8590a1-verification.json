@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "verdict": "APPROVE_DESIGN_IMPLEMENTATION_READY",
+  "reviewedUtc": "2026-11-22T04:49:52.266439+00:00",
+  "reviewer": "auto-reset-policy-design",
+  "source": "66a8590a1f571930d5478fad3c5c01c3bb1cd711",
+  "tree": "7cc4f2308c05d595da4017dd071c34d6a5077199",
+  "designSha256": "a465579faa215757393311ac9301b109dca844aef0418496c8ee446e11a61feb",
+  "priorBlockedDesign": "8a26721bbb22cba448c504e3170be1cd2562137a",
+  "priorBlockReport": "4c886ba9d6993c250d39d20add8d3cf735071267",
+  "reviewScope": "Only R1 output lifecycle correction, observer containment and bounds; native seam assessment retained without reinvestigation",
+  "baseline": "e56648cb0952cb29c5045107b635d81f662dae74",
+  "changedPaths": [
+    "docs/evidence/3774-phase-observation/design.md"
+  ],
+  "productionOrFixtureDelta": false,
+  "reviewerExecutedTests": false,
+  "requiredNextProof": [
+    "setup-failure and unchanged5000ms abort raw/JUnit channels",
+    "native exact args/callback/this/return/metadata/once/error forwarding",
+    "nonthrowing observer failure containment and original stop cleanup",
+    "late invocation/recorder isolation and own listener detach",
+    "bounds/payload allowlist/unfinished snapshots",
+    "exact source tests/types/lint and independent implementation review before any CI"
+  ],
+  "q5PreservedHead": "079a257acf38b168b529fb7745dae97f686b72b8"
+}
