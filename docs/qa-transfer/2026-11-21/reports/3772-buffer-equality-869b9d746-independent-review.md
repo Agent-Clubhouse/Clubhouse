@@ -1,0 +1,30 @@
+# Independent fixture delta review: PR #3772 Buffer equality
+
+**APPROVE the exact fixture-only delta at 869b9d746 for updating the same PR and obtaining ordinary new-head CI.** No production behavior or consumer approval is changed by this verdict. The original failed workflow remains failed; this is not authorization for a blind rerun or a timeout increase.
+
+Reviewed source [`869b9d74670db3f3fcfda359e4b25177c9afcd33`](https://github.com/Agent-Clubhouse/Clubhouse/commit/869b9d74670db3f3fcfda359e4b25177c9afcd33), tree `8444e6f88e46d519b78c85fbb04b0df85a49be5d`, has previously approved `0e779377f19e2c40347e983dd81ea752637a61d1` as its direct parent.
+Evidence [`74232b9766715a335f331352fbfffbb5176b8c46`](https://github.com/Agent-Clubhouse/Clubhouse/blob/74232b9766715a335f331352fbfffbb5176b8c46/docs/evidence/3772-buffer-equality/README.md), tree `54ddcbda63fa4170cdcd4d1f02aab187e7edc611`, has [manifest](https://github.com/Agent-Clubhouse/Clubhouse/blob/74232b9766715a335f331352fbfffbb5176b8c46/docs/evidence/3772-buffer-equality/manifest.json) SHA256 `183a6c431649453a5dba5c90b35726bcd5dd4b12b0fb6fc157fb0015c7dbb58e`.
+
+Reviewer `auto-reset-policy-design` used the existing authenticated `gh` route only. I inspected source and evidence without rerunning tests/types/lint, modifying product files, updating the PR, changing account/settings, or reopening the accepted consumer review. Q5 private WIP remains unchanged.
+
+## Exact assertion and preserved behavior
+
+The source commit changes exactly one line in `src/main/services/handoff-transfer-source.test.ts`: `expect(Buffer.concat(chunks)).toEqual(f.bytes)` becomes `expect(Buffer.concat(chunks).equals(f.bytes)).toBe(true)`. I fetched both complete fixture blobs and verified that this single expression replacement produces the entire after-file byte-for-byte. Before SHA256 is `d96313b36efcf0679250ec7836268d658814ac40da8d0d61a58e47936c6c8b3e`; after is `dc8cddff8055f4eb609eff7cd5f76b674a82091fc0341ee429d99717f7c0455b`.
+
+Both operands are ordinary Buffers created by this fixture (`Buffer.alloc` and `Buffer.concat`), with no custom object properties requiring deep comparison. Native `equals` checks their byte content; the boolean assertion still fails on unequal content. The chunk size bound, returned offset, per-chunk SHA256, EOF, full aggregate, verify/open/descriptor-close assertions and existing deadlines all remain. No service, import, workflow, package, compiler option or timeout changes accompany the source delta.
+
+## Recorded controls and measured limits
+
+Attempt54 ran the original eight-case fixture plus four temporary comparator controls through the normal min4 gate: **12 passed**, maxWorkers=2. I inspected the archived probe bytes and matched their hash to the original receipt. It reconstructs the same 614,400 bytes through three 256 KiB-bounded base64 chunks, confirms separate Buffer objects, and compares the identical actual/expected pair with each matcher. Matching content passes; first/middle/last one-byte mismatches are rejected by both. Three samples alternate comparison order. There are no timing assertions or raised deadlines.
+
+The raw output matches the manifest's full sample arrays and input hashes. On the recorded Darwin arm64/Node24.22.1 host, matching-content median was **455.054167 ms** for Vitest deep equality versus **0.059875 ms** for native equality plus boolean matcher. This is evidence of removable local assertion cost, **not proof of the Windows timeout's cause**, and not a Windows performance measurement or a flake classification.
+
+Exact clean candidate869 attempt55 passed all **8 tests**, observing the affected case at 3 ms. Attempt58 passed the **focused fixture graph** typecheck at min6, with inherited unchanged compiler options and the repository's existing `.d.ts` and `.js` roots. This is not a fresh full-root typecheck claim. Attempt59 passed strict fixture lint at min4 with **0 errors/0 warnings**. Original attempt56 remains a failed task-local compiler configuration that omitted those ambient/JS roots; both configs and its real diagnostics are preserved. Attempt57 was **not executed**.
+
+## Evidence verification and original hosted failure
+
+All **19 manifest artifact blobs** and the two before/after fixture blobs were fetched at immutable refs and SHA256/Git blob identities verified. Five command receipt/raw pairs match their manifest commands, exits, minima, heads, trees and status; source and gate observations agree before/after. Producer and temporary compiler/probe hashes match the archived bytes. The companion verification JSON records those checks and actual command receipts. No supplemental check is presented as an additional execution seal.
+
+The original run [44966571904](https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/44966571904) remains **32 success / 4 skipped / 1 failed**. I verified the archived original ZIP hash and independently read the official artifact API: artifact `14732446194`, size612726, uploaded digest `sha256:7dce5c3ddab2dcd6ae105df93ed865569da325174b06e3248cc31cc61b83d4fe`, associated with that run and original PR head0e779. Its JUnit XML has the preserved SHA256 `bbd729303795d94d62afc9f3612f437b182cdceb9acd89ddc238b40d90c0daed` and one failing testcase, the named aggregate fixture, at **5.3225339 seconds** against its existing 5-second limit. The log excerpt is explicitly partial; it is not substituted for a full original log. I do not infer causation from the failure's location or local speedup.
+
+The prior [bounded consumer/R1 approval](https://github.com/Agent-Clubhouse/Clubhouse/blob/0be97bb677cb57d5e428b3b8a383c0785ff3f304/docs/qa-transfer/2026-11-21/reports/3613-consumer-r1-715678845-independent-review.md) stands unchanged. This delta is suitable for the same PR's ordinary new-head CI after normal exact-head/push/composition guards. Hosted results for the new head remain required; neither old green jobs nor this fixture review grants full-duplex, native app, release or merge acceptance.
