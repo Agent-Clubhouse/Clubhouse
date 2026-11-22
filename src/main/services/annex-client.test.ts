@@ -517,7 +517,6 @@ describe('annex-client', () => {
       expect(annexControl.request).toHaveBeenCalledTimes(4);
       accepted = false;
       devicesChanged();
-      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(annexControl.request).toHaveBeenCalledTimes(4);
       vi.mocked(annexControl.request).mockResolvedValue({
         status: 200, headers: { 'content-type': 'image/png' }, body: Buffer.from([0, 255]),

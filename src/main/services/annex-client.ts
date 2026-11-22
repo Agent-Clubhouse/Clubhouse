@@ -279,6 +279,7 @@ function retireSatelliteStream(sat: SatelliteConnectionInternal): void {
   const stream = sat.stream;
   sat.stream = undefined;
   if (!stream) return;
+  sat.iconState = undefined;
   sat.snapshotReceipt = undefined;
   if (stream.via === 'reverse') {
     stream.subscription?.close();
