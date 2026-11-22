@@ -1,0 +1,684 @@
+{
+  "source": "ad104a538772156af463f3750783fbf4cd99c39c",
+  "sourceTree": "ce7bd1ed851cd28cdb52af76c9f5f63b14bdb446",
+  "proof": "ef99265da9faddddf522c2c294745d86d593d78d",
+  "proofTree": "7a44b77cf3eed75ddcec1d8b3fd027855fe29d89",
+  "srcTree": "e9da1ee8179d0592e897365f7f84824fdc687d1c",
+  "archives": 61,
+  "runtime": [
+    {
+      "id": "84-producer-candidate",
+      "source": "e1f47fce8a5b6ca86b7eadcc98c0dfe1bcc3cb8e",
+      "counts": {
+        "PASS": 6,
+        "SKIP": 15
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > refuses original sender grant retirement before queued offer admission without adding history or binding",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses ask offer before handler admission",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses off offer before handler admission",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "global handoff tools > offers normalized task metadata with the host-resolved sender and receiver identities",
+          "class": "src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "global handoff tools > reports automatic preparation ceilings and largest files before creating or posting an offer",
+          "class": "src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        }
+      ]
+    },
+    {
+      "id": "86-producer-continuity",
+      "source": "ff4ee53e10402e44899314af146650e78a8b01af",
+      "counts": {
+        "PASS": 16,
+        "FAIL": 1,
+        "SKIP": 4
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains original grant retirement even when Allow is restored before the queue resumes",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a replacement quick source with the same id and worktree",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a different registered caller worktree after preparation",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > rechecks retirement during the actual positive authorization await",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > uses a synthetic isolated exact-call approval without changing standing Ask grants",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected undefined to be true // Object.is equality",
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:326:46\n            "
+            }
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow a newly retargeted alias authorization for the frozen recipient",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not substitute a new same-summary preparation for the captured catalog entry",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns the original host before implicit preparation and refuses stop-time replacement",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-commands.json save truthfully while stop waits actual work",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-preparations.json save truthfully while stop waits actual work",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoffs.json save truthfully while stop waits actual work",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes catalog-prewrite failure without retry or rollback fiction",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-prewrite failure without retry or rollback fiction",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-after-rename failure without retry or rollback fiction",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        }
+      ]
+    },
+    {
+      "id": "87-producer-ask-correction",
+      "source": "a20ba0cb2810061bf77ef1bcf64a5e8a83d1dc0e",
+      "counts": {
+        "PASS": 4,
+        "SKIP": 19
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > uses a synthetic isolated exact-call approval without changing standing Ask grants",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves consumed Ask approval when only the general MCP gate forgets the caller",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow consumed Ask approval for a changed exact approval context",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        }
+      ]
+    },
+    {
+      "id": "88-producer-durable-marker",
+      "source": "85b0f87b83afd0463d1e1e38504c16f185f3f9bc",
+      "counts": {
+        "PASS": 3,
+        "SKIP": 22
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps a durable original source without a live runtime and ignores display name/color changes",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses a durable source replacement with only its original createdAt changed",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes catalog-prewrite failure without retry or rollback fiction",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        }
+      ]
+    },
+    {
+      "id": "89-producer-target-window",
+      "source": "e3140b4af0b8d88fc05b6e1235aff454788a8a16",
+      "counts": {
+        "FAIL": 1,
+        "SKIP": 25
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > ignores cosmetic binding changes during the actual target-project capture await",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected true not to be true // Object.is equality",
+              "text": "\nAssertionError: expected true not to be true // Object.is equality\n \u276f offer test/annex-v2/handoff-producer-admission.test.ts:118:30\n \u276f test/annex-v2/handoff-producer-admission.test.ts:286:22\n            "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "90-producer-target-owner-correction",
+      "source": "f05d72834653dbb1314c5083e3b6f82d8dd31f41",
+      "counts": {
+        "PASS": 2,
+        "SKIP": 24
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > ignores cosmetic binding changes during the actual target-project capture await",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        }
+      ]
+    },
+    {
+      "id": "93-negative-continuity",
+      "source": "83f91f8244e871f2bac556c8f98c165beef5f320",
+      "counts": {
+        "FAIL": 1,
+        "SKIP": 25
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains original grant retirement even when Allow is restored before the queue resumes",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected undefined to be true // Object.is equality",
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:249:46\n            "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "94-full-authorization",
+      "source": "c6184fdd501abebc4946dcea12392bfd98846848",
+      "counts": {
+        "FAIL": 2,
+        "SKIP": 24
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected undefined to be true // Object.is equality",
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:391:46\n            "
+            }
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow consumed Ask approval for a changed exact approval context",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected undefined to be true // Object.is equality",
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:417:46\n            "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "95-recipient",
+      "source": "ed90b31ccbba52fd5d637301f3d574c2f3347366",
+      "counts": {
+        "FAIL": 1,
+        "SKIP": 25
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow a newly retargeted alias authorization for the frozen recipient",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected undefined to be true // Object.is equality",
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:441:44\n            "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "96-selection",
+      "source": "262b8ee284a0d0b42ba916894b1eefb6fe58eed3",
+      "counts": {
+        "FAIL": 1,
+        "SKIP": 25
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not substitute a new same-summary preparation for the captured catalog entry",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected undefined to be true // Object.is equality",
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:455:44\n            "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "97-post-owner",
+      "source": "19b992b72b431b62c6d6cddbce3b7b7f5491039a",
+      "counts": {
+        "FAIL": 1,
+        "SKIP": 25
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected true to be false // Object.is equality",
+              "text": "\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:533:23\n            "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "98-producer-selected-dependency",
+      "source": "a8f0d35178aefe5b17d28590c04c690cc8cbba3b",
+      "counts": {
+        "FAIL": 2,
+        "SKIP": 26
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses an independently running preparation with a different mode before a remote marker",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected { ready: false, \u2026(3) } to match object { ready: true } (3 matching properties omitted from actual)",
+              "text": "\nAssertionError: expected { ready: false, \u2026(3) } to match object { ready: true }\n(3 matching properties omitted from actual)\n\n- Expected\n+ Received\n\n  {\n-   \"ready\": true,\n+   \"ready\": false,\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:495:47\n            "
+            }
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses an independently running preparation captured from a different original producer source",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected undefined to be true // Object.is equality",
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:521:39\n            "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "99-producer-mode-valid-baseline",
+      "source": "5e497b1a6324a5a155d3a2397785364f847ff737",
+      "counts": {
+        "FAIL": 1,
+        "SKIP": 27
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses an independently running preparation with a different mode before a remote marker",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "FAIL",
+          "failureNodes": [
+            {
+              "type": "AssertionError",
+              "message": "expected undefined to be true // Object.is equality",
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:501:39\n            "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "100-producer-preparation-ownership",
+      "source": "20243bb2199edb83852720b6504f81d0fca7062d",
+      "counts": {
+        "PASS": 3,
+        "SKIP": 26
+      },
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its own requested mode after an independently running preparation",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its original captured source after an independently running preparation on another source",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns its await of separately admitted preparation without cancelling that independent read on stop",
+          "class": "test/annex-v2/handoff-producer-admission.test.ts",
+          "status": "PASS",
+          "failureNodes": []
+        }
+      ]
+    }
+  ],
+  "actualXmlRows": 357,
+  "mutants": [
+    {
+      "source": "83f91f8244e871f2bac556c8f98c165beef5f320",
+      "localOnly": true,
+      "path": "src/main/services/handoff-host.ts",
+      "fullSourceSha256": "ee518df91f26f5e1e0b0d791575f133b1ce23149f57bceadba3732143cbbe2dc",
+      "patchSha256": "6aa8b017c6a43a1470e7ce7714b2dc5c27e4bcfc0021d80c3cf6c63e4f8279d3",
+      "counts": {
+        "FAIL": 1,
+        "SKIP": 25
+      },
+      "failureNames": [
+        "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains original grant retirement even when Allow is restored before the queue resumes"
+      ]
+    },
+    {
+      "source": "c6184fdd501abebc4946dcea12392bfd98846848",
+      "localOnly": true,
+      "path": "src/main/services/handoff-service.ts",
+      "fullSourceSha256": "f46e01796f3d845ac584ffc1603c7143ac4e6e7efb84782e9f8f2540bc46122e",
+      "patchSha256": "2da0992958e45c47e0c1ae83b4646bb7f4ed16e21e136078182b45e5119b9aac",
+      "counts": {
+        "FAIL": 2,
+        "SKIP": 24
+      },
+      "failureNames": [
+        "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+        "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow consumed Ask approval for a changed exact approval context"
+      ]
+    },
+    {
+      "source": "ed90b31ccbba52fd5d637301f3d574c2f3347366",
+      "localOnly": true,
+      "path": "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+      "fullSourceSha256": "88fc93d3398ed06b52ce22cd10fec90314cfc432b8a041e281f0865909610b55",
+      "patchSha256": "1f644126f1aa9e6b7edd3ac145abdc735f4b8ecc67e9517a7a54c7cf221eaffb",
+      "counts": {
+        "FAIL": 1,
+        "SKIP": 25
+      },
+      "failureNames": [
+        "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow a newly retargeted alias authorization for the frozen recipient"
+      ]
+    },
+    {
+      "source": "262b8ee284a0d0b42ba916894b1eefb6fe58eed3",
+      "localOnly": true,
+      "path": "src/main/services/handoff-preparations.ts",
+      "fullSourceSha256": "e09bec6d375efccdef6ed66a79c8c669acccd50dbcef7114bba595069382c20d",
+      "patchSha256": "d28a6eb9dbc41c829ba0f4d3ae4c1aefc7c8cd2f3a2eaf7b7cab97a2930a318e",
+      "counts": {
+        "FAIL": 1,
+        "SKIP": 25
+      },
+      "failureNames": [
+        "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not substitute a new same-summary preparation for the captured catalog entry"
+      ]
+    },
+    {
+      "source": "19b992b72b431b62c6d6cddbce3b7b7f5491039a",
+      "localOnly": true,
+      "path": "src/main/services/handoff-coordinator.ts",
+      "fullSourceSha256": "c39cc9778e386ebf7defe294b3a13f2a429c087df3e5fcbdc6ff3d367f9b43b1",
+      "patchSha256": "70126c3fe9b0127d96bfce9cbb8cc86d66b6a685306df4315ba5f6a9d3653327",
+      "counts": {
+        "FAIL": 1,
+        "SKIP": 25
+      },
+      "failureNames": [
+        "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "source": "eaf75907c255dcca5217043398710f941e48af4e",
+      "kind": "types",
+      "exit": 2,
+      "diagnostics": 146
+    },
+    {
+      "source": "365dea416ff7a035816f7a51307d9dd67b06f803",
+      "kind": "types",
+      "exit": 2,
+      "diagnostics": 2
+    },
+    {
+      "source": "e1f47fce8a5b6ca86b7eadcc98c0dfe1bcc3cb8e",
+      "kind": "types",
+      "exit": 0,
+      "diagnostics": 0
+    },
+    {
+      "source": "ff4ee53e10402e44899314af146650e78a8b01af",
+      "kind": "types",
+      "exit": 0,
+      "diagnostics": 0
+    },
+    {
+      "source": "f05d72834653dbb1314c5083e3b6f82d8dd31f41",
+      "kind": "types",
+      "exit": 0,
+      "diagnostics": 0
+    },
+    {
+      "source": "ad104a538772156af463f3750783fbf4cd99c39c",
+      "kind": "types",
+      "exit": 0,
+      "diagnostics": 0
+    },
+    {
+      "source": "f05d72834653dbb1314c5083e3b6f82d8dd31f41",
+      "kind": "lint",
+      "files": 8,
+      "errors": 0,
+      "warnings": 0
+    },
+    {
+      "source": "ad104a538772156af463f3750783fbf4cd99c39c",
+      "kind": "lint",
+      "files": 8,
+      "errors": 0,
+      "warnings": 0
+    }
+  ],
+  "config": {
+    "actualArchivedConfig": {
+      "extends": "../../../tsconfig.json",
+      "compilerOptions": {
+        "noEmit": true
+      },
+      "include": [
+        "../../../src/**/*"
+      ],
+      "files": [
+        "../../../test/annex-v2/handoff-producer-admission.test.ts",
+        "../../../src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts"
+      ]
+    },
+    "productionRootsReconstructed": 2465,
+    "additionalCompleteFixtures": 2,
+    "totalRoots": 2467,
+    "afterExecutionRootCountsOnly": true,
+    "final101ContainsNoListFilesHashInventory": true,
+    "atomicReadSeal": false
+  },
+  "manifestSha256": "7d2d7ffc58cd1112ee92e7741ec10c871f743b4132df7952a5b1651cad7069d8",
+  "readmeSha256": "c847815fe5cfd95e2f7f0f7c2d7511c4c98d9820b690620319ac6eeea64ce336",
+  "srcChangedPaths": [
+    "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+    "src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+    "src/main/services/clubhouse-mcp/tools/handoff-tools.ts",
+    "src/main/services/handoff-coordinator.ts",
+    "src/main/services/handoff-host.ts",
+    "src/main/services/handoff-preparations.ts",
+    "src/main/services/handoff-service.ts"
+  ],
+  "protectedPhoneNativeLowerTreesEqual": true,
+  "disposition": "BLOCK: CP1 consumed approval/context after-positive verify-await gap; CP2 unawaited source observation revision can be blessed",
+  "remoteReadback": {
+    "proof": "ef99265da9faddddf522c2c294745d86d593d78d",
+    "tree": "7a44b77cf3eed75ddcec1d8b3fd027855fe29d89",
+    "parent": "ad104a538772156af463f3750783fbf4cd99c39c",
+    "candidateRef": "refs/heads/lane-3613-p2-routes/handoff-usable-path",
+    "boundaryRef": "refs/heads/lane-3613-p2-routes/handoff-producer-boundary",
+    "boundaryHead": "664effcd1d6d10858c0c7904983628a0393a0780"
+  },
+  "findings": [
+    {
+      "id": "CP1",
+      "severity": "medium",
+      "confidence": "high source-derived/not reviewer-executed",
+      "anchors": [
+        "handoff-service.ts:106-110",
+        "clubhouse-mcp/handoff-permissions.ts:27-31",
+        "handoff-host.ts:352-390"
+      ],
+      "issue": "approval/context validity checked before subsequent async verification; absent at final fence"
+    },
+    {
+      "id": "CP2",
+      "severity": "medium",
+      "confidence": "high ordering invariant/source-derived; concrete host interleaving pending",
+      "anchors": [
+        "handoff-host.ts:301-305",
+        "handoff-host.ts:315-324",
+        "handoff-host.ts:379-390"
+      ],
+      "issue": "latest revision can be blessed without awaiting corresponding newly appended observation"
+    }
+  ],
+  "privateWorkspace": {
+    "head": "079a257acf38b168b529fb7745dae97f686b72b8",
+    "tree": "89e942aabd42c8ec93fe47794f2eef95b0b61980",
+    "clean": true
+  }
+}
