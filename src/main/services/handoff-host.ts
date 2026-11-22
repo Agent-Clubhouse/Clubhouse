@@ -14,7 +14,8 @@ import { callerHandoffSource } from './handoff-preflight-host';
 import { openHandoffRepository, readHandoffSnapshotManifest } from './handoff-snapshot';
 import { requestHandoffTransfer, readHandoffTransferManifest } from './handoff-transfer-transport';
 import { HandoffTransferSource } from './handoff-transfer-source';
-import { bindPreparedHandoff, settleHandoffPreparationBinding, pruneHandoffPreparations, preparedSourceForRecord } from './handoff-preparations';
+import { bindPreparedHandoff, selectPreparedHandoff, settleHandoffPreparationBinding, pruneHandoffPreparations, preparedSourceForRecord,
+  type HandoffPreparationSource, type HandoffPreparationSelection } from './handoff-preparations';
 import { evaluateGrant, type GrantCallTarget } from '../../shared/agent-grants';
 import { parseAgentAddress } from '../../shared/agent-address';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -22,13 +23,13 @@ import { isHandoffAgent, isTerminalHandoff, sameHandoffAgent, type Handoff, type
 import { safeHandoffDiagnosticPath, scanHandoffSecrets } from '../../shared/handoff-secrets';
 import { getIdentity, getOrCreateIdentity } from './annex-identity';
 import { getSettings, networkEnabled } from './annex-settings';
-import { listPeers } from './annex-peers';
+import { listPeers, trustOf } from './annex-peers';
 import * as annexClient from './annex-client';
 import { isNetworkComputer } from './annex-agent-calls';
 import { agentRegistry } from './agent-registry';
 import { getAgentRuntime } from './agent-runtime';
-import { agentConfigGeneration, peekDurableConfigs } from './agent-config';
-import { peekProjects } from './project-store';
+import { agentConfigGeneration, onAgentConfigChanged, peekDurableConfigs } from './agent-config';
+import { onProjectsChanged, peekProjects } from './project-store';
 import { getDispatcherState, isDispatcherAgentId, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { effectiveAgentGrants } from './agent-grants-service';
 import { getConnectionDirection, localConnectionWakeOn, onConnectionGrantsChanged } from './connection-grants-store';
@@ -40,7 +41,7 @@ import { handoffAgreementCallApproved } from './clubhouse-mcp/handoff-permission
 import { withCapacityDeadline } from './handoff-capacity';
 import { HANDOFF_ACTIVE_LIMIT, HANDOFF_PEER_LIMIT, HandoffService, type HandoffAuthorization } from './handoff-service';
 import { HandoffStore } from './handoff-store';
-import { HandoffCoordinator, type HandoffSyncAdmission } from './handoff-coordinator';
+import { HandoffCoordinator, type HandoffSyncAdmission, type HandoffProducerAdmission } from './handoff-coordinator';
 import { HandoffCommandStore } from './handoff-command-store';
 import { publishFederationHandoff } from './dispatcher-federation-policy';
 
@@ -191,7 +192,7 @@ class HandoffSyncOwner implements HandoffSyncAdmission {
   }
 }
 
-interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator: HandoffCoordinator; machine: string; transfer: HandoffTransferSource; worker: HandoffWorker; ready: Promise<void>; reverseSyncs: Set<HandoffSyncOwner>; incoming: Set<HandoffSyncOwner>; stopping: boolean }
+interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator: HandoffCoordinator; machine: string; transfer: HandoffTransferSource; worker: HandoffWorker; ready: Promise<void>; reverseSyncs: Set<HandoffSyncOwner>; incoming: Set<HandoffSyncOwner>; producers: Set<HandoffProducerOwner>; stopping: boolean }
 let host: Host | undefined;
 let sweep: ReturnType<typeof setInterval> | undefined;
 let offConnected: (() => void) | undefined;
@@ -221,7 +222,9 @@ async function authorize(request: HandoffAuthorization): Promise<boolean> {
     catch { return false; /* telemetry-exempt: a selected agent never acquires the brief without current target and Dispatcher rights */ }
   }
   if ((action === 'handoff.offer' && stage === 'offered') || (action === 'handoff.accept' && stage === 'accepted')) {
-    const approved = await handoffAgreementCallApproved(actor.agentId, action);
+    const expectedRecipient = action === 'handoff.offer'
+      ? 'agentId' in record.to ? addressText(record.to) : `dispatcher@${record.to.machine}` : undefined;
+    const approved = await handoffAgreementCallApproved(actor.agentId, action, expectedRecipient);
     return approved && (targetAdmission?.() ?? true);
   }
   const location = await localAgent(actor.agentId);
@@ -229,6 +232,177 @@ async function authorize(request: HandoffAuthorization): Promise<boolean> {
   const peer = action === 'handoff.offer' ? record.to : record.from;
   const target = action === 'handoff.offer' ? await peerTarget(actor, peer) : await resolveAcceptancePeer(record, actor);
   return evaluateGrant({ caller: { kind: 'agent', agentId: actor.agentId, projectPath: location.projectPath }, action, target }, grants).outcome !== 'refuse';
+}
+
+class HandoffProducerOwner implements HandoffProducerAdmission {
+  private references = 1;
+  private retired = false;
+  private readonly off: Array<() => void> = [];
+  private readonly grants: string;
+  private source?: HandoffPreparationSource;
+  private sourceAgent?: string;
+  private anchors: Array<{ path: string; dev: bigint; ino: bigint }> = [];
+  private target?: HandoffTarget;
+  private targetAuthority?: string;
+  private selected?: HandoffPreparationSelection;
+  private admittedId?: string;
+  private observations = Promise.resolve();
+  private sourceRevision = 0;
+  private verifiedRevision = 0;
+  private sourceFailed = false;
+  private sourceFailure: unknown;
+  readonly settled: Promise<void>;
+  private readonly complete: () => void;
+  readonly actor: HandoffAgent;
+
+  constructor(private readonly active: Host, private readonly agentId: string) {
+    this.actor = Object.freeze({ agentId, machine: active.machine });
+    this.grants = this.grantStamp();
+    let complete!: () => void;
+    this.settled = new Promise<void>((resolve) => { complete = resolve; });
+    this.complete = complete;
+    const changed = () => {
+      if (this.grantStamp() !== this.grants || this.target && this.targetStamp() !== this.targetAuthority) this.retire();
+    };
+    this.off.push(onOrchestrationGateChange((id) => { if (id === agentId) changed(); }),
+      bindingManager.onChange((id) => { if (id === agentId) changed(); }),
+      onConnectionGrantsChanged(changed), onDispatcherChanged(changed));
+  }
+
+  private grantStamp(): string {
+    return JSON.stringify(callerGrants(this.agentId).filter((grant) => grant.action === 'handoff.offer')
+      .map((grant) => [grant.action, grant.target, grant.mode]));
+  }
+  private targetStamp(): string {
+    if (!this.target) return '';
+    const dispatcher = 'via' in this.target || this.target.machine === this.active.machine && isDispatcherAgentId(this.target.agentId);
+    const peer = this.target.machine !== this.active.machine
+      ? listPeers().find((candidate) => candidate.fingerprint.toLowerCase() === this.target!.machine) : undefined;
+    const state = getDispatcherState();
+    return JSON.stringify([
+      'agentId' in this.target ? hasConnection(this.actor, this.target) : undefined,
+      dispatcher && this.target.machine === this.active.machine ? [state.enabled, state.agentId, state.path] : undefined,
+      peer ? [trustOf(peer), peer.kind] : undefined,
+      this.source && this.target.machine !== this.active.machine ? isCrossProjectEnabled(this.agentId) : undefined,
+    ]);
+  }
+  private agentIdentity(rows: Awaited<ReturnType<typeof peekDurableConfigs>>): string | undefined {
+    const row = rows.find((candidate) => candidate.id === this.agentId && !isDisposedAgent(candidate));
+    return row && JSON.stringify([row.id, row.createdAt, row.worktreePath]);
+  }
+  private observe(work: Promise<void>): void {
+    this.sourceRevision++;
+    this.observations = Promise.all([this.observations, work]).then(() => undefined, (error: unknown) => {
+      this.sourceFailed = true; this.sourceFailure = error; this.retire();
+    });
+  }
+  async captureSource(source: HandoffPreparationSource): Promise<HandoffPreparationSource> {
+    this.source = Object.freeze({ ...source, project: Object.freeze({ ...source.project }), bounds: Object.freeze({ ...source.bounds }) });
+    this.sourceAgent = this.agentIdentity(await peekDurableConfigs(source.project.path));
+    this.anchors = [source.project.path, source.worktreeRoot].map((member) => {
+      const stat = fs.statSync(member, { bigint: true });
+      if (!stat.isDirectory()) throw new HandoffAuthorizationChanged();
+      return { path: member, dev: stat.dev, ino: stat.ino };
+    });
+    this.off.push(onAgentConfigChanged((changed) => {
+      if (path.resolve(changed) !== path.resolve(source.project.path)) return;
+      this.observe(peekDurableConfigs(source.project.path).then((rows) => {
+        if (this.agentIdentity(rows) !== this.sourceAgent) this.retire();
+      }));
+    }), onProjectsChanged(() => {
+      this.observe(peekProjects().then((projects) => {
+        if (!projects.some((project) => project.id === source.project.id && path.resolve(project.path) === path.resolve(source.project.path))) this.retire();
+      }));
+    }));
+    await this.verify();
+    return this.source;
+  }
+  captureTarget(target: HandoffTarget): void {
+    this.target = Object.freeze({ ...target });
+    this.targetAuthority = this.targetStamp();
+  }
+  select(selected: HandoffPreparationSelection): void { this.selected = selected; }
+  retire(): void { this.retired = true; }
+  check(): void {
+    if (this.sourceFailed) throw this.sourceFailure;
+    if (this.retired || host !== this.active || this.active.stopping || ownMachine() !== this.active.machine
+      || this.grantStamp() !== this.grants || this.target && this.targetStamp() !== this.targetAuthority
+      || this.sourceRevision !== this.verifiedRevision) {
+      this.retire(); throw new HandoffAuthorizationChanged();
+    }
+    if (this.source) {
+      this.source.secretPolicy.assertCurrent();
+      for (const anchor of this.anchors) {
+        const current = fs.statSync(anchor.path, { bigint: true });
+        if (!current.isDirectory() || current.dev !== anchor.dev || current.ino !== anchor.ino) {
+          this.retire(); throw new HandoffAuthorizationChanged();
+        }
+      }
+      if (!this.sourceAgent) {
+        const live = agentRegistry.get(this.agentId);
+        if (!live || path.resolve(live.projectPath) !== path.resolve(this.source.project.path)
+          || path.resolve(live.cwd || live.projectPath) !== path.resolve(this.source.worktreeRoot)) {
+          this.retire(); throw new HandoffAuthorizationChanged();
+        }
+      }
+    }
+  }
+  async verify(): Promise<void> {
+    await this.observations;
+    if (this.source) {
+      const current = await callerHandoffSource(this.agentId);
+      const rows = await peekDurableConfigs(this.source.project.path);
+      await this.observations;
+      if (current.project.id !== this.source.project.id || path.resolve(current.project.path) !== path.resolve(this.source.project.path)
+        || path.resolve(current.worktreeRoot) !== path.resolve(this.source.worktreeRoot)
+        || JSON.stringify(current.bounds) !== JSON.stringify(this.source.bounds) || this.agentIdentity(rows) !== this.sourceAgent) this.retire();
+    }
+    this.verifiedRevision = this.sourceRevision;
+    this.check();
+  }
+  admit(record: Handoff): void {
+    this.check();
+    if (this.admittedId || !this.selected || !sameHandoffAgent(record.from, this.actor)
+      || JSON.stringify(record.to) !== JSON.stringify(this.target)) throw new HandoffAuthorizationChanged();
+    this.admittedId = record.id;
+  }
+  bind(record: Handoff): Promise<void> {
+    if (record.id !== this.admittedId || !this.selected) throw new HandoffAuthorizationChanged();
+    // The queue admitted these fixed values before either independent save.
+    return bindPreparedHandoff(record, this.selected);
+  }
+  holdPost(): () => void {
+    this.check();
+    this.references++;
+    let released = false;
+    return () => { if (!released) { released = true; this.release(); } };
+  }
+  release(): void {
+    if (--this.references !== 0) return;
+    for (const unsubscribe of this.off) unsubscribe();
+    void this.observations.then(() => { this.active.producers.delete(this); this.complete(); });
+  }
+}
+
+/** Original host/source ownership starts before implicit preparation, not after its awaits. */
+export async function offerCallerHandoff(agentId: string, input: {
+  reference: string; task: Handoff['task']; mode: Handoff['mode']; manifest?: Handoff['manifest'];
+}): Promise<Handoff> {
+  const active = handoffHost();
+  const producer = new HandoffProducerOwner(active, agentId);
+  active.producers.add(producer);
+  try {
+    await active.ready;
+    producer.check();
+    const source = await producer.captureSource(await callerHandoffSource(agentId));
+    const target = await resolveHandoffTarget(input.reference);
+    producer.captureTarget(target);
+    const senderName = await handoffSenderName(agentId);
+    await producer.verify();
+    const selected = await selectPreparedHandoff(agentId, input.mode, input.manifest, source, () => producer.check());
+    producer.select(selected);
+    return await active.coordinator.offer({ to: target, senderName, task: input.task, mode: input.mode, manifest: selected.summary }, producer.actor, producer);
+  } finally { producer.release(); }
 }
 
 /** Saved grants are synchronous; a change during any asynchronous lookup invalidates its result. */
@@ -357,8 +531,8 @@ export function handoffHost(): Host {
   const machine = ownMachine();
   if (host?.stopping) throw new HandoffAuthorizationChanged();
   if (host?.machine === machine) return host;
-  if (host && (host.reverseSyncs.size || host.incoming.size)) {
-    for (const owner of [...host.reverseSyncs, ...host.incoming]) owner.retire();
+  if (host && (host.reverseSyncs.size || host.incoming.size || host.producers.size)) {
+    for (const owner of [...host.reverseSyncs, ...host.incoming, ...host.producers]) owner.retire();
     throw new HandoffAuthorizationChanged();
   }
   void host?.worker.stop();
@@ -491,7 +665,7 @@ export function handoffHost(): Host {
       if (delivery !== 'delivered') throw new Error('Receiving agent did not receive its handoff.');
     },
   });
-  host = { machine, store, commands, coordinator, transfer, worker, ready, reverseSyncs: new Set(), incoming: new Set(), stopping: false };
+  host = { machine, store, commands, coordinator, transfer, worker, ready, reverseSyncs: new Set(), incoming: new Set(), producers: new Set(), stopping: false };
   void ready.catch(() => { /* telemetry-exempt: tools and continuation fail closed if recovery/storage is unavailable */ });
   return host;
 }
@@ -537,7 +711,7 @@ export async function stopHandoffs(): Promise<void> {
   const active = host;
   if (active) {
     active.stopping = true;
-    const owners = [...active.reverseSyncs, ...active.incoming];
+    const owners = [...active.reverseSyncs, ...active.incoming, ...active.producers];
     for (const owner of owners) owner.retire();
     await Promise.all(owners.map((owner) => owner.settled));
   }

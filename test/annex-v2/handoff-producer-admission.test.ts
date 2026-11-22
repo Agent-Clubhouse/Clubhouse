@@ -137,7 +137,7 @@ async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestS
   });
   const actualOffer: Fixture['host']['coordinator']['service']['offer'] = fx.host.coordinator.service.offer.bind(fx.host.coordinator.service);
   // Coordinator pruning precedes this entry. The blocker is an actual older history transaction.
-  vi.spyOn(fx.host.coordinator.service, 'offer').mockImplementation((input, sender, beforeCommit) => {
+  vi.spyOn(fx.host.coordinator.service, 'offer').mockImplementation((input, sender, beforeCommit, admission) => {
     const blocker = transact(seed.id, async (record) => {
       if (!record) throw new Error('Missing genuine seed history.');
       entered.resolve();
@@ -145,7 +145,7 @@ async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestS
       return record;
     });
     operations.push(blocker);
-    return actualOffer(input, sender, beforeCommit);
+    return actualOffer(input, sender, beforeCommit, admission);
   });
   const pending = fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary));
   operations.push(pending);

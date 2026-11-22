@@ -14,11 +14,15 @@ export function withHandoffAgreementCall<T>(call: AgreementCall, work: () => Pro
 }
 
 /** Recheck the exact target, live policy and consumed approval at the durable write boundary. */
-export async function handoffAgreementCallApproved(agentId: string, action: 'handoff.offer' | 'handoff.accept'): Promise<boolean> {
+export async function handoffAgreementCallApproved(agentId: string, action: 'handoff.offer' | 'handoff.accept', expectedRecipient?: string): Promise<boolean> {
   const call = agreementCalls.getStore();
   if (!call || call.agentId !== agentId || (action === 'handoff.offer') !== (call.name === 'offer_handoff')) return false;
   const grant = action === 'handoff.offer' ? HANDOFF_OFFER_GRANT : HANDOFF_ACCEPT_GRANT;
   const targets = await resolveArgTargets(agentId, grant, call.args);
+  if (expectedRecipient !== undefined) {
+    const resolved = targets?.get(grant);
+    if (resolved?.length !== 1 || resolved[0].agentId !== expectedRecipient) return false;
+  }
   const check = checkToolGrant(agentId, grant, call.args, undefined, targets);
   return callGrantIsApproved(agentId, call.name, call.args, check,
     grantApprovalContext(agentId, call.name, call.args, grant, targets));
