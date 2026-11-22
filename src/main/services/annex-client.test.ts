@@ -565,7 +565,8 @@ describe('annex-client', () => {
       function ownSnapshot(lastSeq = 1) {
         subscriptionCapable = true;
         devicesChanged();
-        subscriptions.at(-1)!.handlers.onFrame(snapshot(lastSeq));
+        expect(subscriptions).toHaveLength(1);
+        subscriptions[0].handlers.onFrame(snapshot(lastSeq));
         expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt).toEqual(expect.any(String));
         return annexClient.getSatellite(fingerprint)!.snapshotReceipt!;
       }
@@ -629,9 +630,11 @@ describe('annex-client', () => {
 
       it.each(['stop', 'disconnect', 'forget', 'pin', 'trust', 'role', 'kind', 'pending', 'link', 'pairing', 'off', 'network-off'] as const)(
         'cancels a held Details read on %s and discards its valid late body without fallback', async (reason) => {
-          if (reason === 'trust') vi.mocked(annexPeers.trustOf).mockImplementation((row) =>
-            JSON.stringify([row.fingerprint, row.publicKey, row.role, row.tlsCertificateFingerprint,
-              row.tlsCertificatePem, row.pairingId, row.pairedAt, !!row.networkPending]));
+          if (reason === 'trust') vi.mocked(annexPeers.trustOf).mockImplementation((row) => ({
+            fingerprint: row.fingerprint, publicKey: row.publicKey, role: row.role,
+            tlsCertificateFingerprint: row.tlsCertificateFingerprint, tlsCertificatePem: row.tlsCertificatePem,
+            pairingId: row.pairingId, pairedAt: row.pairedAt, networkPending: row.networkPending,
+          }));
           const held = hold(), pending = annexClient.requestAgentDetails(fingerprint, agentId);
           expect(held.signal()?.aborted).toBe(false);
           if (reason === 'stop') annexClient.stopClient();
@@ -678,7 +681,8 @@ describe('annex-client', () => {
         expect(await pending).toEqual({ status: 'forbidden' });
         expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt).toBeUndefined();
         expect(annexClient.getSatellite(fingerprint)?.snapshot).toBe(cached);
-        const published = vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).at(-1)?.[1];
+        const publications = vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED);
+        const published = publications[publications.length - 1]?.[1];
         expect(published).toEqual(expect.arrayContaining([expect.not.objectContaining({ snapshotReceipt: receipt })]));
         vi.mocked(annexControl.request).mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(kind === 'role'
           ? { version: 1, role: 'dispatcher', agentId, details: details() } : details())) });
@@ -747,7 +751,8 @@ describe('annex-client', () => {
         expect(closed).toBe(true);
         expect(annexClient.getSatellite(fingerprint)?.snapshot?.lastSeq).toBe(10);
         expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt).toBeUndefined();
-        const published = vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED).at(-1)?.[1];
+        const publications = vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.ANNEX_CLIENT.SATELLITES_CHANGED);
+        const published = publications[publications.length - 1]?.[1];
         expect(published).toEqual(expect.arrayContaining([expect.not.objectContaining({ snapshotReceipt: receipt })]));
       });
 
@@ -3657,6 +3662,17 @@ describe('annex-client', () => {
         Object.assign(sockets[0], { readyState: 2 });
         expect(current().snapshotReceipt).toBeUndefined();
         expect(current().snapshot).toMatchObject({ lastSeq: 1 });
+      });
+
+      it('keeps legacy pinned metadata transport separate from closing-socket snapshot export', async () => {
+        await discover(); sockets[0].handlers.open(); send(0, 'snapshot', payload());
+        expect(current().snapshotReceipt).toEqual(expect.any(String));
+        Object.assign(sockets[0], { readyState: 2 });
+        expect(current().state).toBe('connected');
+        expect(current().snapshotReceipt).toBeUndefined();
+        answer(200, metadata());
+        expect(await annexClient.requestAgentDetails(FP, 'role1')).toEqual({ status: 'ok', value: metadata() });
+        expect(current().snapshotReceipt).toBeUndefined();
       });
 
       it('drops admission on snapshot failure while preserving its cache, then requires a real new snapshot', async () => {

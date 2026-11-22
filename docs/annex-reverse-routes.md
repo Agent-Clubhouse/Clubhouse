@@ -58,8 +58,8 @@ stream (including absence), connection generation, pinned trust, role, kind and
 pending state before the first await. Reverse reads additionally retain accepted
 link epoch and local readiness revision. The same capture is checked before send
 and before post-await statuses/body/receipt effects; replacements cannot be
-recaptured as the original. Legacy connected records without a socket retain
-direct reader behavior; an actual closing socket does not remain current.
+recaptured as the original. Legacy raw-connected direct reader behavior is
+retained; socket `OPEN` is a snapshot admission guard, not a new GET permission.
 
 The selected dispatcher reader retains its existing receipt-equality fence.
 Ordinary agent Details intentionally does **not** acquire that fence: its captured

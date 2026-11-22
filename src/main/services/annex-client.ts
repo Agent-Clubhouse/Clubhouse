@@ -2878,7 +2878,7 @@ function captureDetailsRead(sat: SatelliteConnectionInternal): (() => boolean) |
     if (satelliteFor(fingerprint) !== sat || sat.stream !== stream || sat.ws !== ws || sat.needsPairing
       || (connectionEpochs.get(sat.id) ?? 0) !== epoch || controllerReadTrust(fingerprint) !== trust
       || now?.role !== role || now?.kind !== kind || now?.networkPending !== pending) return false;
-    if (via === 'direct') return sat.state === 'connected' && (ws === null || ws.readyState === WebSocket.OPEN);
+    if (via === 'direct') return sat.state === 'connected';
     const current = getControllerReadObservation(fingerprint);
     return sat.state !== 'connected' && current.ready && current.revision === observation?.revision
       && annexControl.getAcceptedLinkEpoch(fingerprint) === linkEpoch;
