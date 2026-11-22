@@ -1,0 +1,500 @@
+{
+  "source": "9a5247cadf41756bc1c085a87c59493b34d5e99f",
+  "tree": "38b3a1ca4ead8e6b664eef641676cb72838a3814",
+  "base": "c2a59f9f2c872bf2cb1fe9852adf8c92f2a996fc",
+  "contract": "6385c5ead359d3b46bfc7895e889d4a486dedc4e",
+  "contractReview": {
+    "commit": "404f15761cd8319374ccc1b8d9854cd6575bc8e5",
+    "blob": "bbe2f6be5371e21ae08878e3286a0125f8b3c447",
+    "designOnly": true
+  },
+  "acceptedLowerProof": {
+    "source": "a4074c7f5e76714bbe346ecee1acfc434307de0e",
+    "proof": "be01f8bd511dba2a625462021732c119ce6b170e",
+    "review": "74d2ed4f64c1e9d539339e5a75b7c3c31171e8b3",
+    "rerun": false,
+    "unchanged": true,
+    "creditNotExpanded": true
+  },
+  "changedSource": [
+    {
+      "path": "docs/annex-reverse-routes.md",
+      "bytes": 25462,
+      "sha256": "067ff774857169584b11ddd52222247d97ff38cae42445452587ae80bb006296",
+      "blob": "2d3b3f053647538624ca7ce6fd1006b4bd27fc79"
+    },
+    {
+      "path": "src/main/services/handoff-command-store.test.ts",
+      "bytes": 7796,
+      "sha256": "a791068501b277d55a16a4ac5a6a4a13c625d032d0613857dbd8096a1c987609",
+      "blob": "f6afadf6ae524be4d482b83fed554c54dd94c9dd"
+    },
+    {
+      "path": "src/main/services/handoff-command-store.ts",
+      "bytes": 6902,
+      "sha256": "708c1ffffedd49005661761143bdbaa84a62b07c48141c9c6e38e262e26f66a2",
+      "blob": "9d79d55142243e14ebd7ba2a526bfddbb631b0f6"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.test.ts",
+      "bytes": 19090,
+      "sha256": "e7bb22b884b3a9ab2a4afcb8e9158e7d024111976c35a2bd144b3307e75a5f81",
+      "blob": "ede50373d53db9d5152be5e466207e6d38dbd98b"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.ts",
+      "bytes": 21321,
+      "sha256": "63949fa8ce3913f0ff3c3b9f40798a7745cf70e846817fa4dbc76f9f6dc6d1a2",
+      "blob": "dfb28e612c7514a9056279c40e2926c3006b1aad"
+    },
+    {
+      "path": "src/main/services/handoff-host.test.ts",
+      "bytes": 32465,
+      "sha256": "0228633724b34f0477e4eb4cff35b2db76c7834c42337047c93246ae7a951d40",
+      "blob": "bad13a16bae382556a16f22696fa6f6436826aa6"
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "bytes": 44114,
+      "sha256": "c3382f3cfe1b677eeaebae67fbc92314ae13d1bd6b65d4c913d048fe7333cbda",
+      "blob": "c5a27d178161c3faeaf196e1112574e1c9922fc2"
+    },
+    {
+      "path": "src/main/services/handoff-service.test.ts",
+      "bytes": 18715,
+      "sha256": "f99002cbd6145da1e2dfcc7e93c513596b319e7dc6b7167a7b55d45bc8656915",
+      "blob": "59e995f750cc77065205e1f448c5be75100d4df2"
+    },
+    {
+      "path": "src/main/services/handoff-service.ts",
+      "bytes": 14312,
+      "sha256": "88b1a9b0562577879a54fcfc922bf66f78918b7c48cfed88f27edd699bf16363",
+      "blob": "2d885a737347f731aef0b60cfa3e0e769eecba90"
+    },
+    {
+      "path": "test/annex-v2/annex-reverse-handoff-sync.test.ts",
+      "bytes": 13079,
+      "sha256": "33a9b63fae20b88e358eec904dc0c0d479155fc0b810aadd912e5b51c9c1c734",
+      "blob": "f0c9bf9b9143706733af41be63391189a48a0bda"
+    }
+  ],
+  "production": [
+    "src/main/services/handoff-command-store.ts",
+    "src/main/services/handoff-coordinator.ts",
+    "src/main/services/handoff-host.ts",
+    "src/main/services/handoff-service.ts"
+  ],
+  "anchors": [
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "anchor": "class HandoffSyncOwner",
+      "line": 148,
+      "blob": "c5a27d178161c3faeaf196e1112574e1c9922fc2"
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "anchor": "captureSync:",
+      "line": 378,
+      "blob": "c5a27d178161c3faeaf196e1112574e1c9922fc2"
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "anchor": "post: async",
+      "line": 399,
+      "blob": "c5a27d178161c3faeaf196e1112574e1c9922fc2"
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "anchor": "export async function stopHandoffs",
+      "line": 532,
+      "blob": "c5a27d178161c3faeaf196e1112574e1c9922fc2"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.ts",
+      "anchor": "private async syncRecord",
+      "line": 236,
+      "blob": "dfb28e612c7514a9056279c40e2926c3006b1aad"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.ts",
+      "anchor": "private async acknowledgeReverse",
+      "line": 310,
+      "blob": "dfb28e612c7514a9056279c40e2926c3006b1aad"
+    },
+    {
+      "path": "src/main/services/handoff-command-store.ts",
+      "anchor": "private change",
+      "line": 61,
+      "blob": "9d79d55142243e14ebd7ba2a526bfddbb631b0f6"
+    },
+    {
+      "path": "src/main/services/handoff-command-store.ts",
+      "anchor": "beforeChange?.();",
+      "line": 63,
+      "blob": "9d79d55142243e14ebd7ba2a526bfddbb631b0f6"
+    },
+    {
+      "path": "src/main/services/handoff-service.ts",
+      "anchor": "async receiveSnapshot",
+      "line": 201,
+      "blob": "2d885a737347f731aef0b60cfa3e0e769eecba90"
+    },
+    {
+      "path": "src/main/services/handoff-service.ts",
+      "anchor": "beforeAdopt?.();",
+      "line": 206,
+      "blob": "2d885a737347f731aef0b60cfa3e0e769eecba90"
+    }
+  ],
+  "unchanged": [
+    {
+      "path": "src/main/services/annex-client.ts",
+      "blob": "87dc6c769e81a1b5dd6e0a9e38948e1ceaceabd7",
+      "sha256": "1e518e2c5eb4ae0ca0130fd11c7eae345c957eed0a4e4c1002d031694ad964b4"
+    },
+    {
+      "path": "src/main/services/annex-control.ts",
+      "blob": "065b48063fed54a6114dbe5b1d316530b97517ce",
+      "sha256": "09d9dbf04a5e54265e3832a858c18cb18e3965238bb286722d7d02f938fecd2b"
+    },
+    {
+      "path": "src/main/services/annex-server.ts",
+      "blob": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b",
+      "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500"
+    },
+    {
+      "path": "src/main/services/handoff-store.ts",
+      "blob": "90ba5659b480bae13e1ccda31cd29b5293a2ccfd",
+      "sha256": "b31ef7baa59bcea292186a6ffc4caac31d4c0593c47708636f679580bc3fcde2"
+    },
+    {
+      "path": "src/main/services/settings-store.ts",
+      "blob": "83bc7d24a08ec3b8387f42e706e1966b472d7dfb",
+      "sha256": "689c48017f8cbeb535a19def3b420674e8c6544bcdc5d9b459c88f8476ec00d3"
+    },
+    {
+      "path": "src/main/services/annex-control-bulk.ts",
+      "blob": "18ee308fc55d33e89523d840f584101eea189be0",
+      "sha256": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee"
+    },
+    {
+      "path": "src/shared/annex-control-protocol.ts",
+      "blob": "6ee5ef77a8d978da390838dde7e450ac05374d78",
+      "sha256": "572357f08535654bc6fe6ebffbe0bf6508363eab61c8c7170681d1efdd374f61"
+    },
+    {
+      "path": "src/shared/handoffs.ts",
+      "blob": "fe5519df70a45b040e4aae25db044e6d8ca3e36d",
+      "sha256": "4a9f8dd5815162f64decd0fd07f4e5335fe356661cbf6adc87136c0afc49af2f"
+    },
+    {
+      "path": "docs/annex-route-contract-3611.md",
+      "blob": "6e730374c6bc8c7e7c1a9c2afc453f0bc0cecfed",
+      "sha256": "0ef7005395de649ef67cd1f74348a4aea8984c1f11b39b82cacc89a7b72723cf"
+    },
+    {
+      "path": "package.json",
+      "blob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9"
+    },
+    {
+      "path": "package-lock.json",
+      "blob": "7e45389f84ca58c5c7832cab169aa5674320d25d",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+    },
+    {
+      "path": "tsconfig.json",
+      "blob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+    }
+  ],
+  "executions": [
+    {
+      "name": "baseline01",
+      "start": "2026-11-22T13:06:56Z START lane-p2 idle=87% unused=2979M avail=32838M freepct=87 comp=706M swap=3713M pid=17073 cmd=node_modules/.bin/vitest run --project main src/main/services/handoff-host.test.ts -t synchronizes an offered agreement through the original host --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/handoff-reverse-sync/baseline01-original.xml",
+      "end": "2026-11-22T13:06:56Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "candidate02",
+      "start": "2026-11-22T13:14:12Z START lane-p2 idle=88% unused=3338M avail=33012M freepct=87 comp=706M swap=3713M pid=19471 cmd=node_modules/.bin/vitest run --project main src/main/services/handoff-host.test.ts src/main/services/handoff-coordinator.test.ts src/main/services/handoff-service.test.ts src/main/services/handoff-command-store.test.ts src/main/services/handoff-retention.test.ts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/handoff-reverse-sync/candidate02-original.xml",
+      "end": "2026-11-22T13:14:18Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "candidate03",
+      "start": "2026-11-22T13:15:30Z START lane-p2 idle=90% unused=3302M avail=32979M freepct=87 comp=706M swap=3713M pid=19882 cmd=node_modules/.bin/vitest run --project main src/main/services/handoff-host.test.ts src/main/services/handoff-coordinator.test.ts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/handoff-reverse-sync/candidate03-original.xml",
+      "end": "2026-11-22T13:15:32Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "candidate04",
+      "start": "2026-11-22T13:17:50Z START lane-p2 idle=91% unused=3223M avail=32902M freepct=87 comp=706M swap=3713M pid=20519 cmd=node_modules/.bin/vitest run --project main --project integration src/main/services/handoff-host.test.ts test/annex-v2/annex-reverse-handoff-sync.test.ts -t drains an already-admitted|assembles actual hosts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/handoff-reverse-sync/candidate04-original.xml",
+      "end": "2026-11-22T13:17:52Z END lane-p2 rc=0",
+      "exit": 0
+    },
+    {
+      "name": "types05",
+      "start": "2026-11-22T13:19:51Z START lane-p2 idle=89% unused=3289M avail=32843M freepct=87 comp=706M swap=3713M pid=21119 cmd=node_modules/.bin/tsc --noEmit --pretty false --project node_modules/.cache/handoff-reverse-sync/changed-fixture-types.json",
+      "end": "2026-11-22T13:19:59Z END lane-p2 rc=2",
+      "exit": 2
+    },
+    {
+      "name": "baseline06",
+      "start": "2026-11-22T13:21:22Z START lane-p2 idle=90% unused=3433M avail=32990M freepct=87 comp=706M swap=3713M pid=21527 cmd=node_modules/.bin/vitest run --project main --project integration src/main/services/handoff-command-store.test.ts test/annex-v2/annex-reverse-handoff-sync.test.ts -t refuses reverse .* inside the actual queue|assembles actual hosts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=../baseline06-original.xml",
+      "end": "2026-11-22T13:21:23Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "types07",
+      "start": "2026-11-22T13:23:00Z START lane-p2 idle=89% unused=3238M avail=32797M freepct=87 comp=706M swap=3713M pid=22095 cmd=node_modules/.bin/tsc --noEmit --pretty false --project node_modules/.cache/handoff-reverse-sync/changed-fixture-types.json",
+      "end": "2026-11-22T13:23:08Z END lane-p2 rc=0",
+      "exit": 0
+    },
+    {
+      "name": "baseline08",
+      "start": "2026-11-22T13:23:17Z START lane-p2 idle=91% unused=3446M avail=33019M freepct=87 comp=706M swap=3713M pid=22233 cmd=node_modules/.bin/vitest run --project main src/main/services/handoff-command-store.test.ts -t refuses reverse .* inside the actual queue --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=../baseline08-original.xml",
+      "end": "2026-11-22T13:23:18Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "final09",
+      "start": "2026-11-22T13:24:07Z START lane-p2 idle=90% unused=3894M avail=32970M freepct=87 comp=706M swap=3713M pid=22534 cmd=node_modules/.bin/vitest run --project main --project integration src/main/services/handoff-host.test.ts src/main/services/handoff-coordinator.test.ts src/main/services/handoff-service.test.ts src/main/services/handoff-command-store.test.ts src/main/services/handoff-retention.test.ts test/annex-v2/annex-reverse-handoff-sync.test.ts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/handoff-reverse-sync/final09-original.xml",
+      "end": "2026-11-22T13:24:13Z END lane-p2 rc=0",
+      "exit": 0
+    },
+    {
+      "name": "mutant10",
+      "start": "2026-11-22T13:24:33Z START lane-p2 idle=90% unused=4220M avail=33221M freepct=87 comp=706M swap=3713M pid=22724 cmd=node_modules/.bin/vitest run --project main src/main/services/handoff-command-store.test.ts -t refuses reverse .* inside the actual queue --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=../mutant10-original.xml",
+      "end": "2026-11-22T13:24:33Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "baseline11",
+      "start": "2026-11-22T13:24:48Z START lane-p2 idle=90% unused=4207M avail=33209M freepct=87 comp=706M swap=3713M pid=22893 cmd=node_modules/.bin/vitest run --project integration test/annex-v2/annex-reverse-handoff-sync.test.ts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=../baseline11-original.xml",
+      "end": "2026-11-22T13:24:50Z END lane-p2 rc=1",
+      "exit": 1
+    },
+    {
+      "name": "types12",
+      "start": "2026-11-22T13:25:37Z START lane-p2 idle=91% unused=4210M avail=33210M freepct=87 comp=706M swap=3713M pid=23162 cmd=node_modules/.bin/tsc --noEmit --pretty false --listFiles --project node_modules/.cache/handoff-reverse-sync/changed-fixture-types.json",
+      "end": "2026-11-22T13:25:45Z END lane-p2 rc=0",
+      "exit": 0
+    },
+    {
+      "name": "lint13",
+      "start": "2026-11-22T13:25:46Z START lane-p2 idle=91% unused=4145M avail=33146M freepct=87 comp=706M swap=3713M pid=23266 cmd=node_modules/.bin/eslint src/main/services/handoff-host.ts src/main/services/handoff-coordinator.ts src/main/services/handoff-service.ts src/main/services/handoff-command-store.ts src/main/services/handoff-host.test.ts src/main/services/handoff-coordinator.test.ts src/main/services/handoff-service.test.ts src/main/services/handoff-command-store.test.ts test/annex-v2/annex-reverse-handoff-sync.test.ts --format json --output-file node_modules/.cache/handoff-reverse-sync/lint13-original.json",
+      "end": "2026-11-22T13:25:47Z END lane-p2 rc=0",
+      "exit": 0
+    }
+  ],
+  "final": {
+    "tests": 100,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "suites": [
+      {
+        "name": "test/annex-v2/annex-reverse-handoff-sync.test.ts",
+        "timestamp": "2026-11-22T13:24:13.786Z",
+        "hostname": "Masons-MacBook-Pro-13346.local",
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "1.22510825"
+      },
+      {
+        "name": "src/main/services/handoff-command-store.test.ts",
+        "timestamp": "2026-11-22T13:24:13.786Z",
+        "hostname": "Masons-MacBook-Pro-13346.local",
+        "tests": "10",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "0.193023208"
+      },
+      {
+        "name": "src/main/services/handoff-coordinator.test.ts",
+        "timestamp": "2026-11-22T13:24:13.788Z",
+        "hostname": "Masons-MacBook-Pro-13346.local",
+        "tests": "19",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "0.317515875"
+      },
+      {
+        "name": "src/main/services/handoff-host.test.ts",
+        "timestamp": "2026-11-22T13:24:13.790Z",
+        "hostname": "Masons-MacBook-Pro-13346.local",
+        "tests": "33",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "1.015275708"
+      },
+      {
+        "name": "src/main/services/handoff-retention.test.ts",
+        "timestamp": "2026-11-22T13:24:13.793Z",
+        "hostname": "Masons-MacBook-Pro-13346.local",
+        "tests": "14",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "2.758631416"
+      },
+      {
+        "name": "src/main/services/handoff-service.test.ts",
+        "timestamp": "2026-11-22T13:24:13.794Z",
+        "hostname": "Masons-MacBook-Pro-13346.local",
+        "tests": "23",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "0.333855458"
+      }
+    ],
+    "compilerInputs": 3961,
+    "all2465RootIncludesPresent": true,
+    "all5ChangedTestsPresent": true,
+    "compilerDiagnostics": 0,
+    "lintFiles": 9,
+    "lintErrors": 0,
+    "lintWarnings": 0
+  },
+  "candidatePaired": [
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_READY",
+      "value": {
+        "requester": "bd:9a:20:d3:42:83:ca:ef:43:63:8a:81:84:ba:44:e7",
+        "target": "84:19:0f:1a:0c:9f:f6:b6:6e:85:8f:07:6b:dc:c1:84",
+        "requesterPin": "33:32:7F:59:79:0A:A0:C7:DE:68:28:CF:5F:23:9B:83:CD:26:D1:24:F0:D7:91:55:19:43:B8:40:02:4F:2D:C3",
+        "targetPin": "F5:4B:FC:D4:8D:74:1A:50:C2:AB:E8:97:DB:19:11:F5:E4:1A:D3:01:3B:0C:0F:B3:07:E2:29:18:3A:EB:12:3E",
+        "epoch": 1,
+        "observation": {
+          "ready": true,
+          "revision": 2
+        },
+        "directConnected": false,
+        "acceptedSnapshot": false
+      }
+    },
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_FIRST_OFFER",
+      "value": {
+        "id": "f794666d-a24c-46ec-b26b-52f6657176b1",
+        "requests": 1,
+        "undelivered": false,
+        "destinationVersion": 1
+      }
+    },
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC",
+      "value": {
+        "requester": "bd:9a:20:d3:42:83:ca:ef:43:63:8a:81:84:ba:44:e7",
+        "target": "84:19:0f:1a:0c:9f:f6:b6:6e:85:8f:07:6b:dc:c1:84",
+        "requesterPin": "33:32:7F:59:79:0A:A0:C7:DE:68:28:CF:5F:23:9B:83:CD:26:D1:24:F0:D7:91:55:19:43:B8:40:02:4F:2D:C3",
+        "targetPin": "F5:4B:FC:D4:8D:74:1A:50:C2:AB:E8:97:DB:19:11:F5:E4:1A:D3:01:3B:0C:0F:B3:07:E2:29:18:3A:EB:12:3E",
+        "firstEpoch": 1,
+        "secondEpoch": 2,
+        "agreements": [
+          "f794666d-a24c-46ec-b26b-52f6657176b1",
+          "54105e73-3aa9-4afb-affe-b155cf1087e4"
+        ],
+        "terminalVersion": 2,
+        "requests": [
+          [
+            "offer",
+            "f794666d-a24c-46ec-b26b-52f6657176b1"
+          ],
+          [
+            "offer",
+            "f794666d-a24c-46ec-b26b-52f6657176b1"
+          ],
+          [
+            "offer",
+            "54105e73-3aa9-4afb-affe-b155cf1087e4"
+          ]
+        ],
+        "ordinaryHttp": 0,
+        "upgrades": [
+          "/control",
+          "/control"
+        ],
+        "directConnected": false,
+        "acceptedSnapshot": false,
+        "fixtureBoundaries": [
+          "positive grant callbacks",
+          "preparation binding",
+          "worker",
+          "provider delivery",
+          "route dispatch adapter"
+        ]
+      }
+    },
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_TEARDOWN",
+      "value": {
+        "sockets": 0,
+        "inFlight": 0,
+        "subscriptions": 0,
+        "listener": false,
+        "forward": false
+      }
+    }
+  ],
+  "finalBasePaired": [
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_READY",
+      "value": {
+        "requester": "bc:3f:18:3e:2a:f3:ff:32:65:37:ab:78:9e:37:52:89",
+        "target": "91:76:96:4a:e5:d5:f6:8a:e0:a0:21:27:7d:70:85:2d",
+        "requesterPin": "32:8B:55:76:E8:2A:8D:D1:AA:99:98:CB:96:BC:12:68:FE:D7:5F:19:D1:E6:3E:AC:50:32:85:EC:C0:8E:E9:D9",
+        "targetPin": "54:99:31:99:2B:9D:C6:EB:ED:3F:F2:47:D3:81:83:DE:3A:2F:F5:82:8E:99:D9:D5:50:C7:6F:BF:29:F1:AD:D0",
+        "epoch": 1,
+        "observation": {
+          "ready": true,
+          "revision": 2
+        },
+        "directConnected": false,
+        "acceptedSnapshot": false
+      }
+    },
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_FIRST_OFFER",
+      "value": {
+        "id": "6f99a977-c0cb-416c-acd4-d5e32e4889bc",
+        "requests": 0,
+        "undelivered": true,
+        "destinationVersion": null
+      }
+    },
+    {
+      "kind": "ANNEX_REVERSE_HANDOFF_SYNC_TEARDOWN",
+      "value": {
+        "sockets": 0,
+        "inFlight": 0,
+        "subscriptions": 0,
+        "listener": false,
+        "forward": false
+      }
+    }
+  ],
+  "canonicalMobileFiles": 103,
+  "canonicalMobileBytes": 1529625,
+  "preservedTestDirectoryFixtureJsonCount": 106,
+  "preservedTestDirectoryFixtureJsonBytes": 1547788,
+  "observedMain": "c2a59f9f2c872bf2cb1fe9852adf8c92f2a996fc",
+  "observedAt": "2026-11-22T13:31:59.003Z",
+  "versions": {
+    "node": "v24.22.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "eslint": "9.39.5"
+  },
+  "readContentHashesMeasuredAfterExecution": true,
+  "atomicPerReadContentTracing": false,
+  "prCreated": false,
+  "ciStarted": false
+}
