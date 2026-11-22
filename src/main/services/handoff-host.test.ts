@@ -378,11 +378,12 @@ it('drains an already-admitted real history save on stop before replacement and 
 it.each(['posted-operation', 'scheduled-operation', 'posted-rejection'] as const)('keeps the actual %s lease after outer deadline until real settlement', async (phase) => {
   reverse(); vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   const active = handoffHost(); const entered = barrier(); const held = barrier();
-  let signal: AbortSignal | undefined; let late: Handoff | undefined;
+  let signal: AbortSignal | undefined; let heldId: string | undefined;
   const unhandled = vi.fn(); process.on('unhandledRejection', unhandled);
   if (phase === 'scheduled-operation') state.beforeOperation = async (actual) => { signal = actual; entered.release(); await held.promise; };
   state.post.mockImplementation(async (_peer, _route, body, options) => {
-    signal = options.signal; late = acceptedCopy(body.record);
+    if (heldId && body.record.id !== heldId) return { status: 200, body: body.record };
+    heldId = body.record.id; signal = options.signal; const late = acceptedCopy(body.record);
     if (phase !== 'scheduled-operation') { entered.release(); await held.promise; }
     if (phase === 'posted-rejection') throw new Error('Actual late operation rejection');
     return { status: 200, body: late };
@@ -394,10 +395,17 @@ it.each(['posted-operation', 'scheduled-operation', 'posted-rejection'] as const
     expect(signal?.aborted).toBe(true); expect(active.reverseSyncs.size).toBe(0);
     expect(state.connectionListeners.size).toBe(1); expect(state.bindingListeners.size).toBe(1);
     await stopHandoffs(); expect(state.connectionListeners.size).toBe(1);
+    if (phase === 'posted-operation') {
+      const replacement = handoffHost();
+      const unrelated = await replacement.coordinator.offer(remoteOffer(), localHandoffAgent('sender'));
+      expect(unrelated.id).not.toBe(record.id); expect(replacement.commands.isUndelivered(unrelated.id)).toBe(false);
+      expect(state.connectionListeners.size).toBe(1); expect(active.store.get(record.id)).toEqual(record);
+    }
     held.release(); vi.useRealTimers();
     await vi.waitFor(() => { expect(state.connectionListeners.size).toBe(0); expect(state.bindingListeners.size).toBe(0); });
-    expect(state.post).toHaveBeenCalledTimes(phase === 'scheduled-operation' ? 0 : 1);
-    expect(state.unsubscribed.mock.calls).toEqual([['connection'], ['binding']]);
+    expect(state.post).toHaveBeenCalledTimes(phase === 'scheduled-operation' ? 0 : phase === 'posted-operation' ? 2 : 1);
+    expect(state.unsubscribed.mock.calls).toEqual(phase === 'posted-operation'
+      ? [['connection'], ['binding'], ['connection'], ['binding']] : [['connection'], ['binding']]);
     expect(active.store.get(record.id)).toEqual(record); expect(record.version).toBe(1);
     expect(state.send.mock.calls.some(([text]) => text.includes('State: accepted'))).toBe(false);
     expect(unhandled).not.toHaveBeenCalled();

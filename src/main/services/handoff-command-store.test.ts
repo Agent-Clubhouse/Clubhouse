@@ -81,12 +81,18 @@ it.each(['acknowledge', 'remove'] as const)('refuses reverse %s inside the actua
   const queued = operation === 'acknowledge' ? store.acknowledge(pending.id, 2, guard) : store.remove(pending.operationId, guard);
   const refusal = expect(queued).rejects.toThrow('Original reverse admission retired');
   const unrelated = store.markUndelivered(unrelatedId);
-  expect(guard).not.toHaveBeenCalled(); retired = true; held.release();
-  await earlier; await refusal; await unrelated;
-  expect(guard).toHaveBeenCalledTimes(1); expect(store.acknowledged(pending.id)).toBeUndefined(); expect(store.list()).toEqual([pending]);
-  const restarted = new HandoffCommandStore();
-  expect(restarted.acknowledged(pending.id)).toBeUndefined(); expect(restarted.list()).toEqual([pending]);
-  expect(restarted.isUndelivered(unrelatedId)).toBe(true);
+  try {
+    expect(guard).not.toHaveBeenCalled(); retired = true; held.release();
+    await earlier; await refusal; await unrelated;
+    expect(guard).toHaveBeenCalledTimes(1); expect(store.acknowledged(pending.id)).toBeUndefined(); expect(store.list()).toEqual([pending]);
+    const restarted = new HandoffCommandStore();
+    expect(restarted.acknowledged(pending.id)).toBeUndefined(); expect(restarted.list()).toEqual([pending]);
+    expect(restarted.isUndelivered(unrelatedId)).toBe(true);
+  } finally {
+    held.release();
+    await Promise.all([earlier, unrelated]);
+    await Promise.allSettled([queued]);
+  }
 });
 
 it.each(['acknowledge', 'remove'] as const)('publishes matching disk and memory for %s admitted before retirement', async (operation) => {

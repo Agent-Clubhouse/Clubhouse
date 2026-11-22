@@ -7,6 +7,7 @@ import type { Duplex } from 'stream';
 import { TLSSocket } from 'tls';
 import { expect, it, vi } from 'vitest';
 import { decodeControlBody } from '../../src/shared/annex-control-protocol';
+import type { OrchestrationControl } from '../../src/shared/orchestration-policy';
 import type { DispatchContext } from '../../src/main/services/annex-control';
 import { authority, close, desktop, listen, pairedPeer } from './reverse-desktop-fixture';
 
@@ -34,7 +35,7 @@ async function syncDesktop(dir: string) {
   vi.doMock('../../src/main/services/clubhouse-mcp/grant-check', () => ({ callerGrants: (): [] => [] }));
   vi.doMock('../../src/main/services/clubhouse-mcp/orchestration-gate', () => ({
     onOrchestrationGateChange: () => () => {}, notifyToolGateChange: () => {},
-    isOrchestrationEnabled: () => true, isCrossProjectEnabled: () => true, orchestrationControl: () => 'autonomous',
+    isOrchestrationEnabled: () => true, isCrossProjectEnabled: () => true, orchestrationControl: (): OrchestrationControl => 'hands-off',
   }));
   vi.doMock('../../src/main/services/clubhouse-mcp/handoff-permissions', () => ({ handoffAgreementCallApproved: async () => true }));
   vi.doMock('../../src/main/services/handoff-preparations', () => ({
