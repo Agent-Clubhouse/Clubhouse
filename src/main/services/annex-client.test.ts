@@ -1246,7 +1246,7 @@ describe('annex-client', () => {
         dials: WebSocketMock.mock.calls.length,
         retainedRemoved: removed.filter((fingerprint) => annexClient.getSatellite(fingerprint) !== null),
       }).toEqual({
-        retired: removed.map((fingerprint) => ({
+        retired: removed.map<(typeof observed)[number]>((fingerprint) => ({
           fingerprint, connected: false, satellite: null, sent: { sent: false, error: 'not_connected' },
           extraWrites: 0, socketClosed: 1,
         })),

@@ -117,13 +117,13 @@ describe('annex-handlers', () => {
   });
 
   it('SAVE_SETTINGS reports clubhouse.settings.changed with key annex', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
     await handlers.get(IPC.ANNEX.SAVE_SETTINGS)!({}, { enableServer: false, enableClient: false, deviceName: 'Mac' });
     expect(settingsChanged).toHaveBeenCalledWith('annex');
   });
 
   it('SAVE_SETTINGS starts server when enabling enableServer', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: true, enableClient: false, deviceName: 'Mac' });
     expect(annexServer.start).toHaveBeenCalled();
@@ -131,7 +131,7 @@ describe('annex-handlers', () => {
   });
 
   it('SAVE_SETTINGS stops server when disabling enableServer', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: false, enableClient: false, deviceName: 'Mac' });
     expect(annexServer.stop).toHaveBeenCalled();
@@ -139,21 +139,21 @@ describe('annex-handlers', () => {
   });
 
   it('SAVE_SETTINGS starts client when enabling enableClient', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: false, enableClient: true, deviceName: 'Mac' });
     expect(annexClient.startClient).toHaveBeenCalled();
   });
 
   it('SAVE_SETTINGS stops client when disabling enableClient', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: false, enableClient: false, deviceName: 'Mac' });
     expect(annexClient.stopClient).toHaveBeenCalled();
   });
 
   it('SAVE_SETTINGS does not start/stop when neither toggle changes', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: true, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: true, enableClient: true, deviceName: 'Mac' });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: true, enableClient: true, deviceName: 'New Name' });
     expect(annexServer.start).not.toHaveBeenCalled();
@@ -165,7 +165,7 @@ describe('annex-handlers', () => {
 
   it.each([true, false])('SAVE_SETTINGS reconciles control retries when autoReconnect becomes %s', async (autoReconnect) => {
     const previous = { enableServer: true, enableClient: true, deviceName: 'Mac', autoReconnect: !autoReconnect };
-    vi.mocked(annexSettings.getSettings).mockReturnValue(previous);
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue(previous);
     await handlers.get(IPC.ANNEX.SAVE_SETTINGS)!({}, { ...previous, autoReconnect });
     expect(annexControl.refreshConnections).toHaveBeenCalledExactlyOnceWith();
     expect(vi.mocked(annexSettings.saveSettings).mock.invocationCallOrder[0])
@@ -178,7 +178,7 @@ describe('annex-handlers', () => {
   });
 
   it('SAVE_SETTINGS can enable server without client', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: true, enableClient: false, deviceName: 'Mac' });
     expect(annexServer.start).toHaveBeenCalled();
@@ -187,7 +187,7 @@ describe('annex-handlers', () => {
 
   it.each([true, false])('SAVE_SETTINGS restarts the listener and refreshes discovery when loopback becomes %s, keeping pairings', async (loopbackOnly) => {
     const previous = { enableServer: true, enableClient: true, deviceName: 'Mac', loopbackOnly: !loopbackOnly };
-    vi.mocked(annexSettings.getSettings).mockReturnValue(previous);
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue(previous);
     await handlers.get(IPC.ANNEX.SAVE_SETTINGS)!({}, { ...previous, loopbackOnly });
     expect(annexSettings.saveSettings).toHaveBeenCalledWith({ ...previous, loopbackOnly });
     expect(annexServer.stop).toHaveBeenCalledExactlyOnceWith();
@@ -201,7 +201,7 @@ describe('annex-handlers', () => {
 
   it('SAVE_SETTINGS does not start Annex just because loopback mode changes while off', async () => {
     const previous = { enableServer: false, enableClient: false, deviceName: 'Mac' };
-    vi.mocked(annexSettings.getSettings).mockReturnValue(previous);
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue(previous);
     await handlers.get(IPC.ANNEX.SAVE_SETTINGS)!({}, { ...previous, loopbackOnly: true });
     expect(annexServer.start).not.toHaveBeenCalled();
     expect(annexServer.stop).not.toHaveBeenCalled();
@@ -210,7 +210,7 @@ describe('annex-handlers', () => {
   });
 
   it('SAVE_SETTINGS can enable client without server', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: false, enableClient: true, deviceName: 'Mac' });
     expect(annexClient.startClient).toHaveBeenCalled();
@@ -218,7 +218,7 @@ describe('annex-handlers', () => {
   });
 
   it('SAVE_SETTINGS can disable server while keeping client running', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: true, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: true, enableClient: true, deviceName: 'Mac' });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: false, enableClient: true, deviceName: 'Mac' });
     expect(annexServer.stop).toHaveBeenCalled();
@@ -226,7 +226,7 @@ describe('annex-handlers', () => {
   });
 
   it('SAVE_SETTINGS logs error when server start fails', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
     vi.mocked(annexServer.start).mockImplementationOnce(() => { throw new Error('port in use'); });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: true, enableClient: false, deviceName: 'Mac' });
@@ -236,7 +236,7 @@ describe('annex-handlers', () => {
   });
 
   it('SAVE_SETTINGS broadcasts status change after save', async () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: false, enableClient: false, deviceName: 'Mac' });
     expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.STATUS_CHANGED, expect.anything());
@@ -250,7 +250,7 @@ describe('annex-handlers', () => {
   });
 
   it('REGENERATE_PIN calls regeneratePin, broadcasts, and returns new status', async () => {
-    vi.mocked(annexServer.getStatus).mockReturnValue({
+    vi.mocked(annexServer.getStatus, { partial: true }).mockReturnValue({
       advertising: true, port: 3000, pin: '1234', connectedCount: 0,
     });
     const handler = handlers.get(IPC.ANNEX.REGENERATE_PIN)!;
@@ -389,20 +389,20 @@ describe('maybeStartAnnex', () => {
   });
 
   it('starts server when settings.enableServer is true', () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
     maybeStartAnnex();
     expect(annexServer.start).toHaveBeenCalled();
     expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('auto-started'));
   });
 
   it('does not start server when settings.enableServer is false', () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
     maybeStartAnnex();
     expect(annexServer.start).not.toHaveBeenCalled();
   });
 
   it('logs error when auto-start fails', () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
     vi.mocked(annexServer.start).mockImplementationOnce(() => { throw new Error('bind failed'); });
     maybeStartAnnex();
     expect(appLog).toHaveBeenCalledWith('core:annex', 'error', expect.any(String), expect.objectContaining({
@@ -417,20 +417,20 @@ describe('maybeStartAnnexClient', () => {
   });
 
   it('starts client when enableClient is true', () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
     maybeStartAnnexClient();
     expect(annexClient.startClient).toHaveBeenCalled();
     expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('client auto-started'));
   });
 
   it('does not start client when enableClient is false', () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
     maybeStartAnnexClient();
     expect(annexClient.startClient).not.toHaveBeenCalled();
   });
 
   it('logs error when client start fails', () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
+    vi.mocked(annexSettings.getSettings, { partial: true }).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
     vi.mocked(annexClient.startClient).mockImplementationOnce(() => { throw new Error('bonjour failed'); });
     maybeStartAnnexClient();
     expect(appLog).toHaveBeenCalledWith('core:annex', 'error', expect.any(String), expect.objectContaining({
