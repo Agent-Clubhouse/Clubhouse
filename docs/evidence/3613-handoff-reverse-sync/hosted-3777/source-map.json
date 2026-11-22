@@ -1,0 +1,89 @@
+{
+  "pr": 3777,
+  "run": 45031884736,
+  "event": "pull_request",
+  "attempt": 1,
+  "head": "868d8b53fdb20c23876c83538c855165761b40df",
+  "base": "c2a59f9f2c872bf2cb1fe9852adf8c92f2a996fc",
+  "testedSource": "9a5247cadf41756bc1c085a87c59493b34d5e99f",
+  "actualCheckout": "2724f81e7b3fdd00b1083b0b331fa12f85e07be9",
+  "checkoutParents": [
+    "c2a59f9f2c872bf2cb1fe9852adf8c92f2a996fc",
+    "868d8b53fdb20c23876c83538c855165761b40df"
+  ],
+  "checkoutTree": "208fb893fcc36e7154efdb2df07206f85d65f6ed",
+  "startedAt": "2026-11-22T14:16:02Z",
+  "updatedAt": "2026-11-22T14:38:18Z",
+  "conclusion": "success",
+  "watchExit": 0,
+  "jobs": {
+    "success": 33,
+    "skipped": 4
+  },
+  "skippedJobs": [
+    "Dependency resolution preflight",
+    "macOS unit",
+    "Linux Package Smoke Test",
+    "macOS build + E2E smoke"
+  ],
+  "selectedPlatforms": [
+    {
+      "os": "ubuntu-latest",
+      "selectedPass": 100,
+      "selectedFail": 0,
+      "selectedSkip": 0,
+      "files": {
+        "handoff-command-store.test.ts": {
+          "pass": 10
+        },
+        "handoff-retention.test.ts": {
+          "pass": 14
+        },
+        "handoff-service.test.ts": {
+          "pass": 23
+        },
+        "annex-reverse-handoff-sync.test.ts": {
+          "pass": 1
+        },
+        "handoff-coordinator.test.ts": {
+          "pass": 19
+        },
+        "handoff-host.test.ts": {
+          "pass": 33
+        }
+      },
+      "totalJUnitCases": 36513
+    },
+    {
+      "os": "windows-latest",
+      "selectedPass": 100,
+      "selectedFail": 0,
+      "selectedSkip": 0,
+      "files": {
+        "handoff-command-store.test.ts": {
+          "pass": 10
+        },
+        "handoff-retention.test.ts": {
+          "pass": 14
+        },
+        "handoff-service.test.ts": {
+          "pass": 23
+        },
+        "annex-reverse-handoff-sync.test.ts": {
+          "pass": 1
+        },
+        "handoff-coordinator.test.ts": {
+          "pass": 19
+        },
+        "handoff-host.test.ts": {
+          "pass": 33
+        }
+      },
+      "totalJUnitCases": 36511
+    }
+  ],
+  "sourceReview": "6f15b83d35a86b25dd24cfac4289de3bc9440909",
+  "sourceProof": "868d8b53fdb20c23876c83538c855165761b40df",
+  "rawBodySha256": "edd0743c51a2be449498ad6e3c98d78b2052d5ec4ec8c65002905ab87f34229e",
+  "sourceBoundaries": "Native grants/preparation/worker/provider/route adapter remain fixtures; virtual deadline cases use fake timers; no content-through-coordinator/apply/wake/twohost/full-duplex acceptance."
+}

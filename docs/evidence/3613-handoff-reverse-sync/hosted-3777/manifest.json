@@ -1,0 +1,189 @@
+{
+  "source": "868d8b53fdb20c23876c83538c855165761b40df",
+  "sourceTree": "208fb893fcc36e7154efdb2df07206f85d65f6ed",
+  "run": 45031884736,
+  "attempt": 1,
+  "artifactCount": 20,
+  "artifacts": [
+    {
+      "path": "artifacts/actual-checkouts-derived.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/actual-checkouts-derived.json",
+      "rawBytes": 8101,
+      "rawSha256": "52881a40c49c2da9f065f3d078a8a5c2df1192e00b08269b3316b99fd0a2f638",
+      "storedBytes": 765,
+      "storedSha256": "a4338b27b4431884e1856aa285365d594e727f284531a06a0ba539ecfab70435"
+    },
+    {
+      "path": "artifacts/artifacts-terminal-original.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/artifacts-terminal-original.json",
+      "rawBytes": 20146,
+      "rawSha256": "ec88eaca7a94492ecd436650d9a2bf68c69a8f62ba8b1bc25be2f9604a763c5b",
+      "storedBytes": 2760,
+      "storedSha256": "6deb541f1058ffa59d9bb27c697419100b5e72171011eaabf87a3b3a08737d10"
+    },
+    {
+      "path": "artifacts/checkout-commit-original.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/checkout-commit-original.json",
+      "rawBytes": 2654,
+      "rawSha256": "0991f3ea369386827d14acbce28df9d0800889b087b34351c816b41bd434a6d7",
+      "storedBytes": 1244,
+      "storedSha256": "4afb465be771d777dfe7b7878e61bad1f4ffec6c8da2c397fa315165251a2c84"
+    },
+    {
+      "path": "artifacts/jobs-start-original.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/jobs-start-original.json",
+      "rawBytes": 36196,
+      "rawSha256": "fbf3995c586772f6cc3f5d61a04f236983370b159302ead52e9831b8546a0624",
+      "storedBytes": 2602,
+      "storedSha256": "e5223846197882b2b56042d8009c86f4992132d2a9d0862652dbdfc7db55ca41"
+    },
+    {
+      "path": "artifacts/jobs-terminal-original.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/jobs-terminal-original.json",
+      "rawBytes": 104808,
+      "rawSha256": "d4710f9f58c8fd64e0eefafeaa3c5cc05e572163eed5511b830044c768a75e6b",
+      "storedBytes": 5490,
+      "storedSha256": "018a986856de429f5e9b5c60e6f2a46a8bd70edf569f1b35edd86163acf3e5f1"
+    },
+    {
+      "path": "artifacts/junit-selected-derived.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/junit-selected-derived.json",
+      "rawBytes": 1295,
+      "rawSha256": "f566a5f34c8e32f98e8438665640030caa81dd83d2226fc87bae2ee152fb654a",
+      "storedBytes": 253,
+      "storedSha256": "c08a3eb0cd8b9591a8f5b07c9facfe49171970ca561372a9b24aea14ee6bffca"
+    },
+    {
+      "path": "artifacts/logs-terminal-original.zip",
+      "encoding": "original-zip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/logs-terminal-original.zip",
+      "rawBytes": 3503848,
+      "rawSha256": "1589c31b1690fbf774c6343f0fa1c052952eabc6c1190fdef42fcad6f3f7bd00",
+      "storedBytes": 3503848,
+      "storedSha256": "1589c31b1690fbf774c6343f0fa1c052952eabc6c1190fdef42fcad6f3f7bd00"
+    },
+    {
+      "path": "artifacts/main-terminal-original.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/main-terminal-original.json",
+      "rawBytes": 348,
+      "rawSha256": "c3be8f810ccb8f021f0506b147d37d640ab88ecb8ec2e16d345188bd7fcb69db",
+      "storedBytes": 214,
+      "storedSha256": "19a38964787280656631bf25b1ec16c6b682deb4b1efc6d6ee40d388ce69cfe7"
+    },
+    {
+      "path": "artifacts/pr-terminal-original.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/pr-terminal-original.json",
+      "rawBytes": 23273,
+      "rawSha256": "f37a8a91bc86e840c85713bb9ab4699f630d30517ffecf39002ed37fdaa7d270",
+      "storedBytes": 6060,
+      "storedSha256": "6e4a6bba10c8efca5da439e3eb7f4ff58a55c149a50c820df21568b32753dde8"
+    },
+    {
+      "path": "artifacts/run-start-original.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/run-start-original.json",
+      "rawBytes": 13359,
+      "rawSha256": "d8ff90eb7de91cca9474d6b20155c6a33e469203b6159c182c3ccaaf94abc15d",
+      "storedBytes": 1802,
+      "storedSha256": "6321f6a114b64a897cdcfc57a77ef96089d73a9289eced99e67e139dc4c5c23c"
+    },
+    {
+      "path": "artifacts/run-terminal-original.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/run-terminal-original.json",
+      "rawBytes": 13362,
+      "rawSha256": "4379b70fb0b8b5f9b9f9d9a223c01e785470940673a779f67415217640106e57",
+      "storedBytes": 1805,
+      "storedSha256": "a25c2a6e43bb365256013c9a113de764ab2c6e4dc6792fb0c1f7439a3eb636fe"
+    },
+    {
+      "path": "artifacts/terminal-summary-derived.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/terminal-summary-derived.json",
+      "rawBytes": 416,
+      "rawSha256": "6968534843210fa37996e4c1432065cabff0cc6ba834607695005ea16112f693",
+      "storedBytes": 278,
+      "storedSha256": "ce047496e9eab6fd1ef39b46ec79da29eaa4b9d271d88a8642ed0b3c2d1f833b"
+    },
+    {
+      "path": "artifacts/watcher-exit-original.txt.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/watcher-exit-original.txt",
+      "rawBytes": 2,
+      "rawSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "storedBytes": 22,
+      "storedSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "path": "artifacts/watcher-original.log.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/watcher-original.log",
+      "rawBytes": 281862,
+      "rawSha256": "1c8a138312665d4e4fe517cb42424b84e2617bf1a976302ba7c9017aac7a1961",
+      "storedBytes": 4595,
+      "storedSha256": "aac2cf5ea4f3fd19543869acc704c54605685d840cb6a9ea513c0f3389d8533b"
+    },
+    {
+      "path": "artifacts/pr-created-original.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-created-original.json",
+      "rawBytes": 16953,
+      "rawSha256": "fe17403945d4e5be6eb3110c09ddb0de8d87d771397f6a2e86c5cfdb49a83503",
+      "storedBytes": 5744,
+      "storedSha256": "e83e3a39ba5a815597b58100a3fb06201a48445be2b1df13b2bff32e7672b91c"
+    },
+    {
+      "path": "artifacts/sole-run-original.json.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-sole-run-original.json",
+      "rawBytes": 14905,
+      "rawSha256": "df374d53055ef83696c35593a2135ff17dfef7ebb4e45e241653d862bbb90110",
+      "storedBytes": 1954,
+      "storedSha256": "b231a91418203ff1877e25a86a2f6e7fdb88bb398366a1aae0f52483c9a69e84"
+    },
+    {
+      "path": "artifacts/junit-ubuntu-latest-1-original.xml.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/junit/test-results-ubuntu-latest-1/test-results.xml",
+      "rawBytes": 6860202,
+      "rawSha256": "190bc110a75718c10a24e556e1718495aaf6b3b5762e1409caca5a022f21d85f",
+      "storedBytes": 621150,
+      "storedSha256": "d8fa5b5771b819a3d4c2d3393466d05af0174bdc9e312f051f130dec803dbc01"
+    },
+    {
+      "path": "artifacts/junit-ubuntu-latest-2-original.xml.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/junit/test-results-ubuntu-latest-2/test-results.xml",
+      "rawBytes": 15960290,
+      "rawSha256": "a03b291f6143a51077705d9993338218ab156285c7fd2fdd63f4b9d582d11b55",
+      "storedBytes": 572751,
+      "storedSha256": "8f9b45d69fa0b11b7119421f3604af47d763ac1ec4527ccfa9726448ded453ec"
+    },
+    {
+      "path": "artifacts/junit-windows-latest-1-original.xml.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/junit/test-results-windows-latest-1/test-results.xml",
+      "rawBytes": 6818356,
+      "rawSha256": "49b69f23a4ca8e689423f63bc269d3c7b580146b6d627c3678c5fbbd6055db64",
+      "storedBytes": 594062,
+      "storedSha256": "2861f15bc220bb9886f778c2cc7e61155293f95f8d78af73db6125549150cc99"
+    },
+    {
+      "path": "artifacts/junit-windows-latest-2-original.xml.gz",
+      "encoding": "gzip",
+      "originalCachePath": "node_modules/.cache/handoff-reverse-sync/pr3777-hosted/junit/test-results-windows-latest-2/test-results.xml",
+      "rawBytes": 15915302,
+      "rawSha256": "24684be3a1707e65bda6e6ba1c920e1be39cecfa9e027d3b36dd82eea42b6ddb",
+      "storedBytes": 550577,
+      "storedSha256": "716f793b846d1ae0e48fca88192c09471239d5ed8ba26a193b871105d47fa938"
+    }
+  ]
+}
