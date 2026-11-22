@@ -21,7 +21,7 @@ export async function handoffAgreementCallApproved(agentId: string, action: 'han
   const targets = await resolveArgTargets(agentId, grant, call.args);
   if (expectedRecipient !== undefined) {
     const resolved = targets?.get(grant);
-    if (resolved?.length !== 1 || resolved[0].agentId !== expectedRecipient) return false;
+    if (resolved?.length !== 1 || resolved[0].kind !== 'agent' || resolved[0].agentId !== expectedRecipient) return false;
   }
   const check = checkToolGrant(agentId, grant, call.args, undefined, targets);
   return callGrantIsApproved(agentId, call.name, call.args, check,
