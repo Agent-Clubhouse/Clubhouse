@@ -1,11 +1,25 @@
 # Desktop reverse-control routes and readiness (#3613 P2/P7/P7w)
 
-## Remaining consumer candidate (not accepted)
+## Landed transport and remaining composed proof
 
-The current-main capability inventory is in
+At source checkpoint `c2a59f9f2c872bf2cb1fe9852adf8c92f2a996fc`, common
+reverse requests/subscriptions are present, the bounded Git diff envelope landed
+in #3775, and the narrow Details continuation landed in #3776. These are scoped
+desktop changes, not full-duplex, handoff-product or release acceptance.
+
+The historical capability inventory is in
 [`evidence/3613-duplex-current-c43/README.md`](evidence/3613-duplex-current-c43/README.md).
-The remaining-consumer candidate is separate from the landed bounded controller
-GET slice documented below. It does not establish full duplex or release acceptance.
+Its source-specific missing/candidate labels are not a current-main inventory.
+Original evidence and its execution limits remain unchanged.
+
+The existing reverse-consumer fixture's 81,937-byte handoff-shaped envelope is
+transport fidelity only: its custom handler accepts `op: chunk`, not the actual
+handoff `manifest`/`read` operations. The separate reverse-handoff fixture composes
+the existing pinned transport and request adapter with the actual source/receiver
+and real disk I/O. Agreement/preparation lookup, application route dispatch and
+agent-grant admission remain fixtures; offer, acceptance, apply, renderer and
+two-host product behavior are not exercised. Its exact source/proof still needs
+independent review before acceptance.
 
 Common REST requests capture one route before sending: a live direct connection
 wins, otherwise an already-authorized accepted control link is used. Each request
@@ -43,7 +57,7 @@ transport and positive snapshot receipts. Selected-board query/import/inventory
 hunks remain reserved; Naming's pure alias getter is separate, and its full-list
 label notification is held.
 
-### Details transport and positive admission candidate (not accepted)
+### Landed Details transport and positive admission (#3776)
 
 The four existing Settings, selected dispatcher, agent Details and Changes GET
 readers can use an already-authorized accepted reverse request link when direct
@@ -82,14 +96,18 @@ selected-board clearance. No producer, DTO, renderer, Naming, phone/wire, grant,
 shared authorization/retirement helper or release changes are included.
 The [genuine test-only baseline](evidence/3613-details-transport/baseline/README.md)
 retains9FAIL/0PASS/372SKIP on landed `edcd915763a2ec73f0e8149917b4683ced06ecd6`.
-Its downstream assertions remain unexecuted. Candidate proof, changed-fixture
-typing disposition and independent exact-delta review are separate gates.
-The [frozen unreviewed proof](evidence/3613-details-transport/proof/README.md)
+Its downstream assertions remain unexecuted. The
+[frozen original proof](evidence/3613-details-transport/proof/README.md)
 records95 targeted passes on `b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58`;
 the actual full fixture compiler remains54FAIL, exactly matching its separate
 baseline by complete diagnostic/3956-input comparison. This is not compilerPASS.
-Independent source review and that new failure disposition remain pending;
-neither full-duplex nor hosted acceptance is inferred.
+Independent review
+[`bd4b9fe`](https://github.com/Agent-Clubhouse/Clubhouse/blob/bd4b9feff8aee6e4b03f9d7303ab4cc4fb3e7df0/docs/qa-transfer/2026-11-22/reports/details-b1f2-independent-source-review.md)
+accepted the exact source and that separate54FAIL nonregression disposition.
+The [hosted packet](https://github.com/Agent-Clubhouse/Clubhouse/blob/63978a2e9213a61795c6a8381e7191c6d7cbabd3/docs/evidence/3613-details-transport/hosted-45017029171/README.md)
+records actual checkout and both-platform client results. Those client tests
+still mock request/readiness/subscription ports; neither full duplex nor real
+paired application acceptance follows from their hosted passes.
 
 ### Existing GET Git diff response envelope
 
