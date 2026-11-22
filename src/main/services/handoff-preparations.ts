@@ -129,6 +129,13 @@ export async function selectPreparedHandoff(owner: string, mode: 'branch' | 'wor
   return Object.freeze({ id: entry.id, owner, source, mode, summary: Object.freeze({ ...entry.summary }) });
 }
 
+export function assertPreparedHandoffSelection(selected: HandoffPreparationSelection): void {
+  if (!store().list().some((entry) => entry.id === selected.id && entry.owner === selected.owner && entry.project === selected.source.project.id
+    && entry.mode === selected.mode && sameSummary(entry.summary, selected.summary) && (entry.boundTo.length || Date.now() - entry.at < TTL))) {
+    throw new Error('The selected handoff preparation changed or expired.');
+  }
+}
+
 /** An offer may reference only this agent's own frozen, registered-project preparation. */
 export async function ensurePreparedHandoff(owner: string, mode: 'branch' | 'worktree', summary?: HandoffManifestSummary): Promise<HandoffManifestSummary> {
   if (!summary) return (await prepareCallerHandoff(owner, mode)).summary;

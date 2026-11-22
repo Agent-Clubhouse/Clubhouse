@@ -1,4 +1,6 @@
 import { execFile } from 'child_process';
+import { generateKeyPairSync } from 'crypto';
+import * as nativeFs from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -8,6 +10,7 @@ import type { GrantChangeMode } from '../../src/shared/agent-grant-changes';
 import { parseHandoffManifest, summarizeHandoffManifest } from '../../src/shared/handoff-manifest';
 import { parseHandoff, type Handoff, type HandoffManifestSummary } from '../../src/shared/handoffs';
 import type { McpToolResult } from '../../src/main/services/clubhouse-mcp/types';
+import type { DurableAgentConfig } from '../../src/shared/types';
 import { desktop } from './reverse-desktop-fixture';
 
 const exec = promisify(execFile);
@@ -37,7 +40,7 @@ async function setup(dir: string) {
   await exec('git', ['add', 'fixture.txt'], { cwd: repository });
   await exec('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Fixture'], { cwd: repository });
   await fs.writeFile(path.join(repository, 'fixture.txt'), contents);
-  await desktop(userData);
+  const machine = await desktop(userData);
   const projects = await import('../../src/main/services/project-store');
   const project = await projects.add(repository);
   const registry = await import('../../src/main/services/agent-registry');
@@ -65,7 +68,7 @@ async function setup(dir: string) {
   const preparation = await import('../../src/main/services/handoff-preparations');
   const source = await import('../../src/main/services/handoff-preflight-host');
   const requests = await import('../../src/main/services/grant-requests');
-  return { userData, repository, project, registry, gate, grants, tools, hostApi, host, preparation, source, requests, setGrant };
+  return { userData, repository, project, registry, gate, grants, tools, hostApi, host, preparation, source, requests, setGrant, machine, binding };
 }
 
 type Fixture = Awaited<ReturnType<typeof setup>>;
@@ -84,6 +87,8 @@ afterEach(async () => {
   await fixture?.hostApi.stopHandoffs();
   fixture?.requests._resetGrantRequestsForTesting();
   vi.restoreAllMocks();
+  vi.useRealTimers();
+  (await import('../../src/main/services/agent-config')).clearAgentConfigCache();
   fixture = undefined;
   await fs.rm(dir, { recursive: true, force: true });
 });
@@ -93,8 +98,8 @@ function current(): Fixture {
   return fixture;
 }
 
-async function prepare(fx: Fixture): Promise<HandoffManifestSummary> {
-  const result = await fx.tools.callTool(caller, 'prepare_handoff', { mode: 'worktree' });
+async function prepare(fx: Fixture, exclude?: string[]): Promise<HandoffManifestSummary> {
+  const result = await fx.tools.callTool(caller, 'prepare_handoff', { mode: 'worktree', ...(exclude && { exclude }) });
   expect(result.isError).not.toBe(true);
   const value = resultValue(result);
   expect(value).toMatchObject({ ready: true });
@@ -127,7 +132,7 @@ async function verifySource(fx: Fixture, record: Handoff, summary: HandoffManife
   expect(await fs.readFile(path.join(prepared.snapshot.root, 'files', 'fixture.txt'), 'utf8')).toBe(contents);
 }
 
-async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestSummary) {
+async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestSummary, args = offerArgs(summary)) {
   const entered = deferred(), queued = deferred(), release = deferred();
   releases.push(release.resolve);
   const transact: Fixture['host']['store']['transact'] = fx.host.store.transact.bind(fx.host.store);
@@ -147,7 +152,7 @@ async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestS
     operations.push(blocker);
     return actualOffer(input, sender, beforeCommit, admission);
   });
-  const pending = fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary));
+  const pending = fx.tools.callTool(caller, 'offer_handoff', args);
   operations.push(pending);
   await Promise.all([entered.promise, queued.promise]);
   return { pending, release: release.resolve };
@@ -166,6 +171,307 @@ describe('isolated real MCP producer domain admission', () => {
     await verifySource(fx, parseHandoff(resultValue(result)), summary);
     expect(fx.host.store.list()).toHaveLength(2);
     expect(fx.requests.listGrantRequests()).toEqual([]);
+  });
+
+  async function heldSelection(fx: Fixture, args: Record<string, unknown>, afterSelection = false) {
+    const entered = deferred(), release = deferred();
+    releases.push(release.resolve);
+    const select = fx.preparation.selectPreparedHandoff;
+    let selected: Awaited<ReturnType<typeof select>> | undefined;
+    vi.spyOn(fx.preparation, 'selectPreparedHandoff').mockImplementation(async (...input) => {
+      if (afterSelection) selected = await select(...input);
+      entered.resolve();
+      await release.promise;
+      return selected ?? select(...input);
+    });
+    const pending = fx.tools.callTool(caller, 'offer_handoff', args);
+    operations.push(pending);
+    await entered.promise;
+    return { pending, release: release.resolve, selected: () => selected };
+  }
+
+  function heldRename(fx: Fixture, filename: string, eligible = () => true) {
+    const entered = deferred(), release = deferred();
+    releases.push(release.resolve);
+    const rename: typeof nativeFs.promises.rename = nativeFs.promises.rename.bind(nativeFs.promises);
+    vi.spyOn(nativeFs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (to === path.join(fx.userData, filename) && eligible()) {
+        entered.resolve();
+        await release.promise;
+      }
+      return rename(from, to);
+    });
+    return { entered: entered.promise, release: release.resolve };
+  }
+
+  async function remote(fx: Fixture) {
+    const { publicKey } = generateKeyPairSync('ed25519');
+    const publicKeyBase64 = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    const fingerprint = fx.machine.identity.computeFingerprint(publicKeyBase64);
+    fx.machine.peers.addPeer({
+      fingerprint, publicKey: publicKeyBase64, alias: 'Remote fixture', icon: 'computer', color: 'indigo',
+      role: 'member', kind: 'desktop', pairedAt: '2026-01-01T00:00:00.000Z', lastSeen: '',
+    });
+    await fx.grants.updateAgentGrantChanges(caller, () => ({
+      changes: [
+        { action: 'handoff.offer', target: { kind: 'connected' }, mode: 'allow' },
+        { action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'allow' },
+      ],
+    }));
+    vi.spyOn(fx.machine.client, 'isMachineConnected').mockImplementation((machine) => machine === fingerprint);
+    return fingerprint;
+  }
+
+  describe('original producer continuity and admitted persistence', () => {
+    it('retains original grant retirement even when Allow is restored before the queue resumes', async () => {
+      const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
+      const before = await catalog(fx);
+      const queued = await queuedOffer(fx, seed, summary);
+      await fx.setGrant('off');
+      await fx.setGrant('allow');
+      queued.release();
+      expect((await queued.pending).isError).toBe(true);
+      expect(fx.host.store.list()).toEqual([seed]);
+      expect(await catalog(fx)).toBe(before);
+    });
+
+    it('preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata', async () => {
+      const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
+      const queued = await queuedOffer(fx, seed, summary);
+      fx.gate.forgetMcpCaller(caller);
+      fx.registry.agentRegistry.setRuntime(caller, 'chat');
+      fx.binding.bindingManager.updateBinding(caller, receiver, { label: 'Cosmetic label' });
+      fx.binding.bindingManager.bind(caller, { targetKind: 'agent', targetId: 'unrelated-fixture', label: 'Unrelated' });
+      expect(fx.gate.mcpCallAccess(caller, fx.repository)).toBe('closed');
+      queued.release();
+      const result = await queued.pending;
+      expect(result.isError).not.toBe(true);
+      await verifySource(fx, parseHandoff(resultValue(result)), summary);
+    });
+
+    it('does not adopt a replacement quick source with the same id and worktree', async () => {
+      const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
+      const original = fx.registry.agentRegistry.get(caller);
+      if (!original) throw new Error('Missing original caller.');
+      const before = await catalog(fx);
+      const queued = await queuedOffer(fx, seed, summary);
+      fx.registry.agentRegistry.untrack(caller);
+      fx.registry.agentRegistry.register(caller, { ...original });
+      fx.gate.setMcpCallerQuick(caller, fx.repository);
+      queued.release();
+      expect((await queued.pending).isError).toBe(true);
+      expect(fx.host.store.list()).toEqual([seed]);
+      expect(await catalog(fx)).toBe(before);
+    });
+
+    it('does not adopt a different registered caller worktree after preparation', async () => {
+      const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
+      const original = fx.registry.agentRegistry.get(caller);
+      if (!original) throw new Error('Missing original caller.');
+      const before = await catalog(fx);
+      const queued = await queuedOffer(fx, seed, summary);
+      original.cwd = path.join(dir, 'different-source');
+      queued.release();
+      expect((await queued.pending).isError).toBe(true);
+      expect(fx.host.store.list()).toEqual([seed]);
+      expect(await catalog(fx)).toBe(before);
+    });
+
+    it('rechecks retirement during the actual positive authorization await', async () => {
+      const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
+      const permissions = await import('../../src/main/services/clubhouse-mcp/handoff-permissions');
+      const approve = permissions.handoffAgreementCallApproved;
+      const entered = deferred(), release = deferred();
+      releases.push(release.resolve);
+      vi.spyOn(permissions, 'handoffAgreementCallApproved').mockImplementation(async (...args) => {
+        const allowed = await approve(...args);
+        expect(allowed).toBe(true);
+        entered.resolve();
+        await release.promise;
+        return allowed;
+      });
+      const before = await catalog(fx);
+      const pending = fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary));
+      operations.push(pending);
+      await entered.promise;
+      await fx.setGrant('off');
+      await fx.setGrant('allow');
+      release.resolve();
+      expect((await pending).isError).toBe(true);
+      expect(fx.host.store.list()).toEqual([seed]);
+      expect(await catalog(fx)).toBe(before);
+    });
+
+    it('uses a synthetic isolated exact-call approval without changing standing Ask grants', async () => {
+      const fx = current(), summary = await prepare(fx);
+      await fx.setGrant('ask');
+      expect((await fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary))).isError).toBe(true);
+      const request = fx.requests.listGrantRequests()[0];
+      fx.requests.takeGrantRequest(request.requestId, true);
+      const before = fx.grants.getAgentGrantChanges(caller);
+      await verifySource(fx, await offer(fx, summary), summary);
+      expect(fx.grants.getAgentGrantChanges(caller)).toEqual(before);
+      expect(fx.requests.listGrantRequests()).toEqual([]);
+    });
+
+    it('requires still-valid consumed approval inside the queue, not merely a stable Ask grant', async () => {
+      const fx = current(), summary = await prepare(fx), seed = await offer(fx, summary);
+      await fx.setGrant('ask');
+      expect((await fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary))).isError).toBe(true);
+      fx.requests.takeGrantRequest(fx.requests.listGrantRequests()[0].requestId, true);
+      const before = await catalog(fx);
+      const queued = await queuedOffer(fx, seed, summary);
+      fx.requests.dropCallApprovalsFor(caller);
+      queued.release();
+      expect((await queued.pending).isError).toBe(true);
+      expect(fx.host.store.list()).toEqual([seed]);
+      expect(await catalog(fx)).toBe(before);
+    });
+
+    it('does not borrow a newly retargeted alias authorization for the frozen recipient', async () => {
+      const fx = current();
+      const config = await import('../../src/main/services/agent-config');
+      const configs: DurableAgentConfig[] = [
+        { id: receiver, name: 'Receiver', color: 'indigo', createdAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'producer-other', name: 'Other', color: 'indigo', createdAt: '2026-01-01T00:00:01.000Z' },
+      ];
+      const configDir = path.join(fx.repository, '.clubhouse');
+      await fs.mkdir(configDir);
+      await fs.writeFile(path.join(configDir, 'agents.json'), JSON.stringify(configs));
+      config.clearAgentConfigCache(fx.repository);
+      fx.binding.bindingManager.bind(caller, { targetKind: 'agent', targetId: 'producer-other', label: 'Other' });
+      const summary = await prepare(fx, ['.clubhouse/**']);
+      const held = await heldSelection(fx, { ...offerArgs(summary), to: 'Receiver' }, true);
+      configs[0].name = 'Former receiver'; configs[1].name = 'Receiver';
+      await fs.writeFile(path.join(configDir, 'agents.json'), JSON.stringify(configs));
+      config.clearAgentConfigCache(fx.repository);
+      expect(await fx.hostApi.resolveHandoffTarget('Receiver')).toMatchObject({ agentId: 'producer-other' });
+      held.release();
+      expect((await held.pending).isError).toBe(true);
+      expect(fx.host.store.list()).toEqual([]);
+      expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ boundTo: [] }] });
+    });
+
+    it('does not substitute a new same-summary preparation for the captured catalog entry', async () => {
+      const fx = current(), summary = await prepare(fx);
+      const held = await heldSelection(fx, offerArgs(summary), true);
+      const selected = held.selected();
+      if (!selected) throw new Error('Missing actual captured preparation.');
+      expect(await prepare(fx)).toEqual(summary);
+      const replacement = JSON.parse(await catalog(fx));
+      expect(replacement.entries[0].id).not.toBe(selected.id);
+      held.release();
+      expect((await held.pending).isError).toBe(true);
+      expect(fx.host.store.list()).toEqual([]);
+      expect(JSON.parse(await catalog(fx))).toEqual(replacement);
+    });
+
+    it('owns the original host before implicit preparation and refuses stop-time replacement', async () => {
+      const fx = current();
+      const held = await heldSelection(fx, { to: receiver, task: 'Fixture', brief: 'Synthetic fixture', mode: 'worktree' });
+      let stopped = false;
+      const stopping = fx.hostApi.stopHandoffs().then(() => { stopped = true; });
+      operations.push(stopping);
+      await Promise.resolve();
+      expect(stopped).toBe(false);
+      expect(() => fx.hostApi.handoffHost()).toThrow();
+      held.release();
+      expect((await held.pending).isError).toBe(true);
+      await stopping;
+      expect(fx.host.store.list()).toEqual([]);
+      await expect(fs.access(path.join(fx.userData, 'handoff-preparations.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      const replacement = fx.hostApi.handoffHost();
+      expect(replacement).not.toBe(fx.host);
+      await replacement.ready;
+    });
+
+    it.each(['handoff-commands.json', 'handoff-preparations.json', 'handoffs.json'])('finishes admitted %s save truthfully while stop waits actual work', async (filename) => {
+      const fx = current(), summary = await prepare(fx);
+      const peer = filename === 'handoff-commands.json' ? await remote(fx) : undefined;
+      const post = vi.spyOn(fx.machine.client, 'postToMachine');
+      let marking = false;
+      const mark = fx.host.commands.markUndelivered.bind(fx.host.commands);
+      vi.spyOn(fx.host.commands, 'markUndelivered').mockImplementation((id) => {
+        marking = true;
+        return mark(id).finally(() => { marking = false; });
+      });
+      const held = heldRename(fx, filename, () => filename !== 'handoff-commands.json' || marking);
+      const pending = fx.tools.callTool(caller, 'offer_handoff', { ...offerArgs(summary), ...(peer && { to: `machine:${peer}` }) });
+      operations.push(pending);
+      await held.entered;
+      let stopped = false;
+      const stopping = fx.hostApi.stopHandoffs().then(() => { stopped = true; });
+      operations.push(stopping);
+      await Promise.resolve();
+      expect(stopped).toBe(false);
+      expect(fx.host.store.list()).toEqual([]);
+      expect(() => fx.hostApi.handoffHost()).toThrow();
+      held.release();
+      const result = await pending;
+      expect(result.isError).not.toBe(true);
+      const record = parseHandoff(resultValue(result));
+      expect(fx.host.store.get(record.id)).toEqual(record);
+      expect(JSON.parse(await fs.readFile(path.join(fx.userData, 'handoffs.json'), 'utf8')).records).toEqual([record]);
+      expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ boundTo: [record.id] }] });
+      if (peer) expect(fx.host.commands.isUndelivered(record.id)).toBe(true);
+      expect(post).not.toHaveBeenCalled();
+      await stopping;
+    });
+
+    it('holds a dispatched POST beyond its deadline until the actual promise releases', async () => {
+      const fx = current(), summary = await prepare(fx), peer = await remote(fx);
+      const entered = deferred();
+      let finish!: (value: Awaited<ReturnType<typeof fx.machine.client.postToMachine>>) => void;
+      const response = new Promise<Awaited<ReturnType<typeof fx.machine.client.postToMachine>>>((resolve) => { finish = resolve; });
+      const post = vi.spyOn(fx.machine.client, 'postToMachine').mockImplementation(async () => { entered.resolve(); return response; });
+      vi.useFakeTimers();
+      const pending = fx.tools.callTool(caller, 'offer_handoff', { ...offerArgs(summary), to: `machine:${peer}` });
+      operations.push(pending);
+      await entered.promise;
+      const record = fx.host.store.list()[0];
+      releases.push(() => finish({ status: 200, body: record }));
+      let stopped = false;
+      const stopping = fx.hostApi.stopHandoffs().then(() => { stopped = true; });
+      operations.push(stopping);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect((await pending).isError).not.toBe(true);
+      expect(stopped).toBe(false);
+      expect(fx.host.producers.size).toBe(1);
+      expect(() => fx.hostApi.handoffHost()).toThrow();
+      finish({ status: 200, body: record });
+      await stopping;
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(fx.host.store.get(record.id)).toEqual(record);
+      expect(fx.host.producers.size).toBe(0);
+    });
+
+    it.each(['catalog-prewrite', 'history-prewrite', 'history-after-rename'] as const)('retains exact partial ids and distinguishes %s failure without retry or rollback fiction', async (failure) => {
+      const fx = current(), summary = await prepare(fx);
+      const filename = failure === 'catalog-prewrite' ? 'handoff-preparations.json' : 'handoffs.json';
+      const rename: typeof nativeFs.promises.rename = nativeFs.promises.rename.bind(nativeFs.promises);
+      const error = new Error(`Synthetic ${failure} failure`);
+      let faults = 0, id: string | undefined;
+      const transact: Fixture['host']['store']['transact'] = fx.host.store.transact.bind(fx.host.store);
+      vi.spyOn(fx.host.store, 'transact').mockImplementation((nextId, change) => { id = nextId; return transact(nextId, change); });
+      vi.spyOn(nativeFs.promises, 'rename').mockImplementation(async (from, to) => {
+        if (to !== path.join(fx.userData, filename)) return rename(from, to);
+        faults++;
+        if (failure === 'history-after-rename') await rename(from, to);
+        throw error;
+      });
+      const result = await fx.tools.callTool(caller, 'offer_handoff', offerArgs(summary));
+      expect(result.isError).toBe(true);
+      expect(faults).toBe(1);
+      expect(fx.host.store.list()).toEqual([]);
+      expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ boundTo: failure === 'catalog-prewrite' ? [] : [id] }] });
+      if (failure === 'history-after-rename') {
+        const records = JSON.parse(await fs.readFile(path.join(fx.userData, 'handoffs.json'), 'utf8')).records;
+        expect(records).toHaveLength(1);
+        expect(records[0].id).toBe(id);
+        console.info('Admitted ambiguous IO witness', JSON.stringify({ failure, id, memory: [], disk: records, error: error.message }));
+      } else await expect(fs.access(path.join(fx.userData, 'handoffs.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await fx.hostApi.stopHandoffs();
+    });
   });
 
   it('refuses original sender grant retirement before queued offer admission without adding history or binding', async () => {

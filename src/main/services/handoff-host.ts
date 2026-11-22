@@ -14,7 +14,7 @@ import { callerHandoffSource } from './handoff-preflight-host';
 import { openHandoffRepository, readHandoffSnapshotManifest } from './handoff-snapshot';
 import { requestHandoffTransfer, readHandoffTransferManifest } from './handoff-transfer-transport';
 import { HandoffTransferSource } from './handoff-transfer-source';
-import { bindPreparedHandoff, selectPreparedHandoff, settleHandoffPreparationBinding, pruneHandoffPreparations, preparedSourceForRecord,
+import { assertPreparedHandoffSelection, bindPreparedHandoff, selectPreparedHandoff, settleHandoffPreparationBinding, pruneHandoffPreparations, preparedSourceForRecord,
   type HandoffPreparationSource, type HandoffPreparationSelection } from './handoff-preparations';
 import { evaluateGrant, type GrantCallTarget } from '../../shared/agent-grants';
 import { parseAgentAddress } from '../../shared/agent-address';
@@ -243,6 +243,7 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
   private sourceAgent?: string;
   private anchors: Array<{ path: string; dev: bigint; ino: bigint }> = [];
   private target?: HandoffTarget;
+  private targetProject?: string;
   private targetAuthority?: string;
   private selected?: HandoffPreparationSelection;
   private admittedId?: string;
@@ -251,6 +252,7 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
   private verifiedRevision = 0;
   private sourceFailed = false;
   private sourceFailure: unknown;
+  private registrationLost = false;
   readonly settled: Promise<void>;
   private readonly complete: () => void;
   readonly actor: HandoffAgent;
@@ -266,7 +268,12 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
     };
     this.off.push(onOrchestrationGateChange((id) => { if (id === agentId) changed(); }),
       bindingManager.onChange((id) => { if (id === agentId) changed(); }),
-      onConnectionGrantsChanged(changed), onDispatcherChanged(changed));
+      onConnectionGrantsChanged(changed), onDispatcherChanged(changed),
+      agentRegistry.onAuthChange((id) => {
+        if (id !== agentId || agentRegistry.get(id)) return;
+        this.registrationLost = true;
+        if (this.source && !this.sourceAgent) this.retire();
+      }));
   }
 
   private grantStamp(): string {
@@ -283,7 +290,8 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
       'agentId' in this.target ? hasConnection(this.actor, this.target) : undefined,
       dispatcher && this.target.machine === this.active.machine ? [state.enabled, state.agentId, state.path] : undefined,
       peer ? [trustOf(peer), peer.kind] : undefined,
-      this.source && this.target.machine !== this.active.machine ? isCrossProjectEnabled(this.agentId) : undefined,
+      this.source && (this.target.machine !== this.active.machine
+        || this.targetProject && this.targetProject !== path.resolve(this.source.project.path)) ? isCrossProjectEnabled(this.agentId) : undefined,
     ]);
   }
   private agentIdentity(rows: Awaited<ReturnType<typeof peekDurableConfigs>>): string | undefined {
@@ -317,15 +325,20 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
     await this.verify();
     return this.source;
   }
-  captureTarget(target: HandoffTarget): void {
+  async captureTarget(target: HandoffTarget): Promise<void> {
     this.target = Object.freeze({ ...target });
+    if (target.machine === this.active.machine) {
+      const project = 'agentId' in target ? (await localAgent(target.agentId)).projectPath : getDispatcherState().path;
+      this.targetProject = project && path.resolve(project);
+    }
     this.targetAuthority = this.targetStamp();
   }
   select(selected: HandoffPreparationSelection): void { this.selected = selected; }
   retire(): void { this.retired = true; }
   check(): void {
     if (this.sourceFailed) throw this.sourceFailure;
-    if (this.retired || host !== this.active || this.active.stopping || ownMachine() !== this.active.machine
+    if (this.retired || this.source && !this.sourceAgent && this.registrationLost
+      || host !== this.active || this.active.stopping || ownMachine() !== this.active.machine
       || this.grantStamp() !== this.grants || this.target && this.targetStamp() !== this.targetAuthority
       || this.sourceRevision !== this.verifiedRevision) {
       this.retire(); throw new HandoffAuthorizationChanged();
@@ -338,6 +351,7 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
           this.retire(); throw new HandoffAuthorizationChanged();
         }
       }
+      if (this.selected) assertPreparedHandoffSelection(this.selected);
       if (!this.sourceAgent) {
         const live = agentRegistry.get(this.agentId);
         if (!live || path.resolve(live.projectPath) !== path.resolve(this.source.project.path)
@@ -396,7 +410,7 @@ export async function offerCallerHandoff(agentId: string, input: {
     producer.check();
     const source = await producer.captureSource(await callerHandoffSource(agentId));
     const target = await resolveHandoffTarget(input.reference);
-    producer.captureTarget(target);
+    await producer.captureTarget(target);
     const senderName = await handoffSenderName(agentId);
     await producer.verify();
     const selected = await selectPreparedHandoff(agentId, input.mode, input.manifest, source, () => producer.check());
