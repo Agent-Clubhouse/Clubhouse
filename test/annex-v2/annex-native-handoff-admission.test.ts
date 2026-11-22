@@ -390,6 +390,45 @@ it('normal host stop refuses queued native work and new admissions until actual 
   } finally { await pair.cleanup(); }
 }, 30_000);
 
+it.each(['pairingId', 'certificatePem', 'unchanged', 'route', 'alias', 'lastSeen'] as const)(
+  'checks canonical native trust at the real held queue for %s-only updates', async (change) => {
+    const pair = await nativePair();
+    try {
+      pair.target.peers.addPeer({ ...pair.peerB, pairingId: 'native-pairing-original' });
+      const saved = pair.target.peers.getPeer(pair.peerB.fingerprint);
+      if (!saved) throw new Error('Expected the actual saved requester pairing');
+      const originalTrust = JSON.stringify([pair.target.peers.trustOf(saved), saved.kind]);
+      const record = offered(pair.peerB.fingerprint, pair.peerA.fingerprint), held = pair.holdQueue(record);
+      const reply = pair.request(record);
+      await held.queued; await held.entered; pair.witness(record);
+      expect(held.started()).toBe(false);
+      if (change === 'pairingId') pair.target.peers.addPeer({ ...saved, pairingId: 'native-pairing-replacement' });
+      if (change === 'certificatePem') pair.target.peers.addPeer({ ...saved, tlsCertificatePem: pair.target.cert.certPem });
+      if (change === 'route') pair.target.peers.addPeer({ ...saved, knownHosts: ['metadata-route.invalid'],
+        hostPorts: { 'metadata-route.invalid': 7443 }, mainPort: 7443 });
+      if (change === 'alias') pair.target.peers.addPeer({ ...saved, alias: 'Changed fixture display name' });
+      if (change === 'lastSeen') pair.target.peers.recordLastSeen(saved.fingerprint, new Date('2030-01-01T00:00:00.000Z'));
+      const current = pair.target.peers.getPeer(saved.fingerprint);
+      if (!current) throw new Error('Expected the same actual saved requester');
+      const changedTrust = change === 'pairingId' || change === 'certificatePem';
+      expect(JSON.stringify([pair.target.peers.trustOf(current), current.kind]) !== originalTrust).toBe(changedTrust);
+      if (change === 'pairingId') expect({ ...current, pairingId: saved.pairingId }).toEqual(saved);
+      if (change === 'certificatePem') expect({ ...current, tlsCertificatePem: saved.tlsCertificatePem }).toEqual(saved);
+      expect(pair.target.auth.stillAuthorized(pair.principals[0], authority(pair.target))).toBe(true);
+      expect(pair.requester.control.getLinkReadiness(pair.peerA.fingerprint).acceptedHere).toBe(true);
+      held.release();
+      const result = await pair.calls[0];
+      process.stdout.write(`ANNEX_NATIVE_TRUST_QUEUE ${JSON.stringify({
+        change, changedTrust, domainOutcome: result.status, storedState: pair.host.store.get(record.id)?.state ?? null,
+      })}\n`);
+      expect(result.status).toBe(changedTrust ? 'rejected' : 'fulfilled');
+      expect(await reply).toMatchObject({ status: 'fulfilled', value: { status: changedTrust ? 400 : 200 } });
+      expect(pair.host.store.get(record.id)).toEqual(changedTrust ? undefined : record);
+      expect(pair.host.store.get(held.unrelated.id)).toEqual(held.unrelated);
+      expect(pair.host.incoming.size).toBe(0);
+    } finally { await pair.cleanup(); }
+  }, 30_000);
+
 it.each(['pairing-scalar', 'pin-mismatch'] as const)(
   'refuses an original native request after its saved %s changes while the actual queue is held', async (change) => {
     const pair = await nativePair();
