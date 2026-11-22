@@ -103,7 +103,7 @@
     "notHostedPhaseOrStackTraceEvidence": true
   },
   "artifacts": [
-    {"path": "official/windows-unit-2-all-steps-original.log", "bytes": 2589040, "sha256": "0390e7809c9448b3c126e65b525e901a4fddbdfe92f78ef58c95b159ff5e3014"},
+    {"path": "official/windows-unit-2-all-steps-original.txt", "bytes": 2589040, "sha256": "0390e7809c9448b3c126e65b525e901a4fddbdfe92f78ef58c95b159ff5e3014"},
     {"path": "official/test-results-windows-latest-2-original.zip", "bytes": 559423, "sha256": "fe42f0c760f17f48c5fb67ed6ab8875d6421b4a8c06a895842577a2984478d12"},
     {"path": "phase-observation.json", "bytes": 5645, "sha256": "de0e1a87531dfbc3082fa92adfcda3fb0e88f37fbb7e42bdaaa2dfe63f898c87"},
     {"path": "attempts-01-phase-observation.patch", "bytes": 4963, "sha256": "6325c182576b0cf25adfe1371338889ec69cf5a6e00d23eb09d4963f6edee5df"},
