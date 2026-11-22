@@ -1,0 +1,24 @@
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:32:40.8696584Z [31m   [31m×[31m resumes an artifact larger than 512 KiB in independently hashed bounded chunks[39m[33m 5323[2mms[22m[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6706732Z [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6709642Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6712293Z [41m[1m FAIL [22m[49m [30m[45m main [49m[39m src/main/services/handoff-transfer-source.test.ts[2m > [22mresumes an artifact larger than 512 KiB in independently hashed bounded chunks
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6721698Z [31m[1mError[22m: Test timed out in 5000ms.
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6722744Z If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6724666Z [36m [2m❯[22m src/main/services/handoff-transfer-source.test.ts:[2m22:1[22m[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6774547Z     [90m 20|[39m }
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6775634Z     [90m 21|[39m [34mafterEach[39m(() [33m=>[39m { vi[33m.[39m[34museRealTimers[39m()[33m;[39m })[33m;[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6777023Z     [90m 22|[39m it('resumes an artifact larger than 512 KiB in independently hashed bo…
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6778017Z     [90m   |[39m [31m^[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6779325Z     [90m 23|[39m   [35mconst[39m f [33m=[39m [34mfixture[39m()[33m;[39m [35mconst[39m chunks[33m:[39m [33mBuffer[39m[] [33m=[39m [][33m;[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6780946Z     [90m 24|[39m   expect(await f.service.receive(peer, { op: 'manifest', id: f.record.…
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6781583Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6781998Z [31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6782374Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6787360Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.6845071Z [2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m736 passed[39m[22m[2m | [22m[33m7 skipped[39m[90m (744)[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.7059342Z [2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m19386 passed[39m[22m[2m | [22m[33m93 skipped[39m[90m (19480)[39m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.7060503Z [2m   Start at [22m 00:28:06
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.7074269Z [2m   Duration [22m 661.86s[2m (transform 65.86s, setup 79.58s, import 248.90s, tests 1040.78s, environment 381.98s)[22m
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:08.7077735Z 
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:13.1238650Z JUNIT report written to D:/a/Clubhouse/Clubhouse/test-results.xml
+Unit + Component Tests (windows-latest, 1/2)	UNKNOWN STEP	2026-11-22T00:39:14.1348076Z ##[error]Process completed with exit code 1.

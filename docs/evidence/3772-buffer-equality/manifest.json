@@ -182,7 +182,7 @@
     ],
     "failedLogExcerpt": {
       "bytes": 3942,
-      "path": "attempts/hosted-failure-excerpt.log",
+      "path": "attempts/hosted-failure-excerpt.txt",
       "sha256": "3095d6e647d1150270728e15bef0d8c41ba5e974091eec2048f75fe6c67f1921"
     },
     "fullOriginalLogDisposition": "Official original run and persistent session original retained; excerpt explicitly partial.",
