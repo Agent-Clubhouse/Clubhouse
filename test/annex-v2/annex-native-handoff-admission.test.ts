@@ -113,10 +113,17 @@ async function nativePair() {
     peerServer.on('upgrade', (request, socket, head) => caller.control.handleControlUpgrade(request, socket, head));
     const peerPort = await listen(peerServer);
     const connect = async () => {
-      destination.control.connectTo(peerB.fingerprint, '127.0.0.1', peerPort,
+      const targetFingerprint = peerA.fingerprint, requesterFingerprint = peerB.fingerprint;
+      const previousEpoch = caller.control.getAcceptedLinkEpoch(targetFingerprint);
+      destination.control.connectTo(requesterFingerprint, '127.0.0.1', peerPort,
         destination.tls.createPinnedTlsClientOptions(destination.info, { certPem: caller.cert.certPem, fingerprint: peerB.tlsCertificateFingerprint }),
         peerB.tlsCertificateFingerprint);
-      await vi.waitFor(() => expect(caller.control.getLinkReadiness(peerA.fingerprint).acceptedHere).toBe(true), { timeout: 10_000, interval: 20 });
+      await vi.waitFor(() => {
+        const epoch = caller.control.getAcceptedLinkEpoch(targetFingerprint);
+        expect(epoch).toBeGreaterThan(0); expect(epoch).not.toBe(previousEpoch);
+        expect(caller.control.getLinkReadiness(targetFingerprint).acceptedHere).toBe(true);
+        expect(destination.control.getLinkReadiness(requesterFingerprint).openedHere).toBe(true);
+      }, { timeout: 10_000, interval: 20 });
       expect(caller.client.isMachineConnected(peerA.fingerprint)).toBe(false);
       expect(destination.client.getControllerReadObservation(peerB.fingerprint).ready).toBe(false);
     };
