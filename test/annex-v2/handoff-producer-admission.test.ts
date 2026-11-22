@@ -286,6 +286,53 @@ describe('isolated real MCP producer domain admission', () => {
     return { pending, release: release.resolve };
   }
 
+  it('keeps overlapping cleanup behind the original actual preparation drain', async () => {
+    const fx = current(), failure = new Error('Original overlap fixture caller rejection.');
+    const grant = fx.tools.listToolGrants().find((tool) => tool.kind === 'global' && tool.name === 'offer_handoff')?.grant;
+    if (!grant) throw new Error('Missing actual offer grant declaration.');
+    fx.tools.registerGlobalTool('fixture_overlap_rejection', {
+      description: 'Isolated actual overlapping teardown rejection control.',
+      inputSchema: { type: 'object', properties: { to: { type: 'string' } }, required: ['to'] },
+    }, async () => { throw failure; }, { grant });
+    const rejection = await fx.tools.callTool(caller, 'fixture_overlap_rejection', { to: receiver }).then(
+      () => { throw new Error('Expected an actual registered caller rejection.'); },
+      (error: unknown) => error,
+    );
+    expect(rejection).toBe(failure);
+    const held = await heldFixturePreparation(fx);
+    const stop = fx.hostApi.stopHandoffs;
+    let stopCalls = 0, firstFinished = false, overlapFinished = false;
+    vi.spyOn(fx.hostApi, 'stopHandoffs').mockImplementation(async () => {
+      stopCalls++;
+      await stop();
+    });
+    const first = cleanupFixture().then(
+      () => { firstFinished = true; return { ok: true }; },
+      (error: unknown) => { firstFinished = true; return { ok: false, error }; },
+    );
+    const overlap = cleanupFixture().then(
+      () => { overlapFinished = true; return { ok: true }; },
+      (error: unknown) => { overlapFinished = true; return { ok: false, error }; },
+    );
+    try {
+      await Promise.race([overlap, new Promise((resolve) => setTimeout(resolve, 25))]);
+      expect.soft(firstFinished).toBe(false);
+      expect.soft(overlapFinished).toBe(false);
+      expect.soft(stopCalls).toBe(0);
+      expect.soft(nativeFs.existsSync(fx.userData)).toBe(true);
+    } finally {
+      held.release();
+      try { await held.pending; } finally {
+        for (const outcome of await Promise.all([first, overlap])) {
+          if ('error' in outcome) expect.soft(outcome.error).toBe(failure);
+          else expect.soft(false, 'Expected both cleanup callers to retain the original actual caller rejection.').toBe(true);
+        }
+        expect.soft(stopCalls).toBe(1);
+        expect.soft(nativeFs.existsSync(fx.userData)).toBe(false);
+      }
+    }
+  });
+
   it.each([1, 9])('drains a real held preparation and completes teardown before reporting its original caller rejection (%i failures)', async (count) => {
     const fx = current();
     const failures = Array.from({ length: count }, (_, index) => new Error(`Original fixture caller rejection ${index}.`));
