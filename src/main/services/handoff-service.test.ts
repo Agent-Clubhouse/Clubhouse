@@ -4,6 +4,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Handoff, HandoffAgent, HandoffOffer } from '../../shared/handoffs';
+import { transitionHandoff } from '../../shared/handoffs';
 
 const state = vi.hoisted(() => ({ dir: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => state.dir } }));
@@ -21,6 +22,15 @@ const input: HandoffOffer = {
 };
 const checkpoint = { projectId: 'project', worktree: '/registered/project/handoff', branch: 'handoff/example', stagingId: randomUUID() };
 let allowed: (request: HandoffAuthorization) => boolean;
+function barrier() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+function acceptedCopy(record: Handoff): Handoff {
+  return transitionHandoff(record, { state: 'accepted', target: receiver, operationId: randomUUID(),
+    at: record.updatedAt + 1, by: { kind: 'agent', address: receiver } }, record.version);
+}
 
 function service(machine: string, store = new HandoffStore()): HandoffService {
   return new HandoffService({
@@ -201,6 +211,58 @@ describe('handoff synchronization', () => {
     } finally {
       state.dir = senderDirectory;
     }
+  });
+
+  it.each(['newer', 'older-prefix'] as const)('checks reverse %s adoption inside the actual held history queue', async (kind) => {
+    const offered = await seed(); const store = new HandoffStore(); const senderService = service(sender.machine, store);
+    const accepted = acceptedCopy(offered);
+    if (kind === 'older-prefix') await senderService.receiveSnapshot(accepted, receiver.machine);
+    const prior = store.get(offered.id)!; const entered = barrier(); const held = barrier();
+    const earlier = store.transact(offered.id, async (record) => { entered.release(); await held.promise; return record!; });
+    await entered.promise;
+    let retired = false;
+    const guard = vi.fn(() => { if (retired) throw new Error('Original reverse admission retired'); });
+    const queued = senderService.receiveSnapshot(kind === 'newer' ? accepted : offered, receiver.machine, guard);
+    const refusal = expect(queued).rejects.toThrow('Original reverse admission retired');
+    expect(guard).not.toHaveBeenCalled();
+    retired = true; held.release(); await earlier; await refusal;
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(store.get(offered.id)).toEqual(prior);
+    expect(new HandoffStore().get(offered.id)).toEqual(prior);
+    expect(await store.transact(offered.id, (record) => record!)).toEqual(prior);
+  });
+
+  it('truthfully commits already-admitted history after retirement while a real atomic rename is held', async () => {
+    const offered = await seed(); const accepted = acceptedCopy(offered);
+    const store = new HandoffStore(); const entered = barrier(); const held = barrier();
+    const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === path.join(state.dir, 'handoffs.json')) { entered.release(); await held.promise; }
+      return rename(from, to);
+    });
+    let retired = false;
+    const guard = vi.fn(() => { if (retired) throw new Error('Original reverse admission retired'); });
+    const admitted = service(sender.machine, store).receiveSnapshot(accepted, receiver.machine, guard);
+    await entered.promise; expect(guard).toHaveBeenCalledTimes(1); expect(store.get(offered.id)).toEqual(offered);
+    retired = true; held.release();
+    expect(await admitted).toEqual(accepted);
+    expect(store.get(offered.id)).toEqual(accepted);
+    expect(new HandoffStore().get(offered.id)).toEqual(accepted);
+    await expect(service(sender.machine, store).receiveSnapshot(offered, receiver.machine, guard)).rejects.toThrow('retired');
+    expect(store.get(offered.id)).toEqual(accepted);
+  });
+
+  it.each(['before-rename', 'after-real-rename'] as const)('surfaces %s IO failure without inventing history rollback or commit success', async (phase) => {
+    const offered = await seed(); const accepted = acceptedCopy(offered); const store = new HandoffStore();
+    expect(store.get(offered.id)).toEqual(offered);
+    const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (phase === 'after-real-rename') await rename(from, to);
+      throw new Error(`Injected ${phase} IO failure`);
+    });
+    await expect(service(sender.machine, store).receiveSnapshot(accepted, receiver.machine, () => {})).rejects.toThrow(`Injected ${phase} IO failure`);
+    expect(store.get(offered.id)).toEqual(offered);
+    expect(new HandoffStore().get(offered.id)).toEqual(phase === 'before-rename' ? offered : accepted);
   });
 });
 

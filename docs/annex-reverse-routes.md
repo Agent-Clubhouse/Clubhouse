@@ -18,8 +18,47 @@ handoff `manifest`/`read` operations. The separate reverse-handoff fixture compo
 the existing pinned transport and request adapter with the actual source/receiver
 and real disk I/O. Agreement/preparation lookup, application route dispatch and
 agent-grant admission remain fixtures; offer, acceptance, apply, renderer and
-two-host product behavior are not exercised. Its exact source/proof still needs
-independent review before acceptance.
+two-host product behavior are not exercised. Its bounded source/proof
+`a4074c7f5e76714bbe346ecee1acfc434307de0e` /
+`be01f8bd511dba2a625462021732c119ce6b170e` was independently accepted at
+`74d2ed4f64c1e9d539339e5a75b7c3c31171e8b3`, without upgrading those limits.
+
+### Bounded handoff synchronization candidate
+
+The four-file successor follows the independently approved desktop contract
+[`6385c5ead`](https://github.com/Agent-Clubhouse/Clubhouse/blob/6385c5ead359d3b46bfc7895e889d4a486dedc4e/docs/evidence/3613-handoff-sync-contract-r2/README.md).
+This is an unlanded candidate, not approval of its implementation. A handoff-local
+attempt can use request readiness without a snapshot when the direct connection
+is absent. It retains the original host and observation revision; every primary
+and secondary cancellation POST keeps that capture. Existing positive outgoing
+authorization and pending-cancellation/history exceptions remain. Only a fresh
+local sender's offered record without pending cancellation takes the additional
+negative authority lease. Global connectivity, grant scope, phone fields,
+the 30-second sweep and its 10-slot fairness are unchanged.
+
+History adoption and ACK/removal checks run inside their actual private queues,
+before admitting the decision/save. Retirement before admission refuses without
+that mutation; retirement after admission can complete the save and publish
+matching committed memory. No post-save fake refusal or guessed disk rollback
+is used. Reverse ACK memory advances only after actual guarded durable success.
+Storage errors remain errors, including ambiguous IO that may have replaced the
+file before reporting failure.
+
+An enclosing sync holds its queued work. Each deadline-wrapped POST also holds
+the actual operation until settlement, not merely until the outer five-second
+deadline. Stop retires admissions and drains enclosing writers before replacement;
+an expired outstanding POST retains its reference but cannot later admit writes.
+Notifications retain their ordinary committed-history semantics, not continuous
+transport liveness through notification/provider awaits. No shared-store or notice
+ledger redesign is included.
+
+The new paired fixture exercises actual hosts/coordinators/history and command
+stores over pinned TLS/control with opposite direct reach blocked and no received
+snapshot. Grant callbacks, preparation binding, worker/provider delivery and route
+dispatch remain explicit fixtures. It does not replay the separately accepted
+content proof or claim native grants, offer/accept/apply UI, two-host or full
+handoff-product acceptance. Exact candidate proof and independent source review
+are still required before a PR and ordinary hosted gates.
 
 Common REST requests capture one route before sending: a live direct connection
 wins, otherwise an already-authorized accepted control link is used. Each request

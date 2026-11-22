@@ -13,13 +13,19 @@ export interface HandoffCancellation {
 export interface HandoffCommandStorage {
   list(): HandoffCancellation[];
   put(command: HandoffCancellation): Promise<void>;
-  remove(operationId: string): Promise<void>;
+  remove(operationId: string, beforeChange?: () => void): Promise<void>;
   markUndelivered?(id: string): Promise<void>;
   markAttempted?(id: string): Promise<void>;
   isUndelivered?(id: string): boolean;
-  acknowledge?(id: string, version: number): Promise<void>;
+  acknowledge?(id: string, version: number, beforeChange?: () => void): Promise<void>;
   acknowledged?(id: string): number | undefined;
   prune?(retained: ReadonlySet<string>): Promise<void>;
+}
+export interface HandoffSyncAdmission {
+  check(): void;
+  checkOutgoing(): void;
+  holdPost(): () => void;
+  release(): void;
 }
 export interface HandoffCoordinatorOptions {
   machine: string;
@@ -27,8 +33,9 @@ export interface HandoffCoordinatorOptions {
   service: HandoffService;
   commands: HandoffCommandStorage;
   /** The existing pinned Annex computer transport, never a URL supplied by an agent. */
-  post(machine: string, body: Record<string, unknown>): Promise<unknown>;
+  post(machine: string, body: Record<string, unknown>, admission?: HandoffSyncAdmission): Promise<unknown>;
   connected(machine: string): boolean;
+  captureSync?(record: Handoff, machine: string): HandoffSyncAdmission | undefined;
   authorizeOutgoing(record: Handoff): Promise<boolean>;
   changed?(record: Handoff): Promise<void>;
   now?: () => number;
@@ -236,40 +243,74 @@ export class HandoffCoordinator {
     const sending = record.from.machine === this.options.machine;
     if (sending && isTerminalHandoff(record.state) && !this.options.commands.list().some((command) => command.id === id)) return;
     const peer = sending ? record.to.machine : record.from.machine;
-    if (!this.options.connected(peer) || !await this.options.authorizeOutgoing(record) && !this.options.commands.list().some((command) => command.id === id)) return;
-    const cancellation = sending ? this.options.commands.list().find((command) => command.id === id) : undefined;
-    // Persist the attempt before transport: a crash/timeout can never be mistaken for no delivery.
-    if (sending) await this.options.commands.markAttempted?.(id);
-    const response = await this.options.post(peer, cancellation ? { op: 'cancel', command: cancellation, record: originalHandoffOffer(record) } : sending
-      ? { op: 'offer', record: originalHandoffOffer(record) }
-      : { op: 'snapshot', record });
-    // Membership/grants can change while a request is in flight.
-    if (!this.options.connected(peer) || !await this.options.authorizeOutgoing(record) && !this.options.commands.list().some((command) => command.id === id)) return;
-    const refused = !!response && typeof response === 'object' && 'kind' in response && response.kind === 'refused';
-    if (refused && (!sending || Object.keys(response).some((key) => !['kind', 'record'].includes(key)))) throw new Error('Invalid refusal.');
-    const next = parseHandoff(refused && 'record' in response ? response.record : response);
-    if (refused && (next.state !== 'failed' || !['refused', 'expired'].includes(next.failure?.code ?? ''))) throw new Error('Invalid refusal.');
-    if (next.id !== id) throw new Error('Invalid handoff reply.');
-    if (!sending) {
-      assertHandoffExtension(record, next);
-      if (next.version !== record.version) throw new Error('Invalid handoff reply.');
-      this.acknowledged.set(id, record.version);
-      await this.options.commands.acknowledge?.(id, record.version);
-    }
-    if (sending) {
-      await this.service.receiveSnapshot(next, peer);
-      if (isTerminalHandoff(next.state)) {
-        await this.options.commands.acknowledge?.(id, next.version);
-        for (const command of this.options.commands.list().filter((item) => item.id === id)) await this.options.commands.remove(command.operationId);
+    const connected = this.options.connected(peer);
+    const admission = connected ? undefined : this.options.captureSync?.(record, peer);
+    if (!connected && !admission) return;
+    const beforeChange = admission ? () => admission.check() : undefined;
+    const post = (body: Record<string, unknown>) => admission ? this.options.post(peer, body, admission) : this.options.post(peer, body);
+    const remove = (operationId: string) => admission ? this.options.commands.remove(operationId, beforeChange) : this.options.commands.remove(operationId);
+    const authorized = async () => {
+      admission?.checkOutgoing();
+      const allowed = await this.options.authorizeOutgoing(record);
+      admission?.check();
+      if (!allowed && !this.options.commands.list().some((command) => command.id === id)) return false;
+      admission?.checkOutgoing();
+      return true;
+    };
+    try {
+      if (!await authorized()) return;
+      const cancellation = sending ? this.options.commands.list().find((command) => command.id === id) : undefined;
+      // Persist the attempt before transport: a crash/timeout can never be mistaken for no delivery.
+      admission?.checkOutgoing();
+      if (sending) await this.options.commands.markAttempted?.(id);
+      admission?.checkOutgoing();
+      const response = await post(cancellation ? { op: 'cancel', command: cancellation, record: originalHandoffOffer(record) } : sending
+        ? { op: 'offer', record: originalHandoffOffer(record) }
+        : { op: 'snapshot', record });
+      // Membership/grants can change while a request is in flight.
+      admission?.check();
+      if (!admission && !this.options.connected(peer) || !await authorized()) return;
+      const refused = !!response && typeof response === 'object' && 'kind' in response && response.kind === 'refused';
+      if (refused && (!sending || Object.keys(response).some((key) => !['kind', 'record'].includes(key)))) throw new Error('Invalid refusal.');
+      const next = parseHandoff(refused && 'record' in response ? response.record : response);
+      if (refused && (next.state !== 'failed' || !['refused', 'expired'].includes(next.failure?.code ?? ''))) throw new Error('Invalid refusal.');
+      if (next.id !== id) throw new Error('Invalid handoff reply.');
+      if (!sending) {
+        assertHandoffExtension(record, next);
+        if (next.version !== record.version) throw new Error('Invalid handoff reply.');
+        if (admission) await this.acknowledgeReverse(id, record.version, admission);
+        else {
+          this.acknowledged.set(id, record.version);
+          await this.options.commands.acknowledge?.(id, record.version);
+        }
       }
-      for (const command of this.options.commands.list().filter((item) => item.id === id)) {
-        const cancelled = parseHandoff(await this.options.post(peer, { op: 'cancel', command }));
-        if (cancelled.id !== id) throw new Error('Invalid handoff reply.');
-        await this.service.receiveSnapshot(cancelled, peer);
-        await this.options.commands.remove(command.operationId);
+      if (sending) {
+        await this.service.receiveSnapshot(next, peer, beforeChange);
+        if (isTerminalHandoff(next.state)) {
+          if (admission) await this.acknowledgeReverse(id, next.version, admission);
+          else await this.options.commands.acknowledge?.(id, next.version);
+          for (const command of this.options.commands.list().filter((item) => item.id === id)) await remove(command.operationId);
+        }
+        for (const command of this.options.commands.list().filter((item) => item.id === id)) {
+          admission?.check();
+          const cancelled = parseHandoff(await post({ op: 'cancel', command }));
+          admission?.check();
+          if (cancelled.id !== id) throw new Error('Invalid handoff reply.');
+          await this.service.receiveSnapshot(cancelled, peer, beforeChange);
+          if (admission && isTerminalHandoff(cancelled.state)) await this.acknowledgeReverse(id, cancelled.version, admission);
+          await remove(command.operationId);
+        }
       }
+      await this.changed(this.options.store.get(id)!);
+    } finally {
+      admission?.release();
     }
-    await this.changed(this.options.store.get(id)!);
+  }
+
+  private async acknowledgeReverse(id: string, version: number, admission: HandoffSyncAdmission): Promise<void> {
+    if (!this.options.commands.acknowledge) throw new Error('Durable reverse handoff acknowledgement is unavailable.');
+    await this.options.commands.acknowledge(id, version, () => admission.check());
+    this.acknowledged.set(id, version);
   }
 
   /** Acknowledged or removed-peer terminal history is evictable; pending decisions/commands remain durable. */
