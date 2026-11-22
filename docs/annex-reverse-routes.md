@@ -121,6 +121,16 @@ fresh call after a benign refusal remains usable. Cosmetic bindings do not retir
 a pending target capture. Admission precedes the first offer-specific delivery
 marker or catalog write, not just history visibility.
 
+For a local agent recipient, the same original ID and project path are bound
+before preparation and must match the positive target's authority metadata.
+Final admission checks its original registered project, current live placement
+and, for durable agents, the existing fresh-primary registration lease's ID,
+createdAt and directory identity. Moving the same ID to another project or
+replacing that durable identity cannot borrow the old project-scoped Ask or Allow.
+Name/color/label changes are not identities. Recipient project lookups share the
+captured verification revision, and lease disposal is owned through settlement;
+no target/alias or permission is recaptured at admission.
+
 Command, preparation and history saves remain independent. Already-admitted
 saves may finish truthfully after retirement, publishing matching committed
 memory; no post-save fake refusal or rollback is added. Marker/binding failures

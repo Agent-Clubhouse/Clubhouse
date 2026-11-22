@@ -28,7 +28,7 @@ import * as annexClient from './annex-client';
 import { isNetworkComputer } from './annex-agent-calls';
 import { agentRegistry } from './agent-registry';
 import { getAgentRuntime } from './agent-runtime';
-import { agentConfigGeneration, onAgentConfigChanged, peekDurableConfigs } from './agent-config';
+import { agentConfigGeneration, onAgentConfigChanged, peekDurableConfigs, readDurableRegistrationLease, type DurableRegistrationLease } from './agent-config';
 import { onProjectsChanged, peekProjects } from './project-store';
 import { getDispatcherState, isDispatcherAgentId, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { effectiveAgentGrants } from './agent-grants-service';
@@ -37,7 +37,7 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { notifyToolGateChange, onOrchestrationGateChange, isOrchestrationEnabled, isCrossProjectEnabled, orchestrationControl } from './clubhouse-mcp/orchestration-gate';
 import { callerGrants } from './clubhouse-mcp/grant-check';
 import { callTool, setHandoffParticipantCheck } from './clubhouse-mcp/tool-registry';
-import { handoffAgreementCallApproved, handoffAgreementCallCurrent } from './clubhouse-mcp/handoff-permissions';
+import { bindHandoffAgreementRecipient, handoffAgreementCallApproved, handoffAgreementCallCurrent } from './clubhouse-mcp/handoff-permissions';
 import { withCapacityDeadline } from './handoff-capacity';
 import { HANDOFF_ACTIVE_LIMIT, HANDOFF_PEER_LIMIT, HandoffService, type HandoffAuthorization } from './handoff-service';
 import { HandoffStore } from './handoff-store';
@@ -244,6 +244,9 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
   private anchors: Array<{ path: string; dev: bigint; ino: bigint }> = [];
   private target?: HandoffTarget;
   private targetProject?: string;
+  private targetProjectId?: string;
+  private targetRegistration?: DurableRegistrationLease;
+  private targetRegistrationLost = false;
   private targetAuthority?: string;
   private selected?: HandoffPreparationSelection;
   private admittedId?: string;
@@ -270,6 +273,8 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
       bindingManager.onChange((id) => { if (id === agentId) changed(); }),
       onConnectionGrantsChanged(changed), onDispatcherChanged(changed),
       agentRegistry.onAuthChange((id) => {
+        if (this.target?.machine === active.machine && 'agentId' in this.target
+          && id === this.target.agentId && !agentRegistry.get(id)) this.targetRegistrationLost = true;
         if (id !== agentId || agentRegistry.get(id)) return;
         this.registrationLost = true;
         if (this.source && !this.sourceAgent) this.retire();
@@ -319,7 +324,9 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
       }));
     }), onProjectsChanged(() => {
       this.observe(peekProjects().then((projects) => {
-        if (!projects.some((project) => project.id === source.project.id && path.resolve(project.path) === path.resolve(source.project.path))) this.retire();
+        if (!projects.some((project) => project.id === source.project.id && path.resolve(project.path) === path.resolve(source.project.path))
+          || this.targetProjectId && !projects.some((project) => project.id === this.targetProjectId
+            && path.resolve(project.path) === this.targetProject)) this.retire();
       }));
     }));
     await this.verify();
@@ -345,6 +352,18 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
           this.retire(); throw new HandoffAuthorizationChanged();
         }
         this.targetAuthority = this.targetStamp();
+        if ('agentId' in target) {
+          if (!this.targetProject) throw new HandoffAuthorizationChanged();
+          const registered = (await peekProjects()).find((project) => path.resolve(project.path) === this.targetProject);
+          if (!registered) throw new HandoffAuthorizationChanged();
+          this.targetProjectId = registered.id;
+          const row = (await peekDurableConfigs(this.targetProject)).find((candidate) => candidate.id === target.agentId && !isDisposedAgent(candidate));
+          if (row) {
+            this.targetRegistration = await readDurableRegistrationLease(this.targetProject, target.agentId, row.createdAt) ?? undefined;
+            if (!this.targetRegistration) throw new HandoffAuthorizationChanged();
+          }
+          if (!bindHandoffAgreementRecipient(this.agentId, target.agentId, this.targetProject)) throw new HandoffAuthorizationChanged();
+        }
       } finally { unsubscribe(); }
     }
   }
@@ -357,6 +376,13 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
       || this.grantStamp() !== this.grants || this.target && this.targetStamp() !== this.targetAuthority
       || this.sourceRevision !== this.verifiedRevision) {
       this.retire(); throw new HandoffAuthorizationChanged();
+    }
+    if (this.target?.machine === this.active.machine && 'agentId' in this.target && this.targetProject) {
+      const live = agentRegistry.get(this.target.agentId);
+      const registered = this.targetRegistration ? this.targetRegistration.isCurrent() : !!live && !this.targetRegistrationLost;
+      if (!registered || live && path.resolve(live.projectPath) !== this.targetProject) {
+        this.retire(); throw new HandoffAuthorizationChanged();
+      }
     }
     if (this.source) {
       this.source.secretPolicy.assertCurrent();
@@ -387,6 +413,10 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
         || path.resolve(current.worktreeRoot) !== path.resolve(this.source.worktreeRoot)
         || JSON.stringify(current.bounds) !== JSON.stringify(this.source.bounds) || this.agentIdentity(rows) !== this.sourceAgent) this.retire();
     }
+    if (this.targetProjectId) {
+      const projects = await peekProjects();
+      if (!projects.some((project) => project.id === this.targetProjectId && path.resolve(project.path) === this.targetProject)) this.retire();
+    }
     this.verifiedRevision = revision;
     this.check();
   }
@@ -410,7 +440,7 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
   release(): void {
     if (--this.references !== 0) return;
     for (const unsubscribe of this.off) unsubscribe();
-    void this.observations.then(() => { this.active.producers.delete(this); this.complete(); });
+    void Promise.all([this.observations, this.targetRegistration?.close()]).then(() => { this.active.producers.delete(this); this.complete(); });
   }
 }
 

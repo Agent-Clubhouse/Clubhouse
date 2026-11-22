@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'async_hooks';
+import * as path from 'path';
 import { resolveArgTargets } from './arg-targets';
 import { checkToolGrant } from './grant-check';
 import { callGrantIsApproved, grantApprovalContext } from './tool-registry';
@@ -8,10 +9,19 @@ import type { ToolGrantDeclaration } from './tool-grants';
 export const HANDOFF_OFFER_GRANT: ToolGrantDeclaration = { actions: ['handoff.offer'], target: 'handoff_peer' };
 export const HANDOFF_ACCEPT_GRANT: ToolGrantDeclaration = { actions: ['handoff.accept'], target: 'handoff_peer' };
 type AgreementCall = { agentId: string; name: 'offer_handoff' | 'respond_to_handoff'; args: Record<string, unknown> };
-const agreementCalls = new AsyncLocalStorage<AgreementCall & { approvalVersion: number; offerCurrent?: () => boolean }>();
+const agreementCalls = new AsyncLocalStorage<AgreementCall & {
+  approvalVersion: number; offerCurrent?: () => boolean; recipient?: Readonly<{ agentId: string; projectPath: string }>;
+}>();
 
 export function withHandoffAgreementCall<T>(call: AgreementCall, work: () => Promise<T>): Promise<T> {
   return agreementCalls.run({ ...call, approvalVersion: callApprovalVersion(call.agentId) }, work);
+}
+
+export function bindHandoffAgreementRecipient(agentId: string, recipientId: string, projectPath: string): boolean {
+  const call = agreementCalls.getStore();
+  if (!call || call.agentId !== agentId || call.name !== 'offer_handoff' || call.recipient) return false;
+  call.recipient = Object.freeze({ agentId: recipientId, projectPath });
+  return true;
 }
 
 /** Complete the queued positive check for the exact target, live policy and consumed approval. */
@@ -23,6 +33,12 @@ export async function handoffAgreementCallApproved(agentId: string, action: 'han
   if (expectedRecipient !== undefined) {
     const resolved = targets?.get(grant);
     if (resolved?.length !== 1 || resolved[0].kind !== 'agent' || resolved[0].agentId !== expectedRecipient) return false;
+  }
+  if (action === 'handoff.offer' && call.recipient) {
+    const resolved = targets.get(grant);
+    if (resolved?.length !== 1 || resolved[0].kind !== 'agent'
+      || resolved[0].agentId !== call.recipient.agentId || !resolved[0].projectPath
+      || path.resolve(resolved[0].projectPath) !== call.recipient.projectPath) return false;
   }
   const check = checkToolGrant(agentId, grant, call.args, undefined, targets);
   if (action === 'handoff.offer' && check.ok === false && check.reason === 'ask_first'
