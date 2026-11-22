@@ -292,7 +292,7 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
   }
   private observe(work: Promise<void>): void {
     this.sourceRevision++;
-    this.observations = Promise.all([this.observations, work]).then(() => undefined, (error: unknown) => {
+    this.observations = Promise.all([this.observations, work]).then((): void => undefined, (error: unknown) => {
       this.sourceFailed = true; this.sourceFailure = error; this.retire();
     });
   }
