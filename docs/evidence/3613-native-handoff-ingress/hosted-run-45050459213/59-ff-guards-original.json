@@ -1,0 +1,42 @@
+{
+  "at": "2026-11-22T17:37:01.575Z",
+  "main": "70eff94e9042ccc304e68282e76afc9065497858",
+  "oldHead": "206a88dcc93ecd7d2f5009d533894dd77e36e2ed",
+  "head": "e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+  "tree": "42ab44d9d911f8d370cba393aff0c442f165472c",
+  "refs": [
+    [
+      "206a88dcc93ecd7d2f5009d533894dd77e36e2ed",
+      "refs/heads/lane-3613-p2-routes/handoff-next-path"
+    ],
+    [
+      "e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+      "refs/heads/lane-3613-p2-routes/native-ingress-fixture-review"
+    ],
+    [
+      "70eff94e9042ccc304e68282e76afc9065497858",
+      "refs/heads/main"
+    ]
+  ],
+  "clean": true,
+  "ff": true,
+  "onlyTwoFixturesAndProof": true,
+  "prs": [
+    {
+      "baseRefName": "main",
+      "headRefOid": "206a88dcc93ecd7d2f5009d533894dd77e36e2ed",
+      "number": 3778,
+      "state": "OPEN",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3778"
+    }
+  ],
+  "prior": [
+    {
+      "conclusion": "failure",
+      "databaseId": 45046385831,
+      "headSha": "206a88dcc93ecd7d2f5009d533894dd77e36e2ed",
+      "status": "completed"
+    }
+  ],
+  "reviewBlob": "185a42e72861f54b6bc551c12d86ab3451cfc039"
+}

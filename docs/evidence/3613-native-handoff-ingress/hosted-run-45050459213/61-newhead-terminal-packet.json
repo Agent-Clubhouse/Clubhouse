@@ -1,0 +1,494 @@
+{
+  "at": "2026-11-22T17:55:33.286Z",
+  "run": 45050459213,
+  "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213",
+  "head": "e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+  "status": "completed",
+  "conclusion": "success",
+  "attempt": 1,
+  "event": "pull_request",
+  "startedAt": "2026-11-22T17:37:06Z",
+  "updatedAt": "2026-11-22T17:54:58Z",
+  "pr": {
+    "number": 3778,
+    "head": "e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+    "base": "70eff94e9042ccc304e68282e76afc9065497858",
+    "state": "OPEN",
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "CLEAN",
+    "reviewDecision": ""
+  },
+  "counts": {
+    "success": 33,
+    "skipped": 4
+  },
+  "jobs": [
+    {
+      "id": 137294197432,
+      "name": "Plan the run",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294197432"
+    },
+    {
+      "id": 137294199023,
+      "name": "Dependency resolution preflight",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294199023"
+    },
+    {
+      "id": 137294276036,
+      "name": "ESLint (errors only)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276036"
+    },
+    {
+      "id": 137294276042,
+      "name": "Build app (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276042"
+    },
+    {
+      "id": 137294276050,
+      "name": "Typecheck + API surface",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276050"
+    },
+    {
+      "id": 137294276053,
+      "name": "Build app (windows-2022)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276053"
+    },
+    {
+      "id": 137294276067,
+      "name": "Workflow lint (actionlint)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276067"
+    },
+    {
+      "id": 137294276068,
+      "name": "Unit + Component Tests (windows-latest, 2/2)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276068"
+    },
+    {
+      "id": 137294276084,
+      "name": "Copilot SDK chunk (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276084"
+    },
+    {
+      "id": 137294276092,
+      "name": "Unit + Component Tests (windows-latest, 1/2)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276092"
+    },
+    {
+      "id": 137294276095,
+      "name": "Unit + Component Tests (ubuntu-latest, 2/2)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276095"
+    },
+    {
+      "id": 137294276114,
+      "name": "Codex app-server schema drift",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276114"
+    },
+    {
+      "id": 137294276118,
+      "name": "Unit + Component Tests (ubuntu-latest, 1/2)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276118"
+    },
+    {
+      "id": 137294276273,
+      "name": "Copilot SDK chunk (windows-2022)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294276273"
+    },
+    {
+      "id": 137294277523,
+      "name": "macOS build + E2E smoke",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294277523"
+    },
+    {
+      "id": 137294277671,
+      "name": "Linux Package Smoke Test",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294277671"
+    },
+    {
+      "id": 137294277885,
+      "name": "macOS unit",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137294277885"
+    },
+    {
+      "id": 137296628880,
+      "name": "Stable-mode E2E Tests (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628880"
+    },
+    {
+      "id": 137296628917,
+      "name": "Stable-mode E2E Tests (windows-2022)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628917"
+    },
+    {
+      "id": 137296628925,
+      "name": "Classic layout E2E Tests (windows-2022, 1/1)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628925"
+    },
+    {
+      "id": 137296628960,
+      "name": "Chat E2E Tests (ubuntu-latest, 2/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628960"
+    },
+    {
+      "id": 137296628967,
+      "name": "Chat E2E Tests (windows-2022, 3/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628967"
+    },
+    {
+      "id": 137296628975,
+      "name": "Chat E2E Tests (windows-2022, 2/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628975"
+    },
+    {
+      "id": 137296628976,
+      "name": "Chat E2E Tests (windows-2022, 1/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628976"
+    },
+    {
+      "id": 137296628981,
+      "name": "E2E Tests (ubuntu-latest, 1/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628981"
+    },
+    {
+      "id": 137296628988,
+      "name": "Chat E2E Tests (ubuntu-latest, 3/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628988"
+    },
+    {
+      "id": 137296628990,
+      "name": "Chat E2E Tests (ubuntu-latest, 1/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628990"
+    },
+    {
+      "id": 137296628996,
+      "name": "Annex E2E Tests (ubuntu-latest, 2/2)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296628996"
+    },
+    {
+      "id": 137296629001,
+      "name": "Annex E2E Tests (windows-2022, 1/2)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296629001"
+    },
+    {
+      "id": 137296629005,
+      "name": "Annex E2E Tests (windows-2022, 2/2)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296629005"
+    },
+    {
+      "id": 137296629014,
+      "name": "Classic layout E2E Tests (ubuntu-latest, 1/1)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296629014"
+    },
+    {
+      "id": 137296629021,
+      "name": "E2E Tests (windows-2022, 3/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296629021"
+    },
+    {
+      "id": 137296629044,
+      "name": "E2E Tests (ubuntu-latest, 3/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296629044"
+    },
+    {
+      "id": 137296629049,
+      "name": "E2E Tests (windows-2022, 1/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296629049"
+    },
+    {
+      "id": 137296629062,
+      "name": "E2E Tests (windows-2022, 2/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296629062"
+    },
+    {
+      "id": 137296629079,
+      "name": "E2E Tests (ubuntu-latest, 2/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296629079"
+    },
+    {
+      "id": 137296629156,
+      "name": "Annex E2E Tests (ubuntu-latest, 1/2)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Agent-Clubhouse/Clubhouse/actions/runs/45050459213/job/137296629156"
+    }
+  ],
+  "checkout": [
+    {
+      "job": "Plan the run",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 681,
+      "resultLine": 682
+    },
+    {
+      "job": "ESLint (errors only)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 928,
+      "resultLine": 929
+    },
+    {
+      "job": "Build app (ubuntu-latest)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 5541,
+      "resultLine": 5542
+    },
+    {
+      "job": "Typecheck + API surface",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 6424,
+      "resultLine": 6425
+    },
+    {
+      "job": "Build app (windows-2022)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 6707,
+      "resultLine": 6708
+    },
+    {
+      "job": "Workflow lint (actionlint)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 7123,
+      "resultLine": 7124
+    },
+    {
+      "job": "Unit + Component Tests (windows-latest, 2/2)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 7340,
+      "resultLine": 7341
+    },
+    {
+      "job": "Copilot SDK chunk (ubuntu-latest)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 25449,
+      "resultLine": 25450
+    },
+    {
+      "job": "Unit + Component Tests (windows-latest, 1/2)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 29474,
+      "resultLine": 29475
+    },
+    {
+      "job": "Unit + Component Tests (ubuntu-latest, 2/2)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 85232,
+      "resultLine": 85233
+    },
+    {
+      "job": "Codex app-server schema drift",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 102978,
+      "resultLine": 102979
+    },
+    {
+      "job": "Unit + Component Tests (ubuntu-latest, 1/2)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 103173,
+      "resultLine": 103174
+    },
+    {
+      "job": "Copilot SDK chunk (windows-2022)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 158524,
+      "resultLine": 158525
+    },
+    {
+      "job": "Stable-mode E2E Tests (ubuntu-latest)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 158839,
+      "resultLine": 158840
+    },
+    {
+      "job": "Stable-mode E2E Tests (windows-2022)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 159360,
+      "resultLine": 159361
+    },
+    {
+      "job": "Classic layout E2E Tests (windows-2022, 1/1)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 159903,
+      "resultLine": 159904
+    },
+    {
+      "job": "Chat E2E Tests (ubuntu-latest, 2/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 160404,
+      "resultLine": 160405
+    },
+    {
+      "job": "Chat E2E Tests (windows-2022, 3/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 160968,
+      "resultLine": 160969
+    },
+    {
+      "job": "Chat E2E Tests (windows-2022, 2/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 161507,
+      "resultLine": 161508
+    },
+    {
+      "job": "Chat E2E Tests (windows-2022, 1/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 162081,
+      "resultLine": 162082
+    },
+    {
+      "job": "E2E Tests (ubuntu-latest, 1/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 162607,
+      "resultLine": 162608
+    },
+    {
+      "job": "Chat E2E Tests (ubuntu-latest, 3/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 163240,
+      "resultLine": 163241
+    },
+    {
+      "job": "Chat E2E Tests (ubuntu-latest, 1/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 163774,
+      "resultLine": 163775
+    },
+    {
+      "job": "Annex E2E Tests (ubuntu-latest, 2/2)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 164286,
+      "resultLine": 164287
+    },
+    {
+      "job": "Annex E2E Tests (windows-2022, 1/2)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 164957,
+      "resultLine": 164958
+    },
+    {
+      "job": "Annex E2E Tests (windows-2022, 2/2)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 165620,
+      "resultLine": 165621
+    },
+    {
+      "job": "Classic layout E2E Tests (ubuntu-latest, 1/1)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 166288,
+      "resultLine": 166289
+    },
+    {
+      "job": "E2E Tests (windows-2022, 3/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 166773,
+      "resultLine": 166774
+    },
+    {
+      "job": "E2E Tests (ubuntu-latest, 3/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 167382,
+      "resultLine": 167383
+    },
+    {
+      "job": "E2E Tests (windows-2022, 1/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 167978,
+      "resultLine": 167979
+    },
+    {
+      "job": "E2E Tests (windows-2022, 2/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 168579,
+      "resultLine": 168580
+    },
+    {
+      "job": "E2E Tests (ubuntu-latest, 2/3)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 169268,
+      "resultLine": 169269
+    },
+    {
+      "job": "Annex E2E Tests (ubuntu-latest, 1/2)",
+      "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+      "commandLine": 169945,
+      "resultLine": 169946
+    }
+  ],
+  "originalLog": {
+    "bytes": 25225136,
+    "sha256": "becfff8c587971f46dca0f6a21570f18ed86da34224f0a3f6773887fa962e6d9"
+  },
+  "watcherExit": 0,
+  "previousFailedRun": 45046385831,
+  "previousFailedProof": "13703fdf4270684c83c1c24e144f6ed3c73d6e4c",
+  "originalFixtureTypes": "47/49 BOTH FAIL166; independently accepted scoped nonregression only"
+}

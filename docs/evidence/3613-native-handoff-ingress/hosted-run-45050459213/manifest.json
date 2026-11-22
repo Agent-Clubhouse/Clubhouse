@@ -1,0 +1,404 @@
+{
+  "at": "2026-11-22T17:57:16.242Z",
+  "sourceHead": "e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+  "sourceTree": "42ab44d9d911f8d370cba393aff0c442f165472c",
+  "run": 45050459213,
+  "event": "pull_request",
+  "attempt": 1,
+  "conclusion": "success",
+  "counts": {
+    "success": 33,
+    "skipped": 4
+  },
+  "checkout": {
+    "parents": [
+      {
+        "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/commit/70eff94e9042ccc304e68282e76afc9065497858",
+        "sha": "70eff94e9042ccc304e68282e76afc9065497858",
+        "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/git/commits/70eff94e9042ccc304e68282e76afc9065497858"
+      },
+      {
+        "html_url": "https://github.com/Agent-Clubhouse/Clubhouse/commit/e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+        "sha": "e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+        "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/git/commits/e83d9f27f0e6a85f3a2791b1eadb85995c6ae701"
+      }
+    ],
+    "sha": "eb006d2126abe0fd1d59a188dfc58980778ea8e4",
+    "tree": {
+      "sha": "42ab44d9d911f8d370cba393aff0c442f165472c",
+      "url": "https://api.github.com/repos/Agent-Clubhouse/Clubhouse/git/trees/42ab44d9d911f8d370cba393aff0c442f165472c"
+    }
+  },
+  "freshPr": {
+    "number": 3778,
+    "head": "e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+    "base": "70eff94e9042ccc304e68282e76afc9065497858",
+    "state": "OPEN",
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "CLEAN"
+  },
+  "originalFailedRun": 45046385831,
+  "originalFailedProof": "13703fdf4270684c83c1c24e144f6ed3c73d6e4c",
+  "approvedDeltaReview": "e4c5bd628ab919e599f2f06431714b494ee3b8d2",
+  "selectedPlatforms": {
+    "ubuntu": {
+      "requiredFiveCases": [
+        {
+          "name": "native incoming actual TLS and queue assembly > does not complete a reconnect against an unchanged old accepted link",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "annex-server > accepts handoff agreement synchronization only from a pinned desktop member and hides failure details",
+          "classname": "src/main/services/annex-server.test.ts",
+          "status": "passed"
+        }
+      ],
+      "nativeCaseCount": 21,
+      "allSelectedPassed": true
+    },
+    "windows": {
+      "requiredFiveCases": [
+        {
+          "name": "native incoming actual TLS and queue assembly > does not complete a reconnect against an unchanged old accepted link",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "annex-server > accepts handoff agreement synchronization only from a pinned desktop member and hides failure details",
+          "classname": "src/main/services/annex-server.test.ts",
+          "status": "passed"
+        }
+      ],
+      "nativeCaseCount": 21,
+      "allSelectedPassed": true
+    }
+  },
+  "files": [
+    {
+      "name": "58-before-update-pr-original.json",
+      "rawBytes": 11390,
+      "rawSha256": "6c03d1cc4f6e1e482671dca59b9960abcf7b08e35db32599bd6cb9ec8d697b2f",
+      "storedSha256": "6c03d1cc4f6e1e482671dca59b9960abcf7b08e35db32599bd6cb9ec8d697b2f",
+      "blob": "36a93050b63696c9cc31be0016f5778069aee25d"
+    },
+    {
+      "name": "59-ff-guards-original.json",
+      "rawBytes": 1158,
+      "rawSha256": "e4b2d9d3a718db6fb558958b1e47137f5feec06512845df0ef84322b70d34d2b",
+      "storedSha256": "e4b2d9d3a718db6fb558958b1e47137f5feec06512845df0ef84322b70d34d2b",
+      "blob": "1467d338279288ee689b50f60c954ad0114f34bb"
+    },
+    {
+      "name": "59-newhead-runs-original.json",
+      "rawBytes": 227,
+      "rawSha256": "eaa8db48236dbbba4c6dc7e0e5655c1f3d1cb7495c29b87d808d94d6f3fd0dd2",
+      "storedSha256": "eaa8db48236dbbba4c6dc7e0e5655c1f3d1cb7495c29b87d808d94d6f3fd0dd2",
+      "blob": "2e4c4486def407c4068037ad86a8176e42310dc6"
+    },
+    {
+      "name": "59-updated-pr-original.json",
+      "rawBytes": 15463,
+      "rawSha256": "3249f81b3afccfd0caae869f8ee8a2f704ddd07ccc44ad45fe1aa52b5b5dfff7",
+      "storedSha256": "3249f81b3afccfd0caae869f8ee8a2f704ddd07ccc44ad45fe1aa52b5b5dfff7",
+      "blob": "c566b0b2f4fd71fae9e05054a365eda21b1c963f"
+    },
+    {
+      "name": "60-newhead-capture-exits-original.tsv",
+      "rawBytes": 380,
+      "rawSha256": "3688bb9f4d6704015bf7cb5d1f04cce8761645ccb49f9d74e2b85b9b9b9c58cf",
+      "storedSha256": "3688bb9f4d6704015bf7cb5d1f04cce8761645ccb49f9d74e2b85b9b9b9c58cf",
+      "blob": "cea0ec6599deaa0c20692bfb1a2390954716b01e"
+    },
+    {
+      "name": "60-newhead-discovery-1-original.json",
+      "rawBytes": 447,
+      "rawSha256": "458b9175e1c81d9e07d30516e4f4444b219c92c5986906560e3282d7d8841ebf",
+      "storedSha256": "458b9175e1c81d9e07d30516e4f4444b219c92c5986906560e3282d7d8841ebf",
+      "blob": "2e977af512780a958feb459c70e5b1e02135c3fa"
+    },
+    {
+      "name": "60-newhead-discovery-1-original.json.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "60-newhead-merge-ref-initial-original.json",
+      "rawBytes": 365,
+      "rawSha256": "ad7f7c2b164d7d8596284c31c554537913f04f4bb010f2a949921a3c0b127bc7",
+      "storedSha256": "ad7f7c2b164d7d8596284c31c554537913f04f4bb010f2a949921a3c0b127bc7",
+      "blob": "96b2a67b94381d8540210131bf817287aaa711a2"
+    },
+    {
+      "name": "60-newhead-merge-ref-initial-original.json.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "60-newhead-run-initial-original.json",
+      "rawBytes": 13382,
+      "rawSha256": "f6a2833fcb15805f5b2a693f79fe9174253fb921bae0654e2c009e032069ece6",
+      "storedSha256": "f6a2833fcb15805f5b2a693f79fe9174253fb921bae0654e2c009e032069ece6",
+      "blob": "a5a45238ad3a2eb498a0e1ceb1708376af57ea18"
+    },
+    {
+      "name": "60-newhead-run-initial-original.json.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "60-newhead-watch-exit-original.txt",
+      "rawBytes": 2,
+      "rawSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "storedSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "blob": "573541ac9702dd3969c9bc859d2b91ec1f7e6e56"
+    },
+    {
+      "name": "60-newhead-watch-original.log",
+      "rawBytes": 185199,
+      "rawSha256": "9ab116cbf09274855cfb5dd3f8292f174ac7fd6b4ca7ae828d5c0b4de8205029",
+      "storedSha256": "9ab116cbf09274855cfb5dd3f8292f174ac7fd6b4ca7ae828d5c0b4de8205029",
+      "blob": "f7933be284f4da2054a7f1e786f0bc0e74a223f4"
+    },
+    {
+      "name": "60-newhead-watch-owner-original.txt",
+      "rawBytes": 17,
+      "rawSha256": "3fa0f5663640830ea61ae77895fd5ea879bbbe41f04361cb8fd361008c1a15b1",
+      "storedSha256": "3fa0f5663640830ea61ae77895fd5ea879bbbe41f04361cb8fd361008c1a15b1",
+      "blob": "68011e71e760715ae9426c8016bcd70c63b74b10"
+    },
+    {
+      "name": "61-newhead-artifacts-original.json",
+      "rawBytes": 20067,
+      "rawSha256": "84b972a4ddc447ff58ba6e4084e1ba4e3d5421d80f5efe2c58f6d0c0f3fa1df6",
+      "storedSha256": "84b972a4ddc447ff58ba6e4084e1ba4e3d5421d80f5efe2c58f6d0c0f3fa1df6",
+      "blob": "4de9df7bee88e6155f810ee48641db75bfe6aac8"
+    },
+    {
+      "name": "61-newhead-artifacts-original.json.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "61-newhead-jobs-final-original.json",
+      "rawBytes": 104699,
+      "rawSha256": "4c2e69c56b86960be0e66098c3e8fde05b67149060b34c9fd50f66129145b7af",
+      "storedSha256": "4c2e69c56b86960be0e66098c3e8fde05b67149060b34c9fd50f66129145b7af",
+      "blob": "779f9630251420b0422c2ac2c1ba32b4626683d4"
+    },
+    {
+      "name": "61-newhead-jobs-final-original.json.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "61-newhead-junit-download-original.txt",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "61-newhead-junit-download-original.txt.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "61-newhead-logs-original.log.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "61-newhead-pr-final-original.json",
+      "rawBytes": 11833,
+      "rawSha256": "cdb9895fa6ae56e0ee7bae5b519935f35678d1681b4e86ac8271285b49b4ff50",
+      "storedSha256": "cdb9895fa6ae56e0ee7bae5b519935f35678d1681b4e86ac8271285b49b4ff50",
+      "blob": "797628c3ccdd2db0094b6f84c7524a7e79235e3c"
+    },
+    {
+      "name": "61-newhead-pr-final-original.json.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "61-newhead-refs-final-original.txt",
+      "rawBytes": 147,
+      "rawSha256": "7883f40062994b25c6a0b2b25926fac3a5081070e2cea0ca1b2690d936cdf1dc",
+      "storedSha256": "7883f40062994b25c6a0b2b25926fac3a5081070e2cea0ca1b2690d936cdf1dc",
+      "blob": "7b4b543e15fc0df03f3b6c9e6588248d4bbba36b"
+    },
+    {
+      "name": "61-newhead-refs-final-original.txt.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "61-newhead-run-final-original.json",
+      "rawBytes": 13385,
+      "rawSha256": "ee8c186212681272e452b1ec289801579c0502ea031f71377a271f4befddea38",
+      "storedSha256": "ee8c186212681272e452b1ec289801579c0502ea031f71377a271f4befddea38",
+      "blob": "988b960dbf98da887ecfd173cb3936f3e138f354"
+    },
+    {
+      "name": "61-newhead-run-final-original.json.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "name": "61-newhead-terminal-packet.json",
+      "rawBytes": 16112,
+      "rawSha256": "560ebab7aece94ed7e27695378e7aff9fa32cb1c8df75a72b700f78e966023b6",
+      "storedSha256": "560ebab7aece94ed7e27695378e7aff9fa32cb1c8df75a72b700f78e966023b6",
+      "blob": "b43ff356d113d32f11568646ea439a9d4f6dc6ef"
+    },
+    {
+      "name": "62-newhead-checkout-commit-original.json",
+      "rawBytes": 781,
+      "rawSha256": "fa76ce1d978a2ed853d04ea17c4516e1498b1dd1c68c1d5ac4ca56197353ca80",
+      "storedSha256": "fa76ce1d978a2ed853d04ea17c4516e1498b1dd1c68c1d5ac4ca56197353ca80",
+      "blob": "b76f4337281d9dd99bca3c8830bc47a1c54779c4"
+    },
+    {
+      "name": "62-newhead-pr-fresh-original.json",
+      "rawBytes": 11849,
+      "rawSha256": "27c6360686dcc98e1b918cb1848a964c35225077445015804be37752140d64f8",
+      "storedSha256": "27c6360686dcc98e1b918cb1848a964c35225077445015804be37752140d64f8",
+      "blob": "bc8bfba16ac7da0fbf14ae032bf23c53c1374999"
+    },
+    {
+      "name": "62-newhead-refs-fresh-original.txt",
+      "rawBytes": 147,
+      "rawSha256": "7883f40062994b25c6a0b2b25926fac3a5081070e2cea0ca1b2690d936cdf1dc",
+      "storedSha256": "7883f40062994b25c6a0b2b25926fac3a5081070e2cea0ca1b2690d936cdf1dc",
+      "blob": "7b4b543e15fc0df03f3b6c9e6588248d4bbba36b"
+    },
+    {
+      "name": "63-derivation-original.log",
+      "rawBytes": 640,
+      "rawSha256": "4e8b33b99f651909974eac2773a2ab68eb89a936fe3d15c62797b57414d44045",
+      "storedSha256": "4e8b33b99f651909974eac2773a2ab68eb89a936fe3d15c62797b57414d44045",
+      "blob": "d293b09ae3c18835553eee5840d2610c452e8cb4"
+    },
+    {
+      "name": "63-newhead-junit-derived.json",
+      "rawBytes": 18131,
+      "rawSha256": "d4fada9fcfa61c8841e71b2d42c3c7c87e8faf5ee843f460aadf5c33c7d0d3c0",
+      "storedSha256": "d4fada9fcfa61c8841e71b2d42c3c7c87e8faf5ee843f460aadf5c33c7d0d3c0",
+      "blob": "451697d6e40b7ec8c0a284627743466e31c6d78a"
+    },
+    {
+      "name": "61-newhead-logs-original.log.gz",
+      "rawBytes": 25225136,
+      "rawSha256": "becfff8c587971f46dca0f6a21570f18ed86da34224f0a3f6773887fa962e6d9",
+      "storedSha256": "7b8c3ffa9350aaec20f8ecdb46774e5dbd29ab1f95fc526c4ea6db6877d7b17b",
+      "blob": "f498e7c93be46fc1c188abc07f28b87d86e206ff"
+    },
+    {
+      "name": "junit/test-results-ubuntu-latest-1.xml.gz",
+      "rawBytes": 6862421,
+      "rawSha256": "ebe33843089f12e6500510e4b2a531917272cd83e6b2d33faf3181b0567fdb1a",
+      "storedSha256": "c85e8a9e7798e8954e258f998f18ff1d6c1b0f7ed0206255d83a5a496bc93c13",
+      "blob": "fbbd96cc6addab2195227c09a2e5400a22873a69"
+    },
+    {
+      "name": "junit/test-results-ubuntu-latest-2.xml.gz",
+      "rawBytes": 15976079,
+      "rawSha256": "f5ce4dd461d564beaeacf9a334c0c40f3a2f64d5062fc49452dfa6593f6985e2",
+      "storedSha256": "f826429cfe20e94be88240092a96473c1e759fbed73d0dc78cb9dd6fe3d52db3",
+      "blob": "229301c098bb394d705abb553c12df00f7c68ef6"
+    },
+    {
+      "name": "junit/test-results-windows-latest-1.xml.gz",
+      "rawBytes": 6819954,
+      "rawSha256": "f42968f9180798aac602950685d47efd63d29c2ba15dc1add73ce6f050842680",
+      "storedSha256": "693abd2db79f1dee94e60849f8f207de1c8ef5b48e65fe69a8bff4baa7e2b0e2",
+      "blob": "446ea13a9b9acb33f984677275b2c48bcc83b4de"
+    },
+    {
+      "name": "junit/test-results-windows-latest-2.xml.gz",
+      "rawBytes": 15931890,
+      "rawSha256": "f5ed1ead326ffbe951fc6932cb0c0daf569d77b14b943ea7d2a8ddb3927b9afc",
+      "storedSha256": "d53afa5242c743a819ebf143eec0cdca394d582153205f63eba6572af0874146",
+      "blob": "555074d32eae710b42d56f135e5a8eb4d70d8af4"
+    },
+    {
+      "name": "README.md",
+      "rawBytes": 2862,
+      "rawSha256": "2042652303e2e759b80565b3e3748b009b18bcf6bf315449e84bb88cbadd1e13",
+      "storedSha256": "2042652303e2e759b80565b3e3748b009b18bcf6bf315449e84bb88cbadd1e13",
+      "blob": "a4c8a7b841de31cbc0f13b13eff320ead1126518"
+    },
+    {
+      "name": "owner-watch-original.sh",
+      "rawBytes": 6942,
+      "rawSha256": "146053b15beb6ee06ce05bf3d2175ad9505ec58b630b970da657c05367a89825",
+      "storedSha256": "146053b15beb6ee06ce05bf3d2175ad9505ec58b630b970da657c05367a89825",
+      "blob": "bed10ee5745c8f61cc65e3608da9a96618953ed8"
+    },
+    {
+      "name": "junit-derivation-original.py",
+      "rawBytes": 2913,
+      "rawSha256": "3921d0d2bd684ec224bde2d4d8d8ed5b589de3db3074661180e7cd113563e3e1",
+      "storedSha256": "3921d0d2bd684ec224bde2d4d8d8ed5b589de3db3074661180e7cd113563e3e1",
+      "blob": "0c8afa71ee4a451a37b787a3462187f8699e7a6a"
+    },
+    {
+      "name": "seal-newhead-hosted-original.cjs",
+      "rawBytes": 6089,
+      "rawSha256": "0c1159e2bf011b07b6f0b734cc92c5082a421ac2e34cf1e0a9bbc44681a23c25",
+      "storedSha256": "0c1159e2bf011b07b6f0b734cc92c5082a421ac2e34cf1e0a9bbc44681a23c25",
+      "blob": "5d6559bfb10f2b4ebe623574b6946ce7b7f46754"
+    }
+  ],
+  "limitations": "Actual hosted success; no merger/release or full-handoff acceptance. Local complete fixture types47/49 remain BOTHFAIL166 independently accepted scoped nonregression.247 legacy warnings separate71. Hosted reconnect cause unknown; all originals and human/product/protected boundaries preserved."
+}

@@ -1,0 +1,371 @@
+{
+  "run": 45050459213,
+  "head": "e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+  "artifacts": [
+    {
+      "artifact": "test-results-ubuntu-latest-1",
+      "rawBytes": 6862421,
+      "rawSha256": "ebe33843089f12e6500510e4b2a531917272cd83e6b2d33faf3181b0567fdb1a",
+      "rootAttributes": {
+        "name": "vitest tests",
+        "tests": "19575",
+        "failures": "0",
+        "errors": "0",
+        "time": "811.195582178"
+      },
+      "counts": {
+        "passed": 19521,
+        "failure": 0,
+        "error": 0,
+        "skipped": 54
+      },
+      "selected": [
+        {
+          "name": "native incoming actual TLS and queue assembly > does not complete a reconnect against an unchanged old accepted link",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for pairingId-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for certificatePem-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for unchanged-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for legacy-undefined-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for route-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for alias-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for lastSeen-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "artifact": "test-results-ubuntu-latest-2",
+      "rawBytes": 15976079,
+      "rawSha256": "f5ce4dd461d564beaeacf9a334c0c40f3a2f64d5062fc49452dfa6593f6985e2",
+      "rootAttributes": {
+        "name": "vitest tests",
+        "tests": "16981",
+        "failures": "0",
+        "errors": "0",
+        "time": "811.206450578"
+      },
+      "counts": {
+        "passed": 16916,
+        "failure": 0,
+        "error": 0,
+        "skipped": 65
+      },
+      "selected": [
+        {
+          "name": "annex-server > accepts handoff agreement synchronization only from a pinned desktop member and hides failure details",
+          "classname": "src/main/services/annex-server.test.ts",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "artifact": "test-results-windows-latest-1",
+      "rawBytes": 6819954,
+      "rawSha256": "f42968f9180798aac602950685d47efd63d29c2ba15dc1add73ce6f050842680",
+      "rootAttributes": {
+        "name": "vitest tests",
+        "tests": "19573",
+        "failures": "0",
+        "errors": "0",
+        "time": "1016.1431711"
+      },
+      "counts": {
+        "passed": 19480,
+        "failure": 0,
+        "error": 0,
+        "skipped": 93
+      },
+      "selected": [
+        {
+          "name": "native incoming actual TLS and queue assembly > does not complete a reconnect against an unchanged old accepted link",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > retains native new-offer authorization rather than treating a valid reverse principal as receiver permission",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > keeps an admitted real save truthful after actual cancellation and replays the same RPC key without readmission",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > handles current native history, cancellation and snapshots without reintroducing new-offer permission gates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > keeps a deadline-destroyed native result unretained while actual slot, owner and save remain held",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > preserves the real native before-rename IO failure instead of inventing rollback or success",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > preserves the real native after-real-rename IO failure instead of inventing rollback or success",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > normal host stop retains an admitted incoming writer and refuses replacement until its actual save settles",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > normal host stop refuses queued native work and new admissions until actual queued ownership drains",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for pairingId-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for certificatePem-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for unchanged-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for legacy-undefined-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for route-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for alias-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > checks canonical native trust at the real held queue for lastSeen-only updates",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pairing-scalar changes while the actual queue is held",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request after its saved pin-mismatch changes while the actual queue is held",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "artifact": "test-results-windows-latest-2",
+      "rawBytes": 15931890,
+      "rawSha256": "f5ed1ead326ffbe951fc6932cb0c0daf569d77b14b943ea7d2a8ddb3927b9afc",
+      "rootAttributes": {
+        "name": "vitest tests",
+        "tests": "16981",
+        "failures": "0",
+        "errors": "0",
+        "time": "2108.4171827"
+      },
+      "counts": {
+        "passed": 16805,
+        "failure": 0,
+        "error": 0,
+        "skipped": 176
+      },
+      "selected": [
+        {
+          "name": "annex-server > accepts handoff agreement synchronization only from a pinned desktop member and hides failure details",
+          "classname": "src/main/services/annex-server.test.ts",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "platforms": {
+    "ubuntu": {
+      "requiredFiveCases": [
+        {
+          "name": "native incoming actual TLS and queue assembly > does not complete a reconnect against an unchanged old accepted link",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "annex-server > accepts handoff agreement synchronization only from a pinned desktop member and hides failure details",
+          "classname": "src/main/services/annex-server.test.ts",
+          "status": "passed"
+        }
+      ],
+      "nativeCaseCount": 21,
+      "allSelectedPassed": true
+    },
+    "windows": {
+      "requiredFiveCases": [
+        {
+          "name": "native incoming actual TLS and queue assembly > does not complete a reconnect against an unchanged old accepted link",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "annex-server > accepts handoff agreement synchronization only from a pinned desktop member and hides failure details",
+          "classname": "src/main/services/annex-server.test.ts",
+          "status": "passed"
+        }
+      ],
+      "nativeCaseCount": 21,
+      "allSelectedPassed": true
+    }
+  },
+  "note": "Actual hosted XML at e83, separate from original local five-case60ed run and historical35/8/1 scopes. No new compiler or broader product acceptance."
+}

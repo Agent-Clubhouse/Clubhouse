@@ -1,0 +1,5206 @@
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 1 minute ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+* ESLint (errors only) (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  * Run npm ci
+  * Run npm run lint
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Build app (ubuntu-latest) (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Typecheck + API surface (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  * Run npm ci
+  * Run npx tsc --noEmit
+  * Run npm run check:test-coverage-ratchet
+  * Run npx vitest run --project renderer plugin-api-version-contracts
+  * Check plugin-types changes
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Build app (windows-2022) (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  * Run actions/cache@v6
+  * Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  * Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Copilot SDK chunk (ubuntu-latest) (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  * Run npm ci --foreground-scripts
+  * Check koffi used its prebuilt binary
+  * Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  * Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (ubuntu-latest, 2/2) (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  * Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (ubuntu-latest, 1/2) (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  * Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Copilot SDK chunk (windows-2022) (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  * Run npm ci --foreground-scripts
+  * Check koffi used its prebuilt binary
+  * Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 2 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+* ESLint (errors only) (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm run lint
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Build app (ubuntu-latest) (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (windows-2022) (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Copilot SDK chunk (ubuntu-latest) (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  * Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  * Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (ubuntu-latest, 2/2) (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (ubuntu-latest, 1/2) (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Copilot SDK chunk (windows-2022) (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  * Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 3 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (ubuntu-latest) (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (windows-2022) (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (ubuntu-latest, 2/2) (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (ubuntu-latest, 1/2) (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Copilot SDK chunk (windows-2022) (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  * Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 4 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (ubuntu-latest) (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (windows-2022) (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (ubuntu-latest, 2/2) (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (ubuntu-latest, 1/2) (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 5 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (ubuntu-latest) (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (windows-2022) (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (ubuntu-latest, 2/2) (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (ubuntu-latest, 1/2) (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 6 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (ubuntu-latest) (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (windows-2022) (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (ubuntu-latest, 2/2) (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (ubuntu-latest, 1/2) (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 7 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (ubuntu-latest) (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (windows-2022) (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Build app
+  * Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (ubuntu-latest, 2/2) (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (ubuntu-latest, 1/2) (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 8 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (ubuntu-latest) in 7m33s (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  - Verify actual packaged Windows runtime
+  - Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Build app (windows-2022) (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  * Verify actual packaged Windows runtime
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (ubuntu-latest, 2/2) (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (ubuntu-latest, 1/2) (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 9 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (ubuntu-latest) in 7m33s (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  - Verify actual packaged Windows runtime
+  - Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (windows-2022) in 8m19s (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  ✓ Verify actual packaged Windows runtime
+  ✓ Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Unit + Component Tests (ubuntu-latest, 2/2) (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 1/2) in 8m53s (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+* Stable-mode E2E Tests (ubuntu-latest) (ID 137296628880)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run stable-mode E2E tests
+  * Run stable-mode E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Stable-mode E2E Tests (windows-2022) (ID 137296628917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run stable-mode E2E tests
+  * Run stable-mode E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Classic layout E2E Tests (windows-2022, 1/1) (ID 137296628925)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run classic layout E2E tests
+  * Run classic layout E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (ubuntu-latest, 2/3) (ID 137296628960)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (windows-2022, 3/3) (ID 137296628967)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  * Exclude workspace from Windows Defender
+  * Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (windows-2022, 2/3) (ID 137296628975)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  * Exclude workspace from Windows Defender
+  * Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (windows-2022, 1/3) (ID 137296628976)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 1/3) (ID 137296628981)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run E2E tests (shard 1/3)
+  * Run E2E tests (shard 1/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (ubuntu-latest, 3/3) (ID 137296628988)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (ubuntu-latest, 1/3) (ID 137296628990)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (ubuntu-latest, 2/2) (ID 137296628996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (windows-2022, 1/2) (ID 137296629001)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (windows-2022, 2/2) (ID 137296629005)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Classic layout E2E Tests (ubuntu-latest, 1/1) (ID 137296629014)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run classic layout E2E tests
+  * Run classic layout E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (windows-2022, 3/3) (ID 137296629021)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run E2E tests (shard 3/3)
+  * Run E2E tests (shard 3/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 3/3) (ID 137296629044)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run E2E tests (shard 3/3)
+  * Run E2E tests (shard 3/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (windows-2022, 1/3) (ID 137296629049)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run E2E tests (shard 1/3)
+  * Run E2E tests (shard 1/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (windows-2022, 2/3) (ID 137296629062)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  * Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run E2E tests (shard 2/3)
+  * Run E2E tests (shard 2/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 2/3) (ID 137296629079)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run E2E tests (shard 2/3)
+  * Run E2E tests (shard 2/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (ubuntu-latest, 1/2) (ID 137296629156)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 10 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (ubuntu-latest) in 7m33s (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  - Verify actual packaged Windows runtime
+  - Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (windows-2022) in 8m19s (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  ✓ Verify actual packaged Windows runtime
+  ✓ Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Unit + Component Tests (ubuntu-latest, 2/2) in 9m18s (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 1/2) in 8m53s (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+* Stable-mode E2E Tests (ubuntu-latest) (ID 137296628880)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run stable-mode E2E tests
+  * Run stable-mode E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Stable-mode E2E Tests (windows-2022) (ID 137296628917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run stable-mode E2E tests
+  * Run stable-mode E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Classic layout E2E Tests (windows-2022, 1/1) (ID 137296628925)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run classic layout E2E tests
+  * Run classic layout E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (ubuntu-latest, 2/3) (ID 137296628960)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (windows-2022, 3/3) (ID 137296628967)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (windows-2022, 2/3) (ID 137296628975)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (windows-2022, 1/3) (ID 137296628976)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 1/3) (ID 137296628981)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 1/3)
+  * Run E2E tests (shard 1/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (ubuntu-latest, 3/3) (ID 137296628988)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (ubuntu-latest, 1/3) (ID 137296628990)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (ubuntu-latest, 2/2) (ID 137296628996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (windows-2022, 1/2) (ID 137296629001)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (windows-2022, 2/2) (ID 137296629005)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Classic layout E2E Tests (ubuntu-latest, 1/1) (ID 137296629014)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run classic layout E2E tests
+  * Run classic layout E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (windows-2022, 3/3) (ID 137296629021)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  * Run actions/download-artifact@v8
+  * Run E2E tests (shard 3/3)
+  * Run E2E tests (shard 3/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 3/3) (ID 137296629044)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 3/3)
+  * Run E2E tests (shard 3/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (windows-2022, 1/3) (ID 137296629049)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run E2E tests (shard 1/3)
+  * Run E2E tests (shard 1/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (windows-2022, 2/3) (ID 137296629062)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  * Run npm ci
+  * Run actions/download-artifact@v8
+  * Run E2E tests (shard 2/3)
+  * Run E2E tests (shard 2/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 2/3) (ID 137296629079)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 2/3)
+  * Run E2E tests (shard 2/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (ubuntu-latest, 1/2) (ID 137296629156)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 11 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (ubuntu-latest) in 7m33s (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  - Verify actual packaged Windows runtime
+  - Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (windows-2022) in 8m19s (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  ✓ Verify actual packaged Windows runtime
+  ✓ Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Unit + Component Tests (ubuntu-latest, 2/2) in 9m18s (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 1/2) in 8m53s (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+* Stable-mode E2E Tests (ubuntu-latest) (ID 137296628880)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run stable-mode E2E tests
+  * Run stable-mode E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Stable-mode E2E Tests (windows-2022) (ID 137296628917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run stable-mode E2E tests
+  - Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Classic layout E2E Tests (windows-2022, 1/1) (ID 137296628925)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run classic layout E2E tests
+  * Run classic layout E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (ubuntu-latest, 2/3) (ID 137296628960)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Chat E2E Tests (windows-2022, 3/3) (ID 137296628967)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (windows-2022, 2/3) (ID 137296628975)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (windows-2022, 1/3) (ID 137296628976)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 1/3) (ID 137296628981)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 1/3)
+  * Run E2E tests (shard 1/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (ubuntu-latest, 3/3) (ID 137296628988)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Chat E2E Tests (ubuntu-latest, 1/3) in 2m37s (ID 137296628990)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Annex E2E Tests (ubuntu-latest, 2/2) (ID 137296628996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (windows-2022, 1/2) (ID 137296629001)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (windows-2022, 2/2) (ID 137296629005)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Classic layout E2E Tests (ubuntu-latest, 1/1) (ID 137296629014)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run classic layout E2E tests
+  * Run classic layout E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (windows-2022, 3/3) (ID 137296629021)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run E2E tests (shard 3/3)
+  * Run E2E tests (shard 3/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 3/3) (ID 137296629044)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 3/3)
+  * Run E2E tests (shard 3/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (windows-2022, 1/3) (ID 137296629049)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run E2E tests (shard 1/3)
+  * Run E2E tests (shard 1/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (windows-2022, 2/3) (ID 137296629062)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run E2E tests (shard 2/3)
+  * Run E2E tests (shard 2/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 2/3) (ID 137296629079)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 2/3)
+  * Run E2E tests (shard 2/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (ubuntu-latest, 1/2) (ID 137296629156)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 12 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (ubuntu-latest) in 7m33s (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  - Verify actual packaged Windows runtime
+  - Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (windows-2022) in 8m19s (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  ✓ Verify actual packaged Windows runtime
+  ✓ Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 1/2) (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Unit + Component Tests (ubuntu-latest, 2/2) in 9m18s (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 1/2) in 8m53s (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+✓ Stable-mode E2E Tests (ubuntu-latest) in 3m16s (ID 137296628880)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run stable-mode E2E tests
+  ✓ Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Stable-mode E2E Tests (windows-2022) in 2m58s (ID 137296628917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run stable-mode E2E tests
+  - Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (windows-2022, 1/1) in 3m26s (ID 137296628925)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run classic layout E2E tests
+  - Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 2/3) in 2m54s (ID 137296628960)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Chat E2E Tests (windows-2022, 3/3) (ID 137296628967)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (windows-2022, 2/3) (ID 137296628975)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Chat E2E Tests (windows-2022, 1/3) (ID 137296628976)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 1/3) (ID 137296628981)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 1/3)
+  * Run E2E tests (shard 1/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Chat E2E Tests (ubuntu-latest, 3/3) in 3m21s (ID 137296628988)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 1/3) in 2m37s (ID 137296628990)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (ubuntu-latest, 2/2) in 3m36s (ID 137296628996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  ✓ Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Annex E2E Tests (windows-2022, 1/2) (ID 137296629001)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (windows-2022, 2/2) (ID 137296629005)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Classic layout E2E Tests (ubuntu-latest, 1/1) in 3m5s (ID 137296629014)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run classic layout E2E tests
+  ✓ Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* E2E Tests (windows-2022, 3/3) (ID 137296629021)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run E2E tests (shard 3/3)
+  * Run E2E tests (shard 3/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ E2E Tests (ubuntu-latest, 3/3) in 3m52s (ID 137296629044)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 3/3)
+  ✓ Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* E2E Tests (windows-2022, 1/3) (ID 137296629049)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run E2E tests (shard 1/3)
+  * Run E2E tests (shard 1/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (windows-2022, 2/3) (ID 137296629062)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run E2E tests (shard 2/3)
+  * Run E2E tests (shard 2/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* E2E Tests (ubuntu-latest, 2/3) (ID 137296629079)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 2/3)
+  * Run E2E tests (shard 2/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+* Annex E2E Tests (ubuntu-latest, 1/2) (ID 137296629156)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 13 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (ubuntu-latest) in 7m33s (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  - Verify actual packaged Windows runtime
+  - Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (windows-2022) in 8m19s (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  ✓ Verify actual packaged Windows runtime
+  ✓ Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (windows-latest, 1/2) in 12m51s (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 2/2) in 9m18s (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 1/2) in 8m53s (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+✓ Stable-mode E2E Tests (ubuntu-latest) in 3m16s (ID 137296628880)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run stable-mode E2E tests
+  ✓ Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Stable-mode E2E Tests (windows-2022) in 2m58s (ID 137296628917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run stable-mode E2E tests
+  - Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (windows-2022, 1/1) in 3m26s (ID 137296628925)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run classic layout E2E tests
+  - Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 2/3) in 2m54s (ID 137296628960)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Chat E2E Tests (windows-2022, 3/3) (ID 137296628967)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run chat E2E tests
+  * Run chat E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Chat E2E Tests (windows-2022, 2/3) in 4m27s (ID 137296628975)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 1/3) in 4m13s (ID 137296628976)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 1/3) in 4m24s (ID 137296628981)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 1/3)
+  ✓ Run E2E tests (shard 1/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 3/3) in 3m21s (ID 137296628988)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 1/3) in 2m37s (ID 137296628990)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (ubuntu-latest, 2/2) in 3m36s (ID 137296628996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  ✓ Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Annex E2E Tests (windows-2022, 1/2) (ID 137296629001)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Annex E2E Tests (windows-2022, 2/2) in 4m46s (ID 137296629005)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run Annex E2E tests
+  - Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (ubuntu-latest, 1/1) in 3m5s (ID 137296629014)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run classic layout E2E tests
+  ✓ Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 3/3) in 4m44s (ID 137296629021)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 3/3)
+  - Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 3/3) in 3m52s (ID 137296629044)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 3/3)
+  ✓ Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 1/3) in 5m2s (ID 137296629049)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 1/3)
+  - Run E2E tests (shard 1/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* E2E Tests (windows-2022, 2/3) (ID 137296629062)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run E2E tests (shard 2/3)
+  * Run E2E tests (shard 2/3, Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ E2E Tests (ubuntu-latest, 2/3) in 4m41s (ID 137296629079)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 2/3)
+  ✓ Run E2E tests (shard 2/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Annex E2E Tests (ubuntu-latest, 1/2) (ID 137296629156)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 14 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (ubuntu-latest) in 7m33s (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  - Verify actual packaged Windows runtime
+  - Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (windows-2022) in 8m19s (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  ✓ Verify actual packaged Windows runtime
+  ✓ Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (windows-latest, 1/2) in 12m51s (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 2/2) in 9m18s (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 1/2) in 8m53s (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+✓ Stable-mode E2E Tests (ubuntu-latest) in 3m16s (ID 137296628880)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run stable-mode E2E tests
+  ✓ Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Stable-mode E2E Tests (windows-2022) in 2m58s (ID 137296628917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run stable-mode E2E tests
+  - Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (windows-2022, 1/1) in 3m26s (ID 137296628925)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run classic layout E2E tests
+  - Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 2/3) in 2m54s (ID 137296628960)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 3/3) in 5m28s (ID 137296628967)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 2/3) in 4m27s (ID 137296628975)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 1/3) in 4m13s (ID 137296628976)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 1/3) in 4m24s (ID 137296628981)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 1/3)
+  ✓ Run E2E tests (shard 1/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 3/3) in 3m21s (ID 137296628988)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 1/3) in 2m37s (ID 137296628990)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (ubuntu-latest, 2/2) in 3m36s (ID 137296628996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  ✓ Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Annex E2E Tests (windows-2022, 1/2) (ID 137296629001)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  * Run Annex E2E tests
+  * Run Annex E2E tests (Linux — requires virtual display)
+  * Run actions/upload-artifact@v7
+  * Post Run actions/cache@v6
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Annex E2E Tests (windows-2022, 2/2) in 4m46s (ID 137296629005)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run Annex E2E tests
+  - Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (ubuntu-latest, 1/1) in 3m5s (ID 137296629014)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run classic layout E2E tests
+  ✓ Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 3/3) in 4m44s (ID 137296629021)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 3/3)
+  - Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 3/3) in 3m52s (ID 137296629044)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 3/3)
+  ✓ Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 1/3) in 5m2s (ID 137296629049)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 1/3)
+  - Run E2E tests (shard 1/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 2/3) in 5m45s (ID 137296629062)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 2/3)
+  - Run E2E tests (shard 2/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 2/3) in 4m41s (ID 137296629079)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 2/3)
+  ✓ Run E2E tests (shard 2/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (ubuntu-latest, 1/2) in 5m31s (ID 137296629156)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  ✓ Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 15 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (ubuntu-latest) in 7m33s (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  - Verify actual packaged Windows runtime
+  - Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (windows-2022) in 8m19s (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  ✓ Verify actual packaged Windows runtime
+  ✓ Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (windows-latest, 1/2) in 12m51s (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 2/2) in 9m18s (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 1/2) in 8m53s (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+✓ Stable-mode E2E Tests (ubuntu-latest) in 3m16s (ID 137296628880)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run stable-mode E2E tests
+  ✓ Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Stable-mode E2E Tests (windows-2022) in 2m58s (ID 137296628917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run stable-mode E2E tests
+  - Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (windows-2022, 1/1) in 3m26s (ID 137296628925)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run classic layout E2E tests
+  - Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 2/3) in 2m54s (ID 137296628960)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 3/3) in 5m28s (ID 137296628967)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 2/3) in 4m27s (ID 137296628975)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 1/3) in 4m13s (ID 137296628976)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 1/3) in 4m24s (ID 137296628981)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 1/3)
+  ✓ Run E2E tests (shard 1/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 3/3) in 3m21s (ID 137296628988)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 1/3) in 2m37s (ID 137296628990)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (ubuntu-latest, 2/2) in 3m36s (ID 137296628996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  ✓ Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (windows-2022, 1/2) in 6m45s (ID 137296629001)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run Annex E2E tests
+  - Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (windows-2022, 2/2) in 4m46s (ID 137296629005)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run Annex E2E tests
+  - Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (ubuntu-latest, 1/1) in 3m5s (ID 137296629014)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run classic layout E2E tests
+  ✓ Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 3/3) in 4m44s (ID 137296629021)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 3/3)
+  - Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 3/3) in 3m52s (ID 137296629044)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 3/3)
+  ✓ Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 1/3) in 5m2s (ID 137296629049)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 1/3)
+  - Run E2E tests (shard 1/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 2/3) in 5m45s (ID 137296629062)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 2/3)
+  - Run E2E tests (shard 2/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 2/3) in 4m41s (ID 137296629079)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 2/3)
+  ✓ Run E2E tests (shard 2/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (ubuntu-latest, 1/2) in 5m31s (ID 137296629156)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  ✓ Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 16 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (ubuntu-latest) in 7m33s (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  - Verify actual packaged Windows runtime
+  - Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (windows-2022) in 8m19s (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  ✓ Verify actual packaged Windows runtime
+  ✓ Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+* Unit + Component Tests (windows-latest, 2/2) (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  * Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  * Run actions/upload-artifact@v7
+  * Post Run actions/setup-node@v7
+  * Post Run actions/checkout@v7
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (windows-latest, 1/2) in 12m51s (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 2/2) in 9m18s (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 1/2) in 8m53s (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+✓ Stable-mode E2E Tests (ubuntu-latest) in 3m16s (ID 137296628880)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run stable-mode E2E tests
+  ✓ Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Stable-mode E2E Tests (windows-2022) in 2m58s (ID 137296628917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run stable-mode E2E tests
+  - Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (windows-2022, 1/1) in 3m26s (ID 137296628925)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run classic layout E2E tests
+  - Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 2/3) in 2m54s (ID 137296628960)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 3/3) in 5m28s (ID 137296628967)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 2/3) in 4m27s (ID 137296628975)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 1/3) in 4m13s (ID 137296628976)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 1/3) in 4m24s (ID 137296628981)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 1/3)
+  ✓ Run E2E tests (shard 1/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 3/3) in 3m21s (ID 137296628988)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 1/3) in 2m37s (ID 137296628990)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (ubuntu-latest, 2/2) in 3m36s (ID 137296628996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  ✓ Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (windows-2022, 1/2) in 6m45s (ID 137296629001)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run Annex E2E tests
+  - Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (windows-2022, 2/2) in 4m46s (ID 137296629005)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run Annex E2E tests
+  - Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (ubuntu-latest, 1/1) in 3m5s (ID 137296629014)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run classic layout E2E tests
+  ✓ Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 3/3) in 4m44s (ID 137296629021)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 3/3)
+  - Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 3/3) in 3m52s (ID 137296629044)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 3/3)
+  ✓ Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 1/3) in 5m2s (ID 137296629049)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 1/3)
+  - Run E2E tests (shard 1/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 2/3) in 5m45s (ID 137296629062)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 2/3)
+  - Run E2E tests (shard 2/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 2/3) in 4m41s (ID 137296629079)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 2/3)
+  ✓ Run E2E tests (shard 2/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (ubuntu-latest, 1/2) in 5m31s (ID 137296629156)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  ✓ Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ lane-3613-p2-routes/handoff-next-path Validate Agent-Clubhouse/Clubhouse#3778 · 45050459213
+Triggered via pull_request about 18 minutes ago
+
+JOBS
+✓ Plan the run in 15s (ID 137294197432)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Check paths are valid on Windows
+  ✓ Check the CLI kill switch list isn't reset
+  ✓ Classify the change
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- Dependency resolution preflight in 0s (ID 137294199023)
+✓ ESLint (errors only) in 2m18s (ID 137294276036)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm run lint
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (ubuntu-latest) in 7m33s (ID 137294276042)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  - Verify actual packaged Windows runtime
+  - Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Typecheck + API surface in 1m29s (ID 137294276050)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npx tsc --noEmit
+  ✓ Run npm run check:test-coverage-ratchet
+  ✓ Run npx vitest run --project renderer plugin-api-version-contracts
+  ✓ Check plugin-types changes
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Build app (windows-2022) in 8m19s (ID 137294276053)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Build app
+  - Build unsigned isolated macOS test artifact
+  ✓ Verify actual packaged Windows runtime
+  ✓ Run actions/upload-artifact@v7
+  - Run actions/upload-artifact@v7
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Workflow lint (actionlint) in 7s (ID 137294276067)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/cache@v6
+  ✓ Download actionlint
+  ✓ Run ./actionlint -shellcheck= -pyflakes=
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (windows-latest, 2/2) in 17m27s (ID 137294276068)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Copilot SDK chunk (ubuntu-latest) in 1m51s (ID 137294276084)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (windows-latest, 1/2) in 12m51s (ID 137294276092)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 2/2) in 9m18s (ID 137294276095)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=2/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Codex app-server schema drift in 17s (ID 137294276114)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm run codex:check-types
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Unit + Component Tests (ubuntu-latest, 1/2) in 8m53s (ID 137294276118)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run npm ci
+  ✓ Run npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Copilot SDK chunk (windows-2022) in 2m57s (ID 137294276273)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci --foreground-scripts
+  ✓ Check koffi used its prebuilt binary
+  ✓ Run node scripts/check-copilot-sdk-chunk.mjs --static-only
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+- macOS build + E2E smoke in 0s (ID 137294277523)
+- Linux Package Smoke Test in 0s (ID 137294277671)
+- macOS unit in 0s (ID 137294277885)
+✓ Stable-mode E2E Tests (ubuntu-latest) in 3m16s (ID 137296628880)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run stable-mode E2E tests
+  ✓ Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Stable-mode E2E Tests (windows-2022) in 2m58s (ID 137296628917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run stable-mode E2E tests
+  - Run stable-mode E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (windows-2022, 1/1) in 3m26s (ID 137296628925)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run classic layout E2E tests
+  - Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 2/3) in 2m54s (ID 137296628960)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 3/3) in 5m28s (ID 137296628967)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 2/3) in 4m27s (ID 137296628975)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (windows-2022, 1/3) in 4m13s (ID 137296628976)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run chat E2E tests
+  - Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 1/3) in 4m24s (ID 137296628981)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 1/3)
+  ✓ Run E2E tests (shard 1/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 3/3) in 3m21s (ID 137296628988)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Chat E2E Tests (ubuntu-latest, 1/3) in 2m37s (ID 137296628990)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run chat E2E tests
+  ✓ Run chat E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (ubuntu-latest, 2/2) in 3m36s (ID 137296628996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  ✓ Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (windows-2022, 1/2) in 6m45s (ID 137296629001)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run Annex E2E tests
+  - Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (windows-2022, 2/2) in 4m46s (ID 137296629005)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run Annex E2E tests
+  - Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Classic layout E2E Tests (ubuntu-latest, 1/1) in 3m5s (ID 137296629014)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run classic layout E2E tests
+  ✓ Run classic layout E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 3/3) in 4m44s (ID 137296629021)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 3/3)
+  - Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 3/3) in 3m52s (ID 137296629044)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 3/3)
+  ✓ Run E2E tests (shard 3/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 1/3) in 5m2s (ID 137296629049)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 1/3)
+  - Run E2E tests (shard 1/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (windows-2022, 2/3) in 5m45s (ID 137296629062)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  ✓ Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  ✓ Run E2E tests (shard 2/3)
+  - Run E2E tests (shard 2/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ E2E Tests (ubuntu-latest, 2/3) in 4m41s (ID 137296629079)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run E2E tests (shard 2/3)
+  ✓ Run E2E tests (shard 2/3, Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
+✓ Annex E2E Tests (ubuntu-latest, 1/2) in 5m31s (ID 137296629156)
+  ✓ Set up job
+  ✓ Run actions/checkout@v7
+  ✓ Run actions/setup-node@v7
+  - Exclude workspace from Windows Defender
+  ✓ Run actions/cache@v6
+  ✓ Run npm ci
+  ✓ Run actions/download-artifact@v8
+  - Run Annex E2E tests
+  ✓ Run Annex E2E tests (Linux — requires virtual display)
+  ✓ Run actions/upload-artifact@v7
+  ✓ Post Run actions/cache@v6
+  ✓ Post Run actions/setup-node@v7
+  ✓ Post Run actions/checkout@v7
+  ✓ Complete job
