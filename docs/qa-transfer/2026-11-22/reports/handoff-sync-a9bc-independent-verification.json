@@ -1,0 +1,77 @@
+{
+  "design": "a9bc18116af5b0e7b6467601d323fccfad23d85c",
+  "tree": "ea27d2d13024e4098081e30d1afce9eeb3036227",
+  "base": "c2a59f9f2c872bf2cb1fe9852adf8c92f2a996fc",
+  "baseTree": "33d3dfed92deaa3e159a46f41d79ce8287149ba8",
+  "priorProof": "be01f8bd511dba2a625462021732c119ce6b170e",
+  "priorProofVerdict": "74d2ed4f64c1e9d539339e5a75b7c3c31171e8b3",
+  "designSha256": "b0592144eb93e3b629d5815394c9e64129803c87aa7e4a8122e0ad74140bad5a",
+  "sourceMapSha256": "52c0fd99b4593c091e3baf0ac3e232429e37e736cfb92b0d566544e7fca92686",
+  "sourceInputsVerified": [
+    {
+      "path": "src/main/services/handoff-coordinator.ts",
+      "blob": "2c779f962fd64f629119cf38c29debbc981383b1",
+      "sha256": "46b1422a694888ef577e3041c306356d20234524dad7f4cb0bb25402be6ad733",
+      "bytes": 19429
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "blob": "0d2f06f6a0000904686ed0b30a3954b56e41d028",
+      "sha256": "0a899c041e1c2f2c5681f5ef3f599718e957d1eccabdeb992612bad1c5124791",
+      "bytes": 40605
+    },
+    {
+      "path": "src/main/services/handoff-service.ts",
+      "blob": "132c629fd02d05454403f03130d8ae0f5c9023f6",
+      "sha256": "1dd93e98df492da38e86468922b56d6bae286d330dbef0e036c1dbebfc23b2cb",
+      "bytes": 14263
+    },
+    {
+      "path": "src/main/services/handoff-store.ts",
+      "blob": "90ba5659b480bae13e1ccda31cd29b5293a2ccfd",
+      "sha256": "b31ef7baa59bcea292186a6ffc4caac31d4c0593c47708636f679580bc3fcde2",
+      "bytes": 5222
+    },
+    {
+      "path": "src/main/services/handoff-command-store.ts",
+      "blob": "45c22a44fae9fecc52041e296b8ad3792ae3158d",
+      "sha256": "6383654cf8b9d5f7fb5149b6341d5c7a18f396d0b5ef41db03705854796d1178",
+      "bytes": 6769
+    },
+    {
+      "path": "src/main/services/handoff-capacity.ts",
+      "blob": "b5bc7b27855635238d47415ca2244d39cbec06ed",
+      "sha256": "201a0482495f4c1ca6df347f3862252af314d9a0a10fa889cb6261a3de350f76",
+      "bytes": 10807
+    },
+    {
+      "path": "src/main/services/annex-client.ts",
+      "blob": "87dc6c769e81a1b5dd6e0a9e38948e1ceaceabd7",
+      "sha256": "1e518e2c5eb4ae0ca0130fd11c7eae345c957eed0a4e4c1002d031694ad964b4",
+      "bytes": 174608
+    },
+    {
+      "path": "src/main/services/annex-control.ts",
+      "blob": "065b48063fed54a6114dbe5b1d316530b97517ce",
+      "sha256": "09d9dbf04a5e54265e3832a858c18cb18e3965238bb286722d7d02f938fecd2b",
+      "bytes": 78767
+    },
+    {
+      "path": "src/main/services/handoff-host.test.ts",
+      "blob": "19d8329d3d3a0dc740cbea09115fccb547f14203",
+      "sha256": "0e0ff86fddcf38f8628a2d86e7cacaf6b0cba95f8dc0297cc75f96f29a4992c9",
+      "bytes": 16813
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.test.ts",
+      "blob": "83e17f7d36960170efeabdd2e61f041a34f69a73",
+      "sha256": "da25f47fc37f36c9f19dce03720c82837d1c1bc622c2c150e7c98b686e40aedb",
+      "bytes": 8138
+    }
+  ],
+  "onlyNewPaths": [
+    "docs/evidence/3613-handoff-sync-design/README.md",
+    "docs/evidence/3613-handoff-sync-design/source-map.json"
+  ],
+  "productEditsOrValidationByReviewer": false
+}
