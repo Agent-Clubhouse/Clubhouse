@@ -7,6 +7,7 @@
     "typeRoots": ["../node_modules/@types", "../node_modules"]
   },
   "files": [
+    "../src/main/ipc/annex-handlers.test.ts",
     "../src/main/services/annex-routes.test.ts",
     "../src/main/services/annex-control-reconnect.test.ts",
     "../src/main/services/annex-control.test.ts",

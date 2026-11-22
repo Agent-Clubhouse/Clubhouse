@@ -1,0 +1,4 @@
+src/main/ipc/annex-handlers.ts unchanged-line bridged diagnostics 0 introduced 0
+src/main/ipc/annex-handlers.test.ts unchanged-line bridged diagnostics 3 introduced 0
+src/main/services/annex-client.test.ts unchanged-line bridged diagnostics 143 introduced 0
+PASS: every final diagnostic maps to the exact unchanged baseline source line and column.
