@@ -43,10 +43,25 @@ Details read/positive-receipt hunks remain held for their owner; Naming's pure
 alias getter is separate, and its full-list label notification is held.
 
 This candidate changes no handler permissions, phone/control/network fields,
-P5/P6 fence or grant. #3711, #3714's narrow security gate, current-app/P8 cleanup
+P5/P6 fence or grant. #3711 is documented separately below; #3714's narrow security gate, current-app/P8 cleanup
 and confinement acceptance, #3760 and the release hold remain separate. Historical
 proofs do not transfer. All TypeScript compiler checks require gate minimum 6 GiB;
 targeted tests (at most two workers) and scoped lint require minimum 4 GiB.
+
+## Legacy paired-peer removal (#3711)
+
+The legacy `REMOVE_PEER` IPC now revokes the pairing and then calls the existing
+client-side forget operation, including when the pairing was already absent.
+This retires the retained outgoing socket, requests and stream before returning;
+late socket frames and callbacks cannot revive it. The revocation result and
+peer-list notification behavior are unchanged. Revoking first preserves the
+existing removed-phone notification ordering.
+
+`REMOVE_ALL_PEERS` captures the paired fingerprints before server revocation
+clears the peer store, then forgets each outgoing owner. It does not stop the
+client, remove unrelated discovered devices, change pairing consent or grants,
+or introduce a new removal channel. The unified device-removal and membership
+paths are unchanged.
 
 ## Route and reconnect slice (P2)
 
