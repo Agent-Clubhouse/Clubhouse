@@ -83,7 +83,12 @@ shared authorization/retirement helper or release changes are included.
 The [genuine test-only baseline](evidence/3613-details-transport/baseline/README.md)
 retains9FAIL/0PASS/372SKIP on landed `edcd915763a2ec73f0e8149917b4683ced06ecd6`.
 Its downstream assertions remain unexecuted. Candidate proof, changed-fixture
-typing disposition and independent exact-delta review are still required;
+typing disposition and independent exact-delta review are separate gates.
+The [frozen unreviewed proof](evidence/3613-details-transport/proof/README.md)
+records95 targeted passes on `b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58`;
+the actual full fixture compiler remains54FAIL, exactly matching its separate
+baseline by complete diagnostic/3956-input comparison. This is not compilerPASS.
+Independent source review and that new failure disposition remain pending;
 neither full-duplex nor hosted acceptance is inferred.
 
 ### Existing GET Git diff response envelope

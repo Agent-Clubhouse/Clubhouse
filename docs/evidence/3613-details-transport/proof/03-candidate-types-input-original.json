@@ -1,0 +1,66 @@
+{
+  "head": "bdc305e898521419f4ec98b9e9d30f0fda5d0800",
+  "tree": "f0876463d75791721a01c701742d3da1bbccb138",
+  "command": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 6 -- npx tsc --noEmit --pretty false --listFiles --project node_modules/.cache/details-transport/fixture-types.json",
+  "config": {
+    "extends": "../../../tsconfig.json",
+    "files": [
+      "../../../src/main/services/annex-client.test.ts"
+    ]
+  },
+  "rootConfig": {
+    "compilerOptions": {
+      "target": "ES2020",
+      "allowJs": true,
+      "module": "commonjs",
+      "skipLibCheck": true,
+      "esModuleInterop": true,
+      "noImplicitAny": true,
+      "sourceMap": true,
+      "baseUrl": ".",
+      "typeRoots": [
+        "node_modules/@types"
+      ],
+      "outDir": "dist",
+      "moduleResolution": "node",
+      "resolveJsonModule": true,
+      "jsx": "react-jsx",
+      "paths": {
+        "*": [
+          "node_modules/*"
+        ]
+      }
+    },
+    "include": [
+      "src/**/*"
+    ],
+    "exclude": [
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+      "src/**/*.qa.ts"
+    ]
+  },
+  "files": [
+    {
+      "path": "node_modules/.cache/details-transport/fixture-types.json",
+      "sha256": "5fdead47a3b5fe72d4c9fdcffa7a5070e49ff8bc2393c52441b0c85c408cac5a"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+    },
+    {
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "e2f883f35a204a7abe5b135153ec98a3170452278049bca840beaa5b701c5b25"
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "sha256": "6f0e5fda51364540f0c4420a6dfd62cc4938facac1d58e09dfdfaa305eb3af2b"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+    }
+  ],
+  "scope": "Inherited original production roots/options/excludes plus explicit actual changed test; no library/compiler flag relaxation and no reduced fixture proxy"
+}

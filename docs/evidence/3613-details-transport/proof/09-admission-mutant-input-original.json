@@ -1,0 +1,8 @@
+{
+  "parent": "b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58",
+  "mutation": "Replace accepted current snapshot admission with request readiness; captured request helper restored exactly",
+  "sourceSHA256": "a6cb99128788c06299ffaec76e986312f234e3a8df2e200115d0b77b6a3ada07",
+  "fixtureSHA256": "136506b035ec088b98e84ba8cf98044fe7e97b4691f94c96ca73c3c1c095bfd6",
+  "selector": "does not expose a receipt on a closing socket|pause, resume, failure and successful request",
+  "command": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npx vitest run --project main src/main/services/annex-client.test.ts -t \"does not expose a receipt on a closing socket|pause, resume, failure and successful request\" --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/details-transport/09-admission-mutant-original.xml"
+}

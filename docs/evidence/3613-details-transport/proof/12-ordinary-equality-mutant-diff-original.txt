@@ -1,0 +1,13 @@
+diff --git a/src/main/services/annex-client.ts b/src/main/services/annex-client.ts
+index 87dc6c769..033cb5b5d 100644
+--- a/src/main/services/annex-client.ts
++++ b/src/main/services/annex-client.ts
+@@ -2966,7 +2966,7 @@ export async function requestAgentDetails(machine: string, agentId: string, quer
+   const receipt = sat.snapshotReceipt;
+   try {
+     const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/details${params ? `?${params}` : ''}`, undefined, { maxResponseBytes: REMOTE_DETAILS_MAX_BYTES });
+-    if (!current()) return { status: 'offline' };
++    if (!current() || sat.snapshotReceipt !== receipt) return { status: 'offline' };
+     if (res.status === 404 || res.status === 405 || page && res.status === 400) return { status: 'unavailable' };
+     if (res.status === 401 || res.status === 403) { invalidateSnapshotAdmission(sat, receipt); return { status: 'forbidden' }; }
+     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };

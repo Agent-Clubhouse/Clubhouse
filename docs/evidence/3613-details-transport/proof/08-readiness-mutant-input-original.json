@@ -1,0 +1,8 @@
+{
+  "parent": "b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58",
+  "deliberateMutation": "Replace captured outer currentness with current request readiness, retaining existing inner request lease fencing and role receipt equality",
+  "sourceSHA256": "3d15727452e2c18f756449ca6c34e48e2b3ef7de3236d23bc20362325e901431",
+  "fixtureSHA256": "136506b035ec088b98e84ba8cf98044fe7e97b4691f94c96ca73c3c1c095bfd6",
+  "selector": "captured .*Details transport|does not recapture an eligible trust revision",
+  "command": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npx vitest run --project main src/main/services/annex-client.test.ts -t \"captured .*Details transport|does not recapture an eligible trust revision\" --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/details-transport/08-readiness-mutant-original.xml"
+}

@@ -1,0 +1,43 @@
+{
+  "source": "b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58",
+  "base": "edcd915763a2ec73f0e8149917b4683ced06ecd6",
+  "status": "Code/test/root configs byte-identical to measured C2; only evidence and direct desktop documentation change while freezing. Source/54FAIL disposition remains unreviewed.",
+  "files": [
+    {
+      "path": "eslint.config.mjs",
+      "sha256": "8c564677cbd56bfa0bc45c15f489c1352e74346ff7254302cad5de41e3119f9f",
+      "unchangedFromC2": true
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "unchangedFromC2": true
+    },
+    {
+      "path": "package.json",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "unchangedFromC2": true
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "sha256": "136506b035ec088b98e84ba8cf98044fe7e97b4691f94c96ca73c3c1c095bfd6",
+      "unchangedFromC2": true
+    },
+    {
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "1e518e2c5eb4ae0ca0130fd11c7eae345c957eed0a4e4c1002d031694ad964b4",
+      "unchangedFromC2": true
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "unchangedFromC2": true
+    },
+    {
+      "path": "vitest.config.ts",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "unchangedFromC2": true
+    }
+  ],
+  "productionDelta": " docs/annex-reverse-routes.md           |  50 ++++-\n src/main/services/annex-client.test.ts | 327 ++++++++++++++++++++++++++++++++-\n src/main/services/annex-client.ts      |  67 +++++--\n 3 files changed, 415 insertions(+), 29 deletions(-)\n"
+}
