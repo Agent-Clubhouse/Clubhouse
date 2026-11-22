@@ -47,6 +47,8 @@ interface Sources {
   now?: number;
   controlOf?: (fingerprint: string) => ControlLinkReadiness;
   controllerReadOf?: (fingerprint: string) => annexClient.ControllerReadObservation;
+  /** Renderer consumer state can be live over reverse; it is not a direct /ws observation. */
+  directOf?: (fingerprint: string) => boolean;
 }
 
 /**
@@ -136,6 +138,7 @@ function readSources(): Sources {
     now: Date.now(),
     controlOf: getLinkReadiness,
     controllerReadOf: annexClient.getControllerReadObservation,
+    directOf: annexClient.isMachineConnected,
   };
 }
 
@@ -174,7 +177,7 @@ function reachFor(peer: AnnexPeer, sat: annexClient.SatelliteConnection | undefi
     if (!on) { tracker.idle(peer.fingerprint, dir); return { state: 'off' }; }
     return tracker.observe(peer.fingerprint, dir, up, failed, now);
   };
-  const directOutbound = sat?.state === 'connected' || !!control?.openedHere;
+  const directOutbound = (sources.directOf?.(peer.fingerprint) ?? sat?.state === 'connected') || !!control?.openedHere;
   const directInbound = !!control?.acceptedHere
     || [sources.connected, sources.inbound].some((set) => !!set && (set.has(peer.fingerprint) || set.has(peer.fingerprint.toLowerCase())));
   const outbound = direction('outbound', annexPeers.controlledFromHere(peer), sources.clientOn,

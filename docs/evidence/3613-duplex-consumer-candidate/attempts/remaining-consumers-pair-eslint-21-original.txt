@@ -1,0 +1,2 @@
+2026-11-21T23:22:27Z START lane-p2 idle=90% unused=6941M avail=32993M freepct=87 comp=741M swap=3801M pid=10779 cmd=npx --no-install eslint test/annex-v2/annex-reverse-consumers.test.ts --max-warnings=0
+2026-11-21T23:22:28Z END lane-p2 rc=0

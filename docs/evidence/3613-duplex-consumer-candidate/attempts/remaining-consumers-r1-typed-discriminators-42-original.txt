@@ -1,0 +1,18 @@
+2026-11-22T00:13:44Z START lane-p2 idle=84% unused=7230M avail=33859M freepct=87 comp=741M swap=3785M pid=33511 cmd=npm test -- --project main src/main/services/annex-client.test.ts --maxWorkers=2 -t never sends queued reverse icons directly|keeps the same omitted icons live
+
+> clubhouse@0.43.0-beta.7 test
+> vitest run --project main src/main/services/annex-client.test.ts --maxWorkers=2 -t never sends queued reverse icons directly|keeps the same omitted icons live
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+
+ Test Files  1 passed (1)
+      Tests  6 passed | 363 skipped (369)
+   Start at  19:13:44
+   Duration  443ms (transform 299ms, setup 5ms, import 348ms, tests 24ms, environment 0ms)
+
+2026-11-22T00:13:45Z END lane-p2 rc=0

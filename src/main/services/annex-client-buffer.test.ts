@@ -513,7 +513,9 @@ describe('annex-client remote PTY buffer cache', () => {
       await pending;
       _receiveSatelliteDisconnectForTesting(SAT);
       vi.mocked(broadcastToAllWindows).mockClear();
-
+      livePtyData('retired frame', 501);
+      expect(forwardedPtyEvents()).toEqual([]);
+      _addConnectedSatelliteForTesting(SAT);
       livePtyData('after restart', 13);
       expect(forwardedPtyEvents()).toEqual([expect.objectContaining({ data: 'after restart' })]);
     });

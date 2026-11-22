@@ -1,0 +1,12 @@
+diff --git a/src/main/services/annex-client.test.ts b/src/main/services/annex-client.test.ts
+index d9a9d210a..563c9bb57 100644
+--- a/src/main/services/annex-client.test.ts
++++ b/src/main/services/annex-client.test.ts
+@@ -517,7 +517,6 @@ describe('annex-client', () => {
+       expect(annexControl.request).toHaveBeenCalledTimes(4);
+       accepted = false;
+       devicesChanged();
+-      await new Promise((resolve) => setTimeout(resolve, 0));
+       expect(annexControl.request).toHaveBeenCalledTimes(4);
+       vi.mocked(annexControl.request).mockResolvedValue({
+         status: 200, headers: { 'content-type': 'image/png' }, body: Buffer.from([0, 255]),

@@ -1,0 +1,2 @@
+2026-11-21T23:02:04Z START lane-p2 idle=81% unused=7395M avail=33518M freepct=87 comp=741M swap=3801M pid=2749 cmd=npx --no-install tsc --noEmit -p docs/annex-reverse-routes.tsconfig.json
+2026-11-21T23:02:13Z END lane-p2 rc=0

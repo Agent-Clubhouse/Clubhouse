@@ -1,0 +1,8 @@
+2026-11-21T23:25:39Z START lane-p2 idle=82% unused=6523M avail=32881M freepct=87 comp=741M swap=3801M pid=13631 cmd=npx --no-install eslint test/annex-v2/annex-reverse-consumers.test.ts --max-warnings=0
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/test/annex-v2/annex-reverse-consumers.test.ts
+  284:34  error  Unsafe usage of ThrowStatement  no-unsafe-finally
+
+✖ 1 problem (1 error, 0 warnings)
+
+2026-11-21T23:25:40Z END lane-p2 rc=1

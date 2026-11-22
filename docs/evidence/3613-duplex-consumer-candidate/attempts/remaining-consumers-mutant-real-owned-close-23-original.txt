@@ -1,0 +1,42 @@
+2026-11-21T23:23:54Z START lane-p2 idle=91% unused=6909M avail=32975M freepct=87 comp=741M swap=3801M pid=11656 cmd=npm test -- --project integration test/annex-v2/annex-reverse-consumers.test.ts --maxWorkers=2
+
+> clubhouse@0.43.0-beta.7 test
+> vitest run --project integration test/annex-v2/annex-reverse-consumers.test.ts --maxWorkers=2
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ❯ |integration| test/annex-v2/annex-reverse-consumers.test.ts (1 test | 1 failed) 1547ms
+   × preserves binary bytes through one forward and retires the whole owned consumer stream 1546ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/annex-v2/annex-reverse-consumers.test.ts > preserves binary bytes through one forward and retires the whole owned consumer stream
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ test/annex-v2/annex-reverse-consumers.test.ts:254:28
+    252|       expect(pendingRead?.aborted).toBe(true);
+    253|       expect(inFlight.size).toBe(0);
+    254|       expect(serving.size).toBe(0);
+       |                            ^
+    255|       expect(owned.closed).toBe(true);
+    256|       expect(requester.headless.getSize(terminalId)).toBeUndefined();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  18:23:54
+   Duration  1.64s (transform 923ms, setup 0ms, import 26ms, tests 1.55s, environment 0ms)
+
+2026-11-21T23:23:56Z END lane-p2 rc=1

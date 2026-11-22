@@ -1,0 +1,33 @@
+diff --git a/src/main/services/annex-client.ts b/src/main/services/annex-client.ts
+index 77cfe1328..acc7739d5 100644
+--- a/src/main/services/annex-client.ts
++++ b/src/main/services/annex-client.ts
+@@ -574,7 +574,7 @@ function headerInt(res: Pick<http.IncomingMessage, 'headers'>, name: string): nu
+ 
+ /** An icon through the satellite's authenticated icon route, as a data URL. */
+ function fetchSatelliteIcon(sat: SatelliteConnectionInternal, stream: SatelliteStream | undefined, kind: IconKind, id: string): Promise<IconFetchResult> {
+-  if (!stream || !satelliteStreamCurrent(sat, stream)) return Promise.resolve({ status: 'failed' });
++  if (!stream) return Promise.resolve({ status: 'failed' });
+   if (stream.via === 'reverse') {
+     return requestSatelliteRaw(sat.fingerprint, {
+       method: 'GET', path: `/api/v1/icons/${kind}/${encodeURIComponent(id)}`, timeoutMs: 10_000, maxResponseBytes: REMOTE_ICON_MAX_BYTES,
+diff --git a/src/main/services/remote-icon-fetch.ts b/src/main/services/remote-icon-fetch.ts
+index 87e2736c6..22b171401 100644
+--- a/src/main/services/remote-icon-fetch.ts
++++ b/src/main/services/remote-icon-fetch.ts
+@@ -117,7 +117,6 @@ export async function fetchLeftOutIcons(
+       let next = 0;
+       const worker = async () => {
+         while (next < missing.length) {
+-          if (!getSnapshot()) return;
+           const want = missing[next++];
+           const key = keyOf(want.kind, want.id);
+           let result: IconFetchResult;
+@@ -127,7 +126,6 @@ export async function fetchLeftOutIcons(
+             // telemetry-exempt: a failed icon is counted and retried within the limits above, and shows initials meanwhile
+             result = { status: 'failed' };
+           }
+-          if (!getSnapshot()) return;
+           if (result.status === 'ok') {
+             state.have.set(key, { icon: want.icon, dataUrl: result.dataUrl });
+             state.tried.delete(key);

@@ -1,0 +1,53 @@
+import { createHash } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import { expect, it } from 'vitest';
+import { HANDOFF_CHUNK_BYTES } from '../../shared/handoff-transfer';
+
+const size = 600 * 1024;
+const median = (values: number[]): number => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+
+it.each([
+  ['match', undefined],
+  ['first-byte-mismatch', 0],
+  ['middle-byte-mismatch', size / 2],
+  ['last-byte-mismatch', size - 1],
+] as const)('measures identical-input Buffer equality cost: %s', (name, mismatch) => {
+  const expected = Buffer.alloc(size, 17);
+  const chunks: Buffer[] = [];
+  for (let offset = 0; offset < size; offset += HANDOFF_CHUNK_BYTES) {
+    chunks.push(Buffer.from(expected.subarray(offset, offset + HANDOFF_CHUNK_BYTES).toString('base64'), 'base64'));
+  }
+  const actual = Buffer.concat(chunks);
+  if (mismatch !== undefined) actual[mismatch] ^= 1;
+  const equal = mismatch === undefined;
+  expect(actual).not.toBe(expected);
+  expect(actual.length).toBe(size);
+  const deep = () => {
+    if (equal) expect(actual).toEqual(expected);
+    else expect(actual).not.toEqual(expected);
+  };
+  const native = () => expect(actual.equals(expected)).toBe(equal);
+  const measure = (assertion: () => void): number => {
+    const started = performance.now();
+    assertion();
+    return performance.now() - started;
+  };
+  const deepMs: number[] = [], nativeMs: number[] = [];
+  for (let iteration = 0; iteration < 3; iteration++) {
+    if (iteration % 2 === 0) {
+      deepMs.push(measure(deep));
+      nativeMs.push(measure(native));
+    } else {
+      nativeMs.push(measure(native));
+      deepMs.push(measure(deep));
+    }
+  }
+  process.stdout.write(`HANDOFF_ASSERTION_COST ${JSON.stringify({
+    platform: process.platform, arch: process.arch, node: process.version,
+    case: name, expectedEqual: equal, bytes: actual.length, chunks: chunks.length,
+    expectedSha256: createHash('sha256').update(expected).digest('hex'),
+    actualSha256: createHash('sha256').update(actual).digest('hex'),
+    deepMs, nativeMs, deepMedianMs: median(deepMs), nativeMedianMs: median(nativeMs),
+    medianSpeedup: median(deepMs) / median(nativeMs),
+  })}\n`);
+});
