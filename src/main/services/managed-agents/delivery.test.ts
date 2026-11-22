@@ -647,7 +647,7 @@ describe('previewManagedSetup', () => {
 
   it('renders an agent that doesn\'t exist yet as delivery will, once it has its folder (#2895)', async () => {
     const rules = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'I am @@AgentName in @@Path on @@StandbyBranch.' } }));
-    const setup = { version: 1 as const, blocks: [BUILTIN_BLOCK_IDS.identity, rules.id], skills: [], mcps: [] };
+    const setup: NonNullable<DurableAgentConfig['managed']> = { version: 1 as const, blocks: [BUILTIN_BLOCK_IDS.identity, rules.id], skills: [], mcps: [] };
     // The New agent builder's draft: no folder yet, the name typed.
     const draft: DurableAgentConfig = { id: 'new-agent', name: 'cool-gazelle', color: 'gray', createdAt: '2026-11-07T00:00:00.000Z' };
     const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent: draft, provider: provider(), setup }));
@@ -817,7 +817,7 @@ describe('quickLaunchFor (D25)', () => {
     try {
       const mcp = await user(() => service.createPart({ name: 'WorkIQ', content: { kind: 'mcp', serverKey: 'workiq', transport: 'stdio', command: 'npx' } }));
       const template = await user(() => service.saveTemplate({ name: 'Reader', description: '', settings: {}, setup: { blocks: [], skills: [], mcps: [mcp.id] } }));
-      const flags = { ...provider(), id: 'codex-cli', buildMcpArgs: () => [] } as unknown as OrchestratorProvider;
+      const flags = { ...provider(), id: 'codex-cli', buildMcpArgs: (): string[] => [] } as unknown as OrchestratorProvider;
       const withFlags = await user(() => quickLaunchFor(project, project, 'q1', { id: template.id, agentName: 'q' }, flags));
       expect(Object.keys(withFlags.servers)).toEqual(['workiq']);
       vi.mocked(appLog).mockClear();
@@ -945,7 +945,7 @@ describe('exactly its parts (#2819)', () => {
     fs.writeFileSync(path.join(project, '.claude', 'skills', 'build', 'SKILL.md'), '# ours');
     git(project, 'add', '.claude/skills/build/SKILL.md');
     const draft: DurableAgentConfig = { id: 'new-agent', name: 'keen-heron', color: 'gray', createdAt: '2026-11-07T00:00:00.000Z' };
-    const setup = { version: 1 as const, blocks: [], skills: [BUILTIN_SKILL_IDS.build, BUILTIN_SKILL_IDS.validate], mcps: [] };
+    const setup: NonNullable<DurableAgentConfig['managed']> = { version: 1 as const, blocks: [], skills: [BUILTIN_SKILL_IDS.build, BUILTIN_SKILL_IDS.validate], mcps: [] };
     const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent: draft, provider: provider(), setup, projectOwnFrom: project }));
     expect(preview.skills.find((sk) => sk.id === BUILTIN_SKILL_IDS.build)!.projectOwn).toBe("Using the project's own build skill");
     expect(preview.skills.find((sk) => sk.id === BUILTIN_SKILL_IDS.validate)!.projectOwn).toBeUndefined();

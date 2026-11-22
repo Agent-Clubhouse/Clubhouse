@@ -44,6 +44,8 @@ inputs = [
     "package.json", "package-lock.json",
     "docs/evidence/3774-phase-observation/capture.py",
     "docs/evidence/3774-phase-observation/fixture-tsconfig.json",
+    "docs/evidence/3774-phase-observation/emission-bridge.cjs",
+    "docs/evidence/3774-phase-observation/verify.py",
 ]
 inputs.extend(subprocess.check_output([
     "git", "ls-files", "src/main/services/managed-agents/builtin-text",
