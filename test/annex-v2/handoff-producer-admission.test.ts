@@ -225,6 +225,100 @@ async function heldPostPositiveSource(fx: Fixture, args: Record<string, unknown>
 }
 
 describe('isolated real MCP producer domain admission', () => {
+  async function heldFixturePreparation(fx: Fixture) {
+    const entered = deferred(), release = deferred();
+    const source = fx.source.callerHandoffSource;
+    vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
+      const selected = await source(...args);
+      entered.resolve();
+      await release.promise;
+      return selected;
+    });
+    const pending = fx.tools.callTool(caller, 'prepare_handoff', { mode: 'worktree' });
+    await entered.promise;
+    return { pending, release: release.resolve };
+  }
+
+  it('drains a real held preparation and completes teardown before reporting its original caller rejection', async () => {
+    const fx = current();
+    const failure = new Error('Original fixture caller rejection.');
+    const grant = fx.tools.listToolGrants().find((tool) => tool.kind === 'global' && tool.name === 'offer_handoff')?.grant;
+    if (!grant) throw new Error('Missing actual offer grant declaration.');
+    fx.tools.registerGlobalTool('fixture_teardown_rejection', {
+      description: 'Isolated fixture rejection control.',
+      inputSchema: { type: 'object', properties: { to: { type: 'string' } }, required: ['to'] },
+    }, async () => { throw failure; }, { grant });
+    const rejection = await fx.tools.callTool(caller, 'fixture_teardown_rejection', { to: receiver }).then(
+      () => { throw new Error('Expected an actual registered caller rejection.'); },
+      (error: unknown) => error,
+    );
+    expect(rejection).toBe(failure);
+    const held = await heldFixturePreparation(fx);
+    const stop = vi.spyOn(fx.hostApi, 'stopHandoffs');
+    const reset = vi.spyOn(fx.requests, '_resetGrantRequestsForTesting');
+    let finished = false;
+    const cleaning = cleanupFixture().then(
+      () => { finished = true; return { ok: true }; },
+      (error: unknown) => { finished = true; return { ok: false, error }; },
+    );
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect.soft(finished).toBe(false);
+      expect.soft(nativeFs.existsSync(fx.userData)).toBe(true);
+      expect.soft(stop).not.toHaveBeenCalled();
+    } finally {
+      held.release();
+      const prepared = await held.pending;
+      const outcome = await cleaning;
+      expect.soft(prepared.isError).not.toBe(true);
+      expect.soft(outcome).toEqual({ ok: false, error: failure });
+      expect.soft(stop).toHaveBeenCalledOnce();
+      expect.soft(reset).toHaveBeenCalledOnce();
+      expect.soft(nativeFs.existsSync(fx.userData)).toBe(false);
+      expect.soft(current).toThrow('Producer fixture is not initialized.');
+    }
+  });
+
+  it.each(['clock', 'logger'] as const)('completes actual fixture teardown when its Windows %s diagnostic throws', async (port) => {
+    const fx = current(), held = await heldFixturePreparation(fx);
+    const release = vi.fn(held.release);
+    releases.push(release);
+    const stop = vi.spyOn(fx.hostApi, 'stopHandoffs');
+    const reset = vi.spyOn(fx.requests, '_resetGrantRequestsForTesting');
+    const failure = new Error(`Original fixture ${port} diagnostic fault.`);
+    let faulted = false;
+    const diagnosticFailure = () => { faulted = true; throw failure; };
+    const diagnostic = port === 'clock'
+      ? vi.spyOn(Date, 'now').mockImplementationOnce(diagnosticFailure)
+      : vi.spyOn(console, 'error').mockImplementationOnce(diagnosticFailure);
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    if (!platform?.configurable) throw new Error('Cannot isolate the synchronous Windows diagnostic branch.');
+    let cleaning: Promise<void>;
+    try {
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+      cleaning = cleanupFixture();
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+      diagnostic.mockRestore();
+    }
+    const observed = cleaning.then(
+      () => ({ ok: true }),
+      (error: unknown) => ({ ok: false, error }),
+    );
+    try {
+      expect.soft(faulted).toBe(true);
+      expect.soft(await observed).toEqual({ ok: true });
+      expect.soft(release).toHaveBeenCalledOnce();
+      expect.soft(stop).toHaveBeenCalledOnce();
+      expect.soft(reset).toHaveBeenCalledOnce();
+      expect.soft(nativeFs.existsSync(fx.userData)).toBe(false);
+      expect.soft(current).toThrow('Producer fixture is not initialized.');
+    } finally {
+      held.release();
+      expect.soft((await held.pending).isError).not.toBe(true);
+    }
+  });
+
   it('keeps actual fixture preparation alive until teardown settles it', async () => {
     const fx = current(), entered = deferred(), release = deferred();
     const source = fx.source.callerHandoffSource;
