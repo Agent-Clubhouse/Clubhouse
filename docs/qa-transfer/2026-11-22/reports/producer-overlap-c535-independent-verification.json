@@ -1,0 +1,64 @@
+{
+  "ref": "e2da738ce3db11a21c250333e7a80a1ffb8347c2",
+  "tree": "9062d142aa27e65520ea797f38e8520063a6cb61",
+  "source": "c535d031ef94617c2364e745a9765c91c2a31726",
+  "sourceTree": "e602a6b981ce7fabb60edf75a9d16744ad8195f8",
+  "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+  "archivesVerified": 42,
+  "directoryFiles": 44,
+  "manifestSha256": "9f83490af1e1e367d621c65385d30a2f8f0b8631b350bfd5624b4f787fbab304",
+  "readmeSha256": "7eed9fafa75ac86cebeef83339da5f17a9c5c45324f7c4336261cdaa3d6fa5a1",
+  "originalFixtureBlob": "b455b81fd8dc3561df4ddedec77eadf1dc193cff",
+  "originalFixtureBytes": 66098,
+  "originalFixtureSha256": "77d6ebe34cee0b16d824e116d7dc8a7d96289f94c14a69ba6d1556de0e1d5738",
+  "singleControlLines": 47,
+  "singleControlBytes": 2401,
+  "completeOriginalFixtureReconstructed": true,
+  "ownedWrapperCleanupBytes": 2781,
+  "ownedWrapperCleanupUnchanged": true,
+  "matchingCleanPrePostInputHashes": 16,
+  "all16ArchivedInputBytesVerified": true,
+  "counts": {
+    "fail": 1,
+    "skip": 58
+  },
+  "failureNodes": 4,
+  "failedCase": {
+    "name": "isolated real MCP producer domain admission > keeps overlapping cleanup behind the original actual preparation drain",
+    "time": "1.360444417",
+    "failureNodes": 4,
+    "failures": [
+      {
+        "attributes": {
+          "message": "expected true to be false // Object.is equality",
+          "type": "AssertionError"
+        },
+        "text": "\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:320:36\n            "
+      },
+      {
+        "attributes": {
+          "message": "expected 1 to be +0 // Object.is equality",
+          "type": "AssertionError"
+        },
+        "text": "\nAssertionError: expected 1 to be +0 // Object.is equality\n\n- Expected\n+ Received\n\n- 0\n+ 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:321:30\n            "
+      },
+      {
+        "attributes": {
+          "message": "expected false to be true // Object.is equality",
+          "type": "AssertionError"
+        },
+        "text": "\nAssertionError: expected false to be true // Object.is equality\n\n- Expected\n+ Received\n\n- true\n+ false\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:322:53\n            "
+      },
+      {
+        "attributes": {
+          "message": "Expected both cleanup callers to retain the original actual caller rejection.: expected false to be true // Object.is equality",
+          "type": "AssertionError"
+        },
+        "text": "\nAssertionError: Expected both cleanup callers to retain the original actual caller rejection.: expected false to be true // Object.is equality\n\n- Expected\n+ Received\n\n- true\n+ false\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:328:116\n            "
+      }
+    ]
+  },
+  "contract165Sha256": "621891d41c7c66f01bbc7ee6ba1d795b69653848ba66bba17b05eb7762011914",
+  "additive167Sha256": "62c82a7330ab8a9f2eff9006fa7f05faf0f0cb3112c77c1f8020093a2840ea30",
+  "noReviewerProductExecution": true
+}

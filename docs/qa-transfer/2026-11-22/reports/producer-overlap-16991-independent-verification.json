@@ -1,0 +1,187 @@
+{
+  "evidence": "16991dca76a7a6117a3c7e26232ecae5b86d89d0",
+  "tree": "ed465801b27f213fdc5590c2c6427d191917170f",
+  "source": "76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2",
+  "sourceTree": "0526a2a05866a683981805b546365aaf3b98af69",
+  "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+  "archivesVerified": 68,
+  "directoryFiles": 70,
+  "checkoutWitnessesVerifiedInRawLog": 33,
+  "syntheticMerge": "f2a25a9272bd1bc0b832393731525e354aba7144",
+  "syntheticMergeTreeRemoteReadback": "0526a2a05866a683981805b546365aaf3b98af69",
+  "jobCounts": {
+    "success": 31,
+    "skipped": 4,
+    "failure": 2
+  },
+  "junit": [
+    {
+      "archive": "031-test-results.xml.gz",
+      "counts": {
+        "pass": 19580,
+        "skip": 54
+      },
+      "rows": 19634
+    },
+    {
+      "archive": "032-test-results.xml.gz",
+      "counts": {
+        "pass": 16916,
+        "skip": 65
+      },
+      "rows": 16981
+    },
+    {
+      "archive": "033-test-results.xml.gz",
+      "counts": {
+        "pass": 19482,
+        "skip": 93,
+        "fail": 57
+      },
+      "rows": 19632
+    },
+    {
+      "archive": "034-test-results.xml.gz",
+      "counts": {
+        "pass": 16805,
+        "skip": 176
+      },
+      "rows": 16981
+    },
+    {
+      "archive": "061-junit.xml.gz",
+      "counts": {
+        "pass": 20,
+        "fail": 1,
+        "skip": 6
+      },
+      "rows": 27
+    }
+  ],
+  "xmlRows": 73255,
+  "exactFamilyLedgerIndependentlyChecked": true,
+  "originalCount1Count9": [
+    {
+      "archive": "033-test-results.xml.gz",
+      "name": "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection (1 failures)",
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "time": "9.7856421",
+      "status": "fail",
+      "failures": [
+        {
+          "tag": "failure",
+          "attributes": {
+            "message": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".",
+            "type": "Error"
+          },
+          "text": "\nError: Test timed out in 5000ms.\nIf this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".\n \u276f test/annex-v2/handoff-producer-admission.test.ts:289:18\n            "
+        },
+        {
+          "tag": "failure",
+          "attributes": {
+            "message": "EBUSY: resource busy or locked, rmdir 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\handoff-producer-admission-vpmoqm\\repository'",
+            "type": "Error"
+          },
+          "text": "\nError: EBUSY: resource busy or locked, rmdir 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\handoff-producer-admission-vpmoqm\\repository'\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\nSerialized Error: { errno: -4082, code: 'EBUSY', syscall: 'rmdir', path: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\handoff-producer-admission-vpmoqm\\repository' }\n            "
+        }
+      ]
+    },
+    {
+      "archive": "033-test-results.xml.gz",
+      "name": "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection (9 failures)",
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "time": "0.4041851",
+      "status": "fail",
+      "failures": [
+        {
+          "tag": "failure",
+          "attributes": {
+            "message": "expected Error: Producer fixture work or teardown \u2026 { errors: [ \u2026(2) ] } to be Error: Original fixture caller rejection \u2026 // Object.is equality",
+            "type": "AssertionError"
+          },
+          "text": "\nAssertionError: expected Error: Producer fixture work or teardown \u2026 { errors: [ \u2026(2) ] } to be Error: Original fixture caller rejection \u2026 // Object.is equality\n\n- Expected\n+ Received\n\n  Error {\n+   \"message\": \"Producer fixture work or teardown failed.\",\n+   \"errors\": [\n+     Error {\n        \"message\": \"Original fixture caller rejection 0.\",\n+     },\n+     Error {\n+       \"message\": \"EBUSY: resource busy or locked, rmdir 'C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\handoff-producer-admission-lRnu4C\\\\repository'\",\n+       \"errno\": -4082,\n+       \"code\": \"EBUSY\",\n+       \"syscall\": \"rmdir\",\n+       \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\handoff-producer-admission-lRnu4C\\\\repository\",\n+     },\n+   ],\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:329:53\n            "
+        },
+        {
+          "tag": "failure",
+          "attributes": {
+            "message": "expected \"stopHandoffs\" to be called once, but got 0 times",
+            "type": "AssertionError"
+          },
+          "text": "\nAssertionError: expected \"stopHandoffs\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:340:25\n            "
+        },
+        {
+          "tag": "failure",
+          "attributes": {
+            "message": "expected \"_resetGrantRequestsForTesting\" to be called once, but got 0 times",
+            "type": "AssertionError"
+          },
+          "text": "\nAssertionError: expected \"_resetGrantRequestsForTesting\" to be called once, but got 0 times\n \u276f test/annex-v2/handoff-producer-admission.test.ts:341:26\n            "
+        },
+        {
+          "tag": "failure",
+          "attributes": {
+            "message": "ENOENT: no such file or directory, open 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\handoff-producer-admission-lRnu4C\\user-data\\annex-identity.json'",
+            "type": "Error"
+          },
+          "text": "\nError: ENOENT: no such file or directory, open 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\handoff-producer-admission-lRnu4C\\user-data\\annex-identity.json'\n \u276f saveIdentity src/main/services/annex-identity.ts:95:6\n \u276f Module.getOrCreateIdentity src/main/services/annex-identity.ts:212:3\n \u276f desktop test/annex-v2/reverse-desktop-fixture.ts:35:25\n \u276f setup test/annex-v2/handoff-producer-admission.test.ts:47:19\n \u276f test/annex-v2/handoff-producer-admission.test.ts:96:13\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\nSerialized Error: { errno: -4058, code: 'ENOENT', syscall: 'open', path: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\handoff-producer-admission-lRnu4C\\user-data\\annex-identity.json' }\n            "
+        }
+      ]
+    }
+  ],
+  "chat": [
+    {
+      "traceArchive": "056-trace.zip",
+      "bytes": 52255,
+      "sha256": "427862a2a9e50163c40e150c3e36c5408f73f2f6c9dda22187830e4ceab44a42",
+      "zipEntries": [
+        "src/41ca69a61472aa45bea6da9fdbb875fa11a39683.ts",
+        "src/9ec5d4aa3876e8a030dce48cccce24f7dfbbbdb7.ts",
+        "attachments/9499e4c6fcd735aad6f7420cd6cd8b30bdbe29a0",
+        "attachments/e3cc3b72e849c39276d30ed518fb8b38b9c8d84c",
+        "attachments/be8c56be4b124e69ea67538d5edd47e948816a83",
+        "test.trace"
+      ],
+      "context": "054-error-context.md",
+      "contextSha256": "0157744fc3434a52ee5a4eb96ba7d422fbde201a801c0945c2fcf5448da499c7",
+      "previewVisibleBeforeCanvasFailure": true,
+      "pdfErrorStateObserved": "Couldn't read this PDF.",
+      "failureStepLine": 205,
+      "callerLine": 222,
+      "assertionWaitMs": 20002.301,
+      "underlyingLoaderOrOpenExceptionCaptured": false
+    },
+    {
+      "traceArchive": "060-trace.zip",
+      "bytes": 52334,
+      "sha256": "3c8a5824aa42925263ba6e706def2dacb6833c9e90aa02fe879f777fc670b892",
+      "zipEntries": [
+        "src/41ca69a61472aa45bea6da9fdbb875fa11a39683.ts",
+        "src/9ec5d4aa3876e8a030dce48cccce24f7dfbbbdb7.ts",
+        "attachments/a51d0872010b097364a07c22206c018d66f251a9",
+        "attachments/583167d947971dd7b65c4e549bcd8b7fedb9e8f1",
+        "attachments/c2eeef365c938d29f7fe8da7c878c944b606daac",
+        "test.trace"
+      ],
+      "context": "058-error-context.md",
+      "contextSha256": "ebfae35b6d4a4c378fc43953a8f9697adf0c6a31c91436f98cf7752db756f111",
+      "previewVisibleBeforeCanvasFailure": true,
+      "pdfErrorStateObserved": "Couldn't read this PDF.",
+      "failureStepLine": 205,
+      "callerLine": 222,
+      "assertionWaitMs": 20005.645,
+      "underlyingLoaderOrOpenExceptionCaptured": false
+    }
+  ],
+  "chatSourceAnchor": {
+    "path": "src/renderer/features/agents/chat/rich/PdfPreview.tsx",
+    "blob": "79966405700cc715a27990bdbf9694084381170a",
+    "sha256": "3c2202a460e11c26fca41974f7c1adce986cc900f467cc85a2386f7f430db51a",
+    "lines": "21-31 loader/open rejection; render rejection has separate wording37-41"
+  },
+  "unchangedChatConfigPathsOnlyNotCausalityProof": true,
+  "ownerHandoffSha256": "940d1ebafeb43febe53138e6763c5b5d4b13949f1eaf8520ec7b8d02021f3946",
+  "manifestSha256": "4f9b8a9a7952f2a4e8232f9fb13dbe9ea364d1371ac26344520ec9820667c6a6",
+  "readmeSha256": "c6bede880ef8996e765e078b3708311b156d0549eaac1978f0e6833566cdae79",
+  "reviewerExecution": "read-only source/artifact analysis; no product/test/compiler/lint/CI",
+  "disposition": "bounded fixture owner/coalescing+body completion design ready with explicit error acknowledgment ordering; current hosted producer and Chat failures unwaived; no unseen implementation approval"
+}

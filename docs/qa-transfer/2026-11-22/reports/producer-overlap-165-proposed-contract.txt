@@ -1,0 +1,84 @@
+PROPOSED MINIMAL FIXTURE-ONLY HUNK CONTRACT - NOT IMPLEMENTED OR APPROVED
+
+Basis: original fixture at76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2,
+blob b455b81fd8dc3561df4ddedec77eadf1dc193cff; original hosted custody
+16991dca76a7a6117a3c7e26232ecae5b86d89d0. The authorized baseline adds ONE
+47-line control atc535d031ef94617c2364e745a9765c91c2a31726, fixture blob
+b661b98a26c2bc77e16a62e8665833e600981944. Removing its2401-byte hunk
+reconstructs the COMPLETE original66098-byte fixture byte-for-byte.
+Full production src505ff0699b01779e52338e06a239d7cc15a6d2b1 is unchanged.
+
+The one authorized baseline is not a correction or a phase-instrumentation
+framework. It uses actual callTool registration/grant/target resolution and
+an actual caller rejection, then an original real source-selection hold.
+Explicit cleanup enters its original drain before overlapping cleanup starts.
+Observations race actual overlap settlement against the existing25ms bounded
+observation window; stop observation forwards the actual stop call and survives
+mock restoration. Finally releases the real hold and awaits actual preparation
+and both cleanup outcomes, including original caller error object identity.
+The test's original5000ms deadline and every prior fixture body are unchanged.
+
+Potential correction boundary: ONLY
+test/annex-v2/handoff-producer-admission.test.ts.
+No production, registry, generic drain, runner/framework, dependency, config,
+workflow, Chat/UI or permission change. No additional instrumentation/probe is
+implemented or authorized by this contract.
+
+Proposed hunk responsibilities, pending existing independent reviewer:
+
+1. Original globals/beforeEach/callTool wrapper (approximately80-116):
+   establish one immutable fixture lifecycle identity before asynchronous setup.
+   Its directory, eventual original fixture, release/work ledgers, admission and
+   retirement belong to that identity. Actual caller forwarding and F2 bounded,
+   best-effort diagnostics remain outside functional-error containment.
+   A previous unresolved actual body/lifecycle MUST refuse later setup BEFORE
+   mkdtemp, module reset, identity initialization or adopting a new directory.
+   Refusal must be explicit, not a default success or a replacement owner.
+
+2. Original cleanup (approximately117-159):
+   one owned/coalesced cleanup execution; all callers join its complete real-work
+   drain and mandatory teardown. Preserve all-settlement, deduplication/appended
+   batch accounting and original single/multiple error identities. Capture the
+   original fixture/directory rather than reading whichever global is current.
+   Cleanup cannot stop, clear or remove a later owner. Mandatory steps must still
+   be attempted, not skipped because an earlier functional/diagnostic step fails.
+   Manual cleanup MUST NOT await its own test body: that body awaits cleanup.
+
+3. Raw fixture-body boundary and afterEach:
+   actual MCP settlement and cleanup settlement are NOT actual test-body
+   completion. Observe the RAW async callback/continuation, not Vitest's cancelled
+   or timed-out wrapper. Any encoding must stay private to this ONE fixture;
+   concrete callback-entry hunks require full design disposition, not a generic
+   test collector/framework or an inferred promise proxy.
+   Hook cleanup accounts for held test barriers, joins owned teardown, then
+   observes the original raw body completion, without creating a manual
+   cleanup/body await cycle. Original raw body rejection must remain observable.
+   If hook timing ends before actual continuation completion, later setup stays
+   fail-closed; runner cancellation alone must never authorize a new fixture.
+   Barrier accounting must retain the existing manual held-work observation:
+   manual cleanup cannot prematurely release that test's intentional hold just
+   to make the control pass. Automatic teardown must not strand the same hold
+   after a deadline. No new/widened deadlines or cancellation of actual MCP work.
+
+Required acceptance, NOT claimed by the one overlap baseline:
+matched correction green/current and rejection-forwarding controls; actual
+later-directory protection; timed-out raw-body continuation and hold-release
+accounting without self-deadlock; F2 metadata-fault containment; all existing
+assertions/deadlines and actual-work semantics; exact final type/lint attribution
+and existing independent delta review before any same-PR/hosted update.
+
+A shared cleanup promise alone does not discharge body lifetime. The overlap
+control alone does not locate the first Windows body delay, close all57 hosted
+failures or establish native Windows acceptance.
+
+Separate Chat disposition refinement received from existing reviewer:
+both original/configured-retry contexts show expected outside/report.pdf preview
+OPEN with "(Read-only) Couldn't read this PDF." (ASCII apostrophe transcription.)
+First preview visibility succeeds;
+Page1of2 visibility times out and painted assertion206 is unreached. This is a
+PDF read-or-render error-state gap. Original traces do not identify the underlying
+renderer/PDF/IPC exception. No slow-canvas, unopened-view, flake, preexisting,
+producer-cause or absence-of-indirect-causality claim; no Chat edits.
+
+Original16991/ab853 terminal failures and4aa/e08/454 source-specific approvals
+remain immutable. PR3779 stays76656. Correction/full design remains pending.

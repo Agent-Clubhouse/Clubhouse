@@ -1,0 +1,42 @@
+LATEST REVIEWER REQUIREMENT - PENDING FULL DESIGN, NOT IMPLEMENTED
+
+This is an additive refinement to165-overlap-minimal-hunk-contract.txt.
+The one authorized/executed c535/164 original baseline remains unchanged.
+No additional test, correction or instrumentation framework is authorized here.
+
+Coalescing a RAW REJECTING cleanupPromise is insufficient in two ways:
+
+1. Cleanup settlement is not actual raw-body/continuation completion.
+   Manual cleanup cannot await its own body: the body awaits cleanup.
+   Hook teardown must separately account for real holds and actual raw-body
+   completion, or refuse later setup before adopting a new directory.
+   Vitest cancellation/timeout wrapper settlement is not an ownership release.
+
+2. The existing single/9-error manual controls deliberately assert original
+   synthetic caller Error object identities. If automatic afterEach simply
+   awaits/rethrows that shared rejecting cleanupPromise, those genuine controls
+   will fail even when their expected errors were correctly preserved/asserted.
+   Conversely, swallowing every hook rejection or inferring acknowledgment from
+   body resolution would hide unexpected caller or mandatory teardown failures.
+
+Required fixture-local completion record:
+retain ALL exact actual caller errors, their provenance and ALL mandatory
+teardown outcomes, separate from how any one waiter observes the record.
+Manual and overlapping join waiters must preserve the original single Error
+identity and multiple original references/cause, not replace them with success.
+Hook behavior must distinguish explicitly registered AND asserted expected
+synthetic references from unexpected caller/teardown errors. A successful body,
+an attempted soft assertion, a generic expected-error flag, Error.message match
+or a shared promise's handled status alone is not acknowledgment.
+All unexpected errors remain surfaced after mandatory work/body accounting.
+No blanket catch, teardown-error suppression or positive/default fallback.
+
+The acknowledgment protocol's concrete private test-entry/manual-outcome/hook
+hunks require full independent design disposition. Preserve existing current,
+single/9-rejection and diagnostic fault controls/assertions/deadlines; do not
+make a generic registry/drain or Vitest/framework repair.
+
+The known local overlap baseline still proves premature completion/stop/delete
+and lost overlapping-waiter error identity ONLY. It does not prove later-owner
+or timed-out-body safety, this acknowledgment protocol, first Windows delay
+closure, all57 hosted failures, native Windows acceptance or Chat cause.
