@@ -1,0 +1,10 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom/vitest"],
+    "typeRoots": ["../../../node_modules/@types", "../../../node_modules"]
+  },
+  "files": ["../../../src/main/services/managed-agents/delivery.test.ts"]
+}
