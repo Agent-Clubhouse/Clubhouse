@@ -1,0 +1,1153 @@
+{
+  "baselineExecutionHead": "50723d350deda3ca84fe26050ec8680c5a15c769",
+  "baselineFixtureBytesFrom63f": true,
+  "finalExecutionHead": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+  "baselineCompilerExit": 2,
+  "finalCompilerExit": 2,
+  "baselineCount": 139,
+  "finalCount": 139,
+  "newHunkOrOtherFileDiagnostics": 0,
+  "fullFileBytesEqualAfterRemovingExactImportAndTestInsertions": true,
+  "insertedRanges": [
+    {
+      "start": 2,
+      "end": 2
+    },
+    {
+      "start": 9997,
+      "end": 10025
+    }
+  ],
+  "allFullMessagesCodesColumnsMultiplicityMappedEqual": true,
+  "normalizedSha256": "c21118378143baf04073845e8bec22c9e752e8a0e0e92853e5143e16403a4f84",
+  "selectedInputs": 33,
+  "differingInputs": [
+    "src/main/services/annex-control.test.ts",
+    "src/main/services/annex-server.test.ts"
+  ],
+  "sameGateRuntimeInstalledIdentities": true,
+  "rootCompilerBridge": {
+    "executedHead": "fd58d8774dedef913b587d6b7127cc0f60cb4737",
+    "finalHead": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+    "onlyChangedFiles": [
+      "src/main/services/annex-control.test.ts",
+      "src/main/services/annex-server.test.ts"
+    ],
+    "bothExcludedByUnchangedRootConfig": true,
+    "finalRootRerun": false
+  },
+  "diagnostics": [
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 69,
+      "baselineLine": 68,
+      "column": 50,
+      "code": "TS7011",
+      "fullMessage": "Function expression, which lacks return-type annotation, implicitly has an 'any[]' return type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 533,
+      "baselineLine": 532,
+      "column": 58,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ enabled: false; deviceName: string; alias: string; icon: string; color: string; autoReconnect: false; }' is not assignable to parameter of type 'AnnexSettings'.\n  Type '{ enabled: false; deviceName: string; alias: string; icon: string; color: string; autoReconnect: false; }' is missing the following properties from type 'AnnexSettings': enableServer, enableClient"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 550,
+      "baselineLine": 549,
+      "column": 50,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 551,
+      "baselineLine": 550,
+      "column": 62,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 615,
+      "baselineLine": 614,
+      "column": 69,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ agentId: string; sessionId: string; seq: number; ts: number; type: \"agent_message\"; data: { messageId: string; text: string; }; }[]' is not assignable to parameter of type 'ChatEvent[]'.\n  Type '{ agentId: string; sessionId: string; seq: number; ts: number; type: \"agent_message\"; data: { messageId: string; text: string; }; }' is not assignable to type 'ChatEvent'.\n    Property 'v' is missing in type '{ agentId: string; sessionId: string; seq: number; ts: number; type: \"agent_message\"; data: { messageId: string; text: string; }; }' but required in type 'ChatEnvelopeBase<\"agent_message\">'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 667,
+      "baselineLine": 666,
+      "column": 166,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'rows' implicitly has an 'any[]' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 667,
+      "baselineLine": 666,
+      "column": 176,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'notes' implicitly has an 'any[]' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 773,
+      "baselineLine": 772,
+      "column": 141,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'next' implicitly has an 'any' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1144,
+      "baselineLine": 1143,
+      "column": 81,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'error' implicitly has an 'any' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1144,
+      "baselineLine": 1143,
+      "column": 120,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'value' implicitly has an 'any' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1787,
+      "baselineLine": 1786,
+      "column": 24,
+      "code": "TS2352",
+      "fullMessage": "Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ agents: Record<string, any[]>; quickAgents: Record<string, any[]>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.\n  Property 'quickAgents' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ agents: Record<string, any[]>; quickAgents: Record<string, any[]>; }'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1889,
+      "baselineLine": 1888,
+      "column": 24,
+      "code": "TS2352",
+      "fullMessage": "Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ projectState: Record<string, unknown>; idleDays: number; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.\n  Type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' is missing the following properties from type '{ projectState: Record<string, unknown>; idleDays: number; }': projectState, idleDays"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1910,
+      "baselineLine": 1909,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1912,
+      "baselineLine": 1911,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1918,
+      "baselineLine": 1917,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1921,
+      "baselineLine": 1920,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1924,
+      "baselineLine": 1923,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1930,
+      "baselineLine": 1929,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1933,
+      "baselineLine": 1932,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1978,
+      "baselineLine": 1977,
+      "column": 24,
+      "code": "TS2352",
+      "fullMessage": "Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ finishedQuickAgents: Record<string, unknown[]>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.\n  Property 'finishedQuickAgents' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ finishedQuickAgents: Record<string, unknown[]>; }'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 1998,
+      "baselineLine": 1997,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2002,
+      "baselineLine": 2001,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2008,
+      "baselineLine": 2007,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2010,
+      "baselineLine": 2009,
+      "column": 24,
+      "code": "TS2352",
+      "fullMessage": "Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ finishedQuickAgents: Record<string, unknown[]>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.\n  Property 'finishedQuickAgents' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ finishedQuickAgents: Record<string, unknown[]>; }'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2016,
+      "baselineLine": 2015,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2019,
+      "baselineLine": 2018,
+      "column": 20,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2034,
+      "baselineLine": 2033,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2050,
+      "baselineLine": 2049,
+      "column": 26,
+      "code": "TS2352",
+      "fullMessage": "Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ theme: Record<string, unknown>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.\n  Property 'theme' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ theme: Record<string, unknown>; }'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2068,
+      "baselineLine": 2067,
+      "column": 26,
+      "code": "TS2352",
+      "fullMessage": "Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ theme: Record<string, unknown>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.\n  Property 'theme' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ theme: Record<string, unknown>; }'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2113,
+      "baselineLine": 2112,
+      "column": 24,
+      "code": "TS2352",
+      "fullMessage": "Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ theme: Record<string, unknown>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.\n  Property 'theme' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ theme: Record<string, unknown>; }'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2896,
+      "baselineLine": 2895,
+      "column": 88,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'lastSeen' implicitly has an 'any' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2944,
+      "baselineLine": 2943,
+      "column": 22,
+      "code": "TS2352",
+      "fullMessage": "Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ helperRequests: unknown; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.\n  Property 'helperRequests' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ helperRequests: unknown; }'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2948,
+      "baselineLine": 2947,
+      "column": 13,
+      "code": "TS2352",
+      "fullMessage": "Conversion of type 'Readonly<Record<string, readonly DurableAgentConfig[]>>' to type 'Record<string, { id: string; }[]>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.\n  'string' index signatures are incompatible.\n    The type 'readonly DurableAgentConfig[]' is 'readonly' and cannot be assigned to the mutable type '{ id: string; }[]'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2996,
+      "baselineLine": 2995,
+      "column": 18,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 2998,
+      "baselineLine": 2997,
+      "column": 18,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 3000,
+      "baselineLine": 2999,
+      "column": 18,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 3003,
+      "baselineLine": 3002,
+      "column": 11,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 3037,
+      "baselineLine": 3036,
+      "column": 89,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'options' implicitly has an 'any[]' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 3203,
+      "baselineLine": 3202,
+      "column": 18,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'events' implicitly has an 'any[]' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 3234,
+      "baselineLine": 3233,
+      "column": 99,
+      "code": "TS2367",
+      "fullMessage": "This comparison appears to be unintentional because the types 'AgentRuntime' and '{ kind: \"chat\"; agentId: string; isRunning: () => boolean; getState: () => \"idle\"; getSessionId: () => string; getNativeSessionId: () => string; getDisplayRunId: () => string; sendMessage: Mock<Procedure>; readTranscript: Mock<...>; }' have no overlap."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 3289,
+      "baselineLine": 3288,
+      "column": 108,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'options' implicitly has an 'any[]' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 3488,
+      "baselineLine": 3487,
+      "column": 90,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'events' implicitly has an 'any[]' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4758,
+      "baselineLine": 4757,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4848,
+      "baselineLine": 4847,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4884,
+      "baselineLine": 4883,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4887,
+      "baselineLine": 4886,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4929,
+      "baselineLine": 4928,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4932,
+      "baselineLine": 4931,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4956,
+      "baselineLine": 4955,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4959,
+      "baselineLine": 4958,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4975,
+      "baselineLine": 4974,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4978,
+      "baselineLine": 4977,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 4990,
+      "baselineLine": 4989,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5007,
+      "baselineLine": 5006,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5035,
+      "baselineLine": 5034,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5064,
+      "baselineLine": 5063,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5092,
+      "baselineLine": 5091,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5095,
+      "baselineLine": 5094,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5133,
+      "baselineLine": 5132,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5196,
+      "baselineLine": 5195,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5215,
+      "baselineLine": 5214,
+      "column": 34,
+      "code": "TS2554",
+      "fullMessage": "Expected 3 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5317,
+      "baselineLine": 5316,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5320,
+      "baselineLine": 5319,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5350,
+      "baselineLine": 5349,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5353,
+      "baselineLine": 5352,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5382,
+      "baselineLine": 5381,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5385,
+      "baselineLine": 5384,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5412,
+      "baselineLine": 5411,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5415,
+      "baselineLine": 5414,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5443,
+      "baselineLine": 5442,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5446,
+      "baselineLine": 5445,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5797,
+      "baselineLine": 5796,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5800,
+      "baselineLine": 5799,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5814,
+      "baselineLine": 5813,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5817,
+      "baselineLine": 5816,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5831,
+      "baselineLine": 5830,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5834,
+      "baselineLine": 5833,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5853,
+      "baselineLine": 5852,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5856,
+      "baselineLine": 5855,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; color: string; branch: string; model: null; orchestrator: null; freeAgentMode: boolean; icon: null; }[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type '{ id: string; name: string; color: string; branch: string; model: null; orchestrator: null; freeAgentMode: boolean; icon: null; }[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5952,
+      "baselineLine": 5951,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5985,
+      "baselineLine": 5984,
+      "column": 22,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'provider' implicitly has an 'any' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5985,
+      "baselineLine": 5984,
+      "column": 38,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'model' implicitly has an 'any' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5985,
+      "baselineLine": 5984,
+      "column": 51,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'effort' implicitly has an 'any' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 5991,
+      "baselineLine": 5990,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 6096,
+      "baselineLine": 6095,
+      "column": 54,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 6097,
+      "baselineLine": 6096,
+      "column": 66,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 6123,
+      "baselineLine": 6122,
+      "column": 66,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 6258,
+      "baselineLine": 6257,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 6307,
+      "baselineLine": 6306,
+      "column": 54,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 6321,
+      "baselineLine": 6320,
+      "column": 54,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 6363,
+      "baselineLine": 6362,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 6671,
+      "baselineLine": 6670,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 6674,
+      "baselineLine": 6673,
+      "column": 32,
+      "code": "TS2554",
+      "fullMessage": "Expected 1 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 7285,
+      "baselineLine": 7284,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 7313,
+      "baselineLine": 7312,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 7334,
+      "baselineLine": 7333,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 7351,
+      "baselineLine": 7350,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 7722,
+      "baselineLine": 7721,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 7986,
+      "baselineLine": 7985,
+      "column": 34,
+      "code": "TS2554",
+      "fullMessage": "Expected 1 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8061,
+      "baselineLine": 8060,
+      "column": 26,
+      "code": "TS2352",
+      "fullMessage": "Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ pendingPermissions: Record<string, any>[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.\n  Property 'pendingPermissions' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ pendingPermissions: Record<string, any>[]; }'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8075,
+      "baselineLine": 8074,
+      "column": 34,
+      "code": "TS2554",
+      "fullMessage": "Expected 1 arguments, but got 2."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8341,
+      "baselineLine": 8340,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8363,
+      "baselineLine": 8362,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8377,
+      "baselineLine": 8376,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8386,
+      "baselineLine": 8385,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8395,
+      "baselineLine": 8394,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8408,
+      "baselineLine": 8407,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8421,
+      "baselineLine": 8420,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8443,
+      "baselineLine": 8442,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8455,
+      "baselineLine": 8454,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8464,
+      "baselineLine": 8463,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8485,
+      "baselineLine": 8484,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 8515,
+      "baselineLine": 8514,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9243,
+      "baselineLine": 9242,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9262,
+      "baselineLine": 9261,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9265,
+      "baselineLine": 9264,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9304,
+      "baselineLine": 9303,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9357,
+      "baselineLine": 9356,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9360,
+      "baselineLine": 9359,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9400,
+      "baselineLine": 9399,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9403,
+      "baselineLine": 9402,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9801,
+      "baselineLine": 9800,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9811,
+      "baselineLine": 9810,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9815,
+      "baselineLine": 9814,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9823,
+      "baselineLine": 9822,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9870,
+      "baselineLine": 9869,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9874,
+      "baselineLine": 9873,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9887,
+      "baselineLine": 9886,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9904,
+      "baselineLine": 9903,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9905,
+      "baselineLine": 9904,
+      "column": 64,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 9945,
+      "baselineLine": 9944,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 10031,
+      "baselineLine": 10001,
+      "column": 216,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'events' implicitly has an 'any[]' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 10051,
+      "baselineLine": 10021,
+      "column": 224,
+      "code": "TS7018",
+      "fullMessage": "Object literal's property 'events' implicitly has an 'any[]' type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 10069,
+      "baselineLine": 10039,
+      "column": 71,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 10338,
+      "baselineLine": 10308,
+      "column": 21,
+      "code": "TS7011",
+      "fullMessage": "Function expression, which lacks return-type annotation, implicitly has an 'any' return type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 10437,
+      "baselineLine": 10407,
+      "column": 46,
+      "code": "TS2339",
+      "fullMessage": "Property 'mock' does not exist on type '(id: string, projectPath: string, opts?: { beforeSpawn?: () => void; }) => Promise<void>'."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 10731,
+      "baselineLine": 10701,
+      "column": 29,
+      "code": "TS7011",
+      "fullMessage": "Function expression, which lacks return-type annotation, implicitly has an 'any' return type."
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 10755,
+      "baselineLine": 10725,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    },
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "finalLine": 10779,
+      "baselineLine": 10749,
+      "column": 52,
+      "code": "TS2345",
+      "fullMessage": "Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.\n  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]"
+    }
+  ]
+}
