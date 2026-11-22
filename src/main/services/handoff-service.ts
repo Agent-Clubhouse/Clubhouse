@@ -26,6 +26,9 @@ export interface HandoffServiceOptions {
   incomingAvailable?(record: Handoff): boolean;
 }
 
+/** A new offer additionally checks policy captured before its awaited admission. */
+export type HandoffReceiveGuard = (newOffer?: Handoff) => void;
+
 export const HANDOFF_OFFER_TTL_MS = 24 * 60 * 60 * 1000;
 export const HANDOFF_ACTIVE_LIMIT = 512;
 export const HANDOFF_PEER_LIMIT = 64;
@@ -114,16 +117,18 @@ export class HandoffService {
     }
   }
 
-  async receiveOffer(raw: unknown, authenticatedMachine: string): Promise<Handoff> {
+  async receiveOffer(raw: unknown, authenticatedMachine: string, beforeAdopt?: HandoffReceiveGuard): Promise<Handoff> {
     const record = parseHandoff(raw);
     this.requireReceiver(record);
     if (record.version !== 1 || record.from.machine !== authenticatedMachine) throw new Error('Invalid handoff offer source.');
     return this.options.store.transact(record.id, async (current) => {
+      beforeAdopt?.(current ? undefined : record);
       if (current) {
         assertHandoffExtension(record, current);
         return current;
       }
-      await this.admitIncomingOffer(record, authenticatedMachine);
+      try { await this.admitIncomingOffer(record, authenticatedMachine); }
+      finally { beforeAdopt?.(record); }
       return record;
     });
   }
@@ -149,24 +154,29 @@ export class HandoffService {
   }
 
   /** Atomically records cancellation even when the original offer was never received. */
-  async receiveCancelledOffer(raw: unknown, sender: HandoffAgent, machine: string, operationId: string, reason?: string): Promise<Handoff> {
+  async receiveCancelledOffer(raw: unknown, sender: HandoffAgent, machine: string, operationId: string, reason?: string, beforeAdopt?: HandoffReceiveGuard): Promise<Handoff> {
     const offer = parseHandoff(raw);
     this.requireReceiver(offer);
     if (offer.version !== 1 || machine !== sender.machine || !sameHandoffAgent(offer.from, sender)) throw new Error('Invalid cancelled offer.');
     return this.options.store.transact(offer.id, async (current) => {
+      beforeAdopt?.(current ? undefined : offer);
       if (current) assertHandoffExtension(offer, current);
       const record = current ?? offer;
       if (isTerminalHandoff(record.state) || record.state === 'applying') return record;
-      if (!current) await this.admitIncomingOffer(offer, machine);
+      if (!current) {
+        try { await this.admitIncomingOffer(offer, machine); }
+        finally { beforeAdopt?.(offer); }
+      }
       return transitionHandoff(record, { state: 'cancelled', operationId, at: Math.max(this.now(), record.updatedAt),
         by: { kind: 'agent', address: sender }, ...(reason !== undefined && { reason }) }, record.version);
     });
   }
 
   /** Called locally or from an authenticated, durably queued sender command. */
-  async cancelAtReceiver(id: string, sender: HandoffAgent, authenticatedMachine: string, expectedVersion: number, reason?: string, operationId = this.newId()): Promise<Handoff> {
+  async cancelAtReceiver(id: string, sender: HandoffAgent, authenticatedMachine: string, expectedVersion: number, reason?: string, operationId = this.newId(), beforeAdopt?: () => void): Promise<Handoff> {
     if (!isHandoffAgent(sender) || sender.machine !== authenticatedMachine) throw new Error('Invalid handoff cancellation source.');
     return this.options.store.transact(id, (record) => {
+      beforeAdopt?.();
       if (!record || !sameHandoffAgent(record.from, sender)) throw new Error('Only the sender can cancel.');
       this.requireReceiver(record);
       return transitionHandoff(record, {

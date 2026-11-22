@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 1,
+  "source": "222737575bba9a36af9ac9c626b92d8cdf23a86f",
+  "sourceTree": "33ef87eedfffc37b0c1005384e2f7d95d91a2219",
+  "reviewed": "940365ecde7ca2e9fb31abf48362a938445e1fe5",
+  "inherited": "0da6a65fa4973658efe9964a4971ad9bc85d1912",
+  "red": "7be137c573314d76e7f206dd319a8ac7c08f25c7",
+  "sourceInputs": [
+    {
+      "path": "src/main/services/annex-server.ts",
+      "bytes": 362090,
+      "sha256": "4262460c65d3e485103bc6a3d2cbabda9d310fc128b48e8a1e8735f1a3d111b0",
+      "blob": "108a4c45160c0d77ef0efcb9da3934ba1b1a50a8"
+    },
+    {
+      "path": "test/annex-v2/annex-native-handoff-admission.test.ts",
+      "bytes": 28241,
+      "sha256": "147b48fcfd55b822198581f05d3881bae65981739718dc4463cd0a4e4867102a",
+      "blob": "daf9a1cbd20fc02fd9ab4cbc128e9646293973e7"
+    },
+    {
+      "path": "docs/annex-native-handoff-admission.md",
+      "bytes": 6844,
+      "sha256": "4492fd014e4dfbb279e275963b216703165091d1f7b2f8dd8b922b061245469e",
+      "blob": "60b2f021e629f9fa796306a78f32981178afad04"
+    }
+  ],
+  "trigger": "Parent-conveyed independent pairingId/canonical-PEM source finding; full immutable original source verdict pending.",
+  "redResult": {
+    "pass": 4,
+    "fail": 2,
+    "skipped": 13
+  },
+  "greenResult": {
+    "pass": 8,
+    "fail": 0,
+    "skipped": 11
+  },
+  "tests": [
+    "pairingId-only",
+    "stored certificate PEM-only",
+    "unchanged/current",
+    "route-only",
+    "alias-only",
+    "lastSeen-only",
+    "prior pairedAt-only",
+    "prior pin-mismatch"
+  ],
+  "types": {
+    "diagnostics": 0,
+    "actualInputs": 3957,
+    "roots": 2466,
+    "changedFixtures": [
+      "test/annex-v2/annex-native-handoff-admission.test.ts"
+    ],
+    "inputIdentitiesAreAfterExecutionObservations": true
+  },
+  "lint": {
+    "files": 2,
+    "errors": 0,
+    "warnings": 71,
+    "exact940WarningObjectsWithMappedSuggestionOffsetsEqual": true,
+    "byteDelta": -69
+  },
+  "preservedTrees": [
+    {
+      "path": "test/fixtures",
+      "tree": "547b613aefe0e14abfb27b049d2407d13675c3a2"
+    },
+    {
+      "path": "docs/evidence/3613-native-handoff-ingress/baseline",
+      "tree": "e7012a1d3c3ec7865959cac69bf1a1bed0aa713a"
+    },
+    {
+      "path": "docs/evidence/3613-native-handoff-ingress/candidate",
+      "tree": "2c4f74c5c2ce755d120ef4a806acbbb7f8b51f7a"
+    },
+    {
+      "path": "docs/evidence/3613-reverse-handoff",
+      "tree": "dfdca9d6da91dfac5cd7c874ac739e02fabd1e85"
+    },
+    {
+      "path": "docs/evidence/3613-handoff-reverse-sync",
+      "tree": "978b83b9dc77794736180683fdf8cd617d0e719d"
+    }
+  ],
+  "protectedFiles": [
+    {
+      "path": "src/main/services/annex-peers.ts",
+      "blob": "b85f7eece758f9d1bf400d6ab85bf1b51bbd764d"
+    },
+    {
+      "path": "src/main/services/annex-client.ts",
+      "blob": "87dc6c769e81a1b5dd6e0a9e38948e1ceaceabd7"
+    },
+    {
+      "path": "src/main/services/annex-authorizer.ts",
+      "blob": "b88180d9ac2c9f855691e731bc71eec0903cd824"
+    },
+    {
+      "path": "src/main/services/annex-control.ts",
+      "blob": "065b48063fed54a6114dbe5b1d316530b97517ce"
+    },
+    {
+      "path": "src/shared/annex-control-protocol.ts",
+      "blob": "6ee5ef77a8d978da390838dde7e450ac05374d78"
+    },
+    {
+      "path": "src/main/services/handoff-service.ts",
+      "blob": "72e02b6700ad5cce8d3667822c2abec386924617"
+    },
+    {
+      "path": "src/main/services/handoff-coordinator.ts",
+      "blob": "185ab771d3a14becc89b54e55bf832b854c12ba9"
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "blob": "0c4cc42034ade17e8dcc05dd53d0cec4f0df3969"
+    },
+    {
+      "path": "docs/annex-route-contract-3611.md",
+      "blob": "6e730374c6bc8c7e7c1a9c2afc453f0bc0cecfed"
+    },
+    {
+      "path": "package.json",
+      "blob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8"
+    },
+    {
+      "path": "package-lock.json",
+      "blob": "7e45389f84ca58c5c7832cab169aa5674320d25d"
+    },
+    {
+      "path": "tsconfig.json",
+      "blob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "blob": "976d18982b0d82dad5e924939921613aca8b29d3"
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "artifacts/22-canonical-trust-green-original.log.gz",
+      "raw": {
+        "bytes": 6032,
+        "sha256": "53a44e3aa3bd77c8450ac6b8d17ff4f43fe874e5febce67fb110c27123a2f057",
+        "blob": "7d1ce2336bb25bd797c04b01d462eed467a25ec2"
+      },
+      "stored": {
+        "bytes": 2763,
+        "sha256": "76b97b8e4668609692c5a37c66060e6ce0beaa3ef72d1bf1e9d0ce3c74b49e38",
+        "blob": "22066a99af6d9a861e58392f2bdbf3b1274d7c90"
+      }
+    },
+    {
+      "name": "artifacts/22-canonical-trust-green-original.xml.gz",
+      "raw": {
+        "bytes": 5773,
+        "sha256": "172df4882b1fb4fdc45e57a3a8f38ebd27ab1b86da2ea63c7e6e054c41b8b1f8",
+        "blob": "b359609494af17ea243d312c7d94c0c51579d7ae"
+      },
+      "stored": {
+        "bytes": 1030,
+        "sha256": "7cfd194ab993addbdb7e812aae3fe62092b30a4c4345247217e702124c15df11",
+        "blob": "c08cc53ad96b0b8afde15c771e1ef6ba9da8f094"
+      }
+    },
+    {
+      "name": "artifacts/23-canonical-trust-types-original.log.gz",
+      "raw": {
+        "bytes": 734675,
+        "sha256": "00464d554515c83622632a82f4077c5467b337721eaece9952e41ff37d2d57a4",
+        "blob": "e6e2354da6374fc0b6c6a77a9471b50b733b8951"
+      },
+      "stored": {
+        "bytes": 32668,
+        "sha256": "002adf2f696de855cf989615fd82b4296d82b6c4a65812e319e9097b8abd03d7",
+        "blob": "c047c745e703a9de52344ef982b1c146da420966"
+      }
+    },
+    {
+      "name": "artifacts/24-canonical-trust-eslint-original.log.gz",
+      "raw": {
+        "bytes": 376,
+        "sha256": "513b339fb810c12854fb80c803c0b8052edd6ce6538eee95f3bb796955f0e477",
+        "blob": "70b3f0e42e14e8fbc469e93581245ab0d95e27aa"
+      },
+      "stored": {
+        "bytes": 274,
+        "sha256": "7d45f3ea4b098b27cab9eeb5ad51695cf0465905f98b0ed8fd64a26150c4bb73",
+        "blob": "1529f7736c8f921851083bf4b1dd9e0eb894af83"
+      }
+    },
+    {
+      "name": "artifacts/24-canonical-trust-eslint-original.json.gz",
+      "raw": {
+        "bytes": 396849,
+        "sha256": "75e0c67d9b70ed8a56f409cf3666b96bcf1f0197642f3b7f628cf9c2665791e9",
+        "blob": "50281d48b687846aab60f7c8e1a293aa2632c718"
+      },
+      "stored": {
+        "bytes": 95879,
+        "sha256": "6098c8400ee849a035e54b3f06efe633177313995c6906e22627c75b338924ba",
+        "blob": "3eff434355f5c9e0a2fa4a589c8e6a6b59f466eb"
+      }
+    },
+    {
+      "name": "artifacts/25-warning-comparison-original.log.gz",
+      "raw": {
+        "bytes": 65536,
+        "sha256": "ea7404393a70363d8772c597ce62f7c8afc61016deb148a0835fb317b2ef102c",
+        "blob": "2fa4e0a57df4c9f904cd36be45504bf75223a539"
+      },
+      "stored": {
+        "bytes": 2297,
+        "sha256": "8df82dcec17eb598583f36905f0a81316be008183e527e29c74397f83297cd9f",
+        "blob": "0ae7af0c660ea4e1dc58e9df6761996f7db342e5"
+      }
+    },
+    {
+      "name": "artifacts/trust-correction-types-original.json.gz",
+      "raw": {
+        "bytes": 128,
+        "sha256": "4ce75a6996068b0f33fa1727e76aa9c864bcfd311ea1f10c4052ef27b0eea436",
+        "blob": "85b8dce4348025818d63813db8939b3be425fcdc"
+      },
+      "stored": {
+        "bytes": 120,
+        "sha256": "1a2e096954e1f12f739ff8902aac79c64c37b82270204a81ae5f83eabbc4b0ff",
+        "blob": "111bbd25489f6eda4cb9bda3a07e2e46fb6b1f45"
+      }
+    },
+    {
+      "name": "artifacts/trust-correction-inputs-original.json.gz",
+      "raw": {
+        "bytes": 1149504,
+        "sha256": "533e53a083dc1972cdf564ab6ee0766382311fe93c5c8dfcabcd8cea561d48fd",
+        "blob": "3bac02baefefd5914d91741b7942fe69c2c249cf"
+      },
+      "stored": {
+        "bytes": 330225,
+        "sha256": "aef2ea3038864b68f55373693773a1f8c54d000dfa85814b685b11d5f470673d",
+        "blob": "b0ee4a75c973fe23d2c8e3ab721a70adca346e14"
+      }
+    },
+    {
+      "name": "artifacts/trust-correction-source-original.patch.gz",
+      "raw": {
+        "bytes": 763,
+        "sha256": "cb95c0245a634b9ca88d7e417c7f2bd061d926c7c582c15a9f1a40460fb006bc",
+        "blob": "8e82948dd0a2965f73498157157a20c49ba9cbda"
+      },
+      "stored": {
+        "bytes": 408,
+        "sha256": "7cd3fedf8478585b7c5fe7f4515e29f560f1a969eba2ce25a6098089c14d8e3f",
+        "blob": "5680b7e3076d945ce35e2907a904f7e50dfbe2fe"
+      }
+    },
+    {
+      "name": "artifacts/trust-correction-collector-original.cjs.gz",
+      "raw": {
+        "bytes": 8711,
+        "sha256": "25e0d8bf370386ace3b36d97abf37aaf3b9c0a1d1eb8caebbf6544e1805f7014",
+        "blob": "a94c8488aee2fcead32b014121141195e656dbe6"
+      },
+      "stored": {
+        "bytes": 3230,
+        "sha256": "ad33ae1003fb0068e310f522bab6e30d5c65b183d05529b28821df6d1693aea8",
+        "blob": "0375ec1d925ee0bde271b9a342f99c5ca8117e4d"
+      }
+    }
+  ],
+  "limits": [
+    "Actual native router/control/TLS pins/real authorizer and real held history queue; synthetic metadata and Dispatcher/absent-runtime fixture inputs unchanged.",
+    "Before release, original principal remains authorized and original manual receiver-opened link stays accepted; no kept-plan or debounce timing assumption.",
+    "PEM-only mutation substitutes a valid fixture PEM while saved pin/public key remain fixed: a synthetic saved-record mismatch, not a valid re-pairing or executed incident.",
+    "Four matched unchanged/current and benign route/alias/lastSeen controls; unrelated admitted transaction survives, incoming ownership releases.",
+    "Reuse existing trustOf plus kind field identity; no change to shared sameTrust, grants, control, route or cache policy.",
+    "Original940/0da and all earlier source/proof/failures remain immutable; no unaffected35/lower/sync rerun or aggregate41 exact-head claim.",
+    "Only source-derived correction checks, source-bound types6 and scoped lint4; no PR/CI/install/E2E/release/full-handoff acceptance.",
+    "Metadata comparison25 failure incorrectly demanded unchanged suggestion byte offsets; original tool output preserved, corrected mapping verified without rerunning checks.",
+    "Exact successor source/proof review remains pending; coordinate further substantive findings before PR."
+  ]
+}

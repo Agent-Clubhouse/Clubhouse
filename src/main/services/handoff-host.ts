@@ -29,7 +29,7 @@ import { agentRegistry } from './agent-registry';
 import { getAgentRuntime } from './agent-runtime';
 import { agentConfigGeneration, peekDurableConfigs } from './agent-config';
 import { peekProjects } from './project-store';
-import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher-service';
+import { getDispatcherState, isDispatcherAgentId, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { effectiveAgentGrants } from './agent-grants-service';
 import { getConnectionDirection, localConnectionWakeOn, onConnectionGrantsChanged } from './connection-grants-store';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -191,7 +191,7 @@ class HandoffSyncOwner implements HandoffSyncAdmission {
   }
 }
 
-interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator: HandoffCoordinator; machine: string; transfer: HandoffTransferSource; worker: HandoffWorker; ready: Promise<void>; reverseSyncs: Set<HandoffSyncOwner>; stopping: boolean }
+interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator: HandoffCoordinator; machine: string; transfer: HandoffTransferSource; worker: HandoffWorker; ready: Promise<void>; reverseSyncs: Set<HandoffSyncOwner>; incoming: Set<HandoffSyncOwner>; stopping: boolean }
 let host: Host | undefined;
 let sweep: ReturnType<typeof setInterval> | undefined;
 let offConnected: (() => void) | undefined;
@@ -357,8 +357,8 @@ export function handoffHost(): Host {
   const machine = ownMachine();
   if (host?.stopping) throw new HandoffAuthorizationChanged();
   if (host?.machine === machine) return host;
-  if (host?.reverseSyncs.size) {
-    for (const owner of host.reverseSyncs) owner.retire();
+  if (host && (host.reverseSyncs.size || host.incoming.size)) {
+    for (const owner of [...host.reverseSyncs, ...host.incoming]) owner.retire();
     throw new HandoffAuthorizationChanged();
   }
   void host?.worker.stop();
@@ -491,7 +491,7 @@ export function handoffHost(): Host {
       if (delivery !== 'delivered') throw new Error('Receiving agent did not receive its handoff.');
     },
   });
-  host = { machine, store, commands, coordinator, transfer, worker, ready, reverseSyncs: new Set(), stopping: false };
+  host = { machine, store, commands, coordinator, transfer, worker, ready, reverseSyncs: new Set(), incoming: new Set(), stopping: false };
   void ready.catch(() => { /* telemetry-exempt: tools and continuation fail closed if recovery/storage is unavailable */ });
   return host;
 }
@@ -537,8 +537,9 @@ export async function stopHandoffs(): Promise<void> {
   const active = host;
   if (active) {
     active.stopping = true;
-    for (const owner of active.reverseSyncs) owner.retire();
-    await Promise.all([...active.reverseSyncs].map((owner) => owner.settled));
+    const owners = [...active.reverseSyncs, ...active.incoming];
+    for (const owner of owners) owner.retire();
+    await Promise.all(owners.map((owner) => owner.settled));
   }
   await flushWork;
   setHandoffParticipantCheck(() => false);
@@ -611,7 +612,28 @@ export async function receiveHandoffTransfer(machine: string, body: unknown, bef
 }
 
 const incomingRates = new Map<string, number[]>();
-export async function receiveNetworkHandoff(machine: string, body: unknown): Promise<Handoff | { kind: 'refused'; record: Handoff }> {
+
+function incomingOfferPolicy(record: Handoff) {
+  const stamp = () => {
+    const dispatcher = getDispatcherState();
+    const receiver = 'agentId' in record.to ? record.to
+      : dispatcher.agentId ? localHandoffAgent(dispatcher.agentId) : undefined;
+    const localDispatcher = !!receiver && isDispatcherAgentId(receiver.agentId);
+    return JSON.stringify([agentConfigGeneration(), acceptsRemote(), receiver, localDispatcher,
+      localDispatcher || 'via' in record.to ? [dispatcher.enabled, dispatcher.agentId, dispatcher.path] : undefined,
+      receiver && !localDispatcher && !('via' in record.to) ? hasConnection(record.from, receiver) : undefined]);
+  };
+  const original = stamp();
+  let retired = false;
+  const changed = () => { if (stamp() !== original) retired = true; };
+  const offConnection = onConnectionGrantsChanged(changed), offDispatcher = onDispatcherChanged(changed);
+  return {
+    check: () => { changed(); if (retired) throw new HandoffAuthorizationChanged(); },
+    dispose: () => { offConnection(); offDispatcher(); },
+  };
+}
+
+export async function receiveNetworkHandoff(machine: string, body: unknown, currentRequest?: () => boolean): Promise<Handoff | { kind: 'refused'; record: Handoff }> {
   // The service gates new offers and acceptance. Retained status and sender
   // cancellation must still synchronize after the person disables incoming work.
   if (!isNetworkComputer(machine)) throw new Error('Handoff is unavailable.');
@@ -620,7 +642,24 @@ export async function receiveNetworkHandoff(machine: string, body: unknown): Pro
   const times = (incomingRates.get(machine) ?? []).filter((at) => now >= at && now - at < 60_000);
   if (times.length >= 60 || !incomingRates.has(machine) && incomingRates.size >= 200) throw new Error('Handoff rate limit reached.');
   incomingRates.set(machine, [...times, now]);
-  return handoffHost().coordinator.receive(machine, body);
+  const active = handoffHost();
+  if (!currentRequest) return active.coordinator.receive(machine, body);
+  let policy: ReturnType<typeof incomingOfferPolicy> | undefined;
+  const owner = new HandoffSyncOwner(
+    () => host === active && !active.stopping && ownMachine() === active.machine && currentRequest(),
+    () => {}, () => policy?.dispose(), () => { active.incoming.delete(owner); },
+  );
+  active.incoming.add(owner);
+  try {
+    owner.check();
+    return await active.coordinator.receive(machine, body, (newOffer) => {
+      owner.check();
+      if (newOffer) {
+        policy ??= incomingOfferPolicy(newOffer);
+        policy.check();
+      }
+    });
+  } finally { owner.release(); }
 }
 
 /** New receiving agents use the normal managed creation grant and helper template. No model runs before apply. */

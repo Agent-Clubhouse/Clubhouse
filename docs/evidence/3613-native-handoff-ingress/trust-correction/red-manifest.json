@@ -1,0 +1,41 @@
+{
+  "source": "940365ecde7ca2e9fb31abf48362a938445e1fe5",
+  "proof": "0da6a65fa4973658efe9964a4971ad9bc85d1912",
+  "productionServerBlob": "d7c406f124bb2344e8354669bbad7502f44139d1",
+  "currentServerBlob": "d7c406f124bb2344e8354669bbad7502f44139d1",
+  "testFixture": {
+    "path": "test/annex-v2/annex-native-handoff-admission.test.ts",
+    "bytes": 28241,
+    "sha256": "147b48fcfd55b822198581f05d3881bae65981739718dc4463cd0a4e4867102a",
+    "blob": "daf9a1cbd20fc02fd9ab4cbc128e9646293973e7",
+    "identity": "after-execution observation"
+  },
+  "result": {
+    "pass": 4,
+    "fail": 2,
+    "skipped": 13
+  },
+  "failed": [
+    "pairingId-only",
+    "certificatePem-only"
+  ],
+  "nativeWitness": "Actual original principal remains authorized and manual receiver-opened link stays accepted before queue release; both stale offers commit on940",
+  "downstreamAssertionsAfterFailureUncredited": true,
+  "certificatePemFixtureBoundary": "Synthetic stored PEM-only replacement with pin/publicKey/pairing unchanged; not a claimed valid re-pairing or executed incident",
+  "artifacts": [
+    {
+      "name": "artifacts/21-canonical-trust-red-original.log.gz",
+      "rawBytes": 8155,
+      "rawSha256": "b7d93cfe7e10dafbd513f897eb9fc1aed9613571ed3d187fbfd017356544f8f7",
+      "storedBytes": 3258,
+      "storedSha256": "2d66398c13a7a96a467a0155372bd84e4614a0d64f4a8454c501dab8fd4c57bc"
+    },
+    {
+      "name": "artifacts/21-canonical-trust-red-original.xml.gz",
+      "rawBytes": 6573,
+      "rawSha256": "3a7029f276aa759e34e4586b6885bdf122ba5671f7d248e18ce76d62b89d414f",
+      "storedBytes": 1158,
+      "storedSha256": "1528baf89c746ad7cf19b097d6e93f0dd6018f0652760a304921a9b2d55b0ae5"
+    }
+  ]
+}

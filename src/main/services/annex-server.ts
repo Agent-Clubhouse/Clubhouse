@@ -3816,14 +3816,30 @@ async function handleNetworkHandoffsRoute(ctx: AnnexRouteContext): Promise<void>
   if (ctx.requireMtls()) { ctx.req.resume(); return; }
   const machine = agentCallPeer(ctx);
   if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  const principal = { ...ctx.principal }, server = tlsServer, generation = serverGeneration;
+  const trust = () => {
+    const peer = annexPeers.getPeer(principal.fingerprint);
+    return peer && JSON.stringify([annexPeers.trustOf(peer), peer.kind]);
+  };
+  const originalTrust = trust();
+  let retired = false;
+  const currentRequest = principal.via === 'reverse' ? () => {
+    if (!server || server !== tlsServer || generation !== serverGeneration || !reverseRequestLive(ctx.req)
+      || !stillAuthorized(principal, authorizerDeps) || agentCallPeer(ctx) !== machine || trust() !== originalTrust) retired = true;
+    return !retired;
+  } : undefined;
   const body = await readAgentCallBody(ctx);
   if (body === undefined) return;
-  if (ctx.requireMtls()) return;
-  if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
-  try {
-    const record = await receiveNetworkHandoff(machine, body);
+  if (!currentRequest) {
     if (ctx.requireMtls()) return;
     if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  }
+  try {
+    const record = await receiveNetworkHandoff(machine, body, ...(currentRequest ? [currentRequest] as const : []));
+    if (!currentRequest) {
+      if (ctx.requireMtls()) return;
+      if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+    }
     sendJson(ctx.res, 200, record);
   } catch { // telemetry-exempt: never return peer content, task text or storage diagnostics
     sendJson(ctx.res, 400, { error: 'handoff_refused' });

@@ -276,6 +276,7 @@ vi.mock('./annex-tls', () => ({
 vi.mock('./annex-peers', async (importOriginal) => ({
   // The real rule for keeping saved routes when a device pairs again (#3608).
   withSavedRoutes: (await importOriginal<typeof import('./annex-peers')>()).withSavedRoutes,
+  trustOf: (await importOriginal<typeof import('./annex-peers')>()).trustOf,
   controlsThisMachine: (p?: { role?: string; networkPending?: boolean } | null) => !p?.networkPending && (p?.role === 'controller' || p?.role === 'member'),
   controlledFromHere: (p?: { role?: string; kind?: string } | null) => p?.role === 'satellite' || (p?.role === 'member' && p.kind !== 'phone'),
   checkBruteForce: vi.fn().mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),

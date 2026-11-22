@@ -1,0 +1,524 @@
+{
+  "at": "2026-11-22T17:28:06.378Z",
+  "source": "60ed5f77f76029681160f298bfe789fb1d884512",
+  "sourceTree": "a9068e09c2618aba0f6d4bd00e0c1d6d3b00f4c0",
+  "baseline": "206a88dcc93ecd7d2f5009d533894dd77e36e2ed",
+  "redSource": "f7c62dd5dc731bc2060c2c30f778823279396feb",
+  "previousReview": "7acf3f1adb93b71f21986e9b2fead93c78e1a837",
+  "hostedFailureProof": "13703fdf4270684c83c1c24e144f6ed3c73d6e4c",
+  "previousHostedRun": {
+    "id": 45046385831,
+    "attempt": 1,
+    "event": "pull_request",
+    "head": "206a88dcc93ecd7d2f5009d533894dd77e36e2ed",
+    "conclusion": "failure",
+    "counts": {
+      "success": 30,
+      "skipped": 4,
+      "failure": 3
+    }
+  },
+  "files": [
+    {
+      "file": "src/main/services/annex-server.test.ts",
+      "original": "4ed04c9f93170408d0d9cfe92a99628f5fbb6186",
+      "red": "4ed04c9f93170408d0d9cfe92a99628f5fbb6186",
+      "current": "a032492ab48a852d5b407234a6952c787e1b195f"
+    },
+    {
+      "file": "test/annex-v2/annex-native-handoff-admission.test.ts",
+      "original": "b58285525bacf812e292c0524901a32a77522bd1",
+      "red": "e3f4846444bfa412bfcdbbb22ea94aa10f78b368",
+      "current": "b15a3b61a24ce8ab45837df40113a20ee908e414"
+    }
+  ],
+  "identities": [
+    {
+      "file": "src/main/services/annex-server.ts",
+      "original": "108a4c45160c0d77ef0efcb9da3934ba1b1a50a8",
+      "current": "108a4c45160c0d77ef0efcb9da3934ba1b1a50a8",
+      "unchanged": true
+    },
+    {
+      "file": "src/main/services/handoff-host.ts",
+      "original": "0c4cc42034ade17e8dcc05dd53d0cec4f0df3969",
+      "current": "0c4cc42034ade17e8dcc05dd53d0cec4f0df3969",
+      "unchanged": true
+    },
+    {
+      "file": "src/main/services/handoff-coordinator.ts",
+      "original": "185ab771d3a14becc89b54e55bf832b854c12ba9",
+      "current": "185ab771d3a14becc89b54e55bf832b854c12ba9",
+      "unchanged": true
+    },
+    {
+      "file": "src/main/services/handoff-service.ts",
+      "original": "72e02b6700ad5cce8d3667822c2abec386924617",
+      "current": "72e02b6700ad5cce8d3667822c2abec386924617",
+      "unchanged": true
+    },
+    {
+      "file": "src/main/services/annex-peers.ts",
+      "original": "b85f7eece758f9d1bf400d6ab85bf1b51bbd764d",
+      "current": "b85f7eece758f9d1bf400d6ab85bf1b51bbd764d",
+      "unchanged": true
+    },
+    {
+      "file": "src/main/services/annex-client.ts",
+      "original": "87dc6c769e81a1b5dd6e0a9e38948e1ceaceabd7",
+      "current": "87dc6c769e81a1b5dd6e0a9e38948e1ceaceabd7",
+      "unchanged": true
+    },
+    {
+      "file": "src/main/services/annex-authorizer.ts",
+      "original": "b88180d9ac2c9f855691e731bc71eec0903cd824",
+      "current": "b88180d9ac2c9f855691e731bc71eec0903cd824",
+      "unchanged": true
+    },
+    {
+      "file": "src/main/services/annex-control.ts",
+      "original": "065b48063fed54a6114dbe5b1d316530b97517ce",
+      "current": "065b48063fed54a6114dbe5b1d316530b97517ce",
+      "unchanged": true
+    },
+    {
+      "file": "src/shared/annex-control-protocol.ts",
+      "original": "6ee5ef77a8d978da390838dde7e450ac05374d78",
+      "current": "6ee5ef77a8d978da390838dde7e450ac05374d78",
+      "unchanged": true
+    },
+    {
+      "file": "src/main/services/annex-control-bulk.ts",
+      "original": "18ee308fc55d33e89523d840f584101eea189be0",
+      "current": "18ee308fc55d33e89523d840f584101eea189be0",
+      "unchanged": true
+    },
+    {
+      "file": "docs/annex-native-handoff-admission.md",
+      "original": "60b2f021e629f9fa796306a78f32981178afad04",
+      "current": "60b2f021e629f9fa796306a78f32981178afad04",
+      "unchanged": true
+    },
+    {
+      "file": "test/annex-v2/reverse-desktop-fixture.ts",
+      "original": "4d7856b881d8136bf8c72d3266f98a7254eb8dcb",
+      "current": "4d7856b881d8136bf8c72d3266f98a7254eb8dcb",
+      "unchanged": true
+    },
+    {
+      "file": "test/fixtures",
+      "original": "547b613aefe0e14abfb27b049d2407d13675c3a2",
+      "current": "547b613aefe0e14abfb27b049d2407d13675c3a2",
+      "unchanged": true
+    },
+    {
+      "file": "docs/evidence/3613-native-handoff-ingress/baseline",
+      "original": "e7012a1d3c3ec7865959cac69bf1a1bed0aa713a",
+      "current": "e7012a1d3c3ec7865959cac69bf1a1bed0aa713a",
+      "unchanged": true
+    },
+    {
+      "file": "docs/evidence/3613-native-handoff-ingress/candidate",
+      "original": "2c4f74c5c2ce755d120ef4a806acbbb7f8b51f7a",
+      "current": "2c4f74c5c2ce755d120ef4a806acbbb7f8b51f7a",
+      "unchanged": true
+    },
+    {
+      "file": "docs/evidence/3613-native-handoff-ingress/trust-correction",
+      "original": "bee6cefaca0ca4f0445e7a9ec9cace58fbdfba7c",
+      "current": "bee6cefaca0ca4f0445e7a9ec9cace58fbdfba7c",
+      "unchanged": true
+    },
+    {
+      "file": "docs/evidence/3613-reverse-handoff",
+      "original": "dfdca9d6da91dfac5cd7c874ac739e02fabd1e85",
+      "current": "dfdca9d6da91dfac5cd7c874ac739e02fabd1e85",
+      "unchanged": true
+    },
+    {
+      "file": "docs/evidence/3613-handoff-reverse-sync",
+      "original": "978b83b9dc77794736180683fdf8cd617d0e719d",
+      "current": "978b83b9dc77794736180683fdf8cd617d0e719d",
+      "unchanged": true
+    },
+    {
+      "file": "docs/annex-route-contract-3611.md",
+      "original": "6e730374c6bc8c7e7c1a9c2afc453f0bc0cecfed",
+      "current": "6e730374c6bc8c7e7c1a9c2afc453f0bc0cecfed",
+      "unchanged": true
+    },
+    {
+      "file": "package.json",
+      "original": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8",
+      "current": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8",
+      "unchanged": true
+    },
+    {
+      "file": "package-lock.json",
+      "original": "7e45389f84ca58c5c7832cab169aa5674320d25d",
+      "current": "7e45389f84ca58c5c7832cab169aa5674320d25d",
+      "unchanged": true
+    },
+    {
+      "file": "tsconfig.json",
+      "original": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef",
+      "current": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef",
+      "unchanged": true
+    },
+    {
+      "file": "eslint.config.mjs",
+      "original": "976d18982b0d82dad5e924939921613aca8b29d3",
+      "current": "976d18982b0d82dad5e924939921613aca8b29d3",
+      "unchanged": true
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "artifacts/45-fixture-red-exit-original.txt.gz",
+      "rawBytes": 2,
+      "storedBytes": 22,
+      "rawSha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "storedSha256": "c7a59aef81850655fa3db209745efdcf2e0279ded77a73733ef15e15d5a38af6",
+      "blob": "a9c9639e090d7b18063dcfec687fa21c1c7194a0"
+    },
+    {
+      "name": "artifacts/45-fixture-red-original.log.gz",
+      "rawBytes": 61162,
+      "storedBytes": 17424,
+      "rawSha256": "9bf8757953487a337e888ed422e8cffdf99b465eff102d269e62ae2fcc059bd0",
+      "storedSha256": "e4e76b8ad73d9e5cc84574a0cf82601093457f666c49fb9998ef3d5ddc9bc40b",
+      "blob": "d910e954ff46cb9f2e983fa781bf34474584591d"
+    },
+    {
+      "name": "artifacts/45-fixture-red-original.xml.gz",
+      "rawBytes": 186884,
+      "storedBytes": 19642,
+      "rawSha256": "7e4c7f1a039c42286ad9002518541b4f56f30b58d7029877a8f685cf6b534a95",
+      "storedSha256": "8465eceff8af85f8558f351219e7ce657b963fa4dc5b9f62d924c4be7b31455e",
+      "blob": "2429296cf9a66a6b96fe6780091e281604208f3c"
+    },
+    {
+      "name": "artifacts/45-red-source-original.patch.gz",
+      "rawBytes": 2121,
+      "storedBytes": 862,
+      "rawSha256": "ddd473f96865c2358ca20a6ccb04953ec87b11d6279f5c16819ef8b7aae78800",
+      "storedSha256": "2531dde780bc61cd13d97ea2ba4f661144ae3ab699bcd3fc788edeb6411c0ea8",
+      "blob": "db1c16fa1a94137f06b5bd8215b92fb6c534b91a"
+    },
+    {
+      "name": "artifacts/45-red-source-original.txt.gz",
+      "rawBytes": 82,
+      "storedBytes": 82,
+      "rawSha256": "5a8f0c629af447ce359404b2f20ec50194746dfc3fcc4d432babf77200eb7ad1",
+      "storedSha256": "f4cd229fe54419ec03a7bd8a38ecaab7f5befe18f75b84253009dc1d228a52f2",
+      "blob": "2cc5ef5a7c7156f14650058efb27cb9327143df2"
+    },
+    {
+      "name": "artifacts/46-correction-source-original.patch.gz",
+      "rawBytes": 4672,
+      "storedBytes": 1676,
+      "rawSha256": "d096a5571bd515c90f8c1bceed337c904f13d5c66b1724fca721e4faa89cf0d1",
+      "storedSha256": "5479e47bb926a20dda75d3e3303384b3c14c9cfe95053b55a37ccdc7115d9049",
+      "blob": "f50783532335f16e1258e774b08372b83d4a865b"
+    },
+    {
+      "name": "artifacts/46-correction-source-original.txt.gz",
+      "rawBytes": 82,
+      "storedBytes": 80,
+      "rawSha256": "dce6cd13f60556393c1ae65e5ab3988f20761014401b6162921fa9ae64280282",
+      "storedSha256": "4c3bd6461d3d730ea2bad990d496de81b69afc45c8486e8c57a30179cf625bc7",
+      "blob": "b3d11af10bcbc44a2470d1b277fb01668e34cc4d"
+    },
+    {
+      "name": "artifacts/46-fixture-green-exit-original.txt.gz",
+      "rawBytes": 2,
+      "storedBytes": 22,
+      "rawSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "storedSha256": "527b2f834c00122e0c9d62124143283b65b8a72f6f3f5e10c68f419e87173409",
+      "blob": "daa3139ae7d5aa00fc94bf4e91687783467b910b"
+    },
+    {
+      "name": "artifacts/46-fixture-green-original.log.gz",
+      "rawBytes": 3460,
+      "storedBytes": 1814,
+      "rawSha256": "a6bd0a62230dcfbbd1d950c3c05a35221298a419a6c611206d7ac4401c0946e7",
+      "storedSha256": "3db415d8925056ef9a5d7ffcf539885148c17e878d1f9e73953e8aacd7585f56",
+      "blob": "ce20057658074f5486e56824c4c3dd62d41347ba"
+    },
+    {
+      "name": "artifacts/46-fixture-green-original.xml.gz",
+      "rawBytes": 186110,
+      "storedBytes": 19388,
+      "rawSha256": "7d579325a624a769cc79bd2804330924c2086f023749dbf8785b2cffe870bdbf",
+      "storedSha256": "06652a4193a5c3fc7be9b8cc485430da6ff4bee0fb9e7f7485c280f027bf9a98",
+      "blob": "0766544bbacae2c9cdd11d567954b760158a13f0"
+    },
+    {
+      "name": "artifacts/47-fixture-types-exit-original.txt.gz",
+      "rawBytes": 2,
+      "storedBytes": 22,
+      "rawSha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "storedSha256": "4efaf3c5456b0c143afdabea7252e09fc712136232d4892701da7610f474828d",
+      "blob": "c2169bc4e20e7eadbe253ec4d9d5de146eb39910"
+    },
+    {
+      "name": "artifacts/47-fixture-types-original.log.gz",
+      "rawBytes": 779404,
+      "storedBytes": 37516,
+      "rawSha256": "b7c0384ee8cef6cafc43efc3796ebe1359495de4b52198c260fad089a9841b35",
+      "storedSha256": "24fea30f179110ed3523ea821805beea464633df1591e146d6d8be6fa0fa1949",
+      "blob": "7f2358c8f066d99b3b2a42de4b46bf16b9e7a8dd"
+    },
+    {
+      "name": "artifacts/48-fixture-eslint-exit-original.txt.gz",
+      "rawBytes": 2,
+      "storedBytes": 22,
+      "rawSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "storedSha256": "527b2f834c00122e0c9d62124143283b65b8a72f6f3f5e10c68f419e87173409",
+      "blob": "daa3139ae7d5aa00fc94bf4e91687783467b910b"
+    },
+    {
+      "name": "artifacts/48-fixture-eslint-original.json.gz",
+      "rawBytes": 792631,
+      "storedBytes": 124544,
+      "rawSha256": "10ce39d7c5e4c7c89f96f8bd5394dc5f48a486d75baf32a9b69ff005b920eb45",
+      "storedSha256": "ab051820b1dbc60055ef9b2b047867fa618490fbfe4a6fe717ccb6a432db56e3",
+      "blob": "b0cd492c0b731a69915fbfca310283b34a73e908"
+    },
+    {
+      "name": "artifacts/48-fixture-eslint-original.log.gz",
+      "rawBytes": 373,
+      "storedBytes": 269,
+      "rawSha256": "5ee40a8f21ea33578b477ddf1d4978d042d2426e18fa9d48d37272e7f6d37f48",
+      "storedSha256": "0cadf54fa20024b446b6c319c9bd74546b1668e175906cd0013542e905107099",
+      "blob": "3f3301d49211ea131938b6bac5267b7063fb9d44"
+    },
+    {
+      "name": "artifacts/49-original-fixture-types-exit-original.txt.gz",
+      "rawBytes": 2,
+      "storedBytes": 22,
+      "rawSha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "storedSha256": "4efaf3c5456b0c143afdabea7252e09fc712136232d4892701da7610f474828d",
+      "blob": "c2169bc4e20e7eadbe253ec4d9d5de146eb39910"
+    },
+    {
+      "name": "artifacts/49-original-fixture-types-original.log.gz",
+      "rawBytes": 952401,
+      "storedBytes": 38840,
+      "rawSha256": "cd9b3ccebfd2c2790e8eac918cc32103dcfbf93b0fafe8f32c3c236976a8d288",
+      "storedSha256": "ea92e4244a51bf500c3a721913b0c4f42555bd1fc4314675c444cfc464369272",
+      "blob": "c4e9e748d8a1edb5249819ed8edae8106424e671"
+    },
+    {
+      "name": "artifacts/50-original-fixture-eslint-exit-original.txt.gz",
+      "rawBytes": 2,
+      "storedBytes": 22,
+      "rawSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "storedSha256": "527b2f834c00122e0c9d62124143283b65b8a72f6f3f5e10c68f419e87173409",
+      "blob": "daa3139ae7d5aa00fc94bf4e91687783467b910b"
+    },
+    {
+      "name": "artifacts/50-original-fixture-eslint-original.json.gz",
+      "rawBytes": 792197,
+      "storedBytes": 124360,
+      "rawSha256": "a30f8fe6c655e5b286c75e0db6c76b186d8f849db5f52df8095a3044b8a448c1",
+      "storedSha256": "be77b9cbbd8b24104807bae6996663fe546dba5c3487763a47ce267bae487186",
+      "blob": "bf0c2a1780ea1236bc638294da68856c5110ca83"
+    },
+    {
+      "name": "artifacts/50-original-fixture-eslint-original.log.gz",
+      "rawBytes": 481,
+      "storedBytes": 329,
+      "rawSha256": "75019ac58a83cc7bee38f05ce5b83af76a8d270106f3501e038ac9cdd2620e71",
+      "storedSha256": "80a75a22b0bd7fd80ff873a224d435e735d69965f00eec9306178eefc6c75384",
+      "blob": "a1cdd7589a01d209c53ceea88b96a510c06eaa97"
+    },
+    {
+      "name": "artifacts/51-fixture-correction-metadata.json.gz",
+      "rawBytes": 2641559,
+      "storedBytes": 678796,
+      "rawSha256": "cfa6a0386f43f4f34bdac02743950cd8b0b3e6cb8230352f216d26b65c852c1a",
+      "storedSha256": "5c9b38a8c033de6408ab34b153e52e714875e37fdf51282f12ed24fd597f8f5f",
+      "blob": "555b52a5a9fc63334d859b5d8f811f0f0df69974"
+    },
+    {
+      "name": "artifacts/51-metadata-collection-original.log.gz",
+      "rawBytes": 381,
+      "storedBytes": 248,
+      "rawSha256": "db06740e508910ed71feb6b62a3d3663179f7f6cbd29844159a18537bd821927",
+      "storedSha256": "ce23d5910c6fbe12e293f82652b7263d72775819bfce267c91072358e0bd25e4",
+      "blob": "299d4e12db6e750970a205556e8cbe14dc2280a7"
+    },
+    {
+      "name": "artifacts/52-case-derivation-original.log.gz",
+      "rawBytes": 402,
+      "storedBytes": 268,
+      "rawSha256": "bd58d90e94d43f61429221b6b83470a127f007f5616b7074153296f730381d37",
+      "storedSha256": "3ef98b79e3deaea2c2f5b1634aa6ed08e7cda4af387fce1a7d8407f286ff2869",
+      "blob": "fb12c7d7051e0ff59dde122b87c193ad8f4dd320"
+    },
+    {
+      "name": "artifacts/52-fixture-cases-derived.json.gz",
+      "rawBytes": 359826,
+      "storedBytes": 38341,
+      "rawSha256": "6d62d0fc29ce06c77bc4e0a923836bc114c6f7a61e287287c5c97d7f7e139e2c",
+      "storedSha256": "1a6355d740d99d4ab3de2aae492e209e0e0edf4eadf41f66597e743538f45528",
+      "blob": "fdbaa0e6ae2b35e43142baca8842518a5f6bc40d"
+    },
+    {
+      "name": "artifacts/53-packaging-failed-source-original.cjs.gz",
+      "rawBytes": 5470,
+      "storedBytes": 2166,
+      "rawSha256": "e7160c23b6fe915445499e2a95c00c0baadcec4acea48563d14af10965a9d886",
+      "storedSha256": "50ce3071035ef3253b6106e65301116b2a865832bf2fe53d1c7cd56c02d4138a",
+      "blob": "3a1cf18027bf4d4688b0cb6d5ba1865ef0b9eb10"
+    },
+    {
+      "name": "artifacts/53-packaging-original.log.gz",
+      "rawBytes": 1984,
+      "storedBytes": 597,
+      "rawSha256": "6ca42a1af0bee8157c6910a7462a3b4d9e760b888ed17d766b0536c4cfc9ca32",
+      "storedSha256": "36df00eaad85ad212e37877583213f6280e17f19122bc96b72b786113f9a3d9b",
+      "blob": "b11748eda363efa2081da733c6f457ac40a3cb6c"
+    },
+    {
+      "name": "artifacts/changed-fixture-types-original.json.gz",
+      "rawBytes": 183,
+      "storedBytes": 140,
+      "rawSha256": "ea477b18fbdb4c508523cb500efbd5c192fc201aa1d89ae4be683bfd36ef65b2",
+      "storedSha256": "1045d190aba4e3fe97ddaeb29187f667656a0c8d93fbeeb81cd9831a798471e8",
+      "blob": "3fabd0892373214f8a700401b8de6446f9184e34"
+    },
+    {
+      "name": "artifacts/baseline-fixture-types-original.json.gz",
+      "rawBytes": 162,
+      "storedBytes": 134,
+      "rawSha256": "d70d71346b6953b2c2a66b8323e1255fd03abe35f06c6cd26ce514207a3f1816",
+      "storedSha256": "c481a43965e699d34b4669a419d4474180ff1a0409cc8ef32098b61d8e063406",
+      "blob": "fae38ed43f1fd85c3fc9871d31c0882c92bffcc6"
+    },
+    {
+      "name": "artifacts/metadata-collector-original.cjs.gz",
+      "rawBytes": 7069,
+      "storedBytes": 2553,
+      "rawSha256": "0c4f50eb9c907cfa110b4944eff94108f9cf2a2c9b8e687703ff6654021a7be7",
+      "storedSha256": "4eb827087839d2b564a4986ff69ed289462cf01e5c2e00b1578884f030d57ad2",
+      "blob": "45e363dab648089c99f51c22768d1adfdbf6ffd3"
+    },
+    {
+      "name": "artifacts/case-derivation-original.py.gz",
+      "rawBytes": 1725,
+      "storedBytes": 737,
+      "rawSha256": "d1bc57059ae3c8019cd5d7bc466c64c4eec2cfe1d75daede8042682d0a54cb9d",
+      "storedSha256": "a300ab8fa59d201ea281c6b261f71bb8baa409356eddc3ed20f177b5409deef5",
+      "blob": "fe9a8cb78a36bbd5a92412f5c5abdee41e789962"
+    },
+    {
+      "name": "artifacts/packaging-original.cjs.gz",
+      "rawBytes": 5571,
+      "storedBytes": 2200,
+      "rawSha256": "87f98b3bc2d8924f3d17b5c2c5bf73dc4f438e97e2303d7a127a07c47a97bf78",
+      "storedSha256": "7fa33a6cdc2c4c8806ef19b8192aa56d59ac4017d57bff8d852cca8509ef0aeb",
+      "blob": "4e1ec1c7df4da1daea31e1be1e5ee63aaa7f7658"
+    }
+  ],
+  "executions": [
+    {
+      "artifact": "45-fixture-red-original.xml",
+      "counts": {
+        "passed": 0,
+        "failure": 2,
+        "error": 0,
+        "skipped": 680
+      },
+      "selected": [
+        {
+          "name": "native incoming actual TLS and queue assembly > does not complete a reconnect against an unchanged old accepted link",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "failure",
+          "failure": {
+            "attributes": {
+              "message": "expected true to be false // Object.is equality",
+              "type": "AssertionError"
+            },
+            "text": "\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n ❯ test/annex-v2/annex-native-handoff-admission.test.ts:199:21\n            "
+          }
+        },
+        {
+          "name": "annex-server > accepts handoff agreement synchronization only from a pinned desktop member and hides failure details",
+          "classname": "src/main/services/annex-server.test.ts",
+          "status": "failure",
+          "failure": {
+            "attributes": {
+              "message": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".",
+              "type": "Error"
+            },
+            "text": "\nError: Test timed out in 5000ms.\nIf this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".\n ❯ src/main/services/annex-server.test.ts:2734:3\n            "
+          }
+        }
+      ],
+      "rawSha256": "7e4c7f1a039c42286ad9002518541b4f56f30b58d7029877a8f685cf6b534a95"
+    },
+    {
+      "artifact": "46-fixture-green-original.xml",
+      "counts": {
+        "passed": 5,
+        "failure": 0,
+        "error": 0,
+        "skipped": 677
+      },
+      "selected": [
+        {
+          "name": "native incoming actual TLS and queue assembly > does not complete a reconnect against an unchanged old accepted link",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "annex-server > accepts handoff agreement synchronization only from a pinned desktop member and hides failure details",
+          "classname": "src/main/services/annex-server.test.ts",
+          "status": "passed"
+        }
+      ],
+      "rawSha256": "7d579325a624a769cc79bd2804330924c2086f023749dbf8785b2cffe870bdbf"
+    }
+  ],
+  "typing": {
+    "currentExit": 2,
+    "baselineExit": 2,
+    "diagnostics": 166,
+    "exactMappedBaseline": true,
+    "newDiagnostics": 0,
+    "wholeGraphPass": false,
+    "currentInputs": 3958,
+    "baselineInputs": 3958,
+    "roots": 2467,
+    "productionRoots": 2465,
+    "explicitCompleteFixtures": 2,
+    "orderedInputGraphsMatched": true,
+    "optionsMatchedAfterCheckoutPathNormalization": true
+  },
+  "lint": {
+    "currentErrors": 0,
+    "legacyWarnings": 247,
+    "nativeWarnings": 0,
+    "exactMappedBaseline": true,
+    "insertedAtLine": 279,
+    "insertedUtf16Length": 77
+  },
+  "limitations": "Fixture-only source; exact delta review pending. No established hosted reconnect cause/rejection code, full-graph types pass, broad suite or aggregate successor result. Other7acf/1172 evidence reused by unchanged identity. Real native grant/preparation/content/apply/wake/two-host/full-duplex acceptance remains deferred."
+}

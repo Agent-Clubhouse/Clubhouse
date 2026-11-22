@@ -4,7 +4,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Handoff, HandoffAgent, HandoffOffer } from '../../shared/handoffs';
-import { transitionHandoff } from '../../shared/handoffs';
+import { parseHandoff, transitionHandoff } from '../../shared/handoffs';
 
 const state = vi.hoisted(() => ({ dir: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => state.dir } }));
@@ -50,6 +50,75 @@ beforeEach(() => {
 
 afterEach(() => {
   fs.rmSync(state.dir, { recursive: true, force: true });
+});
+
+describe('native incoming decision admission', () => {
+  function incoming(): Handoff {
+    const at = Date.now();
+    return parseHandoff({ ...input, schemaVersion: 1, id: randomUUID(), createdAt: at, updatedAt: at, version: 1,
+      from: sender, state: 'offered',
+      history: [{ operationId: randomUUID(), at, state: 'offered', by: { kind: 'agent', address: sender } }] });
+  }
+
+  it.each([
+    ['offer', true], ['offer', false], ['cancelled-offer', true], ['cancelled-offer', false],
+  ] as const)('checks original retirement after held %s authorization, including allowed=%s', async (operation, authorized) => {
+    const store = new HandoffStore(), record = incoming(), reached = barrier(), lookup = barrier();
+    const receiving = new HandoffService({ machine: receiver.machine, store, isDispatcher: () => false,
+      authorize: async () => { reached.release(); await lookup.promise; return authorized; } });
+    let live = true;
+    const check = () => { if (!live) throw new Error('Original native request retired'); };
+    const work = operation === 'offer' ? receiving.receiveOffer(record, sender.machine, check)
+      : receiving.receiveCancelledOffer(record, sender, sender.machine, randomUUID(), undefined, check);
+    try {
+      await reached.promise;
+      live = false; lookup.release();
+      await expect(work).rejects.toThrow('Original native request retired');
+      expect(store.get(record.id)).toBeUndefined();
+      expect(fs.existsSync(path.join(state.dir, 'handoffs.json'))).toBe(false);
+    } finally { lookup.release(); await Promise.allSettled([work]); }
+  });
+
+  it.each(['existing-offer', 'terminal-cancelled-offer', 'cancellation'] as const)(
+    'checks inside the actual held queue before the %s decision', async (operation) => {
+      const store = new HandoffStore(), offered = incoming();
+      const record = operation === 'terminal-cancelled-offer'
+        ? transitionHandoff(offered, { state: 'declined', operationId: randomUUID(), at: offered.updatedAt + 1,
+          by: { kind: 'agent', address: receiver } }, 1) : offered;
+      await store.transact(record.id, () => record);
+      const entered = barrier(), held = barrier();
+      const blocking = store.transact(record.id, async (current) => {
+        entered.release(); await held.promise;
+        if (!current) throw new Error('Missing owned queue record');
+        return current;
+      });
+      await entered.promise;
+      let live = true;
+      const check = () => { if (!live) throw new Error('Original native request retired'); };
+      const receiving = service(receiver.machine, store);
+      const work = operation === 'existing-offer' ? receiving.receiveOffer(offered, sender.machine, check)
+        : operation === 'terminal-cancelled-offer'
+          ? receiving.receiveCancelledOffer(offered, sender, sender.machine, randomUUID(), undefined, check)
+          : receiving.cancelAtReceiver(record.id, sender, sender.machine, record.version, undefined, randomUUID(), check);
+      try {
+        live = false; held.release();
+        await expect(work).rejects.toThrow('Original native request retired');
+        expect(store.get(record.id)).toEqual(record);
+        expect(JSON.parse(fs.readFileSync(path.join(state.dir, 'handoffs.json'), 'utf8')).records).toEqual([record]);
+      } finally { held.release(); await Promise.allSettled([blocking, work]); }
+    });
+
+  it('retains known history and cancellation exceptions while new incoming permission is withdrawn', async () => {
+    const record = incoming(), store = new HandoffStore(), receiving = service(receiver.machine, store);
+    await receiving.receiveOffer(record, sender.machine);
+    allowed = () => false;
+    const guard = vi.fn();
+    expect(await receiving.receiveOffer(record, sender.machine, guard)).toEqual(record);
+    const cancelled = await receiving.receiveCancelledOffer(record, sender, sender.machine, randomUUID(), undefined, guard);
+    expect(cancelled.state).toBe('cancelled');
+    expect(guard.mock.calls.every((args) => args[0] === undefined)).toBe(true);
+    expect(await receiving.receiveCancelledOffer(record, sender, sender.machine, randomUUID(), undefined, guard)).toEqual(cancelled);
+  });
 });
 
 describe('durable handoff agreement', () => {

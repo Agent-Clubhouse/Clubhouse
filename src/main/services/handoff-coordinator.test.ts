@@ -91,6 +91,88 @@ describe('reverse sync actual history and command queue assembly', () => {
       retire: () => { live = false; } };
   }
 
+  describe('native incoming coordinator admission', () => {
+    it.each(['existing-offer', 'cancel-with-offer', 'cancel', 'newer-snapshot', 'older-snapshot'] as const)(
+      'carries the original callback into the real %s queue', async (operation) => {
+        const f = await queueFixture(true);
+        const snapshot = operation.endsWith('snapshot');
+        if (operation === 'older-snapshot') await f.store.transact(f.offered.id, () => f.declined);
+        const machine = snapshot ? sender.machine : receiver.machine;
+        const service = new HandoffService({ machine, store: f.store, authorize: async () => false, isDispatcher: () => false });
+        const coordinator = new HandoffCoordinator({ ...f.options, machine, service, now: Date.now });
+        const before = f.store.get(f.offered.id);
+        const raw = operation === 'existing-offer' ? { op: 'offer', record: f.offered }
+          : snapshot ? { op: 'snapshot', record: operation === 'older-snapshot' ? f.offered : f.declined }
+            : { op: 'cancel', command: f.command, ...(operation === 'cancel-with-offer' && { record: f.offered }) };
+        const entered = barrier(), held = barrier();
+        const transact = f.store.transact.bind(f.store);
+        let blocking: Promise<Handoff> | undefined;
+        const spy = vi.spyOn(f.store, 'transact').mockImplementationOnce((id, change) => {
+          blocking = transact(id, async (current: Handoff | undefined) => {
+            entered.release(); await held.promise;
+            if (!current) throw new Error('Missing owned queue record');
+            return current;
+          });
+          return transact(id, change);
+        });
+        let live = true;
+        const check = () => { if (!live) throw new Error('Original native request retired'); };
+        const work = coordinator.receive(snapshot ? receiver.machine : sender.machine, raw, check);
+        try {
+          await entered.promise;
+          live = false; held.release();
+          await expect(work).rejects.toThrow('Original native request retired');
+          expect(f.store.get(f.offered.id)).toEqual(before);
+          expect(f.changed).not.toHaveBeenCalled();
+        } finally { held.release(); await Promise.allSettled([blocking, work]); spy.mockRestore(); }
+      });
+
+    it.each(['terminal-ACK', 'terminal-cancel'] as const)(
+      'checks original admission before its synchronous %s decision', async (operation) => {
+        const f = await queueFixture(false);
+        const ack = operation === 'terminal-ACK';
+        const machine = ack ? sender.machine : receiver.machine;
+        const service = new HandoffService({ machine, store: f.store, authorize: async () => false, isDispatcher: () => false });
+        const coordinator = new HandoffCoordinator({ ...f.options, machine, service, now: Date.now });
+        let checked = false;
+        const check = () => {
+          if (checked) throw new Error('Original native request retired');
+          checked = true;
+        };
+        const record = parseHandoff({ ...f.declined, id: randomUUID() });
+        const work = coordinator.receive(ack ? receiver.machine : sender.machine,
+          ack ? { op: 'snapshot', record } : { op: 'cancel', command: f.command }, check);
+        await expect(work).rejects.toThrow('Original native request retired');
+        expect(f.store.get(record.id)).toBeUndefined();
+        expect(f.changed).not.toHaveBeenCalled();
+      });
+
+    it('retains separately admitted local expiry but refuses the retired incoming message afterwards', async () => {
+      const f = await queueFixture(true);
+      const at = Date.now() - 2 * 24 * 60 * 60_000;
+      const expired = parseHandoff({ ...f.offered, id: randomUUID(), createdAt: at, updatedAt: at,
+        history: [{ ...f.offered.history[0], at }] });
+      await f.store.transact(expired.id, () => expired);
+      const incoming = parseHandoff({ ...f.offered, id: randomUUID() });
+      const service = new HandoffService({ machine: receiver.machine, store: f.store, authorize: async () => true, isDispatcher: () => false });
+      const coordinator = new HandoffCoordinator({ ...f.options, machine: receiver.machine, service, now: Date.now });
+      let live = true;
+      const transact = f.store.transact.bind(f.store);
+      const spy = vi.spyOn(f.store, 'transact').mockImplementation((id, change) => transact(id, async (current: Handoff | undefined) => {
+        const result = await change(current);
+        if (id === expired.id) live = false;
+        return result;
+      }));
+      try {
+        await expect(coordinator.receive(sender.machine, { op: 'offer', record: incoming }, () => {
+          if (!live) throw new Error('Original native request retired');
+        })).rejects.toThrow('Original native request retired');
+        expect(f.store.get(expired.id)).toMatchObject({ state: 'failed', failure: { code: 'expired' } });
+        expect(f.store.get(incoming.id)).toBeUndefined();
+      } finally { spy.mockRestore(); }
+    });
+  });
+
   it.each(['receiver-ACK', 'terminal-ACK', 'secondary-ACK', 'primary-remove', 'secondary-remove'] as const)(
     'carries the original capture into queued %s and refuses before its real mutation', async (stage) => {
       const sending = stage !== 'receiver-ACK'; const terminal = stage === 'terminal-ACK' || stage === 'primary-remove';
