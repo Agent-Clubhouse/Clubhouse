@@ -196,6 +196,99 @@ describe('controller caller receive bound', () => {
   });
 });
 
+describe('route-budget disposition design (#3714)', () => {
+  it.each(['GET', 'POST'] as const)('refuses only the known %s response above its route budget before credit', async (method) => {
+    const path = method === 'GET' ? '/api/v1/icons/agents/a' : '/api/v1/network/agent-call';
+    const gates = new Map<string, (result: control.ControlResult) => void>();
+    handler = async (_principal, request) => new Promise((resolve) => { gates.set(request.path, resolve); });
+    const { requesterWs, targetWs } = await connected(['request', 'subscribe', 'ws-control', 'bulk']);
+    const frames: Array<Record<string, unknown>> = [];
+    const ends: string[] = [];
+    const subscription = control.subscribe(TARGET, { onFrame: (frame) => frames.push(frame), onEnd: (code) => ends.push(code) });
+    await flush();
+    const unrelatedFailures: Array<{ code: string; indeterminate: boolean; requestId: string }> = [];
+    const observe = (pending: Promise<control.ControlResult>) => pending.then(
+      (result) => ({ status: result.status, body: result.body.toString() }),
+      (error: unknown) => {
+        if (!(error instanceof control.ControlRequestError)) throw error;
+        if (error.requestId !== 'budget-owner') unrelatedFailures.push({
+          code: error.code, indeterminate: error.indeterminate, requestId: error.requestId,
+        });
+        return { code: error.code, indeterminate: error.indeterminate, requestId: error.requestId };
+      },
+    );
+    const rejected = observe(control.request(TARGET, { method, path }, { requestId: 'budget-owner' }));
+    const read = observe(control.request(TARGET, { method: 'GET', path: '/budget-unrelated-read' }, { requestId: 'unrelated-read' }));
+    const write = observe(control.request(TARGET, { method: 'POST', path: '/budget-unrelated-write', body: '{}' }, { requestId: 'unrelated-write' }));
+    try {
+      await flush();
+      expect(gates.size).toBe(3);
+      expect(served).toHaveLength(1);
+      gates.get(path)!({ status: 200, headers: {}, body: Buffer.alloc(control.responseBodyLimit(path) + 1, 0x41) });
+      await flush();
+      const offered = sentOfType(targetWs, 'bulk').find((frame) => frame.op === 'start' && frame.id === 'budget-owner');
+      expect(offered).toBeDefined();
+      const observed = {
+        refused: await rejected,
+        requesterClosed: requesterWs.closed, targetClosed: targetWs.closed,
+        ready: control.getLinkReadiness(TARGET).acceptedHere,
+        credits: sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit' && frame.transfer === offered!.transfer).length,
+        cancels: sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'cancel' && frame.transfer === offered!.transfer).length,
+        rejectedBinary: sentOfType(targetWs, 'binary').length,
+        subscriptionEnds: ends, servedClosed: served[0].close.mock.calls.length,
+        unrelatedFailures,
+      };
+      expect(observed).toEqual({
+        refused: { code: 'response_too_large', indeterminate: method === 'POST', requestId: 'budget-owner' },
+        requesterClosed: null, targetClosed: null, ready: true, credits: 0, cancels: 1,
+        rejectedBinary: 0, subscriptionEnds: [], servedClosed: 0,
+        unrelatedFailures: [],
+      } satisfies typeof observed);
+      gates.get('/budget-unrelated-read')!(ok('read-live'));
+      gates.get('/budget-unrelated-write')!(ok('write-live'));
+      expect(await read).toEqual({ status: 200, body: JSON.stringify('read-live') });
+      expect(await write).toEqual({ status: 200, body: JSON.stringify('write-live') });
+      expect(served[0].sink.send(JSON.stringify({ type: 'chat:event', payload: { id: 'still-live' }, seq: 1 }))).toBe(true);
+      expect(subscription.send({ type: 'pty:resize', payload: { cols: 80, rows: 24 } })).toBe(true);
+      await flush();
+      expect(frames).toEqual([{ type: 'chat:event', payload: { id: 'still-live' }, seq: 1 }]);
+      expect(served[0].receive).toHaveBeenCalledOnce();
+      expect(dispatch).toHaveBeenCalledTimes(3);
+    } finally {
+      for (const release of gates.values()) release(ok('fixture-cleanup'));
+      await flush();
+      await Promise.all([rejected, read, write]);
+      subscription.close();
+    }
+  });
+
+  it.each(['unknown', 'expired', 'cancelled', 'metadata', 'size', 'pin', 'feature'] as const)('keeps a route-oversize %s offer link-fatal before credit or completion', async (guard) => {
+    const ws = new FakeSocket();
+    control._attachForTesting(ws as never, TARGET, TARGET_PIN, 'in');
+    ws.deliver({ v: 1, type: 'hello', features: guard === 'feature' ? ['request'] : ['request', 'bulk'] });
+    const abort = new AbortController();
+    const pending = control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/a' },
+      { requestId: 'fatal-owner', timeoutMs: guard === 'expired' ? 1 : undefined, signal: abort.signal }).catch((error: unknown) => {
+      if (!(error instanceof control.ControlRequestError)) throw error;
+      return error;
+    });
+    if (guard === 'expired') await new Promise((resolve) => setTimeout(resolve, 5));
+    if (guard === 'cancelled') abort.abort();
+    if (guard === 'pin') inboundAllowed = false;
+    ws.deliver({
+      v: 1, type: 'bulk', op: 'start', transfer: '00000000-0000-4000-8000-000000003714',
+      id: guard === 'unknown' ? 'unknown-owner' : 'fatal-owner', kind: 'response',
+      size: guard === 'size' ? -1 : control.responseBodyLimit('/api/v1/icons/agents/a') + 1,
+      meta: { status: guard === 'metadata' ? 700 : 200, headers: {} },
+    });
+    const error = await pending;
+    expect(error).toBeInstanceOf(control.ControlRequestError);
+    expect(ws.closed?.code).toBe(guard === 'pin' ? CONTROL_CLOSE_REVOKED : CONTROL_CLOSE_PROTOCOL);
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(false);
+    expect(sentOfType(ws, 'bulk').filter((frame) => frame.op === 'credit')).toHaveLength(0);
+  });
+});
+
 describe('capability hello and mixed versions', () => {
   it('the accepting side sends nothing until the opener says hello, then only what both support', async () => {
     const ws = new FakeSocket();
