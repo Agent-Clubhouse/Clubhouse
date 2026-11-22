@@ -1,0 +1,129 @@
+{
+  "evidence": "8d8e3d28fb48e13323002b3792d73d2e4743d713",
+  "evidenceTree": "65ed5fea2b17912e0207893ce3c51a3ce8f901f6",
+  "source": "219fca7759963de4c68a4ddf0159c6c7b1a97645",
+  "sourceTree": "20e0b5b4741b6242d8c1765130a3b5e6ecaf6216",
+  "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+  "fixtureBlob": "53c60a023bd7318c012b75eedb9eba9c7dc3bd5b",
+  "archivesVerified": 73,
+  "directoryFiles": 75,
+  "manifestSha256": "95cf7ca7604e64d7c4161260b8cef9fad25f19ec13a788789fae9218b2ad24e0",
+  "readmeSha256": "e8d20a513520c6460ff0abfda66e16bae93834c040077758b3ea5083cda14327",
+  "runs": [
+    {
+      "prefix": "170-owner-finite-candidate",
+      "head": "79e562d6bbd45a4e14c8293227cf59f2dd92e1d0",
+      "matchingCleanPrePostInputs": 16,
+      "exit": 0,
+      "counts": {
+        "pass": 18,
+        "skip": 50
+      },
+      "declarations": 68,
+      "passedCases": [
+        "isolated real MCP producer domain admission > keeps overlapping cleanup behind the original actual preparation drain",
+        "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection (1 failures)",
+        "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection (9 failures)",
+        "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows clock diagnostic throws",
+        "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows logger diagnostic throws",
+        "isolated real MCP producer domain admission > forwards actual preparation once when its pre-forward diagnostic clock throws",
+        "isolated real MCP producer domain admission > reports actual early offer settlement without entering an unreachable history hold",
+        "isolated real MCP producer domain admission > keeps actual fixture preparation alive until teardown settles it",
+        "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+        "isolated real MCP producer domain admission > owner lifecycle excludes later setup until the actual body finishes without a manual self-cycle",
+        "isolated real MCP producer domain admission > owner lifecycle hook releases original and late body holds exactly once before joining core",
+        "isolated real MCP producer domain admission > owner lifecycle drains appended actual filesystem work and retains rejection plus every teardown outcome",
+        "isolated real MCP producer domain admission > owner lifecycle preserves unexpected caller errors without inferred acknowledgment",
+        "isolated real MCP producer domain admission > owner lifecycle preserves unexpected release errors without inferred acknowledgment",
+        "isolated real MCP producer domain admission > owner lifecycle preserves unexpected teardown errors without inferred acknowledgment",
+        "isolated real MCP producer domain admission > owner lifecycle preserves unexpected body errors without inferred acknowledgment",
+        "isolated real MCP producer domain admission > owner lifecycle refuses incomplete actual setup and retains partial storage and late-install failure until settlement",
+        "isolated real MCP producer domain admission > owner lifecycle reports actual early preparation refusal instead of stranding source entry"
+      ]
+    },
+    {
+      "prefix": "171-owner-fixture-types",
+      "head": "79e562d6bbd45a4e14c8293227cf59f2dd92e1d0",
+      "matchingCleanPrePostInputs": 16,
+      "exit": 0,
+      "listFiles": 3959
+    },
+    {
+      "prefix": "172-owner-fixture-lint",
+      "head": "79e562d6bbd45a4e14c8293227cf59f2dd92e1d0",
+      "matchingCleanPrePostInputs": 16,
+      "exit": 0,
+      "lintFiles": 1
+    },
+    {
+      "prefix": "173-owner-final-finite",
+      "head": "219fca7759963de4c68a4ddf0159c6c7b1a97645",
+      "matchingCleanPrePostInputs": 16,
+      "exit": 0,
+      "counts": {
+        "pass": 19,
+        "skip": 50
+      },
+      "declarations": 69,
+      "passedCases": [
+        "isolated real MCP producer domain admission > keeps overlapping cleanup behind the original actual preparation drain",
+        "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection (1 failures)",
+        "isolated real MCP producer domain admission > drains a real held preparation and completes teardown before reporting its original caller rejection (9 failures)",
+        "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows clock diagnostic throws",
+        "isolated real MCP producer domain admission > completes actual fixture teardown when its Windows logger diagnostic throws",
+        "isolated real MCP producer domain admission > forwards actual preparation once when its pre-forward diagnostic clock throws",
+        "isolated real MCP producer domain admission > reports actual early offer settlement without entering an unreachable history hold",
+        "isolated real MCP producer domain admission > keeps actual fixture preparation alive until teardown settles it",
+        "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+        "isolated real MCP producer domain admission > owner lifecycle excludes later setup until the actual body finishes without a manual self-cycle",
+        "isolated real MCP producer domain admission > owner lifecycle hook releases original and late body holds exactly once before joining core",
+        "isolated real MCP producer domain admission > owner lifecycle drains appended actual filesystem work and retains rejection plus every teardown outcome",
+        "isolated real MCP producer domain admission > owner lifecycle preserves unexpected caller errors without inferred acknowledgment",
+        "isolated real MCP producer domain admission > owner lifecycle preserves unexpected release errors without inferred acknowledgment",
+        "isolated real MCP producer domain admission > owner lifecycle preserves unexpected teardown errors without inferred acknowledgment",
+        "isolated real MCP producer domain admission > owner lifecycle preserves unexpected body errors without inferred acknowledgment",
+        "isolated real MCP producer domain admission > owner lifecycle rejects equal-message unregistered error references despite fulfilled body",
+        "isolated real MCP producer domain admission > owner lifecycle refuses incomplete actual setup and retains partial storage and late-install failure until settlement",
+        "isolated real MCP producer domain admission > owner lifecycle reports actual early preparation refusal instead of stranding source entry"
+      ]
+    },
+    {
+      "prefix": "174-owner-final-types",
+      "head": "219fca7759963de4c68a4ddf0159c6c7b1a97645",
+      "matchingCleanPrePostInputs": 16,
+      "exit": 0,
+      "listFiles": 3959
+    },
+    {
+      "prefix": "175-owner-final-lint",
+      "head": "219fca7759963de4c68a4ddf0159c6c7b1a97645",
+      "matchingCleanPrePostInputs": 16,
+      "exit": 0,
+      "lintFiles": 1
+    }
+  ],
+  "original164CopiedBytesEqual": true,
+  "xmlCustodyRowsDistinctSources": 196,
+  "compilerObservedAfterExecution": {
+    "orderedInputs": 3959,
+    "trackedBytesVerifiedToGit": 2471,
+    "dependencyObservationsNotReobservedByReviewer": 1488,
+    "threeCompleteFixturesIncluded": true,
+    "preExecutionOrAtomicSeal": false
+  },
+  "staticBridge": {
+    "originalPhysicalRegistrations": 33,
+    "currentWrappersIndependentlyCounted": 40,
+    "normalizedExpectCallTextsOwnerBridge": 448,
+    "wholeBodyOrByteBridge": false,
+    "review": "direct relevant callback/helper/diff inspection, not runtime of50skips"
+  },
+  "finding": {
+    "id": "F1",
+    "sourceDerivedNotReviewerExecution": true,
+    "lines": "323-331; core287-295; caller174-179",
+    "description": "Hook invokes hold releases before core closes retiring, permitting synchronous reentrant caller admission."
+  },
+  "reviewerProductExecution": false,
+  "disposition": "BLOCK exact candidate pending narrow hook pre-release admission ordering correction; other reviewed source/evidence boundaries reusable with stated limits"
+}
