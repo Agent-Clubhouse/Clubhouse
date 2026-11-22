@@ -1,0 +1,569 @@
+{
+  "source": "adcb284b217030163574b2b094df2b482cdc8684",
+  "sourceTree": "1f23b1350640314a18b3e9aee66de5711f3b49fc",
+  "evidence": "a9e3717944a75425dd6feacb5a32848cae110d83",
+  "evidenceTree": "9eac5a872e38ab7510d81e82e2d5ed0ed1030e48",
+  "manifestSha256": "505ef32dfcc497a189c84c55fe986438bc83e42dd44500f8ebf20968baf0f16d",
+  "all34ArtifactsVerified": true,
+  "losslessOriginalPackagesVerified": 32,
+  "sourceInputHashesVerified": [
+    {
+      "path": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+      "bytes": 15733,
+      "sha256": "913d21b98b995c3867ec30a937e8819685e264f4c3989682dfc98b7ba59b1796"
+    },
+    {
+      "path": "src/main/services/agent-runtime/checkpoint-tracker.ts",
+      "bytes": 15348,
+      "sha256": "f71f8ab65d759d717e3e805e60db84fe4576666b20733f9d037f080bc01ecffb"
+    },
+    {
+      "path": "src/main/services/agent-runtime/checkpoints.ts",
+      "bytes": 24430,
+      "sha256": "219a0194154b42c9a6eb615e0e3d8b9cbe3c5e2587158ceb8d061fb27613d5fe"
+    },
+    {
+      "path": "test/checkpoint-fixture-lifetime.ts",
+      "bytes": 10432,
+      "sha256": "1595e7895bb714cd68a673cc5602da8343276bdfb4d63c30197638425f69fc5d"
+    },
+    {
+      "path": "test/dispatcher-work-owner.ts",
+      "bytes": 7342,
+      "sha256": "cffdfa8407a32eec3b6d8a4161e7e1baa956152d9c4e03809787a26fef8b2acb"
+    },
+    {
+      "path": "test/standard-runtime-boundary.ts",
+      "bytes": 379,
+      "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+    },
+    {
+      "path": "test/global-setup.ts",
+      "bytes": 658,
+      "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e"
+    },
+    {
+      "path": "vitest.config.ts",
+      "bytes": 3220,
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 530,
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+    },
+    {
+      "path": "package.json",
+      "bytes": 5782,
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9"
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 690814,
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+    },
+    {
+      "path": "node_modules/.cache/3775-checkpoint-idle/fixture-types.json",
+      "bytes": 134,
+      "sha256": "f96121b20e098b064e78796367cfd42459831eb7e5f42ad1ceebeee97d38e6f1"
+    }
+  ],
+  "sourceOnly4Insertions2DeletionsInRunTurn": true,
+  "evidenceCommitNoSourceTestConfigDelta": true,
+  "overlayFixturesAndInputDigestsReconstructed": true,
+  "runtimeResults": [
+    {
+      "key": "01-discriminator",
+      "pass": 2,
+      "fail": 0,
+      "skip": 11,
+      "cases": [
+        {
+          "name": "checkpoint tracker > names the pre-prompt snapshot as the turn start, checkpoints the end and reports the turn diff",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > works from a subdirectory, with paths relative to the repository root",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks turns shared when another agent works in the same worktree",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks a turn shared with a live terminal agent in the same worktree",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks and closes a turn that ends before its start checkpoint is written",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reports a revert in progress so new prompts can wait for it",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > does not mark turns shared for agents in other worktrees",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > refuses to revert while the agent is mid-turn",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > shows session changes against the working tree",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reports unavailable outside a git repository and refuses to revert an unfinished turn",
+          "status": "skip"
+        },
+        {
+          "name": "runTurn producer-idle readiness discriminator > rejects a missing requested start before edit despite an unrelated complete turn",
+          "status": "pass"
+        },
+        {
+          "name": "runTurn producer-idle readiness discriminator > rejects a missing requested end before continuation despite an unrelated complete turn",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "key": "02-readiness-mutant",
+      "pass": 0,
+      "fail": 2,
+      "skip": 11,
+      "cases": [
+        {
+          "name": "checkpoint tracker > names the pre-prompt snapshot as the turn start, checkpoints the end and reports the turn diff",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > works from a subdirectory, with paths relative to the repository root",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks turns shared when another agent works in the same worktree",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks a turn shared with a live terminal agent in the same worktree",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > marks and closes a turn that ends before its start checkpoint is written",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reports a revert in progress so new prompts can wait for it",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > does not mark turns shared for agents in other worktrees",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > refuses to revert while the agent is mid-turn",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > shows session changes against the working tree",
+          "status": "skip"
+        },
+        {
+          "name": "checkpoint tracker > reports unavailable outside a git repository and refuses to revert an unfinished turn",
+          "status": "skip"
+        },
+        {
+          "name": "runTurn producer-idle readiness discriminator > rejects a missing requested start before edit despite an unrelated complete turn",
+          "status": "fail"
+        },
+        {
+          "name": "runTurn producer-idle readiness discriminator > rejects a missing requested end before continuation despite an unrelated complete turn",
+          "status": "fail"
+        }
+      ],
+      "primaryFailures": [
+        "promise resolved \"undefined\" instead of rejecting",
+        "promise resolved \"undefined\" instead of rejecting"
+      ],
+      "teardownPackets": [
+        {
+          "reason": "teardown",
+          "phase": "teardown",
+          "phaseComplete": true,
+          "elapsedMs": 578,
+          "rawPending": 0,
+          "directPending": 0,
+          "childPending": 0,
+          "callbackPending": 0,
+          "closePending": 0,
+          "accountingKnown": true,
+          "closing": true,
+          "retired": true,
+          "teardownOutcome": "retired"
+        },
+        {
+          "reason": "teardown",
+          "phase": "teardown",
+          "phaseComplete": true,
+          "elapsedMs": 562,
+          "rawPending": 0,
+          "directPending": 0,
+          "childPending": 0,
+          "callbackPending": 0,
+          "closePending": 0,
+          "accountingKnown": true,
+          "closing": true,
+          "retired": true,
+          "teardownOutcome": "retired"
+        }
+      ]
+    },
+    {
+      "key": "03-fixture",
+      "pass": 11,
+      "fail": 0,
+      "skip": 0,
+      "cases": [
+        {
+          "name": "checkpoint tracker > names the pre-prompt snapshot as the turn start, checkpoints the end and reports the turn diff",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > reverts a completed turn and undoes the revert with exact bytes and undoable state",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > works from a subdirectory, with paths relative to the repository root",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > marks turns shared when another agent works in the same worktree",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > marks a turn shared with a live terminal agent in the same worktree",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > marks and closes a turn that ends before its start checkpoint is written",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > reports a revert in progress so new prompts can wait for it",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > does not mark turns shared for agents in other worktrees",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > refuses to revert while the agent is mid-turn",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > shows session changes against the working tree",
+          "status": "pass"
+        },
+        {
+          "name": "checkpoint tracker > reports unavailable outside a git repository and refuses to revert an unfinished turn",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "lintErrors": 0,
+  "lintWarnings": 0,
+  "compiler": {
+    "actualConfig": {
+      "extends": "../../../tsconfig.json",
+      "files": [
+        "../../../src/main/services/agent-runtime/checkpoint-tracker.test.ts"
+      ]
+    },
+    "graphInputsEach": 3958,
+    "orderedListsMatchBothOriginalCompilerOutputs": true,
+    "orderedPathListsIdentical": true,
+    "unchangedFullInputRecords": 3957,
+    "onlyDifference": {
+      "candidate": {
+        "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "bytes": 15733,
+        "sha256": "913d21b98b995c3867ec30a937e8819685e264f4c3989682dfc98b7ba59b1796"
+      },
+      "baseline": {
+        "path": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+        "bytes": 15685,
+        "sha256": "949e96e414a05fe0001e7a1e79f9507541668f9ed2976bbcb4eec7e0d9045d44"
+      }
+    },
+    "explicitChangedTestIncludedDespiteRootExclude": true,
+    "fullIdenticalDiagnostic": [
+      {
+        "file": "test/checkpoint-fixture-lifetime.ts",
+        "line": "175",
+        "column": "33",
+        "code": "TS7024",
+        "message": "Function implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions."
+      }
+    ],
+    "candidateExit": 2,
+    "baselineExit": 2,
+    "helperBytesUnchanged": true,
+    "comparisonNotFullCompilerPass": true,
+    "graphDeclaredHeadsMatch": true,
+    "orderedInputPathsSha256": "829e505150e565f94fbb2a43fea02366204268ae237338da707100d2f52b2f42"
+  },
+  "typingDisposition": "Accept scoped zero-regression as sufficient for samePR update/newhead observation; actual changed-test-inclusive compiler remains FAIL1, independent from prior Annex FAIL139. No reduced graph or root-only substitute.",
+  "bindingLimits": "Runtime launch/overlay/source/restoration receipts and captured compiler-input hashes were inspected; no claim of atomic whole-host/executable/transitive runtime sealing or a reviewer compiler rerun.",
+  "reviewerExecution": "Read-only gh/git/hash/patch/XML/graph comparison only; no tests, compiler, lint, CI or product edit.",
+  "verifiedCommittedArtifacts": [
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/README.md",
+      "bytes": 8679,
+      "sha256": "20a78357c5835e47580ea4905dcd0b41ca0eccdc8d92cd98d3493121ba2b61af",
+      "gitBlob": "f59661124fe1e9294b3cf2516a66542eb9462b60",
+      "verifiedGitBlob": "f59661124fe1e9294b3cf2516a66542eb9462b60"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/01-discriminator-exit-original.txt",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gitBlob": "573541ac9702dd3969c9bc859d2b91ec1f7e6e56",
+      "verifiedGitBlob": "573541ac9702dd3969c9bc859d2b91ec1f7e6e56"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/01-discriminator-input-original.json",
+      "bytes": 665,
+      "sha256": "deb0faceb03ce1127d8c6096081eb7b5299baf4390ffe51eb6aaec0c30116a19",
+      "gitBlob": "318fd6e378786f78a250bf10bdf5991016358594",
+      "verifiedGitBlob": "318fd6e378786f78a250bf10bdf5991016358594"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/01-discriminator-original.log.gz",
+      "bytes": 882,
+      "sha256": "e5a59f3c53fc8ca42c9b6b62ffc3bf655b2db032f4e834d2579f613035460b50",
+      "gitBlob": "928a77bcd156f9dd8aaf3e1b53ffdba3cbc40c84",
+      "verifiedGitBlob": "928a77bcd156f9dd8aaf3e1b53ffdba3cbc40c84"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/01-discriminator-original.xml",
+      "bytes": 3579,
+      "sha256": "4a18cb2870eb4660cd61e3e713099c404b74e10be99bef708b74ed9a3f280a8a",
+      "gitBlob": "edae2df6f37d211dc327e976311448f9434fe64c",
+      "verifiedGitBlob": "edae2df6f37d211dc327e976311448f9434fe64c"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/02-readiness-mutant-exit-original.txt",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gitBlob": "d00491fd7e5bb6fa28c517a0bb32b8b506539d4d",
+      "verifiedGitBlob": "d00491fd7e5bb6fa28c517a0bb32b8b506539d4d"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/02-readiness-mutant-input-original.json",
+      "bytes": 762,
+      "sha256": "47e63f9db357bff2f58a15a853d5ed1441ee53db52a1653c3c97aa4cb8febc45",
+      "gitBlob": "52c7e51fa8a5f11a1604f35c905c883a5c369872",
+      "verifiedGitBlob": "52c7e51fa8a5f11a1604f35c905c883a5c369872"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/02-readiness-mutant-original.log.gz",
+      "bytes": 1789,
+      "sha256": "42c79a9081fb3ba49877b2d067c8435753729bc1c97abab6304613172549b5c3",
+      "gitBlob": "78cef03edfdb7976cf9e5cd9322fd5fc989393fb",
+      "verifiedGitBlob": "78cef03edfdb7976cf9e5cd9322fd5fc989393fb"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/02-readiness-mutant-original.xml",
+      "bytes": 6205,
+      "sha256": "ff5ff5e395d3557f42cbaf38bd63bdea07bd74dcf7a3945af0fcba5a22dad2f2",
+      "gitBlob": "e401ed8eacb827883e95442484485480186a4a5f",
+      "verifiedGitBlob": "e401ed8eacb827883e95442484485480186a4a5f"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/03-fixture-exit-original.txt",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gitBlob": "573541ac9702dd3969c9bc859d2b91ec1f7e6e56",
+      "verifiedGitBlob": "573541ac9702dd3969c9bc859d2b91ec1f7e6e56"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/03-fixture-original.log.gz",
+      "bytes": 977,
+      "sha256": "c22a1a1cd8ef7670553ba9bb7751d1cd79fad851588ea91765b7441ab88a741d",
+      "gitBlob": "626174c22c8512cb470bd8b61610f50f6cdde8b7",
+      "verifiedGitBlob": "626174c22c8512cb470bd8b61610f50f6cdde8b7"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/03-fixture-original.xml",
+      "bytes": 2888,
+      "sha256": "c0cfc38ae00e70f08de8669f573365129c52bde62c72aaad474152436d0fa0c0",
+      "gitBlob": "dedd0c2add5d2e30f59e84b16e06799f2cdfa05f",
+      "verifiedGitBlob": "dedd0c2add5d2e30f59e84b16e06799f2cdfa05f"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/04-fixture-types-exit-original.txt",
+      "bytes": 2,
+      "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "gitBlob": "0cfbf08886fca9a91cb753ec8734c84fcbe52c9f",
+      "verifiedGitBlob": "0cfbf08886fca9a91cb753ec8734c84fcbe52c9f"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/04-fixture-types-graph-original.json.gz",
+      "bytes": 212260,
+      "sha256": "730f49b882f6a22122d1e9ab62a34cd2cdd481ea229f12f379dbf23ecc82b532",
+      "gitBlob": "7274b121f2bd86f2583512477a5e09fa83183790",
+      "verifiedGitBlob": "7274b121f2bd86f2583512477a5e09fa83183790"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/04-fixture-types-original.log.gz",
+      "bytes": 32772,
+      "sha256": "cdbdfd68e6ad8d766f32146563dd8296dbf1f7fc4bac352ddd666402f6d56151",
+      "gitBlob": "6c366fb378ead6312eb44311bef8e4d0c17038ed",
+      "verifiedGitBlob": "6c366fb378ead6312eb44311bef8e4d0c17038ed"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/05-fixture-lint-exit-original.txt",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gitBlob": "573541ac9702dd3969c9bc859d2b91ec1f7e6e56",
+      "verifiedGitBlob": "573541ac9702dd3969c9bc859d2b91ec1f7e6e56"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/05-fixture-lint-original.log.gz",
+      "bytes": 381,
+      "sha256": "236bc28bce4bfebdff3ce3e8d60c3760c2d85281d2ba238002c8b419ab0bdc25",
+      "gitBlob": "6766fa4816a36d81671b180f8711f481ba93f84d",
+      "verifiedGitBlob": "6766fa4816a36d81671b180f8711f481ba93f84d"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/06-baseline-types-exit-original.txt",
+      "bytes": 2,
+      "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "gitBlob": "0cfbf08886fca9a91cb753ec8734c84fcbe52c9f",
+      "verifiedGitBlob": "0cfbf08886fca9a91cb753ec8734c84fcbe52c9f"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/06-baseline-types-graph-original.json.gz",
+      "bytes": 212259,
+      "sha256": "6d756436872c66de086d843e195896e32274c9982157fc0d994c03d041d743cf",
+      "gitBlob": "cd9272a7a8b5070602576a9e9b5201ec10cfd391",
+      "verifiedGitBlob": "cd9272a7a8b5070602576a9e9b5201ec10cfd391"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/06-baseline-types-input-original.json",
+      "bytes": 527,
+      "sha256": "abfdfdc0231bb85444d7fbd79d3a03c9009eda4a69d719b65c7bc38b95499824",
+      "gitBlob": "6c69de01a26184e52d50d4df645ccd4da611abd1",
+      "verifiedGitBlob": "6c69de01a26184e52d50d4df645ccd4da611abd1"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/06-baseline-types-original.log.gz",
+      "bytes": 32767,
+      "sha256": "5beb04348ecba484fadac93ba1abca2738366bd17a7224ff214e631e191acbe2",
+      "gitBlob": "9b47c37f0f5bf38b12e51ef51a2b865241bf4aa2",
+      "verifiedGitBlob": "9b47c37f0f5bf38b12e51ef51a2b865241bf4aa2"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/discriminator-fixture-original.ts.txt",
+      "bytes": 17918,
+      "sha256": "6684fb11d9e2104458cff668c1f5e382d955ee4d27bb86b8def12fba9b34e084",
+      "gitBlob": "9a7772bf3d409fff8d3902a3305073066361e390",
+      "verifiedGitBlob": "9a7772bf3d409fff8d3902a3305073066361e390"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/discriminator-overlay-original.diff",
+      "bytes": 3158,
+      "sha256": "166c513bbb47e34a96d93d7851a94169db06d84dc3f27b48053ea92ae55dab34",
+      "gitBlob": "619c3c4589ed40fb6ed417779505055fef92613e",
+      "verifiedGitBlob": "619c3c4589ed40fb6ed417779505055fef92613e"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/final-source-restoration-original.json",
+      "bytes": 266,
+      "sha256": "857eabab2de21821126a025195892d4bda84c6d0c1346bc2803a07efb7711bfd",
+      "gitBlob": "385b0101f88290993374bdd5a720a829fb80b47f",
+      "verifiedGitBlob": "385b0101f88290993374bdd5a720a829fb80b47f"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/fixture-types-comparison-original.json",
+      "bytes": 1466,
+      "sha256": "bdfec4c20aba0a91535ea12dd900c84609699eeefd363e69046dcb4dff291048",
+      "gitBlob": "126d2a7d59738d39489e3eb19b0334225b63783d",
+      "verifiedGitBlob": "126d2a7d59738d39489e3eb19b0334225b63783d"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/fixture-types.json",
+      "bytes": 134,
+      "sha256": "f96121b20e098b064e78796367cfd42459831eb7e5f42ad1ceebeee97d38e6f1",
+      "gitBlob": "b89e2d45f97346dc5ce080482479cdd5e3103f15",
+      "verifiedGitBlob": "b89e2d45f97346dc5ce080482479cdd5e3103f15"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/lossless-originals.json",
+      "bytes": 13531,
+      "sha256": "112bdf4348263a1a6cb8b97b438b9157f236a3db1da95fc64f71c44b75216c68",
+      "gitBlob": "af3f430ba0c8e92a58fcbb601dc0b322b640f6a3",
+      "verifiedGitBlob": "af3f430ba0c8e92a58fcbb601dc0b322b640f6a3"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/main-before-freeze-original.json",
+      "bytes": 348,
+      "sha256": "0bbb3b9a0320075735d543962cf8b558d9c7ce003ca111a6e0ba9a9c3705cf12",
+      "gitBlob": "a2a84b0b2a7785eb39010d6aabf6b0299b85f82e",
+      "verifiedGitBlob": "a2a84b0b2a7785eb39010d6aabf6b0299b85f82e"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/pr-before-freeze-original.json",
+      "bytes": 175,
+      "sha256": "daa2663450a4ac7f699775cc1f0f3d7ad6d168e11ce8f56f63827277796871d5",
+      "gitBlob": "4689e0ace1ddbe202c4eba5c9fd1171610b68268",
+      "verifiedGitBlob": "4689e0ace1ddbe202c4eba5c9fd1171610b68268"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/proof-attribution-original.json",
+      "bytes": 8000,
+      "sha256": "d84260cb91a0ed4c9c611fafe670345382a2c291639c9295f5b43d54a7eda29e",
+      "gitBlob": "d3eedc287d73a8f90c3c9eedf0e1bcb7e18ac8ca",
+      "verifiedGitBlob": "d3eedc287d73a8f90c3c9eedf0e1bcb7e18ac8ca"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/readiness-mutant-fixture-original.ts.txt",
+      "bytes": 17803,
+      "sha256": "d38958cf6fe20dbf7b8f67e1ac2d2a05f3ddce849663e249b7207dbf0ad76f10",
+      "gitBlob": "79c5108a129d92e194c81b324a8ab87d9ab46fe9",
+      "verifiedGitBlob": "79c5108a129d92e194c81b324a8ab87d9ab46fe9"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/readiness-mutant-overlay-original.diff",
+      "bytes": 3923,
+      "sha256": "2c90e309a1fc074d0718661cd45ca7db117116a0773edd4e7bbd38441f087ff4",
+      "gitBlob": "ef2e363b03334b146aa46706d64dc3aca68e15e4",
+      "verifiedGitBlob": "ef2e363b03334b146aa46706d64dc3aca68e15e4"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/restored-source-original.json",
+      "bytes": 190,
+      "sha256": "183eda2d55a9827fe0c77704a03f94ec1aae37bf8434776c3bf68bf9511e3f69",
+      "gitBlob": "8c0726eb009613afa5fbab620c8fd3a0eabca6ed",
+      "verifiedGitBlob": "8c0726eb009613afa5fbab620c8fd3a0eabca6ed"
+    },
+    {
+      "path": "docs/evidence/3775-checkpoint-idle/artifacts/source-original.json",
+      "bytes": 2340,
+      "sha256": "683e1078521e66222f8027309d2472d87d29e6c1016d98c4e968d4a24666e38c",
+      "gitBlob": "0a9c8d4b4c57b8f75d042bb7ba40b5548417d997",
+      "verifiedGitBlob": "0a9c8d4b4c57b8f75d042bb7ba40b5548417d997"
+    }
+  ]
+}
