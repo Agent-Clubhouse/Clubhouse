@@ -1,0 +1,12 @@
+{
+  "key": "02-disposable-controls",
+  "cases": 8,
+  "expectedPrimaryFailures": 2,
+  "actualJUnitPackets": 11,
+  "rawPacketEquality": true,
+  "staticPayloadAndFiniteBounds": true,
+  "node": "v24.22.1",
+  "platform": "darwin",
+  "head": "d333225e04312a8d5862a7b505decf72aa58a775",
+  "trackedDiffSha256": "1520124317490c66ba79e49bd23d1b200c04e386588fe6e14224d6fefe92ef5e"
+}

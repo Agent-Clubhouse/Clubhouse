@@ -1,0 +1,44 @@
+2026-11-22T04:59:57Z START lane-p2 idle=91% unused=4630M avail=33641M freepct=87 comp=713M swap=3769M pid=34379 cmd=npx vitest run --project main src/main/services/managed-agents/delivery.test.ts --maxWorkers=2 --reporter=default --reporter=junit --outputFile.junit=docs/evidence/3774-phase-observation/attempts/01-fixture-observation.xml
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.0466670000000704}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.4950420000000122}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"end","phase":"seed.copy","offsetMs":4.409833000000162,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":4.4461670000000595}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":8.390792000000147,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"beforeEach","offsetMs":8.409958000000188,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":7,"event":"begin","phase":"body","offsetMs":8.510749999999916}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":8,"event":"begin","phase":"git.init","offsetMs":8.541917000000012}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":9,"event":"end","phase":"git.init","offsetMs":23.922625000000153,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":10,"event":"begin","phase":"git.add","offsetMs":24.194833000000017}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":11,"event":"end","phase":"git.add","offsetMs":35.35391699999991,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":12,"event":"begin","phase":"delivery","offsetMs":35.377750000000106}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":13,"event":"begin","phase":"git.async","offsetMs":36.17891700000018}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":14,"event":"end","phase":"git.async","offsetMs":45.13079199999993,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":15,"event":"end","phase":"delivery","offsetMs":46.29258299999992,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":16,"event":"begin","phase":"resolve","offsetMs":46.333500000000186}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":17,"event":"end","phase":"resolve","offsetMs":46.847499999999854,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":18,"event":"begin","phase":"grant.cleanup","offsetMs":46.92450000000008}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":19,"event":"end","phase":"grant.cleanup","offsetMs":46.93579200000022,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":20,"event":"end","phase":"body","offsetMs":46.941707999999835,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.0466670000000704},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.4950420000000122},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":4.409833000000162,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":4.4461670000000595},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":8.390792000000147,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":8.409958000000188,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":8.510749999999916},{"seq":8,"event":"begin","phase":"git.init","offsetMs":8.541917000000012},{"seq":9,"event":"end","phase":"git.init","offsetMs":23.922625000000153,"threw":false},{"seq":10,"event":"begin","phase":"git.add","offsetMs":24.194833000000017},{"seq":11,"event":"end","phase":"git.add","offsetMs":35.35391699999991,"threw":false},{"seq":12,"event":"begin","phase":"delivery","offsetMs":35.377750000000106},{"seq":13,"event":"begin","phase":"git.async","offsetMs":36.17891700000018},{"seq":14,"event":"end","phase":"git.async","offsetMs":45.13079199999993,"threw":false},{"seq":15,"event":"end","phase":"delivery","offsetMs":46.29258299999992,"threw":false},{"seq":16,"event":"begin","phase":"resolve","offsetMs":46.333500000000186},{"seq":17,"event":"end","phase":"resolve","offsetMs":46.847499999999854,"threw":false},{"seq":18,"event":"begin","phase":"grant.cleanup","offsetMs":46.92450000000008},{"seq":19,"event":"end","phase":"grant.cleanup","offsetMs":46.93579200000022,"threw":false},{"seq":20,"event":"end","phase":"body","offsetMs":46.941707999999835,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":47.08541699999978,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":47.2760830000002,"elapsedMs":0.12366600000041217}
+stderr | src/main/services/managed-agents/delivery.test.ts > deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.0466670000000704},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.4950420000000122},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":4.409833000000162,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":4.4461670000000595},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":8.390792000000147,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":8.409958000000188,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":8.510749999999916},{"seq":8,"event":"begin","phase":"git.init","offsetMs":8.541917000000012},{"seq":9,"event":"end","phase":"git.init","offsetMs":23.922625000000153,"threw":false},{"seq":10,"event":"begin","phase":"git.add","offsetMs":24.194833000000017},{"seq":11,"event":"end","phase":"git.add","offsetMs":35.35391699999991,"threw":false},{"seq":12,"event":"begin","phase":"delivery","offsetMs":35.377750000000106},{"seq":13,"event":"begin","phase":"git.async","offsetMs":36.17891700000018},{"seq":14,"event":"end","phase":"git.async","offsetMs":45.13079199999993,"threw":false},{"seq":15,"event":"end","phase":"delivery","offsetMs":46.29258299999992,"threw":false},{"seq":16,"event":"begin","phase":"resolve","offsetMs":46.333500000000186},{"seq":17,"event":"end","phase":"resolve","offsetMs":46.847499999999854,"threw":false},{"seq":18,"event":"begin","phase":"grant.cleanup","offsetMs":46.92450000000008},{"seq":19,"event":"end","phase":"grant.cleanup","offsetMs":46.93579200000022,"threw":false},{"seq":20,"event":"end","phase":"body","offsetMs":46.941707999999835,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":47.08541699999978,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+
+ ✓ |main| src/main/services/managed-agents/delivery.test.ts (68 tests) 6691ms
+     ✓ writes exactly the blocks in order with wildcards filled, and nothing else  2122ms
+     ✓ says the level an agent starts at when its CLI has no start for the saved one in its runtime (#3004)  1021ms
+     ✓ moves every untracked skill folder the setup does not list to app data, and leaves tracked ones for Preview (D48)  574ms
+
+ Test Files  1 passed (1)
+      Tests  68 passed (68)
+   Start at  23:59:57
+   Duration  7.80s (transform 849ms, setup 4ms, import 1.04s, tests 6.69s, environment 0ms)
+
+JUNIT report written to /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/docs/evidence/3774-phase-observation/attempts/01-fixture-observation.xml
+2026-11-22T05:00:05Z END lane-p2 rc=0
