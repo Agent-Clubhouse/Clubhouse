@@ -1,0 +1,287 @@
+{
+  "source": "c1659088c68bd665fc1da0c61873729fcb9a85ee",
+  "sourceTree": "7ef23b3be3767f3c41227190be819295e41e4671",
+  "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+  "proof": "6fa27a5a7f7b497a779df831b008489741390658",
+  "proofTree": "263709d563430a9df9725cd5d2c3ddba361603fc",
+  "changedFiles": [
+    "src/main/services/prepare-handoff-skill.test.ts",
+    "test/annex-v2/handoff-producer-admission.test.ts"
+  ],
+  "typeBridge": {
+    "erasedSourceExactA0AndDd": true,
+    "finalProducerBytesEqualDd140": true,
+    "ownerTranspileReceipt": {
+      "typescript": "5.9.3",
+      "fixture": "src/main/services/prepare-handoff-skill.test.ts",
+      "oldHead": "a0b564ed499acc9dff2121c12849ee237401f20b",
+      "newHead": "c1659088c68bd665fc1da0c61873729fcb9a85ee",
+      "emittedBytes": 15874,
+      "sha256": "fb4c0ed5fb859f2786acf487cf67c700630aeefafc0a926239892fdde2dc52c9",
+      "identical": true
+    },
+    "reviewerDidNotExecuteTranspileOrCompiler": true,
+    "notVitestTransformIdentity": true
+  },
+  "receipts": [
+    {
+      "prefix": "132-skill-original-refusal",
+      "head": "3e82ffa1c08ea058776e4782b8046f83f3daf148",
+      "tree": "5ba5d0a40fa64ead1d81b857a59500207b40c19a",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 1
+    },
+    {
+      "prefix": "135-skill-original-scope",
+      "head": "71b929176e5fa67d952398d919e9f429d2ea1e0b",
+      "tree": "56c5fa27f991c8e41dc915f273d908523038012c",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 1
+    },
+    {
+      "prefix": "136-skill-scope-green",
+      "head": "a0b564ed499acc9dff2121c12849ee237401f20b",
+      "tree": "5ceecf920d51774462d3a60532008d344513f471",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 0
+    },
+    {
+      "prefix": "139-fixture-ownership-red",
+      "head": "330ff895484a86e899bfc86ae9454be77044134f",
+      "tree": "51db518b3faa007261286252da692878ba561f2a",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 1
+    },
+    {
+      "prefix": "140-fixture-ownership-green",
+      "head": "dd508e39270d6d55bfd2c62eee5d3a974d5ea220",
+      "tree": "8473eef8c47d5b67defa89324b76ba1128e88b3d",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 0
+    },
+    {
+      "prefix": "141-hosted-correction-types",
+      "head": "dd508e39270d6d55bfd2c62eee5d3a974d5ea220",
+      "tree": "8473eef8c47d5b67defa89324b76ba1128e88b3d",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 2
+    },
+    {
+      "prefix": "142-hosted-correction-types",
+      "head": "a923690f3c3a649a35ec32f23d2bc597c9327907",
+      "tree": "50248aa376df71265b9b25b47e8bbaaf301f159d",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 2
+    },
+    {
+      "prefix": "143-hosted-correction-types",
+      "head": "c1659088c68bd665fc1da0c61873729fcb9a85ee",
+      "tree": "7ef23b3be3767f3c41227190be819295e41e4671",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 0
+    },
+    {
+      "prefix": "144-hosted-correction-lint",
+      "head": "c1659088c68bd665fc1da0c61873729fcb9a85ee",
+      "tree": "7ef23b3be3767f3c41227190be819295e41e4671",
+      "cleanBeforeAfter": true,
+      "relevantHashes": 16,
+      "exit": 0
+    }
+  ],
+  "xml": [
+    {
+      "prefix": "132-skill-original-refusal",
+      "head": "3e82ffa1c08ea058776e4782b8046f83f3daf148",
+      "counts": {
+        "skip": 4,
+        "fail": 1
+      },
+      "failureNodes": 1,
+      "selected": [
+        {
+          "name": "the prepare-handoff skill (#3344) > followed step by step on a fixture repository, produces a valid offer bound to its preparation",
+          "classname": "src/main/services/prepare-handoff-skill.test.ts",
+          "result": "fail",
+          "failures": [
+            "<failure message=\"expected true not to be true // Object.is equality\" type=\"AssertionError\">\nAssertionError: expected true not to be true // Object.is equality\n \u276f src/main/services/prepare-handoff-skill.test.ts:126:40\n            </failure>\n        "
+          ]
+        }
+      ]
+    },
+    {
+      "prefix": "135-skill-original-scope",
+      "head": "71b929176e5fa67d952398d919e9f429d2ea1e0b",
+      "counts": {
+        "skip": 4,
+        "fail": 1
+      },
+      "failureNodes": 1,
+      "selected": [
+        {
+          "name": "the prepare-handoff skill (#3344) > followed step by step on a fixture repository, produces a valid offer bound to its preparation",
+          "classname": "src/main/services/prepare-handoff-skill.test.ts",
+          "result": "fail",
+          "failures": [
+            "<failure message=\"expected true not to be true // Object.is equality\" type=\"AssertionError\">\nAssertionError: expected true not to be true // Object.is equality\n \u276f src/main/services/prepare-handoff-skill.test.ts:154:40\n            </failure>\n        "
+          ]
+        }
+      ]
+    },
+    {
+      "prefix": "136-skill-scope-green",
+      "head": "a0b564ed499acc9dff2121c12849ee237401f20b",
+      "counts": {
+        "pass": 6
+      },
+      "failureNodes": 0,
+      "selected": [
+        {
+          "name": "the prepare-handoff skill (#3344) > names only registered tools, in the order a scripted agent follows",
+          "classname": "src/main/services/prepare-handoff-skill.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "the prepare-handoff skill (#3344) > followed step by step on a fixture repository, produces a valid offer bound to its preparation",
+          "classname": "src/main/services/prepare-handoff-skill.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "the prepare-handoff skill (#3344) > refuses the same prepared offer when its original agreement scope is bypassed",
+          "classname": "src/main/services/prepare-handoff-skill.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "the prepare-handoff skill (#3344) > tells a too-big refusal apart from a secret finding, and a dirty branch from both",
+          "classname": "src/main/services/prepare-handoff-skill.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "the prepare-handoff skill (#3344) > gets the repository reasons step 4 names from prepare_handoff itself",
+          "classname": "src/main/services/prepare-handoff-skill.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "the prepare-handoff skill (#3344) > refuses the full manifest in place of the summary, as the skill warns",
+          "classname": "src/main/services/prepare-handoff-skill.test.ts",
+          "result": "pass",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "prefix": "139-fixture-ownership-red",
+      "head": "330ff895484a86e899bfc86ae9454be77044134f",
+      "counts": {
+        "fail": 1,
+        "skip": 51
+      },
+      "failureNodes": 3,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > keeps actual fixture preparation alive until teardown settles it",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "fail",
+          "failures": [
+            "<failure message=\"expected true to be false // Object.is equality\" type=\"AssertionError\">\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:216:28\n            </failure>\n            ",
+            "<failure message=\"expected false to be true // Object.is equality\" type=\"AssertionError\">\nAssertionError: expected false to be true // Object.is equality\n\n- Expected\n+ Received\n\n- true\n+ false\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:217:53\n            </failure>\n            ",
+            "<failure message=\"expected true not to be true // Object.is equality\" type=\"AssertionError\">\nAssertionError: expected true not to be true // Object.is equality\n \u276f test/annex-v2/handoff-producer-admission.test.ts:222:39\n            </failure>\n        "
+          ]
+        }
+      ]
+    },
+    {
+      "prefix": "140-fixture-ownership-green",
+      "head": "dd508e39270d6d55bfd2c62eee5d3a974d5ea220",
+      "counts": {
+        "pass": 2,
+        "skip": 50
+      },
+      "failureNodes": 0,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > keeps actual fixture preparation alive until teardown settles it",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "result": "pass",
+          "failures": []
+        }
+      ]
+    }
+  ],
+  "xmlRows": 120,
+  "archiveCount": 77,
+  "compiler": {
+    "143Exit": 0,
+    "orderedListFilesInputs": 3959,
+    "trackedHashesVerifiedToSourceGit": 2471,
+    "dependencyHashesOwnerObservedAfterExecution": 1488,
+    "threeCompleteFixtures": [
+      "../../../test/annex-v2/handoff-producer-admission.test.ts",
+      "../../../src/main/services/clubhouse-mcp/tools/handoff-tools.test.ts",
+      "../../../src/main/services/prepare-handoff-skill.test.ts"
+    ],
+    "atomicSeal": false
+  },
+  "lint": {
+    "144Exit": 0,
+    "files": 2,
+    "errors": 0,
+    "warnings": 0
+  },
+  "oldAssertionsAndDeadlinesPreserved": true,
+  "onlyTwoFixturesProductionUnchanged": true,
+  "protectedSourceEvidenceTreesEqual": true,
+  "manifestSha256": "6173c6b8ac7fea8acaef4ac0118b93cccd494e51352c86e54f448503369bbc60",
+  "readmeSha256": "cf92a03a6c6c089cb52b4ee7b3b59a14003213650de519ff2c7983ed107ba5c1",
+  "disposition": "BLOCK F1 rejection-shortcircuited fixture drain and F2 uncontained diagnostics; no production acceptance reopening",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "medium",
+      "confidence": "high source-derived, not reviewer-executed",
+      "path": "test/annex-v2/handoff-producer-admission.test.ts",
+      "lines": "97-105,108-121,especially114",
+      "issue": "spliced Promise.all rejects early, skips all remaining cleanup and can stop awaiting other actual owned work"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "confidence": "high conditional source path, no actual native logger failure",
+      "path": "test/annex-v2/handoff-producer-admission.test.ts",
+      "lines": "95,110-112",
+      "issue": "uncontained clock/snapshot/emission failure can alter original invocation or skip release/drain/cleanup"
+    }
+  ],
+  "remoteReadback": {
+    "head": "6fa27a5a7f7b497a779df831b008489741390658",
+    "tree": "263709d563430a9df9725cd5d2c3ddba361603fc",
+    "parent": "c1659088c68bd665fc1da0c61873729fcb9a85ee",
+    "ref": "refs/heads/lane-3613-p2-routes/handoff-producer-hosted-correction",
+    "READMEblob": "060d1bfe55de498c441df32c16dad53bf590f1c5"
+  },
+  "priorReview454ByteEqual": true,
+  "privateWorkspace": {
+    "head": "079a257acf38b168b529fb7745dae97f686b72b8",
+    "tree": "89e942aabd42c8ec93fe47794f2eef95b0b61980",
+    "clean": true
+  }
+}
