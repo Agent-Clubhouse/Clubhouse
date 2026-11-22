@@ -1,5 +1,6 @@
-import { REMOTE_DETAILS_CARD_IDS, type RemoteAgentDetails, type RemoteDetailsCard } from '../../shared/remote-agent-details';
-import type { RemoteAgentChanges } from '../../shared/remote-agent-changes';
+import { REMOTE_DETAILS_CARD_IDS, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails, type RemoteDetailsCard } from '../../shared/remote-agent-details';
+import { REMOTE_CHANGES_MAX_BYTES, type RemoteAgentChanges } from '../../shared/remote-agent-changes';
+import { REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
 import type { SelectedDispatcherDetails } from '../../shared/selected-dispatcher-details';
 /**
  * Tests for the Annex V2 Client — discovery, pairing, and connection management.
@@ -473,6 +474,77 @@ describe('annex-client', () => {
       expect(annexClient.getSatellite(fingerprint)?.snapshot).toBeFalsy();
       expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt).toBeUndefined();
       expect(annexClient.isMachineConnected(fingerprint)).toBe(false);
+    });
+
+    describe('reverse Details admission', () => {
+      const agentId = 'details /agent';
+      const details = (): RemoteAgentDetails => ({
+        version: 1, agentId, readOnly: true, readAt: 1, providerId: 'test', running: false,
+        status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({
+          id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1,
+        })),
+      });
+      const settings = (): RemoteAgentSettings => ({
+        version: 1, agentId, readOnly: true, provider: 'test', model: 'test', runtime: 'chat',
+        access: 'paired', executionPolicy: 'read-only', autoSleep: null, context: null,
+        setup: { state: 'ok', managed: false, template: null, instructions: '', skills: null, mcps: null },
+      });
+      const changes = (): RemoteAgentChanges => ({
+        version: 1, agentId, readOnly: true, observedAt: 1, scope: 'branch', state: 'ok',
+        branch: 'main', base: null, sessionId: null, turnId: null, live: true, shared: false,
+        files: [], totalFiles: 0, offset: 0, nextOffset: null, uncompared: 0,
+        skippedLarge: [], skippedRepos: [], skippedOmitted: 0,
+      });
+      const readers = [
+        { name: 'settings', read: () => annexClient.requestAgentSettings(fingerprint, agentId), value: settings,
+          path: '/api/v1/agents/details%20%2Fagent/settings-details', maxBytes: REMOTE_SETTINGS_MAX_BYTES },
+        { name: 'role', read: () => annexClient.requestDispatcherDetails(fingerprint),
+          value: (): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId, details: details() }),
+          path: '/api/v1/dispatcher/details', maxBytes: REMOTE_DETAILS_MAX_BYTES },
+        { name: 'details', read: () => annexClient.requestAgentDetails(fingerprint, agentId), value: details,
+          path: '/api/v1/agents/details%20%2Fagent/details', maxBytes: REMOTE_DETAILS_MAX_BYTES },
+        { name: 'changes', read: () => annexClient.requestAgentChanges(fingerprint, agentId, { scope: 'branch' }), value: changes,
+          path: '/api/v1/agents/details%20%2Fagent/changes?scope=branch', maxBytes: REMOTE_CHANGES_MAX_BYTES },
+      ] as const;
+
+      it.each(readers)('routes request-only $name once without minting snapshot authority', async ({ read, value, path, maxBytes }) => {
+        const body = value();
+        vi.mocked(annexControl.request).mockResolvedValueOnce({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(body)) });
+        const result = await read();
+        expect(https.get).not.toHaveBeenCalled();
+        expect(https.request).not.toHaveBeenCalled();
+        expect(annexClient.getSatellite(fingerprint)?.snapshot).toBeFalsy();
+        expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt).toBeUndefined();
+        expect(result).toEqual({ status: 'ok', value: body });
+        expect(annexControl.request).toHaveBeenCalledExactlyOnceWith(fingerprint,
+          expect.objectContaining({ method: 'GET', path }),
+          expect.objectContaining({ maxResponseBytes: maxBytes, timeoutMs: 30_000, signal: expect.any(AbortSignal) }));
+      });
+
+      it.each(readers)('preserves old-host $name unavailability without fallback or admission', async ({ read }) => {
+        vi.mocked(annexControl.request).mockResolvedValueOnce({ status: 404, headers: {}, body: Buffer.from('{}') });
+        const result = await read();
+        expect(https.request).not.toHaveBeenCalled();
+        expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt).toBeUndefined();
+        expect(result).toEqual({ status: 'unavailable' });
+        expect(annexControl.request).toHaveBeenCalledOnce();
+      });
+
+      it('mints and exports a local receipt only from the accepted current reverse snapshot', () => {
+        subscriptionCapable = true;
+        devicesChanged();
+        expect(subscriptions).toHaveLength(1);
+        subscriptions[0].handlers.onFrame({ type: 'snapshot', payload: {
+          protocolVersion: 2, lastSeq: 1, projects: [], agents: {}, quickAgents: {}, snapshotReceipt: 'HOST_FORGED',
+        } });
+        const current = annexClient.getSatellite(fingerprint);
+        expect(current?.state).toBe('connected');
+        expect(current?.snapshot?.lastSeq).toBe(1);
+        expect(current?.snapshotReceipt).toEqual(expect.any(String));
+        expect(current?.snapshotReceipt).not.toBe('HOST_FORGED');
+        expect(annexClient.getSatellites().find((sat) => sat.fingerprint === fingerprint)?.snapshotReceipt).toBe(current?.snapshotReceipt);
+      });
     });
 
     it('owns one reverse subscription and accepts its lower-sequence replacement snapshot', () => {
