@@ -300,9 +300,10 @@ describe('annex-client', () => {
   describe('GET Git diff envelope desktop adapter', () => {
     it('returns complete enlarged JSON through the actual single-route adapter and control pair', async () => {
       const fingerprint = 'gitdiff-peer';
+      const pin = 'gitdiff-pin';
       const peer: AnnexPeer = {
         fingerprint, publicKey: 'gitdiff-key', alias: 'Git diff', icon: 'computer', color: 'indigo',
-        pairedAt: '', lastSeen: '', role: 'member', kind: 'desktop', tlsCertificateFingerprint: 'gitdiff-pin',
+        pairedAt: '', lastSeen: '', role: 'member', kind: 'desktop', tlsCertificateFingerprint: pin,
       };
       vi.mocked(annexPeers.getPeer).mockImplementation((key) => key === fingerprint ? peer : undefined);
       vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
@@ -333,8 +334,8 @@ describe('annex-client', () => {
       incoming.peer = outgoing; outgoing.peer = incoming;
       annexClient.startClient();
       try {
-        annexControl._attachForTesting(incoming as never, fingerprint, peer.tlsCertificateFingerprint!, 'in');
-        annexControl._attachForTesting(outgoing as never, fingerprint, peer.tlsCertificateFingerprint!, 'out');
+        annexControl._attachForTesting(incoming as never, fingerprint, pin, 'in');
+        annexControl._attachForTesting(outgoing as never, fingerprint, pin, 'out');
         annexControl._sendHelloForTesting(fingerprint, ['request', 'bulk']);
         await vi.waitFor(() => expect(annexControl.hasReverseLink(fingerprint, 'bulk')).toBe(true));
         const result = await annexClient.requestGitOperation(fingerprint, 'project /name', { operation: 'diff', file: 'src/icons/notes.ts', staged: true });

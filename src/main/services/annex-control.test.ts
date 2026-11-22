@@ -200,7 +200,7 @@ describe('GET Git diff envelope boundary', () => {
   it.each([
     { method: 'POST' as const, path },
     { method: 'GET' as const, path: path + '-extra?file=f' },
-    { method: 'HEAD' as const, path },
+    { method: 'DELETE' as const, path },
     { method: 'GET' as const, path: path + '/?file=f' },
     { method: 'GET' as const, path: path + '/extra?file=f' },
     { method: 'GET' as const, path: '/api/v1/projects//git/diff?file=f' },
@@ -210,7 +210,7 @@ describe('GET Git diff envelope boundary', () => {
     handler = async () => ({ status: 200, headers: {}, body: diffBody(formerLimit + 1) });
     const { requesterWs } = await connected(['request', 'bulk']);
     await expect(control.request(TARGET, input)).rejects.toMatchObject({
-      code: 'response_too_large', indeterminate: input.method === 'POST',
+      code: 'response_too_large', indeterminate: input.method !== 'GET',
     });
     expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(false);
   });
@@ -248,7 +248,7 @@ describe('GET Git diff envelope boundary', () => {
     expect(result.body.equals(body)).toBe(true);
   });
 
-  it.each([undefined, 'HEAD' as const, 'POST' as const])('does not infer GET from a missing or different method %s', (method) => {
+  it.each([undefined, 'PATCH' as const, 'POST' as const])('does not infer GET from a missing or different method %s', (method) => {
     expect(control.responseBodyLimit(path, method)).toBe(formerLimit);
     expect(control.responseBodyLimit(path + '#fragment', 'GET')).toBe(formerLimit);
   });
@@ -268,7 +268,11 @@ describe('GET Git diff envelope boundary', () => {
     const credits = sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit').length;
     if (reason === 'cancel') abort.abort();
     else if (reason === 'revoke') world.peer = undefined;
-    else await connected(['request', 'bulk']);
+    else {
+      control.closeFor(TARGET, 'in');
+      await flush();
+      await connected(['request', 'bulk']);
+    }
     await flush();
     targetWs.drain();
     await flush();

@@ -39,6 +39,9 @@ inputs = [
     "vitest.config.ts", "tsconfig.json", "docs/annex-reverse-routes.tsconfig.json",
     "package.json", "package-lock.json", "docs/evidence/3613-gitdiff-envelope/capture.py",
 ]
+fixture_config = "docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json"
+if (root / fixture_config).exists():
+    inputs.append(fixture_config)
 installed = [
     "node_modules/@vitest/runner/dist/chunk-artifact.js",
     "node_modules/@vitest/runner/package.json", "node_modules/vitest/package.json",
