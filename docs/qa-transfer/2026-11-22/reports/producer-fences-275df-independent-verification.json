@@ -1,0 +1,552 @@
+{
+  "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+  "sourceTree": "507f18b6f9125e2c6eccefb9dee0c054649a32f9",
+  "srcTree": "52a10102d89a86af93f6b3ef6f64ac6a2adc384f",
+  "proof": "f1c128853165a088698a06b875cd294ebac12472",
+  "proofTree": "b4f1352065abf40b292fe86c638590506679b16c",
+  "fourFileBridgeVerified": [
+    "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+    "src/main/services/handoff-host.ts",
+    "test/annex-v2/handoff-producer-admission.test.ts",
+    "docs/annex-reverse-routes.md"
+  ],
+  "originalRedAndBenignSrcTreesMatchEf992": true,
+  "finalFixtureEqualsRefinedBenignFixture": true,
+  "commandReceipts": [
+    {
+      "run": 111,
+      "head": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+      "tree": "084d7b389ae7343b18aab15296e22ff00713000a",
+      "relevantHashes": 15,
+      "cleanBeforeAfter": true,
+      "before": "2026-11-22T19:46:57.432Z",
+      "after": "2026-11-22T19:47:10.597Z"
+    },
+    {
+      "run": 112,
+      "head": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+      "tree": "7f7b7233a620e24feb1b7ff6a62f844f06c92f12",
+      "relevantHashes": 15,
+      "cleanBeforeAfter": true,
+      "before": "2026-11-22T19:50:04.118Z",
+      "after": "2026-11-22T19:50:07.866Z"
+    },
+    {
+      "run": 113,
+      "head": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+      "tree": "507f18b6f9125e2c6eccefb9dee0c054649a32f9",
+      "relevantHashes": 15,
+      "cleanBeforeAfter": true,
+      "before": "2026-11-22T19:50:59.806Z",
+      "after": "2026-11-22T19:51:12.677Z"
+    },
+    {
+      "run": 114,
+      "head": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+      "tree": "507f18b6f9125e2c6eccefb9dee0c054649a32f9",
+      "relevantHashes": 15,
+      "cleanBeforeAfter": true,
+      "before": "2026-11-22T19:52:13.168Z",
+      "after": "2026-11-22T19:52:22.642Z"
+    },
+    {
+      "run": 115,
+      "head": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+      "tree": "507f18b6f9125e2c6eccefb9dee0c054649a32f9",
+      "relevantHashes": 15,
+      "cleanBeforeAfter": true,
+      "before": "2026-11-22T19:52:44.925Z",
+      "after": "2026-11-22T19:52:46.302Z"
+    }
+  ],
+  "xml": [
+    {
+      "run": 111,
+      "source": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+      "counts": {
+        "pass": 4,
+        "fail": 4,
+        "skip": 29
+      },
+      "failureNodes": 22,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+            "time": "2.496999083"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:513:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795376821204,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795376821204,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"bfda0aa4-b7d4-4cf4-829d-e766a670dfe3\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"producer-sender\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"machine\": \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",\n+       \"via\": \"dispatcher\",\n+     },\n+     \"updatedAt\": 1795376821204,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:514:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:515:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"markUndelivered\" to not be called at all, but actually been called 1 times  Received:    1st markUndelivered call:      Array [       \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"markUndelivered\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st markUndelivered call:\n\n    Array [\n      \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:516:33\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"postToMachine\" to not be called at all, but actually been called 1 times  Received:    1st postToMachine call:      Array [       \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",       \"/api/v1/network/handoffs\",       Object {         \"op\": \"offer\",         \"record\": Object {           \"createdAt\": 1795376821204,           \"from\": Object {             \"agentId\": \"producer-sender\",             \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",           },           \"history\": Array [             Object {               \"at\": 1795376821204,               \"by\": Object {                 \"address\": Object {                   \"agentId\": \"producer-sender\",                   \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",                 },                 \"kind\": \"agent\",               },               \"operationId\": \"bfda0aa4-b7d4-4cf4-829d-e766a670dfe3\",               \"state\": \"offered\",             },           ],           \"id\": \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",           \"manifest\": Object {             \"fileCount\": 2,             \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\",             \"totalBytes\": 302,           },           \"mode\": \"worktree\",           \"schemaVersion\": 1,           \"senderName\": \"producer-sender\",           \"state\": \"offered\",           \"task\": Object {             \"brief\": \"Synthetic unit fixture only\",             \"title\": \"Continue fixture\",           },           \"to\": Object {             \"machine\": \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",             \"via\": \"dispatcher\",           },           \"updatedAt\": 1795376821204,           \"version\": 1,         },       },       Object {         \"maxResponseBytes\": 524288,         \"signal\": AbortSignal {           Symbol(kEvents): undefined,           Symbol(events.maxEventTargetListeners): 0,           Symbol(events.maxEventTargetListenersWarned): false,           Symbol(kHandlers): undefined,           Symbol(kAborted): false,           Symbol(kReason): undefined,           Symbol(kComposite): false,         },       },     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"postToMachine\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st postToMachine call:\n\n    Array [\n      \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",\n      \"/api/v1/network/handoffs\",\n      Object {\n        \"op\": \"offer\",\n        \"record\": Object {\n          \"createdAt\": 1795376821204,\n          \"from\": Object {\n            \"agentId\": \"producer-sender\",\n            \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n          },\n          \"history\": Array [\n            Object {\n              \"at\": 1795376821204,\n              \"by\": Object {\n                \"address\": Object {\n                  \"agentId\": \"producer-sender\",\n                  \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n                },\n                \"kind\": \"agent\",\n              },\n              \"operationId\": \"bfda0aa4-b7d4-4cf4-829d-e766a670dfe3\",\n              \"state\": \"offered\",\n            },\n          ],\n          \"id\": \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",\n          \"manifest\": Object {\n            \"fileCount\": 2,\n            \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\",\n            \"totalBytes\": 302,\n          },\n          \"mode\": \"worktree\",\n          \"schemaVersion\": 1,\n          \"senderName\": \"producer-sender\",\n          \"state\": \"offered\",\n          \"task\": Object {\n            \"brief\": \"Synthetic unit fixture only\",\n            \"title\": \"Continue fixture\",\n          },\n          \"to\": Object {\n            \"machine\": \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",\n            \"via\": \"dispatcher\",\n          },\n          \"updatedAt\": 1795376821204,\n          \"version\": 1,\n        },\n      },\n      Object {\n        \"maxResponseBytes\": 524288,\n        \"signal\": AbortSignal {\n          Symbol(kEvents): undefined,\n          Symbol(events.maxEventTargetListeners): 0,\n          Symbol(events.maxEventTargetListenersWarned): false,\n          Symbol(kHandlers): undefined,\n          Symbol(kAborted): false,\n          Symbol(kReason): undefined,\n          Symbol(kComposite): false,\n        },\n      },\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:517:33\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"publishFederationHandoff\" to not be called at all, but actually been called 1 times  Received:    1st publishFederationHandoff call:      Array [       Object {         \"createdAt\": 1795376821204,         \"from\": Object {           \"agentId\": \"producer-sender\",           \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",         },         \"history\": Array [           Object {             \"at\": 1795376821204,             \"by\": Object {               \"address\": Object {                 \"agentId\": \"producer-sender\",                 \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",               },               \"kind\": \"agent\",             },             \"operationId\": \"bfda0aa4-b7d4-4cf4-829d-e766a670dfe3\",             \"state\": \"offered\",           },         ],         \"id\": \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",         \"manifest\": Object {           \"fileCount\": 2,           \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\",           \"totalBytes\": 302,         },         \"mode\": \"worktree\",         \"schemaVersion\": 1,         \"senderName\": \"producer-sender\",         \"state\": \"offered\",         \"task\": Object {           \"brief\": \"Synthetic unit fixture only\",           \"title\": \"Continue fixture\",         },         \"to\": Object {           \"machine\": \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",           \"via\": \"dispatcher\",         },         \"updatedAt\": 1795376821204,         \"version\": 1,       },     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"publishFederationHandoff\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st publishFederationHandoff call:\n\n    Array [\n      Object {\n        \"createdAt\": 1795376821204,\n        \"from\": Object {\n          \"agentId\": \"producer-sender\",\n          \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n        },\n        \"history\": Array [\n          Object {\n            \"at\": 1795376821204,\n            \"by\": Object {\n              \"address\": Object {\n                \"agentId\": \"producer-sender\",\n                \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n              },\n              \"kind\": \"agent\",\n            },\n            \"operationId\": \"bfda0aa4-b7d4-4cf4-829d-e766a670dfe3\",\n            \"state\": \"offered\",\n          },\n        ],\n        \"id\": \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",\n        \"manifest\": Object {\n          \"fileCount\": 2,\n          \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\",\n          \"totalBytes\": 302,\n        },\n        \"mode\": \"worktree\",\n        \"schemaVersion\": 1,\n        \"senderName\": \"producer-sender\",\n        \"state\": \"offered\",\n        \"task\": Object {\n          \"brief\": \"Synthetic unit fixture only\",\n          \"title\": \"Continue fixture\",\n        },\n        \"to\": Object {\n          \"machine\": \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",\n          \"via\": \"dispatcher\",\n        },\n        \"updatedAt\": 1795376821204,\n        \"version\": 1,\n      },\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:518:35\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:519:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+            "time": "1.32525125"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:513:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795376822534,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795376822534,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"0bfd400e-7653-45ae-aca0-670f8215c724\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"c2e01452-90cd-4960-87e6-abea26102f56\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"producer-sender\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"machine\": \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",\n+       \"via\": \"dispatcher\",\n+     },\n+     \"updatedAt\": 1795376822534,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:514:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"c2e01452-90cd-4960-87e6-abea26102f56\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:515:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"markUndelivered\" to not be called at all, but actually been called 1 times  Received:    1st markUndelivered call:      Array [       \"c2e01452-90cd-4960-87e6-abea26102f56\",     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"markUndelivered\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st markUndelivered call:\n\n    Array [\n      \"c2e01452-90cd-4960-87e6-abea26102f56\",\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:516:33\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"postToMachine\" to not be called at all, but actually been called 1 times  Received:    1st postToMachine call:      Array [       \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",       \"/api/v1/network/handoffs\",       Object {         \"op\": \"offer\",         \"record\": Object {           \"createdAt\": 1795376822534,           \"from\": Object {             \"agentId\": \"producer-sender\",             \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",           },           \"history\": Array [             Object {               \"at\": 1795376822534,               \"by\": Object {                 \"address\": Object {                   \"agentId\": \"producer-sender\",                   \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",                 },                 \"kind\": \"agent\",               },               \"operationId\": \"0bfd400e-7653-45ae-aca0-670f8215c724\",               \"state\": \"offered\",             },           ],           \"id\": \"c2e01452-90cd-4960-87e6-abea26102f56\",           \"manifest\": Object {             \"fileCount\": 2,             \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\",             \"totalBytes\": 302,           },           \"mode\": \"worktree\",           \"schemaVersion\": 1,           \"senderName\": \"producer-sender\",           \"state\": \"offered\",           \"task\": Object {             \"brief\": \"Synthetic unit fixture only\",             \"title\": \"Continue fixture\",           },           \"to\": Object {             \"machine\": \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",             \"via\": \"dispatcher\",           },           \"updatedAt\": 1795376822534,           \"version\": 1,         },       },       Object {         \"maxResponseBytes\": 524288,         \"signal\": AbortSignal {           Symbol(kEvents): undefined,           Symbol(events.maxEventTargetListeners): 0,           Symbol(events.maxEventTargetListenersWarned): false,           Symbol(kHandlers): undefined,           Symbol(kAborted): false,           Symbol(kReason): undefined,           Symbol(kComposite): false,         },       },     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"postToMachine\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st postToMachine call:\n\n    Array [\n      \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",\n      \"/api/v1/network/handoffs\",\n      Object {\n        \"op\": \"offer\",\n        \"record\": Object {\n          \"createdAt\": 1795376822534,\n          \"from\": Object {\n            \"agentId\": \"producer-sender\",\n            \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n          },\n          \"history\": Array [\n            Object {\n              \"at\": 1795376822534,\n              \"by\": Object {\n                \"address\": Object {\n                  \"agentId\": \"producer-sender\",\n                  \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n                },\n                \"kind\": \"agent\",\n              },\n              \"operationId\": \"0bfd400e-7653-45ae-aca0-670f8215c724\",\n              \"state\": \"offered\",\n            },\n          ],\n          \"id\": \"c2e01452-90cd-4960-87e6-abea26102f56\",\n          \"manifest\": Object {\n            \"fileCount\": 2,\n            \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\",\n            \"totalBytes\": 302,\n          },\n          \"mode\": \"worktree\",\n          \"schemaVersion\": 1,\n          \"senderName\": \"producer-sender\",\n          \"state\": \"offered\",\n          \"task\": Object {\n            \"brief\": \"Synthetic unit fixture only\",\n            \"title\": \"Continue fixture\",\n          },\n          \"to\": Object {\n            \"machine\": \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",\n            \"via\": \"dispatcher\",\n          },\n          \"updatedAt\": 1795376822534,\n          \"version\": 1,\n        },\n      },\n      Object {\n        \"maxResponseBytes\": 524288,\n        \"signal\": AbortSignal {\n          Symbol(kEvents): undefined,\n          Symbol(events.maxEventTargetListeners): 0,\n          Symbol(events.maxEventTargetListenersWarned): false,\n          Symbol(kHandlers): undefined,\n          Symbol(kAborted): false,\n          Symbol(kReason): undefined,\n          Symbol(kComposite): false,\n        },\n      },\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:517:33\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"publishFederationHandoff\" to not be called at all, but actually been called 1 times  Received:    1st publishFederationHandoff call:      Array [       Object {         \"createdAt\": 1795376822534,         \"from\": Object {           \"agentId\": \"producer-sender\",           \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",         },         \"history\": Array [           Object {             \"at\": 1795376822534,             \"by\": Object {               \"address\": Object {                 \"agentId\": \"producer-sender\",                 \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",               },               \"kind\": \"agent\",             },             \"operationId\": \"0bfd400e-7653-45ae-aca0-670f8215c724\",             \"state\": \"offered\",           },         ],         \"id\": \"c2e01452-90cd-4960-87e6-abea26102f56\",         \"manifest\": Object {           \"fileCount\": 2,           \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\",           \"totalBytes\": 302,         },         \"mode\": \"worktree\",         \"schemaVersion\": 1,         \"senderName\": \"producer-sender\",         \"state\": \"offered\",         \"task\": Object {           \"brief\": \"Synthetic unit fixture only\",           \"title\": \"Continue fixture\",         },         \"to\": Object {           \"machine\": \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",           \"via\": \"dispatcher\",         },         \"updatedAt\": 1795376822534,         \"version\": 1,       },     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"publishFederationHandoff\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st publishFederationHandoff call:\n\n    Array [\n      Object {\n        \"createdAt\": 1795376822534,\n        \"from\": Object {\n          \"agentId\": \"producer-sender\",\n          \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n        },\n        \"history\": Array [\n          Object {\n            \"at\": 1795376822534,\n            \"by\": Object {\n              \"address\": Object {\n                \"agentId\": \"producer-sender\",\n                \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n              },\n              \"kind\": \"agent\",\n            },\n            \"operationId\": \"0bfd400e-7653-45ae-aca0-670f8215c724\",\n            \"state\": \"offered\",\n          },\n        ],\n        \"id\": \"c2e01452-90cd-4960-87e6-abea26102f56\",\n        \"manifest\": Object {\n          \"fileCount\": 2,\n          \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\",\n          \"totalBytes\": 302,\n        },\n        \"mode\": \"worktree\",\n        \"schemaVersion\": 1,\n        \"senderName\": \"producer-sender\",\n        \"state\": \"offered\",\n        \"task\": Object {\n          \"brief\": \"Synthetic unit fixture only\",\n          \"title\": \"Continue fixture\",\n        },\n        \"to\": Object {\n          \"machine\": \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",\n          \"via\": \"dispatcher\",\n        },\n        \"updatedAt\": 1795376822534,\n        \"version\": 1,\n      },\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:518:35\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:519:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+            "time": "1.360303625"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+            "time": "1.326999625"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+            "time": "1.309545625"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+            "time": "1.286086167"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:589:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795376827827,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"b4:51:9c:81:27:e5:60:32:d4:33:d3:94:ad:cb:58:09\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795376827827,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"b4:51:9c:81:27:e5:60:32:d4:33:d3:94:ad:cb:58:09\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"47534b87-a4b5-41c4-a78d-d1365a528d12\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"b6bd48af-b941-4d6c-907e-a1929b0a308a\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"bf6d5f4b2dcbad5bfb3dea120fb59e673a093e41d818b0342ce81eb5f3fb6c06\",\n+       \"totalBytes\": 303,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"Original source\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"producer-receiver\",\n+       \"machine\": \"b4:51:9c:81:27:e5:60:32:d4:33:d3:94:ad:cb:58:09\",\n+     },\n+     \"updatedAt\": 1795376827827,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:590:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 303,\n          \"sha256\": \"bf6d5f4b2dcbad5bfb3dea120fb59e673a093e41d818b0342ce81eb5f3fb6c06\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"b6bd48af-b941-4d6c-907e-a1929b0a308a\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:591:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:595:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+            "time": "1.317085541"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:589:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795376829124,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"13:c3:c0:02:a9:3f:43:22:d8:f9:7e:88:c0:8f:2a:f2\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795376829124,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"13:c3:c0:02:a9:3f:43:22:d8:f9:7e:88:c0:8f:2a:f2\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"35b18a6f-68e8-4a41-8fee-b6464f1f3885\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"25efcf2e-1eeb-45ca-94f3-292b17e27f30\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"1f2e55115bcda2d8088feaf82276d53e09eb45acd0907af7b2d326f9bda47541\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"Original source\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"producer-receiver\",\n+       \"machine\": \"13:c3:c0:02:a9:3f:43:22:d8:f9:7e:88:c0:8f:2a:f2\",\n+     },\n+     \"updatedAt\": 1795376829124,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:590:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"1f2e55115bcda2d8088feaf82276d53e09eb45acd0907af7b2d326f9bda47541\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"25efcf2e-1eeb-45ca-94f3-292b17e27f30\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:591:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:595:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+            "time": "1.296283834"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        }
+      ]
+    },
+    {
+      "run": 112,
+      "source": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 36
+      },
+      "failureNodes": 0,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+            "time": "2.426773292"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        }
+      ]
+    },
+    {
+      "run": 113,
+      "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+      "counts": {
+        "pass": 8,
+        "fail": 0,
+        "skip": 29
+      },
+      "failureNodes": 0,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+            "time": "2.484280666"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+            "time": "1.302552542"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+            "time": "1.309586625"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+            "time": "1.301224375"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+            "time": "1.29359275"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+            "time": "1.272136416"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+            "time": "1.315594"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+            "time": "1.285247459"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        }
+      ]
+    }
+  ],
+  "xmlRows": 111,
+  "failureNodes": 22,
+  "archiveCount": 43,
+  "compiler": {
+    "actualExit": 0,
+    "orderedInputs": 3958,
+    "trackedContentHashesVerified": 2470,
+    "dependencyHashesOwnerObservedAfterExecution": 1488,
+    "productionRoots": 2465,
+    "completeAdditionalFixtureRoots": 2,
+    "totalRoots": 2467,
+    "bothCompleteFixturesPresent": true,
+    "atomicReadSeal": false
+  },
+  "lint": {
+    "files": 3,
+    "errors": 0,
+    "warnings": 0
+  },
+  "protectedHistoricalTreesEqual": true,
+  "manifestSha256": "607fbb638abd9855e523d0594d4e93bce20de240adee8931ae20e088f4ad2146",
+  "readmeSha256": "26e0c26b22e2124869949421e0150f39ff21cca1a954a26ed7f64ce5b21a2331",
+  "disposition": "BLOCK remaining CP1 recipient project context dependency; CP2 and demonstrated approval-version/caller-runtime windows resolved",
+  "findings": [
+    {
+      "id": "CP1-R1",
+      "severity": "medium",
+      "confidence": "high/source-derived; not reviewer-executed",
+      "paths": [
+        "src/main/services/clubhouse-mcp/handoff-permissions.ts:22,30-34",
+        "src/main/services/handoff-host.ts:118-127,283-295,315-324,328-349,393-397"
+      ],
+      "issue": "cached resolved targets preserve recipient.projectPath without checking original recipient project continuity through final admission"
+    }
+  ],
+  "closureScopes": {
+    "CP2": "resolved stable captured observation/revision; conservative refusal",
+    "CP1": "approval-version and caller-context windows resolved for executed inputs; remaining recipient project dependency BLOCK"
+  },
+  "remoteReadback": {
+    "head": "f1c128853165a088698a06b875cd294ebac12472",
+    "tree": "b4f1352065abf40b292fe86c638590506679b16c",
+    "parent": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+    "correctionRef": "refs/heads/lane-3613-p2-routes/handoff-producer-fences",
+    "preservedCandidate": "refs/heads/lane-3613-p2-routes/handoff-usable-path=ef99265da9faddddf522c2c294745d86d593d78d"
+  },
+  "necessaryUnchangedContextSources": [
+    {
+      "path": "src/main/services/clubhouse-mcp/tool-registry.ts",
+      "blob": "e1e733db5022b81e1e9da581d33e2e8420dd086f",
+      "sha256": "21fc05c002a6744176dce8bdb911ad2f3008aa3835a8bc269b7c62f0909f2ed2"
+    },
+    {
+      "path": "src/main/services/clubhouse-mcp/arg-targets.ts",
+      "blob": "953e836f05630c3946b95943ab1c2bff5135f1f5",
+      "sha256": "0db979b5125e5796950ed04e2676d94e5ab22d81c1a6cd8df167ef2942a40763"
+    },
+    {
+      "path": "src/shared/agent-grants.ts",
+      "blob": "5aa7fa55d9cdeb1a7828a5e5adbd9c76179ee99f",
+      "sha256": "26d7c1632a26e6e6112494711a0306b54d50ad0d355d00f3cb604810f15e21eb"
+    }
+  ],
+  "privateWorkspace": {
+    "head": "079a257acf38b168b529fb7745dae97f686b72b8",
+    "tree": "89e942aabd42c8ec93fe47794f2eef95b0b61980",
+    "clean": true
+  }
+}
