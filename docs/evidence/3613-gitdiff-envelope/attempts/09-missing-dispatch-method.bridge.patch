@@ -1,0 +1,13 @@
+diff --git a/src/main/services/annex-control.ts b/src/main/services/annex-control.ts
+index 065b48063..a120be163 100644
+--- a/src/main/services/annex-control.ts
++++ b/src/main/services/annex-control.ts
+@@ -859,7 +859,7 @@ function startRun(server: ControlTarget, principal: AnnexPrincipal, request: Con
+   const deadline = new AbortController();
+   const timer = setTimeout(() => deadline.abort('timeout'), targetTimeoutMs);
+   timer.unref?.();
+-  const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed && link.ws.readyState === WebSocket.OPEN, responseLimit: link.features?.has('bulk') ? responseBodyLimit(request.path, request.method) : CONTROL_FRAME_MAX_BYTES };
++  const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed && link.ws.readyState === WebSocket.OPEN, responseLimit: link.features?.has('bulk') ? responseBodyLimit(request.path) : CONTROL_FRAME_MAX_BYTES };
+   let dispatched: Promise<DispatchResult>;
+   try { dispatched = server.dispatch(principal, request, ctx); } catch (err) { // telemetry-exempt: passed on as a rejection, logged below
+     dispatched = Promise.reject(err);

@@ -1,0 +1,1985 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="661" failures="0" errors="0" time="0.614158541">
+    <testsuite name="src/main/services/annex-server.test.ts" timestamp="2026-11-22T07:16:07.593Z" hostname="Masons-MacBook-Pro-13346.local" tests="661" failures="0" errors="0" skipped="658" time="0.614158541">
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; desktop controller conversation (#3474) &gt; serves an authenticated member history, pages and saved sessions" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; desktop controller conversation (#3474) &gt; refuses a desktop without the host agent.read grant" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; desktop controller conversation (#3474) &gt; rate limits repeated controller reads per pinned member" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; desktop controller conversation (#3474) &gt; refuses nonmember, pending and phone principals: &apos;member&apos; &apos;phone&apos; undefined" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; desktop controller conversation (#3474) &gt; refuses nonmember, pending and phone principals: &apos;member&apos; &apos;desktop&apos; true" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; desktop controller conversation (#3474) &gt; refuses nonmember, pending and phone principals: &apos;controller&apos; &apos;desktop&apos; undefined" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; desktop controller conversation (#3474) &gt; requires the pinned certificate and has no write route or mobile controller read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; serves only the ordinary role metadata to a pinned desktop controller, including while off" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; serves only the ordinary role metadata to a pinned desktop member, including while off" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; refuses anonymous before any role/configuration/Details lookup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; refuses removed before any role/configuration/Details lookup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; refuses wrong-pin before any role/configuration/Details lookup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; refuses unpaired-pin before any role/configuration/Details lookup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; refuses opposite-direction before any role/configuration/Details lookup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; refuses phone before any role/configuration/Details lookup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; refuses unclassified before any role/configuration/Details lookup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; refuses unknown-kind before any role/configuration/Details lookup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; refuses pending before any role/configuration/Details lookup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; refuses a session-only principal even if the persistent peer is classified desktop" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; has no mutation/mobile alias or caller-selected identity/path inputs, and no page other than a Connections source or Actions relationship page" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; pages the host-selected role Connections under the same desktop gate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; pages the host-selected role Actions relationships under the same desktop gate (#14)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; keeps an unbound role unavailable rather than creating or selecting another role" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; rejects a changed role/target generation during ordinary Details: role" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; rejects a changed role/target generation during ordinary Details: primary" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; discards late metadata after principal removed changes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; discards late metadata after principal pin changes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; discards late metadata after principal kind changes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; discards late metadata after principal pending changes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; discards late metadata after principal direction changes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; rechecks the SAME receipt after the selector completed: role" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; rechecks the SAME receipt after the selector completed: primary" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; withholds metadata without a usable final admission receipt: missing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; withholds metadata without a usable final admission receipt: unreadable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; rechecks in the HTTP adapter even if a selected-role reader returns after revocation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; preserves reverse-link principal scope: member" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; preserves reverse-link principal scope: controller" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; preserves reverse-link principal scope: phone-member" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; preserves reverse-link principal scope: pending-member" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; does not deliver private role metadata after its reverse link closes during the read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-role desktop Details HTTP authority (#3733) &gt; keeps mobile-off and controller-conversation scopes separate and publishes no role Details on snapshots" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; serves only GET through the pinned controller policy, without mutation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; serializes only the Settings wire body, excluding internal evidence and display rows, status=200" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; serializes only the Settings wire body, excluding internal evidence and display rows, status=503" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; rejects an unpaired/wrong-pin caller before summary reads" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; QA negative: rejects unclassified Settings controller undefined" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; QA negative: rejects unclassified Settings controller unknown" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; rejects a phone or pending pairing before summary reads" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; rejects a device kind changing to undefined after the async read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; rejects a device kind changing to unknown after the async read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; rejects a device kind changing to phone after the async read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote Settings details (#3733) &gt; passes current host authorization to the summary for its final async recheck" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; allows only GET from an eligible pinned desktop and rechecks the selected target read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; allows bounded source continuation only under the same GET desktop authority and rejects extra/duplicate fields before work" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; admits only bounded selected helper page queries under the same pinned desktop GET gates" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; binds selected inventory source/card/order queries under the frozen desktop GET and final revocation gate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; binds Canvas inventory source/card/order queries under the frozen desktop GET and final revocation gate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; rejects ineligible device kind undefined before any Details work" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; rejects ineligible device kind phone before any Details work" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; rejects ineligible device kind unknown before any Details work" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; rejects a wrong certificate pin or pending pairing before any read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; discards late host evidence after removed changes during the await" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; discards late host evidence after pin changes during the await" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; discards late host evidence after kind changes during the await" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote full Details authority (#3733) &gt; discards late host evidence after pending changes during the await" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-agent passive Changes authority (#3733) &gt; uses the same pinned desktop read boundary with a strictly allowlisted bounded query and GET only" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-agent passive Changes authority (#3733) &gt; rejects phone before Changes disk work" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-agent passive Changes authority (#3733) &gt; rejects pending before Changes disk work" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-agent passive Changes authority (#3733) &gt; rejects pin before Changes disk work" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-agent passive Changes authority (#3733) &gt; rejects removed before Changes disk work" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; selected-agent passive Changes authority (#3733) &gt; discards a completed Changes response after pin revocation during an await" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; retains the default start path under the modeled listener driver" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; waits for both listeners and never revives an unready capture" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; invalidates ready captures on stop and replacement even with equal ports/profile" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; isolates the generation fence when modeled listener objects are reused across restart" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; does not revive a not-ready capture with modeled cached positive ports" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; observes memory only and rejects an invalid expected host without starting" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; refuses already-running strict startup without stopping its listeners" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; does not grant a receipt to the TLS-unavailable HTTP fallback" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; rejects modeled main bind failure with owned cleanup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; rejects modeled pairing bind failure with owned cleanup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; does not stop a replacement between strict completion and wrapper continuation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; rejects old wrapper completion even when a restart reuses modeled objects and ports" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; cleans up genuine owned listener loss after strict success" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; owned secure listener readiness (#3720) &gt; leaves the newer committed profile running after actual store-queue interleaving (RL-1)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; does not confirm a scope change before the actual secure listener is ready" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; settles verified startup when stop cancels listen before its callback" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; settles verified startup when close cancels listen before its callback" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; drains real OS bind errors after &apos;direct&apos; cancellation (replacement=false)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; drains real OS bind errors after &apos;host&apos; cancellation (replacement=false)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; drains real OS bind errors after &apos;direct&apos; cancellation (replacement=true)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; drains real OS bind errors after &apos;host&apos; cancellation (replacement=true)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; settles the actual MCP host without undoing a concurrent replacement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; settles the actual MCP host without undoing a concurrent disable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; does not claim restored settings or stopped Annex after rollback is replaced with loopback=true" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; does not claim restored settings or stopped Annex after rollback is replaced with loopback=false" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; rejects actual TLS creation failure and restores the previous secure runtime" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; reports partial rollback and leaves no listener when actual TLS restoration also fails" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; does not claim settings rollback when restoring the saved value fails" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; does not overwrite a concurrent settings edit while reporting an incomplete rollback" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; awaits actual main asynchronous listen errors and restores the previous secure runtime" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; verified MCP network host &gt; awaits actual pairing asynchronous listen errors and restores the previous secure runtime" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; stable ports (#go-device-readiness) &gt; never retries a stopped wide listener after loopback-only mode is enabled" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; stable ports (#go-device-readiness) &gt; rebinds both listeners in each mode, disables advertising, and still accepts a paired certificate after restart" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; stable ports (#go-device-readiness) &gt; binds the ports remembered from the last launch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; stable ports (#go-device-readiness) &gt; takes a new port when the remembered one is taken, and remembers the new pair" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; stable ports (#go-device-readiness) &gt; says nothing about a moved port when the remembered one was free (#3608)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; stable ports (#go-device-readiness) &gt; reports the pairing port moving too, and no live ports once stopped (#3608)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pairing link in status (#go-device-readiness) &gt; is absent while the main server runs without TLS" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pairing link in status (#go-device-readiness) &gt; carries the TLS port, normalized cert, identity, PIN and alias, and follows a new PIN" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; lastActivityAt (#go-device-readiness) &gt; falls back to the creation time, then reports the latest recorded activity" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; lastActivityAt (#go-device-readiness) &gt; records chat events, hook status changes and spawns from the event subscriptions" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; lastActivityAt (#go-device-readiness) &gt; is on quick agents in the snapshot, from their spawn time" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; lastActivityAt (#go-device-readiness) &gt; is in the REST agents response" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; lastActivityAt (#go-device-readiness) &gt; sends a durable agent emoji, or null when it has none (#2456)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; lastActivityAt (#go-device-readiness) &gt; sends the gray colour the desktop draws quick agents with (#2456)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; project pins, marks and idle state (#2458) &gt; sends each project&apos;s state, with idle worked out by the desktop&apos;s rule, and idleDays" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; project pins, marks and idle state (#2458) &gt; leaves the fields out until the state has moved into main" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; project pins, marks and idle state (#2458) &gt; pins and unpins from a phone" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; project pins, marks and idle state (#2458) &gt; marks inactive and active with the desktop&apos;s rules" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; project pins, marks and idle state (#2458) &gt; refuses unknown projects, and changes before the state has moved into main" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; project pins, marks and idle state (#2458) &gt; advertises the projectState capability and both commands" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; finished quick agents (#2467) &gt; sends every project&apos;s list, newest first, with only the fields the list shows" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; finished quick agents (#2467) &gt; leaves the field out until the lists have moved into main" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; finished quick agents (#2467) &gt; dismisses one from a phone and returns the project&apos;s list" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; finished quick agents (#2467) &gt; clears a project&apos;s list from a phone" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; finished quick agents (#2467) &gt; refuses unknown projects, and changes before the lists have moved into main" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; finished quick agents (#2467) &gt; advertises the finishedQuickAgents capability and both commands" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; theme for plugin and custom themes (#go-device-readiness) &gt; sends the synced colors and gradients of the selected plugin theme" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; theme for plugin and custom themes (#go-device-readiness) &gt; sends a pack theme that omits accent2 and overlay*, with derived colors (#2472)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; theme for plugin and custom themes (#go-device-readiness) &gt; sends a full palette for a theme with only base, text and accent (#2472)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; theme for plugin and custom themes (#go-device-readiness) &gt; sends the Latte palette for a light theme with empty colors (#2472)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; theme for plugin and custom themes (#go-device-readiness) &gt; keeps the built-in colors, without gradients, for a built-in theme" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; opens the project root without an agent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; opens a durable agent&apos;s worktree" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; opens the project root for a durable agent without a worktree" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; opens a quick agent&apos;s working folder" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; rejects unknown agents, agents of another project, and unknown projects" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; reports a failed spawn with its session and forgets it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; never spawns over an agent or another controller&apos;s shell" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; answers a failed project lookup with internal_error" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; shell ownership while a spawn is starting, direct (P5 QA) &gt; A disconnects mid-spawn and B starts the same id: A&apos;s spawn never replaces B&apos;s shell" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; shell ownership while a spawn is starting, direct (P5 QA) &gt; a stale spawn never acts on the same controller&apos;s newer claim of that id" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; revocation inside the services&apos; own awaits, direct (P5 QA b) &gt; a controller removed while the stop awaits its orchestrator: nothing is stopped" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; revocation inside the services&apos; own awaits, direct (P5 QA b) &gt; a controller removed while the spawn checks its provider: nothing is created" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; revocation inside the services&apos; own awaits, direct (P5 QA b) &gt; a direct controller that only disconnected: the stop and the spawn still complete, as before" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; clipboard:image cannot paste into another controller&apos;s shell" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; agent:kill cannot stop another controller&apos;s shell, and its own still stops" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; concurrent shell spawns for distinct ids stay within the cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; lifecycle bursts are bounded per connection: the rest are answered busy" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; a controller removed while its spawn looks up the project starts nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; shared handler hardening, direct path (#3613 P5 QA) &gt; a direct controller that only disconnected still gets its spawn, as before" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; caps shells per connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; sends shell output and exit only to the controller that spawned it, outside replay" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; says a durable agent is asleep when it exits, and replay keeps that" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; keeps another controller&apos;s shell input and size private" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; closes a shell on pty:close and only for its owner" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; ends a controller&apos;s shells when it disconnects, and only its own" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; ends a shell that started after its controller left" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; attaches to a terminal-mode agent with its screen and output seq" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; refuses to attach to chat agents, stopped agents and shells" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; requires mTLS for every terminal message" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; advertises rich content unless the flag is saved off" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; advertises no rich content while the settings file can&apos;t be read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; controller terminals (#2476) &gt; advertises the terminal capability" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; legacy remote stop safety (#2394) &gt; binds telemetry hello identities to one authenticated socket and ignores bearer/legacy input" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; legacy remote stop safety (#2394) &gt; awaits runtime-aware chat shutdown before the kill acknowledgement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; legacy remote stop safety (#2394) &gt; awaits runtime-aware pty shutdown before the kill acknowledgement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; legacy remote stop safety (#2394) &gt; awaits runtime-aware headless shutdown before the kill acknowledgement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; legacy remote stop safety (#2394) &gt; returns an error without an acknowledgement when shutdown fails" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; legacy remote stop safety (#2394) &gt; stops an owned plain shell without requiring an agent registration" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; legacy remote stop safety (#2394) &gt; does not acknowledge a stop while the runtime is still running" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; legacy remote stop safety (#2394) &gt; does not acknowledge unknown agents or allow bearer control" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; legacy remote stop safety (#2394) &gt; a failed stop reaches the remote as a failure, with nothing deleted" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; advertises mobile capabilities only after authentication" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; accepts handoff agreement synchronization only from a pinned desktop member and hides failure details" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; serves network group project routes only to pinned desktop network members (#3363)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; serves handoff artifact chunks only to pinned desktop members and hides refusal details" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; still builds a phone snapshot when shared project links are unreadable or have an unknown version" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; marks bounded link publication in the snapshot without splitting a group" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; replicates project links only for pinned network desktop members" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; negotiates durable delivery only for pinned desktop members and surfaces an unreadable store" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; serves capacity only to pinned desktop network members, without reflecting errors" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; advertises agent.create, agent.update and their option and settings routes (#2451, #2452)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; advertises helper requests and their commands (#159)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; lists helper requests in the snapshot from the projects and their agents (#159)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; advertises chat.setModel, chat.setLevel and chatControls (#2462)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; serves create options per registered project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; serves a durable agent its settings and options, live state included" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; dispatches agent.create and agent.update to the durable agent services" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; serves neither mobile control nor reads to a connection without a paired certificate, bearer or not" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; rejects a mobile chat snapshot for unknown agents" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; withholds pending chat approvals when the paired device is revoked during the transcript read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; audits a controlling device&apos;s commands by its kind: a phone, or another computer (#3205)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds ordinary durable older pages to the exact project/runtime after awaited reads: stable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds ordinary durable older pages to the exact project/runtime after awaited reads: phone" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds ordinary durable older pages to the exact project/runtime after awaited reads: tracked Quick collision" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds ordinary durable older pages to the exact project/runtime after awaited reads: project removed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds ordinary durable older pages to the exact project/runtime after awaited reads: agent disposed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds ordinary durable older pages to the exact project/runtime after awaited reads: provider changed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds ordinary durable older pages to the exact project/runtime after awaited reads: same-native reopen" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds ordinary durable older pages to the exact project/runtime after awaited reads: revoked" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; refuses same-object runtime generation replacement across awaited page work: transcript-native" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; refuses same-object runtime generation replacement across awaited page work: transcript-same-native" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; refuses same-object runtime generation replacement across awaited page work: folders-native" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; refuses same-object runtime generation replacement across awaited page work: folders-same-native" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; refuses same-object runtime generation replacement across awaited page work: stable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; never uses recovering or cached generic roots for an attested desktop quick read: corrupt-projects" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; never uses recovering or cached generic roots for an attested desktop quick read: backup-only-projects" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; never uses recovering or cached generic roots for an attested desktop quick read: cached-prior-roots" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; does not confirm desktop Details generation through a phone authority" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; does not confirm desktop Details generation through a downgraded-desktop authority" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; reads only an attested direct desktop quick current session: same" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; reads only an attested direct desktop quick current session: phone" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; reads only an attested direct desktop quick current session: unbound" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; reads only an attested direct desktop quick current session: reused-registration" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; reads only an attested direct desktop quick current session: replaced-during-read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; reads only an attested direct desktop quick current session: removed-during-read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; reads only an attested direct desktop quick current session: unreadable-project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; reads only an attested direct desktop quick current session: revoked-during-read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; reads only an attested direct desktop quick current session: historical-session" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds chat-page display generation to the admitted runtime after awaited read: same" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds chat-page display generation to the admitted runtime after awaited read: replacement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds chat-page display generation to the admitted runtime after awaited read: stopped" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; paginates rich chat while preserving pending interactions outside the visible page" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; sends the composer&apos;s level, model and effort state while the session is live (#2462)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; sends the live session&apos;s slash commands, bounded, and null when not live" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; sends the agent folders, and that any path is served, only while rich content is on (#2457, #2478)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; uses epoch-aware top-level replay metadata without changing legacy replay" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; echoes user images to remote clients as mediaRefs without desktop paths (#2453)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; caps WebSocket frames and advertises attachments (#2453)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; uploads phone images over pinned mTLS and sends them with chat.send (#2453)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; P6 clipboard entry point refuses over the existing cap before decoding or touching a file" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; refuses clipboard:image for chat agents and sniffs the bytes for terminal agents (#2453)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mobile transport contract &gt; binds HTTPS PIN pairing to the real client certificate and rejects same-CN impersonation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; starts and stops without error" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; refuses controller chat and sessions for a session-only phone fingerprint (#3474)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; refuses controller chat for a pinned desktop with role=&apos;member&apos; pending=true (#3474)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; refuses controller chat for a pinned desktop with role=&apos;controller&apos; pending=false (#3474)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; cuts accepted sockets, including unfinished TLS and upgrades, when switching to loopback only" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; pairs over TLS, pins the client certificate, and answers with the fields phones read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; answers a wrong PIN with 409, and an expired or replaced one with 410, each with a plain message" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; per-address attempts with the real counter &gt; a device retrying an expired PIN is never slowed or locked out, and then pairs with the current one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; per-address attempts with the real counter &gt; a PIN that ran out unused is not counted either" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; per-address attempts with the real counter &gt; used-PIN and already-paired answers are not counted, but malformed requests are" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; a used PIN pairs nobody else, and the same device retrying gets the same answer with no change" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; pairing again with a new identity adds a second entry beside the old one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; replaces a pinned certificate only with the identity key binding the new one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; lists a paired device with an open socket as connected, until it is removed (#3057)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the Annex Network channel (#3060) &gt; accepts a pinned peer of either role at /network, where /ws takes only a controller" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the Annex Network channel (#3060) &gt; refuses a stranger, an old pairing, another certificate, and no certificate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; pairing as an Annex Network member (#3061) &gt; makes a desktop that asks a member, pinning its certificate both ways, and says so" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; pairing as an Annex Network member (#3061) &gt; leaves phones, and desktops that don&apos;t ask, as controllers with the same answer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; pairing as an Annex Network member (#3061) &gt; keeps a desktop one-to-one while Annex Network is off here" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the phone as a member (#3062) &gt; makes a phone that asks a member of kind phone, says so, and still locks the screen" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the phone as a member (#3062) &gt; never joins a session-only pairing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the phone as a member (#3062) &gt; offers the network in capabilities while Annex Network is on" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the phone as a member (#3062) &gt; lists the network for a member phone, and only this desktop for a one-to-one phone" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the phone as a member (#3062) &gt; lists a desktop reached only through a private forward with no hosts and no port, in the same shape (#3608)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the phone as a member (#3062) &gt; tells a removed phone on its open connections, before they are cut" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the phone as a member (#3062) &gt; takes members a member phone vouches for, as listed, and refuses others" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the stored name (#2442) &gt; replaces a name equal to this machine&apos;s own, ignoring case and spaces" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the stored name (#2442) &gt; keeps any other name, and names a device that sends none" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the stored name (#2442) &gt; takes the new name when the same device pairs again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the stored name (#2442) &gt; shows the stored name, not the sent one, on the lock overlay" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; needs a valid Ed25519 key and a client certificate named for it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; drops a pairing that never connects while its PIN is live, and keeps one that did" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; never drops an entry that existed before the pairing, even if it does not connect" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; authenticates every kind of entry the same way over REST and WebSocket" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; refuses remote Dispatcher send_message from unpaired, pending, one-to-one and revoked machines before delivery" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; refuses remote Dispatcher send_file from unpaired, pending, one-to-one and revoked machines before delivery" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; a removed peer is closed and then refused on REST and WebSocket" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; acts on nothing more from a removed peer&apos;s socket, even if its client ignores the close, and cuts it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; cuts the sockets of a peer that is no longer a controller here, and leaves a controller alone" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; stops acting on a socket once its peer&apos;s certificate is replaced, and on any socket that is closing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; accepts a pinned client certificate past its end date: the pin is the trust decision" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; plain HTTP /pair answers 410, pairs nothing, and replaces a PIN sent to it in the clear" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; serves nothing over plain HTTP when TLS cannot start" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; pauses pairing for the whole install after repeated wrong PINs, until allowed again in Settings" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; counts a pairing attempt before its body arrives, so held requests cannot all pass the check" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; requests held open together from many addresses get at most the install-wide number of wrong PINs checked" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; regenerating the PIN leaves paired devices connected" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; this computer&apos;s saved routes when a device pairs again (#3608) &gt; keeps them when it pairs again with the same certificate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; this computer&apos;s saved routes when a device pairs again (#3608) &gt; keeps the legacy default needed by a bare typed host when the same certificate pairs again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; this computer&apos;s saved routes when a device pairs again (#3608) &gt; keeps them for a new certificate its identity key signed for" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; this computer&apos;s saved routes when a device pairs again (#3608) &gt; holds them, without using or dropping them, for an entry it cannot show is the same" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; an entry from before pinning pairs again over TLS and is pinned" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; pinned peer identity &gt; the harness switch keeps one PIN usable for many devices" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; allows authenticated endpoints with valid token" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; returns 404 for unknown routes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; routes project agent lookups through the table-based project route" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; routes the main Annex HTTP endpoints through the declarative table" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; route dispatch (declarative table) &gt; GET /api/v1/status dispatches to the status handler" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; route dispatch (declarative table) &gt; GET /api/v1/projects dispatches to the projects handler and reflects project-store data" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; route dispatch (declarative table) &gt; PATCH bulletin protection route dispatches to handleGroupProjectBulletinProtectionRoute" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; route dispatch (declarative table) &gt; PATCH bulletin protection route rejects a non-boolean isProtected without touching the board" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; route dispatch (declarative table) &gt; PATCH /api/v1/group-projects/:id (rename) dispatches to handleGroupProjectPatchRoute, not the bulletin route" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; route dispatch (declarative table) &gt; PATCH /api/v1/group-projects/:id returns 404 when the group project does not exist" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; route dispatch (declarative table) &gt; DELETE bulletin message route dispatches to handleGroupProjectDeleteMessageRoute (destructive)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; route dispatch (declarative table) &gt; POST /api/v1/projects/:id/agents/:agentId/delete dispatches to the destructive durable-delete handler" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; route dispatch (declarative table) &gt; GET /api/v1/group-projects/:id/members dispatches to the members handler, not the get-by-id route" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent mapping &gt; includes status and defaults for missing fields in projects/:id/agents" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent mapping &gt; shows running status when PTY is active" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; icon endpoints &gt; GET /api/v1/icons/agent/:id returns icon data" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; icon endpoints &gt; GET /api/v1/icons/agent/:id returns 404 for missing icon" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; icon endpoints &gt; GET /api/v1/icons/project/:id returns 404 for missing icon" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; quick agent spawning &gt; POST /api/v1/projects/:id/agents/quick spawns a quick agent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; quick agent spawning &gt; POST /api/v1/projects/:id/agents/quick notifies desktop renderer via IPC" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; quick agent spawning &gt; POST /api/v1/projects/:id/agents/quick returns 400 without prompt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; quick agent spawning &gt; POST /api/v1/projects/:id/agents/quick returns 404 for unknown project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; quick agent spawning &gt; POST /api/v1/agents/:id/agents/quick spawns under a parent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; quick agent spawning &gt; POST /api/v1/agents/:id/agents/quick returns 404 for unknown parent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; quick agent spawning &gt; CQ-RC-01: re-spawning with the same agentId within 60s cancels the stale cleanup timer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; exited quick agent cleanup window &gt; builds a snapshot that serializes, with only the contract fields" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; exited quick agent cleanup window &gt; does not put other fields of the tracked entry in the snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; exited quick agent cleanup window &gt; sends a newly connected phone its initial snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; exited quick agent cleanup window &gt; broadcasts snapshot refreshes to connected phones" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; exited quick agent cleanup window &gt; replays the spawn event as it was sent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; exited quick agent cleanup window &gt; removes the entry 60s after exit, with one timer however many exits are reported" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; exited quick agent cleanup window &gt; clears the cleanup timer on stop" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; exited quick agent cleanup window &gt; logs a failed snapshot refresh as an error" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; wake agent &gt; POST /api/v1/agents/:id/wake wakes a sleeping agent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; wake agent &gt; POST /api/v1/agents/:id/wake returns 409 for running agent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; wake agent &gt; POST /api/v1/agents/:id/wake returns 404 for unknown agent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; wake agent &gt; POST /api/v1/agents/:id/wake wakes without a mission" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; wake agent &gt; POST /api/v1/agents/:id/wake supports resume flag" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; wake agent &gt; POST /api/v1/agents/:id/wake starts fresh when asked to resume an agent with no session (#2028)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; permission response &gt; subscribes to permission changes once at startup and unsubscribes on stop" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; permission response &gt; refreshes terminal permission snapshots after a host answer for a request created before startup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; permission response &gt; refreshes terminal permission snapshots after a host answer for a request created after startup" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; permission response &gt; POST /api/v1/agents/:id/permission-response resolves a pending permission" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; permission response &gt; returns 400 for invalid decision" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; permission response &gt; returns 400 for missing requestId" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; permission response &gt; returns 404 for expired/unknown requestId" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; reads a body of exactly 1 MiB and refuses one byte past it without dropping the connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; an oversized body on any route gets a 413 it can read (#2711) &gt; wake agent: answers 413 with a JSON error while reading the upload to its end" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; an oversized body on any route gets a 413 it can read (#2711) &gt; quick agent spawn: answers 413 with a JSON error while reading the upload to its end" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; an oversized body on any route gets a 413 it can read (#2711) &gt; permission response: answers 413 with a JSON error while reading the upload to its end" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; an oversized body on any route gets a 413 it can read (#2711) &gt; answers a chunked upload with no Content-Length once it passes the limit" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; an oversized body on any route gets a 413 it can read (#2711) &gt; refuses an oversized pairing body with a 413, not a dropped connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; an oversized body on any route gets a 413 it can read (#2711) &gt; still takes a body at the limit" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; handles aborted request to quick agent spawn (project)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; handles aborted request to quick agent spawn (agent)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; handles aborted request to wake agent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody error handling &gt; handles aborted request to permission response" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; execution mode &gt; includes executionMode=pty for PTY agents" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; execution mode &gt; includes executionMode=headless for headless agents" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; execution mode &gt; includes executionMode=null for sleeping agents" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot agent projectId &gt; includes projectId in durable agent snapshot objects" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot plugins &gt; listAllManifests is available for snapshot building" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot icon data &gt; readIconData and readAgentIconData are available for snapshot building" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; a helper&apos;s routing stays small: codes only, on every row, under the frame limit (#2671)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; keeps a frame under the limit when twelve icons are 3.7 MB each" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; leaves icons out past the budget, in a set order, and warns with sizes only" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; reports each snapshot sent with sizes and counts, and no image data" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; never sends an SVG: phones can&apos;t draw one, so it is a raster copy or left out" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; does not decode an icon again for later snapshots, until its file changes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; project changes &gt; sends one snapshot for a burst, carrying the new image within the budget" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; project changes &gt; sends another for a change after the burst" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; project changes &gt; keeps a project image within the budget like any other, leaving out what is past it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; project changes &gt; goes through the one build: changes during a running read get one more, not one each" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; project changes &gt; during a failure backoff builds nothing, and the retry at the end of the window covers it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; project changes &gt; builds nothing after the last phone disconnects during the debounce" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; project changes &gt; builds nothing after the server stops during the debounce, and listens again after a restart" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; project changes &gt; builds nothing with no phone connected, and stops listening when the server does" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; leaves canvases out first, keeps icons, and says what it left out" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; never leaves out what a phone would read as removed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; empties both icon maps next, when canvases were not enough" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; with the oversize path &gt; canvases over 16 MiB: left out, so it goes out, with no snapshot_failed and no window" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; with the oversize path &gt; required fields between 8 and 16 MiB: everything optional goes, and it is still sent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; with the oversize path &gt; required fields over 16 MiB: never sent, with snapshot_failed, however much was given up" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; with the oversize path &gt; a socket waiting after a failure gets the truncated form, with its own cursor" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; adds nothing to a snapshot that fits" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; serves canvases a snapshot left out, one project at a time" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; serves the thumbnail from the icon route, and a 404 when there is none" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; sends a phone that opted in refs and no image bytes, and leaves every other phone alone" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; leaves refs out, and answers 503, while an icon can&apos;t be read for a reason that can pass" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; after a temporary icon failure (#2723) &gt; waits until the icon can be tried again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; after a temporary icon failure (#2723) &gt; sends complete refs once the failure clears, with nothing else changing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; after a temporary icon failure (#2723) &gt; stops after a few refreshes in a row while it keeps failing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; after a temporary icon failure (#2723) &gt; asks for nothing when every icon was read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; does not build or report a form no socket gets" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; gives each socket its own form on a refresh" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; has no entry for an agent whose image is gone, and a new version for a changed one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; answers with an ETag, a 304 for a match, and the current image for a stale version" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; keeps a large setup within the metadata target, with no image bytes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; client counts &gt; counts an mTLS socket that says nothing as unknown, not as a desktop" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot frame size &gt; icon refs &gt; client counts &gt; counts by hello when that is all there is" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; sends nothing before the snapshot, then every event after its lastSeq, in order" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; goes live once the snapshot is out" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; holds broadcasts and replay in order, and lets other replies through at once" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; keeps only the newest refresh, with its own cursor, and no rewind" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; keeps events back after a failed snapshot, retries, then sends snapshot and events in order" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; answers commands during the retry, without letting events through" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; grows to at most a minute, with one build per retry however many phones wait" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; answers a new connection inside the window with snapshot_failed and no build" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; does not build for a change inside the window, and the retry covers it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; fans one successful retry out to everyone waiting, each with their own cursor" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; resets once a build works, so the next failure starts short again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; builds nothing while no one is connected, and stops when the sockets do" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; connections while the retry is building &gt; after a frame over the limit, a connection starts past it &gt; on a plain connect, after one a phone can take" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; connections while the retry is building &gt; after a frame over the limit, a connection starts past it &gt; on a plain connect, after one no phone can take" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; connections while the retry is building &gt; after a frame over the limit, a connection starts past it &gt; when it joins a build already running, while one from before keeps its own and gets the frame" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; connections while the retry is building &gt; after a frame over the limit, a connection starts past it &gt; when it joins a retry already building" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; connections while the retry is building &gt; after a frame over the limit, a connection starts past it &gt; when it connects during a failure and is served by the retry" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; connections while the retry is building &gt; join it rather than starting another, each with its own cursor and held events" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; connections while the retry is building &gt; all hear snapshot_failed once if it fails, with one build between them" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; connections while the retry is building &gt; start one shared build when the window has ended and nothing is running" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; a build that hangs &gt; counts as a failure: the phone hears snapshot_failed, and commands get replies" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; a build that hangs &gt; discards a result that arrives late, so nothing old reaches a phone" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; a build that hangs &gt; does not let a read from before a stop mark the next server as stuck" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; a build that hangs &gt; does not start another while one is still stuck, then builds again once it ends" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; reads on the host &gt; stays at one, however many connect before the first timeout" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; reads on the host &gt; serves everyone who joined a first build from it, each with their own cursor" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; reads on the host &gt; follows up when a state change landed during the read a socket joined" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; reads on the host &gt; does not send connected phones a snapshot because someone else connected" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; reads on the host &gt; starts a new read after a running one for a change it may have missed, one at a time" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; host-wide backoff after a failed build &gt; never closes a socket for failing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; sends a later snapshot with the repo key when a newly opened project finishes reading its remote (#3703)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; coalesces changed repo keys with a snapshot refresh already pending (#3703)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; does not send an extra snapshot when a stale repo key refresh is unchanged (#3703)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; stamps a refresh with the seq its live state was read at, so nothing newer is overwritten" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; stamps a refresh that raced a state change with the seq from before, then follows with a fresh one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; counts an event type it does not know as a state change" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; keeps refreshes moving while an agent streams, with every event delivered and none out of order" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; does not count output as a race, or every refresh would be dropped while an agent streams" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; runs one refresh at a time, so an older build can&apos;t arrive after a newer one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; sends nothing to a socket that closed during the build" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; never closes a socket for holding too much, and keeps its cursor so replay can fill the jump" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; always gives a first snapshot the seq from connect, even with only chat during the build" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; a snapshot too large to send &gt; is never sent: the phone hears snapshot_failed once and the socket stays open" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; a snapshot too large to send &gt; does not rebuild on the transient retry timer, only on the slow backstop" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; a snapshot too large to send &gt; does not rebuild for phones reconnecting into it, across several clients and the whole window" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; a snapshot too large to send &gt; rechecks once when the window ends, however many sockets are waiting" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; a snapshot too large to send &gt; rechecks on a real change, but no more than once in the recheck interval" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; a snapshot too large to send &gt; serves every waiting socket from one build once a recheck fits, and new sockets build again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; a snapshot too large to send &gt; recovers on a real change: the next refresh that fits is its first snapshot, with what was held" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; a snapshot too large to send &gt; leaves a phone already connected with what it has, rather than sending it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frames during the first snapshot &gt; stays within the held limit while a socket has no snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; asks the terminal for a buffer that fits a frame, and says scrollback was left out" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; answers an attach it can not fit with terminal_unavailable and no ack" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; never sends an oversized ack, even if one reaches the last check" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; GET /api/v1/agents/:id/buffer &gt; answers 503 for a buffer it can not fit, over a real connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; GET /api/v1/agents/:id/buffer &gt; says how much scrollback it kept when the terminal left some out" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; GET /api/v1/agents/:id/buffer &gt; counts bytes on the wire, not characters" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; GET /api/v1/agents/:id/buffer &gt; leaves an ordinary buffer alone, with no new headers" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; reports a frame with no fallback yet, and sends it as before" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; covers a broadcast and a replayed frame the same way as a direct one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; sends a canvas over the limit as a marker naming it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; leaves a canvas under the limit as it is" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; omits a agent_message over the limit, with its seq, live and on replay" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; omits a agent_message_chunk over the limit, with its seq, live and on replay" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; omits a agent_thought over the limit, with its seq, live and on replay" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; omits a agent_thought_chunk over the limit, with its seq, live and on replay" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; restores an omitted chunk&apos;s text with a final message that fits, and omits one that does not" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; with a critical event a phone can not receive &gt; is sent once live, and a new connection starts past it, so its replay has nothing to send" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; with a critical event a phone can not receive &gt; is never sent again on replay from before it, which gets a gap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; with a critical event a phone can not receive &gt; is never sent again on mobile:replay from before it, which gets a gap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; with a critical event a phone can not receive &gt; still replays one a phone can receive, whole, up to the transport limit" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; leaves one that fits" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; never omits a question, and reports it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; never omits a question_resolved, and reports it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; never omits a user_message, and reports it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; never omits a queue_state, and reports it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; never omits a plan_document, and reports it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; the last resort &gt; never omits a some_future_event, and reports it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; leaves frames under the limit alone, at no cost past a length check" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; counts encoded bytes, not characters" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; tool output &gt; sends a preview that keeps the id and final status, and replaces the content" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; tool output &gt; stores the preview for replay, so a reconnect can not bring the large one back" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; tool output &gt; leaves tool output under the limit exactly as it was" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; tool output &gt; keeps seq, key order and trace context on an ordinary frame" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; tool input &gt; stores and sends a bounded hook:event, keeping its status" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; tool input &gt; bounds the catalog and outer permission paths, and keeps the queue whole" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; tool input &gt; keeps a large Write small on every path, live and on replay" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; tool input &gt; refuses allow on the outer path for a call it only sent part of, and allows deny" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; frame budget &gt; leaves a snapshot to its own limits" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; buildSnapshot error handling &gt; logs error when buildSnapshot throws during WS connect" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; broadcastWs resilience &gt; broadcastWs logs warning on send failure (verified via code inspection)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; malformed JSON handling &gt; handleWsMessage has JSON parse catch with appLog (verified via code inspection)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; WebSocket protocol integration &gt; disconnect tracking — connectedCount decrements on WS close" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; WebSocket protocol integration &gt; the pinned controller reaches REST routes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; WebSocket protocol integration &gt; accepts a WS upgrade from the pinned controller (a bearer header is ignored)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; WebSocket protocol integration &gt; unauthorized WS upgrade is rejected" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; server-side heartbeat &gt; starts heartbeat interval when server starts" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; server-side heartbeat &gt; clears heartbeat interval on server stop" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; server-side heartbeat &gt; exposes correct heartbeat interval constant" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /api/v1/projects/:id/agents/durable creates a durable agent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /agents/durable refuses a worktree agent name that is not a safe folder/branch name (#2221)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /agents/durable returns 404 for unknown project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /agents/durable returns 400 when name/color missing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /api/v1/projects/:id/agents/:agentId/delete deletes through the delete service, force by default" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /agents/:id/delete passes the mode and the helper choice (#3199)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /agents/:id/delete returns the refusal when helpers need a choice, and deletes nothing (#3199)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /agents/:id/delete refuses {&quot;mode&quot;:&quot;nuke&quot;} without deleting" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /agents/:id/delete refuses {&quot;mode&quot;:&quot;force&quot;,&quot;helpers&quot;:&quot;abandon&quot;} without deleting" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /agents/:id/delete refuses {&quot;mode&quot;:&quot;save-patch&quot;} without deleting" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; POST /agents/:id/delete returns 404 for unknown project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; GET /api/v1/projects/:id/agents/:agentId/worktree-status returns status" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; durable agent REST endpoints &gt; GET /worktree-status returns 404 for unknown project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; broadcastSnapshotRefresh &gt; exports broadcastSnapshotRefresh function" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; broadcastSnapshotRefresh &gt; does not throw when called without active server" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/tree &gt; returns file tree for existing project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/tree &gt; calls fileService.readTree with project path and default options" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/tree &gt; passes query parameters (path, depth, includeHidden)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/tree &gt; returns 404 for unknown project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/tree &gt; returns 403 for path traversal via ../ sequences" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/tree &gt; returns 403 for path traversal via sibling directory prefix" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/tree &gt; returns 500 when fileService.readTree fails" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/read &gt; returns file content for existing file" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/read &gt; calls fileService.readFile with resolved path" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/read &gt; returns 400 when path parameter is missing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/read &gt; returns 404 for unknown project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/read &gt; returns 403 for path traversal via ../ sequences" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/read &gt; returns 403 for path traversal via absolute path" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/read &gt; returns 404 when file does not exist (ENOENT)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; file system endpoints &gt; GET /api/v1/projects/:id/files/read &gt; returns 500 for non-ENOENT errors" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; session pause state tracking &gt; notifySessionPause tracks sessionPaused state (structural)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; session pause state tracking &gt; buildSnapshot includes sessionPaused in payload (structural)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; session pause state tracking &gt; resets sessionPaused when last mTLS controller disconnects (structural)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; canvas mutation error propagation &gt; canvas:mutation handler sends error back to client on failure (structural)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; canvas mutation triggers broadcastSnapshotRefresh &gt; canvas:mutation handler calls broadcastSnapshotRefresh on success (structural)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; canvas mutation selectView and namespace stripping (structural) &gt; applyCanvasMutationServerSide handles selectView mutation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; canvas mutation selectView and namespace stripping (structural) &gt; selectedViewId is included in CanvasInstanceJSON interface" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; canvas mutation selectView and namespace stripping (structural) &gt; selectedViewId is broadcast to controller clients" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; canvas mutation selectView and namespace stripping (structural) &gt; stripNamespacedIds is called in updateView handler" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; canvas mutation selectView and namespace stripping (structural) &gt; stripNamespacedIds function exists and handles agentId/projectId/metadata" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; agent message endpoint &gt; POST /api/v1/agents/:id/message sends to PTY agent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; agent message endpoint &gt; refuses a PTY agent that is shutting down, writing nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; agent message endpoint &gt; refuses a pasted image for a PTY agent that is shutting down, writing nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; agent message endpoint &gt; returns 400 when message is missing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; agent message endpoint &gt; returns 400 for headless agent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; deprecated group messaging compatibility endpoints &gt; posts old tap requests to the board for target=null" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; deprecated group messaging compatibility endpoints &gt; posts old tap requests to the board for target=dev" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; deprecated group messaging compatibility endpoints &gt; POST /api/v1/group-projects/:id/polling returns notices without changing settings" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; deprecated group messaging compatibility endpoints &gt; returns 400 when enabled is not a boolean" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; deprecated group messaging compatibility endpoints &gt; returns 404 for an unknown group project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project roles endpoint (#3360) &gt; GET answers a network desktop&apos;s card with lead and admin holders" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project roles endpoint (#3360) &gt; POST gives a member a role, and refuses a bad role" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project roles endpoint (#3360) &gt; refuses a non-member, an excluded agent and an unknown group project without writing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project roles endpoint (#3360) &gt; refuses a paired phone, before any change" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project bulletin digest endpoint &gt; passes a plain `since` through — an older controller keeps working" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project bulletin digest endpoint &gt; decodes `sinceChannels` into a per-channel map" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project bulletin digest endpoint &gt; requests no cutoff when neither param is sent" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project bulletin digest endpoint &gt; rejects malformed JSON in sinceChannels with 400" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project bulletin digest endpoint &gt; rejects prototype-polluting keys from a paired peer with 400" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project bulletin digest endpoint &gt; rejects an over-long sinceChannels param with 400 rather than doing the work" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project bulletin digest endpoint &gt; accepts exactly what the controller&apos;s encoder produces" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project bulletin digest endpoint &gt; documents the compat contract: a pre-#1556 satellite ignores sinceChannels" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; group project bulletin digest endpoint &gt; still 404s for an unknown group project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; theme broadcast includes terminal colors &gt; snapshot includes terminalColors field" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; theme broadcast includes terminal colors &gt; broadcastThemeChanged includes terminalColors" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; WebSocket findProjectById promise chains have .catch() (CQ-01) &gt; agent:spawn handler catches findProjectById rejection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; WebSocket findProjectById promise chains have .catch() (CQ-01) &gt; agent:reorder handler catches findProjectById rejection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote terminal replay metadata &gt; serves the buffer body unchanged, with its seq and the PTY size in headers" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote terminal replay metadata &gt; omits the size headers when the PTY is gone" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote terminal replay metadata &gt; sends the PTY output seq with each pty:data event" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; remote terminal replay metadata &gt; reports its platform and pty backend in the snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot includes canvas wires &gt; buildSnapshot reads canvas-wires key for each project" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot includes canvas wires &gt; buildSnapshot reads canvas-wires for app-level (global) canvas state" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; snapshot includes canvas wires &gt; client-side hydrateFromRemote already accepts wireDefinitions (existing coverage)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; wake handler waits for agent running &gt; agent shows running status after wake (not sleeping)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; wake handler waits for agent running &gt; wake handler tolerates agent that takes multiple polls to register" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; safeSend guards all WebSocket sends &gt; safeSend helper checks readyState before sending" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; safeSend guards all WebSocket sends &gt; handleWsMessage uses safeSend instead of raw ws.send" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; safeSend guards all WebSocket sends &gt; replay loop breaks gracefully on safeSend failure" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; WS wake handler waits for agent running (structural) &gt; handleWakeAgentWs calls waitForAgentRunning before broadcastSnapshotRefresh" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; GP member status checks all execution modes &gt; headless agent shows as connected in GP members endpoint" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; GP member status checks all execution modes &gt; sleeping agent shows as sleeping in GP members endpoint" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mTLS lock state broadcast ordering &gt; broadcasts LOCK_STATE_CHANGED before buildSnapshot resolves (LB-AN-006 behavioral)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mTLS lock state broadcast ordering &gt; shows a neutral name for a controller stored under this machine&apos;s own name (#2442)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mTLS lock state broadcast ordering &gt; a fellow network member connecting does not lock this screen, and its leaving does not unlock it (#3061)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; mTLS lock state broadcast ordering &gt; registers ws.on(close) before buildSnapshot resolves (LB-AN-006 behavioral)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody — chunked accumulation (P-C-1) &gt; correctly assembles a body delivered in many small chunks" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody — chunked accumulation (P-C-1) &gt; rejects when body exceeds MAX_BODY_SIZE" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; readBody — chunked accumulation (P-C-1) &gt; rejects on stream error" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; LB-OA-2026-05-01: mTLS lock persists until all controllers disconnect &gt; does not release lock when a controller disconnects but another mTLS client remains" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; LB-OA-2026-05-01: mTLS lock persists until all controllers disconnect &gt; releases lock when the last mTLS controller disconnects" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; principal and authorizer (#3613) &gt; refuses a request whose connection presents another paired identity before the body arrives" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; principal and authorizer (#3613) &gt; refuses a request whose connection presents another certificate before the body arrives" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; principal and authorizer (#3613) &gt; runs no mobile command whose peer is removed, or whose connection changes certificate, before the body arrives" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; principal and authorizer (#3613) &gt; finishes a mobile command whose connection closes mid-command while the peer stays paired, and stops one whose peer is removed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; principal and authorizer (#3613) &gt; refuses a request whose peer becomes pending or loses its role before the body arrives" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; principal and authorizer (#3613) &gt; withholds rich content when the entry loses its role while the content is read" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; principal and authorizer (#3613) &gt; checks every /ws frame against the peer as it is now: removed, pending, re-pinned or one-to-one refused" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; GET Git diff envelope real target dispatch preserves the finite boundary at 9437184 bytes" time="0.192133625">
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; GET Git diff envelope real target dispatch preserves the finite boundary at 33554432 bytes" time="0.232353792">
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; GET Git diff envelope real target dispatch preserves the finite boundary at 33554433 bytes" time="0.18871925">
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; P6 bulk reaches real attachment staging and retains the uploader identity for chat.send" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; P6 attachment stopped during real staging readdir refuses before write" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; P6 attachment replaced during real staging readdir refuses before write" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; P6 attachment disposed during real staging readdir refuses before write" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; P6 attachment removed during real staging readdir refuses before write" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; P6 attachment project-removed during real staging readdir refuses before write" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; P6 real file route preserves uncapped text beyond the old control-frame cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; answers a reverse request exactly as the same peer&apos;s direct request" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; refusal matrix: the same authorizer, as a reverse principal &gt; active desktop member: direct 200, reverse 200" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; refusal matrix: the same authorizer, as a reverse principal &gt; one-to-one controller keeps its direction: direct 200, reverse 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; refusal matrix: the same authorizer, as a reverse principal &gt; phone network member: direct 200, reverse 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; refusal matrix: the same authorizer, as a reverse principal &gt; pending member: direct 403, reverse 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; refusal matrix: the same authorizer, as a reverse principal &gt; one-to-one satellite: direct 403, reverse 403 peer_role_not_allowed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; refusal matrix: the same authorizer, as a reverse principal &gt; removed: direct 401, reverse 401 peer_not_paired" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; refusal matrix: the same authorizer, as a reverse principal &gt; connection verified another certificate: direct 200, reverse 401 peer_not_paired" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; never reaches pairing: removing a pairing, /pair and unknown paths answer not_found" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; acts as the requester, never as this machine: command receipts are keyed by its identity" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; withholds the answer when the requester is removed while its request runs, and closes the connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; refuses a destructive reverse request whose requester went pending before it acted" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; removing the requester closes its control connections" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; runs a retried non-read request once: the same id gets the original answer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; callback-style routes (readJsonBody): only the handler&apos;s real, completed answer counts &gt; returns the route&apos;s real failure status and body, after the operation ran" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; callback-style routes (readJsonBody): only the handler&apos;s real, completed answer counts &gt; a request cancelled mid-operation leaves its real answer for a retry, never an empty 200" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; callback-style routes (readJsonBody): only the handler&apos;s real, completed answer counts &gt; a handler that outlives its deadline gets timeout, a retry is told there is nothing to replay, and its slot is held until the operation settles" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; serves a fresh snapshot first, then live events with their seq, as a /ws socket from it would get them" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; never gets the lock, and has no path into the /ws handlers" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; never receives another controller&apos;s private shell output" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; stops at the next frame once the subscriber is removed: no frame after, the subscription and connection end" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; stops at the next frame once the subscriber is made pending: no frame after, the subscription and connection end" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; stops at the next frame once the subscriber is re-pinned: no frame after, the subscription and connection end" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; counts as connected only while the subscriber is allowed as reverse, even before its next frame" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; the server serves no subscription for a principal that is not a reverse one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; SECURITY: revoking a client frame closes the virtual subscriber and its shells" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; SECURITY: clipboard image cannot inject input into another subscription shell" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; SECURITY: agent kill cannot stop another subscription shell" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; SECURITY: concurrent reverse shell creation stays below the eight shell cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; SECURITY: lifecycle bursts cannot bypass the control in-flight cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; SECURITY: revocation during lookup prevents an already queued reverse spawn" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; shell ownership while a spawn is starting, reverse (P5 QA) &gt; direct A disconnects mid-spawn and subscription B starts the same id: A never replaces B&apos;s shell" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; revocation inside the services&apos; own awaits (P5 QA b) &gt; a subscriber revoked while the stop awaits its orchestrator: nothing is stopped" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; revocation inside the services&apos; own awaits (P5 QA b) &gt; a subscriber revoked while the spawn checks its provider: nothing is created" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; runs a shell for the subscriber through the /ws handlers: spawn, input, and output only to it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; a direct controller cannot drive the subscriber&apos;s shell, and the subscriber cannot drive a direct controller&apos;s" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; ending the subscription closes the subscriber&apos;s shells, as a direct socket closing does" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; a subscriber that lost access: its input never reaches the terminal" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; the /ws limits apply: pty:input over 64 KiB is refused" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; agent lifecycle goes through the same handlers: kill of an unknown agent is answered agent_not_found" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; control frames over the subscription: terminals and lifecycle (P5) &gt; agent:spawn over reverse creates nothing a direct controller could not: unknown project refused, known project spawned exactly as direct" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; is refused to a subscriber that is not an active desktop member here, and nothing is registered" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; ends when the subscriber is removed here, and when the server stops" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; reverse subscription: this machine&apos;s /ws stream, served to the member over its connection (P4) &gt; unsubscribing, or the connection closing, removes the virtual client" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; accepting the control connection &gt; takes it from an active desktop member, and says nothing until its hello" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; accepting the control connection &gt; refuses a one-to-one controller" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; accepting the control connection &gt; refuses a phone member" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; accepting the control connection &gt; refuses a pending member" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; accepting the control connection &gt; refuses an unknown peer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; reverse requests over the control connection (#3613 P3) &gt; accepting the control connection &gt; ends with the server: nothing is accepted or served once it stops" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; security gate coverage: requireMtls and checkBruteForce &gt; checks the peer again once the body has arrived, so a removal while the body is held back is refused (git operation)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server &gt; security gate coverage: requireMtls and checkBruteForce &gt; returns 429 pairing_locked after six consecutive wrong PIN attempts trigger lockout" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server getDetailedStatus for chat agents &gt; reads Working 31s after the last tool event while the chat turn runs" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server getDetailedStatus for chat agents &gt; reads Working for a turn that has had no tool event yet, timed from the turn start" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server getDetailedStatus for chat agents &gt; keeps a fresh tool verb while the turn runs" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server getDetailedStatus for chat agents &gt; reads Needs you while the chat session waits for input" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server getDetailedStatus for chat agents &gt; reads Done once the chat turn has ended" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server getDetailedStatus for chat agents &gt; still drops a terminal agent status older than 30s" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server getDetailedStatus for chat agents &gt; keeps a fresh terminal agent status" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server chat status push &gt; pushes Working when a turn starts, with no tool event, and not again for its session_state" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server chat status push &gt; pushes nothing for streamed chunks, messages or thoughts during a long think" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server chat status push &gt; pushes Done when the turn ends" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server chat status push &gt; pushes Done even when no hook status is left" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server chat status push &gt; pushes Needs you when the session waits for an answer, then Working again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server chat status push &gt; pushes nothing for an agent no chat runtime runs" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-server.test.ts" name="annex-server chat status push &gt; marks a quick agent with its project so older iOS builds keep it running" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+</testsuites>

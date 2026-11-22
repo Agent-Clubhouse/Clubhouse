@@ -1,0 +1,362 @@
+{
+  "command": [
+    "~/.clubhouse/orch/desktop-test-gate.sh",
+    "lane-p2",
+    "4",
+    "--",
+    "npx",
+    "vitest",
+    "run",
+    "--project",
+    "main",
+    "src/main/services/annex-control.test.ts",
+    "--maxWorkers=2",
+    "-t",
+    "preserves a complete diff above the former boundary with query .*content",
+    "--reporter=default",
+    "--reporter=junit",
+    "--outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/13-query-precedence-restored.xml"
+  ],
+  "gatePathRenderedWithHomeAlias": true,
+  "minimumGiB": 4,
+  "startedAt": "2026-11-22T07:25:17.012672+00:00",
+  "finishedAt": "2026-11-22T07:25:18.342098+00:00",
+  "before": {
+    "head": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+    "tree": "f73a613add940a39d9f0350f1ada6b77e2dd3b4b",
+    "trackedStatus": "",
+    "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+    "runtime": {
+      "node": "v24.22.1",
+      "platform": "darwin"
+    },
+    "inputs": [
+      {
+        "path": "src/main/services/annex-control.ts",
+        "sha256": "09d9dbf04a5e54265e3832a858c18cb18e3965238bb286722d7d02f938fecd2b"
+      },
+      {
+        "path": "src/main/services/annex-control.test.ts",
+        "sha256": "afdf869e67ad19c936ba790992844c542a3f8deb609c816dda2680bbaae745ea"
+      },
+      {
+        "path": "src/main/services/annex-control-bulk.ts",
+        "sha256": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee"
+      },
+      {
+        "path": "src/main/services/annex-control-bulk.test.ts",
+        "sha256": "80f634f00a2754568be5519556137f0728ef2e0adf488a2246f90a008c84c8d2"
+      },
+      {
+        "path": "src/main/services/annex-authorizer.ts",
+        "sha256": "e1a98c503ac0bddb45b70436155c6936b75ed75dbdc259fec09b28ac8d912483"
+      },
+      {
+        "path": "src/shared/annex-control-protocol.ts",
+        "sha256": "572357f08535654bc6fe6ebffbe0bf6508363eab61c8c7170681d1efdd374f61"
+      },
+      {
+        "path": "src/shared/annex-control-protocol.test.ts",
+        "sha256": "629dd1740f0b0784ae8cd0516b376cde30e2a84281f382da3602be4d89e889bc"
+      },
+      {
+        "path": "src/main/services/annex-client.ts",
+        "sha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98"
+      },
+      {
+        "path": "src/main/services/annex-client.test.ts",
+        "sha256": "7368915f74a236d3ec6a49c3b200ec495b561ec06a735fc7b52f3dd079bb3f7c"
+      },
+      {
+        "path": "src/main/services/annex-server.ts",
+        "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500"
+      },
+      {
+        "path": "src/main/services/annex-server.test.ts",
+        "sha256": "97132079694f579eba36fc5be796fa4353537b4c9f860bfb7fbca309e70a1451"
+      },
+      {
+        "path": "src/main/services/git-service.ts",
+        "sha256": "5e991c7f519a1a00823a40200d90fc175627b687895f2196e5189cd3791a13c7"
+      },
+      {
+        "path": "src/shared/annex-binary-limits.ts",
+        "sha256": "471d2d33525218a1017c05b60a7da065bcb7295f787c685ae1fa4a6a484c8a6c"
+      },
+      {
+        "path": "src/shared/icon-limits.ts",
+        "sha256": "4088b925aaa66bc8e0b5164c6ceb75456be028f6b45d68a6921bd2804f9eccab"
+      },
+      {
+        "path": "src/shared/chat/index.ts",
+        "sha256": "c9b6cf0df080130c9d4778a1048cb3546380fc82ab42244d8c64edfb8bcbcf94"
+      },
+      {
+        "path": "src/shared/chat/attachments.ts",
+        "sha256": "0afe904b534ee5a12e3a34b4d3cf2e89546814758984b7dd160559db82573898"
+      },
+      {
+        "path": "src/main/services/annex-full-events.ts",
+        "sha256": "a479f7f1e154dedb395bacfb6e9d4a2d961a4141414579d6489b1d424d1a715c"
+      },
+      {
+        "path": "src/shared/handoff-transfer.ts",
+        "sha256": "657663ef9c6836a0b0b3ae59b0e92679c2a070d1cbfbcf6609f8ef45d104ef82"
+      },
+      {
+        "path": "src/main/services/annex-routes.ts",
+        "sha256": "e676e222b543b11e6978a86fd1c0916e510c8ed3cea526a030164bb25fcc72b8"
+      },
+      {
+        "path": "src/shared/annex-problems.ts",
+        "sha256": "f87cdb5a347bf1f3b2f28146459d98d44e4cd07b3c7d4015fb08e1880a05803e"
+      },
+      {
+        "path": "src/shared/types.ts",
+        "sha256": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa"
+      },
+      {
+        "path": "src/main/services/annex-tls.ts",
+        "sha256": "138761ee7b60e65d7dd3b282f5926a754efc068abfa14186a26a086fdc511cea"
+      },
+      {
+        "path": "src/main/services/annex-device-signal.ts",
+        "sha256": "31e25abf98c78e7ce5721c9c9391e0d657ff9e670b9ac0939e9e0001f5cd04bf"
+      },
+      {
+        "path": "src/main/services/log-service.ts",
+        "sha256": "0e6c8c53c69597eebf8d3db43d34b2c47a9fabd14f9552e0a99aba387a752c9a"
+      },
+      {
+        "path": "test/global-setup.ts",
+        "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e"
+      },
+      {
+        "path": "test/standard-runtime-boundary.ts",
+        "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+      },
+      {
+        "path": "vitest.config.ts",
+        "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+      },
+      {
+        "path": "tsconfig.json",
+        "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+      },
+      {
+        "path": "docs/annex-reverse-routes.tsconfig.json",
+        "sha256": "26b864ea875ec6db8bc65c0e514f6103314a7133639b44b2e185d62d06a3de4a"
+      },
+      {
+        "path": "package.json",
+        "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9"
+      },
+      {
+        "path": "package-lock.json",
+        "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+      },
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/capture.py",
+        "sha256": "dcee5fddb147c09c45677db88e1ec5d506476ab7e0d8cd89cfc7bce63a92aa11"
+      },
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json",
+        "sha256": "f02e261ae5e0621eca7b7e2097677ebeb58b16844dd3bfb68fd0e7c1e0740ed7"
+      }
+    ],
+    "installed": [
+      {
+        "path": "node_modules/@vitest/runner/dist/chunk-artifact.js",
+        "sha256": "bf6af6d2f4469911879a67e83b8f9e7b20332cf42795032c53457b10ccc1c617"
+      },
+      {
+        "path": "node_modules/@vitest/runner/package.json",
+        "sha256": "54a437a3811773a3dcf8d17eb89120e0ed91f820c752fc76c37b83d22e6f76bf"
+      },
+      {
+        "path": "node_modules/vitest/package.json",
+        "sha256": "e5a6d55e103f04929442595df0f641f128b02fd706ff01474c094863b44511d0"
+      },
+      {
+        "path": "node_modules/typescript/package.json",
+        "sha256": "822ef7ca6452205657b6288b066481ecf508bfbf43455d715cf7d3ec457561e6"
+      },
+      {
+        "path": "node_modules/eslint/package.json",
+        "sha256": "361210aa42b55fd814c48a01e3724559ec6f0f3e1c021d0f8aa2e8b00276060e"
+      }
+    ]
+  },
+  "after": {
+    "head": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+    "tree": "f73a613add940a39d9f0350f1ada6b77e2dd3b4b",
+    "trackedStatus": "",
+    "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gateSha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+    "runtime": {
+      "node": "v24.22.1",
+      "platform": "darwin"
+    },
+    "inputs": [
+      {
+        "path": "src/main/services/annex-control.ts",
+        "sha256": "09d9dbf04a5e54265e3832a858c18cb18e3965238bb286722d7d02f938fecd2b"
+      },
+      {
+        "path": "src/main/services/annex-control.test.ts",
+        "sha256": "afdf869e67ad19c936ba790992844c542a3f8deb609c816dda2680bbaae745ea"
+      },
+      {
+        "path": "src/main/services/annex-control-bulk.ts",
+        "sha256": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee"
+      },
+      {
+        "path": "src/main/services/annex-control-bulk.test.ts",
+        "sha256": "80f634f00a2754568be5519556137f0728ef2e0adf488a2246f90a008c84c8d2"
+      },
+      {
+        "path": "src/main/services/annex-authorizer.ts",
+        "sha256": "e1a98c503ac0bddb45b70436155c6936b75ed75dbdc259fec09b28ac8d912483"
+      },
+      {
+        "path": "src/shared/annex-control-protocol.ts",
+        "sha256": "572357f08535654bc6fe6ebffbe0bf6508363eab61c8c7170681d1efdd374f61"
+      },
+      {
+        "path": "src/shared/annex-control-protocol.test.ts",
+        "sha256": "629dd1740f0b0784ae8cd0516b376cde30e2a84281f382da3602be4d89e889bc"
+      },
+      {
+        "path": "src/main/services/annex-client.ts",
+        "sha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98"
+      },
+      {
+        "path": "src/main/services/annex-client.test.ts",
+        "sha256": "7368915f74a236d3ec6a49c3b200ec495b561ec06a735fc7b52f3dd079bb3f7c"
+      },
+      {
+        "path": "src/main/services/annex-server.ts",
+        "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500"
+      },
+      {
+        "path": "src/main/services/annex-server.test.ts",
+        "sha256": "97132079694f579eba36fc5be796fa4353537b4c9f860bfb7fbca309e70a1451"
+      },
+      {
+        "path": "src/main/services/git-service.ts",
+        "sha256": "5e991c7f519a1a00823a40200d90fc175627b687895f2196e5189cd3791a13c7"
+      },
+      {
+        "path": "src/shared/annex-binary-limits.ts",
+        "sha256": "471d2d33525218a1017c05b60a7da065bcb7295f787c685ae1fa4a6a484c8a6c"
+      },
+      {
+        "path": "src/shared/icon-limits.ts",
+        "sha256": "4088b925aaa66bc8e0b5164c6ceb75456be028f6b45d68a6921bd2804f9eccab"
+      },
+      {
+        "path": "src/shared/chat/index.ts",
+        "sha256": "c9b6cf0df080130c9d4778a1048cb3546380fc82ab42244d8c64edfb8bcbcf94"
+      },
+      {
+        "path": "src/shared/chat/attachments.ts",
+        "sha256": "0afe904b534ee5a12e3a34b4d3cf2e89546814758984b7dd160559db82573898"
+      },
+      {
+        "path": "src/main/services/annex-full-events.ts",
+        "sha256": "a479f7f1e154dedb395bacfb6e9d4a2d961a4141414579d6489b1d424d1a715c"
+      },
+      {
+        "path": "src/shared/handoff-transfer.ts",
+        "sha256": "657663ef9c6836a0b0b3ae59b0e92679c2a070d1cbfbcf6609f8ef45d104ef82"
+      },
+      {
+        "path": "src/main/services/annex-routes.ts",
+        "sha256": "e676e222b543b11e6978a86fd1c0916e510c8ed3cea526a030164bb25fcc72b8"
+      },
+      {
+        "path": "src/shared/annex-problems.ts",
+        "sha256": "f87cdb5a347bf1f3b2f28146459d98d44e4cd07b3c7d4015fb08e1880a05803e"
+      },
+      {
+        "path": "src/shared/types.ts",
+        "sha256": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa"
+      },
+      {
+        "path": "src/main/services/annex-tls.ts",
+        "sha256": "138761ee7b60e65d7dd3b282f5926a754efc068abfa14186a26a086fdc511cea"
+      },
+      {
+        "path": "src/main/services/annex-device-signal.ts",
+        "sha256": "31e25abf98c78e7ce5721c9c9391e0d657ff9e670b9ac0939e9e0001f5cd04bf"
+      },
+      {
+        "path": "src/main/services/log-service.ts",
+        "sha256": "0e6c8c53c69597eebf8d3db43d34b2c47a9fabd14f9552e0a99aba387a752c9a"
+      },
+      {
+        "path": "test/global-setup.ts",
+        "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e"
+      },
+      {
+        "path": "test/standard-runtime-boundary.ts",
+        "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+      },
+      {
+        "path": "vitest.config.ts",
+        "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+      },
+      {
+        "path": "tsconfig.json",
+        "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+      },
+      {
+        "path": "docs/annex-reverse-routes.tsconfig.json",
+        "sha256": "26b864ea875ec6db8bc65c0e514f6103314a7133639b44b2e185d62d06a3de4a"
+      },
+      {
+        "path": "package.json",
+        "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9"
+      },
+      {
+        "path": "package-lock.json",
+        "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+      },
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/capture.py",
+        "sha256": "dcee5fddb147c09c45677db88e1ec5d506476ab7e0d8cd89cfc7bce63a92aa11"
+      },
+      {
+        "path": "docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json",
+        "sha256": "f02e261ae5e0621eca7b7e2097677ebeb58b16844dd3bfb68fd0e7c1e0740ed7"
+      }
+    ],
+    "installed": [
+      {
+        "path": "node_modules/@vitest/runner/dist/chunk-artifact.js",
+        "sha256": "bf6af6d2f4469911879a67e83b8f9e7b20332cf42795032c53457b10ccc1c617"
+      },
+      {
+        "path": "node_modules/@vitest/runner/package.json",
+        "sha256": "54a437a3811773a3dcf8d17eb89120e0ed91f820c752fc76c37b83d22e6f76bf"
+      },
+      {
+        "path": "node_modules/vitest/package.json",
+        "sha256": "e5a6d55e103f04929442595df0f641f128b02fd706ff01474c094863b44511d0"
+      },
+      {
+        "path": "node_modules/typescript/package.json",
+        "sha256": "822ef7ca6452205657b6288b066481ecf508bfbf43455d715cf7d3ec457561e6"
+      },
+      {
+        "path": "node_modules/eslint/package.json",
+        "sha256": "361210aa42b55fd814c48a01e3724559ec6f0f3e1c021d0f8aa2e8b00276060e"
+      }
+    ]
+  },
+  "inputsUnchanged": true,
+  "exit": 0,
+  "logSha256": "a0994c251db95db25c5269b310ba6c74d16fd752e26c4097ba179712f4364d90",
+  "stderrMergedAtProcessCapture": true
+}

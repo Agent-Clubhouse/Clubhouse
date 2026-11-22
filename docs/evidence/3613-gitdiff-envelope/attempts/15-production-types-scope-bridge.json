@@ -1,0 +1,18 @@
+{
+  "rootCompilerExecutedAt": "fd58d8774dedef913b587d6b7127cc0f60cb4737",
+  "rootCompilerResult": "PASS before subsequent full-fixture FAIL in03 chained command",
+  "rootCommand": [
+    "npx",
+    "tsc",
+    "--noEmit"
+  ],
+  "finalSource": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+  "changedRootInputs": [
+    "src/main/services/annex-control.test.ts",
+    "src/main/services/annex-server.test.ts"
+  ],
+  "allChangesExcludedByUnchangedRootConfig": true,
+  "rootConfigSha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+  "rootCompilerExecutedAtFinalSource": false,
+  "limitation": "Explicit unchanged-production bridge only; full actual fixture remains FAIL139, no typing acceptance or reduced-graph substitute."
+}

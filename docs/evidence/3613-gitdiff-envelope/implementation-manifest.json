@@ -1,0 +1,929 @@
+{
+  "kind": "Bounded implementation/proof freeze; independent source/typing acceptance PENDING; no PR/CI",
+  "base": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+  "designCommit": "b7843d9889cd004098590a1aac5578518b19c788",
+  "designReviewCommit": "3046c2cf93acbd16b92e07316216e0d593241835",
+  "designReviewBlob": "332bd26e6411bf363d0798b3e308798c6aae2a52",
+  "designReviewSha256": "ab456ae06d42e0382ccb011cb6794f98a05dd32eb5f93f65615ae9e33a266dc3",
+  "sourceCommit": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+  "sourceTree": "f73a613add940a39d9f0350f1ada6b77e2dd3b4b",
+  "evidenceCommit": "containing commit; selected source/config input bridge is byte-identical to sourceCommit",
+  "limitBytes": 33554432,
+  "productionDelta": [
+    "src/main/services/annex-control.ts"
+  ],
+  "rootCompilerBridge": {
+    "rootCompilerExecutedAt": "fd58d8774dedef913b587d6b7127cc0f60cb4737",
+    "rootCompilerResult": "PASS before subsequent full-fixture FAIL in03 chained command",
+    "rootCommand": [
+      "npx",
+      "tsc",
+      "--noEmit"
+    ],
+    "finalSource": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+    "changedRootInputs": [
+      "src/main/services/annex-control.test.ts",
+      "src/main/services/annex-server.test.ts"
+    ],
+    "allChangesExcludedByUnchangedRootConfig": true,
+    "rootConfigSha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+    "rootCompilerExecutedAtFinalSource": false,
+    "limitation": "Explicit unchanged-production bridge only; full actual fixture remains FAIL139, no typing acceptance or reduced-graph substitute."
+  },
+  "fullFixtureStatus": "FAIL139 baseline and final;0 changed-hunk/other-file diagnostics; content/code/column/multiplicity/line mapping equal; NOT PASS or acceptance",
+  "fullDiagnosticSha256": "c21118378143baf04073845e8bec22c9e752e8a0e0e92853e5143e16403a4f84",
+  "mobileFixtureCount": 103,
+  "phoneContractAndSharedProtocolByteIdentical": true,
+  "originalHistoricalArtifactsAtB784": [
+    {
+      "commit": "b7843d9889cd004098590a1aac5578518b19c788",
+      "path": "docs/evidence/3613-gitdiff-envelope/README.md",
+      "bytes": 9939,
+      "sha256": "0db91d139800e1ab808c64eafd612a5a200ef89f208f36d38d3bf3bea6c60a11",
+      "gitBlob": "1ffc19712fdfb1f659a7607abf752d31e8e06f0c"
+    },
+    {
+      "commit": "b7843d9889cd004098590a1aac5578518b19c788",
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-baseline-verification.json",
+      "bytes": 1656,
+      "sha256": "4eb1c1a40d94c0ef6ce3893385dbf16668ba15c5feabd79057b16956b1485155",
+      "gitBlob": "4774ac821ecd93cd6fc927f7727f769e2a4a637a"
+    },
+    {
+      "commit": "b7843d9889cd004098590a1aac5578518b19c788",
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red-original.txt",
+      "bytes": 19169,
+      "sha256": "230eb07eeb391521667119db630834e7c80ce29b581c42193bb129ccdfbfb7c7",
+      "gitBlob": "5b3a031eb6ee214e55d6ab28b40cb6aacf266dc1"
+    },
+    {
+      "commit": "b7843d9889cd004098590a1aac5578518b19c788",
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red-receipt.json",
+      "bytes": 12766,
+      "sha256": "73777453a611d34b018282f0b3de075814eb69dfe62ae82a2d27ee7305e071c9",
+      "gitBlob": "e82266ccc03924ce1ab8fee8d779540f36581e2a"
+    },
+    {
+      "commit": "b7843d9889cd004098590a1aac5578518b19c788",
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red.xml",
+      "bytes": 48865,
+      "sha256": "0439934f9a76cd436a299cc7ea9b57a3203bf35d313c53d89e44c13ab41f362e",
+      "gitBlob": "e676b748c0e1f1e556441f7adebdca885fd267d2"
+    },
+    {
+      "commit": "b7843d9889cd004098590a1aac5578518b19c788",
+      "path": "docs/evidence/3613-gitdiff-envelope/capture.py",
+      "bytes": 4268,
+      "sha256": "f9675e82c45eb877400611b9738028c0d7896700ef26b98788692d4ff7b6017a",
+      "gitBlob": "335deacfdde2838b091f9754dcab0b2765870a25"
+    }
+  ],
+  "sourceInputs": [
+    {
+      "path": "src/main/services/annex-control.ts",
+      "sha256": "09d9dbf04a5e54265e3832a858c18cb18e3965238bb286722d7d02f938fecd2b",
+      "gitBlob": "065b48063fed54a6114dbe5b1d316530b97517ce"
+    },
+    {
+      "path": "src/main/services/annex-control.test.ts",
+      "sha256": "afdf869e67ad19c936ba790992844c542a3f8deb609c816dda2680bbaae745ea",
+      "gitBlob": "6289edcc1296e56fd773bf0f7aa45c40f854c08c"
+    },
+    {
+      "path": "src/main/services/annex-control-bulk.ts",
+      "sha256": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee",
+      "gitBlob": "18ee308fc55d33e89523d840f584101eea189be0"
+    },
+    {
+      "path": "src/main/services/annex-control-bulk.test.ts",
+      "sha256": "80f634f00a2754568be5519556137f0728ef2e0adf488a2246f90a008c84c8d2",
+      "gitBlob": "0e70e901d855fac04e42ff39508840186cbc53ae"
+    },
+    {
+      "path": "src/main/services/annex-authorizer.ts",
+      "sha256": "e1a98c503ac0bddb45b70436155c6936b75ed75dbdc259fec09b28ac8d912483",
+      "gitBlob": "b88180d9ac2c9f855691e731bc71eec0903cd824"
+    },
+    {
+      "path": "src/shared/annex-control-protocol.ts",
+      "sha256": "572357f08535654bc6fe6ebffbe0bf6508363eab61c8c7170681d1efdd374f61",
+      "gitBlob": "6ee5ef77a8d978da390838dde7e450ac05374d78"
+    },
+    {
+      "path": "src/shared/annex-control-protocol.test.ts",
+      "sha256": "629dd1740f0b0784ae8cd0516b376cde30e2a84281f382da3602be4d89e889bc",
+      "gitBlob": "0c9cf1f050c4cb30218ecd81f32342474e2dfa3b"
+    },
+    {
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98",
+      "gitBlob": "77cfe1328ce8b05ed4df5243a3683938e98a9670"
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "sha256": "7368915f74a236d3ec6a49c3b200ec495b561ec06a735fc7b52f3dd079bb3f7c",
+      "gitBlob": "bb36dc1101cd66b0522a1c22ac2d0e486a443ebe"
+    },
+    {
+      "path": "src/main/services/annex-server.ts",
+      "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+      "gitBlob": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b"
+    },
+    {
+      "path": "src/main/services/annex-server.test.ts",
+      "sha256": "97132079694f579eba36fc5be796fa4353537b4c9f860bfb7fbca309e70a1451",
+      "gitBlob": "4ed04c9f93170408d0d9cfe92a99628f5fbb6186"
+    },
+    {
+      "path": "src/main/services/git-service.ts",
+      "sha256": "5e991c7f519a1a00823a40200d90fc175627b687895f2196e5189cd3791a13c7",
+      "gitBlob": "26abc474f1455721718c496bc6d937f8dd0ed35a"
+    },
+    {
+      "path": "src/shared/annex-binary-limits.ts",
+      "sha256": "471d2d33525218a1017c05b60a7da065bcb7295f787c685ae1fa4a6a484c8a6c",
+      "gitBlob": "f9015fabed6d83cd82071c8a101f67c6b5865372"
+    },
+    {
+      "path": "src/shared/icon-limits.ts",
+      "sha256": "4088b925aaa66bc8e0b5164c6ceb75456be028f6b45d68a6921bd2804f9eccab",
+      "gitBlob": "d440bcd0def61724a4792888ededa3c4723f7fd1"
+    },
+    {
+      "path": "src/shared/chat/index.ts",
+      "sha256": "c9b6cf0df080130c9d4778a1048cb3546380fc82ab42244d8c64edfb8bcbcf94",
+      "gitBlob": "0b029abb9461174d0d31facb84b26131aa4cb091"
+    },
+    {
+      "path": "src/shared/chat/attachments.ts",
+      "sha256": "0afe904b534ee5a12e3a34b4d3cf2e89546814758984b7dd160559db82573898",
+      "gitBlob": "bcee1a73f0eac05e36e7493a6e84b80a92d0c9bf"
+    },
+    {
+      "path": "src/main/services/annex-full-events.ts",
+      "sha256": "a479f7f1e154dedb395bacfb6e9d4a2d961a4141414579d6489b1d424d1a715c",
+      "gitBlob": "a9b9c8875cabe561a171e38bd868c8389a962f06"
+    },
+    {
+      "path": "src/shared/handoff-transfer.ts",
+      "sha256": "657663ef9c6836a0b0b3ae59b0e92679c2a070d1cbfbcf6609f8ef45d104ef82",
+      "gitBlob": "7927b7731a6a0303e5a75699fdc25a811fab10c2"
+    },
+    {
+      "path": "src/main/services/annex-routes.ts",
+      "sha256": "e676e222b543b11e6978a86fd1c0916e510c8ed3cea526a030164bb25fcc72b8",
+      "gitBlob": "40900d393e8c66b27e11883a3e7677dc9ddd1bd3"
+    },
+    {
+      "path": "src/shared/annex-problems.ts",
+      "sha256": "f87cdb5a347bf1f3b2f28146459d98d44e4cd07b3c7d4015fb08e1880a05803e",
+      "gitBlob": "ffe01e149cf5838d7ce9c13587838a1daa511cc3"
+    },
+    {
+      "path": "src/shared/types.ts",
+      "sha256": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+      "gitBlob": "d1b0d86fda1037c8262e12503bdfb0c8e63acde0"
+    },
+    {
+      "path": "src/main/services/annex-tls.ts",
+      "sha256": "138761ee7b60e65d7dd3b282f5926a754efc068abfa14186a26a086fdc511cea",
+      "gitBlob": "dad106486d21d16f65beb9b9edbb357d8bb809e8"
+    },
+    {
+      "path": "src/main/services/annex-device-signal.ts",
+      "sha256": "31e25abf98c78e7ce5721c9c9391e0d657ff9e670b9ac0939e9e0001f5cd04bf",
+      "gitBlob": "9b23750124ddfc79612a0bc87216b001fa995e81"
+    },
+    {
+      "path": "src/main/services/log-service.ts",
+      "sha256": "0e6c8c53c69597eebf8d3db43d34b2c47a9fabd14f9552e0a99aba387a752c9a",
+      "gitBlob": "050e6f105d2ebdbd84ca3af9e29e8e37cc6c1e19"
+    },
+    {
+      "path": "test/global-setup.ts",
+      "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "gitBlob": "f80eac131998f792ca0f271f80eb606215c942af"
+    },
+    {
+      "path": "test/standard-runtime-boundary.ts",
+      "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "gitBlob": "0a2d496ec59195a46b27a4b5394d4fab9111f62d"
+    },
+    {
+      "path": "vitest.config.ts",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "gitBlob": "e371e57159be74b4f5baf9aadcb0339fa6034025"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "gitBlob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef"
+    },
+    {
+      "path": "docs/annex-reverse-routes.tsconfig.json",
+      "sha256": "26b864ea875ec6db8bc65c0e514f6103314a7133639b44b2e185d62d06a3de4a",
+      "gitBlob": "31137e6846a46b3ad0f8890b2e10bc2b39620112"
+    },
+    {
+      "path": "package.json",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "gitBlob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "gitBlob": "7e45389f84ca58c5c7832cab169aa5674320d25d"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/capture.py",
+      "sha256": "dcee5fddb147c09c45677db88e1ec5d506476ab7e0d8cd89cfc7bce63a92aa11",
+      "gitBlob": "96dc39cb407baed34ede7c6420dcb6ad4e160a41"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json",
+      "sha256": "f02e261ae5e0621eca7b7e2097677ebeb58b16844dd3bfb68fd0e7c1e0740ed7",
+      "gitBlob": "2a1a53557d33b8a9466ac0308de89cbf49a123a1"
+    }
+  ],
+  "executions": [
+    {
+      "key": "01-gitdiff-boundary-red",
+      "executionHead": "9eff428ebeb70c6b7d0996b6600713a50b4928ed",
+      "executionTree": "2bc1e5b37e8e8f89898982641359c47b580b59d6",
+      "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "minimumGiB": 4,
+      "exit": 1,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/annex-control.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "GET Git diff envelope boundary",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red.xml"
+      ],
+      "counts": {
+        "pass": 5,
+        "fail": 2,
+        "skip": 190
+      },
+      "selectedInputs": 31,
+      "inputsUnchanged": true,
+      "rawLogSha256": "230eb07eeb391521667119db630834e7c80ce29b581c42193bb129ccdfbfb7c7",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red-original.txt",
+      "rawGzip": false,
+      "proofCredit": true
+    },
+    {
+      "key": "02-gitdiff-candidate",
+      "executionHead": "231cee748be1684f008cfe458ae73bf1a6bf9723",
+      "executionTree": "50c2877a2b9f753331e5c15607475088313e5a42",
+      "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "minimumGiB": 4,
+      "exit": 1,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/annex-control.test.ts",
+        "src/main/services/annex-client.test.ts",
+        "src/main/services/annex-server.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "GET Git diff envelope",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/02-gitdiff-candidate.xml"
+      ],
+      "counts": {
+        "pass": 28,
+        "fail": 2,
+        "skip": 1219
+      },
+      "selectedInputs": 32,
+      "inputsUnchanged": true,
+      "rawLogSha256": "3dceb9150a855ff8c1e37a05c489a7a7c7ef40d13fabf5a4b1ca8a110eb7ec39",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/02-gitdiff-candidate-original.txt",
+      "rawGzip": false,
+      "proofCredit": true
+    },
+    {
+      "key": "03-gitdiff-source-proof",
+      "executionHead": "fd58d8774dedef913b587d6b7127cc0f60cb4737",
+      "executionTree": "ee68a9a1bbda656b88bcc542a640b08b8b8d27c7",
+      "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "minimumGiB": 6,
+      "exit": 2,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "6",
+        "--",
+        "bash",
+        "-c",
+        "npx vitest run --project main src/main/services/annex-control.test.ts src/main/services/annex-client.test.ts src/main/services/annex-server.test.ts --maxWorkers=2 -t \"GET Git diff envelope\" --reporter=default --reporter=junit --outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/03-gitdiff-source-proof.xml && npx tsc --noEmit && npx tsc --noEmit -p docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json && npx eslint src/main/services/annex-control.ts src/main/services/annex-control.test.ts src/main/services/annex-client.test.ts src/main/services/annex-server.test.ts"
+      ],
+      "counts": {
+        "pass": 30,
+        "fail": 0,
+        "skip": 1219
+      },
+      "selectedInputs": 33,
+      "inputsUnchanged": true,
+      "rawLogSha256": "4f03ceb92a583159730e43de240b94deb59d7617bc5a7ababf7049825249adf2",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/03-gitdiff-source-proof-original.txt",
+      "rawGzip": false,
+      "proofCredit": true
+    },
+    {
+      "key": "04-full-fixture-baseline",
+      "executionHead": "50723d350deda3ca84fe26050ec8680c5a15c769",
+      "executionTree": "8d54d3d97aeca33d2463e0d8d46bb5280e50d29b",
+      "trackedDiffSha256": "befea4cc4b13ae7b6dd61133b4972fe5d29b05001a8b031cd5dd53c907a25476",
+      "minimumGiB": 6,
+      "exit": 2,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "6",
+        "--",
+        "bash",
+        "-c",
+        "echo FIXTURE_TYPES_BEGIN; npx tsc --noEmit -p docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json; status=$?; echo \"FIXTURE_TYPES_END rc=$status\"; exit \"$status\""
+      ],
+      "counts": null,
+      "selectedInputs": 33,
+      "inputsUnchanged": true,
+      "rawLogSha256": "c1d87772e55f7b7155446c04fc3aeae0958edc92d0fcea59dd32023abcd1e285",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/04-full-fixture-baseline-original.txt",
+      "rawGzip": false,
+      "proofCredit": true
+    },
+    {
+      "key": "05-corrected-target-types-lint",
+      "executionHead": "50723d350deda3ca84fe26050ec8680c5a15c769",
+      "executionTree": "8d54d3d97aeca33d2463e0d8d46bb5280e50d29b",
+      "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "minimumGiB": 6,
+      "exit": 2,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "6",
+        "--",
+        "bash",
+        "-c",
+        "npx vitest run --project main src/main/services/annex-server.test.ts --maxWorkers=2 -t \"GET Git diff envelope\" --reporter=default --reporter=junit --outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/05-corrected-target-types-lint.xml && npx eslint src/main/services/annex-control.ts src/main/services/annex-control.test.ts src/main/services/annex-client.test.ts src/main/services/annex-server.test.ts && echo SCOPED_LINT_PASS && echo FIXTURE_TYPES_BEGIN && npx tsc --noEmit -p docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json; status=$?; echo \"FIXTURE_TYPES_END rc=$status\"; exit \"$status\""
+      ],
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 658
+      },
+      "selectedInputs": 33,
+      "inputsUnchanged": true,
+      "rawLogSha256": "b19196b2434d545f2e00d17ef25c311c199f042de586817f4cc5c60b4130af7f",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/05-corrected-target-types-lint-original.txt",
+      "rawGzip": false,
+      "proofCredit": true
+    },
+    {
+      "key": "07-missing-predicate-mutant",
+      "executionHead": "50723d350deda3ca84fe26050ec8680c5a15c769",
+      "executionTree": "8d54d3d97aeca33d2463e0d8d46bb5280e50d29b",
+      "trackedDiffSha256": "e31d45e656eb46a831f496cce1e5fd8ad1bc7221731fab7cd21ac7ea6bb83bdb",
+      "minimumGiB": 4,
+      "exit": 0,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/annex-control.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "returns exact old-cap-plus-one JSON bytes for",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/07-missing-predicate-mutant.xml"
+      ],
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 216
+      },
+      "selectedInputs": 33,
+      "inputsUnchanged": true,
+      "rawLogSha256": "162e89f06cff4d7e98f27b2f3f936c56e4958758e59106780a3fcbce06cd6dac",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/07-missing-predicate-mutant-original.txt",
+      "rawGzip": false,
+      "proofCredit": false
+    },
+    {
+      "key": "08-missing-predicate-selected",
+      "executionHead": "50723d350deda3ca84fe26050ec8680c5a15c769",
+      "executionTree": "8d54d3d97aeca33d2463e0d8d46bb5280e50d29b",
+      "trackedDiffSha256": "e31d45e656eb46a831f496cce1e5fd8ad1bc7221731fab7cd21ac7ea6bb83bdb",
+      "minimumGiB": 4,
+      "exit": 1,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/annex-control.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "preserves a complete diff above the former boundary with query",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/08-missing-predicate-selected.xml"
+      ],
+      "counts": {
+        "pass": 2,
+        "fail": 3,
+        "skip": 211
+      },
+      "selectedInputs": 33,
+      "inputsUnchanged": true,
+      "rawLogSha256": "df6d28c4470c443dbf7fd3f4e0ffc0f953b096c1aa00ebbd7c1a75d97b91b7fe",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/08-missing-predicate-selected-original.txt",
+      "rawGzip": false,
+      "proofCredit": true
+    },
+    {
+      "key": "09-missing-dispatch-method",
+      "executionHead": "50723d350deda3ca84fe26050ec8680c5a15c769",
+      "executionTree": "8d54d3d97aeca33d2463e0d8d46bb5280e50d29b",
+      "trackedDiffSha256": "e9aaf0db740b84ba7830ee65a5641499650d6d5236e3d6589d933f04eb87ed97",
+      "minimumGiB": 4,
+      "exit": 1,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/annex-server.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "GET Git diff envelope",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/09-missing-dispatch-method.xml"
+      ],
+      "counts": {
+        "pass": 0,
+        "fail": 3,
+        "skip": 658
+      },
+      "selectedInputs": 33,
+      "inputsUnchanged": true,
+      "rawLogSha256": "d9825d9cd0bcc7acecee174b7626c38795829b9fb6c8ea7dc3f198c2d603cfa2",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/09-missing-dispatch-method-original.txt.gz",
+      "rawGzip": true,
+      "proofCredit": true
+    },
+    {
+      "key": "10-restored-risk-delta",
+      "executionHead": "50723d350deda3ca84fe26050ec8680c5a15c769",
+      "executionTree": "8d54d3d97aeca33d2463e0d8d46bb5280e50d29b",
+      "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "minimumGiB": 4,
+      "exit": 0,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/annex-control.test.ts",
+        "src/main/services/annex-server.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "preserves a complete diff above the former boundary with query|keeps a route-oversize .* offer link-fatal|still closes on a rejected token replay|preserves .* file-read response behavior|negotiated binary flows cannot bypass the digest with a legacy successful JSON answer|GET Git diff envelope real target dispatch",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/10-restored-risk-delta.xml"
+      ],
+      "counts": {
+        "pass": 19,
+        "fail": 0,
+        "skip": 858
+      },
+      "selectedInputs": 33,
+      "inputsUnchanged": true,
+      "rawLogSha256": "13096551438ba06262b1d647e702402054031d9c08a32eabdd13af409ee20f30",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/10-restored-risk-delta-original.txt",
+      "rawGzip": false,
+      "proofCredit": true
+    },
+    {
+      "key": "11-content-query-types-lint",
+      "executionHead": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+      "executionTree": "f73a613add940a39d9f0350f1ada6b77e2dd3b4b",
+      "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "minimumGiB": 6,
+      "exit": 2,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "6",
+        "--",
+        "bash",
+        "-c",
+        "npx vitest run --project main src/main/services/annex-control.test.ts --maxWorkers=2 -t \"preserves a complete diff above the former boundary with query .*content\" --reporter=default --reporter=junit --outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/11-content-query-types-lint.xml && npx eslint src/main/services/annex-control.test.ts && echo SCOPED_LINT_PASS && echo FIXTURE_TYPES_BEGIN && npx tsc --noEmit -p docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json; status=$?; echo \"FIXTURE_TYPES_END rc=$status\"; exit \"$status\""
+      ],
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 215
+      },
+      "selectedInputs": 33,
+      "inputsUnchanged": true,
+      "rawLogSha256": "624f71af02a793584e4e1df04a4d936f58b43dfb296c650b5dfdabba740ae729",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/11-content-query-types-lint-original.txt",
+      "rawGzip": false,
+      "proofCredit": true
+    },
+    {
+      "key": "12-query-precedence-mutant",
+      "executionHead": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+      "executionTree": "f73a613add940a39d9f0350f1ada6b77e2dd3b4b",
+      "trackedDiffSha256": "da18ae370fd80e7b602000e1f8d9b3eda2778e0aef04dcd05aafc6334817940c",
+      "minimumGiB": 4,
+      "exit": 1,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/annex-control.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "preserves a complete diff above the former boundary with query .*content",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/12-query-precedence-mutant.xml"
+      ],
+      "counts": {
+        "pass": 0,
+        "fail": 1,
+        "skip": 215
+      },
+      "selectedInputs": 33,
+      "inputsUnchanged": true,
+      "rawLogSha256": "ca72b90c82749412b4cf731821d4e5c2510d6fa28afa69636595a5628040078c",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/12-query-precedence-mutant-original.txt",
+      "rawGzip": false,
+      "proofCredit": true
+    },
+    {
+      "key": "13-query-precedence-restored",
+      "executionHead": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+      "executionTree": "f73a613add940a39d9f0350f1ada6b77e2dd3b4b",
+      "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "minimumGiB": 4,
+      "exit": 0,
+      "command": [
+        "~/.clubhouse/orch/desktop-test-gate.sh",
+        "lane-p2",
+        "4",
+        "--",
+        "npx",
+        "vitest",
+        "run",
+        "--project",
+        "main",
+        "src/main/services/annex-control.test.ts",
+        "--maxWorkers=2",
+        "-t",
+        "preserves a complete diff above the former boundary with query .*content",
+        "--reporter=default",
+        "--reporter=junit",
+        "--outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/13-query-precedence-restored.xml"
+      ],
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 215
+      },
+      "selectedInputs": 33,
+      "inputsUnchanged": true,
+      "rawLogSha256": "a0994c251db95db25c5269b310ba6c74d16fd752e26c4097ba179712f4364d90",
+      "rawRetainedAt": "docs/evidence/3613-gitdiff-envelope/attempts/13-query-precedence-restored-original.txt",
+      "rawGzip": false,
+      "proofCredit": true
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/README.md",
+      "bytes": 10753,
+      "sha256": "46e97c8f03fbb928dbdaa9bed084cd47aaa6fdfaaa4671a4363449456bb53eeb"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-baseline-verification.json",
+      "bytes": 1656,
+      "sha256": "4eb1c1a40d94c0ef6ce3893385dbf16668ba15c5feabd79057b16956b1485155"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red-original.txt",
+      "bytes": 19169,
+      "sha256": "230eb07eeb391521667119db630834e7c80ce29b581c42193bb129ccdfbfb7c7"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red-receipt.json",
+      "bytes": 12766,
+      "sha256": "73777453a611d34b018282f0b3de075814eb69dfe62ae82a2d27ee7305e071c9"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red.xml",
+      "bytes": 48865,
+      "sha256": "0439934f9a76cd436a299cc7ea9b57a3203bf35d313c53d89e44c13ab41f362e"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/02-gitdiff-candidate-original.txt",
+      "bytes": 21025,
+      "sha256": "3dceb9150a855ff8c1e37a05c489a7a7c7ef40d13fabf5a4b1ca8a110eb7ec39"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/02-gitdiff-candidate-receipt.json",
+      "bytes": 13166,
+      "sha256": "9d6bdc60d7bc0cfdc8df0950fdec90e0f3426e252a30032d15ff69a1c940f429"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/02-gitdiff-candidate.xml",
+      "bytes": 334182,
+      "sha256": "2e9b0e34dcca1fc95aff7fcf97f8b2922a369b2d7e45612b72abbfededcff399"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/03-gitdiff-source-proof-original.txt",
+      "bytes": 41078,
+      "sha256": "4f03ceb92a583159730e43de240b94deb59d7617bc5a7ababf7049825249adf2"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/03-gitdiff-source-proof-receipt.json",
+      "bytes": 13730,
+      "sha256": "cf0c9b2eb885decd43efbc664332b6db9895e66514413db05049f24bebe9661a"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/03-gitdiff-source-proof.xml",
+      "bytes": 333073,
+      "sha256": "4d1ab2ea3dced3179243205171695ef034060062356cecde2a84925c8625b4dd"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/04-baseline-server-correct.bridge.patch",
+      "bytes": 2491,
+      "sha256": "61937018f5f11b5302b32c72025d50a5da2bdb46b1e9ac71c2eb39a214df85f5"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/04-full-fixture-baseline-original.txt",
+      "bytes": 39140,
+      "sha256": "c1d87772e55f7b7155446c04fc3aeae0958edc92d0fcea59dd32023abcd1e285"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/04-full-fixture-baseline-receipt.json",
+      "bytes": 13400,
+      "sha256": "e0fd21b9e5e93400c13433d07ea3e82d606d38591962acb6c943198e4430bdb7"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/04-original-misdirected-mock.bridge.patch",
+      "bytes": 2852,
+      "sha256": "9dbc119a0bdc0baf3d48e9a8adb46cc1c6b5b7d90b08c606b9818b02245c889f"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/05-corrected-target-types-lint-original.txt",
+      "bytes": 91081,
+      "sha256": "b19196b2434d545f2e00d17ef25c311c199f042de586817f4cc5c60b4130af7f"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/05-corrected-target-types-lint-receipt.json",
+      "bytes": 13759,
+      "sha256": "7ce7e0cfd5d72450a0b4062cdf302e63271009d5af8ea963f4de774ee04d0ad0"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/05-corrected-target-types-lint.xml",
+      "bytes": 179851,
+      "sha256": "396d101dde40ebb070086eb0fadb497975a6b72cfffa08e3be03c9f5b8eb5fa3"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/06-full-fixture-diagnostic-comparison.json",
+      "bytes": 57523,
+      "sha256": "e5c6c49021108b1bcc368d07345526dc51f37e77a440f506b43039029ba26c71"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/07-missing-predicate-mutant-original.txt",
+      "bytes": 1415,
+      "sha256": "162e89f06cff4d7e98f27b2f3f936c56e4958758e59106780a3fcbce06cd6dac"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/07-missing-predicate-mutant-receipt.json",
+      "bytes": 13541,
+      "sha256": "1f4ab5253a0ff68a732d6dd0ae7f7be56e34d6374e36e576a79c6d9694cb640c"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/07-missing-predicate-mutant.xml",
+      "bytes": 52442,
+      "sha256": "1159a0f0fa0164f4a4783ae9a0129551b9fa5db6c261b29e0fea8cf1d89c62b5"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/07-missing-predicate.bridge.patch",
+      "bytes": 855,
+      "sha256": "e31d45e656eb46a831f496cce1e5fd8ad1bc7221731fab7cd21ac7ea6bb83bdb"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/08-missing-predicate-selected-original.txt",
+      "bytes": 21703,
+      "sha256": "df6d28c4470c443dbf7fd3f4e0ffc0f953b096c1aa00ebbd7c1a75d97b91b7fe"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/08-missing-predicate-selected-receipt.json",
+      "bytes": 13560,
+      "sha256": "b2c8be05772a05266eaf46723bb7710f5ecd771c81e31f5b3bc549811014e733"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/08-missing-predicate-selected.xml",
+      "bytes": 54182,
+      "sha256": "d080417092a88317ea3e217bc58180f4c661d49d0a6d4621a597a1208f6c6085"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/09-lossless-original-archive.json",
+      "bytes": 1215,
+      "sha256": "12464d289071db887409faee239618fb27f3cca26756dd72ba490ebc6eca2dbc"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/09-missing-dispatch-method-original.txt.gz",
+      "bytes": 231554,
+      "sha256": "14a072c38f54327b5ac8ebcbb02d74bf5dd2dc7c70b88f29d716f4febf49d3b8"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/09-missing-dispatch-method-receipt.json",
+      "bytes": 13515,
+      "sha256": "a5c61cb20c3d34250ab5a4ea81a75a69cbbf8e777f45b88f2d31d0fed48ffb89"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/09-missing-dispatch-method.bridge.patch",
+      "bytes": 1273,
+      "sha256": "e9aaf0db740b84ba7830ee65a5641499650d6d5236e3d6589d933f04eb87ed97"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/09-missing-dispatch-method.xml.gz",
+      "bytes": 234676,
+      "sha256": "8a69754037c170d553f34c6d24bfe70e28380d5c2d13c1cb35665e2b0716a067"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/10-restored-risk-delta-original.txt",
+      "bytes": 1818,
+      "sha256": "13096551438ba06262b1d647e702402054031d9c08a32eabdd13af409ee20f30"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/10-restored-risk-delta-receipt.json",
+      "bytes": 13774,
+      "sha256": "68c381da98ff3648f7c8351af57ecdbe83dd7507f7dc43cab9f17f95dd8e97e9"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/10-restored-risk-delta.xml",
+      "bytes": 231957,
+      "sha256": "6f27d5ce1416dcf1c25fae986f6fd72621eb483e1a9849d4d6c70147ca48930e"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/11-content-query-types-lint-original.txt",
+      "bytes": 40547,
+      "sha256": "624f71af02a793584e4e1df04a4d936f58b43dfb296c650b5dfdabba740ae729"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/11-content-query-types-lint-receipt.json",
+      "bytes": 13695,
+      "sha256": "b81be1eddd08e8d5c469a1c708f0091a9f194a2ad638b38dee28b774b4160d9d"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/11-content-query-types-lint.xml",
+      "bytes": 52449,
+      "sha256": "5edb86560f4bdbb3b72bd4cc67f8b2bb6e91513596465956ec7341e5dd3501d5"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/12-final-fixture-diagnostic-comparison.json",
+      "bytes": 57647,
+      "sha256": "1b3ca3f00d487536b41b87f626cf14447623244d8e02230f6f51c985d7476b8f"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/12-query-precedence-mutant-original.txt",
+      "bytes": 19851,
+      "sha256": "ca72b90c82749412b4cf731821d4e5c2510d6fa28afa69636595a5628040078c"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/12-query-precedence-mutant-receipt.json",
+      "bytes": 13567,
+      "sha256": "410bb773865fcc779fa34eadcafbba8cfad45564bf16e9d89038004dd06457f5"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/12-query-precedence-mutant.xml",
+      "bytes": 53042,
+      "sha256": "4c175571cd515bd01e0ad2a48d28b70b233e99802ba19df2b6d4bbcc32c86cbc"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/12-query-precedence.bridge.patch",
+      "bytes": 1322,
+      "sha256": "da18ae370fd80e7b602000e1f8d9b3eda2778e0aef04dcd05aafc6334817940c"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/13-query-precedence-restored-original.txt",
+      "bytes": 1461,
+      "sha256": "a0994c251db95db25c5269b310ba6c74d16fd752e26c4097ba179712f4364d90"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/13-query-precedence-restored-receipt.json",
+      "bytes": 13491,
+      "sha256": "ba7867a42007cbe3737b4cb977a78a3b804d93dce9132def79c76539800bfb25"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/13-query-precedence-restored.xml",
+      "bytes": 52449,
+      "sha256": "4bf3bc9ac82885f3c133908160f02ddbea95d38ea93ddca6929c984f68ca8f4a"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/14-phone-wire-byte-identity.json",
+      "bytes": 19718,
+      "sha256": "f3e8ce5087cb025c2a1f8035aff70e7134e9fb49b96ce8cb9eccd139ea5e0b59"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/attempts/15-production-types-scope-bridge.json",
+      "bytes": 744,
+      "sha256": "2c74d8a5db155d2cda455d3e7fb20bb6380c1e8d3c05ed72494cd1befa5fc31c"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/capture.py",
+      "bytes": 4462,
+      "sha256": "dcee5fddb147c09c45677db88e1ec5d506476ab7e0d8cd89cfc7bce63a92aa11"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/compare-fixture-diagnostics.py",
+      "bytes": 4934,
+      "sha256": "b4521a7fd1953a47b8e3ce53888e3b9b0cec046514e306961d8b3bb4307369af"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json",
+      "bytes": 471,
+      "sha256": "f02e261ae5e0621eca7b7e2097677ebeb58b16844dd3bfb68fd0e7c1e0740ed7"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/implementation-report.md",
+      "bytes": 10255,
+      "sha256": "a10133ca4f697e82991f5ad93404845ecd1235fbac731ba946da52b998854205"
+    },
+    {
+      "path": "docs/evidence/3613-gitdiff-envelope/manifest.json",
+      "bytes": 8328,
+      "sha256": "6aa0a97b476d1f98672d80c579576d3308de300bdc0fca2b378bfa9829290761"
+    }
+  ],
+  "limitations": [
+    "No reduced fixture graph substituted for the failed actual three-file graph",
+    "Selected33input/5installed identity seals, not full-host/dependency immutability",
+    "Target dispatcher/ReverseResponse exercised; Git/filesystem producer and existing suite ports mocked",
+    "Paired production control machinery over in-memory sockets, not actual TLS-control/native/E2E",
+    "Logical route cap does not release backing allocation or bound disk/string/JSON/globalRSS",
+    "Original07 executes0cases and gets0proof credit",
+    "Original09raw/XML retained losslessly with private uncompressed copies; no failure overwritten",
+    "No Details/Naming/selected-board changes, new route family, permissions, phone wire, timeout, install, release or whole-duplex/Windows-timeout disposition"
+  ]
+}

@@ -2,6 +2,8 @@
 
 **Historical baseline/design record:** production was unchanged at the frozen b784 design. Independent [DESIGN APPROVE3046](https://github.com/Agent-Clubhouse/Clubhouse/blob/3046c2cf93acbd16b92e07316216e0d593241835/docs/qa-transfer/2026-11-22/reports/gitdiff-envelope-b784-design-review.md) authorizes the bounded candidate, with the corrected backing-allocation qualification below. Exact implementation proof/review is separate; Details held query/page/receipt hunks remain untouched.
 
+The [implementation successor](implementation-report.md) retains the full actual fixture compiler failure and independent acceptance gate. `manifest.json` is the immutable b784 historical record, not current README/helper hash equality; see `implementation-manifest.json` for the separately sealed successor.
+
 Baseline is actual main `63f140b2a0ba00e686fb727a931d6b340fc3ee7e`, tree `040b9eb93b5dd769920564319f7f3e4becdf2b84`, verified through GitHub and origin. Test-only source `9eff428ebeb70c6b7d0996b6600713a50b4928ed`, tree `2bc1e5b37e8e8f89898982641359c47b580b59d6`, adds seven focused cases and an evidence capture helper; every production source remains byte-identical to main.
 
 ## Actual baseline

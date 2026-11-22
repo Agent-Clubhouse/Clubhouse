@@ -1,0 +1,19 @@
+diff --git a/src/main/services/annex-control.ts b/src/main/services/annex-control.ts
+index 065b48063..e2828d559 100644
+--- a/src/main/services/annex-control.ts
++++ b/src/main/services/annex-control.ts
+@@ -483,13 +483,13 @@ function requestBodyLimit(path: string): number {
+ const GIT_DIFF_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
+ /** Envelope limits only; route handlers retain their exact existing content limits. */
+ export function responseBodyLimit(path: string, method?: ControlMethod): number {
+-  if (method === 'GET' && /^\/api\/v1\/projects\/[^/?#]+\/git\/diff(?:\?[^#]*)?$/.test(path)) return GIT_DIFF_RESPONSE_MAX_BYTES;
+   if (/^\/api\/v1\/projects\/[^/]+\/files\/read(?:\?|$)/.test(path)) return Infinity;
+   if (/\/chat\/events\/\d+(?:\?|$)/.test(path)) return FULL_EVENT_MAX_BYTES;
+   if (/\/icons\//.test(path)) return ICON_SERVED_MAX_BYTES;
+   if (/\/handoffs\/transfer$/.test(path)) return HANDOFF_TRANSFER_BODY_BYTES;
+   // The content route caps raw bytes at 8 MiB, then base64 encodes them.
+   if (/\/content(?:\?|$)/.test(path)) return MOBILE_CONTENT_MAX_BASE64 + 64 * 1024;
++  if (method === 'GET' && /^\/api\/v1\/projects\/[^/?#]+\/git\/diff(?:\?[^#]*)?$/.test(path)) return GIT_DIFF_RESPONSE_MAX_BYTES;
+   return CONTROL_FRAME_MAX_BYTES + 64 * 1024;
+ }
+ function bulkAllowed(link: Link): boolean {
