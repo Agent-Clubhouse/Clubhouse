@@ -1,0 +1,721 @@
+{
+  "source": "e90eab8bbf53c3592ffdf7ae76cd758311831848",
+  "sourceTree": "3381770d91c843fb65433cf19d4092b816020e04",
+  "srcTree": "2327da993691b55ac2d8fab1e33d6bc6b49f41ab",
+  "proof": "7d244fcd153df00668ecac3d0709cece054801e3",
+  "proofTree": "e17f6a5b0607d95bead22e266f879bcaa65e0da2",
+  "base": "f1c128853165a088698a06b875cd294ebac12472",
+  "redSource": "1ae15bc6ef5cf346d15b9c0ac6adf3816374e117",
+  "selectedFiles": [
+    "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+    "src/main/services/handoff-host.ts",
+    "test/annex-v2/handoff-producer-admission.test.ts",
+    "docs/annex-reverse-routes.md"
+  ],
+  "sameFixtureOldProductionRed": true,
+  "exactUnchangedFragments": {
+    "original": "f1c128853165a088698a06b875cd294ebac12472",
+    "source": "e90eab8bbf53c3592ffdf7ae76cd758311831848",
+    "bridges": [
+      {
+        "label": "original approval-version entry snapshot",
+        "path": "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+        "sha256": "4ba8961d6b1dd0969eaa2f4151424ea32a5d388e7bb3ea1d0b2c1b598d2c1ab0",
+        "text": "export function withHandoffAgreementCall<T>(call: AgreementCall, work: () => Promise<T>): Promise<T> {\n  return agreementCalls.run({ ...call, approvalVersion: callApprovalVersion(call.agentId) }, work);\n}"
+      },
+      {
+        "label": "positive grant and Ask-versus-Allow final predicate",
+        "path": "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+        "sha256": "ae6898c53939400926130d913a1286f86f780dc1129c2b0424ae8dc91695b9c7",
+        "text": "  const check = checkToolGrant(agentId, grant, call.args, undefined, targets);\n  if (action === 'handoff.offer' && check.ok === false && check.reason === 'ask_first'\n    && callApprovalVersion(agentId) !== call.approvalVersion) return false;\n  const context = grantApprovalContext(agentId, call.name, call.args, grant, targets);\n  const approved = callGrantIsApproved(agentId, call.name, call.args, check, context);\n  if (action === 'handoff.offer') {\n    call.offerCurrent = approved ? () => check.ok === true || callApprovalVersion(agentId) === call.approvalVersion\n      && grantApprovalContext(agentId, call.name, call.args, grant, targets) === context : undefined;\n  }\n  return approved;\n}"
+      },
+      {
+        "label": "final original-scope synchronous predicate",
+        "path": "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+        "sha256": "ae6432a65d6991e7b303d77b173935e995fd4e7030a255472fe7548c3959df1b",
+        "text": "export function handoffAgreementCallCurrent(agentId: string): boolean {\n  const call = agreementCalls.getStore();\n  return call?.agentId === agentId && call.name === 'offer_handoff' && call.offerCurrent?.() === true;\n}"
+      },
+      {
+        "label": "captured observation/revision pair",
+        "path": "src/main/services/handoff-host.ts",
+        "sha256": "026fd9a40c0d42628d88f5492066c113e03308d651d1322a50dc4dcc266ec1ef",
+        "text": "    const observations = this.observations, revision = this.sourceRevision;\n    await observations;"
+      },
+      {
+        "label": "only captured revision is verified",
+        "path": "src/main/services/handoff-host.ts",
+        "sha256": "0dd255202633ff24206bcdfdd8de09f3c43b61ce831a54b4db54c626e61a71ff",
+        "text": "    this.verifiedRevision = revision;\n    this.check();"
+      },
+      {
+        "label": "original host/source/grant/observation continuity check",
+        "path": "src/main/services/handoff-host.ts",
+        "sha256": "0625927fd9cb9cad77a0400a9bfac23b2fbd33e08ae22810ccd37d8552e5569f",
+        "text": "    if (this.retired || this.source && !this.sourceAgent && this.registrationLost\n      || host !== this.active || this.active.stopping || ownMachine() !== this.active.machine\n      || this.grantStamp() !== this.grants || this.target && this.targetStamp() !== this.targetAuthority\n      || this.sourceRevision !== this.verifiedRevision) {\n      this.retire(); throw new HandoffAuthorizationChanged();\n    }"
+      },
+      {
+        "label": "synchronous actual admission before independent saves",
+        "path": "src/main/services/handoff-host.ts",
+        "sha256": "cfb5e802631e9be1b362b5115288d0ab7b5c90a3843ee050944cd77b502953a7",
+        "text": "  admit(record: Handoff): void {\n    this.check();\n    if (this.admittedId || !this.selected || !handoffAgreementCallCurrent(this.agentId) || !sameHandoffAgent(record.from, this.actor)\n      || JSON.stringify(record.to) !== JSON.stringify(this.target)) throw new HandoffAuthorizationChanged();\n    this.admittedId = record.id;\n  }"
+      }
+    ],
+    "unchangedRegistrationLease": {
+      "path": "src/main/services/agent-config.ts",
+      "blob": "8ff774f99fa7db5f249142684bce27e4d2f179ca"
+    },
+    "limit": "Exact unchanged fragments, not entire unchanged verify/check methods or transferred runtime acceptance."
+  },
+  "noWholeVerifyCheckOrRuntimeBridgeClaim": true,
+  "commandReceipts": [
+    {
+      "run": 120,
+      "head": "1ae15bc6ef5cf346d15b9c0ac6adf3816374e117",
+      "tree": "484e2b6686c170fe08e8aea4dc645e7cbd54bc59",
+      "relevantHashes": 15,
+      "cleanBeforeAfter": true,
+      "before": "2026-11-22T20:15:17.010Z",
+      "after": "2026-11-22T20:15:38.590Z"
+    },
+    {
+      "run": 121,
+      "head": "e90eab8bbf53c3592ffdf7ae76cd758311831848",
+      "tree": "3381770d91c843fb65433cf19d4092b816020e04",
+      "relevantHashes": 15,
+      "cleanBeforeAfter": true,
+      "before": "2026-11-22T20:18:04.576Z",
+      "after": "2026-11-22T20:18:25.630Z"
+    },
+    {
+      "run": 122,
+      "head": "e90eab8bbf53c3592ffdf7ae76cd758311831848",
+      "tree": "3381770d91c843fb65433cf19d4092b816020e04",
+      "relevantHashes": 15,
+      "cleanBeforeAfter": true,
+      "before": "2026-11-22T20:19:09.550Z",
+      "after": "2026-11-22T20:19:19.635Z"
+    },
+    {
+      "run": 123,
+      "head": "e90eab8bbf53c3592ffdf7ae76cd758311831848",
+      "tree": "3381770d91c843fb65433cf19d4092b816020e04",
+      "relevantHashes": 15,
+      "cleanBeforeAfter": true,
+      "before": "2026-11-22T20:19:45.007Z",
+      "after": "2026-11-22T20:19:46.618Z"
+    }
+  ],
+  "xml": [
+    {
+      "run": 120,
+      "source": "1ae15bc6ef5cf346d15b9c0ac6adf3816374e117",
+      "counts": {
+        "pass": 8,
+        "fail": 6,
+        "skip": 37
+      },
+      "failureNodes": 24,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick moved / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick moved / ask",
+            "time": "2.58580725"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:613:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795378521110,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"dc:c4:24:f4:19:fd:c8:f8:29:df:af:fd:59:9d:2d:4e\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795378521110,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"dc:c4:24:f4:19:fd:c8:f8:29:df:af:fd:59:9d:2d:4e\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"2419ea1d-35dc-4e84-b67f-5c9378ea1cc9\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"61e1f824-8cc8-4f6f-b3df-f870662d1ea4\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"bc35c7da476a0f20aa9d04462b1f8e650dbc10f37bcd02cbd5f0075d0f8cb345\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"producer-sender\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"producer-receiver\",\n+       \"machine\": \"dc:c4:24:f4:19:fd:c8:f8:29:df:af:fd:59:9d:2d:4e\",\n+     },\n+     \"updatedAt\": 1795378521110,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:614:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"bc35c7da476a0f20aa9d04462b1f8e650dbc10f37bcd02cbd5f0075d0f8cb345\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"61e1f824-8cc8-4f6f-b3df-f870662d1ea4\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:615:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:619:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick moved / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick moved / allow",
+            "time": "1.327676333"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:613:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795378522446,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"a0:69:07:b5:95:9a:db:a8:89:fc:99:41:30:0b:31:3a\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795378522446,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"a0:69:07:b5:95:9a:db:a8:89:fc:99:41:30:0b:31:3a\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"8676adfa-32e6-421e-b373-1ac307d7ce26\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"c10ece13-e32d-4be9-9902-d633adb2edb0\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"214d96500177c8c93f0018ca2a35dec6e139f9788f31e05b19b77a88baa7e15e\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"producer-sender\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"producer-receiver\",\n+       \"machine\": \"a0:69:07:b5:95:9a:db:a8:89:fc:99:41:30:0b:31:3a\",\n+     },\n+     \"updatedAt\": 1795378522446,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:614:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"214d96500177c8c93f0018ca2a35dec6e139f9788f31e05b19b77a88baa7e15e\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"c10ece13-e32d-4be9-9902-d633adb2edb0\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:615:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:619:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick current / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick current / ask",
+            "time": "1.304844875"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick current / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick current / allow",
+            "time": "1.373230291"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable moved / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable moved / ask",
+            "time": "1.342078708"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:613:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795378526465,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"30:53:25:e1:df:b4:10:a3:66:66:8d:93:b7:24:8a:63\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795378526465,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"30:53:25:e1:df:b4:10:a3:66:66:8d:93:b7:24:8a:63\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"a90c1035-8cec-4492-82a5-6761ad42775c\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"6a687a5b-cf4f-4d79-8894-322c0e2ae6da\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"750924f79d916c7a339e5543b1c6690dcba4aa174f4f3a399bfe38668340f796\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"producer-sender\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"producer-receiver\",\n+       \"machine\": \"30:53:25:e1:df:b4:10:a3:66:66:8d:93:b7:24:8a:63\",\n+     },\n+     \"updatedAt\": 1795378526465,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:614:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"750924f79d916c7a339e5543b1c6690dcba4aa174f4f3a399bfe38668340f796\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"6a687a5b-cf4f-4d79-8894-322c0e2ae6da\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:615:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:619:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable moved / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable moved / allow",
+            "time": "1.360656083"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:613:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795378527827,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"75:ed:99:a2:f2:a4:2f:61:36:2e:0e:fa:23:22:0a:9b\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795378527827,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"75:ed:99:a2:f2:a4:2f:61:36:2e:0e:fa:23:22:0a:9b\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"2f518cde-0f9e-4201-a399-253e2b0ba67e\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"64e6e72a-c6d6-4ba8-985d-87513c8850d7\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"277c56a60b547c3a286fcd295066c631a3a3a77fc0e8eb1da33722359df2ce27\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"producer-sender\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"producer-receiver\",\n+       \"machine\": \"75:ed:99:a2:f2:a4:2f:61:36:2e:0e:fa:23:22:0a:9b\",\n+     },\n+     \"updatedAt\": 1795378527827,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:614:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"277c56a60b547c3a286fcd295066c631a3a3a77fc0e8eb1da33722359df2ce27\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"64e6e72a-c6d6-4ba8-985d-87513c8850d7\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:615:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:619:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable replaced / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable replaced / ask",
+            "time": "1.338832666"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:613:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795378529164,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"3f:df:8e:e4:c3:d3:ca:9a:03:79:a8:38:0f:52:3c:43\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795378529164,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"3f:df:8e:e4:c3:d3:ca:9a:03:79:a8:38:0f:52:3c:43\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"82d47924-0b73-4999-ba63-2bdb8aae0fd9\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"df9c6dae-5c22-462a-bee4-518388027775\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"edab845486b83712e321b4d9fff9ab216376e41a3c4ae10ced1a55ec7c2357e1\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"producer-sender\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"producer-receiver\",\n+       \"machine\": \"3f:df:8e:e4:c3:d3:ca:9a:03:79:a8:38:0f:52:3c:43\",\n+     },\n+     \"updatedAt\": 1795378529164,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:614:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"edab845486b83712e321b4d9fff9ab216376e41a3c4ae10ced1a55ec7c2357e1\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"df9c6dae-5c22-462a-bee4-518388027775\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:615:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:619:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable replaced / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable replaced / allow",
+            "time": "1.322319792"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:613:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795378530488,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"a9:0c:0b:09:c4:6c:58:93:14:65:77:9a:c5:5c:cd:39\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795378530488,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"a9:0c:0b:09:c4:6c:58:93:14:65:77:9a:c5:5c:cd:39\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"b05b54f3-fd5f-402f-99ae-77e96764f204\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"313f2179-0d47-422b-8b92-da3aa6f59192\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"cb028b0a6b3a503f79eb6f7a920e1152262772d2633e16911b86407e10a055b7\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"producer-sender\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"producer-receiver\",\n+       \"machine\": \"a9:0c:0b:09:c4:6c:58:93:14:65:77:9a:c5:5c:cd:39\",\n+     },\n+     \"updatedAt\": 1795378530488,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:614:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"cb028b0a6b3a503f79eb6f7a920e1152262772d2633e16911b86407e10a055b7\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"313f2179-0d47-422b-8b92-da3aa6f59192\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:615:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:619:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable current / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable current / ask",
+            "time": "1.327953292"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable current / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable current / allow",
+            "time": "1.325086708"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable cosmetic / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable cosmetic / ask",
+            "time": "1.338218625"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable cosmetic / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable cosmetic / allow",
+            "time": "1.311379209"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable unrelated / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable unrelated / ask",
+            "time": "1.327174375"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable unrelated / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable unrelated / allow",
+            "time": "1.31394475"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        }
+      ]
+    },
+    {
+      "run": 121,
+      "source": "e90eab8bbf53c3592ffdf7ae76cd758311831848",
+      "counts": {
+        "pass": 14,
+        "fail": 0,
+        "skip": 37
+      },
+      "failureNodes": 0,
+      "selected": [
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick moved / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick moved / ask",
+            "time": "2.50943275"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick moved / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick moved / allow",
+            "time": "1.299051709"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick current / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick current / ask",
+            "time": "1.340034333"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick current / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: quick current / allow",
+            "time": "1.314036791"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable moved / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable moved / ask",
+            "time": "1.318372958"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable moved / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable moved / allow",
+            "time": "1.31169225"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable replaced / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable replaced / ask",
+            "time": "1.296253625"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable replaced / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable replaced / allow",
+            "time": "1.463486125"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable current / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable current / ask",
+            "time": "1.315348708"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable current / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable current / allow",
+            "time": "1.308103083"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable cosmetic / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable cosmetic / ask",
+            "time": "1.309287125"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable cosmetic / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable cosmetic / allow",
+            "time": "1.282093417"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable unrelated / ask",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable unrelated / ask",
+            "time": "1.351154541"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable unrelated / allow",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps original recipient project and identity through postpositive verification: durable unrelated / allow",
+            "time": "1.312849"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        }
+      ]
+    }
+  ],
+  "xmlRows": 102,
+  "failureNodes": 24,
+  "archiveCount": 37,
+  "compiler": {
+    "actualExit": 0,
+    "orderedInputs": 3958,
+    "trackedContentHashesVerified": 2470,
+    "dependencyHashesOwnerObservedAfterExecution": 1488,
+    "productionRoots": 2465,
+    "completeAdditionalFixtureRoots": 2,
+    "totalRoots": 2467,
+    "bothCompleteFixturesPresent": true,
+    "atomicReadSeal": false
+  },
+  "lint": {
+    "files": 3,
+    "errors": 0,
+    "warnings": 0
+  },
+  "protectedHistoricalTreesEqual": true,
+  "manifestSha256": "ac6877a3f23b3e2676582404fe9613cfb75bb837ecfd187b97f655c569b90ba0",
+  "readmeSha256": "b3d08e0d99b2d1e9301a114766bcff5ef12906fa75522356d3599bd1833ea21d",
+  "disposition": "APPROVE exact residual CP1-R1; combined scoped PR-ready with original source-specific proof attribution and remaining composition/hosted gates",
+  "closure": {
+    "CP1-R1": "resolved; bound original local recipient ID/project plus primary durable lease or quick current placement/loss witness",
+    "remainingFindings": [],
+    "combinedScope": "producer admission through e90 only; prior proof retains original source associations"
+  },
+  "remoteReadback": {
+    "head": "7d244fcd153df00668ecac3d0709cece054801e3",
+    "tree": "e17f6a5b0607d95bead22e266f879bcaa65e0da2",
+    "parent": "e90eab8bbf53c3592ffdf7ae76cd758311831848",
+    "ref": "refs/heads/lane-3613-p2-routes/handoff-recipient-continuity"
+  },
+  "unchangedLeaseDependency": {
+    "path": "src/main/services/agent-config.ts",
+    "blob": "8ff774f99fa7db5f249142684bce27e4d2f179ca",
+    "sha256": "7fc28fee4848f6dab34371813822a53b372f481167bbc4448dfd06730c965bdf",
+    "inspectedLines": "1570-1678 necessary existing registration lease",
+    "initialFileHandleClosedDuringAcquisition": true,
+    "closeIdempotentSubscriptionDisposal": true,
+    "noWholeModuleOrNativeFilesystemAcceptance": true
+  },
+  "archivedPriorReview": {
+    "blob": "92cb3a0b5922a38a9075a52030a25019d6d5ba56",
+    "sha256": "b5c481757502988acba0a93dad51a0535552e1a620c3648c4baff895ca2f4ac8",
+    "bytes": 16142
+  },
+  "privateWorkspace": {
+    "head": "079a257acf38b168b529fb7745dae97f686b72b8",
+    "tree": "89e942aabd42c8ec93fe47794f2eef95b0b61980",
+    "clean": true
+  }
+}
