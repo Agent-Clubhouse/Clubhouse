@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "verdict": "BLOCK_DESIGN_LIFECYCLE_OUTPUT",
+  "reviewer": "auto-reset-policy-design",
+  "reviewedUtc": "2026-11-22T04:40:47.995495+00:00",
+  "designHead": "8a26721bbb22cba448c504e3170be1cd2562137a",
+  "designTree": "7b27add241120f65834f8309fe72a8195da6a2f4",
+  "designSha256": "13f77dc8cd9e595762299d55473e207eafc6ae2e2c465205c819e59cb92f00d7",
+  "baseline": "e56648cb0952cb29c5045107b635d81f662dae74",
+  "installedVitestVersion": "4.1.12",
+  "installedRunnerVersion": "4.1.12",
+  "dependencySourceEvidence": [
+    {
+      "path": "node_modules/@vitest/runner/dist/chunk-artifact.js",
+      "sha256": "bf6af6d2f4469911879a67e83b8f9e7b20332cf42795032c53457b10ccc1c617",
+      "bytes": 119176,
+      "excerpts": [
+        {
+          "firstLine": 2368,
+          "lastLine": 2383,
+          "text": "\tcontext.annotate = ((message, type, attachment) => {\n\t\tif (test.result && test.result.state !== \"run\") {\n\t\t\tthrow new Error(`Cannot annotate tests outside of the test run. The test \"${test.name}\" finished running with the \"${test.result.state}\" state already.`);\n\t\t}\n\t\tconst annotation = {\n\t\t\tmessage,\n\t\t\ttype: typeof type === \"object\" || type === undefined ? \"notice\" : type\n\t\t};\n\t\tconst annotationAttachment = typeof type === \"object\" ? type : attachment;\n\t\tif (annotationAttachment) {\n\t\t\tannotation.attachment = annotationAttachment;\n\t\t\tmanageArtifactAttachment(annotation.attachment);\n\t\t}\n\t\treturn recordAsyncOperation(test, recordArtifact(test, {\n\t\t\ttype: \"internal:annotation\",\n\t\t\tannotation"
+        },
+        {
+          "firstLine": 2952,
+          "lastLine": 2980,
+          "text": "\t\t\t\t\t\tconst fn = getFn(test);\n\t\t\t\t\t\tif (!fn) {\n\t\t\t\t\t\t\tthrow new Error(\"Test function is not found. Did you add it using `setFn`?\");\n\t\t\t\t\t\t}\n\t\t\t\t\t\tawait $(\"test.callback\", () => limitMaxConcurrency(() => fn()));\n\t\t\t\t\t}\n\t\t\t\t\tawait runner.onAfterTryTask?.(test, {\n\t\t\t\t\t\tretry: retryCount,\n\t\t\t\t\t\trepeats: repeatCount\n\t\t\t\t\t});\n\t\t\t\t\tif (test.result.state !== \"fail\") {\n\t\t\t\t\t\ttest.result.state = \"pass\";\n\t\t\t\t\t}\n\t\t\t\t} catch (e) {\n\t\t\t\t\tfailTask(test.result, e, runner.config.diffOptions);\n\t\t\t\t}\n\t\t\t\ttry {\n\t\t\t\t\tawait runner.onTaskFinished?.(test);\n\t\t\t\t} catch (e) {\n\t\t\t\t\tfailTask(test.result, e, runner.config.diffOptions);\n\t\t\t\t}\n\t\t\t\ttry {\n\t\t\t\t\tawait $(\"test.afterEach\", () => callSuiteHook(suite, test, \"afterEach\", runner, [test.context, suite]));\n\t\t\t\t\tif (beforeEachCleanups.length) {\n\t\t\t\t\t\tawait $(\"test.cleanup\", () => callCleanupHooks(runner, beforeEachCleanups));\n\t\t\t\t\t}\n\t\t\t\t\t// Only clean up fixtures created inside runTest (after the checkpoint)\n\t\t\t\t\t// Fixtures created for aroundEach will be cleaned up after aroundEach teardown\n\t\t\t\t\tawait callFixtureCleanupFrom(test.context, fixtureCheckpoint);"
+        }
+      ]
+    },
+    {
+      "path": "node_modules/@vitest/runner/dist/tasks.d-DEYaIMIu.d.ts",
+      "sha256": "53cf4076f42b29b8d411259d168d51b3a0274c42c8814e5b44dfa8803a35d4fc",
+      "bytes": 58324,
+      "excerpts": [
+        {
+          "firstLine": 1284,
+          "lastLine": 1293,
+          "text": "\t* Metadata of the current test\n\t*/\n\treadonly task: Readonly<Test>;\n\t/**\n\t* An [`AbortSignal`](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal) that will be aborted if the test times out or\n\t* the test run was cancelled.\n\t* @see {@link https://vitest.dev/guide/test-context#signal}\n\t*/\n\treadonly signal: AbortSignal;\n\t/**"
+        },
+        {
+          "firstLine": 1313,
+          "lastLine": 1322,
+          "text": "\t};\n\t/**\n\t* Add a test annotation that will be displayed by your reporter.\n\t* @see {@link https://vitest.dev/guide/test-context#annotate}\n\t*/\n\treadonly annotate: {\n\t\t(message: string, type?: string, attachment?: TestAttachment): Promise<TestAnnotation>;\n\t\t(message: string, attachment?: TestAttachment): Promise<TestAnnotation>;\n\t};\n}"
+        }
+      ]
+    },
+    {
+      "path": "node_modules/vitest/dist/chunks/index.UpGiHP7g.js",
+      "sha256": "cdafaf8e508042dddba72f8c7bbae84e2836ddb6b06c7026520c35d91af4e798",
+      "bytes": 151531,
+      "excerpts": [
+        {
+          "firstLine": 3684,
+          "lastLine": 3696,
+          "text": "class JUnitReporter {\n\tctx;\n\treportFile;\n\tbaseLog;\n\tlogger;\n\t_timeStart = /* @__PURE__ */ new Date();\n\tfileFd;\n\toptions;\n\tconstructor(options) {\n\t\tthis.options = { ...options };\n\t\tthis.options.includeConsoleOutput ??= true;\n\t}\n\tasync onInit(ctx) {"
+        },
+        {
+          "firstLine": 3724,
+          "lastLine": 3765,
+          "text": "\t}\n\tasync writeLogs(task, type) {\n\t\tif (task.logs == null || task.logs.length === 0) return;\n\t\tconst logType = type === \"err\" ? \"stderr\" : \"stdout\";\n\t\tconst logs = task.logs.filter((log) => log.type === logType);\n\t\tif (logs.length === 0) return;\n\t\tawait this.writeElement(`system-${type}`, {}, async () => {\n\t\t\tfor (const log of logs) await this.baseLog(escapeXML(log.content));\n\t\t});\n\t}\n\tasync writeTasks(tasks, filename) {\n\t\tfor (const task of tasks) {\n\t\t\tlet classname = filename;\n\t\t\tconst templateVars = {\n\t\t\t\tfilename: task.file.name,\n\t\t\t\tfilepath: task.file.filepath\n\t\t\t};\n\t\t\tif (typeof this.options.classnameTemplate === \"function\") classname = this.options.classnameTemplate(templateVars);\n\t\t\telse if (typeof this.options.classnameTemplate === \"string\") classname = this.options.classnameTemplate.replace(/\\{filename\\}/g, templateVars.filename).replace(/\\{filepath\\}/g, templateVars.filepath);\n\t\t\tawait this.writeElement(\"testcase\", {\n\t\t\t\tclassname,\n\t\t\t\tfile: this.options.addFileAttribute ? filename : void 0,\n\t\t\t\tname: task.name,\n\t\t\t\ttime: getDuration(task)\n\t\t\t}, async () => {\n\t\t\t\tif (this.options.includeConsoleOutput) {\n\t\t\t\t\tawait this.writeLogs(task, \"out\");\n\t\t\t\t\tawait this.writeLogs(task, \"err\");\n\t\t\t\t}\n\t\t\t\tif (task.mode === \"skip\" || task.mode === \"todo\") await this.logger.log(\"<skipped/>\");\n\t\t\t\tif (task.type === \"test\" && task.annotations.length) {\n\t\t\t\t\tawait this.logger.log(\"<properties>\");\n\t\t\t\t\tthis.logger.indent();\n\t\t\t\t\tfor (const annotation of task.annotations) {\n\t\t\t\t\t\tawait this.logger.log(`<property name=\"${escapeXML(annotation.type)}\" value=\"${escapeXML(annotation.message)}\">`);\n\t\t\t\t\t\tawait this.logger.log(\"</property>\");\n\t\t\t\t\t}\n\t\t\t\t\tthis.logger.unindent();\n\t\t\t\t\tawait this.logger.log(\"</properties>\");\n\t\t\t\t}\n\t\t\t\tif (task.result?.state === \"fail\") {\n\t\t\t\t\tconst errors = task.result.errors || [];"
+        }
+      ]
+    },
+    {
+      "path": "node_modules/vitest/dist/chunks/test.DNmyFkvJ.js",
+      "sha256": "f07fc8036b066834143b14748bd70c436a6a2f15f648455af8d3a003a4eafc94",
+      "bytes": 153875,
+      "excerpts": [
+        {
+          "firstLine": 4368,
+          "lastLine": 4382,
+          "text": "\textendTaskContext(context) {\n\t\t// create error during the test initialization so we have a nice stack trace\n\t\tif (this.config.expect.requireAssertions) this.assertionsErrors.set(context.task, /* @__PURE__ */ new Error(\"expected any number of assertion, but got none\"));\n\t\tlet _expect;\n\t\tObject.defineProperty(context, \"expect\", { get() {\n\t\t\tif (!_expect) _expect = createExpect(context.task);\n\t\t\treturn _expect;\n\t\t} });\n\t\tObject.defineProperty(context, \"_local\", { get() {\n\t\t\treturn _expect != null;\n\t\t} });\n\t\treturn context;\n\t}\n\tgetImportDurations() {\n\t\tconst { limit } = this.config.experimental.importDurations;"
+        }
+      ]
+    }
+  ],
+  "baselineSourceInputs": [
+    {
+      "path": "src/main/services/managed-agents/delivery.test.ts",
+      "sha256": "4d1000afb87cd565b736fd2fce8133213660fdb453874d0c595f58aa6d32066b"
+    },
+    {
+      "path": "src/main/services/managed-agents/delivery.ts",
+      "sha256": "2d829f93782657d365cf2a32bc6756e1206e8263406c53465058ec281f18dd5b"
+    },
+    {
+      "path": "vitest.config.ts",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    },
+    {
+      "path": ".github/workflows/validate.yml",
+      "sha256": "2612b8fd22c3ded25f53b95495aed6c49c62f404763d3173f52bf760c7f55963"
+    }
+  ],
+  "execution": "source inspection only; no tests/compiler/lint/native Git/CI experiment by reviewer",
+  "finding": "context.annotate refuses pass/fail states; runTest sets terminal result state before afterEach, so proposed final annotation adds a hook error instead of providing promised final property",
+  "minimumCorrection": "Use a lifecycle-valid public output channel. Existing JUnit console stderr is source-supported candidate, with actual raw/JUnit failure controls required; no private task/result mutation, reporter/workflow or timeout change. Observers must not change native invocation/throw/cleanup semantics.",
+  "q5PreservedHead": "079a257acf38b168b529fb7745dae97f686b72b8",
+  "lineCorrection": "Initial progress message guessed pass/fail lines incorrectly; exact verified pass2962-2963/fail2965-2966, annotate2368-2370, afterEach2974. Verdict unchanged."
+}
