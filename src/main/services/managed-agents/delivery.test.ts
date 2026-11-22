@@ -186,16 +186,11 @@ function createPhaseRecorder(context: TestContext): PhaseRecorder {
       signal = undefined;
       recorder.owner = undefined;
       frozen = true;
-      const line = PHASE_PREFIX + (prepared ?? '{"version":1,"observerUnavailable":true}');
-      phaseAttempt(() => { process.stderr.write(line + '\n'); });
-      let started: number | undefined;
-      phaseAttempt(() => { started = clock(); });
-      const emitted = phaseAttempt(() => { console.error(line); });
-      if (emitted) phaseAttempt(() => {
-        const offsetMs = clock();
-        if (started !== undefined) raw({ version: 1, event: 'console.emitted', offsetMs, elapsedMs: offsetMs - started });
-      });
-      else phaseAttempt(() => { raw({ version: 1, observerUnavailable: true }); });
+      const unavailable = PHASE_PREFIX + '{"version":1,"observerUnavailable":true}';
+      const line = prepared === undefined ? unavailable : PHASE_PREFIX + prepared;
+      const written = phaseAttempt(() => { process.stderr.write(line + '\n'); });
+      const emitted = phaseAttempt(() => { console.error(written ? line : unavailable); });
+      if (!emitted) phaseAttempt(() => { process.stderr.write(unavailable + '\n'); });
     },
   };
   return recorder;
