@@ -482,7 +482,7 @@ describe('annex-client', () => {
         const signal = options?.signal;
         if (!signal) throw new Error('Expected an owned icon request signal');
         signals.push(signal);
-        signal.addEventListener('abort', () => reject(new annexControl.ControlRequestError('aborted', false, 'retired-icon')), { once: true });
+        signal.addEventListener('abort', () => reject(new annexControl.ControlRequestError('cancelled', false, 'retired-icon')), { once: true });
       }));
       subscriptionCapable = true;
       devicesChanged();
@@ -509,7 +509,7 @@ describe('annex-client', () => {
       vi.mocked(annexControl.request).mockImplementation((_key, _request, options) => new Promise((_resolve, reject) => {
         const signal = options?.signal;
         if (!signal) throw new Error('Expected an owned icon request signal');
-        signal.addEventListener('abort', () => reject(new annexControl.ControlRequestError('aborted', false, 'retired-icon')), { once: true });
+        signal.addEventListener('abort', () => reject(new annexControl.ControlRequestError('cancelled', false, 'retired-icon')), { once: true });
       }));
       subscriptionCapable = true;
       devicesChanged();
