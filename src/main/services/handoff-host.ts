@@ -327,11 +327,26 @@ class HandoffProducerOwner implements HandoffProducerAdmission {
   }
   async captureTarget(target: HandoffTarget): Promise<void> {
     this.target = Object.freeze({ ...target });
+    const authority = this.targetAuthority = this.targetStamp();
     if (target.machine === this.active.machine) {
-      const project = 'agentId' in target ? (await localAgent(target.agentId)).projectPath : getDispatcherState().path;
-      this.targetProject = project && path.resolve(project);
+      const crossProject = isCrossProjectEnabled(this.agentId);
+      let crossProjectChanged = false;
+      const unsubscribe = onOrchestrationGateChange((id) => {
+        if (id === this.agentId && isCrossProjectEnabled(id) !== crossProject) crossProjectChanged = true;
+      });
+      try {
+        const project = 'agentId' in target ? (await localAgent(target.agentId)).projectPath : getDispatcherState().path;
+        if (this.retired || this.targetStamp() !== authority) {
+          this.retire(); throw new HandoffAuthorizationChanged();
+        }
+        this.targetProject = project && path.resolve(project);
+        if (this.source && this.targetProject && this.targetProject !== path.resolve(this.source.project.path)
+          && (crossProjectChanged || isCrossProjectEnabled(this.agentId) !== crossProject)) {
+          this.retire(); throw new HandoffAuthorizationChanged();
+        }
+        this.targetAuthority = this.targetStamp();
+      } finally { unsubscribe(); }
     }
-    this.targetAuthority = this.targetStamp();
   }
   select(selected: HandoffPreparationSelection): void { this.selected = selected; }
   retire(): void { this.retired = true; }
