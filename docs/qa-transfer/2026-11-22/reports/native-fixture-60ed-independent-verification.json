@@ -1,0 +1,1292 @@
+{
+  "changedFiles": [
+    "src/main/services/annex-server.test.ts",
+    "test/annex-v2/annex-native-handoff-admission.test.ts"
+  ],
+  "unchangedProtectedIdentities": 23,
+  "oldCaseBodiesIdentical": true,
+  "xml": [
+    {
+      "artifact": "45-fixture-red-original.xml",
+      "counts": {
+        "failure": 2,
+        "skipped": 680
+      },
+      "selected": [
+        {
+          "name": "native incoming actual TLS and queue assembly > does not complete a reconnect against an unchanged old accepted link",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "failure",
+          "failure": {
+            "attributes": {
+              "message": "expected true to be false // Object.is equality",
+              "type": "AssertionError"
+            },
+            "text": "\nAssertionError: expected true to be false // Object.is equality\n\n- Expected\n+ Received\n\n- false\n+ true\n\n \u276f test/annex-v2/annex-native-handoff-admission.test.ts:199:21\n            "
+          }
+        },
+        {
+          "name": "annex-server > accepts handoff agreement synchronization only from a pinned desktop member and hides failure details",
+          "classname": "src/main/services/annex-server.test.ts",
+          "status": "failure",
+          "failure": {
+            "attributes": {
+              "message": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".",
+              "type": "Error"
+            },
+            "text": "\nError: Test timed out in 5000ms.\nIf this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".\n \u276f src/main/services/annex-server.test.ts:2734:3\n            "
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "46-fixture-green-original.xml",
+      "counts": {
+        "passed": 5,
+        "skipped": 677
+      },
+      "selected": [
+        {
+          "name": "native incoming actual TLS and queue assembly > does not complete a reconnect against an unchanged old accepted link",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > admits a current native reverse offer through the real held history queue without receiver outbound readiness",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > refuses an original native request retired before actual queue admission even when a new link serves unrelated work",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "native incoming actual TLS and queue assembly > does not adopt an original native request across an owned TLS server generation restart",
+          "classname": "test/annex-v2/annex-native-handoff-admission.test.ts",
+          "status": "passed"
+        },
+        {
+          "name": "annex-server > accepts handoff agreement synchronization only from a pinned desktop member and hides failure details",
+          "classname": "src/main/services/annex-server.test.ts",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "redUnhandledMissingMock": true,
+  "typing": {
+    "disposition": "Both actual commands FAIL166/exit2; exact full multiline diagnostic nonregression; not compiler PASS",
+    "normalizedDiagnosticSha256": "1d0401c51bb132be3695259275345df6dc7987a3a4ca1d92703727ad908947e5",
+    "mapping": [
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 69,
+        "baselineLine": 69,
+        "column": 50,
+        "code": "TS7011"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 534,
+        "baselineLine": 533,
+        "column": 58,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 551,
+        "baselineLine": 550,
+        "column": 50,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 552,
+        "baselineLine": 551,
+        "column": 62,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 616,
+        "baselineLine": 615,
+        "column": 69,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 668,
+        "baselineLine": 667,
+        "column": 166,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 668,
+        "baselineLine": 667,
+        "column": 176,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 774,
+        "baselineLine": 773,
+        "column": 141,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1145,
+        "baselineLine": 1144,
+        "column": 81,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1145,
+        "baselineLine": 1144,
+        "column": 120,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1788,
+        "baselineLine": 1787,
+        "column": 24,
+        "code": "TS2352"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1803,
+        "baselineLine": 1802,
+        "column": 62,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1804,
+        "baselineLine": 1803,
+        "column": 66,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1890,
+        "baselineLine": 1889,
+        "column": 24,
+        "code": "TS2352"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1911,
+        "baselineLine": 1910,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1913,
+        "baselineLine": 1912,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1919,
+        "baselineLine": 1918,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1922,
+        "baselineLine": 1921,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1925,
+        "baselineLine": 1924,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1931,
+        "baselineLine": 1930,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1934,
+        "baselineLine": 1933,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1979,
+        "baselineLine": 1978,
+        "column": 24,
+        "code": "TS2352"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 1999,
+        "baselineLine": 1998,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2003,
+        "baselineLine": 2002,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2009,
+        "baselineLine": 2008,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2011,
+        "baselineLine": 2010,
+        "column": 24,
+        "code": "TS2352"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2017,
+        "baselineLine": 2016,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2020,
+        "baselineLine": 2019,
+        "column": 20,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2035,
+        "baselineLine": 2034,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2051,
+        "baselineLine": 2050,
+        "column": 26,
+        "code": "TS2352"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2069,
+        "baselineLine": 2068,
+        "column": 26,
+        "code": "TS2352"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2114,
+        "baselineLine": 2113,
+        "column": 24,
+        "code": "TS2352"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2155,
+        "baselineLine": 2154,
+        "column": 30,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2254,
+        "baselineLine": 2253,
+        "column": 72,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2305,
+        "baselineLine": 2304,
+        "column": 50,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2318,
+        "baselineLine": 2317,
+        "column": 50,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2352,
+        "baselineLine": 2351,
+        "column": 26,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2364,
+        "baselineLine": 2363,
+        "column": 47,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2408,
+        "baselineLine": 2407,
+        "column": 48,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2439,
+        "baselineLine": 2438,
+        "column": 68,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2440,
+        "baselineLine": 2439,
+        "column": 68,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2461,
+        "baselineLine": 2460,
+        "column": 68,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2897,
+        "baselineLine": 2896,
+        "column": 88,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2945,
+        "baselineLine": 2944,
+        "column": 22,
+        "code": "TS2352"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2947,
+        "baselineLine": 2946,
+        "column": 80,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2997,
+        "baselineLine": 2996,
+        "column": 18,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 2999,
+        "baselineLine": 2998,
+        "column": 18,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 3001,
+        "baselineLine": 3000,
+        "column": 18,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 3004,
+        "baselineLine": 3003,
+        "column": 11,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 3038,
+        "baselineLine": 3037,
+        "column": 89,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 3204,
+        "baselineLine": 3203,
+        "column": 18,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 3235,
+        "baselineLine": 3234,
+        "column": 99,
+        "code": "TS2367"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 3290,
+        "baselineLine": 3289,
+        "column": 108,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 3489,
+        "baselineLine": 3488,
+        "column": 90,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4759,
+        "baselineLine": 4758,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4849,
+        "baselineLine": 4848,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4885,
+        "baselineLine": 4884,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4888,
+        "baselineLine": 4887,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4930,
+        "baselineLine": 4929,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4933,
+        "baselineLine": 4932,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4957,
+        "baselineLine": 4956,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4960,
+        "baselineLine": 4959,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4976,
+        "baselineLine": 4975,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4979,
+        "baselineLine": 4978,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 4991,
+        "baselineLine": 4990,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5008,
+        "baselineLine": 5007,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5036,
+        "baselineLine": 5035,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5065,
+        "baselineLine": 5064,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5093,
+        "baselineLine": 5092,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5096,
+        "baselineLine": 5095,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5134,
+        "baselineLine": 5133,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5197,
+        "baselineLine": 5196,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5216,
+        "baselineLine": 5215,
+        "column": 34,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5318,
+        "baselineLine": 5317,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5321,
+        "baselineLine": 5320,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5351,
+        "baselineLine": 5350,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5354,
+        "baselineLine": 5353,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5383,
+        "baselineLine": 5382,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5386,
+        "baselineLine": 5385,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5413,
+        "baselineLine": 5412,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5416,
+        "baselineLine": 5415,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5444,
+        "baselineLine": 5443,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5447,
+        "baselineLine": 5446,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5506,
+        "baselineLine": 5505,
+        "column": 28,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5516,
+        "baselineLine": 5515,
+        "column": 28,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5798,
+        "baselineLine": 5797,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5801,
+        "baselineLine": 5800,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5815,
+        "baselineLine": 5814,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5818,
+        "baselineLine": 5817,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5832,
+        "baselineLine": 5831,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5835,
+        "baselineLine": 5834,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5854,
+        "baselineLine": 5853,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5857,
+        "baselineLine": 5856,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5953,
+        "baselineLine": 5952,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5986,
+        "baselineLine": 5985,
+        "column": 22,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5986,
+        "baselineLine": 5985,
+        "column": 38,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5986,
+        "baselineLine": 5985,
+        "column": 51,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 5992,
+        "baselineLine": 5991,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6097,
+        "baselineLine": 6096,
+        "column": 54,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6098,
+        "baselineLine": 6097,
+        "column": 66,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6124,
+        "baselineLine": 6123,
+        "column": 66,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6259,
+        "baselineLine": 6258,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6308,
+        "baselineLine": 6307,
+        "column": 54,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6322,
+        "baselineLine": 6321,
+        "column": 54,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6364,
+        "baselineLine": 6363,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6672,
+        "baselineLine": 6671,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6675,
+        "baselineLine": 6674,
+        "column": 32,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6708,
+        "baselineLine": 6707,
+        "column": 23,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6743,
+        "baselineLine": 6742,
+        "column": 21,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 6876,
+        "baselineLine": 6875,
+        "column": 28,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 7286,
+        "baselineLine": 7285,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 7314,
+        "baselineLine": 7313,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 7335,
+        "baselineLine": 7334,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 7352,
+        "baselineLine": 7351,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 7723,
+        "baselineLine": 7722,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 7987,
+        "baselineLine": 7986,
+        "column": 34,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 7996,
+        "baselineLine": 7995,
+        "column": 42,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 7998,
+        "baselineLine": 7997,
+        "column": 41,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8025,
+        "baselineLine": 8024,
+        "column": 31,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8031,
+        "baselineLine": 8030,
+        "column": 40,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8062,
+        "baselineLine": 8061,
+        "column": 26,
+        "code": "TS2352"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8076,
+        "baselineLine": 8075,
+        "column": 34,
+        "code": "TS2554"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8342,
+        "baselineLine": 8341,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8364,
+        "baselineLine": 8363,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8378,
+        "baselineLine": 8377,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8387,
+        "baselineLine": 8386,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8396,
+        "baselineLine": 8395,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8409,
+        "baselineLine": 8408,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8422,
+        "baselineLine": 8421,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8444,
+        "baselineLine": 8443,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8456,
+        "baselineLine": 8455,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8465,
+        "baselineLine": 8464,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8486,
+        "baselineLine": 8485,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 8516,
+        "baselineLine": 8515,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9234,
+        "baselineLine": 9233,
+        "column": 70,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9240,
+        "baselineLine": 9239,
+        "column": 21,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9244,
+        "baselineLine": 9243,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9263,
+        "baselineLine": 9262,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9266,
+        "baselineLine": 9265,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9305,
+        "baselineLine": 9304,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9358,
+        "baselineLine": 9357,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9361,
+        "baselineLine": 9360,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9401,
+        "baselineLine": 9400,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9404,
+        "baselineLine": 9403,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9802,
+        "baselineLine": 9801,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9812,
+        "baselineLine": 9811,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9816,
+        "baselineLine": 9815,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9824,
+        "baselineLine": 9823,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9871,
+        "baselineLine": 9870,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9875,
+        "baselineLine": 9874,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9888,
+        "baselineLine": 9887,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9905,
+        "baselineLine": 9904,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9906,
+        "baselineLine": 9905,
+        "column": 64,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 9946,
+        "baselineLine": 9945,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10032,
+        "baselineLine": 10031,
+        "column": 216,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10052,
+        "baselineLine": 10051,
+        "column": 224,
+        "code": "TS7018"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10070,
+        "baselineLine": 10069,
+        "column": 71,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10299,
+        "baselineLine": 10298,
+        "column": 70,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10326,
+        "baselineLine": 10325,
+        "column": 72,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10339,
+        "baselineLine": 10338,
+        "column": 21,
+        "code": "TS7011"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10438,
+        "baselineLine": 10437,
+        "column": 46,
+        "code": "TS2339"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10506,
+        "baselineLine": 10505,
+        "column": 74,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10570,
+        "baselineLine": 10569,
+        "column": 72,
+        "code": "TS2550"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10732,
+        "baselineLine": 10731,
+        "column": 29,
+        "code": "TS7011"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10756,
+        "baselineLine": 10755,
+        "column": 52,
+        "code": "TS2345"
+      },
+      {
+        "file": "src/main/services/annex-server.test.ts",
+        "currentLine": 10780,
+        "baselineLine": 10779,
+        "column": 52,
+        "code": "TS2345"
+      }
+    ]
+  },
+  "graphs": [
+    {
+      "source": "60ed5f77f76029681160f298bfe789fb1d884512",
+      "inputs": 3958,
+      "roots": 2467,
+      "productionRoots": 2465,
+      "trackedContentHashesVerified": 2470,
+      "dependencyHashes": 1488,
+      "orderedInputNamesSha256": "f7ef961583763ee886d2877ef0618da58c42a4781cd2b5fd45acd81b3a400af3"
+    },
+    {
+      "source": "206a88dcc93ecd7d2f5009d533894dd77e36e2ed",
+      "inputs": 3958,
+      "roots": 2467,
+      "productionRoots": 2465,
+      "trackedContentHashesVerified": 2470,
+      "dependencyHashes": 1488,
+      "orderedInputNamesSha256": "f7ef961583763ee886d2877ef0618da58c42a4781cd2b5fd45acd81b3a400af3"
+    }
+  ],
+  "nonchangedInputHashesEqual": 3956,
+  "dependencyHashesOwnerObservedAfterExecutionOnly": true,
+  "lint": {
+    "errors": 0,
+    "nativeWarnings": 0,
+    "legacyWarnings": 247,
+    "fullNestedObjectsMappedEqual": true,
+    "insertedLine": 279,
+    "insertedUtf16Length": 77,
+    "normalizedWarningsSha256": "d24c00a902b5ebf749d7ee4d6a82a961e8b3123e8eb9e31a736ad2e9cc5a99aa",
+    "server71SeparateUnchanged": true
+  },
+  "archivesVerified": 31,
+  "patchesAndSourceWitnessesEqualGit": true,
+  "archivedActualConfigsOnlyExtendsAndTwoCompleteFiles": true,
+  "remoteReadback": {
+    "source": "60ed5f77f76029681160f298bfe789fb1d884512",
+    "sourceTree": "a9068e09c2618aba0f6d4bd00e0c1d6d3b00f4c0",
+    "proof": "e83d9f27f0e6a85f3a2791b1eadb85995c6ae701",
+    "proofTree": "42ab44d9d911f8d370cba393aff0c442f165472c",
+    "branch": "lane-3613-p2-routes/native-ingress-fixture-review",
+    "README.mdSha256": "418b186fd5d1e68882616b1a01ffe8d72406f2613e02cdf68ceb26bdb25aa336",
+    "manifest.jsonSha256": "d0544357339c010c0238a57e5e938888ef1352a118fdb22ba2aafe138d3d003f"
+  },
+  "all1364XmlCaseRowsMatchDerivedArchive": true,
+  "all31ArtifactPathsMatchManifestBlobIds": true
+}
