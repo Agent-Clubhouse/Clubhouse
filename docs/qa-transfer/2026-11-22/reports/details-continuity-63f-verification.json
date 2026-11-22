@@ -1,0 +1,143 @@
+{
+  "main": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+  "mainTree": "040b9eb93b5dd769920564319f7f3e4becdf2b84",
+  "detailsHead": "bf4796b18ffc09065eedc0e22cf5f2ab9509ff8c",
+  "detailsTree": "943717a56e72a82421a7ab47feef050d64299b2f",
+  "detailsBranch": "details-local-composition/3733-selected-board-preview",
+  "detailsUpstream": "origin/details-local-composition/3733-selected-board-preview",
+  "detailsMergeBase": "be0091d1676764b0e3300898ab0ad1f135f88a46",
+  "localAheadBehind": "0 0",
+  "sourceRecords": [
+    {
+      "ref": "bf4796b18ffc09065eedc0e22cf5f2ab9509ff8c",
+      "path": "docs/implementation-notes/3733-authoritative-snapshot-receipt.md",
+      "sha256": "7ddd7dd774d29210e8c8d4d61955967e1f50423b5d8cf30731f471783bb3198d",
+      "gitBlob": "86f94f5ca8d904b5d8fa7a7a869e27043a3b5510"
+    },
+    {
+      "ref": "bf4796b18ffc09065eedc0e22cf5f2ab9509ff8c",
+      "path": "docs/implementation-notes/3733-local-successor.md",
+      "sha256": "d8016919b513e33114e92b3f61d4be7c3e174e87cc61d5908da4f1e82d5a680d",
+      "gitBlob": "52751d8346f4f07975a9013a7c587bfd4963c545"
+    },
+    {
+      "ref": "bf4796b18ffc09065eedc0e22cf5f2ab9509ff8c",
+      "path": "docs/implementation-notes/3733-selected-board-read-contract.md",
+      "sha256": "b5b29622f04e2cbdfa1ccb43e1dcee2db12f7493336c309bd354abecde6801a7",
+      "gitBlob": "0616b5815bd318dbdaca1447bac325af28191fea"
+    },
+    {
+      "ref": "bf4796b18ffc09065eedc0e22cf5f2ab9509ff8c",
+      "path": "docs/implementation-notes/3733-selected-board-preview-evidence/README.md",
+      "sha256": "9dc510f31dea8e06b05612912f66fadc8c47526245a4f6ec4ec831a8cbc35a59",
+      "gitBlob": "1b58da92b37e096ef4c1319ba48c119a624b864c"
+    },
+    {
+      "ref": "70d1a31a906f3a6bc8ac08a51be25e14d3e01dab",
+      "path": "docs/qa-transfer/2026-11-20/reports/3733-e6fc2201f-13-final-contract.md",
+      "sha256": "5965f0777ceab3f9ae0e4c74d730ee6b678cbfd7d3e433919447b3c07e5e56a9",
+      "gitBlob": "b7bbad8f5e359afd58d378451b0c064fdbd80cb7"
+    },
+    {
+      "ref": "70d1a31a906f3a6bc8ac08a51be25e14d3e01dab",
+      "path": "docs/qa-transfer/2026-11-20/reports/3749-a2bb86472-main535-windows-review.md",
+      "sha256": "2cdf4ef8c13015b8f31546435a222c43cc71273f7f41ce7fd495a0e83f63bcfe",
+      "gitBlob": "8b54d02e45416147d09c4b5fdb5c8e39e8918253"
+    },
+    {
+      "ref": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98",
+      "gitBlob": "77cfe1328ce8b05ed4df5243a3683938e98a9670"
+    },
+    {
+      "ref": "bf4796b18ffc09065eedc0e22cf5f2ab9509ff8c",
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "4de698589965e850fcd28f9264779632c9b20d54367a0298f5893927cd10f0ba",
+      "gitBlob": "78c62ef84236a896737a9451fd4cef0c34ca5cd5"
+    },
+    {
+      "ref": "be0091d1676764b0e3300898ab0ad1f135f88a46",
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "f19f6d5308c851f325e3f2feb1f3aceb5feaec4c9105a3a060e0b9c835e43a60",
+      "gitBlob": "5ee86d1c066f7aac8911c773bca283d0f7616df9"
+    }
+  ],
+  "ownedBoardDeltaSha256": "68facc6b852ae2a5f8b1757703500586c0b0715d7e5e151e71e782d419112819",
+  "mainHunkSliceIdentities": [
+    {
+      "label": "public receipt export",
+      "start": 820,
+      "end": 820,
+      "sha256": "a5781fb720c780f5508f23e74e44b79bf78defc91a2dab275262d2d67af605ea"
+    },
+    {
+      "label": "accepted snapshot assignment/mint",
+      "start": 1361,
+      "end": 1363,
+      "sha256": "56ad8ddde528de49cb2f4dc5fbdcd694f318d6fcb70b45ad6d4b4cb9d833e93a"
+    },
+    {
+      "label": "settings reader",
+      "start": 2860,
+      "end": 2877,
+      "sha256": "95ccc18cc125e5e28dcc8357b575c3895ce8a3d97bae6b3b26431f0f44a1e309"
+    },
+    {
+      "label": "role reader",
+      "start": 2888,
+      "end": 2927,
+      "sha256": "171b56c17468e6c7c5aa7cfb8dfdb5586e00e3ab8694edf0770bcb1f7a9f6c80"
+    },
+    {
+      "label": "agent protected query",
+      "start": 2931,
+      "end": 2934,
+      "sha256": "b584be072958e76ad72968fa1cedf244081f3dbb19d4f94c7d28765b366abdca"
+    },
+    {
+      "label": "agent transport/currentness/status",
+      "start": 2935,
+      "end": 2945,
+      "sha256": "b66bca041d1c5a31fa153801a79a24056b22fa95b9067187b2023cc49dd78fa7"
+    },
+    {
+      "label": "agent protected validators",
+      "start": 2946,
+      "end": 2962,
+      "sha256": "753c225717d27fa163b3e6b696d9c22d21952cbb67078463ff15a4a2d502d1f7"
+    },
+    {
+      "label": "agent result/catch",
+      "start": 2963,
+      "end": 2967,
+      "sha256": "8c85191eb0d3a17af0ddfa3a5c68e725bba6170dff95375a2f3c5e3340059e53"
+    },
+    {
+      "label": "changes reader",
+      "start": 2970,
+      "end": 2991,
+      "sha256": "f378a9a33cf69936867d81acbded7ed844ac01577df1192851d75192114700e2"
+    },
+    {
+      "label": "O1 shared invalidator",
+      "start": 2879,
+      "end": 2885,
+      "sha256": "ed711ffa773a33a3535fe9792d8f1f37a7d8e8159bc60940eeae3cf1a86e9ea2"
+    },
+    {
+      "label": "stream retirement",
+      "start": 278,
+      "end": 292,
+      "sha256": "5ec6e037744c1f254e5c42eb83b7a50b0562356c147d4cbb67ebe0adb39ab44e"
+    }
+  ],
+  "verdict": "Recommend parent-authorized transport/currentness and receipt mint/export continuation only; no whole-function clearance or original-owner concurrence.",
+  "scope": "Read-only ownership/contract continuity map; no implementation/test/whole-source acceptance.",
+  "ownWorkspace": "079a257acf38b168b529fb7745dae97f686b72b8/tree89e942aabd42c8ec93fe47794f2eef95b0b61980 unchanged",
+  "limits": [
+    "Historical QA contract-only and prior O1 merge review carry their original scope.",
+    "Selected-board implementation/evidence remains WIP excluded from host transport batch.",
+    "No tests, login, account/grant change, app action or product edit."
+  ]
+}
