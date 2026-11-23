@@ -393,7 +393,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           commands={state.commands}
           text={draft}
           onTextChange={setDraft}
-          attachmentAgentId={remote ? undefined : agent.id}
+          attachmentAgentId={remote && state.capabilities?.images !== true ? undefined : agent.id}
+          attachmentSessionId={state.sessionId}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
           onSend={onSend}

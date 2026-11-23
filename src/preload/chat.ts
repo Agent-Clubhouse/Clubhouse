@@ -1,3 +1,4 @@
+import { addressFromNamespacedId } from '../shared/agent-address';
 import { ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { CheckpointTurn, ChangesResult, RevertResult } from '../shared/chat-checkpoints';
@@ -19,8 +20,19 @@ export const chat = {
      * Hand a dropped, picked or pasted File to main for checking. The path is
      * resolved here from the File itself, so page code can only stage files
      * the user actually gave it; a File with no path (pasted) goes as bytes.
+     * Remote images always go as bytes, including disk Files.
      */
     stageAttachment: async (agentId: string, file: File, opts?: { imagesAllowed?: boolean }): Promise<StagedChatAttachment> => {
+      if (agentId.startsWith('remote||')) {
+        const target = addressFromNamespacedId(agentId);
+        if (!target?.machine || !target.agentId) throw new Error('Invalid remote image target');
+        if (opts?.imagesAllowed !== true) throw new Error("This agent's chat can't take images");
+        if (!file.size || file.size > CHAT_IMAGE_MAX_BYTES) throw new Error('Images must be nonempty and 3.75 MB or smaller');
+        // Even a genuine disk File travels as bytes; never publish its controller path.
+        return ipcRenderer.invoke(IPC.CHAT.STAGE_ATTACHMENT, agentId, {
+          data: new Uint8Array(await file.arrayBuffer()), name: file.name, imagesAllowed: true,
+        });
+      }
       const filePath = webUtils.getPathForFile(file);
       if (filePath) return ipcRenderer.invoke(IPC.CHAT.STAGE_ATTACHMENT, agentId, { path: filePath, name: file.name });
       if (opts?.imagesAllowed === false) throw new Error("This agent's chat can't take pasted images");
