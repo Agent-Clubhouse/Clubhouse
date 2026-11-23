@@ -85,6 +85,29 @@ describe('two-fixture observation contract', () => {
     }
   });
 
+  it('binds its first scope before optional reentry and never adopts the extra invocation', () => {
+    let first = true; let calls = 0;
+    const selection = new FixtureObservationSelection('auto-seed', {
+      clock: () => { if (first) { first = false; expect(selection.claim()).toBeUndefined(); } return 1; },
+      sink: () => {}, setTimer: () => ({}), unrefTimer: () => {}, clearTimer: () => {},
+    });
+    const scope = selection.claim()!; const store = {}; scope.bindStore(store);
+    scope.call('body', () => { calls++; return 1; });
+    expect(calls).toBe(1); expect(selection.selected).toBe(scope); expect(scope.ownsStore(store)).toBe(true);
+    expect(scope.read()).toMatchObject({ extraInvocation: true, overlap: true, body: 'fulfilled' });
+  });
+
+  it('does not let an older classifier overwrite a newer reentrant error', () => {
+    let scope!: ReturnType<typeof harness>['scope']; let first = true;
+    const newer = new Error('newer-private'); const older = new Error('older-private');
+    const h = harness({ classify: (error) => {
+      if (first) { first = false; expect(() => scope.call('revision', () => { throw newer; })).toThrow(newer); }
+      return error === newer ? 'native-busy' : 'native-denied';
+    } }); scope = h.scope;
+    expect(() => scope.call('catalog', () => { throw older; })).toThrow(older);
+    expect(scope.read()).toMatchObject({ observerFault: true, errorCategory: 'native-busy' });
+  });
+
   it('captures mutable seed arguments before sink reentry and preserves sync cleanup value/error', () => {
     let seed = 'first'; let calls = 0; const h = harness({ sink: () => { seed = 'second'; } }); h.scope.bindDirectory(seed);
     const captured = seed; const value = {};
