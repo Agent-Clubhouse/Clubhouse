@@ -33,4 +33,3 @@ description: Read before acting through Clubhouse tools. Exact procedures and ap
 - **Devices.** `list_devices` shows the user's computers and phones. Renaming, reconnecting or removing one asks the user first. You can't pair a device; `start_adding_device` opens the page where a person does.
 - **Clubhouse updates.** `request_app_update` asks the person to approve the ready desktop update in Needs you. They choose Restart now, Restart when idle, or Cancel. Asking is never approval, even with an Allow grant. Do not retry to install it, run an installer yourself, or restart the app. A phone can make the same request without spending a model turn.
 - Some tools ask the user first. Make the call and say what you asked for; don't retry while it waits.
-
