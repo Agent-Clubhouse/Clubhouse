@@ -12,7 +12,7 @@ import { appendSection, boundBuiltinInstructions, DISPATCHER_BUILTIN_CAP_BYTES, 
 import { MEMORY_LOOKUP_INSTRUCTIONS, withMemoryIndex } from './dispatcher-memory-migration';
 import { memoryWrite } from './dispatcher-memory';
 import { readDispatcherMemory } from './dispatcher-memory-reader';
-import { searchDispatcher } from './dispatcher-search';
+import { searchDispatcher, type SearchOptions, type TranscriptStore } from './dispatcher-search';
 
 const dirs: string[] = [];
 function temp(): string {
@@ -74,7 +74,7 @@ describe('bounded durable Dispatcher context', () => {
     const root = path.join(temp(), 'memory');
     await memoryWrite('index.md', '- historic-canary decision: hold launch.\n', 'agent tool', root);
     await memoryWrite('index.md', '- current-canary decision: review complete.\n', 'agent tool', root);
-    const opts = { memoryRoot: root, stores: [], folders: [] };
+    const opts: SearchOptions = { memoryRoot: root, stores: [], folders: [] };
     expect((await searchDispatcher('historic-canary', opts)).memory).toEqual([]);
     const result = await searchDispatcher('historic-canary', { ...opts, scope: 'history' });
     expect(result.transcripts).toEqual([]);
@@ -86,7 +86,7 @@ describe('bounded durable Dispatcher context', () => {
     expect((await readDispatcherMemory(page, root)).text).toContain('historic-canary');
     expect(fs.readFileSync(file)).toEqual(before);
     expect((await readDispatcherMemory(undefined, root)).text).toContain('current-canary');
-    const stores = [{ provider: 'sentinel', listSessions: () => { throw new Error('history must not inspect transcripts'); }, transcriptPath: async () => null }];
+    const stores: TranscriptStore[] = [{ provider: 'sentinel', listSessions: () => { throw new Error('history must not inspect transcripts'); }, transcriptPath: async () => null }];
     await expect(searchDispatcher('historic-canary', { memoryRoot: root, stores, folders: ['/unused'], scope: 'history' })).resolves.toMatchObject({ transcripts: [] });
   });
 
@@ -98,7 +98,7 @@ describe('bounded durable Dispatcher context', () => {
     fs.mkdirSync(outside);
     fs.writeFileSync(path.join(outside, 'secret.md'), 'outside-canary');
     fs.symlinkSync(outside, path.join(root, 'history'), process.platform === 'win32' ? 'junction' : 'dir');
-    const opts = { memoryRoot: root, stores: [], folders: [] };
+    const opts: SearchOptions = { memoryRoot: root, stores: [], folders: [] };
     expect((await searchDispatcher('outside-canary', { ...opts, scope: 'history' })).memory).toEqual([]);
     expect((await readDispatcherMemory(undefined, root)).pages).toEqual([]);
   });
