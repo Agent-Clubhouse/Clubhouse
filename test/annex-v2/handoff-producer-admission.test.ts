@@ -307,16 +307,20 @@ function markPreparation(observer: PreparationObserver, slot: PreparationSlot, b
     if (observer.claimed.has(slot)) { preparationUnavailableOnce(observer); return; }
     observer.claimed.add(slot); // BEFORE optional clock/build/storage/serialization/publication reentry.
     const now = observer.clock(), baseline = observer.baseline;
+    if (observer.unavailable) return;
     if (baseline === undefined || observer.last === undefined || !Number.isFinite(baseline) || baseline < 0
       || !Number.isFinite(now) || now < observer.last || now < baseline) throw new Error('Unavailable preparation clock.');
     observer.last = now;
     const input = Object.freeze(build(now - baseline)), row = observer.build(input);
+    if (observer.unavailable) return;
     const keys = Object.keys(input) as Array<keyof PreparationRow>;
     if (!Object.isFrozen(row) || Object.keys(row).length !== keys.length || keys.some((key) => row[key] !== input[key])) {
       throw new Error('Unavailable preparation row.');
     }
     observer.rows[slot] = row;
+    if (observer.unavailable) return;
     const encoded = observer.serialize(row);
+    if (observer.unavailable) return;
     if (typeof encoded !== 'string' || /[^\x20-\x7e]/.test(encoded) || preparationPrefix.length + encoded.length + 1 > 256) {
       throw new Error('Unavailable bounded preparation serialization.');
     }
@@ -1290,6 +1294,48 @@ describe('isolated real MCP producer domain admission', () => {
     expect(lines).toEqual([]); // Functional caller ledger registration precedes this deferred optional notice.
     preparationUnavailableOnce(observer);
     expect(lines).toEqual([preparationUnavailable]);
+  }));
+
+  it.each(['clock', 'serialization', 'publisher'] as const)('preparation observation contains reentrant %s failure after original fences', async (port) => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), { observer, lines } = preparationControl();
+    const error = new Error('Optional reentrant preparation port failure.');
+    let calls = 0, joined: Promise<CoreCompletion> | undefined, hook: Promise<Completion> | undefined;
+    const fail = () => { hook = hookCompletion(owner); joined = coreCompletion(owner); throw error; };
+    if (port === 'clock') observer.clock = fail;
+    if (port === 'serialization') observer.serialize = fail;
+    if (port === 'publisher') observer.publish = fail;
+    const raw = fs.writeFile(path.join(fixtureDirectory(owner), 'actual'), 'owned'); owner.operations.push(raw);
+    const actual = observer.context.run(observer, () => observePreparationStage(observer, 'outer', () => { calls++; return raw; }, undefined, []));
+    expect(actual).toBe(raw);
+    await actual;
+    expect(owner.retiring).toBe(true);
+    expect(coreCompletion(owner)).toBe(joined);
+    expect(hookCompletion(owner)).toBe(hook);
+    expect((await coreCompletion(owner)).failures).toEqual([]);
+    expect((await hookCompletion(owner)).failures).toEqual([]);
+    expect(calls).toBe(1);
+    expect(observer.unavailable).toBe(true);
+    expect(observer.noticeAttempted).toBe(true);
+    expect(lines).toEqual(port === 'publisher' ? [] : [preparationUnavailable]);
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it('preparation observation stops an in-flight rich row after reserved-slot clock reentry', async () => runFixtureBody(async () => {
+    const { observer, lines } = preparationControl(), value = Object.freeze({ ready: true });
+    const clock = observer.clock;
+    observer.clock = () => {
+      markPreparation(observer, 'outer-entered', (elapsedMs) => ({ owner: 1, stage: 'outer', event: 'entered', elapsedMs }));
+      return clock();
+    };
+    let calls = 0;
+    const raw = Promise.resolve(value);
+    const actual = observer.context.run(observer, () => observePreparationStage(observer, 'outer', () => { calls++; return raw; }, undefined, []));
+    expect(actual).toBe(raw);
+    expect(await actual).toBe(value);
+    expect(calls).toBe(1);
+    expect(observer.unavailable).toBe(true);
+    expect(lines).toEqual([preparationUnavailable]);
+    expect(observer.rows).toEqual({});
   }));
 
   it('preparation observation forwards nested already-admitted work after fenced publisher reentry', async () => runFixtureBody(async () => {
