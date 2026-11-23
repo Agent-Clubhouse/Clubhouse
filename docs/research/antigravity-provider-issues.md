@@ -37,19 +37,19 @@ Phase 1, terminal
 - [ ] #A6 Access ladder and execution policy mapping (needs #A4)
 - [ ] #A7 Managed instructions, skills and custom agents (needs #A4)
 - [ ] #A8 Clubhouse MCP bridge delivery and authenticated identity (needs #A4)
-- [ ] #A9 Configuration preservation and inherited customizations (needs #A4; with #A7, #A8)
+- [ ] #A9 Configuration preservation and inherited customizations (needs #A4; lands with #A7, #A8)
 - [ ] #A16 Help, settings, first run and provider doc contract (needs #A4)
 
 Phase 2, terminal status, sessions and lifecycle contract
 - [ ] #A10 Hooks-based status, session id and resume (needs #A4, #A9)
-- [ ] #A19 Chat driver lifecycle conformance suite (needs #A3; before #A12)
+- [ ] #A19 Chat driver lifecycle conformance suite (needs #A3; blocks #A11, #A12)
 
 Phase 3, chat
-- [ ] #A11 Restore a provider-neutral ACP chat protocol layer (needs #A3)
-- [ ] #A12 Antigravity ACP chat driver (needs #A6, #A8, #A11, #A19)
+- [ ] #A11 Restore a provider-neutral ACP chat protocol layer (needs #A3, #A19)
+- [ ] #A12 Antigravity ACP chat driver (needs #A3, #A6, #A8, #A11, #A19)
 
 Phase 4, headless
-- [ ] #A13 Headless normalizer and eligibility gate (needs #A4, #A6, #A1)
+- [ ] #A13 Headless normalizer and eligibility gate (needs #A1, #A3, #A4, #A6)
 
 Phase 5, integration
 - [ ] #A18 Helper Auto eligibility and unknown-quota ranking as declared provider policy (needs #A2)
@@ -57,12 +57,12 @@ Phase 5, integration
 - [ ] #A15 Telemetry, diagnostics and version policy (needs #A2, #A4, #A12)
 
 Phase 6, subscription
-- [ ] #A17 Real-login validation gates (needs everything above; deferred acceptance)
+- [ ] #A17 Real-login validation gates (required gates need #A1, #A2-#A12, #A14 baseline, #A15, #A16, #A18, #A19; optional gates need their feature; deferred acceptance)
 
 ## Acceptance for the epic
-Required, cannot be waived: #A2, #A3, #A4, #A5, #A6, #A7, #A8, #A9, #A10, #A11, #A12, #A16, #A19, the eligibility decision in #A1, and every gate marked required in #A17. Together these give an Antigravity agent in terminal and chat with managed instructions, skills and an authenticated Clubhouse MCP, on macOS, Windows and Linux, proven by fixtures in CI and by #A17 on a real account.
+Required, cannot be waived: #A2, #A3, #A4, #A5, #A6, #A7 (except custom agents), #A8, #A9, #A10, #A11, #A12, #A15 (telemetry values and version floors), #A16, #A19, the baseline of #A14 (Annex, mobile and remote history, explicit helpers, capacity), the declared policy fields and the recorded Antigravity decision in #A18, the eligibility decision in #A1, and every gate marked required in #A17. Together these give an Antigravity agent in terminal and chat with managed instructions, skills and an authenticated Clubhouse MCP, on macOS, Windows and Linux, reachable from Annex and helpers, proven by fixtures in CI and by #A17 on a real account.
 
-Optional, may be deferred with a recorded reason: #A13 (headless), the Dispatcher part of #A14, Auto routing in #A18, custom agents in #A7, and the optional gates in #A17.
+Optional, may be deferred with a recorded reason: #A13 (headless), the Dispatcher gate in #A14, actually enabling Antigravity for Auto in #A18, custom agents in #A7, the vendor clarification request in #A1, and the optional gates in #A17.
 
 Existing providers' settings, agents, presets and telemetry values must be unchanged.
 
@@ -83,7 +83,7 @@ The docs also disagree on models for custom ACP clients: the ACP guide limits th
 
 ## Scope
 - Keep the paraphrases, links and read date in the Antigravity help page (#A16) and in this issue.
-- Ask Google through a public channel (Antigravity feedback or support) how statements 1-3 apply to (a) an ACP client launching the user's own `agy acp`, (b) a terminal app hosting the user's `agy` TUI, (c) headless `agy -p` launched by a desktop app, per auth type. Record the answer and date.
+- Proposed follow-up, not authorized by publishing this issue: ask Google through a public channel (Antigravity feedback or support) how statements 1-3 apply to (a) an ACP client launching the user's own `agy acp`, (b) a terminal app hosting the user's `agy` TUI, (c) headless `agy -p` launched by a desktop app, per auth type. Sending it needs the maintainer's explicit authorization first, including who sends it and from which account. If sent, record the answer and date.
 - Maintainer decision, recorded here:
   - ACP chat: proposed available behind the experimental flag for documented auth methods.
   - Terminal TUI: proposed available.
@@ -95,11 +95,11 @@ The docs also disagree on models for custom ACP clients: the ACP guide limits th
 
 ## Acceptance
 - Statements, links and the model discrepancy recorded in-repo with the date.
-- Clarification request sent and linked; the answer, or "no answer by <date>", recorded.
+- Clarification request either sent after explicit authorization (linked, with the answer or "no answer by <date>"), or recorded as not authorized.
 - Maintainer decision recorded for each runtime and auth type.
 
 ## Proof
-Links to the request and the recorded decision. No code.
+The recorded decision, and the request link if one was authorized and sent. No code.
 
 <!-- issue key=A2 labels="enhancement,type:chore,area:main,area:renderer,area:shared,severity: MEDIUM" -->
 # [MEDIUM] Provider descriptor: replace hard-coded provider id lists before adding a fourth provider
@@ -298,7 +298,7 @@ Unit tests on merge and restore with user files (comments, BOM, extra keys); ACP
 <!-- issue key=A9 labels="enhancement,type:feature,area:main,area:renderer,severity: MEDIUM" -->
 # [MEDIUM] Antigravity configuration preservation and inherited customizations
 
-Part of #E. Needs #A4; lands with #A7, #A8.
+Part of #E. Needs #A4. Lands together with #A7 and #A8.
 
 ## Problem
 Antigravity documents no config-dir override (no equivalent of `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `COPILOT_HOME`, `provider-profiles-removed.ts:33-37`). Every Antigravity agent shares the user's `~/.gemini` rules, skills, hooks, MCP servers, permissions and account, all loaded cumulatively.
@@ -370,7 +370,7 @@ Unit tests with documented payloads; live check in #A17.
 <!-- issue key=A11 labels="enhancement,type:feature,area:main,area:shared,severity: HIGH" -->
 # [HIGH] Restore a provider-neutral ACP chat protocol layer
 
-Part of #E. Needs #A3. Blocks #A12.
+Part of #E. Needs #A3, #A19. Blocks #A12.
 
 ## Problem
 Clubhouse removed its ACP driver with legacy Copilot ACP in #2868 (`00c9534bb`). The research doc kept ACP as the event vocabulary and the long-tail driver (`docs/structured-chat-research.md:441-450`), and the event model is already ACP-named (`src/shared/chat/events.ts:8`). Chat driver ids are a closed list (`src/shared/chat/capabilities.ts:16-21`), and selection special-cases Copilot (`src/main/services/agent-runtime/chat-drivers.ts:19-32`, `chat-spawn.ts:139-148`, `chat-runtime-settings.ts:61,90`).
@@ -396,7 +396,7 @@ Unit and fake-CLI flow tests (`chat-fake-cli-flows.test.ts` pattern); schema pin
 <!-- issue key=A12 labels="enhancement,type:feature,area:main,area:renderer,severity: HIGH" -->
 # [HIGH] Antigravity ACP chat driver
 
-Part of #E. Needs #A6, #A8, #A11, #A19.
+Part of #E. Needs #A3, #A6, #A8, #A11, #A19.
 
 ## Problem
 Native chat for Antigravity over `agy acp` (https://antigravity.google/docs/ide/extensions/acp/, https://antigravity.google/docs/cli/acp/).
@@ -407,7 +407,7 @@ Native chat for Antigravity over `agy acp` (https://antigravity.google/docs/ide/
 - Capabilities from `initialize` plus documented behaviour: steer (a prompt mid-turn steers the running turn), interrupt (`session/cancel`), questions (elicitation when advertised), slash commands, `usage: 'context'` (1.5.8+), live model and thinking-level switch through `session/set_config_option`, images and embedded resources per `promptCapabilities`, `login: 'terminal'`, `systemPrompt: false`, `subagents: 'ids_only'` until V8. History from `session/load` replay.
 - Modes from #A6; `liveLevels` excludes `full_access`.
 - Auth: `needsLogin` and `loginHint` on `-32000` ("Run `agy` in a terminal to sign in", or `agy acp --login` over SSH). Clubhouse does not call `authenticate` for OAuth methods and does not inject `GEMINI_API_KEY`.
-- No implicit terminal fallback. On a start failure the agent shows the reason with "Retry chat" and "Open in terminal"; the unsent first message stays in the composer and is not replayed. A failure after a prompt was accepted settles that turn as failed and keeps its known work in the transcript.
+- No implicit terminal fallback. On a start failure the agent shows the reason with "Retry chat" and "Open in terminal"; the unsent first message stays in the composer and is not replayed. After a prompt was accepted, the turn settles as failed only when the provider reports a failure. A lost connection or any other ambiguous outcome settles as unknown. Either way the known work (tool calls, edits, messages) stays in the transcript and the prompt is never retried automatically.
 - `clientInfo` name and title are Clubhouse with the app version; never another client's identity.
 - Models exactly as offered by the session's config options.
 - Chat version policy entry (`chat-version-policy.ts`): floor from #A15; tested max advisory.
@@ -428,7 +428,7 @@ Fake-CLI tests and a chat E2E spec added to an explicit E2E job list; real-login
 <!-- issue key=A13 labels="enhancement,type:feature,area:main,severity: MEDIUM" -->
 # [MEDIUM] Antigravity headless: stream-json normalizer and eligibility gate
 
-Part of #E. Needs #A4, #A6, #A1. Optional for the epic.
+Part of #E. Needs #A1, #A3, #A4, #A6. Optional for the epic.
 
 ## Problem
 Quick agents, Actions and one-off prompts use `HeadlessCapable` (`types.ts:252`, `agent-system.ts:867-968`, `headless-prompt.ts:106-120`). Antigravity documents `agy -p --output-format stream-json` with `init`, `step_update` and `result` events (https://antigravity.google/docs/cli/headless/). The FAQ says wrapping `agy -p` in third-party apps is not supported on consumer plans (https://antigravity.google/docs/faq/); no page positively documents it for other plans.
@@ -498,14 +498,14 @@ Unit tests.
 <!-- issue key=A17 labels="type:chore,area:main,severity: HIGH" -->
 # [HIGH] Antigravity real-login validation gates (deferred until a subscription is available)
 
-Part of #E. Needs all other children. Deferred acceptance: nothing here runs in CI or before an account exists.
+Part of #E. Required gates need #A1, #A2, #A3, #A4, #A5, #A6, #A7, #A8, #A9, #A10, #A11, #A12, #A14 (baseline), #A15, #A16, #A18, #A19. Optional gates need only their feature: V14 needs the Dispatcher part of #A14; any headless run needs #A13. Deferred acceptance: nothing here runs in CI or before an account exists.
 
 ## Problem
 Fixtures are built from public docs. The gates below need a real binary, and some need a signed-in account. Required gates decide whether `optIn` and the experimental status can be removed.
 
 ## Required gates (cannot be waived to close #E)
 Real binary, no prompt:
-- V3: `agy` passes its environment to stdio MCP children, in the TUI and in ACP. If not, the bridge fails closed (#A8).
+- V3: `agy` passes its environment to stdio MCP children, in the TUI and in ACP. The probe server sees only synthetic sentinel variables set for the test (for example `CLUBHOUSE_TEST_SENTINEL_A=1`) and records a boolean per allowlisted name. It never dumps the process environment and never runs with a real nonce, token or credential in its env. If inheritance fails, the bridge fails closed (#A8).
 - V4: a worktree `.git` file stops parent rule traversal.
 - V6: ACP `initialize` capabilities on the pinned version; record a real handshake fixture.
 - V10: MCP `tools/list_changed` handling (token-free probe used for other CLIs).
@@ -526,7 +526,7 @@ Signed in:
 
 ## Rules
 - Use the person's own account, signed in by them. No automated login, credential reads or account switching.
-- Each run records CLI version, OS, auth type and result as `.txt` evidence (not `.log`) with hashes.
+- Each run records CLI version, OS, auth type and result as `.txt` evidence (not `.log`) with hashes. Evidence never contains environment dumps, tokens, nonces, keys or prompt content beyond the minimal test prompt.
 - Minimal prompts only; no load.
 
 ## Acceptance
@@ -564,14 +564,14 @@ Unit tests on `helper-routing` and `helper-auto-policy`.
 Part of #E. Needs #A3. Blocks #A11, #A12.
 
 ## Problem
-Receipt, settlement and retry semantics are spread across `chat-runtime.ts` and each driver, with no driver-independent test. #3782 shows the risk: the runtime keeps one pending token per prompt receipt and retires one per `turn_started`, so two accepted submissions that join one native turn leave a token behind and later work queues with nothing to drain it. Antigravity's ACP server documents exactly that shape: a prompt sent mid-turn steers the running turn instead of starting a new one (https://antigravity.google/docs/ide/extensions/acp/). Its changelog also records past races in cancel, close and late `session/update` delivery (https://antigravity.google/docs/changelog/).
+Receipt, settlement and retry semantics are spread across `chat-runtime.ts` and each driver, with no driver-independent test. #3782 demonstrates the risk with a synthetic reproduction: the runtime keeps one pending token per prompt receipt and retires one per `turn_started`, so two accepted submissions that join one native turn leave a token behind and later work queues with nothing to drain it. Incident evidence there is compatible with this mechanism but is not proven to be its historical cause. Antigravity's ACP server documents exactly that shape: a prompt sent mid-turn steers the running turn instead of starting a new one (https://antigravity.google/docs/ide/extensions/acp/). Its changelog also records past races in cancel, close and late `session/update` delivery (https://antigravity.google/docs/changelog/).
 
 ## Scope
 A conformance suite that any `ChatDriver` runs against a scripted fake (the #A3 ACP personality, the fake chat driver, and the existing drivers where their fakes allow):
 - Receipts: pending vs started vs settled for each accepted submission, including two submissions sharing one native turn (steer) and a submission arriving between turns. Every receipt settles exactly once.
-- Stop and cancel: settle to the real outcome reported by the provider (cancelled, completed, failed), never assumed; open tool calls and pending permissions or questions close.
+- Stop and cancel: settle to the outcome the provider actually reports (cancelled, completed, failed). If it reports nothing (exit, disconnect), the outcome is unknown; Clubhouse never fabricates a provider completion. Open tool calls and pending permissions or questions are closed in Clubhouse as cancelled when the provider confirms it, otherwise as abandoned with the outcome unknown.
 - Permissions and questions: answered, answered elsewhere, timed out, and outstanding when the process exits or disconnects; none left blocking later turns.
-- Disconnect and crash: unknown outcomes stay unknown, not reported as delivered or failed.
+- Disconnect and crash: unknown outcomes stay unknown, not reported as delivered, completed or failed; known work is kept.
 - Stale generations: events or results from an earlier session, process or turn after restart, resume or `session/load` are ignored or attributed correctly.
 - Bounded streams: limits on event queue, text and tool output size, with a visible truncation notice; no unbounded memory.
 - No duplicate side effects: a submission whose delivery is unknown is never retried automatically.

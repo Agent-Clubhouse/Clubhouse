@@ -104,10 +104,10 @@ Paraphrased; read the linked pages for the exact wording. This doc draws no lega
 What this means for the plan:
 
 - Statement 2 is a negative statement about consumer plans. It does not, by itself, document that headless wrapping is permitted for any other auth type. Statement 1's API-key recommendation concerns using Gemini from a third-party agent, not wrapping `agy`. Headless (6.5) is therefore off for every auth type until the eligibility decision (#A1) names the auth types it may be enabled for; API key, Agent Platform and Gemini Enterprise are the candidates, recorded as [Inference].
-- Statement 3 documents ACP for any ACP client with cached interactive credentials. The ACP chat path is planned for the documented auth methods behind the experimental flag. How statement 1 applies to an ACP client that launches the user's own `agy` is not stated; the clarification issue asks, and its answer can change the defaults.
+- Statement 3 documents ACP for any ACP client with cached interactive credentials. The ACP chat path is planned for the documented auth methods behind the experimental flag. How statement 1 applies to an ACP client that launches the user's own `agy` is not stated; the maintainer decision in #A1 sets the defaults; a vendor clarification request is a proposed follow-up that needs explicit authorization before it is sent.
 - The Python SDK documents API-key and Vertex/Enterprise auth only. That is not evidence about subscription use through the SDK either way; the SDK is out of scope.
 - Clubhouse never automates account switching or rotation, never reads or copies credentials from the keyring, and never sets `clientInfo` to anything but Clubhouse.
-- Running the user's own `agy` TUI in a Clubhouse terminal is not addressed by any statement. The clarification issue asks.
+- Running the user's own `agy` TUI in a Clubhouse terminal is not addressed by any statement. #A1 records the maintainer decision; asking Google is a separately authorized follow-up.
 
 ## 4. Capability matrix
 
@@ -159,7 +159,7 @@ Pointers are against `50c474b48`.
 9. **Quota and helper routing.** Auto routing ranks providers by `readPlanQuota`. Copilot has no reader and is still an Auto candidate, ranked last (`helper-routing.ts:70-73`). Eligibility and unknown-quota ranking are hard-coded per provider rather than declared, so a new provider has no stated policy. Antigravity has no token-free documented quota read.
 10. **Provider doc contract.** `provider-doc-contract.test.ts:49-53` and `settings-orchestrators.md:43-49` hard-code three providers.
 11. **No user-facing binary path override.** Only `CLUBHOUSE_TEST_CLI_BINARIES` (`shared.ts:48`) and launch wrappers. `agy` installs to `~/.local/bin`, which GUI-launched apps often miss on macOS; `getExtraBinaryPaths()` must include it and `%LOCALAPPDATA%\agy\bin`.
-12. **No written lifecycle contract for chat drivers.** Receipt, settlement and retry semantics live in `chat-runtime.ts` and each driver. #3782 shows the cost: the runtime keeps one pending token per prompt receipt and retires one per `turn_started`, so two accepted submissions that join one native turn leave a token behind. Antigravity's ACP server documents exactly that shape (a prompt sent mid-turn steers the running turn). A driver-independent conformance suite is needed before a new driver lands.
+12. **No written lifecycle contract for chat drivers.** Receipt, settlement and retry semantics live in `chat-runtime.ts` and each driver. #3782 demonstrates the mechanism with a synthetic reproduction (incident evidence there is compatible with it but not proven to be the historical cause): the runtime keeps one pending token per prompt receipt and retires one per `turn_started`, so two accepted submissions that join one native turn leave a token behind. Antigravity's ACP server documents exactly that shape (a prompt sent mid-turn steers the running turn). A driver-independent conformance suite is needed before a new driver lands.
 13. **Chat and headless fall back to the terminal implicitly.** Copilot chat opens in the CLI view when its driver fails (`chat-spawn.ts:141-144`). A terminal agent has different approval and lifecycle semantics, so for Antigravity the switch must be explicit.
 
 ## 6. Proposed design
@@ -227,7 +227,7 @@ Tradeoffs: a descriptor moves policy (access levels, routing eligibility) next t
 - Capabilities from `initialize`, not hard-coded: `loadSession`, `sessionCapabilities.{resume,list,close}`, `promptCapabilities.{image,embeddedContext}`, `mcpCapabilities`. Static claims for documented behaviour only: `steer: true`, `interrupt: true`, `questions: true` when elicitation is advertised, `slashCommands: true`, `usage: 'context'`, `modelSwitch`/`effortSwitch: 'live'` via `session/set_config_option`, `login: 'terminal'`, `systemPrompt: false` (instructions go through `AGENTS.md`).
 - Permission ladder to ACP modes: `plan`→`plan`, `ask`→`default`, `auto_edit`→`accept-edits`, `auto`→`auto` (only when offered by the session and not on business accounts), `full_access`→process flag `--dangerously-skip-permissions`, which needs a restart. `liveLevels` excludes `full_access`.
 - Auth: `needsLogin` when `initialize` returns `authMethods` and `session/new` fails with `-32000`. Clubhouse does not call `authenticate` for OAuth methods itself; it tells the person to run `agy` (or `agy acp --login` over SSH) and offers a retry.
-- Start failure: no automatic switch to the terminal. The agent shows the failure and two choices: retry chat, or open in terminal. The unsent first message stays in the composer; nothing is replayed into the terminal. A failure after a prompt was accepted settles that turn as failed with its known work (tool calls, edits) kept in the transcript.
+- Start failure: no automatic switch to the terminal. The agent shows the failure and two choices: retry chat, or open in terminal. The unsent first message stays in the composer; nothing is replayed into the terminal. After a prompt was accepted, the turn settles as failed only when the provider reports a failure; a lost connection or other ambiguous outcome settles as unknown. Known work (tool calls, edits) stays in the transcript, and nothing is retried automatically.
 - Lifecycle: the driver must pass the conformance suite (#A19), including steering that joins a running native turn. `gemini-api-key` works only if the user has set `modelProvider` and the key in their environment; Clubhouse does not store or inject the key in phase 3.
 - Client identity: `clientInfo { name: 'clubhouse', title: 'Clubhouse', version }`. Never another client's name.
 - Models: show exactly the model option values the server returns. No local filtering to "third-party allowed" lists.
@@ -281,7 +281,7 @@ Tradeoffs: a descriptor moves policy (access levels, routing eligibility) next t
 
 | Phase | Content | Needs subscription |
 | --- | --- | --- |
-| 0 | Descriptor refactor; fake `agy` harness; eligibility clarification issue | No |
+| 0 | Descriptor refactor; fake `agy` harness; eligibility decision issue | No |
 | 1 | Terminal provider, binary/availability, models, access ladder, managed `AGENTS.md`/skills, workspace MCP, config preservation, help + contract matrix | No (fake CLI); live check in V-gates |
 | 2 | Hooks status, session id capture and resume | No (fixtures) |
 | 2b | Chat lifecycle conformance suite (#A19) | No |
@@ -290,7 +290,7 @@ Tradeoffs: a descriptor moves policy (access levels, routing eligibility) next t
 | 5 | Annex, mobile, helper Auto eligibility, Dispatcher eligibility gate, telemetry, diagnostics | No |
 | 6 | Real-login validation (V1-V12), then remove `optIn` / experimental per maintainer | Yes |
 
-Required for the epic to close, cannot be waived: terminal provider, managed instructions and skills, Clubhouse MCP with authenticated identity, ACP chat, config preservation, the lifecycle conformance suite, and the required real-login gates. Optional, may be deferred with a recorded reason: headless, Dispatcher eligibility, Auto routing, custom agents, transcript rendering beyond ACP history, business-account checks.
+Required for the epic to close, cannot be waived: provider descriptor, terminal provider, models, access ladder, managed instructions and skills, Clubhouse MCP with authenticated identity, config preservation, hooks and resume, ACP chat, the lifecycle conformance suite, help and doc contract, baseline Annex/mobile/helper integration, telemetry values and version floors, the declared Auto policy with a recorded Antigravity value, the eligibility decision, and the required real-login gates. Optional, may be deferred with a recorded reason: headless, Dispatcher eligibility, enabling Auto for Antigravity, custom agents, the vendor clarification request, business-account and subagent checks.
 
 ## Unknowns and validation gates
 
@@ -298,9 +298,9 @@ None of these block phases 0-5; each is settled at the named gate. Gates run out
 
 | # | Unknown | Settled by | Required to close the epic |
 | --- | --- | --- | --- |
-| V1 | How the FAQ statements apply to a Clubhouse ACP client or Clubhouse-hosted TUI on personal plans | Clarification request and maintainer defaults (#A1) | Yes (a recorded decision, whatever it is) |
+| V1 | How the FAQ statements apply to a Clubhouse ACP client or Clubhouse-hosted TUI on personal plans | Maintainer defaults (#A1); vendor clarification only if explicitly authorized | Yes (a recorded decision, whatever it is) |
 | V2 | Which models a custom ACP client is offered (ACP guide vs 1.5.1 changelog) | Signed-in `session/new` config options, per plan | Yes |
-| V3 | Whether `agy` passes its environment to stdio MCP children (TUI and ACP) | Dummy stdio server that records its env; login only if MCP starts after auth | Yes |
+| V3 | Whether `agy` passes its environment to stdio MCP children (TUI and ACP) | Probe stdio server that reports a boolean per allowlisted synthetic sentinel variable; never dumps env or runs with a real nonce or credential | Yes |
 | V4 | Whether a worktree `.git` file stops parent rule traversal | Fixture tree on the real binary | Yes |
 | V5 | ACP `session/load` history replay fidelity | Signed-in session. The undocumented `transcript.jsonl` format is never parsed | Yes |
 | V6 | ACP `initialize` capabilities on the pinned version | Initialize probe. [Inference] works without login, since the ACP spec puts auth after initialize | Yes |
