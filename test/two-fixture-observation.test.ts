@@ -45,7 +45,7 @@ describe('two-fixture observation contract', () => {
     install.reject(new Error('synthetic')); await expect(install.promise).rejects.toThrow();
     await scope.call('install', () => Promise.resolve(), 'skill');
     expect(scope.read()).toMatchObject({ rejectedInstalls: 1, fulfilledInstalls: 1, ensure: 'pending' });
-    const overlap = deferred<void>(); scope.call('catalog', () => overlap.promise); scope.call('catalog', () => undefined);
+    const overlap = deferred<void>(); scope.call('catalog', () => overlap.promise); scope.call('catalog', (): void => undefined);
     expect(scope.read().catalog).toBe('pending'); expect(selection.claim()).toBeUndefined();
     expect(selection.selected).toBe(scope); expect(scope.read()).toMatchObject({ overlap: true, extraInvocation: true });
     overlap.resolve(); ensure.resolve(); body.resolve(); await body.promise;
@@ -55,7 +55,7 @@ describe('two-fixture observation contract', () => {
     const { scope, lines } = harness();
     const canary = { get code() { throw new Error('secret-getter'); }, toJSON() { throw new Error('secret-json'); } };
     expect(() => scope.call('install', () => { throw canary; })).toThrow();
-    for (let n = 0; n < 65536; n++) scope.call('install', () => undefined, 'template');
+    for (let n = 0; n < 65536; n++) scope.call('install', (): void => undefined, 'template');
     for (const slot of allSlots) { scope.publish(slot); scope.publish(slot); }
     expect(scope.read()).toMatchObject({ enteredInstalls: 65535, fulfilledInstalls: 65535, rejectedInstalls: 1, overflow: true });
     expect(lines).toHaveLength(6); expect(lines.every((line) => Buffer.byteLength(line) <= 1536)).toBe(true);
@@ -136,6 +136,18 @@ describe('two-fixture observation contract', () => {
     }
   });
 
+  it('advances progress only after the original await resumes and never serializes captured identity', async () => {
+    const h = harness(); const update = deferred<object>(); const root = {}; const store = { secret: 'identity-canary' };
+    h.scope.bindStore(store); h.scope.bindTask(store); h.scope.bindDirectory('identity-canary');
+    h.scope.setPhase('updates'); h.scope.updateStarted(1);
+    const actual = (async () => { const result = await update.promise; expect(result).toBe(root); h.scope.updateCompleted(1); })();
+    expect(h.scope.read().completedUpdates).toBe(0); update.resolve(root);
+    expect(h.scope.read().completedUpdates).toBe(0); await actual; expect(h.scope.read().completedUpdates).toBe(1);
+    h.scope.publish('entry'); expect(h.lines.join('')).not.toContain('identity-canary');
+    const partial = harness({ serialize: () => 'identity-canary' }); partial.scope.publish('entry'); partial.scope.publish('entry');
+    expect(partial.lines).toEqual([]); expect(partial.scope.read().observerFault).toBe(true);
+  });
+
   it('treats missing/wrong-scope/gaps/clock loss as unavailable, never as functional success', () => {
     const h = harness(); allSlots.forEach((slot) => h.scope.publish(slot));
     expect(readObservationLines(h.lines.join(''), 'pages-large').available).toBe(true);
@@ -198,7 +210,7 @@ it('independent later case sees actual late pages settlement',async()=>{expect(c
   expect(result.stdout + result.stderr).not.toMatch(/Unhandled|unhandled rejection|Worker exited unexpectedly/);
   const availability: Record<string, unknown> = {};
   for (const tag of ['auto-seed', 'pages-large'] as const) {
-    const raw = readObservationLines(result.stdout, tag); const junit = readObservationLines(xml.replaceAll('&quot;', '"').replaceAll('&gt;', '>').replaceAll('&lt;', '<').replaceAll('&amp;', '&'), tag);
+    const raw = readObservationLines(result.stdout, tag); const junit = readObservationLines(xml.replace(/&quot;/g, '"').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&'), tag);
     availability[tag] = { raw: raw.rows, rawAvailable: raw.available, junit: junit.rows, junitAvailable: junit.available };
     expect(raw.available).toBe(true); expect(raw.rows.find((row) => row.event === 'pre-deadline')?.body).toBe('pending');
     expect(raw.rows.find((row) => row.event === 'cleanup-entry')?.body).toBe('pending');
