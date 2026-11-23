@@ -4,16 +4,18 @@
  * comes from the provider's AcpLaunchSpec; nothing here knows which agent runs.
  */
 
-import { spawn } from 'child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { LogRedactor } from '../../../shared/log-redaction';
 import { cleanInheritedEnv, cleanSpawnEnv } from '../../util/shell';
 import { killStructuredChild, type StructuredSpawnCommand } from '../../orchestrators/adapters/structured-spawn';
 import type { AcpConnector, AcpLog, JsonRpcMessage } from './connection';
 
-/** A line longer than this is dropped (and logged) rather than buffered without bound. */
+/** A line longer than this ends the session (it may have been an answer a turn waits for). */
 export const MAX_ACP_LINE_CHARS = 32 * 1024 * 1024;
 /** Stderr kept for diagnostics, from the end. */
 const STDERR_TAIL_CHARS = 8 * 1024;
+/** How long close() waits after SIGTERM before SIGKILL. */
+const KILL_GRACE_MS = 5_000;
 
 export interface AcpStdioOpts {
   command: StructuredSpawnCommand;
@@ -28,17 +30,27 @@ export interface AcpStdioOpts {
 export function stdioConnector(opts: AcpStdioOpts): AcpConnector {
   return ({ onMessage, onEnd }) => {
     const log = opts.log ?? (() => undefined);
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(opts.command.binary, opts.command.args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: opts.cwd,
+        // Never hand the agent a host session's markers or an inherited agent nonce.
+        env: cleanSpawnEnv({ ...(opts.env ?? cleanInheritedEnv({ ...process.env })) }),
+        windowsHide: true,
+        ...(opts.command.windowsVerbatimArguments && { windowsVerbatimArguments: true }),
+      });
+    } catch (err) {
+      // spawn can throw synchronously (EINVAL on Windows): report it as the transport ending.
+      const error = err instanceof Error ? err : new Error(String(err));
+      log('error', 'ACP agent spawn error', { error: error.message });
+      queueMicrotask(() => onEnd({ code: null, signal: null, error }));
+      return { send() { /* never started */ }, async close() { /* nothing to stop */ } };
+    }
     const redactor = new LogRedactor(opts.command.args).startRun();
-    const child = spawn(opts.command.binary, opts.command.args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: opts.cwd,
-      // Never hand the agent a host session's markers or an inherited agent nonce.
-      env: cleanSpawnEnv({ ...(opts.env ?? cleanInheritedEnv({ ...process.env })) }),
-      windowsHide: true,
-      ...(opts.command.windowsVerbatimArguments && { windowsVerbatimArguments: true }),
-    });
 
     let ended = false;
+    let spawnFailed = false;
     let buffer = '';
     let dropping = false;
     let stderrTail = '';
@@ -68,21 +80,24 @@ export function stdioConnector(opts: AcpStdioOpts): AcpConnector {
 
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
+      if (ended) return;
       let start = 0;
       let idx: number;
       while ((idx = chunk.indexOf('\n', start)) !== -1) {
         const piece = chunk.slice(start, idx);
         start = idx + 1;
-        if (dropping) { dropping = false; continue; }
         handleLine(buffer + piece);
         buffer = '';
       }
-      if (dropping) return;
       buffer += chunk.slice(start);
       if (buffer.length > MAX_ACP_LINE_CHARS) {
-        log('warn', 'ACP line over the size limit; dropped', { limit: MAX_ACP_LINE_CHARS });
+        // The dropped line may have been the answer a turn waits for, so the
+        // session can't go on: end it rather than hang.
+        log('error', 'ACP line over the size limit; ending the session', { limit: MAX_ACP_LINE_CHARS });
         buffer = '';
         dropping = true;
+        end(null, null, new Error(`ACP agent sent a line over ${MAX_ACP_LINE_CHARS} characters`));
+        void killStructuredChild(child);
       }
     });
 
@@ -95,12 +110,13 @@ export function stdioConnector(opts: AcpStdioOpts): AcpConnector {
     });
 
     child.on('error', (err) => {
+      spawnFailed = true;
       log('error', 'ACP agent spawn error', { error: err.message });
       end(null, null, err);
     });
     child.on('close', (code, signal) => {
       logStderr(stderrLog.flush());
-      if (buffer.trim() && !dropping) handleLine(buffer);
+      if (buffer.trim() && !dropping && !ended) handleLine(buffer);
       buffer = '';
       log(code === 0 ? 'info' : 'warn', 'ACP agent exited', { code, signal });
       end(code, signal);
@@ -113,9 +129,13 @@ export function stdioConnector(opts: AcpStdioOpts): AcpConnector {
         child.stdin.write(`${JSON.stringify(message)}\n`);
       },
       async close() {
-        if (ended) return;
+        if (spawnFailed || child.exitCode !== null || child.signalCode !== null) return;
         await killStructuredChild(child);
+        const timer = setTimeout(() => {
+          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        }, KILL_GRACE_MS);
         await exited;
+        clearTimeout(timer);
       },
     };
   };

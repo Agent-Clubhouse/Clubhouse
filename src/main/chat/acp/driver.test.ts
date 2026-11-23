@@ -12,7 +12,7 @@ const TEST_DRIVER_ID = 'acp_neutral_test' as ChatDriverId;
 const SPEC: AcpLaunchSpec = {
   id: TEST_DRIVER_ID,
   provider: 'acp-test',
-  command: ({ binaryPath, extraArgs }) => ({ binary: binaryPath, args: ['acp', ...extraArgs] }),
+  args: ({ extraArgs }) => ['acp', ...extraArgs],
 };
 
 const FULL_INIT: InitializeResponse = {
@@ -94,7 +94,7 @@ describe('ACP driver: negotiation', () => {
     const { session } = await open();
     expect(session.capabilities).toMatchObject({
       steer: false, queue: 'client', interrupt: true, resume: 'replay', images: true,
-      questions: false, usage: 'none', modelSwitch: 'none', effortSwitch: 'none', liveLevels: [], login: 'none', systemPrompt: false,
+      questions: false, usage: 'none', modelSwitch: 'none', effortSwitch: 'none', liveLevels: [], login: 'terminal', systemPrompt: false,
     });
   });
 
@@ -221,6 +221,27 @@ describe('ACP driver: prompt turns', () => {
     // Never retried: the agent may have acted on it.
     await settle();
     expect(agent.sentRequests('session/prompt')).toHaveLength(1);
+  });
+
+  it('rejects a send it cannot express before starting a turn', async () => {
+    const { agent, session, drafts } = await open({ initialize: { protocolVersion: 1 } });
+    await expect(session.send([{ type: 'image', mimeType: 'image/png', data: 'AAAA' }], 'prompt')).rejects.toThrow(/can't take images/);
+    await settle();
+    expect(agent.sentRequests('session/prompt')).toEqual([]);
+    expect(drafts.of('turn_started')).toEqual([]);
+    // Nothing is left looking like a running turn.
+    await session.send([{ type: 'text', text: 'next' }], 'prompt');
+    expect(agent.sentRequests('session/prompt')).toHaveLength(1);
+  });
+
+  it('delivers an answer written just before the agent exits', async () => {
+    const { agent, session, drafts } = await open();
+    await session.send([{ type: 'text', text: 'x' }], 'prompt');
+    (await agent.nextPrompt()).end('end_turn');
+    agent.disconnect({ code: 0, signal: null });
+    await drafts.untilEnd();
+    expect(drafts.all.map((d) => d.type).filter((t) => t === 'turn_ended' || t === 'error')).toEqual(['turn_ended', 'error']);
+    expect(drafts.of('error')[0].data.message).not.toContain('unknown');
   });
 
   it('flags a stop reason the pinned schema does not define', async () => {
@@ -354,6 +375,19 @@ describe('ACP driver: cancel', () => {
     expect(drafts.of('turn_ended')[0].data.stopReason).toBe('cancelled');
   });
 
+  it('does not assume a cancelled ending when the agent is lost after the cancel', async () => {
+    const { agent, session, drafts } = await open();
+    await session.send([{ type: 'text', text: 'x' }], 'prompt');
+    await agent.nextPrompt();
+    const cancelled = agent.cancelled();
+    await session.interrupt();
+    await cancelled;
+    agent.disconnect({ code: null, signal: 'SIGKILL' });
+    await drafts.untilEnd();
+    expect(drafts.of('turn_ended')).toEqual([]);
+    expect(drafts.of('error')[0].data).toMatchObject({ code: 'process_exited', message: expect.stringContaining('unknown') });
+  });
+
   it('does nothing between turns', async () => {
     const { agent, session } = await open();
     await session.interrupt();
@@ -466,13 +500,16 @@ describe('ACP driver: config and unknowns', () => {
     await expect(session.compact()).rejects.toThrow(/no compaction/);
   });
 
-  it('reports unknown update kinds and notifications', async () => {
+  it('reports unknown and unmapped update kinds and notifications, but not user echoes', async () => {
     const { agent, drafts } = await open();
+    agent.update('session-1', { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'echo' } });
     agent.update('session-1', { sessionUpdate: 'hologram' });
+    agent.update('session-1', { sessionUpdate: 'current_mode_update', currentModeId: 'x' });
     agent.notify('x/ping', {});
-    await drafts.untilType('protocol_unknown', 2);
+    await drafts.untilType('protocol_unknown', 3);
     expect(drafts.of('protocol_unknown').map((d) => d.data)).toEqual([
       { driver: TEST_DRIVER_ID, kind: 'field', name: 'session/update:hologram' },
+      { driver: TEST_DRIVER_ID, kind: 'field', name: 'session/update:current_mode_update' },
       { driver: TEST_DRIVER_ID, kind: 'notification', name: 'x/ping' },
     ]);
   });
@@ -489,12 +526,35 @@ describe('ACP driver: config and unknowns', () => {
     ] });
   });
 
-  it('cancels a start in progress', async () => {
+  it('cancels a start in progress: no session is opened and the transport is closed', async () => {
     const agent = new ScriptedAcpAgent({ initialize: FULL_INIT });
     const driver = createAcpChatDriver(SPEC, { connect: () => agent.connector });
     const controller = new AbortController();
     const started = driver.start({ ...START, signal: controller.signal });
     controller.abort();
     await expect(started).rejects.toThrow(/cancelled/);
+    await settle();
+    expect(agent.isOpen).toBe(false);
+    expect(agent.sentRequests('session/new')).toEqual([]);
+    expect(agent.sentRequests('session/close')).toEqual([]);
+  });
+
+  it('applies updates sent before session/new answered in order, so the requested model wins', async () => {
+    const stale = { sessionUpdate: 'config_option_update' as const, configOptions: MODEL_OPTIONS };
+    const { agent, session, drafts } = await open({ configOptions: MODEL_OPTIONS, beforeNewReply: [stale, { sessionUpdate: 'session_info_update', title: 'Early' }] }, { model: 'large' });
+    expect(agent.sentRequests('session/set_config_option')).toEqual([{ sessionId: 'session-1', configId: 'model', value: 'large' }]);
+    await drafts.until((all) => all.some((d) => d.type === 'session_info' && d.data.title === 'Early'));
+    expect(drafts.of('session_info')[0].data.model).toBe('large');
+    expect(drafts.of('model_changed')).toEqual([]);
+    await session.setModel('large', 'high');
+    expect(agent.sentRequests('session/set_config_option')).toHaveLength(2);
+  });
+
+  it('switches effort alone when the agent offers no model choice', async () => {
+    const { agent, session } = await open({ configOptions: [MODEL_OPTIONS[1]] });
+    expect(session.capabilities).toMatchObject({ modelSwitch: 'none', effortSwitch: 'live' });
+    await session.setModel('whatever', 'high');
+    expect(agent.sentRequests('session/set_config_option')).toEqual([{ sessionId: 'session-1', configId: 'thinking', value: 'high' }]);
+    await expect(session.setModel('whatever')).rejects.toThrow(/no model choice/);
   });
 });

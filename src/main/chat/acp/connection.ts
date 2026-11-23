@@ -112,7 +112,8 @@ export class AcpConnection {
    * Send a request. `timeoutMs: null` waits until the agent answers or the
    * transport ends (session/prompt answers only when its turn ends). On a
    * timeout the request is withdrawn with `$/cancel_request`; the agent may
-   * still have acted on it.
+   * still have acted on it. Throws synchronously when the transport can't
+   * take the message, so the request was never sent.
    */
   request<T = unknown>(method: string, params: unknown, opts: { timeoutMs?: number | null; signal?: AbortSignal } = {}): Promise<T> {
     if (this.endInfo) return Promise.reject(new AcpDisconnectedError(this.endInfo));
@@ -122,13 +123,14 @@ export class AcpConnection {
     this.log('debug', 'ACP request', { id, method });
     const signal = opts.signal;
     if (signal?.aborted) return Promise.reject(new Error(`ACP request '${method}' aborted`));
-    return new Promise<T>((resolve, reject) => {
+    let entry!: Pending;
+    const answer = new Promise<T>((resolve, reject) => {
       const onAbort = () => withdraw(new Error(`ACP request '${method}' aborted`));
       const settle = () => {
         if (entry.timer) clearTimeout(entry.timer);
         signal?.removeEventListener('abort', onAbort);
       };
-      const entry: Pending = {
+      entry = {
         method,
         resolve: (result) => { settle(); resolve(result as T); },
         reject: (err) => { settle(); reject(err); },
@@ -141,8 +143,16 @@ export class AcpConnection {
       if (timeoutMs !== null) entry.timer = setTimeout(() => withdraw(new AcpRequestTimeoutError(method, timeoutMs)), timeoutMs);
       signal?.addEventListener('abort', onAbort, { once: true });
       this.pending.set(id, entry);
-      this.transport.send({ jsonrpc: '2.0', id, method, params });
     });
+    try {
+      this.transport.send({ jsonrpc: '2.0', id, method, params });
+    } catch (err) {
+      // Never written: the caller's call fails, and nothing waits for an answer.
+      this.pending.delete(id);
+      entry.resolve(undefined);
+      throw err;
+    }
+    return answer;
   }
 
   notify(method: string, params: unknown): void {
@@ -233,7 +243,9 @@ export class AcpConnection {
     this.pending.clear();
     for (const [, controller] of this.incoming) controller.abort();
     this.incoming.clear();
-    this.opts.onEnd?.(end);
+    // After a macrotask, so work already settled by answers that arrived
+    // before the end (their promise callbacks) runs first.
+    setTimeout(() => this.opts.onEnd?.(end), 0);
   }
 }
 

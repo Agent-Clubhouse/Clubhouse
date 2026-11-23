@@ -29,7 +29,7 @@ import type {
 import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import { RpcError } from '../../orchestrators/adapters/rpc-error';
 import { throwIfStartAborted, untilStartAborted } from '../../orchestrators/adapters/start-abort';
-import type { StructuredSpawnCommand } from '../../orchestrators/adapters/structured-spawn';
+import { resolveStructuredSpawn, type StructuredSpawnCommand } from '../../orchestrators/adapters/structured-spawn';
 import { acpChatCapabilities, negotiate, selectOption, type AcpNegotiated, type AcpSessionFacts, type AcpStaticClaims } from './capabilities';
 import { AcpConnection, AcpDisconnectedError, AcpRequestTimeoutError, type AcpConnector, type AcpLog, type AcpTransportEnd } from './connection';
 import {
@@ -68,8 +68,12 @@ export interface AcpLaunchSpec {
   id: ChatDriverId;
   provider: string;
   optIn?: boolean;
-  /** The agent's command line; `extraArgs` are the caller's, already validated. */
-  command(opts: { binaryPath: string; extraArgs: readonly string[]; commandPrefix?: string }): StructuredSpawnCommand;
+  /**
+   * Arguments for the agent binary (`ChatDriverStartOptions.binaryPath`).
+   * `extraArgs` are the caller's, already validated. The driver applies the
+   * command prefix and Windows shim handling (resolveStructuredSpawn).
+   */
+  args(opts: { extraArgs: readonly string[] }): string[];
   claims?: AcpStaticClaims;
 }
 
@@ -92,6 +96,9 @@ export interface AcpTimeouts {
   closeMs: number;
 }
 
+/** Updates or drafts kept during setup before the rest are dropped. */
+const MAX_HELD = 1000;
+
 const DEFAULT_TIMEOUTS: AcpTimeouts = { initializeMs: 30_000, requestMs: 60_000, loadMs: 120_000, closeMs: 5_000 };
 
 export function createAcpChatDriver(spec: AcpLaunchSpec, deps: AcpDriverDeps = {}): ChatDriver {
@@ -113,13 +120,14 @@ class AcpChatDriver implements ChatDriver {
 
   /** `initialize` only: no session, no prompt, no tokens. */
   async probe(binaryPath: string, env?: Record<string, string>, opts?: { commandPrefix?: string }): Promise<ChatDriverProbe> {
-    const command = this.spec.command({ binaryPath, extraArgs: [], commandPrefix: opts?.commandPrefix });
-    const conn = new AcpConnection(this.connector(command, { env }), {
-      onRequest: () => Promise.reject(new RpcError(ACP_ERROR_CODES.methodNotFound, 'No session')),
-      onNotification: () => undefined,
-      log: this.deps.log,
-    });
+    let conn: AcpConnection | undefined;
     try {
+      const command = resolveStructuredSpawn(binaryPath, this.spec.args({ extraArgs: [] }), opts?.commandPrefix);
+      conn = new AcpConnection(this.connector(command, { env }), {
+        onRequest: () => Promise.reject(new RpcError(ACP_ERROR_CODES.methodNotFound, 'No session')),
+        onNotification: () => undefined,
+        log: this.deps.log,
+      });
       const init = await conn.request<InitializeResponse>(ACP_AGENT_METHODS.initialize, this.initializeParams(), { timeoutMs: this.timeouts.initializeMs });
       checkProtocolVersion(init);
       const n = negotiate(init, true);
@@ -136,20 +144,21 @@ class AcpChatDriver implements ChatDriver {
         errorCode: probeErrorCode(err),
       };
     } finally {
-      await conn.close();
+      await conn?.close();
     }
   }
 
   async start(opts: ChatDriverStartOptions): Promise<ChatDriverSession> {
     throwIfStartAborted(opts.signal);
-    const command = this.spec.command({ binaryPath: opts.binaryPath, extraArgs: opts.extraArgs ?? [], commandPrefix: opts.commandPrefix });
+    const command = resolveStructuredSpawn(opts.binaryPath, this.spec.args({ extraArgs: opts.extraArgs ?? [] }), opts.commandPrefix);
     const session = new AcpDriverSession(this.id, this.spec.claims ?? {}, this.timeouts, this.deps.log ?? (() => undefined));
     session.connect(this.connector(command, { cwd: opts.cwd, env: opts.env }));
     try {
-      await untilStartAborted(session.open(opts, this.initializeParams()), opts.signal, () => void session.close());
+      await untilStartAborted(session.open(opts, this.initializeParams()), opts.signal, () => void session.abort());
       return session;
     } catch (err) {
-      await session.close();
+      // A failed or cancelled start ends the process without waiting on session/close.
+      await session.abort();
       throw err;
     }
   }
@@ -179,6 +188,7 @@ function probeErrorCode(err: unknown): ChatDriverProbe['errorCode'] {
   if (err instanceof AcpRequestTimeoutError) return 'rpc_timeout';
   if (err instanceof AcpDisconnectedError) return err.end.error ? 'spawn_failed' : 'process_exited';
   if (err instanceof RpcError) return 'protocol_error';
+  if (err instanceof Error && 'code' in err && (err.code === 'ENOENT' || err.code === 'EACCES' || err.code === 'EINVAL')) return 'spawn_failed';
   if (err instanceof Error && err.message.startsWith('ACP agent answered protocol version')) return 'protocol_error';
   return 'unknown';
 }
@@ -208,6 +218,8 @@ class AcpDriverSession implements ChatDriverSession {
   private turn: { startedAt: number } | undefined;
   /** Updates for a session id not known yet (they can precede the session/new answer). */
   private early: SessionNotification[] = [];
+  /** Drafts from this session's updates during setup, sent after the opening session_info. */
+  private heldDrafts: ChatEventDraft[] = [];
   private setupDone = false;
   /** session/load in flight: its updates replay history Clubhouse already has. */
   private replay: { sessionId: string; started: number; firstReplyMs?: number } | undefined;
@@ -279,6 +291,11 @@ class AcpDriverSession implements ChatDriverSession {
       this.sessionId = setupResponse.sessionId;
     }
     if (Array.isArray(setupResponse?.configOptions)) this.facts = { ...this.facts, configOptions: setupResponse.configOptions };
+    // Updates that arrived before the session id was known: their state
+    // applies now, in arrival order, ahead of anything later.
+    for (const early of this.early.splice(0)) {
+      if (early.sessionId === this.sessionId) this.holdUpdate(early.update);
+    }
     // Requested settings go in before events flow, so they aren't reported as changes.
     await this.applyRequestedModel(opts);
     this.setupDone = true;
@@ -296,9 +313,7 @@ class AcpDriverSession implements ChatDriverSession {
         efforts: choices.efforts,
       },
     });
-    for (const early of this.early.splice(0)) {
-      if (early.sessionId === this.sessionId) this.applyUpdate(early.update);
-    }
+    for (const draft of this.heldDrafts.splice(0)) this.push(draft);
   }
 
   private async reopen(sessionId: string, setup: SessionSetup, n: AcpNegotiated): Promise<SessionSetupResponse> {
@@ -345,18 +360,17 @@ class AcpDriverSession implements ChatDriverSession {
   async send(content: ChatContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
     if (this.conn.ended || this.closing || !this.sessionId || !this.negotiated) throw new Error('The ACP session is not open');
     if (this.turn) {
-      // Stable ACP v1 has no steer; queue: 'client' means the runtime holds it.
+      // No steer in the stable schema; queue: 'client' means the runtime holds it.
       throw new Error(`Cannot ${delivery} into a running ACP turn; queue it until the turn ends`);
     }
+    // Anything that can fail before the prompt is written fails the send itself.
+    const prompt = toAcpPrompt(content, this.negotiated.prompt);
+    const answer = this.conn.request<PromptResponse>(ACP_AGENT_METHODS.sessionPrompt, { sessionId: this.sessionId, prompt }, { timeoutMs: null });
     const turn = { startedAt: Date.now() };
     this.turn = turn;
     this.mapper.breakRun();
     this.push({ type: 'turn_started', data: { trigger: 'prompt' } });
-    this.conn.request<PromptResponse>(
-      ACP_AGENT_METHODS.sessionPrompt,
-      { sessionId: this.sessionId, prompt: toAcpPrompt(content, this.negotiated.prompt) },
-      { timeoutMs: null },
-    ).then(
+    answer.then(
       (response) => this.endTurn(turn, response),
       (err: unknown) => this.failTurn(turn, err),
     );
@@ -389,9 +403,9 @@ class AcpDriverSession implements ChatDriverSession {
   }
 
   /**
-   * Sends session/cancel. Open permission requests and questions are answered
-   * as cancelled first, as the protocol asks of the client. The turn ends when
-   * the agent answers the prompt.
+   * Sends session/cancel and answers open permission requests and questions
+   * as cancelled, as the protocol asks of the client. The turn ends when the
+   * agent answers the prompt.
    */
   async interrupt(): Promise<void> {
     if (!this.turn || !this.sessionId || this.conn.ended) return;
@@ -432,13 +446,21 @@ class AcpDriverSession implements ChatDriverSession {
   async setModel(modelId: string, effort?: string | null): Promise<void> {
     // ACP config options have no "unset", so there is no provider default to return to.
     if (effort === null) throw new Error("This agent can't return effort to its default");
-    await this.setConfig('model', modelId);
+    const model = selectOption(this.facts.configOptions, 'model');
+    if (model ? model.currentValue !== modelId : !effort) await this.setConfig('model', modelId);
     if (effort) await this.setConfig('thought_level', effort);
   }
 
   /** ACP v1 has no compaction method. */
   async compact(): Promise<void> {
     throw new Error('ACP has no compaction request');
+  }
+
+  /** Ends the process at once, without asking the agent to close the session. */
+  async abort(): Promise<void> {
+    this.closing = true;
+    await this.conn.close();
+    return this.ended;
   }
 
   async close(): Promise<void> {
@@ -474,10 +496,12 @@ class AcpDriverSession implements ChatDriverSession {
         if (this.replay?.sessionId === note.sessionId) {
           this.replay.firstReplyMs ??= Date.now() - this.replay.started;
           this.applyEffectsOnly(note.update);
-          return;
+        } else if (this.sessionId) {
+          if (note.sessionId === this.sessionId) this.holdUpdate(note.update);
+        } else if (this.early.length < MAX_HELD) {
+          // session/new hasn't answered yet; keep it until the id is known.
+          this.early.push(note);
         }
-        // session/new hasn't answered yet; keep it until the id is known (bounded).
-        if (this.early.length < 1000) this.early.push(note);
         return;
       }
       if (note.sessionId !== this.sessionId) {
@@ -574,6 +598,13 @@ class AcpDriverSession implements ChatDriverSession {
     const { drafts, effects } = this.mapper.map(update);
     for (const draft of drafts) this.push(draft);
     this.applyEffects(effects);
+  }
+
+  /** An update during setup: its state applies now, its events wait for the opening session_info. */
+  private holdUpdate(update: unknown): void {
+    const { drafts, effects } = this.mapper.map(update);
+    this.applyEffects(effects);
+    if (this.heldDrafts.length + drafts.length <= MAX_HELD) this.heldDrafts.push(...drafts);
   }
 
   /** A replayed update: session state only, no transcript events. */
