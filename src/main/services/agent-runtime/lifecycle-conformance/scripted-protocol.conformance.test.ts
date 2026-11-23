@@ -19,7 +19,7 @@ function subject(personality: ScriptedPersonality, traits: ConformanceTraits): C
   return {
     name: `scripted protocol (${personality.name})`,
     traits,
-    canFailSend: true,
+    canRejectSend: true,
     create: async () => {
       const driver = new ScriptedProtocolDriver(personality);
       return { driver, native: () => scriptedNativeControl(driver.last) };
@@ -32,7 +32,7 @@ const ALL_RUN = {
   merged_submissions_leave_no_debt: 'run', client_queue_drains_once: 'run', interrupt_settles_as_reported: 'run',
   interrupt_unreported_stays_open: 'skipped: provider reports interrupts', permission_answered_once: 'run',
   permission_closed_by_provider: 'run', question_answered_once: 'run', question_closed_by_provider: 'run',
-  disconnect_outcome_unknown: 'run', disconnect_held_input_stays_unsent: 'run', disconnect_with_open_requests: 'run', send_failure_not_retried: 'run',
+  disconnect_outcome_unknown: 'run', disconnect_held_input_stays_unsent: 'run', disconnect_with_open_requests: 'run', send_rejected_not_accepted: 'run', accepted_submission_fails_later: 'run',
   replaced_session_ignored: 'run',
 } as const;
 

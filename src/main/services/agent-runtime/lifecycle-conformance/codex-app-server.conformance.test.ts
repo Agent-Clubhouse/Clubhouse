@@ -26,8 +26,9 @@ describeChatLifecycleConformance(codexConformanceSubject(vi.mocked(spawn)), {
   question_answered_once: 'run',
   question_closed_by_provider: 'run',
   disconnect_outcome_unknown: 'run',
-  disconnect_held_input_stays_unsent: 'blocked: the driver\'s turn_ended on process exit drains held input into the exited process (lifecycle-gaps.test.ts)',
+  disconnect_held_input_stays_unsent: 'run',
   disconnect_with_open_requests: 'run',
-  send_failure_not_retried: 'run',
+  send_rejected_not_accepted: 'run',
+  accepted_submission_fails_later: 'run',
   replaced_session_ignored: 'run',
 });

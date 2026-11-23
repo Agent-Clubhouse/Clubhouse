@@ -82,8 +82,8 @@ export class ScriptedProtocolSession implements ChatDriverSession {
   closed = false;
   /** While true, receipts wait for releaseReceipts(). Sends are recorded at once either way. */
   holdReceipts = false;
-  /** When set, the next send rejects with it after the provider may have received it. */
-  failNextSend: Error | undefined;
+  /** When set, the next send is refused locally before anything reaches the provider. */
+  rejectNextSend: Error | undefined;
   private readonly operations: Operation[] = [];
   private readonly held: HeldReceipt[] = [];
   private nextOperation = 1;
@@ -176,10 +176,10 @@ export class ScriptedProtocolSession implements ChatDriverSession {
 
   private submit(content: ContentBlock[], delivery: MessageDelivery): Promise<ChatSendReceipt> {
     if (this.disconnected) return Promise.reject(new Error('Scripted transport disconnected'));
+    const refused = this.rejectNextSend;
+    this.rejectNextSend = undefined;
+    if (refused) return Promise.reject(refused);
     this.sent.push({ content, delivery });
-    const failure = this.failNextSend;
-    this.failNextSend = undefined;
-    if (failure) return Promise.reject(failure);
     const running = this.running;
     let receipt: () => ChatSendReceipt;
     if (delivery === 'steer' && running) {
@@ -296,6 +296,7 @@ export const SCRIPTED_PERSONALITIES = {
 export function scriptedNativeControl(session: ScriptedProtocolSession): import('./types').NativeControl {
   return {
     received: () => session.sent.length,
+    answered: () => session.responses.length + session.answers.length,
     beginTurn: async () => { session.beginTurn(); },
     endTurn: async (stopReason) => { session.endTurn(stopReason); },
     requestPermission: async (id) => { session.requestPermission(id); },
@@ -303,6 +304,6 @@ export function scriptedNativeControl(session: ScriptedProtocolSession): import(
     ask: async (id) => { session.ask(id); },
     resolveQuestionNatively: async (id) => { session.resolveQuestionNatively(id); },
     disconnect: async () => { session.disconnect(); },
-    failNextSend: () => { session.failNextSend = new Error('Scripted transport failed after hand-off'); },
+    rejectNextSend: () => { session.rejectNextSend = new Error('Scripted transport refused the send before dispatch'); },
   };
 }

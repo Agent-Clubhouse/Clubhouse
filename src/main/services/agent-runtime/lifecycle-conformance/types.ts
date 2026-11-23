@@ -43,14 +43,22 @@ export interface NativeControl {
   endTurn(stopReason: TurnStopReason): Promise<void>;
   /** The provider asks for permission; options include allow_once and reject_once kinds. */
   requestPermission(requestId: string): Promise<void>;
+  /** Answers to permission requests and questions the provider received from the driver. */
+  answered(): number;
   /** The provider closes a permission request itself (timeout, cancel, answered elsewhere). */
   resolvePermissionNatively?(requestId: string): Promise<void>;
   ask?(requestId: string): Promise<void>;
   resolveQuestionNatively?(requestId: string): Promise<void>;
   /** The transport ends and the provider reports nothing more. */
   disconnect(): Promise<void>;
-  /** The next submission fails at the transport after Clubhouse handed it over (its delivery is unknown). */
-  failNextSend?(): void;
+  /**
+   * The next submission is refused in a way known not to have been accepted:
+   * a local failure before anything reaches the provider, or a refusal the
+   * provider documents as non-acceptance (Codex turn/start error) returned
+   * before the driver reports acceptance. A rejected promise alone is not
+   * that proof; adapters that cannot control it leave this out.
+   */
+  rejectNextSend?(): void;
 }
 
 export interface ConformanceHarness {
@@ -64,12 +72,12 @@ export interface ConformanceSubject {
   name: string;
   /** Known before any harness exists, so skipped cases are decided when tests are registered. */
   traits: ConformanceTraits;
-  /** Whether the adapter's NativeControl implements failNextSend. */
-  canFailSend: boolean;
+  /** Whether the adapter's NativeControl implements rejectNextSend. */
+  canRejectSend: boolean;
   /**
    * Cases this existing driver fails today, each with the reason. They are
    * not run and not counted as passing: the coverage matrix reports them as
-   * blocked, and the failure itself is pinned in lifecycle-gaps.test.ts.
+   * blocked, and the subject's test file pins the current behavior.
    * This subject does not conform while any remain. A new driver has none.
    */
   blocked?: Partial<Record<ConformanceCaseId, string>>;
@@ -92,7 +100,8 @@ export const CONFORMANCE_CASES = [
   'disconnect_outcome_unknown',
   'disconnect_held_input_stays_unsent',
   'disconnect_with_open_requests',
-  'send_failure_not_retried',
+  'send_rejected_not_accepted',
+  'accepted_submission_fails_later',
   'replaced_session_ignored',
 ] as const;
 
@@ -100,7 +109,7 @@ export type ConformanceCaseId = typeof CONFORMANCE_CASES[number];
 export type ConformanceCoverage = Record<ConformanceCaseId, 'run' | `skipped: ${string}` | `blocked: ${string}`>;
 
 /** Which cases a subject with these traits runs, and why the rest are skipped. */
-export function conformanceCoverage({ traits, canFailSend, blocked = {} }: Pick<ConformanceSubject, 'traits' | 'canFailSend' | 'blocked'>): ConformanceCoverage {
+export function conformanceCoverage({ traits, canRejectSend, blocked = {} }: Pick<ConformanceSubject, 'traits' | 'canRejectSend' | 'blocked'>): ConformanceCoverage {
   const when = (ok: boolean, reason: string): 'run' | `skipped: ${string}` => ok ? 'run' : `skipped: ${reason}`;
   const coverage: ConformanceCoverage = {
     prompt_settles_once: 'run',
@@ -117,7 +126,8 @@ export function conformanceCoverage({ traits, canFailSend, blocked = {} }: Pick<
     disconnect_outcome_unknown: 'run',
     disconnect_held_input_stays_unsent: 'run',
     disconnect_with_open_requests: when(traits.permissions, 'no permissions'),
-    send_failure_not_retried: when(canFailSend, 'adapter cannot fail a send'),
+    send_rejected_not_accepted: when(canRejectSend, 'no controlled known non-acceptance'),
+    accepted_submission_fails_later: 'run',
     replaced_session_ignored: 'run',
   };
   for (const [id, reason] of Object.entries(blocked) as Array<[ConformanceCaseId, string]>) {

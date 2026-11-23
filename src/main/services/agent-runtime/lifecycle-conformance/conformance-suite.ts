@@ -219,15 +219,25 @@ const CASES: Record<ConformanceCaseId, Case> = {
     await native.requestPermission('p1');
     await run.until(() => expect(run.runtime.getState()).toBe('waiting_permission'));
     const [request] = run.of('permission_request');
+    const answeredBefore = native.answered();
     await native.resolvePermissionNatively!(request.data.requestId);
     await run.until(() => expect(run.of('permission_resolved')).toHaveLength(1));
+    await settle();
     // The provider's own record goes through as the provider said it; the runtime writes nothing of its own.
     expect(run.of('permission_resolved')[0].data.by).not.toBe('user');
+    // Nothing waits on it any more: no options, no queue entry, and the turn reads as running again.
+    expect(run.runtime.getPendingPermissionOptions(request.data.requestId)).toBeUndefined();
+    expect(permissionQueue.listPendingForAgent(run.runtime.agentId)).toHaveLength(0);
+    expect(run.runtime.getState()).toBe('running');
+    // A late answer is refused here and never reaches the provider.
+    await run.runtime.respondPermission(request.data.requestId, optionOf(request.data.options, 'allow_once'));
+    await settle();
+    expect(native.answered()).toBe(answeredBefore);
+    expect(run.of('permission_resolved')).toHaveLength(1);
     await native.endTurn('end_turn');
     await run.until(() => expect(run.runtime.getState()).toBe('idle'));
     await settle();
     expect(run.runtime.hasPendingWork()).toBe(false);
-    // Not blocking: the next turn runs normally.
     await promptTurn(run, 'next');
     expect(run.of('permission_resolved')).toHaveLength(1);
   },
@@ -276,6 +286,8 @@ const CASES: Record<ConformanceCaseId, Case> = {
     await settle();
     expect(run.of('session_ended').length).toBeGreaterThanOrEqual(1);
     expect(run.runtime.getState()).toBe('sleeping');
+    // The ended runtime keeps no reservation or open turn of its own.
+    expect(run.runtime.hasPendingWork()).toBe(false);
     // Nothing is sent again on Clubhouse's own initiative.
     expect(native.received()).toBe(1);
     // The accepted prompt's record stays as written: its outcome is unknown, never relabeled.
@@ -344,15 +356,39 @@ const CASES: Record<ConformanceCaseId, Case> = {
     }
   },
 
-  async send_failure_not_retried(run) {
+  async send_rejected_not_accepted(run) {
     const native = run.harness.native();
-    native.failNextSend!();
-    await expect(run.runtime.sendMessage('lost', { source: 'user', delivery: 'prompt' })).rejects.toThrow();
+    native.rejectNextSend!();
+    const before = native.received();
+    await expect(run.runtime.sendMessage('refused', { source: 'user', delivery: 'prompt' })).rejects.toThrow();
     await settle();
-    // Delivery is unknown: the caller is told, and Clubhouse never sends it again on its own.
-    expect(native.received()).toBe(1);
+    // Known not accepted: the caller is told, nothing is recorded as sent, and nothing is sent again.
+    const attempted = native.received();
+    expect(attempted - before).toBeLessThanOrEqual(1);
     expect(run.of('user_message')).toHaveLength(0);
     expect(run.runtime.hasPendingWork()).toBe(false);
+    expect(run.runtime.isRunning()).toBe(true);
+    await promptTurn(run, 'next');
+    expect(native.received()).toBe(attempted + 1);
+  },
+
+  async accepted_submission_fails_later(run) {
+    const native = run.harness.native();
+    // Accepted: send resolved. The provider reports the failure afterwards, as the turn's outcome.
+    const accepted = await run.runtime.sendMessage('fails', { source: 'user', delivery: 'prompt' });
+    expect(accepted.delivery).toBe('prompt');
+    await native.beginTurn();
+    await run.until(() => expect(run.runtime.getState()).toBe('running'));
+    await native.endTurn('error');
+    await run.until(() => expect(run.of('turn_ended')).toHaveLength(1));
+    await settle();
+    expect(run.of('turn_ended')[0].data.stopReason).toBe('error');
+    for (const e of run.of('error')) expect(e.data.fatal).toBe(false);
+    // The record of what was sent stays as written, and nothing is sent again.
+    expect(run.of('user_message').map((e) => [e.data.messageId, e.data.delivery])).toEqual([[accepted.messageId, 'prompt']]);
+    expect(native.received()).toBe(1);
+    expect(run.runtime.hasPendingWork()).toBe(false);
+    expect(run.runtime.getState()).toBe('idle');
     expect(run.runtime.isRunning()).toBe(true);
     await promptTurn(run, 'next');
     expect(native.received()).toBe(2);
@@ -417,34 +453,3 @@ export function describeChatLifecycleConformance(subject: ConformanceSubject, ex
   });
 }
 
-/**
- * What happens today to input held in Clubhouse's queue when the transport
- * ends mid-turn, for pinning a blocked disconnect_held_input_stays_unsent.
- */
-export async function observeHeldInputOnDisconnect(subject: ConformanceSubject) {
-  const run = await open(subject);
-  try {
-    const native = run.harness.native();
-    const settled: ActionQueueSettlement[] = [];
-    await run.runtime.sendMessage('accepted', { source: 'user', delivery: 'prompt' });
-    await native.beginTurn();
-    await run.until(() => expect(run.runtime.getState()).toBe('running'));
-    const held = await run.runtime.sendMessage('held', {
-      source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', onSettled: (d) => { settled.push(d); } },
-    });
-    await native.disconnect();
-    await settle(50);
-    return {
-      received: native.received(),
-      settled,
-      statuses: run.of('queue_state').filter((e) => e.data.transition.messageIds.includes(held.messageId!)).map((e) => e.data.transition.status),
-      notices: run.of('notice').map((e) => e.data.code),
-      turnEnded: run.of('turn_ended').map((e) => e.data.stopReason),
-      running: run.runtime.isRunning(),
-    };
-  } finally {
-    await run.runtime.stop().catch((): void => undefined);
-    await run.harness.dispose?.();
-    permissionQueue.reset();
-  }
-}

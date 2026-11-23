@@ -8,7 +8,7 @@
  * text-keyed fake-claude.mjs, whose turns run on their own and cannot be
  * stepped by these cases.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { vi } from 'vitest';
 
 vi.mock('../chat-transcript', () => ({ appendChatEvent: vi.fn(async () => undefined), readChatTranscript: vi.fn(async () => []) }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
@@ -18,7 +18,7 @@ import { AsyncQueue } from '../../../orchestrators/adapters/async-queue';
 import { ClaudeChatDriver } from '../../../chat/claude/driver';
 import type { ClaudeChatEvent, ClaudeChatEventBody } from '../../../chat/claude/events';
 import type { ClaudePermissionDecision, ClaudeTransport, ClaudeUserInput } from '../../../chat/claude/transport';
-import { describeChatLifecycleConformance, observeHeldInputOnDisconnect } from './conformance-suite';
+import { describeChatLifecycleConformance } from './conformance-suite';
 import type { ConformanceSubject, NativeControl } from './types';
 
 /** The CLI side of one session, as normalized transport events. */
@@ -65,6 +65,7 @@ class ScriptedClaudeTransport implements ClaudeTransport {
 function control(transport: ScriptedClaudeTransport): NativeControl {
   return {
     received: () => transport.sent.length,
+    answered: () => transport.answers.length,
     // The driver opens its turn when it sends from idle; the CLI reports only the result.
     beginTurn: async () => undefined,
     endTurn: async (stopReason) => {
@@ -101,11 +102,8 @@ const subject: ConformanceSubject = {
     // On session_ended mid-turn the driver ends its turn ('error') and cancels its requests itself.
     disconnectClosure: 'local_closure',
   },
-  // transport.send has no result: it throws only once the session ended, so a live send cannot fail after hand-off.
-  canFailSend: false,
-  blocked: {
-    disconnect_held_input_stays_unsent: 'the driver\'s turn_ended on session end drains held input into the ended transport',
-  },
+  // transport.send has no result and throws only once the session ended: there is no controlled refusal of a live send.
+  canRejectSend: false,
   create: async () => {
     const transports: ScriptedClaudeTransport[] = [];
     const driver = new ClaudeChatDriver('claude_agent_sdk', {
@@ -139,18 +137,9 @@ describeChatLifecycleConformance(subject, {
   question_answered_once: 'run',
   question_closed_by_provider: 'run',
   disconnect_outcome_unknown: 'run',
-  disconnect_held_input_stays_unsent: 'blocked: the driver\'s turn_ended on session end drains held input into the ended transport',
+  disconnect_held_input_stays_unsent: 'run',
   disconnect_with_open_requests: 'run',
-  send_failure_not_retried: 'skipped: adapter cannot fail a send',
+  send_rejected_not_accepted: 'skipped: no controlled known non-acceptance',
+  accepted_submission_fails_later: 'run',
   replaced_session_ignored: 'run',
-});
-
-/** Current behavior behind the blocked case: the driver ends its turn locally on session_ended; the runtime drains the held item into the ended transport, whose send refuses it. */
-describe('gap: Claude held input on disconnect (current behavior)', () => {
-  it('dispatches the held item after the local turn end instead of dropping it unsent', async () => {
-    // Dropped only after a failed send into the ended transport, with a send-failure notice.
-    expect(await observeHeldInputOnDisconnect(subject)).toEqual({
-      received: 1, settled: ['dropped'], statuses: ['queued', 'dispatching', 'failed'], notices: ['queued_send_failed'], turnEnded: ['error'], running: false,
-    });
-  });
 });

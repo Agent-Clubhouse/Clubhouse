@@ -96,6 +96,8 @@ export function createCodexAppServer() {
 
   const control: NativeControl = {
     received: () => received.filter((m) => m.id !== undefined && (m.method === 'turn/start' || m.method === 'turn/steer')).length,
+    // Replies to the server's own requests (approvals, questions).
+    answered: () => received.filter((m) => m.id !== undefined && m.method === undefined).length,
     beginTurn: async () => {
       const turn = turns.find((t) => !t.started && !t.ended);
       if (!turn) throw new Error('No accepted turn to start');
@@ -135,7 +137,8 @@ export function createCodexAppServer() {
       proc.exitCode = 1;
       proc.emit('exit', 1, null);
     },
-    failNextSend: () => { failNext = true; },
+    // turn/start answered with a JSON-RPC error: Codex started no turn for it.
+    rejectNextSend: () => { failNext = true; },
   };
   return { proc, control };
 }
@@ -155,10 +158,7 @@ export function codexConformanceSubject(spawn: { mockImplementation(fn: never): 
       // ('cancelled' by 'agent'). That is its own bookkeeping; app-server reported none of it.
       disconnectClosure: 'local_closure',
     },
-    canFailSend: true,
-    blocked: {
-      disconnect_held_input_stays_unsent: 'the driver\'s turn_ended on process exit drains held input into the exited process (lifecycle-gaps.test.ts)',
-    },
+    canRejectSend: true,
     create: async () => {
       const servers: Array<ReturnType<typeof createCodexAppServer>> = [];
       spawn.mockImplementation((() => {
