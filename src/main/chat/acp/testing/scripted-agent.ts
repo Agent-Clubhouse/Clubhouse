@@ -62,6 +62,9 @@ export class ScriptedAcpAgent {
   promptsWritten = 0;
   /** Ids of this agent's requests to the client, in the order sent. */
   readonly clientRequestIds: JsonRpcId[] = [];
+  /** Results (not errors) the client sent back for this agent's requests. */
+  answers = 0;
+  private rejectPromptWrite = false;
 
   private client: { onMessage(m: JsonRpcMessage): void; onEnd(e: AcpTransportEnd): void } | undefined;
   private open = false;
@@ -84,7 +87,14 @@ export class ScriptedAcpAgent {
       this.open = true;
       return {
         send: (message) => {
-          if (message.method === ACP_AGENT_METHODS.sessionPrompt) this.promptsWritten++;
+          if (message.method === ACP_AGENT_METHODS.sessionPrompt) {
+            if (this.rejectPromptWrite) {
+              // The pipe refuses the write: nothing reaches the agent.
+              this.rejectPromptWrite = false;
+              throw new Error('Scripted transport refused the write');
+            }
+            this.promptsWritten++;
+          }
           // Deliver on a later tick, as a pipe would.
           queueMicrotask(() => { if (this.open) this.receive(message); });
         },
@@ -98,6 +108,11 @@ export class ScriptedAcpAgent {
     const ready = this.prompts.shift();
     if (ready) return Promise.resolve(ready);
     return new Promise((resolve) => this.promptWaiters.push({ resolve }));
+  }
+
+  /** The transport refuses the next `session/prompt` write, so it never reaches the agent. */
+  refuseNextPromptWrite(): void {
+    this.rejectPromptWrite = true;
   }
 
   /** Answer the next `session/prompt` with this JSON-RPC error as soon as it arrives. */
@@ -177,7 +192,11 @@ export class ScriptedAcpAgent {
     if (typeof msg.method !== 'string') {
       // An answer to one of this agent's requests.
       const waiter = msg.id !== undefined && msg.id !== null ? this.outgoing.get(msg.id) : undefined;
-      if (waiter) { this.outgoing.delete(msg.id!); waiter.resolve(msg); }
+      if (waiter) {
+        this.outgoing.delete(msg.id!);
+        if (msg.result !== undefined) this.answers++;
+        waiter.resolve(msg);
+      }
       return;
     }
     this.received.push({ method: msg.method, params: msg.params });
