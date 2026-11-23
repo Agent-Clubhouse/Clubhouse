@@ -338,7 +338,8 @@ function heldRelease(owner: FixtureOwner, release: () => void, preparationPhase 
     if (preparationPhase) markPhase(owner, 'releaseReturn', `hold-release-${origin}-returned`);
   };
   owner.holds.push(finish);
-  if (owner.hookRequested) releaseOwned(owner, owner.holds, 'hook');
+  // This invocation comes from late registration, not a fresh hook call.
+  if (owner.hookRequested) releaseOwned(owner, owner.holds, 'other');
   return finish;
 }
 
@@ -935,6 +936,26 @@ describe('isolated real MCP producer domain admission', () => {
     expect(observer.rows.complete?.phase).toBe('owner-complete');
     expect(observer.rows.hook?.phase).toBe('hook-fulfilled');
     expect(lines).toHaveLength(7);
+  }));
+
+  it('phase observer attributes immediate late registration release to its actual other invocation', async () => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), { observer } = phaseControl(owner), gate = deferred(), entered = deferred();
+    const actual = observe(owner, 'body', async () => { entered.resolve(); await gate.promise; });
+    await entered.promise;
+    const hook = hookCompletion(owner);
+    let releases = 0;
+    const release = heldRelease(owner, () => { releases++; }, true);
+    release('body');
+    expect(observer.rows.releaseEntry?.phase).toBe('hold-release-other-enter');
+    expect(observer.rows.releaseReturn?.phase).toBe('hold-release-other-returned');
+    expect(observer.rows.coreEntry?.phase).toBe('core-created-hook');
+    expect(owner.complete).toBe(false);
+    gate.resolve();
+    await actual;
+    expect((await hook).failures).toEqual([]);
+    expect(releases).toBe(1);
+    expect(observer.rows.complete?.phase).toBe('owner-complete');
+    expect(observer.rows.hook?.phase).toBe('hook-fulfilled');
   }));
 
   it('phase observer baseline failure remains unavailable while actual owner accounting continues', async () => runFixtureBody(async () => {
