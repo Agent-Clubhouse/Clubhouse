@@ -6,7 +6,7 @@ This is an empirical run-created cohort, not a billing report or a causal compar
 
 Run `python3 docs/ci-efficiency/history_analysis.py` with authenticated `gh` access to `Agent-Clubhouse/Clubhouse`. Only GETs are made; no logs, workflow dispatches, workflow edits or hosted jobs are used. The script uses at most four concurrent job-read requests and caps uncached GETs at 600 per invocation. It fails on API errors, exhausted budget or missing offline data. Network retries are not automatic. Before collecting, core rate allowance was observed as 5,000 remaining; the cached rate-limit response is also retained. Multiple cached invocations do not reset the server's actual limit.
 
-Private cache defaults to `/tmp/clubhouse-ci-history-20261123-cache`. Endpoint strings map to SHA256-named JSON files; `manifest.json` maps endpoints to paths. These raw responses stay outside git. Exported CSVs omit actor identities, logs, commit messages, SHA values and runner host identities. They contain run/job IDs, branch names, job labels and timestamps for auditability.
+Private cache defaults to `/tmp/clubhouse-ci-history-20261123-cache`. Endpoint strings map to SHA256-named JSON files; `manifest.json` maps endpoints to paths. These raw responses stay outside git. Exported CSVs omit actor identities, logs, commit messages and runner host identities. They contain public head SHA values for historical selector replay, run/job IDs, branch names, job labels and timestamps for auditability.
 
 Once cached, regenerate using:
 
@@ -32,7 +32,7 @@ The attempt-specific jobs endpoint can repeat carried-forward successful jobs un
 
 `history-dedup-proof.csv` is a concrete regression check for run 44159641801: seven carried-forward rows in attempt 2 are excluded, including the unchanged x64 macOS build. The new arm64 build and Publish execution remain. Assertions fail if this fixture changes. Jobs lacking timestamps cannot establish distinct zero-time execution identity reliably; their counts are observations, not proof of runner use.
 
-OS is classified from runner labels only: macOS, Windows, Ubuntu/Linux, otherwise unknown. Job names do not establish OS. All skipped jobs get a separate `skipped` category and zero execution seconds, even if the API supplies synthetic timestamps. This prevents skipped macOS-named jobs from being counted as Mac executions. Jobs without complete timing stay in counts and expose missing-duration counts, rather than contributing invented time. Active jobs therefore make duration totals incomplete at observation time.
+OS is classified from runner labels only: macOS, Windows, Ubuntu/Linux, otherwise unknown. Job names do not establish OS. In this snapshot, all 38 unknown-OS job observations are cancelled unresolved-matrix placeholders with zero observed execution seconds. They provide no positive evidence of runner execution or platform. All skipped jobs get a separate `skipped` category and zero execution seconds, even if the API supplies synthetic timestamps. This prevents skipped macOS-named jobs from being counted as Mac executions. Jobs without complete timing stay in counts and expose missing-duration counts, rather than contributing invented time. Active jobs therefore make duration totals incomplete at observation time.
 
 ## Timing, failures and interpretation limits
 
