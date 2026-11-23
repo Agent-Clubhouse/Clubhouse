@@ -24,17 +24,11 @@ import { appLog } from './log-service';
 import { peekProjects } from './project-store';
 import { readProjectAgentDefaults } from './agent-settings-service';
 import { cliStateDir, homePath } from '../orchestrators/shared';
+import { providerDescriptor } from '../../shared/providers/descriptors';
 
 const PROFILES_FILE = 'profiles.json';
 /** Records that the log line and the notice went out, so neither repeats. Holds no profile data. */
 const NOTED_FILE = 'profiles-removed.json';
-
-/** The variable that moves each CLI's state folder, and that folder's default under home. */
-const STATE_DIR: Readonly<Record<string, { key: string; fallback: string }>> = {
-  'claude-code': { key: 'CLAUDE_CONFIG_DIR', fallback: '.claude' },
-  'codex-cli': { key: 'CODEX_HOME', fallback: '.codex' },
-  'copilot-cli': { key: 'COPILOT_HOME', fallback: '.copilot' },
-};
 
 interface SavedProfile {
   id: string;
@@ -80,7 +74,7 @@ function parseSavedProfiles(raw: string): SavedProfile[] | null {
         const env = (config as { env?: unknown } | null)?.env;
         const envRecord = env && typeof env === 'object' ? env as Record<string, unknown> : {};
         variables[provider] = Object.keys(envRecord).sort();
-        const key = STATE_DIR[provider]?.key;
+        const key = providerDescriptor(provider)?.stateDir?.env;
         const dir = key ? envRecord[key] : undefined;
         if (typeof dir === 'string' && dir.trim()) stateDirs[provider] = expandHome(dir.trim());
       }
@@ -108,12 +102,12 @@ async function readSavedProfiles(): Promise<SavedProfile[] | 'unreadable' | null
  * now. Read-only; empty without saved profiles. Never throws.
  */
 export async function removedProfileStateDirs(providerId: string): Promise<string[]> {
-  const spec = STATE_DIR[providerId];
+  const spec = providerDescriptor(providerId)?.stateDir;
   if (!spec) return [];
   try {
     const profiles = await readSavedProfiles();
     if (!Array.isArray(profiles)) return [];
-    const current = path.resolve(cliStateDir(spec.key, spec.fallback));
+    const current = path.resolve(cliStateDir(spec.env, spec.fallback));
     const dirs = new Set<string>();
     for (const profile of profiles) {
       const dir = profile.stateDirs[providerId];

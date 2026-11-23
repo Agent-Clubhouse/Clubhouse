@@ -1,5 +1,5 @@
 import { preparePressure } from './helper-burn-pressure';
-import { isAutoBudgetPolicy } from '../../shared/helper-auto-budget';
+import { AUTO_RESERVE_PROVIDERS, isAutoBudgetPolicy } from '../../shared/helper-auto-budget';
 import { forecastHistory } from '../telemetry/helper-decision-ledger';
 import type { PressureDecision } from '../../shared/helper-burn-pressure';
 /**
@@ -17,6 +17,7 @@ import { createHash, randomUUID } from 'crypto';
 import {
   AUTO_CANDIDATE_PROVIDERS,
   AUTO_LEVEL_FOLLOWS,
+  autoPolicySkip,
   AUTO_LEVELS,
   BUILTIN_PRESETS,
   HELPER_DIFFICULTIES,
@@ -70,6 +71,7 @@ import { AUTO_TIERS, decideAutoProvider, type AutoCandidate, type AutoDecision }
 import { _resetHelperAutoStateForTesting, reserveAutoDecision, rotationCursors } from './helper-auto-state';
 import type { DecisionCandidate, DecisionQuota, DecisionQuotaWindow, HelperDecisionRecord, HelperTaskProfile } from '../../shared/telemetry/helper-usage-contract';
 import { getSettings as getOrchestratorSettings } from './orchestrator-settings';
+import { providerDescriptor } from '../../shared/providers/descriptors';
 import { readProjectAgentDefaults, updateProjectAgentDefaults } from './agent-settings-service';
 import type { DurableAgentConfig } from '../../shared/types';
 import { decideHelperAuto, type ResolvedOrchestrationPolicy } from '../../shared/orchestration-policy';
@@ -437,6 +439,11 @@ function candidateKey(provider: string): string {
   return `${provider}:default`;
 }
 
+/** The saved value of the provider's Auto allow setting (#3803); undefined when it has none. */
+function autoAllowed(provider: string): boolean | undefined {
+  return providerDescriptor(provider)?.helperRouting.allowSetting === 'copilotAuto' ? orchestrationSettings.getCopilotAuto() : undefined;
+}
+
 /**
  * What Auto can choose from, read before the start lock, because a list or a
  * quota read can take a CLI handshake. The choice waits for the lock, so a burst
@@ -459,7 +466,8 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
   const options: AutoOption[] = [];
   await Promise.all(AUTO_CANDIDATE_PROVIDERS.map(async (provider) => {
     if (enabled.length > 0 && !enabled.includes(provider)) { skipped[provider] = 'cli_disabled'; return; }
-    if (provider === 'copilot-cli' && !orchestrationSettings.getCopilotAuto()) { skipped[provider] = 'auto_disabled'; return; }
+    const policySkip = autoPolicySkip(provider, autoAllowed(provider));
+    if (policySkip) { skipped[provider] = policySkip; return; }
     if (!(await providerUsable(provider))) { skipped[provider] = 'cli_unavailable'; return; }
     if (await isProviderCoolingDown(provider)) { skipped[provider] = 'cooling_down'; return; }
     const configuredCell = { ...(orchestrationSettings.getPresets()[provider]?.[difficulty] ?? BUILTIN_PRESETS[provider][difficulty]) };
@@ -697,8 +705,10 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
   }));
   const eligible = options.filter((option) => {
     const currentGeneration = orchestrationSettings.getPresetCellGeneration(option.provider, difficulty);
-    if (enabled.length > 0 && !enabled.includes(option.provider)) skipped[option.provider] = 'cli_disabled';
-    else if (option.provider === 'copilot-cli' && !orchestrationSettings.getCopilotAuto()) skipped[option.provider] = 'auto_disabled';
+    const cliDisabled = enabled.length > 0 && !enabled.includes(option.provider);
+    const policySkip = cliDisabled ? undefined : autoPolicySkip(option.provider, autoAllowed(option.provider));
+    if (cliDisabled) skipped[option.provider] = 'cli_disabled';
+    else if (policySkip) skipped[option.provider] = policySkip;
     else if (isProviderCoolingDownNow(option.provider, now)) skipped[option.provider] = 'cooling_down';
     else if (!sameCell(option.configuredCell, orchestrationSettings.getPresets()[option.provider]?.[difficulty] ?? BUILTIN_PRESETS[option.provider][difficulty])
       || (option.configuredGeneration !== undefined && currentGeneration !== undefined
@@ -1163,7 +1173,7 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
     await orchestrationSettings.saveAutoBudgetPolicy(update.autoBudgetPolicy);
     await appendSettingsAudit({ surface, scope: 'app', key: 'helper_auto.budget.enabled',
       before: before && before !== 'invalid' ? before.enabled : null, after: update.autoBudgetPolicy.enabled, outcome: 'ok' });
-    for (const provider of ['claude-code', 'codex-cli'] as const) {
+    for (const provider of AUTO_RESERVE_PROVIDERS) {
       await appendSettingsAudit({ surface, scope: 'app', key: `helper_auto.budget.${provider}`,
         before: before && before !== 'invalid' ? before.reserves[provider] : null, after: update.autoBudgetPolicy.reserves[provider], outcome: 'ok' });
     }

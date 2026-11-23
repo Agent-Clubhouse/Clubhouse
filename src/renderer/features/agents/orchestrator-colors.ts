@@ -3,11 +3,14 @@
  * Uses CSS custom properties (--ctp-badge-*) for theme compatibility.
  */
 
-export const ORCHESTRATOR_COLORS: Record<string, { bg: string; text: string }> = {
-  'claude-code': { bg: 'rgb(var(--ctp-badge-orange) / 0.2)', text: 'rgb(var(--ctp-badge-orange))' },
-  'copilot-cli': { bg: 'rgb(var(--ctp-badge-blue) / 0.2)', text: 'rgb(var(--ctp-badge-blue))' },
-  'codex-cli': { bg: 'rgb(var(--ctp-badge-teal) / 0.2)', text: 'rgb(var(--ctp-badge-teal))' },
-};
+import { providerDescriptor, providerDescriptors } from '../../../shared/providers/descriptors';
+
+const badge = (color: string) => ({ bg: `rgb(var(--ctp-badge-${color}) / 0.2)`, text: `rgb(var(--ctp-badge-${color}))` });
+
+/** Each built-in provider's badge, from its descriptor's `badgeColor`. */
+export const ORCHESTRATOR_COLORS: Record<string, { bg: string; text: string }> = Object.fromEntries(
+  providerDescriptors().map((d) => [d.id, badge(d.badgeColor)]),
+);
 export const DEFAULT_ORCH_COLOR = { bg: 'rgb(var(--ctp-badge-grey) / 0.2)', text: 'rgb(var(--ctp-badge-grey))' };
 
 const MODEL_PALETTE = [
@@ -40,21 +43,15 @@ export function getOrchestratorColor(id: string): { bg: string; text: string } {
 /**
  * Format an orchestrator ID into a display label.
  * Prefers the displayName from the provided orchestrator list, falling back
- * to a static map of known display names, then to the raw ID.
+ * to the built-in descriptor's display name, then to the raw ID.
  */
-const ORCHESTRATOR_DISPLAY_NAMES: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  'copilot-cli': 'GitHub Copilot',
-  'codex-cli': 'Codex',
-};
-
 export function getOrchestratorLabel(
   orchId: string,
   allOrchestrators?: Array<{ id: string; shortName?: string; displayName?: string }>,
 ): string {
   const info = allOrchestrators?.find((o) => o.id === orchId);
   if (info) return info.displayName || info.shortName || orchId;
-  return ORCHESTRATOR_DISPLAY_NAMES[orchId] || orchId;
+  return providerDescriptor(orchId)?.displayName || orchId;
 }
 
 /**

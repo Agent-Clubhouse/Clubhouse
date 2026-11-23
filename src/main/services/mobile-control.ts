@@ -8,6 +8,7 @@ import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, switchNote } from '../../share
 import { MOBILE_COMMAND_TYPES, MOBILE_GRANT_ANSWERS, type MobileChatControls, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
 import { AGENT_IDLE_SLEEP_MINUTES } from '../../shared/idle-sleep';
 import { boundPendingPermissions, hasSupportedDeny, isIncompletePermission } from './annex-chat-bounds';
+import { isFeatureOffered, resolveEffectiveFeature } from '../../shared/providers/features';
 
 const DENY_OPTION_KINDS: ReadonlySet<string> = new Set(['reject_once', 'reject_always', 'cancel_turn']);
 const INCOMPLETE_APPROVE_REFUSED = 'This request is too large to review here. Review it on the desktop to approve it, or deny it here.';
@@ -279,7 +280,8 @@ export async function executeChatCommand(command: Extract<MobileCommand, { sessi
     const blocks: ContentBlock[] = command.text ? [{ type: 'text', text: command.text }] : [];
     if (command.attachmentIds?.length) {
       const caps = runtime.getCapabilities?.();
-      if (caps?.images !== true) throw new MobileControlError('images_not_supported');
+      // The negotiated session decides; with no session record nothing is offered.
+      if (!isFeatureOffered(resolveEffectiveFeature({ declarations: undefined, runtime: 'chat', feature: 'images', session: caps }))) throw new MobileControlError('images_not_supported');
       if (!resolveAttachments) throw new MobileControlError('attachment_unavailable');
       try { blocks.push(...await resolveAttachments(command.attachmentIds, caps)); }
       catch { // telemetry-exempt: expired or foreign ids are a bounded caller error; no content is logged.

@@ -11,6 +11,7 @@ import type { QuotaCalibrationPlan } from './helper-burn-pressure';
  */
 
 import { isEffortValue } from './agent-helpers';
+import { PROVIDER_DESCRIPTORS, providerDescriptor, providerIdsWhere, type AutoProviderId, type PresetProviderId, type ProviderAutoPolicy } from './providers/descriptors';
 import type { HelperAutoOffReason, HelperAutoSource } from './orchestration-policy';
 
 export const HELPER_DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
@@ -56,25 +57,50 @@ export const HELPER_ROUTING_POLICY_VERSION = 4;
 
 /**
  * The providers with an Auto mapping: presets for every level, which
- * `difficulty` and `resolveAutoLevel` use. Copilot joined in #3085. Its model
- * list may report no efforts for a model, so a Copilot cell can have none.
+ * `difficulty` and `resolveAutoLevel` use. From each descriptor's
+ * `helperRouting.presets`; Copilot joined in #3085. Its model list may report
+ * no efforts for a model, so a Copilot cell can have none.
  */
-export const PRESET_PROVIDERS = ['claude-code', 'codex-cli', 'copilot-cli'] as const;
-export type PresetProvider = (typeof PRESET_PROVIDERS)[number];
+export const PRESET_PROVIDERS: readonly PresetProviderId[] = providerIdsWhere<PresetProviderId>((d) => d.helperRouting.presets !== undefined);
+export type PresetProvider = PresetProviderId;
 
 export function isPresetProvider(value: unknown): value is PresetProvider {
   return (PRESET_PROVIDERS as readonly unknown[]).includes(value);
 }
 
 /**
- * The providers `cli: "auto"` chooses between. Copilot has no plan-quota reader,
- * so it ranks last, behind even low and temporarily unmeasured providers (#3279).
+ * The providers `cli: "auto"` chooses between: descriptors whose Auto policy is
+ * `candidate` or `opt_in` (#3803). Ranking follows the descriptor's quota kind:
+ * an `unknown`-quota provider (Copilot) ranks last, behind even low and
+ * temporarily unmeasured providers (#3279).
  */
-export const AUTO_CANDIDATE_PROVIDERS = ['claude-code', 'codex-cli', 'copilot-cli'] as const satisfies readonly PresetProvider[];
-export type AutoCandidateProvider = (typeof AUTO_CANDIDATE_PROVIDERS)[number];
+export const AUTO_CANDIDATE_PROVIDERS: readonly AutoCandidateProvider[] = providerIdsWhere<AutoCandidateProvider>((d) => d.helperRouting.auto !== 'excluded');
+export type AutoCandidateProvider = AutoProviderId & PresetProvider;
 
 export function isAutoCandidateProvider(value: unknown): value is AutoCandidateProvider {
   return (AUTO_CANDIDATE_PROVIDERS as readonly unknown[]).includes(value);
+}
+
+/**
+ * Why Auto's declared policy (#3803) skips a provider, or undefined when it may
+ * be considered. `allowed` is the provider's `allowSetting` as read: a
+ * `candidate` is skipped only when it is false; an `opt_in` only when it isn't
+ * true; an `excluded` or unknown provider always.
+ */
+export function autoPolicySkip(provider: string, allowed: boolean | undefined): 'auto_not_supported' | 'auto_disabled' | undefined {
+  return isAutoCandidateProvider(provider) ? autoPolicySkipFor(providerDescriptor(provider)?.helperRouting.auto, allowed) : 'auto_not_supported';
+}
+
+/** `autoPolicySkip` for a declared policy; undefined is a provider with none. */
+export function autoPolicySkipFor(auto: ProviderAutoPolicy | undefined, allowed: boolean | undefined): 'auto_not_supported' | 'auto_disabled' | undefined {
+  if (auto === undefined || auto === 'excluded') return 'auto_not_supported';
+  if (auto === 'opt_in') return allowed === true ? undefined : 'auto_disabled';
+  return allowed === false ? 'auto_disabled' : undefined;
+}
+
+/** Auto ranks this provider last because Clubhouse can't read its quota (#3279). */
+export function isLastResortProvider(provider: string): boolean {
+  return isAutoCandidateProvider(provider) && providerDescriptor(provider)?.helperRouting.quota === 'unknown';
 }
 
 export interface PresetCell {
@@ -86,31 +112,14 @@ export interface PresetCell {
 export type ProviderPresets = Record<HelperDifficulty, PresetCell>;
 
 /**
- * The built-in presets. These are tunable starting proposals, not measured
- * optimal values: nothing has compared them on real tasks. Every value is checked
- * against the CLI's list when it is used, and one that is no longer offered is
- * never run.
+ * The built-in presets, from each descriptor. These are tunable starting
+ * proposals, not measured optimal values: nothing has compared them on real
+ * tasks. Every value is checked against the CLI's list when it is used, and one
+ * that is no longer offered is never run.
  */
-export const BUILTIN_PRESETS: Readonly<Record<PresetProvider, ProviderPresets>> = {
-  'claude-code': {
-    easy: { model: 'haiku', effort: 'low' },
-    medium: { model: 'sonnet', effort: 'medium' },
-    hard: { model: 'opus', effort: 'high' },
-  },
-  'codex-cli': {
-    easy: { model: 'gpt-6-luna', effort: 'low' },
-    medium: { model: 'gpt-6.1-terra', effort: 'medium' },
-    hard: { model: 'gpt-6.1-sol', effort: 'high' },
-  },
-  // Copilot's own ids for the Claude family, at the same levels as Claude Code's.
-  // Its live list (the SDK's models.list) reports these levels for them; its
-  // fallback list reports none, so there a cell shows as unverified.
-  'copilot-cli': {
-    easy: { model: 'claude-haiku-5.5', effort: 'low' },
-    medium: { model: 'claude-sonnet-5.5', effort: 'medium' },
-    hard: { model: 'claude-opus-5.5', effort: 'high' },
-  },
-};
+export const BUILTIN_PRESETS: Readonly<Record<PresetProvider, ProviderPresets>> = Object.fromEntries(
+  PRESET_PROVIDERS.map((id) => [id, PROVIDER_DESCRIPTORS[id].helperRouting.presets]),
+) as Record<PresetProvider, ProviderPresets>;
 
 /**
  * The user's overrides. Only what differs from a built-in is kept. Minimum and

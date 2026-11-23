@@ -16,6 +16,7 @@ import { IPC } from '../ipc-channels';
 /** Bump on breaking attribute changes; exported as `clubhouse.telemetry.schema`. */
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
 import type { BuiltinThemeId } from '../types';
+import { PROVIDER_TELEMETRY_CODES } from '../providers/descriptors';
 import { ACTION_EVENT_KINDS, ACTION_STEP_KINDS, MISSED_RUN_RULES } from '../actions/types';
 import { GRANT_ACTIONS } from '../agent-grants';
 import { DISPATCHER_USAGE_KINDS } from '../dispatcher-usage';
@@ -325,7 +326,7 @@ export const ATTR = {
 
   // Agents (§5.1 examples; instrumented from Phase 3)
   agentKind: enumAttr('clubhouse.agent.kind', ['durable', 'quick', 'companion']),
-  orchestrator: enumAttr('clubhouse.orchestrator', ['claude-code', 'codex-cli', 'copilot-cli', 'other']),
+  orchestrator: enumAttr('clubhouse.orchestrator', [...PROVIDER_TELEMETRY_CODES, 'other']),
   agentRuntime: enumAttr('clubhouse.agent.runtime', ['pty', 'headless', 'chat']),
   exitCode: intAttr('process.exit.code'),
   agentIdHash: hashAttr('clubhouse.agent.id_hash'),
@@ -605,7 +606,7 @@ export const ATTR = {
   hooksEnabled: boolAttr('clubhouse.hooks.enabled'),
   wrapperApplied: boolAttr('clubhouse.wrapper.applied'),
   // A helper's start and the presets behind it (#2671). Codes only: never a raw model id, a task or a persona.
-  helperRoutingRequestedCli: enumAttr('clubhouse.helper_routing.requested_cli', ['claude-code', 'codex-cli', 'copilot-cli', 'auto', 'other', 'unset']),
+  helperRoutingRequestedCli: enumAttr('clubhouse.helper_routing.requested_cli', [...PROVIDER_TELEMETRY_CODES, 'auto', 'other', 'unset']),
   helperRoutingDifficulty: enumAttr('clubhouse.helper_routing.difficulty', ['easy', 'medium', 'hard', 'none']),
   helperRoutingMode: enumAttr('clubhouse.helper_routing.mode', ['explicit', 'preset', 'auto']),
   helperRoutingEffort: enumAttr('clubhouse.helper_routing.effort', ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'other']),
@@ -630,7 +631,7 @@ export const ATTR = {
   helperRunIdHash: hashAttr('clubhouse.helper_run.id_hash'),
   helperDecisionKnown: boolAttr('clubhouse.helper_decision.known'),
   helperDecisionOutcome: enumAttr('clubhouse.helper_decision.outcome', HELPER_DECISION_OUTCOMES),
-  helperAskerCli: enumAttr('clubhouse.helper_decision.asker_cli', ['claude-code', 'codex-cli', 'copilot-cli', 'other', 'none']),
+  helperAskerCli: enumAttr('clubhouse.helper_decision.asker_cli', [...PROVIDER_TELEMETRY_CODES, 'other', 'none']),
   helperTaskProfile: enumAttr('clubhouse.helper_decision.task_profile', HELPER_TASK_PROFILES),
   helperDecidedAtMs: intAttr('clubhouse.helper_decision.decided_at_ms'),
   helperDecisionAgeMs: intAttr('clubhouse.helper_decision.age_ms'),

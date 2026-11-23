@@ -17,6 +17,7 @@ import {
   HELPER_ROUTING_REASONS,
   PRESET_CELL_STATES,
   PRESET_PROVIDERS,
+  isLastResortProvider,
   QUOTA_SOURCES,
   QUOTA_STATES,
   QUOTA_UNKNOWN_REASONS,
@@ -55,7 +56,7 @@ export function helperRoutingCapability() {
     /** The providers with presets, Copilot included (#3085), and the ones `cli: "auto"` chooses between. */
     presetProviders: PRESET_PROVIDERS,
     autoCandidates: AUTO_CANDIDATE_PROVIDERS,
-    lastResortCandidates: ['copilot-cli'] as const,
+    lastResortCandidates: AUTO_CANDIDATE_PROVIDERS.filter(isLastResortProvider),
     copilotAuto: true,
     resetAwareBudget: 1,
     reasons: HELPER_ROUTING_REASONS,

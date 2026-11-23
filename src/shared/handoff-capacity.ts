@@ -1,7 +1,9 @@
 import { isMachineFingerprint } from './agent-address';
+import { providerIdsWhere, type CapacityProviderId } from './providers/descriptors';
 
-export const CAPACITY_PROVIDERS = ['claude-code', 'copilot-cli', 'codex-cli'] as const;
-export type CapacityProvider = typeof CAPACITY_PROVIDERS[number];
+/** Descriptors with `capacityTracked`. Peers validate this exact key set, so changing it is a wire change. */
+export const CAPACITY_PROVIDERS: readonly CapacityProviderId[] = providerIdsWhere<CapacityProviderId>((d) => d.capacityTracked);
+export type CapacityProvider = CapacityProviderId;
 export type ProviderCapacity = 'available' | 'limited' | 'unavailable' | 'unknown';
 export interface CapacityAgentCounts {
   running: number;
@@ -58,9 +60,7 @@ export function parseHandoffCapacity(raw: unknown): HandoffCapacity {
     machine: raw.machine, online: true, sampledAt: raw.sampledAt, lastSeen,
     agents: { running: raw.agents.running, sleeping: raw.agents.sleeping, idleDurable: raw.agents.idleDurable },
     load: raw.load, disk: raw.disk,
-    providers: {
-      'claude-code': raw.providers['claude-code'], 'copilot-cli': raw.providers['copilot-cli'], 'codex-cli': raw.providers['codex-cli'],
-    },
+    providers: Object.fromEntries(CAPACITY_PROVIDERS.map((provider) => [provider, (raw.providers as Record<CapacityProvider, ProviderCapacity>)[provider]])) as Record<CapacityProvider, ProviderCapacity>,
     accepting_handoffs: raw.accepting_handoffs,
   };
 }

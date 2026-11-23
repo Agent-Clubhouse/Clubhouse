@@ -12,6 +12,7 @@
  */
 
 import type { OrchestratorId } from '../../../shared/types';
+import { providerDescriptor } from '../../../shared/providers/descriptors';
 
 export interface MascotProps {
   /** Rendered width and height in px. */
@@ -206,9 +207,10 @@ export function GenericMascot({ size = 88, awake, error }: MascotProps) {
 /** The mascot for an agent's provider, sleeping unless `awake`. */
 export function SleepingMascot({ orchestrator, size = 88, awake, error }: MascotProps & { orchestrator?: OrchestratorId }) {
   const props = { size, awake, error };
-  const art = orchestrator === 'claude-code' ? <ClaudeMascot {...props} />
-    : orchestrator === 'codex-cli' ? <CodexMascot {...props} />
-      : orchestrator === 'copilot-cli' ? <CopilotMascot {...props} />
+  const mascot = providerDescriptor(orchestrator)?.mascot;
+  const art = mascot === 'claude' ? <ClaudeMascot {...props} />
+    : mascot === 'codex' ? <CodexMascot {...props} />
+      : mascot === 'copilot' ? <CopilotMascot {...props} />
         : <GenericMascot {...props} />;
   return <span className={`inline-block ${error ? 'opacity-50' : ''}`} data-testid="agent-mascot">{art}</span>;
 }

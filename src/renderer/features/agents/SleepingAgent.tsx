@@ -4,6 +4,7 @@ import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ATTR, tel } from '../../telemetry';
 import { Agent } from '../../../shared/types';
+import { providerDescriptor } from '../../../shared/providers/descriptors';
 import { useAgentStore } from '../../stores/agentStore';
 import { isDispatcherAgent, useLocalProject } from '../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../dispatcher/dispatcherNav';
@@ -58,9 +59,8 @@ function useCompact(ref: React.RefObject<HTMLElement | null>): boolean {
 }
 
 function cliName(orchestrator?: string): string {
-  if (orchestrator === 'codex-cli') return 'codex';
-  if (orchestrator === 'copilot-cli') return 'copilot';
-  return orchestrator && orchestrator !== 'claude-code' ? orchestrator : 'claude';
+  if (!orchestrator) return 'claude';
+  return providerDescriptor(orchestrator)?.command ?? orchestrator;
 }
 
 /**
