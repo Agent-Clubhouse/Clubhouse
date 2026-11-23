@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { acpChatCapabilities, negotiate } from './capabilities';
+import { acpChatCapabilities, negotiate, type AcpSessionFacts } from './capabilities';
 
-const NO_FACTS = { configOptions: [], commands: false, usage: false };
+const NO_FACTS: AcpSessionFacts = { configOptions: [], commands: false, usage: false };
 
 describe('ACP capabilities', () => {
   it('reads omitted and null session capabilities as not advertised, {} as advertised', () => {
