@@ -1,0 +1,90 @@
+run_id,event,conclusion,mode,reason,diff_base,changed_count,unit_files_proposed,failed_paths,directory_rule_misses,shadow_known_file_omissions,failures_without_file
+40367203669,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),ca2390834b25d40a4bf16b35c8c69ef73195809b,1,,1,1,0,0
+40369799917,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),343fc8c3e06d6c363659d26137b69b7821700b08,2,,1,1,0,0
+40454933531,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),1be5ee65c22ad1b6ddb07633bf2ffa9e8a354e71,22,,1,1,0,0
+40469557711,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),0e3cbee88e667ddf07d4fe9bfc03507861fcffc1,21,,0,0,0,0
+41023001213,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),56209c3e1e31c8f896fcdb3541e75bc993ebab62,49,,1,0,0,0
+41027635652,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),000821b09ddbd1f64af25eef42d6aebc45a0abc2,2,,0,0,0,0
+41032963108,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),24b100888fa3bedbdd76004c8c28d29079355063,18,,0,0,0,0
+41033762745,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),4ffb75eb93c100e76e1c0139d0d6c12117266478,3,,0,0,0,0
+41035748663,push,cancelled,full,no-plan,,,,0,,,0
+41037391983,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),4e9556f1f4e59d3366abe76700d5a007a59ae40e,6,,1,1,0,0
+41040438284,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),1c08c8a9a0a68be4648e41c1472354378d72deb0,2,,0,0,0,0
+41042623065,push,cancelled,full,no-plan,,,,0,,,0
+41042934480,push,cancelled,full,no-plan,,,,0,,,0
+41217664080,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),29e36247ebbb9125ecb7c12df88949af598cd95a,10,,1,1,0,0
+41236556901,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),aed796c85fb0755a2bb9e8771e278ba6a1bb22ea,8,,1,0,0,0
+41238764904,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),49bf2861bf29462dc820843ad975353322dff9d8,8,,0,0,0,1
+41239876812,pull_request,skipped,full,no-plan,,,,0,,,0
+41239877138,pull_request,skipped,full,no-plan,,,,0,,,0
+41241995443,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),242d337a5e109a9caef032a3e3bca6ab5bba7d78,32,,0,0,0,0
+41245249169,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),23ad12b6f9c70ce9a86ff19e69bd962938f53e09,17,,0,0,0,1
+41275415083,push,cancelled,full,no-plan,,,,0,,,0
+41276155944,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),dfa7c9e58b4c37060deeb60d82d314edf31f751f,11,,0,0,0,0
+41287673964,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),dda74a1259beb5a969ed836fb343ce7dd4ed2d2c,1,,0,0,0,0
+41334262195,push,cancelled,full,no-plan,,,,0,,,0
+41335988354,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),9d3e568fb900e93af9a9a8b973719d0a20549c7a,7,,0,0,0,0
+41404558883,push,cancelled,full,no-plan,,,,0,,,0
+41404745038,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),093caa241fbda71c86a545914b72762cbc516e4e,2,,0,0,0,0
+41406385511,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),fd5391df0a02787a19599ecd4a49cd4709d936b2,2,,0,0,0,0
+41406613029,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),fd5391df0a02787a19599ecd4a49cd4709d936b2,8,,0,0,0,0
+41969444995,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),1d1c42d5fec93218b083b4ac305c66a220d44080,71,,1,1,0,4
+41988479714,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),a5de9f452db2adc31cb793a8091b1b7e850b1175,111,,1,0,0,0
+42187343908,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),7b58f004eed465f35e7b8ce66c07a6a61eb3da65,2,,1,1,0,0
+42196494771,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),5ca9e67f3e46f79b3c697f8799c757a06684ca9d,18,,2,1,0,0
+42206172234,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),1dfa15162d075d58b1ef4831d975891a59c499c5,1,,0,0,0,0
+42370554943,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),999bb2fdf24d12d8c9fe1e09607131b5630c1160,54,,0,0,0,0
+42391240000,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),77c8b520389bf52fc92fcd843295665c1681d6c7,132,,0,0,0,1
+42416563900,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),e1e0c6bf6d6237dcd7c1a3406a6d56031a4463b2,73,,0,0,0,0
+42421651460,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),533f09e077d85b1bbc1260e7c56d0c827635bfff,137,,1,0,0,0
+42431653088,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),b5ec6be0efe5c321f7750f80e89d67fafa31d476,139,,0,0,0,0
+42474437298,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),6e82921577c6496530a7132cb8708032876ab2d6,5,,0,0,0,0
+42476987853,pull_request,skipped,full,no-plan,,,,0,,,0
+42480059658,pull_request,skipped,full,no-plan,,,,0,,,0
+42495867320,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),b7f00afce53420799a9369ac92042da5aff05351,17,,0,0,0,0
+42497591362,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),15f6f69e08baa014ad61eb005f9d547a753e5c87,27,,0,0,0,1
+42500678780,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),4586a73d61103a1f8dd8d0a54d9849c7d341a836,5,,0,0,0,0
+42510925336,push,cancelled,full,no-plan,,,,0,,,0
+42517512469,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),c6165c98cacea15644de4a9e3ca5d27db668f9fb,33,,0,0,0,0
+42752754629,push,cancelled,full,no-plan,,,,0,,,0
+42755119443,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),fb8471f1c633465418a987f59cbddea608d1757a,15,,1,1,0,0
+42988311463,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),e517b254680b8d9affeb13ba27c0eac6c3ee2291,15,,2,2,0,0
+43234216967,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),d030e0111406b3aafa20cfb79d3926b033e97c65,14,,1,0,0,0
+43279932732,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),6c3746091e6d36b7c5e88bfae2da38f8165817e2,7,,0,0,0,0
+43357413937,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),533545b90ed16dd683788fccc510371b6d6ff203,1,,0,0,0,0
+43391450721,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),9cbaca6c92c91783fc9883176b0606a9832fa48c,45,,1,0,0,0
+43508233681,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),9ed0b2f37e94e5e02933d8e2875bda1ababf81fe,31,,0,0,0,1
+43511064970,push,cancelled,full,no-plan,,,,0,,,0
+43551087219,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),2a72d97741ba962119fa4ea3ad2e03d0de3fc4c7,1,,1,1,0,0
+43563762119,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),7e6ca9397a5ffd09e301357dcea9abc789803ed1,7,,1,1,0,2
+43566276420,pull_request,skipped,full,no-plan,,,,0,,,0
+43668299862,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),8168e44a4b21b100e7bb95fa95f74beacb691d0a,13,,0,0,0,0
+43703728172,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),be12f5a554c8778a08cfe5fa2840af597180e435,7,,1,1,0,0
+43795917153,push,cancelled,full,no-plan,,,,0,,,0
+43871910121,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),ad5789182f348521a738d67a3d11f83a21b87a9c,7,,2,2,0,0
+43871960015,push,cancelled,full,no-plan,,,,0,,,0
+44039605154,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),cacd49ba7ce6a9744f16db033f6e67c46a97ee2a,4,,0,0,0,0
+44061010178,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),e91ce8a3e2c78da570c3ab3a103f97bbb91130e8,22,,1,0,0,0
+44066815888,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),a4664ace12fc2ac8f8966ce7be6770423251cd5c,20,,0,0,0,1
+44068198571,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),a4664ace12fc2ac8f8966ce7be6770423251cd5c,14,,0,0,0,0
+44071360154,push,cancelled,full,no-plan,,,,0,,,0
+44127078821,pull_request,cancelled,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),5f893335686d2ca189f3691f39a3e2900ca0d578,15,,0,0,0,0
+44177241430,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),aa193423d0f81798337ac5d3652cffe6fec3ea5a,33,,0,0,0,0
+44352914648,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),c5a8133a1b9f820b9934b0270d8df3307f0103a9,1,,0,0,0,0
+44486726159,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),dcea3a48ecbefcb7ba5c2c831a038f58e580c473,37,,3,2,0,0
+44715575990,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),ae56577af786b0db79f21d137d0b334a5f7847dc,56,,1,0,0,1
+44868309476,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),69ef383cefec405d811f1c199f25c10cdc0395b6,425,,7,0,0,0
+44876043424,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),69ef383cefec405d811f1c199f25c10cdc0395b6,11,,3,1,0,4
+44880178404,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),6130b29669f58c8a7bad112aa745d4ca43775971,15,,0,0,0,0
+44969593360,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),c43ffb37d20650c542e449a8a04a9fd84e65b655,145,,0,0,0,0
+44971161674,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),c43ffb37d20650c542e449a8a04a9fd84e65b655,145,,0,0,0,0
+44976247783,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),7dfc8b1541bc8c77980faaff782f573c2fa85a15,27,,1,1,0,0
+44993228824,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),e68536e2d292ed0b824230e158e54ff79b2f027d,94,,1,0,0,0
+45005668220,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),63f140b2a0ba00e686fb727a931d6b340fc3ee7e,94,,0,0,0,0
+45007610796,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),63f140b2a0ba00e686fb727a931d6b340fc3ee7e,94,,0,0,0,0
+45017029171,pull_request,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),edcd915763a2ec73f0e8149917b4683ced06ecd6,77,,0,0,0,0
+45046385831,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),70eff94e9042ccc304e68282e76afc9065497858,74,,2,0,0,0
+45100981056,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),50c474b48f57e0256661244bd29b9343ec112bc4,430,,1,0,0,0
+45138480825,pull_request,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),50c474b48f57e0256661244bd29b9343ec112bc4,2,,2,2,0,1
+45277744872,push,success,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),50c474b48f57e0256661244bd29b9343ec112bc4,5,,0,0,0,0
+45284846388,push,failure,full,outside-reviewed-cohort (production/config/fixture/shared/preload/native/platform boundaries),c8a8078dc372309742e22615ad65502bb2edc5e8,20,,1,1,0,0

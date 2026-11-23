@@ -1,0 +1,73 @@
+run_id,job_id,os,job,failure_path,first_report_utc,evidence
+41023001213,123954715788,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/annex-mobile-contract.test.ts,2026-10-30T07:57:07.9662570Z,reporter
+41217664080,124585508148,macos,macOS unit,src/main/telemetry/annex-telemetry.test.ts,2026-10-31T16:06:30.7073320Z,reporter
+41217664080,124585508196,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/telemetry/annex-telemetry.test.ts,2026-10-31T16:04:25.6892773Z,reporter
+41217664080,124585508265,linux,"Unit + Component Tests (ubuntu-latest, 2/2)",src/main/telemetry/annex-telemetry.test.ts,2026-10-31T16:03:42.5711281Z,reporter
+40454933531,122026327376,macos,macOS unit,src/renderer/features/agents/details/AgentDetailsAsleep.test.tsx,2026-10-27T05:36:32.5439020Z,reporter
+40367203669,121728156502,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/agent-runtime/checkpoint-tracker.test.ts,2026-10-26T17:19:24.4046035Z,reporter
+41236556901,124641489644,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/agent-config-helpers.git.test.ts,2026-10-31T19:59:36.3733454Z,reporter
+41037391983,124001672404,windows,"Unit + Component Tests (windows-latest, 1/2)",src/renderer/features/agents/details/AgentDetailsAsleep.test.tsx,2026-10-30T10:02:07.6472523Z,reporter
+41988479714,127114863372,windows,"Unit + Component Tests (windows-latest, 1/2)",test/mcp-off/mcp-off-revocation.test.ts,2026-11-05T07:39:03.5068666Z,reporter
+41969444995,127054058667,macos,macOS unit,src/main/orchestrators/adapters/fixture-replay.test.ts,2026-11-05T04:46:49.4427210Z,reporter
+41969444995,127054058678,linux,"Unit + Component Tests (ubuntu-latest, 1/2)",,,no-path-discriminator
+41969444995,127054058694,linux,"Unit + Component Tests (ubuntu-latest, 2/2)",,,no-path-discriminator
+41969444995,127054058765,windows,"Unit + Component Tests (windows-latest, 1/2)",,,no-path-discriminator
+41969444995,127054058806,windows,"Unit + Component Tests (windows-latest, 2/2)",,,no-path-discriminator
+42421651460,128551223625,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/orchestrators/copilot-session-store.test.ts,2026-11-07T22:43:25.0658498Z,reporter
+42497591362,128784950548,linux,Annex E2E Tests (ubuntu-latest),,,no-path-discriminator
+43508233681,132175958733,linux,"Chat E2E Tests (ubuntu-latest, 2/3)",,,no-path-discriminator
+43391450721,131772165221,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/clubhouse-mcp/tools/project-import-tools.test.ts,2026-11-13T08:18:47.9126942Z,reporter
+43563762119,132353074329,linux,"Unit + Component Tests (ubuntu-latest, 1/2)",src/renderer/features/agents/AgentGrantsSettings.test.tsx,2026-11-14T06:00:08.0386452Z,reporter
+43563762119,132356848722,linux,"Chat E2E Tests (ubuntu-latest, 1/3)",,,no-path-discriminator
+43563762119,132356848866,windows,"Chat E2E Tests (windows-2022, 1/3)",,,no-path-discriminator
+43234216967,131237281841,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/project-import/service.test.ts,2026-11-12T14:14:06.7071232Z,reporter
+44061010178,133962675113,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/annex-mobile-contract.test.ts,2026-11-17T10:04:12.3698766Z,reporter
+44061010178,133962675181,linux,"Unit + Component Tests (ubuntu-latest, 1/2)",src/main/services/annex-mobile-contract.test.ts,2026-11-17T10:04:00.8921213Z,reporter
+44066815888,133986502479,linux,"E2E Tests (ubuntu-latest, 3/3)",,,no-path-discriminator
+44715575990,136218113092,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/annex-mobile-contract.test.ts,2026-11-20T10:04:04.8368320Z,reporter
+44715575990,136218113109,linux,"Unit + Component Tests (ubuntu-latest, 1/2)",src/main/services/annex-mobile-contract.test.ts,2026-11-20T10:02:53.6371463Z,reporter
+44715575990,136221712556,windows,"Annex E2E Tests (windows-2022, 1/2)",,,no-path-discriminator
+44868309476,136736957566,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/orchestrators/passive-session-lookup.test.ts,2026-11-21T05:05:28.3702509Z,reporter
+44868309476,136736957566,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/agent-system.test.ts,2026-11-21T04:56:38.3622210Z,reporter
+44868309476,136736957566,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/dispatcher/dispatcher-agent-card-display.test.ts,2026-11-21T05:00:46.3149093Z,reporter
+44868309476,136736957566,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/read-only-helper-work.test.ts,2026-11-21T05:01:52.6201853Z,reporter
+44868309476,136736957566,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/remote-quick-details.test.ts,2026-11-21T04:59:23.4323112Z,reporter
+44868309476,136736957624,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/read-only-repository-changes.test.ts,2026-11-21T04:58:15.4445358Z,reporter
+44868309476,136736957624,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/remote-agent-details.test.ts,2026-11-21T04:56:36.3808615Z,reporter
+44868309476,136736957641,linux,"Unit + Component Tests (ubuntu-latest, 2/2)",src/main/services/agent-system.test.ts,2026-11-21T04:56:01.6208866Z,reporter
+44876043424,136760892815,linux,"Unit + Component Tests (ubuntu-latest, 2/2)",src/main/services/connection-guidance.test.ts,2026-11-21T06:35:01.8859978Z,reporter
+44876043424,136760892841,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/dispatcher-wire-source.test.ts,2026-11-21T06:35:12.2490012Z,reporter
+44876043424,136760892842,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/connection-guidance.test.ts,2026-11-21T06:38:29.2533074Z,reporter
+44876043424,136760892842,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/managed-agents/restart.test.ts,2026-11-21T06:40:04.1148186Z,reporter
+44876043424,136760892902,linux,"Unit + Component Tests (ubuntu-latest, 1/2)",src/main/services/dispatcher-wire-source.test.ts,2026-11-21T06:35:02.9983375Z,reporter
+44876043424,136763116444,linux,"Annex E2E Tests (ubuntu-latest, 1/2)",,,no-path-discriminator
+44876043424,136763116540,windows,"Annex E2E Tests (windows-2022, 1/2)",,,no-path-discriminator
+44876043424,136763116612,linux,"Chat E2E Tests (ubuntu-latest, 3/3)",,,no-path-discriminator
+44876043424,136763116641,windows,"Chat E2E Tests (windows-2022, 3/3)",,,no-path-discriminator
+45100981056,137451606209,windows,"Unit + Component Tests (windows-latest, 1/2)",test/annex-v2/handoff-producer-admission.test.ts,2026-11-23T02:43:18.9491941Z,reporter
+45138480825,137570593989,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/group-project-notice-ledger/pages.test.ts,2026-11-23T08:33:28.3967866Z,reporter
+45138480825,137570593989,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/managed-agents/auto-migrate.test.ts,2026-11-23T08:32:39.1515691Z,reporter
+45138480825,137574235241,windows,"Chat E2E Tests (windows-2022, 1/3)",,,no-path-discriminator
+45046385831,137281878332,linux,"Unit + Component Tests (ubuntu-latest, 2/2)",src/main/services/annex-server.test.ts,2026-11-22T16:57:54.5289279Z,reporter
+45046385831,137281878342,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/annex-server.test.ts,2026-11-22T16:58:50.2480623Z,reporter
+45046385831,137281878503,linux,"Unit + Component Tests (ubuntu-latest, 1/2)",test/annex-v2/annex-native-handoff-admission.test.ts,2026-11-22T16:55:45.3324468Z,reporter
+41245249169,124667263764,linux,Linux Package Smoke Test,,,no-path-discriminator
+41238764904,124648060814,linux,Linux Package Smoke Test,,,no-path-discriminator
+40369799917,121737298263,linux,"Unit + Component Tests (ubuntu-latest, 1/2)",src/renderer/features/agents/details/AgentDetailsAsleep.test.tsx,2026-10-26T17:37:21.7371944Z,reporter
+42391240000,128459108226,macos,macOS build + E2E smoke,,,no-path-discriminator
+42196494771,127832333477,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/agent-runtime/checkpoint-tracker.test.ts,2026-11-06T10:09:07.5926111Z,reporter
+42196494771,127832333477,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/goobers-event-stream.test.ts,2026-11-06T10:08:00.8600399Z,reporter
+42187343908,127790773651,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/agent-runtime/checkpoint-tracker.test.ts,2026-11-06T08:26:24.2854236Z,reporter
+42988311463,130417573228,windows,"Unit + Component Tests (windows-latest, 1/2)",src/main/services/asset-catalog/store.test.ts,2026-11-11T08:45:23.8842546Z,reporter
+42988311463,130417573228,windows,"Unit + Component Tests (windows-latest, 1/2)",test/e2e-cleanup.test.ts,2026-11-11T08:44:52.1891258Z,reporter
+43551087219,132313503509,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/managed-agents/plain.test.ts,2026-11-14T03:25:00.5614544Z,reporter
+42755119443,129627669167,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/managed-agents/restart.test.ts,2026-11-10T04:24:09.3927833Z,reporter
+44486726159,135440498045,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/agent-runtime/agent-mcp-launch.test.ts,2026-11-19T08:45:33.0953525Z,reporter
+44486726159,135440498045,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/managed-agents/agents.test.ts,2026-11-19T08:59:19.5897192Z,reporter
+44486726159,135440498045,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/managed-agents/auto-migrate.test.ts,2026-11-19T08:59:19.6131280Z,reporter
+43871910121,133315101970,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/annex-agent-calls.test.ts,2026-11-16T13:05:27.6698350Z,reporter
+43871910121,133315101970,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/clubhouse-mcp/tools/project-import-tools.test.ts,2026-11-16T13:20:30.7407890Z,reporter
+43703728172,132780280533,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/project-import/service.test.ts,2026-11-15T10:26:55.9961857Z,reporter
+44976247783,137066785141,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/group-project-notice-ledger/pages.test.ts,2026-11-22T02:35:15.5099191Z,reporter
+44993228824,137118728866,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/managed-agents/restart.test.ts,2026-11-22T06:26:47.9896957Z,reporter
+45284846388,138078562576,windows,"Unit + Component Tests (windows-latest, 2/2)",src/main/services/group-project-notice-ledger/pages.test.ts,2026-11-23T23:07:54.9555474Z,reporter

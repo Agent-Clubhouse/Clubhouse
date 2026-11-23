@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 326" role="img" aria-labelledby="title desc"><title id="title">Estimated macOS execution minutes per ordinary Validate run</title><desc id="desc">Run-created weekly estimates for pull requests and main pushes. Includes cancellations. The final bucket covers two dates. Sparse stratified sample, especially for long jobs.</desc><rect width="760" height="326" fill="#fff"/><g font-family="system-ui,sans-serif" fill="#18313e" font-size="12">
+<text x="20" y="27" font-size="19" font-weight="bold">Estimated macOS runner-minutes per Validate run</text>
+<text x="20" y="47" >PR and main-push cohorts, including cancelled and skipped runs in the denominator</text>
+<path d="M68 220H710" stroke="#d4dee1"/>
+<text x="60" y="224" text-anchor="end">0</text>
+<path d="M68 188.8H710" stroke="#d4dee1"/>
+<text x="60" y="192.8" text-anchor="end">2</text>
+<path d="M68 157.6H710" stroke="#d4dee1"/>
+<text x="60" y="161.6" text-anchor="end">4</text>
+<path d="M68 126.4H710" stroke="#d4dee1"/>
+<text x="60" y="130.4" text-anchor="end">6</text>
+<path d="M68 95.19999999999999H710" stroke="#d4dee1"/>
+<text x="60" y="99.19999999999999" text-anchor="end">8</text>
+<path d="M68 64H710" stroke="#d4dee1"/>
+<text x="60" y="68" text-anchor="end">10</text>
+<path d="M103 136.81969696969696 L238 107.41083123425693 L373 64.30310160427808 L508 181.57626865671642 L643 220" fill="none" stroke="#00767a" stroke-width="2.5"/>
+<circle cx="103" cy="136.81969696969696" r="4" fill="#00767a"><title>pull_request Oct 25–31: 5.33 min/run; 88 runs</title></circle>
+<circle cx="238" cy="107.41083123425693" r="4" fill="#00767a"><title>pull_request Nov 1–7: 7.22 min/run; 397 runs</title></circle>
+<circle cx="373" cy="64.30310160427808" r="4" fill="#00767a"><title>pull_request Nov 8–14: 9.98 min/run; 748 runs</title></circle>
+<circle cx="508" cy="181.57626865671642" r="4" fill="#00767a"><title>pull_request Nov 15–21: 2.46 min/run; 268 runs</title></circle>
+<circle cx="643" cy="220" r="4" fill="#00767a"><title>pull_request Nov 22–23*: 0.00 min/run; 26 runs</title></circle>
+<path d="M117 108.21695652173915 L252 89.57142857142858 L387 147.54021825396825 L522 209.42809917355373 L657 220" fill="none" stroke="#a64424" stroke-width="2.5"/>
+<circle cx="117" cy="108.21695652173915" r="4" fill="#a64424"><title>push Oct 25–31: 7.17 min/run; 46 runs</title></circle>
+<circle cx="252" cy="89.57142857142858" r="4" fill="#a64424"><title>push Nov 1–7: 8.36 min/run; 182 runs</title></circle>
+<circle cx="387" cy="147.54021825396825" r="4" fill="#a64424"><title>push Nov 8–14: 4.64 min/run; 336 runs</title></circle>
+<circle cx="522" cy="209.42809917355373" r="4" fill="#a64424"><title>push Nov 15–21: 0.68 min/run; 121 runs</title></circle>
+<circle cx="657" cy="220" r="4" fill="#a64424"><title>push Nov 22–23*: 0.00 min/run; 9 runs</title></circle>
+<text x="110" y="244" text-anchor="middle">Oct 25–31</text>
+<text x="245" y="244" text-anchor="middle">Nov 1–7</text>
+<text x="380" y="244" text-anchor="middle">Nov 8–14</text>
+<text x="515" y="244" text-anchor="middle">Nov 15–21</text>
+<text x="650" y="244" text-anchor="middle">Nov 22–23*</text>
+<text x="22" y="273" fill="#00767a">● Pull request</text>
+<text x="135" y="273" fill="#a64424">● Main push</text>
+<text x="22" y="298" >Validate pause merged Nov 16, inside the fourth bucket. *Partial week through Nov 23 23:29 UTC.</text>
+<text x="22" y="317" >Stratified estimates; changes in workload, cancellations and workflow versions also affect this series.</text>
+</g></svg>
