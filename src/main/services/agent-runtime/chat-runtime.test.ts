@@ -111,6 +111,46 @@ it('does not retain future-turn debt when Codex accepts two prompts into one nat
 });
 
 describe('native submission ownership', () => {
+  it('resumes input held after a queued native turn ends before its receipt', async () => {
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
+    const { runtime } = makeRuntime(driver);
+    const stopTracking = startFederationTurnTracking(runtime.agentId);
+    const settled = vi.fn();
+    let resolve!: (receipt: ChatSendReceipt) => void;
+    const reply = new Promise<ChatSendReceipt>((r) => { resolve = r; });
+    try {
+      await runtime.start();
+      driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'bootstrap' } }); await flush();
+      let count = 0;
+      Object.assign(driver.last, { sendWithReceipt: async (...args: Parameters<typeof driver.last.send>) => {
+        await driver.last.send(...args);
+        return ++count === 1 ? reply : { delivery: 'prompt', nativeTurn: { id: `native-${count}`, completed: false } };
+      } });
+      await withFederationInput({ id: 'queued-causal', cause: { rootId: 'queued-causal', depth: 4 } } as FederatedRequest,
+        () => runtime.sendMessage('first', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', onSettled: settled } }));
+      driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(driver.last.sent).toHaveLength(1);
+      driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'native-1' } });
+      driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(runtime.getState()).toBe('idle');
+      expect((await runtime.sendMessage('second', { source: 'user' })).delivery).toBe('queued');
+      expect((await runtime.sendMessage('third', { source: 'user' })).delivery).toBe('queued');
+      expect(settled).not.toHaveBeenCalled();
+      resolve({ delivery: 'prompt', nativeTurn: { id: 'native-1', completed: false } }); await flush();
+      expect(settled).toHaveBeenCalledExactlyOnceWith('delivered');
+      expect(driver.last.sent).toHaveLength(2);
+      driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'native-2' } });
+      driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(driver.last.sent).toHaveLength(3);
+      driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'native-3' } });
+      driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(runtime.hasPendingWork()).toBe(false);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+      expect(driver.last.sent.map((x) => x.content)).toEqual(['first', 'second', 'third'].map((text) => [{ type: 'text', text }]));
+      expect(settled).toHaveBeenCalledExactlyOnceWith('delivered');
+    } finally { await runtime.stop(); stopTracking(); }
+  });
+
   it.each(['resolve', 'reject'] as const)('resumes FIFO input held after turn end when the late receipt %ss', async (outcome) => {
     const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
     const { runtime } = makeRuntime(driver);

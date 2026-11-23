@@ -733,6 +733,17 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
   }
 
+  private resumeReceiptQueue(session: ChatDriverSession): void {
+    // A turn can finish before its submission RPC settles. Input held during
+    // that remaining operation then has no future turn-end to wake the queue.
+    if (!session.sendWithReceipt || this.session !== session || this.state !== 'idle'
+      || this.turnId || this.draining || this.pendingTurns.size || !this.queued.length) return;
+    void this.drainQueue().catch(() => {
+      // telemetry-exempt: locally records a failed wake; no payload or provider error text.
+      appLog('core:chat', 'warn', 'Could not resume chat queue after a native receipt', { meta: { agentId: this.agentId } });
+    });
+  }
+
   private async deliverMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
     const session = this.requireSession();
     const federationInputs = captureFederationInputs();
@@ -834,6 +845,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       await rollbackAssignment();
       if (pending) this.pendingTurns.delete(pending);
       if (this.pendingTrace === traceContext) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
+      this.resumeReceiptQueue(session);
       throw error;
     }
     for (const context of federation) context?.accepted(delivered);
@@ -843,6 +855,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.pendingTraceAssigned = false;
     }
     await this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: delivered } });
+    this.resumeReceiptQueue(session);
     return { delivery: delivered, messageId };
   }
 
@@ -1044,6 +1057,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.pendingDispatch = next;
     this.armHeldWarning();
     let failed = false;
+    let accepted = false;
     const pending = Symbol();
     let federation: ReturnType<typeof prepareFederationInput>[] = [];
     let rollbackAssignment: (() => Promise<void>) | undefined;
@@ -1071,6 +1085,7 @@ export class ChatAgentRuntime implements AgentRuntime {
         const delivered = await this.submit(session, [...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt', pending);
         for (const context of federation) context?.accepted(delivered);
         this.settleQueued(next, 'delivered');
+        accepted = true;
         if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
       }
     } catch (err) {
@@ -1092,6 +1107,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       if (this.pendingDispatch === next) this.pendingDispatch = undefined;
       this.draining = false;
       this.armQueueExpiry();
+      if (accepted) this.resumeReceiptQueue(session);
     }
     // Nothing was sent, so no turn will end to drain the rest: go on with the next one.
     if (failed) await this.drainQueue();
