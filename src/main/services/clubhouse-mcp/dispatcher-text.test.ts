@@ -236,9 +236,9 @@ describe('how the Dispatcher speaks and acts (#3185)', () => {
   it.each(instructions)('%s: only through Clubhouse tools, and says what it can\'t do instead of working around it', (_label, text) => {
     expect(text).toMatch(/Never drive an app's windows \(computer use, browser control, screenshots or clicks\)/);
     expect(text).toMatch(/never ask the user to click through/);
-    expect(_label === 'instructions' ? procedures?.text : text).toContain('change your permissions in Clubhouse');
+    expect(text).toContain('change your permissions in Clubhouse');
     if (_label === 'instructions') {
-      expect(text).toContain('A missing tool or permission refusal means stop that action and report the concrete blocker');
+      expect(text).toContain('When a tool refuses for lack of permission, stop and tell the user');
       expect(text).toContain('do not try another access route');
     }
   });
