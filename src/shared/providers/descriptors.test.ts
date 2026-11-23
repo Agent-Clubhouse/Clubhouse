@@ -138,9 +138,9 @@ describe('Auto policy (#3803)', () => {
 
 /**
  * #3787 acceptance: no non-test file outside the provider descriptor and the
- * provider implementations lists every built-in provider id for policy or
- * display. A file that mentions each id for its own provider-specific
- * behaviour is not caught, because it doesn't mention all of them.
+ * provider implementations quotes all three built-in provider ids. That is all
+ * this checks: a list of two ids, a template literal or a partial list passes,
+ * as does a file that names each id for its own provider-specific behaviour.
  */
 describe('provider lists come from descriptors', () => {
   const root = path.resolve(__dirname, '../..');
@@ -149,6 +149,8 @@ describe('provider lists come from descriptors', () => {
   const EXEMPT_FILES: Record<string, string> = {
     'renderer/features/agents/chat/fixtures/providers.ts': 'design-gallery fixtures, one sample session per provider',
   };
+  /** The mascot drawings tag their own provider (`data-mascot="codex-cli"`), one id per element; only that file's attributes are ignored. */
+  const MASCOT_FILE = 'renderer/features/agents/SleepingMascots.tsx';
   const isTest = (rel: string) => /\.(test|spec|qa)\.tsx?$|\.runtime\.qa\.ts$|(^|\/)__(tests|fixtures)__\//.test(rel);
 
   function walk(dir: string, out: string[] = []): string[] {
@@ -165,8 +167,8 @@ describe('provider lists come from descriptors', () => {
       .map((file) => path.relative(root, file).split(path.sep).join('/'))
       .filter((rel) => !isTest(rel) && !EXEMPT_DIRS.some((d) => rel.startsWith(d)) && !(rel in EXEMPT_FILES))
       .filter((rel) => {
-        // A mascot drawing tags its own provider (`data-mascot="codex-cli"`); that is one id per element, not a list.
-        const text = fs.readFileSync(path.join(root, rel), 'utf8').replace(/\bdata-mascot="[a-z-]+"/g, '');
+        const raw = fs.readFileSync(path.join(root, rel), 'utf8');
+        const text = rel === MASCOT_FILE ? raw.replace(/\bdata-mascot="[a-z-]+"/g, '') : raw;
         return BUILTIN_PROVIDER_IDS.every((id) => text.includes(`'${id}'`) || text.includes(`"${id}"`));
       });
     expect(offenders).toEqual([]);

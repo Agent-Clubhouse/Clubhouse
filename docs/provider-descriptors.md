@@ -27,7 +27,7 @@ Only `supported` offers the feature.
 
 ## Existing providers
 
-Chat features, as each driver publishes them. `provider-feature-mapping.test.ts` checks this table against the drivers' exports.
+Chat features, as each driver publishes them. `provider-feature-mapping.test.ts` checks this table against the drivers' exported capability records. Descriptor features are declarations, not proof from a live session. Behaviour still lives in each driver, and this table claims no parity beyond what it lists.
 
 | Feature | Claude Code (Agent SDK, stream-json) | Codex (app-server) | Copilot (SDK) |
 |---|---|---|---|
