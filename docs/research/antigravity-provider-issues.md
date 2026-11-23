@@ -1,6 +1,6 @@
 # Antigravity provider: epic and child issue drafts
 
-Draft for parent readback. Each block between `<!-- issue ... -->` markers becomes one GitHub issue. `#E` means the epic and `#A1`..`#A19` mean the children; they are replaced by real numbers on publish. Design reference for every issue: `docs/research/antigravity-provider-design.md` on branch `antigravity-provider-design/design-epic`.
+Draft for parent readback. Each block between `<!-- issue ... -->` markers becomes one GitHub issue. `#3785` means the epic and `#3786`..`#3804` mean the children; they are replaced by real numbers on publish. Design reference for every issue: `docs/research/antigravity-provider-design.md` on branch `antigravity-provider-design/design-epic`.
 
 Labels: every issue gets `antigravity-2026-11-23` (new dated batch label) plus the existing labels listed.
 
@@ -14,7 +14,7 @@ Design, evidence and capability matrix: `docs/research/antigravity-provider-desi
 ## Surfaces
 - Terminal: the `agy` TUI in a PTY.
 - Chat: `agy acp`, Agent Client Protocol v1 over stdio, which the ACP guide documents for any ACP client (https://antigravity.google/docs/ide/extensions/acp/). Driven by a restored, provider-neutral ACP driver (removed with legacy Copilot ACP in #2868, recoverable from `00c9534bb^`).
-- Headless: `agy -p --output-format stream-json` (https://antigravity.google/docs/cli/headless/). Off until the eligibility decision in #A1, because the FAQ says wrapping `agy -p` in third-party apps is not supported on consumer plans (https://antigravity.google/docs/faq/) and no page positively documents it for other plans.
+- Headless: `agy -p --output-format stream-json` (https://antigravity.google/docs/cli/headless/). Off until the eligibility decision in #3786, because the FAQ says wrapping `agy -p` in third-party apps is not supported on consumer plans (https://antigravity.google/docs/faq/) and no page positively documents it for other plans.
 - Not used: the Python SDK `google-antigravity` (Python only; its docs cover API-key and Vertex/Enterprise auth only).
 
 ## Constraints
@@ -23,53 +23,53 @@ Design, evidence and capability matrix: `docs/research/antigravity-provider-desi
 - No implicit fallback between chat, headless and terminal. Switching runtime is the person's explicit choice, and nothing is replayed.
 - The Clubhouse MCP fails closed: an agent counts as connected only after the bridge authenticates with that launch's identity.
 - Behind the experimental flag and a provider toggle; never the default provider.
-- No paid prompts or live login in CI. Real-login checks are in #A17 and run when a subscription is available.
+- No paid prompts or live login in CI. Real-login checks are in #3802 and run when a subscription is available.
 
 ## Children (dependency order)
 Phase 0, no subscription needed
-- [ ] #A1 Record plan and usage eligibility statements, request clarification, decide defaults
-- [ ] #A2 Provider descriptor: replace hard-coded provider id lists
-- [ ] #A3 Fake `agy` CLI and fixtures
+- [ ] #3786 Record plan and usage eligibility statements, request clarification, decide defaults
+- [ ] #3787 Provider descriptor: replace hard-coded provider id lists
+- [ ] #3788 Fake `agy` CLI and fixtures
 
 Phase 1, terminal
-- [ ] #A4 Terminal provider `AntigravityCliProvider` (needs #A2, #A3)
-- [ ] #A5 Model and effort discovery (needs #A4)
-- [ ] #A6 Access ladder and execution policy mapping (needs #A4)
-- [ ] #A7 Managed instructions, skills and custom agents (needs #A4)
-- [ ] #A8 Clubhouse MCP bridge delivery and authenticated identity (needs #A4)
-- [ ] #A9 Configuration preservation and inherited customizations (needs #A4; lands with #A7, #A8)
-- [ ] #A16 Help, settings, first run and provider doc contract (needs #A4)
+- [ ] #3789 Terminal provider `AntigravityCliProvider` (needs #3787, #3788)
+- [ ] #3790 Model and effort discovery (needs #3789)
+- [ ] #3791 Access ladder and execution policy mapping (needs #3789)
+- [ ] #3792 Managed instructions, skills and custom agents (needs #3789)
+- [ ] #3793 Clubhouse MCP bridge delivery and authenticated identity (needs #3789)
+- [ ] #3794 Configuration preservation and inherited customizations (needs #3789; lands with #3792, #3793)
+- [ ] #3801 Help, settings, first run and provider doc contract (needs #3789)
 
 Phase 2, terminal status, sessions and lifecycle contract
-- [ ] #A10 Hooks-based status, session id and resume (needs #A4, #A9)
-- [ ] #A19 Chat driver lifecycle conformance suite (needs #A3; blocks #A11, #A12)
+- [ ] #3795 Hooks-based status, session id and resume (needs #3789, #3794)
+- [ ] #3804 Chat driver lifecycle conformance suite (needs #3788; blocks #3796, #3797)
 
 Phase 3, chat
-- [ ] #A11 Restore a provider-neutral ACP chat protocol layer (needs #A3, #A19)
-- [ ] #A12 Antigravity ACP chat driver (needs #A3, #A6, #A8, #A11, #A19)
+- [ ] #3796 Restore a provider-neutral ACP chat protocol layer (needs #3788, #3804)
+- [ ] #3797 Antigravity ACP chat driver (needs #3788, #3791, #3793, #3796, #3804)
 
 Phase 4, headless
-- [ ] #A13 Headless normalizer and eligibility gate (needs #A1, #A3, #A4, #A6)
+- [ ] #3798 Headless normalizer and eligibility gate (needs #3786, #3788, #3789, #3791)
 
 Phase 5, integration
-- [ ] #A18 Helper Auto eligibility and unknown-quota ranking as declared provider policy (needs #A2)
-- [ ] #A14 Annex, mobile, helpers and Dispatcher eligibility gate (needs #A2, #A4, #A18)
-- [ ] #A15 Telemetry, diagnostics and version policy (needs #A2, #A4, #A12)
+- [ ] #3803 Helper Auto eligibility and unknown-quota ranking as declared provider policy (needs #3787)
+- [ ] #3799 Annex, mobile, helpers and Dispatcher eligibility gate (needs #3787, #3789, #3803)
+- [ ] #3800 Telemetry, diagnostics and version policy (needs #3787, #3789, #3797)
 
 Phase 6, subscription
-- [ ] #A17 Real-login validation gates (required gates need #A1, #A2-#A12, #A14 baseline, #A15, #A16, #A18, #A19; optional gates need their feature; deferred acceptance)
+- [ ] #3802 Real-login validation gates (required gates need #3786, #3787-#3797, #3799 baseline, #3800, #3801, #3803, #3804; optional gates need their feature; deferred acceptance)
 
 ## Acceptance for the epic
-Required, cannot be waived: #A2, #A3, #A4, #A5, #A6, #A7 (except custom agents), #A8, #A9, #A10, #A11, #A12, #A15 (telemetry values and version floors), #A16, #A19, the baseline of #A14 (Annex, mobile and remote history, explicit helpers, capacity), the declared policy fields and the recorded Antigravity decision in #A18, the eligibility decision in #A1, and every gate marked required in #A17. Together these give an Antigravity agent in terminal and chat with managed instructions, skills and an authenticated Clubhouse MCP, on macOS, Windows and Linux, reachable from Annex and helpers, proven by fixtures in CI and by #A17 on a real account.
+Required, cannot be waived: #3787, #3788, #3789, #3790, #3791, #3792 (except custom agents), #3793, #3794, #3795, #3796, #3797, #3800 (telemetry values and version floors), #3801, #3804, the baseline of #3799 (Annex, mobile and remote history, explicit helpers, capacity), the declared policy fields and the recorded Antigravity decision in #3803, the eligibility decision in #3786, and every gate marked required in #3802. Together these give an Antigravity agent in terminal and chat with managed instructions, skills and an authenticated Clubhouse MCP, on macOS, Windows and Linux, reachable from Annex and helpers, proven by fixtures in CI and by #3802 on a real account.
 
-Optional, may be deferred with a recorded reason: #A13 (headless), the Dispatcher gate in #A14, actually enabling Antigravity for Auto in #A18, custom agents in #A7, the vendor clarification request in #A1, and the optional gates in #A17.
+Optional, may be deferred with a recorded reason: #3798 (headless), the Dispatcher gate in #3799, actually enabling Antigravity for Auto in #3803, custom agents in #3792, the vendor clarification request in #3786, and the optional gates in #3802.
 
 Existing providers' settings, agents, presets and telemetry values must be unchanged.
 
 <!-- issue key=A1 labels="needs-decision,type:chore,area:main,severity: MEDIUM" -->
 # [MEDIUM] Antigravity: record plan and usage eligibility statements, request clarification, decide defaults
 
-Part of #E.
+Part of #3785.
 
 ## Problem
 Three public statements bear on how Clubhouse may launch `agy` (paraphrased; see the links for exact wording):
@@ -82,7 +82,7 @@ Statement 2 only says what is not supported on consumer plans. No page positivel
 The docs also disagree on models for custom ACP clients: the ACP guide limits third-party models to named editors, while the CLI 1.5.1 changelog says every model is offered to every ACP client (https://antigravity.google/docs/changelog/).
 
 ## Scope
-- Keep the paraphrases, links and read date in the Antigravity help page (#A16) and in this issue.
+- Keep the paraphrases, links and read date in the Antigravity help page (#3801) and in this issue.
 - Proposed follow-up, not authorized by publishing this issue: ask Google through a public channel (Antigravity feedback or support) how statements 1-3 apply to (a) an ACP client launching the user's own `agy acp`, (b) a terminal app hosting the user's `agy` TUI, (c) headless `agy -p` launched by a desktop app, per auth type. Sending it needs the maintainer's explicit authorization first, including who sends it and from which account. If sent, record the answer and date.
 - Maintainer decision, recorded here:
   - ACP chat: proposed available behind the experimental flag for documented auth methods.
@@ -91,7 +91,7 @@ The docs also disagree on models for custom ACP clients: the ACP guide limits th
 
 ## Non-goals
 - Any legal conclusion beyond the documented text.
-- Blocking phases 0-5. Code reads these defaults as settings (#A12, #A13).
+- Blocking phases 0-5. Code reads these defaults as settings (#3797, #3798).
 
 ## Acceptance
 - Statements, links and the model discrepancy recorded in-repo with the date.
@@ -104,13 +104,13 @@ The recorded decision, and the request link if one was authorized and sent. No c
 <!-- issue key=A2 labels="enhancement,type:chore,area:main,area:renderer,area:shared,severity: MEDIUM" -->
 # [MEDIUM] Provider descriptor: replace hard-coded provider id lists before adding a fourth provider
 
-Part of #E. Blocks #A4, #A14, #A15, #A18.
+Part of #3785. Blocks #3789, #3799, #3800, #3803.
 
 ## Problem
 `OrchestratorId` is open (`src/main/orchestrators/types.ts:7`) but about 35 non-test files enumerate `claude-code`, `codex-cli` and `copilot-cli` by literal. A new provider silently degrades in each: Ask-only access (`src/shared/agent-access.ts:105-109`), no helper presets (`src/shared/helper-routing.ts:62,94`), no capacity tracking (`src/shared/handoff-capacity.ts:3,62`, `src/shared/helper-auto-budget.ts:2`), no remote history (`src/main/services/remote-session-history.ts:34`), missing glyph, colors, mascots and install link (`OrchestratorGlyph.tsx:5`, `orchestrator-colors.ts:7-9,46-48`, `SleepingMascots.tsx:209-211`, `SleepingAgent.tsx:61`, `FirstRun.tsx:21-23`, `HelperPresetsSection.tsx:30`), `other` in telemetry (`src/shared/telemetry/attributes.ts:328,608,633`; `knownCli` sets in `feature-events.ts:41`, `chat-telemetry.ts:84`, `agent-signals.ts:94,118`, `agent-telemetry.ts:62`, `session-telemetry.ts:20`, `spawn-telemetry.ts:30`), and chat labels (`chat-version-policy.ts:80-84`, `ChatHeader.tsx:11-14`, `src/shared/chat/provider-inventory.ts:15-16`). `supportsPositionalMission` falls back to `id === 'claude-code'` (`types.ts:386`).
 
 ## Scope
-- A static `ProviderDescriptor` per built-in provider: id, names, short name, telemetry code, access levels per runtime, helper preset flag, Auto policy and quota kind (policy semantics in #A18), capacity tracking, remote-history eligibility, install docs URL, glyph and color keys, optional state-dir env. Shape in design section 6.1.
+- A static `ProviderDescriptor` per built-in provider: id, names, short name, telemetry code, access levels per runtime, helper preset flag, Auto policy and quota kind (policy semantics in #3803), capacity tracking, remote-history eligibility, install docs URL, glyph and color keys, optional state-dir env. Shape in design section 6.1.
 - Replace the literal lists above with descriptor lookups. Telemetry enums stay closed and reviewed; the descriptor supplies the value.
 - Provider-specific behaviour (Codex TOML, Copilot hooks) stays where it is; this issue moves enumerations only.
 
@@ -119,7 +119,7 @@ Part of #E. Blocks #A4, #A14, #A15, #A18.
 - #384 provider parity suite can iterate the descriptor list.
 
 ## Non-goals
-- Adding Antigravity (#A4). Any behaviour change for the existing three providers.
+- Adding Antigravity (#3789). Any behaviour change for the existing three providers.
 
 ## Acceptance
 - No non-test file outside `src/main/orchestrators/` enumerates all three provider ids for policy or display (a test enforces it).
@@ -131,7 +131,7 @@ Full `npm test`, `npm run typecheck`, lint.
 <!-- issue key=A3 labels="enhancement,test-coverage,type:chore,area:main,severity: MEDIUM" -->
 # [MEDIUM] Fake `agy` CLI and fixtures for Antigravity tests (no tokens)
 
-Part of #E. Blocks #A4, #A11, #A12, #A13, #A19.
+Part of #3785. Blocks #3789, #3796, #3797, #3798, #3804.
 
 ## Problem
 There is no Antigravity binary in CI and no subscription. Every Antigravity code path needs a deterministic stand-in built from the public docs.
@@ -147,7 +147,7 @@ There is no Antigravity binary in CI and no subscription. Every Antigravity code
 - Vendor the ACP JSON schema from `@agentclientprotocol/sdk` at a pinned version (2.9.1 when drafted) with a CI diff check, like the Codex bindings.
 
 ## Non-goals
-- Recording from a real account (#A17 may later add real handshake fixtures).
+- Recording from a real account (#3802 may later add real handshake fixtures).
 
 ## Acceptance
 - `CLUBHOUSE_TEST_CLI_BINARIES` can point `agy` at the fake in unit and E2E tests.
@@ -159,18 +159,18 @@ Unit tests for each personality; schema diff test.
 <!-- issue key=A4 labels="enhancement,type:feature,area:main,severity: MEDIUM" -->
 # [MEDIUM] Antigravity terminal provider: `AntigravityCliProvider`
 
-Part of #E. Needs #A2, #A3.
+Part of #3785. Needs #3787, #3788.
 
 ## Problem
 Clubhouse cannot launch `agy` as an agent.
 
 ## Scope
 - `src/main/orchestrators/antigravity-cli-provider.ts` extending `BaseProvider` (`base-provider.ts:62-118`): `id: 'antigravity-cli'`, display "Antigravity CLI", short "AGY", badge Experimental. Registered after Codex so it is never the first-enabled default (`dispatcher-service.ts:748-751`). Hidden unless the experimental flag and provider toggle are on.
-- Binary: `binaryNames ['agy']`; `getExtraBinaryPaths()` adds `~/.local/bin` and `%LOCALAPPDATA%\agy\bin`, the documented install locations (https://antigravity.google/docs/getting-started/). `checkAvailability` runs `agy --version` and applies the floor from #A15.
-- `buildSpawnCommand`: `--model`, `--effort`, access flags from #A6, `--sandbox` from execution policy, `--conversation <id>` (or `-c`) for resume, optional `-i <mission>` (`--prompt-interactive`). `--add-dir` once #1724 adds `SpawnOpts.additionalDirs`; added folders also load their customizations (https://antigravity.google/docs/customization-discovery/). Flags per https://antigravity.google/docs/cli/reference/.
-- `getExitCommand` `'/exit\r'`. Paste timing starts from the Copilot profile with quiescence; tuned in #A17.
+- Binary: `binaryNames ['agy']`; `getExtraBinaryPaths()` adds `~/.local/bin` and `%LOCALAPPDATA%\agy\bin`, the documented install locations (https://antigravity.google/docs/getting-started/). `checkAvailability` runs `agy --version` and applies the floor from #3800.
+- `buildSpawnCommand`: `--model`, `--effort`, access flags from #3791, `--sandbox` from execution policy, `--conversation <id>` (or `-c`) for resume, optional `-i <mission>` (`--prompt-interactive`). `--add-dir` once #1724 adds `SpawnOpts.additionalDirs`; added folders also load their customizations (https://antigravity.google/docs/customization-discovery/). Flags per https://antigravity.google/docs/cli/reference/.
+- `getExitCommand` `'/exit\r'`. Paste timing starts from the Copilot profile with quiescence; tuned in #3802.
 - `conventions`: `configDir '.agents'`, `localInstructionsFile 'AGENTS.md'`, `skillsRoot '.agents/skills'`, `mcpConfigFile '.agents/mcp_config.json'`, `hooksFile 'hooks.json'`, `settingsFormat 'json'`, `permissionRules false`.
-- Capabilities: `headless` from #A13's gate, `hooks: true` (#A10), `sessionResume: true`, `permissions: true`, `supportsPositionalMission: false`.
+- Capabilities: `headless` from #3798's gate, `hooks: true` (#3795), `sessionResume: true`, `permissions: true`, `supportsPositionalMission: false`.
 - Workspace trust: a new worktree prompts in the TUI. Do not write `trustedWorkspaces` (https://antigravity.google/docs/settings/); explain in help.
 - `provider-integration.test.ts` describe block (spawn flags, resume, free agent, default permissions) and `registry.test.ts`.
 
@@ -183,12 +183,12 @@ Clubhouse cannot launch `agy` as an agent.
 - Off by default; no change for users who don't enable it.
 
 ## Proof
-Unit and integration tests with the fake CLI; Windows `.exe` resolution test. Live start in #A17 (V9).
+Unit and integration tests with the fake CLI; Windows `.exe` resolution test. Live start in #3802 (V9).
 
 <!-- issue key=A5 labels="enhancement,type:feature,area:main,area:renderer,severity: MEDIUM" -->
 # [MEDIUM] Antigravity model and effort discovery
 
-Part of #E. Needs #A4.
+Part of #3785. Needs #3789.
 
 ## Problem
 Model pickers and `acceptsModel` need Antigravity's live model list. Headless exits non-zero on an unknown `--model` with no fallback (https://antigravity.google/docs/cli/headless/), so a stale static list breaks runs. Several models are scheduled for removal on 2026-11-30 (https://antigravity.google/docs/models/).
@@ -197,23 +197,23 @@ Model pickers and `acceptsModel` need Antigravity's live model list. Headless ex
 - `modelFetchConfig` running `agy models` in the empty probe dir (`base-provider.ts:312-341`), parsed into `ModelInfo`. The static fallback is `default` only; no hard-coded slugs.
 - Efforts: `low|medium|high|xhigh|max` "depending on the model" (headless page). Where the CLI does not report per-model efforts, offer the documented set and surface the CLI's rejection.
 - `acceptsModel` true only for listed slugs.
-- Chat models come from ACP config options (#A12), not this list.
-- No `readPlanQuota`: there is no token-free documented quota read (`/usage` is interactive). Quota kind `unknown` in the descriptor; routing policy in #A18.
+- Chat models come from ACP config options (#3797), not this list.
+- No `readPlanQuota`: there is no token-free documented quota read (`/usage` is interactive). Quota kind `unknown` in the descriptor; routing policy in #3803.
 
 ## Non-goals
-- Filtering third-party models by client (the docs disagree, #A1). Show what the CLI reports.
+- Filtering third-party models by client (the docs disagree, #3786). Show what the CLI reports.
 
 ## Acceptance
 - The picker lists fake `agy models` output; probe errors set `liveError` and fall back without crashing.
 - `peekModels` never spawns.
 
 ## Proof
-Unit tests for normal, malformed and timed-out output. Live list in #A17 (V2).
+Unit tests for normal, malformed and timed-out output. Live list in #3802 (V2).
 
 <!-- issue key=A6 labels="enhancement,type:feature,area:main,area:shared,severity: MEDIUM" -->
 # [MEDIUM] Antigravity access ladder and execution policy mapping
 
-Part of #E. Needs #A4. Used by #A12, #A13.
+Part of #3785. Needs #3789. Used by #3797, #3798.
 
 ## Problem
 Clubhouse's five levels (`src/shared/chat/capabilities.ts:32`) must map to Antigravity's documented modes, and an unknown provider currently gets Ask only (`src/shared/agent-access.ts:105-109`).
@@ -225,7 +225,7 @@ Clubhouse's five levels (`src/shared/chat/capabilities.ts:32`) must map to Antig
   - `auto_edit`: `--mode accept-edits` / ACP `accept-edits`
   - `auto`: `--mode auto` / ACP `auto`, only where offered (needs the terminal sandbox; macOS/Linux v1.3.5+, Windows v1.4.4+; not for business or enterprise accounts)
   - `full_access`: `--dangerously-skip-permissions` (a process flag; chat needs a restart)
-- Descriptor access levels (#A2): all five for terminal and chat, with `auto` hidden when the account is business/enterprise or the type is unknown (read-only from `auth.type`).
+- Descriptor access levels (#3787): all five for terminal and chat, with `auto` hidden when the account is business/enterprise or the type is unknown (read-only from `auth.type`).
 - Execution policy: `--sandbox` when the agent's policy asks for one (`src/shared/execution-policy.ts:30` is Codex-only today; extend through the descriptor). Linux needs bubblewrap; refuse the sandboxed start with a reason when it is missing rather than running unsandboxed.
 - Headless runs in `auto` by default since v1.5.7, so every headless launch passes `--mode` explicitly and never runs above the chosen level.
 - UI note that the user's own `permissions.allow|ask|deny` in `~/.gemini/antigravity-cli/settings.json` still apply (Deny > Ask > Allow).
@@ -237,12 +237,12 @@ Clubhouse's five levels (`src/shared/chat/capabilities.ts:32`) must map to Antig
 - Unit tests for argv per level and runtime; `auto` absent for business accounts and older versions; headless always passes `--mode`; a missing sandbox refuses.
 
 ## Proof
-Unit tests; live behaviour in #A17 (V11 optional).
+Unit tests; live behaviour in #3802 (V11 optional).
 
 <!-- issue key=A7 labels="enhancement,type:feature,area:main,severity: MEDIUM" -->
 # [MEDIUM] Antigravity managed instructions, skills and custom agents
 
-Part of #E. Needs #A4.
+Part of #3785. Needs #3789.
 
 ## Problem
 Managed agents deliver instructions and skills per provider (`src/main/services/managed-agents/delivery.ts:134,354,820,948`), with special cases for Claude and Copilot (`delivery.ts:482,692-695,707,851,1077-1090`). Antigravity reads `AGENTS.md`, `GEMINI.md`, `.agents/AGENTS.md`, `.agents/rules/*.md` and `.agents/skills/<name>/SKILL.md` from the workspace and each parent up to the repo root, cumulatively. It documents a 24,000-byte per-file limit and a 20,000-token aggregate rules budget but not what happens to content beyond them (https://antigravity.google/docs/rules/, https://antigravity.google/docs/skills/, https://antigravity.google/docs/customization-discovery/).
@@ -254,7 +254,7 @@ Managed agents deliver instructions and skills per provider (`src/main/services/
 - Delivery receipt records "within per-file limit, aggregate budget unverified", since the user's own global rules count toward the 20,000-token budget.
 - Skills in `.agents/skills/<name>/`, flat, reusing Codex's root and exclude logic.
 - Custom agents (`.agents/agents/<name>.md` + `--agent <name>`): optional follow-up, not required for the epic.
-- Parent traversal stop at a worktree `.git` file is checked in #A17 (V4); until then help says rules in the main checkout's parent folders may also load.
+- Parent traversal stop at a worktree `.git` file is checked in #3802 (V4); until then help says rules in the main checkout's parent folders may also load.
 
 ## Non-goals
 - Editing user rules or skills in `~/.gemini`.
@@ -270,7 +270,7 @@ Unit tests with a temp worktree, including a 24,001-byte case and a user file wi
 <!-- issue key=A8 labels="enhancement,type:feature,area:main,severity: HIGH" -->
 # [HIGH] Antigravity: Clubhouse MCP bridge delivery and authenticated identity
 
-Part of #E. Needs #A4. Blocks #A12.
+Part of #3785. Needs #3789. Blocks #3797.
 
 ## Problem
 Every agent gets the Clubhouse MCP. The bridge is a stdio server that reads `CLUBHOUSE_HOOK_NONCE`, `CLUBHOUSE_AGENT_ID` and `CLUBHOUSE_MCP_PORT` from its inherited environment (`src/main/services/clubhouse-mcp/injection.ts:460-470`). Antigravity reads MCP from `~/.gemini/config/mcp_config.json`, `<workspace>/.agents/mcp_config.json` and plugins; on a name collision the server already running keeps the name; unconfigured MCP tools run in Ask mode (https://antigravity.google/docs/mcp/, https://antigravity.google/docs/settings/). ACP clients can pass `mcpServers`; HTTP servers from the client need `--process-per-session` (https://antigravity.google/docs/ide/extensions/acp/). Whether `agy` passes its own environment to stdio MCP children is not documented.
@@ -293,18 +293,18 @@ Every agent gets the Clubhouse MCP. The bridge is a stdio server that reads `CLU
 - A configured `clubhouse` collision refuses before launch.
 
 ## Proof
-Unit tests on merge and restore with user files (comments, BOM, extra keys); ACP request capture; impostor-server and collision tests. V3 and V10 in #A17.
+Unit tests on merge and restore with user files (comments, BOM, extra keys); ACP request capture; impostor-server and collision tests. V3 and V10 in #3802.
 
 <!-- issue key=A9 labels="enhancement,type:feature,area:main,area:renderer,severity: MEDIUM" -->
 # [MEDIUM] Antigravity configuration preservation and inherited customizations
 
-Part of #E. Needs #A4. Lands together with #A7 and #A8.
+Part of #3785. Needs #3789. Lands together with #3792 and #3793.
 
 ## Problem
 Antigravity documents no config-dir override (no equivalent of `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `COPILOT_HOME`, `provider-profiles-removed.ts:33-37`). Every Antigravity agent shares the user's `~/.gemini` rules, skills, hooks, MCP servers, permissions and account, all loaded cumulatively.
 
 ## Scope
-- Clubhouse never writes under `~/.gemini`. Reads are limited to `~/.gemini/antigravity-cli/settings.json` (`auth.type`, `modelProvider`, `agentMode`, `gcp`) and `~/.gemini/config/mcp_config.json` (the #A8 collision check). Both are BOM- and comment-tolerant. An unparsable settings file means "unknown" for eligibility; an unparsable MCP config means the collision check cannot pass, so the start is refused with the reason.
+- Clubhouse never writes under `~/.gemini`. Reads are limited to `~/.gemini/antigravity-cli/settings.json` (`auth.type`, `modelProvider`, `agentMode`, `gcp`) and `~/.gemini/config/mcp_config.json` (the #3793 collision check). Both are BOM- and comment-tolerant. An unparsable settings file means "unknown" for eligibility; an unparsable MCP config means the collision check cannot pass, so the start is refused with the reason.
 - Workspace writes (`AGENTS.md` block, `.agents/skills/*`, `.agents/mcp_config.json` entry, `.agents/hooks.json` named hooks) are merged, snapshotted, restored and excluded. User custom text is preserved byte-for-byte.
 - Agent settings view: a read-only list "Also loaded from your Antigravity profile" with the documented global paths that exist.
 - Do not use the undocumented `GEMINI_HOME`.
@@ -322,14 +322,14 @@ Unit tests with a temp HOME; crash-restore through `config-pipeline` recovery.
 <!-- issue key=A16 labels="documentation,enhancement,type:chore,area:renderer,severity: MEDIUM" -->
 # [MEDIUM] Antigravity help, settings, first run and provider doc contract
 
-Part of #E. Needs #A4.
+Part of #3785. Needs #3789.
 
 ## Problem
 The provider doc contract test hard-codes three providers (`src/main/orchestrators/provider-doc-contract.test.ts:49-53`) against the matrix in `src/renderer/features/help/content/settings-orchestrators.md:43-49`. Users need install, sign-in and limitation guidance.
 
 ## Scope
 - An Antigravity column in the help matrix and the contract test.
-- Help page: install link (https://antigravity.google/docs/getting-started/); sign in by running `agy` once in a terminal (or `agy acp --login` over SSH); workspace trust prompt; what each runtime needs and why headless may be unavailable; `auto` unavailable for business accounts; inherited `~/.gemini` customizations; the #A1 statements paraphrased with links.
+- Help page: install link (https://antigravity.google/docs/getting-started/); sign in by running `agy` once in a terminal (or `agy acp --login` over SSH); workspace trust prompt; what each runtime needs and why headless may be unavailable; `auto` unavailable for business accounts; inherited `~/.gemini` customizations; the #3786 statements paraphrased with links.
 - Settings: provider toggle with the Experimental badge; first-run install link via the descriptor.
 - API-key use requires the person to set `"modelProvider": "gemini"` and export `GEMINI_API_KEY` themselves (https://antigravity.google/docs/install/); Clubhouse does not edit that file.
 
@@ -345,7 +345,7 @@ Unit and renderer tests.
 <!-- issue key=A10 labels="enhancement,type:feature,area:main,severity: MEDIUM" -->
 # [MEDIUM] Antigravity terminal status via hooks, session id capture and resume
 
-Part of #E. Needs #A4, #A9.
+Part of #3785. Needs #3789, #3794.
 
 ## Problem
 Terminal agents need tool and stop status and a native session id for resume. Antigravity prints no documented session id to the PTY; documented hook payloads carry `conversationId`. Hooks live in `.agents/hooks.json` as a map of named hooks with `SessionStart`, `PreToolUse`, `PostToolUse` and `Stop` (https://antigravity.google/docs/hooks/). `SessionCapable.extractSessionId` (`types.ts:309`) assumes PTY text, and `readSessionTranscript` assumes a parseable file.
@@ -365,29 +365,29 @@ Terminal agents need tool and stop status and a native session id for resume. An
 - Documented payload examples produce status events and a stored session id; resume argv uses it; the hook file is restored after stop.
 
 ## Proof
-Unit tests with documented payloads; live check in #A17.
+Unit tests with documented payloads; live check in #3802.
 
 <!-- issue key=A11 labels="enhancement,type:feature,area:main,area:shared,severity: HIGH" -->
 # [HIGH] Restore a provider-neutral ACP chat protocol layer
 
-Part of #E. Needs #A3, #A19. Blocks #A12.
+Part of #3785. Needs #3788, #3804. Blocks #3797.
 
 ## Problem
 Clubhouse removed its ACP driver with legacy Copilot ACP in #2868 (`00c9534bb`). The research doc kept ACP as the event vocabulary and the long-tail driver (`docs/structured-chat-research.md:441-450`), and the event model is already ACP-named (`src/shared/chat/events.ts:8`). Chat driver ids are a closed list (`src/shared/chat/capabilities.ts:16-21`), and selection special-cases Copilot (`src/main/services/agent-runtime/chat-drivers.ts:19-32`, `chat-spawn.ts:139-148`, `chat-runtime-settings.ts:61,90`).
 
 ## Scope
 - Recover `acp-client.ts`, `acp-session.ts`, `acp-updates.ts`, `acp-chat-mapper.ts`, `acp-schema.ts`, `acp-capabilities.ts` and `acp-chat-driver.ts` from `00c9534bb^:src/main/orchestrators/adapters/` into `src/main/chat/acp/`, removing every Copilot branch. `AcpLaunchSpec` (`acp-chat-driver.ts:23` in that tree) becomes the only provider hook.
-- Update to the ACP schema pinned in #A3 (the removed code targeted schema v1.26.0): `session/resume`, `session/close`, `session/list`, `session/set_config_option`, elicitation, `$/cancel_request`, `additionalDirectories`.
+- Update to the ACP schema pinned in #3788 (the removed code targeted schema v1.26.0): `session/resume`, `session/close`, `session/list`, `session/set_config_option`, elicitation, `$/cancel_request`, `additionalDirectories`.
 - Capabilities come from `initialize`; static claims come only from the launch spec.
 - Driver selection treats a provider's ACP driver as an ordinary candidate (Copilot branches move to descriptor data). Selecting chat never implies a silent terminal fallback for providers that opt out of it.
 - Carry forward the fixes for #2191 (activity after the prompt reply) and #2401 (resume test timing).
-- Passes #A19.
+- Passes #3804.
 
 ## Non-goals
 - Re-adding Copilot ACP.
 
 ## Acceptance
-- The generic driver passes the fake ACP flows and #A19 with no provider-specific code.
+- The generic driver passes the fake ACP flows and #3804 with no provider-specific code.
 - The kill-switch denylist validation accepts the new id(s).
 
 ## Proof
@@ -396,39 +396,39 @@ Unit and fake-CLI flow tests (`chat-fake-cli-flows.test.ts` pattern); schema pin
 <!-- issue key=A12 labels="enhancement,type:feature,area:main,area:renderer,severity: HIGH" -->
 # [HIGH] Antigravity ACP chat driver
 
-Part of #E. Needs #A3, #A6, #A8, #A11, #A19.
+Part of #3785. Needs #3788, #3791, #3793, #3796, #3804.
 
 ## Problem
 Native chat for Antigravity over `agy acp` (https://antigravity.google/docs/ide/extensions/acp/, https://antigravity.google/docs/cli/acp/).
 
 ## Scope
-- Launch spec: `agy acp --log-file <clubhouse log dir>`; `--sandbox` and `--dangerously-skip-permissions` from #A6; `--add-dir` after #1724; `--process-per-session` only when an HTTP MCP server must be passed. Working directory is the agent worktree.
-- Driver id `antigravity_acp`, `optIn: true` until the required #A17 gates pass.
+- Launch spec: `agy acp --log-file <clubhouse log dir>`; `--sandbox` and `--dangerously-skip-permissions` from #3791; `--add-dir` after #1724; `--process-per-session` only when an HTTP MCP server must be passed. Working directory is the agent worktree.
+- Driver id `antigravity_acp`, `optIn: true` until the required #3802 gates pass.
 - Capabilities from `initialize` plus documented behaviour: steer (a prompt mid-turn steers the running turn), interrupt (`session/cancel`), questions (elicitation when advertised), slash commands, `usage: 'context'` (1.5.8+), live model and thinking-level switch through `session/set_config_option`, images and embedded resources per `promptCapabilities`, `login: 'terminal'`, `systemPrompt: false`, `subagents: 'ids_only'` until V8. History from `session/load` replay.
-- Modes from #A6; `liveLevels` excludes `full_access`.
+- Modes from #3791; `liveLevels` excludes `full_access`.
 - Auth: `needsLogin` and `loginHint` on `-32000` ("Run `agy` in a terminal to sign in", or `agy acp --login` over SSH). Clubhouse does not call `authenticate` for OAuth methods and does not inject `GEMINI_API_KEY`.
 - No implicit terminal fallback. On a start failure the agent shows the reason with "Retry chat" and "Open in terminal"; the unsent first message stays in the composer and is not replayed. After a prompt was accepted, the turn settles as failed only when the provider reports a failure. A lost connection or any other ambiguous outcome settles as unknown. Either way the known work (tool calls, edits, messages) stays in the transcript and the prompt is never retried automatically.
 - `clientInfo` name and title are Clubhouse with the app version; never another client's identity.
 - Models exactly as offered by the session's config options.
-- Chat version policy entry (`chat-version-policy.ts`): floor from #A15; tested max advisory.
+- Chat version policy entry (`chat-version-policy.ts`): floor from #3800; tested max advisory.
 - Chat header label and driver picker entry.
 - Workspace trust in ACP sessions handled if it arrives as a question or permission (V7).
 
 ## Non-goals
-- Third-party model access decisions (#A1). Headless.
+- Third-party model access decisions (#3786). Headless.
 
 ## Acceptance
-- Passes #A19 against the fake CLI.
+- Passes #3804 against the fake CLI.
 - Fake-CLI flows: start, stream, tool call with diff, permission allow and deny, question, cancel mid-tool, steer, model switch, resume after restart, auth-required with hint and no fallback, Windows `.exe` spawn.
 - No regression in other drivers.
 
 ## Proof
-Fake-CLI tests and a chat E2E spec added to an explicit E2E job list; real-login QA in #A17.
+Fake-CLI tests and a chat E2E spec added to an explicit E2E job list; real-login QA in #3802.
 
 <!-- issue key=A13 labels="enhancement,type:feature,area:main,severity: MEDIUM" -->
 # [MEDIUM] Antigravity headless: stream-json normalizer and eligibility gate
 
-Part of #E. Needs #A1, #A3, #A4, #A6. Optional for the epic.
+Part of #3785. Needs #3786, #3788, #3789, #3791. Optional for the epic.
 
 ## Problem
 Quick agents, Actions and one-off prompts use `HeadlessCapable` (`types.ts:252`, `agent-system.ts:867-968`, `headless-prompt.ts:106-120`). Antigravity documents `agy -p --output-format stream-json` with `init`, `step_update` and `result` events (https://antigravity.google/docs/cli/headless/). The FAQ says wrapping `agy -p` in third-party apps is not supported on consumer plans (https://antigravity.google/docs/faq/); no page positively documents it for other plans.
@@ -437,7 +437,7 @@ Quick agents, Actions and one-off prompts use `HeadlessCapable` (`types.ts:252`,
 - `buildHeadlessCommand`: `agy -p <prompt> --output-format stream-json --mode <level>` plus `--model`, `--effort`, `--conversation` and `--print-timeout`.
 - `createEventNormalizer` to the stream-json shape `headless-manager.ts` consumes (pattern: `codex-headless-events.ts`).
 - Soft-denied approvals (exit 0 with a stderr notice) become a warning on the run result, never silent success.
-- Gate: off for every auth type by default. Enabled only for auth types listed by the #A1 decision, read from `auth.type`, `modelProvider` and `AGY_ADC_AUTH`; unknown means not eligible.
+- Gate: off for every auth type by default. Enabled only for auth types listed by the #3786 decision, read from `auth.type`, `modelProvider` and `AGY_ADC_AUTH`; unknown means not eligible.
 - When the gate is closed: the request is refused with the reason. A quick agent may be started as an interactive terminal agent only if the person picks that option, which states that approvals then happen in the terminal. Actions that need headless refuse. No automatic conversion or replay.
 - `disallowedTools` and `noSessionPersistence` map only to documented equivalents; otherwise they are reported unsupported.
 
@@ -448,19 +448,19 @@ Quick agents, Actions and one-off prompts use `HeadlessCapable` (`types.ts:252`,
 - Normalizer tests for every documented event and status; gate tests for each auth type, including unknown; refusal and explicit-choice paths.
 
 ## Proof
-Unit tests with the fake CLI. A live run in #A17 only if #A1 enables an auth type that is available.
+Unit tests with the fake CLI. A live run in #3802 only if #3786 enables an auth type that is available.
 
 <!-- issue key=A14 labels="enhancement,type:feature,area:main,area:shared,severity: MEDIUM" -->
 # [MEDIUM] Antigravity in Annex, mobile, helpers, and the Dispatcher eligibility gate
 
-Part of #E. Needs #A2, #A4, #A18.
+Part of #3785. Needs #3787, #3789, #3803.
 
 ## Problem
 Remote and orchestration paths enumerate providers: remote history (`remote-session-history.ts:34`, `RemoteSessionHistory.tsx:52`), mobile refusal of unknown ids (`orchestrator_unavailable`), helper presets (`src/shared/helper-routing.ts:62,94`), the Dispatcher default (`dispatcher-service.ts:748-751`) and the Dispatcher's no-desktop-control contract (#3185, `desktopControlOffArgs`, `agent-system.ts:792`).
 
 ## Scope
 - Annex: the desktop sends the descriptor list so phone and remote desktops show Antigravity agents without their own allowlists; remote session history for Antigravity sessions.
-- Helpers: explicit `cli: 'antigravity-cli'` for same-project and cross-project helpers. Auto policy comes from #A18.
+- Helpers: explicit `cli: 'antigravity-cli'` for same-project and cross-project helpers. Auto policy comes from #3803.
 - Dispatcher eligibility gate (optional for the epic):
   1. Write down the contract: the Dispatcher acts only through the Clubhouse MCP, never through the CLI's own computer use or browser control.
   2. List Antigravity's documented browser and desktop tools (hooks tool list, the `/browser` subagent, `browser_*` tools) and the documented controls for each: a workspace `PreToolUse` hook returning `deny`, `mcp(server/tool)` deny rules (which cover the `/browser` subagent's DevTools tools since a 1.5.x fix), sandbox network rules.
@@ -481,7 +481,7 @@ Unit tests for routing and Annex payloads; existing Annex harness; V14 evidence.
 <!-- issue key=A15 labels="enhancement,type:chore,area:main,area:shared,severity: LOW" -->
 # [LOW] Antigravity telemetry, diagnostics and version policy
 
-Part of #E. Needs #A2, #A4, #A12.
+Part of #3785. Needs #3787, #3789, #3797.
 
 ## Scope
 - Telemetry enum values `antigravity-cli` (`clubhouse.orchestrator`, helper routing) and `antigravity_acp` (`c.chat.driver`), reviewed per the OTel spec. No prompt text, raw model ids outside existing rules, or auth type in exported data.
@@ -498,31 +498,31 @@ Unit tests.
 <!-- issue key=A17 labels="type:chore,area:main,severity: HIGH" -->
 # [HIGH] Antigravity real-login validation gates (deferred until a subscription is available)
 
-Part of #E. Required gates need #A1, #A2, #A3, #A4, #A5, #A6, #A7, #A8, #A9, #A10, #A11, #A12, #A14 (baseline), #A15, #A16, #A18, #A19. Optional gates need only their feature: V14 needs the Dispatcher part of #A14; any headless run needs #A13. Deferred acceptance: nothing here runs in CI or before an account exists.
+Part of #3785. Required gates need #3786, #3787, #3788, #3789, #3790, #3791, #3792, #3793, #3794, #3795, #3796, #3797, #3799 (baseline), #3800, #3801, #3803, #3804. Optional gates need only their feature: V14 needs the Dispatcher part of #3799; any headless run needs #3798. Deferred acceptance: nothing here runs in CI or before an account exists.
 
 ## Problem
 Fixtures are built from public docs. The gates below need a real binary, and some need a signed-in account. Required gates decide whether `optIn` and the experimental status can be removed.
 
-## Required gates (cannot be waived to close #E)
+## Required gates (cannot be waived to close #3785)
 Real binary, no prompt:
-- V3: `agy` passes its environment to stdio MCP children, in the TUI and in ACP. The probe server sees only synthetic sentinel variables set for the test (for example `CLUBHOUSE_TEST_SENTINEL_A=1`) and records a boolean per allowlisted name. It never dumps the process environment and never runs with a real nonce, token or credential in its env. If inheritance fails, the bridge fails closed (#A8).
+- V3: `agy` passes its environment to stdio MCP children, in the TUI and in ACP. The probe server sees only synthetic sentinel variables set for the test (for example `CLUBHOUSE_TEST_SENTINEL_A=1`) and records a boolean per allowlisted name. It never dumps the process environment and never runs with a real nonce, token or credential in its env. If inheritance fails, the bridge fails closed (#3793).
 - V4: a worktree `.git` file stops parent rule traversal.
 - V6: ACP `initialize` capabilities on the pinned version; record a real handshake fixture.
 - V10: MCP `tools/list_changed` handling (token-free probe used for other CLIs).
 
 Signed in:
-- V1: the #A1 decision is applied; sign-in flow text confirmed.
+- V1: the #3786 decision is applied; sign-in flow text confirmed.
 - V2: which models the ACP session offers Clubhouse, per available plan.
 - V5: ACP `session/load` history replay is enough for the chat transcript. The undocumented `transcript.jsonl` is not parsed whatever this shows.
 - V7: workspace trust prompt in ACP sessions for a new worktree.
 - V9: PTY paste timing.
 - V12: Windows ACP startup and spawn.
-- V13: steering, cancel, permission and disconnect settlement on the real server match #A19.
+- V13: steering, cancel, permission and disconnect settlement on the real server match #3804.
 
 ## Optional gates (may be deferred with a reason)
 - V8: subagent reporting over ACP.
 - V11: business account (`oauth-business`): no `auto`, admin policies, if an account is available.
-- V14: documented browser and desktop controls fail closed (Dispatcher gate in #A14).
+- V14: documented browser and desktop controls fail closed (Dispatcher gate in #3799).
 
 ## Rules
 - Use the person's own account, signed in by them. No automated login, credential reads or account switching.
@@ -537,15 +537,15 @@ Signed in:
 <!-- issue key=A18 labels="enhancement,needs-decision,type:feature,area:main,area:shared,severity: MEDIUM" -->
 # [MEDIUM] Helper Auto eligibility and unknown-quota ranking as declared provider policy
 
-Part of #E. Needs #A2. Blocks the helper part of #A14.
+Part of #3785. Needs #3787. Blocks the helper part of #3799.
 
 ## Problem
 `cli: 'auto'` picks among `AUTO_CANDIDATE_PROVIDERS` (`src/shared/helper-routing.ts:73`) and ranks by `readPlanQuota`. Copilot has no quota reader and is still a candidate, ranked last behind even low and unmeasured providers (`helper-routing.ts:70-72`, #3279). That policy lives in literals and comments rather than in the provider contract, so a new provider like Antigravity (no token-free quota read, no documented headless eligibility on consumer plans) has no stated policy.
 
 ## Scope
-- Descriptor fields (#A2): `auto: 'candidate' | 'opt_in' | 'excluded'` and `quota: 'reader' | 'unknown'`, with documented ranking: providers with readings by remaining quota, then `unknown`, preserving today's Copilot behaviour exactly.
-- Auto only starts a provider in a runtime that provider's gates allow (terminal or chat for Antigravity; headless only if #A13's gate is open).
-- Decision for Antigravity's initial value, recorded here: proposed `opt_in` (off unless the person enables it in helper settings), as a starting point to revisit after #A17, not a conclusion that Antigravity is unsuitable.
+- Descriptor fields (#3787): `auto: 'candidate' | 'opt_in' | 'excluded'` and `quota: 'reader' | 'unknown'`, with documented ranking: providers with readings by remaining quota, then `unknown`, preserving today's Copilot behaviour exactly.
+- Auto only starts a provider in a runtime that provider's gates allow (terminal or chat for Antigravity; headless only if #3798's gate is open).
+- Decision for Antigravity's initial value, recorded here: proposed `opt_in` (off unless the person enables it in helper settings), as a starting point to revisit after #3802, not a conclusion that Antigravity is unsuitable.
 - Settings UI shows why a provider is ranked where it is (for example "quota unknown").
 
 ## Non-goals
@@ -561,13 +561,13 @@ Unit tests on `helper-routing` and `helper-auto-policy`.
 <!-- issue key=A19 labels="enhancement,test-coverage,type:feature,area:main,area:shared,severity: HIGH" -->
 # [HIGH] Chat driver lifecycle conformance suite (receipts, settlement, retries)
 
-Part of #E. Needs #A3. Blocks #A11, #A12.
+Part of #3785. Needs #3788. Blocks #3796, #3797.
 
 ## Problem
 Receipt, settlement and retry semantics are spread across `chat-runtime.ts` and each driver, with no driver-independent test. #3782 demonstrates the risk with a synthetic reproduction: the runtime keeps one pending token per prompt receipt and retires one per `turn_started`, so two accepted submissions that join one native turn leave a token behind and later work queues with nothing to drain it. Incident evidence there is compatible with this mechanism but is not proven to be its historical cause. Antigravity's ACP server documents exactly that shape: a prompt sent mid-turn steers the running turn instead of starting a new one (https://antigravity.google/docs/ide/extensions/acp/). Its changelog also records past races in cancel, close and late `session/update` delivery (https://antigravity.google/docs/changelog/).
 
 ## Scope
-A conformance suite that any `ChatDriver` runs against a scripted fake (the #A3 ACP personality, the fake chat driver, and the existing drivers where their fakes allow):
+A conformance suite that any `ChatDriver` runs against a scripted fake (the #3788 ACP personality, the fake chat driver, and the existing drivers where their fakes allow):
 - Receipts: pending vs started vs settled for each accepted submission, including two submissions sharing one native turn (steer) and a submission arriving between turns. Every receipt settles exactly once.
 - Stop and cancel: settle to the outcome the provider actually reports (cancelled, completed, failed). If it reports nothing (exit, disconnect), the outcome is unknown; Clubhouse never fabricates a provider completion. Open tool calls and pending permissions or questions are closed in Clubhouse as cancelled when the provider confirms it, otherwise as abandoned with the outcome unknown.
 - Permissions and questions: answered, answered elsewhere, timed out, and outstanding when the process exits or disconnects; none left blocking later turns.
@@ -581,7 +581,7 @@ A conformance suite that any `ChatDriver` runs against a scripted fake (the #A3 
 - Fixing #3782 itself (tracked there). The suite adds the shared-turn case so new drivers can't regress it, marked expected-fail for drivers that currently fail it until #3782 lands.
 
 ## Acceptance
-- The suite runs in CI for the fake driver and the generic ACP driver, and is required for #A12.
+- The suite runs in CI for the fake driver and the generic ACP driver, and is required for #3797.
 - Contract written in `src/shared/chat/README.md`.
 
 ## Proof
