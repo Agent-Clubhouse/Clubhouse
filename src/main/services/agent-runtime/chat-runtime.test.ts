@@ -111,6 +111,78 @@ it('does not retain future-turn debt when Codex accepts two prompts into one nat
 });
 
 describe('native submission ownership', () => {
+  it.each([
+    ['strict-success', 'during-close'], ['strict-success', 'after-stop'],
+    ['best-effort-failure', 'during-close'], ['best-effort-failure', 'after-stop'],
+  ] as const)('does not re-admit input after %s with its receipt arriving %s', async (stopKind, receiptOrder) => {
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
+    const { runtime } = makeRuntime(driver);
+    let resolveReceipt!: (receipt: ChatSendReceipt) => void;
+    let releaseClose!: () => void;
+    let rejectClose!: (error: Error) => void;
+    const receipt = new Promise<ChatSendReceipt>((resolve) => { resolveReceipt = resolve; });
+    const closing = new Promise<void>((resolve, reject) => { releaseClose = resolve; rejectClose = reject; });
+    await runtime.start();
+    const session = driver.last;
+    const originalClose = session.close.bind(session);
+    const close = vi.spyOn(session, 'close').mockImplementationOnce(async () => { await closing; await originalClose(); });
+    try {
+      Object.assign(session, { sendWithReceipt: async (...args: Parameters<typeof session.send>) => {
+        await session.send(...args); return receipt;
+      } });
+      const sending = runtime.sendMessage('original', { source: 'user' });
+      await flush();
+      const stopping = runtime.stop({ throwOnFailure: stopKind === 'strict-success' });
+      await flush();
+      expect(close).toHaveBeenCalledOnce();
+      expect(session.sent).toHaveLength(1);
+      if (receiptOrder === 'during-close') {
+        resolveReceipt({ delivery: 'prompt', nativeTurn: { id: 'old-native', completed: false } });
+        expect(await sending).toMatchObject({ delivery: 'prompt' });
+      }
+      if (stopKind === 'strict-success') releaseClose();
+      else rejectClose(new Error('best-effort close failed'));
+      await expect(stopping).resolves.toBeUndefined();
+      expect(runtime.isRunning()).toBe(false);
+      if (receiptOrder === 'after-stop') {
+        resolveReceipt({ delivery: 'prompt', nativeTurn: { id: 'old-native', completed: false } });
+        expect(await sending).toMatchObject({ delivery: 'prompt' });
+      }
+      await expect(runtime.sendMessage('new input', { source: 'user' })).rejects.toThrow('not running');
+      expect(session.sent.map((x) => x.content)).toEqual([[{ type: 'text', text: 'original' }]]);
+      expect(driver.sessions).toEqual([session]);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+      // No new stopped hasPendingWork contract: this control checks disposal,
+      // actual returned delivery and absence of a retry/admission only.
+    } finally { close.mockRestore(); await runtime.stop(); }
+  });
+
+  it('removes only its own rejected native submission and preserves the original error', async () => {
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
+    const { runtime } = makeRuntime(driver);
+    let rejectReceipt!: (error: Error) => void;
+    const receipt = new Promise<ChatSendReceipt>((_, reject) => { rejectReceipt = reject; });
+    const error = new Error('first receipt rejected');
+    try {
+      await runtime.start();
+      let count = 0;
+      Object.assign(driver.last, { sendWithReceipt: async (...args: Parameters<typeof driver.last.send>) => {
+        await driver.last.send(...args);
+        return ++count === 1 ? receipt : { delivery: 'prompt', nativeTurn: { id: 'accepted-native', completed: false } };
+      } });
+      const first = runtime.sendMessage('rejected', { source: 'user' }).catch((value: unknown) => value);
+      await flush();
+      await runtime.sendMessage('accepted', { source: 'user' });
+      rejectReceipt(error);
+      expect(await first).toBe(error);
+      expect(runtime.hasPendingWork()).toBe(true);
+      driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'accepted-native' } });
+      driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(runtime.hasPendingWork()).toBe(false);
+      expect(driver.last.sent.map((x) => x.content)).toEqual(['rejected', 'accepted'].map((text) => [{ type: 'text', text }]));
+    } finally { await runtime.stop(); }
+  });
+
   it('retains an accepted native reservation when strict close fails after its receipt resolves during detach', async () => {
     const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
     const { runtime } = makeRuntime(driver);
@@ -324,29 +396,47 @@ describe('native submission ownership', () => {
   it.each(['resolve', 'reject'] as const)('keeps old-session receipt %s from retiring a replacement reservation', async (outcome) => {
     const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
     const { runtime } = makeRuntime(driver);
+    const stopTracking = startFederationTurnTracking(runtime.agentId);
+    const settled = vi.fn();
     let resolve!: (receipt: ChatSendReceipt) => void;
     let reject!: (error: Error) => void;
     const reply = new Promise<ChatSendReceipt>((r, j) => { resolve = r; reject = j; });
     try {
       await runtime.start();
       const old = driver.last;
-      Object.assign(old, { sendWithReceipt: async () => reply });
+      Object.assign(old, { sendWithReceipt: async (...args: Parameters<typeof old.send>) => {
+        await old.send(...args); return reply;
+      } });
       const sending = runtime.sendMessage('old input', { source: 'user' });
       const result = sending.then((value) => value, (error) => error as Error);
       await flush();
       await runtime.clearContext();
-      Object.assign(driver.last, { sendWithReceipt: async () => ({ delivery: 'prompt', nativeTurn: { id: 'same-id', completed: false } }) });
-      await runtime.sendMessage('new input', { source: 'user' });
+      let count = 0;
+      Object.assign(driver.last, { sendWithReceipt: async (...args: Parameters<typeof driver.last.send>) => ({
+        delivery: await driver.last.send(...args), nativeTurn: { id: ++count === 1 ? 'same-id' : 'next-native', completed: false },
+      }) });
+      await withFederationInput({ id: 'replacement-causal', cause: { rootId: 'replacement-causal', depth: 4 } } as FederatedRequest,
+        () => runtime.sendMessage('new input', { source: 'mcp' }));
+      expect((await runtime.sendMessage('queued input', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'new', onSettled: settled } })).delivery).toBe('queued');
       // IDs may repeat across driver generations. No old receipt can own
       // the new session's reservation, regardless of its success or failure.
       if (outcome === 'resolve') resolve({ delivery: 'prompt', nativeTurn: { id: 'same-id', completed: false } });
       else reject(new Error('old operation failed'));
       expect(await result).toMatchObject(outcome === 'resolve' ? { delivery: 'prompt' } : { message: 'old operation failed' });
       expect(runtime.hasPendingWork()).toBe(true);
+      expect(old.sent).toHaveLength(1);
+      expect(driver.last.sent).toHaveLength(1);
+      expect(settled).not.toHaveBeenCalled();
       driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'same-id' } });
       driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(driver.last.sent).toHaveLength(2);
+      expect(settled).toHaveBeenCalledExactlyOnceWith('delivered');
+      driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'next-native' } });
+      driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
       expect(runtime.hasPendingWork()).toBe(false);
-    } finally { await runtime.stop(); }
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+      expect(old.sent).toHaveLength(1);
+    } finally { await runtime.stop(); stopTracking(); }
   });
 
   it('keeps a genuinely pending causal submission fenced and retains permission, question and tool waits', async () => {

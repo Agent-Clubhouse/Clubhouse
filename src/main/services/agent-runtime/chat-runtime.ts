@@ -714,7 +714,11 @@ export class ChatAgentRuntime implements AgentRuntime {
     try {
       const receipt = await session.sendWithReceipt(content, delivery);
       const turn = receipt.nativeTurn;
-      if (this.session !== session || !turn || turn.completed || submissions.active === turn.id || submissions.observed.has(turn.id)) {
+      // Strict close temporarily detaches this pointer and may restore the
+      // same live session. Only ended runtime/removed ownership retires this
+      // reservation; clearContext already removes the old session's tokens.
+      if (this.ended || !this.pendingTurns.has(token) || !turn || turn.completed
+        || submissions.active === turn.id || submissions.observed.has(turn.id)) {
         this.pendingTurns.delete(token);
       } else {
         submissions.pending.set(token, turn.id);
