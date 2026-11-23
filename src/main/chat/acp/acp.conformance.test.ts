@@ -32,7 +32,18 @@ function control(agent: ScriptedAcpAgent): NativeControl {
     received: () => agent.promptsWritten,
     answered: () => agent.answers,
     // An ACP turn runs from the prompt's receipt; there's no separate start message.
-    async beginTurn() { current = await agent.nextPrompt(); },
+    async beginTurn() {
+      const prompt = await agent.nextPrompt();
+      current = prompt;
+      // A live agent answers session/cancel by ending the prompt with
+      // `cancelled`, as the protocol requires. (An agent lost before that
+      // answer is a different case: driver.test.ts keeps it unknown.)
+      void agent.cancelled().then(() => {
+        if (current !== prompt) return;
+        current = undefined;
+        prompt.end('cancelled');
+      });
+    },
     async endTurn(stopReason) {
       const turn = current ?? await agent.nextPrompt();
       current = undefined;
