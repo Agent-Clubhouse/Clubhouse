@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
+import { reportVerdict, combinedVerdict } from './ci-efficiency-mutation-verdict.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const require = createRequire(import.meta.url);
@@ -41,15 +42,15 @@ const config = path.join(sandbox, 'vitest.config.mjs');
 fs.writeFileSync(path.join(sandbox, 'ci-scripts.test.ts'), tests);
 fs.writeFileSync(config, `export default ${JSON.stringify({ root: sandbox, test: { include: ['ci-scripts.test.ts'], environment: 'node', maxWorkers: 1, fileParallelism: false } })};\n`);
 const report = {
-  schemaVersion: 1, createdAt: new Date().toISOString(), baseCommit: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim(),
+  schemaVersion: 2, createdAt: new Date().toISOString(), baseCommit: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim(),
   runtime: { node: process.version, vitest: require('vitest/package.json').version, platform: process.platform, arch: process.arch, cpus: os.cpus().length },
-  inputs: { source: 'scripts/ci/classify-changes.mjs', sourceSha256: hash(source), tests: 'scripts/ci/ci-scripts.test.ts', testsSha256: hash(tests), runnerSha256: hash(fs.readFileSync(fileURLToPath(import.meta.url))) },
+  inputs: { source: 'scripts/ci/classify-changes.mjs', sourceSha256: hash(source), tests: 'scripts/ci/ci-scripts.test.ts', testsSha256: hash(tests), runnerSha256: hash(fs.readFileSync(fileURLToPath(import.meta.url))), verdictSha256: hash(fs.readFileSync(new URL('./ci-efficiency-mutation-verdict.mjs', import.meta.url))) },
   limits: { hypotheses: 8, repetitions: 2, workers: 1, budgetMs: 600_000, processTimeoutMs: 30_000 },
   strategies: { targeted: 'Existing classifier suite filtered to one named test per hypothesis', full: 'All existing classifier tests (not the repository suite)' },
   baselines: [], hypotheses: [],
 };
 
-function run(strategy, name) {
+function run(strategy, name, matcher) {
   const remaining = Math.floor(deadline - performance.now());
   if (remaining <= 0) return { outcome: 'unresolved', reason: 'pilot budget exhausted', elapsedMs: 0 };
   const json = path.join(sandbox, 'result.json');
@@ -63,12 +64,7 @@ function run(strategy, name) {
   let data;
   try { data = JSON.parse(fs.readFileSync(json, 'utf8')); }
   catch { return { ...result, outcome: 'invalid', reason: 'missing or invalid test report', output: (child.stderr + child.stdout).slice(-2000) }; }
-  const assertions = data.testResults.flatMap((suite) => suite.assertionResults);
-  const failed = assertions.filter((test) => test.status === 'failed').map((test) => test.fullName);
-  const passed = assertions.filter((test) => test.status === 'passed').length;
-  if (failed.length && child.status === 1) return { ...result, outcome: 'killed', passed, failed };
-  if (child.status === 0 && passed > 0 && !data.numFailedTestSuites) return { ...result, outcome: 'survived', passed, failed };
-  return { ...result, outcome: 'invalid', reason: 'suite/import/infrastructure failure or no selected tests', passed, failed, output: (child.stderr + child.stdout).slice(-2000) };
+  return { ...result, ...reportVerdict(data, child.status, name, matcher) };
 }
 
 function green(strategy, name, phase) {
@@ -97,13 +93,11 @@ try {
     entry.witness = { original: witness(original, hypothesis), mutant: witness(mutant, hypothesis) };
     if (JSON.stringify(entry.witness.original) === JSON.stringify(entry.witness.mutant)) { entry.classification = 'unresolved'; entry.reason = 'witness did not prove non-equivalence; not counted as equivalent'; continue; }
     entry.equivalence = 'non-equivalent (explicit counterexample)';
+    entry.expectedMatcher = ['docs-any', 'test-e2e', 'stable-e2e', 'removed-lines'].includes(hypothesis.id) ? 'deeply equal' : 'match object';
     for (const strategy of ['targeted', 'full']) {
-      entry.runs[strategy] = Array.from({ length: 2 }, () => run(strategy, hypothesis.test));
+      entry.runs[strategy] = Array.from({ length: 2 }, () => run(strategy, hypothesis.test, entry.expectedMatcher));
     }
-    const outcomes = Object.values(entry.runs).flat().map((r) => r.outcome);
-    entry.classification = outcomes.includes('invalid') ? 'invalid' : outcomes.includes('unresolved') ? 'unresolved'
-      : Object.values(entry.runs).some((runs) => runs[0].outcome !== runs[1].outcome) ? 'unresolved'
-        : entry.runs.full[0].outcome;
+    entry.classification = combinedVerdict(entry.runs);
     console.log(`${entry.id}: targeted=${entry.runs.targeted.map((r) => r.outcome).join('/')} full=${entry.runs.full.map((r) => r.outcome).join('/')}`);
   }
   green('full', undefined, 'after');

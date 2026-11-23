@@ -1,0 +1,1454 @@
+{
+  "schemaVersion": 2,
+  "createdAt": "2026-11-23T23:38:22.473Z",
+  "baseCommit": "88b7e1ba39fa353e932493bcc35efebf7555ad78",
+  "runtime": {
+    "node": "v25.8.1",
+    "vitest": "4.1.12",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpus": 10
+  },
+  "inputs": {
+    "source": "scripts/ci/classify-changes.mjs",
+    "sourceSha256": "050bb76f206e2468940e5735b2cb96bc64231d59b12774a9c8c5fafff22858e3",
+    "tests": "scripts/ci/ci-scripts.test.ts",
+    "testsSha256": "5ce156984e56d47840355376bf44bfd3b24e39bd7b87ba4637526212649405c0",
+    "runnerSha256": "5fe19fcb6ce577ef10ace1b081707d335594245729cf1614289ce577c4b383b2",
+    "verdictSha256": "ea886a5af3a5238ac7bb52eaddd550b82d420ecdea1d92a98c8af761555e0526"
+  },
+  "limits": {
+    "hypotheses": 8,
+    "repetitions": 2,
+    "workers": 1,
+    "budgetMs": 600000,
+    "processTimeoutMs": 30000
+  },
+  "strategies": {
+    "targeted": "Existing classifier suite filtered to one named test per hypothesis",
+    "full": "All existing classifier tests (not the repository suite)"
+  },
+  "baselines": [
+    {
+      "phase": "before",
+      "strategy": "full",
+      "elapsedMs": 310.65,
+      "exitCode": 0,
+      "passed": 27,
+      "failed": [],
+      "reportCounts": {
+        "failedTests": 0,
+        "passedTests": 27,
+        "failedSuites": 0,
+        "totalSuites": 2
+      },
+      "suiteStatus": "passed",
+      "outcome": "survived"
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "docs-only changes need nothing",
+      "elapsedMs": 306.22,
+      "exitCode": 0,
+      "passed": 1,
+      "failed": [],
+      "reportCounts": {
+        "failedTests": 0,
+        "passedTests": 1,
+        "failedSuites": 0,
+        "totalSuites": 2
+      },
+      "suiteStatus": "passed",
+      "outcome": "survived"
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "with no file list it runs everything",
+      "elapsedMs": 315.37,
+      "exitCode": 0,
+      "passed": 1,
+      "failed": [],
+      "reportCounts": {
+        "failedTests": 0,
+        "passedTests": 1,
+        "failedSuites": 0,
+        "totalSuites": 2
+      },
+      "suiteStatus": "passed",
+      "outcome": "survived"
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "a unit-test-only change skips the E2E build",
+      "elapsedMs": 303.78,
+      "exitCode": 0,
+      "passed": 1,
+      "failed": [],
+      "reportCounts": {
+        "failedTests": 0,
+        "passedTests": 1,
+        "failedSuites": 0,
+        "totalSuites": 2
+      },
+      "suiteStatus": "passed",
+      "outcome": "survived"
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "the dispatch-only stable candidate files need neither E2E nor the macOS build",
+      "elapsedMs": 304.59,
+      "exitCode": 0,
+      "passed": 1,
+      "failed": [],
+      "reportCounts": {
+        "failedTests": 0,
+        "passedTests": 1,
+        "failedSuites": 0,
+        "totalSuites": 2
+      },
+      "suiteStatus": "passed",
+      "outcome": "survived"
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+      "elapsedMs": 306.72,
+      "exitCode": 0,
+      "passed": 1,
+      "failed": [],
+      "reportCounts": {
+        "failedTests": 0,
+        "passedTests": 1,
+        "failedSuites": 0,
+        "totalSuites": 2
+      },
+      "suiteStatus": "passed",
+      "outcome": "survived"
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "dependency changes count only for Electron, native modules and forge",
+      "elapsedMs": 302.43,
+      "exitCode": 0,
+      "passed": 1,
+      "failed": [],
+      "reportCounts": {
+        "failedTests": 0,
+        "passedTests": 1,
+        "failedSuites": 0,
+        "totalSuites": 2
+      },
+      "suiteStatus": "passed",
+      "outcome": "survived"
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "the macOS build for darwin lines in window chrome, preload or the renderer",
+      "elapsedMs": 305.13,
+      "exitCode": 0,
+      "passed": 1,
+      "failed": [],
+      "reportCounts": {
+        "failedTests": 0,
+        "passedTests": 1,
+        "failedSuites": 0,
+        "totalSuites": 2
+      },
+      "suiteStatus": "passed",
+      "outcome": "survived"
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "parses changed lines per file from git diff -U0",
+      "elapsedMs": 303.72,
+      "exitCode": 0,
+      "passed": 1,
+      "failed": [],
+      "reportCounts": {
+        "failedTests": 0,
+        "passedTests": 1,
+        "failedSuites": 0,
+        "totalSuites": 2
+      },
+      "suiteStatus": "passed",
+      "outcome": "survived"
+    },
+    {
+      "phase": "after",
+      "strategy": "full",
+      "elapsedMs": 325.86,
+      "exitCode": 0,
+      "passed": 27,
+      "failed": [],
+      "reportCounts": {
+        "failedTests": 0,
+        "passedTests": 27,
+        "failedSuites": 0,
+        "totalSuites": 2
+      },
+      "suiteStatus": "passed",
+      "outcome": "survived"
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "docs-any",
+      "from": "const docsOnly = changed.every(",
+      "to": "const docsOnly = changed.some(",
+      "targetedTest": "docs-only changes need nothing",
+      "witnessInput": {
+        "files": [
+          "docs/ci.md",
+          "src/main/index.ts"
+        ],
+        "lines": []
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 307.22,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes docs-only changes need nothing",
+                "messages": [
+                  "AssertionError: expected { docsOnly: true, e2e: false, …(1) } to deeply equal { docsOnly: false, e2e: true, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:28:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes docs-only changes need nothing",
+              "matcher": "deeply equal"
+            }
+          },
+          {
+            "elapsedMs": 306.98,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes docs-only changes need nothing",
+                "messages": [
+                  "AssertionError: expected { docsOnly: true, e2e: false, …(1) } to deeply equal { docsOnly: false, e2e: true, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:28:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes docs-only changes need nothing",
+              "matcher": "deeply equal"
+            }
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 317.5,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes docs-only changes need nothing",
+                "messages": [
+                  "AssertionError: expected { docsOnly: true, e2e: false, …(1) } to deeply equal { docsOnly: false, e2e: true, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:28:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes docs-only changes need nothing",
+              "matcher": "deeply equal"
+            }
+          },
+          {
+            "elapsedMs": 317.17,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes docs-only changes need nothing",
+                "messages": [
+                  "AssertionError: expected { docsOnly: true, e2e: false, …(1) } to deeply equal { docsOnly: false, e2e: true, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:28:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes docs-only changes need nothing",
+              "matcher": "deeply equal"
+            }
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        },
+        "mutant": {
+          "docsOnly": true,
+          "e2e": false,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "expectedMatcher": "deeply equal",
+      "classification": "killed"
+    },
+    {
+      "id": "empty-e2e",
+      "from": "docsOnly: false, e2e: true, macosBuild: true, macosBuildReason: 'no changed files listed'",
+      "to": "docsOnly: false, e2e: false, macosBuild: true, macosBuildReason: 'no changed files listed'",
+      "targetedTest": "with no file list it runs everything",
+      "witnessInput": {
+        "files": [],
+        "lines": []
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 311.32,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes with no file list it runs everything",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: false, …(2) } to match object { e2e: true, macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:121:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes with no file list it runs everything",
+              "matcher": "match object"
+            }
+          },
+          {
+            "elapsedMs": 308.37,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes with no file list it runs everything",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: false, …(2) } to match object { e2e: true, macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:121:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes with no file list it runs everything",
+              "matcher": "match object"
+            }
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 315.92,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes with no file list it runs everything",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: false, …(2) } to match object { e2e: true, macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:121:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes with no file list it runs everything",
+              "matcher": "match object"
+            }
+          },
+          {
+            "elapsedMs": 318.72,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes with no file list it runs everything",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: false, …(2) } to match object { e2e: true, macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:121:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes with no file list it runs everything",
+              "matcher": "match object"
+            }
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": true,
+          "macosBuildReason": "no changed files listed"
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": false,
+          "macosBuild": true,
+          "macosBuildReason": "no changed files listed"
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "expectedMatcher": "match object",
+      "classification": "killed"
+    },
+    {
+      "id": "test-e2e",
+      "from": "&& !isTest(f) && !isStableCandidateOnly(f)",
+      "to": "&& !isStableCandidateOnly(f)",
+      "targetedTest": "a unit-test-only change skips the E2E build",
+      "witnessInput": {
+        "files": [
+          "src/main/a.test.ts"
+        ],
+        "lines": []
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 306.94,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes a unit-test-only change skips the E2E build",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to deeply equal { docsOnly: false, e2e: false, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:37:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes a unit-test-only change skips the E2E build",
+              "matcher": "deeply equal"
+            }
+          },
+          {
+            "elapsedMs": 303.26,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes a unit-test-only change skips the E2E build",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to deeply equal { docsOnly: false, e2e: false, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:37:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes a unit-test-only change skips the E2E build",
+              "matcher": "deeply equal"
+            }
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 320.53,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes a unit-test-only change skips the E2E build",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to deeply equal { docsOnly: false, e2e: false, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:37:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes a unit-test-only change skips the E2E build",
+              "matcher": "deeply equal"
+            }
+          },
+          {
+            "elapsedMs": 313.86,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes a unit-test-only change skips the E2E build",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to deeply equal { docsOnly: false, e2e: false, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:37:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes a unit-test-only change skips the E2E build",
+              "matcher": "deeply equal"
+            }
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": false,
+          "macosBuild": false
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "expectedMatcher": "deeply equal",
+      "classification": "killed"
+    },
+    {
+      "id": "stable-e2e",
+      "from": "&& !isStableCandidateOnly(f) && !isCliDenylistOnly(f)",
+      "to": "&& !isCliDenylistOnly(f)",
+      "targetedTest": "the dispatch-only stable candidate files need neither E2E nor the macOS build",
+      "witnessInput": {
+        "files": [
+          "scripts/ci/stable-candidate.mjs"
+        ],
+        "lines": []
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 303.32,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to deeply equal { docsOnly: false, e2e: false, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:43:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build",
+              "matcher": "deeply equal"
+            }
+          },
+          {
+            "elapsedMs": 308.4,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to deeply equal { docsOnly: false, e2e: false, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:43:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build",
+              "matcher": "deeply equal"
+            }
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 321.39,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to deeply equal { docsOnly: false, e2e: false, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:43:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build",
+              "matcher": "deeply equal"
+            }
+          },
+          {
+            "elapsedMs": 312.8,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to deeply equal { docsOnly: false, e2e: false, …(1) }\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:43:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build",
+              "matcher": "deeply equal"
+            }
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": false,
+          "macosBuild": false
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "expectedMatcher": "deeply equal",
+      "classification": "killed"
+    },
+    {
+      "id": "path-build",
+      "from": "if (byPath) reason =",
+      "to": "if (false) reason =",
+      "targetedTest": "the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+      "witnessInput": {
+        "files": [
+          "forge.config.ts"
+        ],
+        "lines": []
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 307.94,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true, …(1) }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:92:45\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+              "matcher": "match object"
+            }
+          },
+          {
+            "elapsedMs": 309.99,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true, …(1) }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:92:45\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+              "matcher": "match object"
+            }
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 322.53,
+            "exitCode": 1,
+            "passed": 23,
+            "failed": [
+              {
+                "name": "classify-changes the stable candidate exception covers only its own files",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:48:116\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              },
+              {
+                "name": "classify-changes the CLI kill switch exception covers only that file",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { e2e: true, macosBuild: true }\n(1 matching property omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:61:109\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              },
+              {
+                "name": "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true, …(1) }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:92:45\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              },
+              {
+                "name": "classify-changes the CLI reads a diff on stdin and writes GITHUB_OUTPUT",
+                "messages": [
+                  "AssertionError: expected 'docs_only=false\\ne2e=true\\nmacos_buil…' to be 'docs_only=false\\ne2e=true\\nmacos_buil…' // Object.is equality\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:138:55\n    at async file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 4,
+              "passedTests": 23,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+              "matcher": "match object"
+            }
+          },
+          {
+            "elapsedMs": 320.01,
+            "exitCode": 1,
+            "passed": 23,
+            "failed": [
+              {
+                "name": "classify-changes the stable candidate exception covers only its own files",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:48:116\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              },
+              {
+                "name": "classify-changes the CLI kill switch exception covers only that file",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { e2e: true, macosBuild: true }\n(1 matching property omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:61:109\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              },
+              {
+                "name": "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true, …(1) }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:92:45\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              },
+              {
+                "name": "classify-changes the CLI reads a diff on stdin and writes GITHUB_OUTPUT",
+                "messages": [
+                  "AssertionError: expected 'docs_only=false\\ne2e=true\\nmacos_buil…' to be 'docs_only=false\\ne2e=true\\nmacos_buil…' // Object.is equality\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:138:55\n    at async file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 4,
+              "passedTests": 23,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+              "matcher": "match object"
+            }
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": true,
+          "macosBuildReason": "path forge.config.ts"
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "expectedMatcher": "match object",
+      "classification": "killed"
+    },
+    {
+      "id": "dependency-build",
+      "from": "else if (byDependency) reason =",
+      "to": "else if (false) reason =",
+      "targetedTest": "dependency changes count only for Electron, native modules and forge",
+      "witnessInput": {
+        "files": [
+          "package.json"
+        ],
+        "lines": [
+          [
+            "package.json",
+            [
+              "\"electron\": \"1\""
+            ]
+          ]
+        ]
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 310.01,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes dependency changes count only for Electron, native modules and forge",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:113:115\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes dependency changes count only for Electron, native modules and forge",
+              "matcher": "match object"
+            }
+          },
+          {
+            "elapsedMs": 334.75,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes dependency changes count only for Electron, native modules and forge",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:113:115\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes dependency changes count only for Electron, native modules and forge",
+              "matcher": "match object"
+            }
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 320.44,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes dependency changes count only for Electron, native modules and forge",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:113:115\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes dependency changes count only for Electron, native modules and forge",
+              "matcher": "match object"
+            }
+          },
+          {
+            "elapsedMs": 314.14,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes dependency changes count only for Electron, native modules and forge",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:113:115\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes dependency changes count only for Electron, native modules and forge",
+              "matcher": "match object"
+            }
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": true,
+          "macosBuildReason": "Electron or native-module dependency change in package.json"
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "expectedMatcher": "match object",
+      "classification": "killed"
+    },
+    {
+      "id": "marker-build",
+      "from": "else if (byMarker) reason =",
+      "to": "else if (false) reason =",
+      "targetedTest": "the macOS build for darwin lines in window chrome, preload or the renderer",
+      "witnessInput": {
+        "files": [
+          "src/main/index.ts"
+        ],
+        "lines": [
+          [
+            "src/main/index.ts",
+            [
+              "process.platform === 'darwin'"
+            ]
+          ]
+        ]
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 304.74,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true, …(1) }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:98:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer",
+              "matcher": "match object"
+            }
+          },
+          {
+            "elapsedMs": 304.41,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true, …(1) }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:98:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer",
+              "matcher": "match object"
+            }
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 324.49,
+            "exitCode": 1,
+            "passed": 16,
+            "failed": [
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   if (process.platform === 'darwin') return;",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   const isMac = platform === \"mac\";",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   if (e.metaKey && e.key === \"k\") open();",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   accelerator: 'CmdOrCtrl+Shift+N',",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   const brew = '/opt/homebrew/bin/claude';",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   titleBarStyle: 'hiddenInset',",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   titleBarOverlay: { height: 30 },",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   trafficLightPosition: { x: 12, y: 10 },",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   app.dock.setBadge(String(n));",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   safeStorage.encryptString(token)",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true, …(1) }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:98:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 11,
+              "passedTests": 16,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer",
+              "matcher": "match object"
+            }
+          },
+          {
+            "elapsedMs": 335.32,
+            "exitCode": 1,
+            "passed": 16,
+            "failed": [
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   if (process.platform === 'darwin') return;",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   const isMac = platform === \"mac\";",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   if (e.metaKey && e.key === \"k\") open();",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   accelerator: 'CmdOrCtrl+Shift+N',",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   const brew = '/opt/homebrew/bin/claude';",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   titleBarStyle: 'hiddenInset',",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   titleBarOverlay: { height: 30 },",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   trafficLightPosition: { x: 12, y: 10 },",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   app.dock.setBadge(String(n));",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes a changed source line with a macOS marker needs the macOS build:   safeStorage.encryptString(token)",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:87:74\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2025:60\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)"
+                ]
+              },
+              {
+                "name": "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer",
+                "messages": [
+                  "AssertionError: expected { docsOnly: false, e2e: true, …(1) } to match object { macosBuild: true, …(1) }\n(2 matching properties omitted from actual)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/masonallen/source/Clubhouse/node_modules/chai/index.js:1737:25)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:98:8\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 11,
+              "passedTests": 16,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer",
+              "matcher": "match object"
+            }
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": true,
+          "macosBuildReason": "macOS-specific lines changed in src/main/index.ts"
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "expectedMatcher": "match object",
+      "classification": "killed"
+    },
+    {
+      "id": "removed-lines",
+      "from": "(line.startsWith('+') || line.startsWith('-'))",
+      "to": "line.startsWith('+')",
+      "targetedTest": "parses changed lines per file from git diff -U0",
+      "witnessInput": "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +0 @@\n-removed\n",
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 309.85,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes parses changed lines per file from git diff -U0",
+                "messages": [
+                  "AssertionError: expected [ [ 'a.ts', [ 'added' ] ], …(1) ] to deeply equal [ …(2) ]\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:126:34\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes parses changed lines per file from git diff -U0",
+              "matcher": "deeply equal"
+            }
+          },
+          {
+            "elapsedMs": 303.6,
+            "exitCode": 1,
+            "passed": 0,
+            "failed": [
+              {
+                "name": "classify-changes parses changed lines per file from git diff -U0",
+                "messages": [
+                  "AssertionError: expected [ [ 'a.ts', [ 'added' ] ], …(1) ] to deeply equal [ …(2) ]\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:126:34\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 0,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes parses changed lines per file from git diff -U0",
+              "matcher": "deeply equal"
+            }
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 318.48,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes parses changed lines per file from git diff -U0",
+                "messages": [
+                  "AssertionError: expected [ [ 'a.ts', [ 'added' ] ], …(1) ] to deeply equal [ …(2) ]\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:126:34\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes parses changed lines per file from git diff -U0",
+              "matcher": "deeply equal"
+            }
+          },
+          {
+            "elapsedMs": 313.04,
+            "exitCode": 1,
+            "passed": 26,
+            "failed": [
+              {
+                "name": "classify-changes parses changed lines per file from git diff -U0",
+                "messages": [
+                  "AssertionError: expected [ [ 'a.ts', [ 'added' ] ], …(1) ] to deeply equal [ …(2) ]\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.ci-mutation-1aDFL9/ci-scripts.test.ts:126:34\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                ]
+              }
+            ],
+            "reportCounts": {
+              "failedTests": 1,
+              "passedTests": 26,
+              "failedSuites": 2,
+              "totalSuites": 2
+            },
+            "suiteStatus": "failed",
+            "outcome": "killed",
+            "discriminator": {
+              "test": "classify-changes parses changed lines per file from git diff -U0",
+              "matcher": "deeply equal"
+            }
+          }
+        ]
+      },
+      "witness": {
+        "original": [
+          [
+            "a.ts",
+            [
+              "removed"
+            ]
+          ]
+        ],
+        "mutant": [
+          [
+            "a.ts",
+            []
+          ]
+        ]
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "expectedMatcher": "deeply equal",
+      "classification": "killed"
+    }
+  ],
+  "originalsUnchanged": true,
+  "sandboxRemoved": true,
+  "elapsedMs": 13165,
+  "summary": {
+    "killed": 8,
+    "survived": 0,
+    "invalid": 0,
+    "equivalent": 0,
+    "unresolved": 0
+  },
+  "strategyElapsedMs": {
+    "targeted": 4941,
+    "full": 5106
+  }
+}

@@ -1,5 +1,10 @@
 # Portable bounded classifier mutation pilot
 
+The original and corrected JSON files below preserve historical schema-1 runs.
+Their failed-test-status-only verdict was too broad: runtime errors can also
+appear in Vitest `assertionResults` as failed tests. The schema-2 reviewed run
+is the current acceptance evidence; it retains and checks failure messages.
+
 This is a local experiment on `scripts/ci/classify-changes.mjs`, using its existing
 `scripts/ci/ci-scripts.test.ts` suite. It installs nothing and activates no hosted
 job. Production classifier and workflow files are unchanged.
@@ -99,14 +104,67 @@ node scripts/ci/ci-efficiency-mutation.mjs /tmp/mutation-corrected.json
 
 ## Outcome rules and boundaries
 
-Only an assertion failure in a completed test process kills a mutant. Import,
-syntax, missing-report and suite/infrastructure failures are invalid. Timeouts,
-budget exhaustion, inconsistent repeated outcomes or a missing counterexample are
-unresolved. No equivalent mutant was claimed; equality on one witness would not
+The verdict is scoped to this known classifier suite, not a general Vitest
+failure classifier. A kill requires exit 1, consistent reporter counts, no suite
+error, and the hypothesis's exact named test failing with its expected `deeply
+equal` or `match object` AssertionError message. Every other failure must also be
+one of those known expect messages. The sole additional recognized form is the
+CLI output test's string comparison: an AssertionError for a `docs_only=` output
+string with `// Object.is equality`, in that exact named test. This permits the
+path mutation's real collateral CLI assertion failure without treating arbitrary
+runtime errors or matchers as kills. The report keeps messages, discriminator,
+exit code, counts and suite status for audit.
+
+Import, syntax, missing-report, runtime and suite/infrastructure failures are
+invalid. Assertion+runtime mixtures (within one test or across tests), missing
+expected discriminators, unknown assertion forms and targeted/full or repeat
+kill/survive disagreement are invalid. An invalid observation takes priority over
+a timeout. A known kill/survive disagreement also takes priority over a timeout.
+Timeout/budget exhaustion without such contradictions, or a missing explicit
+counterexample, remains unresolved. No equivalent mutant was claimed; equality on one witness would not
 prove equivalence. Survivors are successful experiment outcomes, so they do not
 make the runner exit nonzero. Invalid/unresolved experiments or failed original
 controls do. Evidence includes failure names, exit codes and elapsed times per
 trial. Exact timings vary across reruns.
+
+## Reviewed verdict and capped rerun
+
+The report classifier and combination logic are isolated in
+`scripts/ci/ci-efficiency-mutation-verdict.mjs`. Run the 29 focused cases with:
+
+```sh
+node --test scripts/ci/ci-efficiency-mutation-verdict.test.mjs
+node scripts/ci/ci-efficiency-mutation.mjs /tmp/mutation-reviewed.json
+```
+
+Those cases cover expected equality/object-match failures, green originals,
+TypeError/ReferenceError, mixed runtime/assertion failures in one or multiple
+tests, CLI collateral output assertion versus runtime error, wrong name/matcher,
+missing/malformed messages/report, suite errors, count mismatch, exit mismatch,
+no selected tests, Vitest nested suite counts, repeated/strategy disagreement,
+invalid plus timeout, disagreement plus timeout and timeout alone. All 29 pass.
+These verdict fixtures are correctness checks, not extra mutation hypotheses.
+
+[mutation-results-reviewed.json](mutation-results-reviewed.json) records the
+corrected tests under schema 2: **8 killed, 0 survived, 0 invalid, 0 equivalent,
+0 unresolved**. Every named expected failure appears in both repetitions under
+both strategies. All ten original green controls pass (two full 27-test runs,
+eight single-test runs). Source/test originals remain unchanged and sandbox
+cleanup succeeds. The runner and verdict-module hashes identify the exact logic.
+
+The accepted serial rerun took **13.165s total** within the same 600s cap and
+30s per-process cap. Its 16 targeted mutant processes totaled **4.941s**, and
+16 full-classifier processes totaled **5.106s**: **0.165s / 3.2%** difference.
+The entire pilot still consists of eight hypotheses, 32 mutant processes and ten
+green controls. These figures exclude the separate 29 verdict fixture checks
+(64ms Node test duration) and ESLint. The full strategy still means the classifier
+suite, not the repository. Timing limitations above continue to apply.
+
+A development rerun conservatively marked the path hypothesis invalid because
+its collateral CLI output `toBe` assertion was outside the first message
+whitelist. Inspection of the real reporter message led to the narrowly scoped
+CLI exception above, with positive and negative checks, before this final rerun.
+Earlier schema-1 reports and the regression commit remain preserved.
 
 The pilot covers eight chosen fault models, not all mutations or all classifier
 inputs. It establishes neither cross-platform execution evidence nor hosted CI
