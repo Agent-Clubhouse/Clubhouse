@@ -12,7 +12,7 @@ import { appendSection, boundBuiltinInstructions, DISPATCHER_BUILTIN_CAP_BYTES, 
 import { MEMORY_LOOKUP_INSTRUCTIONS, withMemoryIndex } from './dispatcher-memory-migration';
 import { memoryWrite } from './dispatcher-memory';
 import { readDispatcherMemory } from './dispatcher-memory-reader';
-import { searchDispatcher, type SearchOptions, type TranscriptStore } from './dispatcher-search';
+import { searchDispatcher, MAX_MEMORY_PAGE_BYTES, type SearchOptions, type TranscriptStore } from './dispatcher-search';
 
 const dirs: string[] = [];
 function temp(): string {
@@ -91,6 +91,16 @@ describe('bounded durable Dispatcher context', () => {
     expect((await readDispatcherMemory(undefined, root)).text).toContain('current-canary');
     const stores: TranscriptStore[] = [{ provider: 'sentinel', listSessions: () => { throw new Error('history must not inspect transcripts'); }, transcriptPath: async () => null }];
     await expect(searchDispatcher('historic-canary', { memoryRoot: root, stores, folders: ['/unused'], scope: 'history' })).resolves.toMatchObject({ transcripts: [] });
+  });
+
+  it('reports withheld historical coverage instead of claiming an absent fact', async () => {
+    const root = path.join(temp(), 'memory');
+    const history = path.join(root, 'history', 'index.md');
+    fs.mkdirSync(history, { recursive: true });
+    fs.writeFileSync(path.join(history, 'oversized.md'), 'canary'.padEnd(MAX_MEMORY_PAGE_BYTES + 1, 'x'));
+    const result = await searchDispatcher('canary', { memoryRoot: root, scope: 'history', stores: [], folders: [] });
+    expect(result.memory).toEqual([]);
+    expect(result.incomplete).toBe(true);
   });
 
   it('does not follow a history symlink outside memory or expose history in the default directory', async () => {

@@ -83,7 +83,7 @@ export interface SearchResult {
   transcripts: TranscriptHit[];
   /** True when a source had more hits than the limit. */
   more?: true;
-  /** True when the transcript budget ran out before every session was read. */
+  /** True when transcript or explicit history coverage is incomplete. */
   incomplete?: true;
 }
 
@@ -156,8 +156,9 @@ function clampLimit(limit: number | undefined): number {
 
 // ── Memory ─────────────────────────────────────────────────────────────────
 
-async function memoryPages(root: string, historyOnly: boolean): Promise<string[]> {
+async function memoryPages(root: string, historyOnly: boolean): Promise<{ pages: string[]; incomplete: boolean }> {
   const pages: string[] = [];
+  let incomplete = false;
   const walk = async (dir: string): Promise<void> => {
     let entries: fs.Dirent[];
     try {
@@ -168,7 +169,7 @@ async function memoryPages(root: string, historyOnly: boolean): Promise<string[]
     }
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
-      if (pages.length >= MAX_MEMORY_PAGES) return;
+      if (pages.length >= MAX_MEMORY_PAGES) { incomplete = true; return; }
       // Links are never followed: they could lead out of memory.
       if (entry.isSymbolicLink()) continue;
       const full = path.join(dir, entry.name);
@@ -178,7 +179,7 @@ async function memoryPages(root: string, historyOnly: boolean): Promise<string[]
     }
   };
   await walk(root);
-  return pages;
+  return { pages, incomplete };
 }
 
 /**
@@ -202,16 +203,19 @@ export function paragraphs(text: string): Array<{ line: number; text: string }> 
   return out;
 }
 
-async function searchMemory(root: string, terms: readonly string[], historyOnly: boolean): Promise<Array<MemoryHit & { score: number }>> {
+async function searchMemory(root: string, terms: readonly string[], historyOnly: boolean): Promise<{ hits: Array<MemoryHit & { score: number }>; incomplete: boolean }> {
   const hits: Array<MemoryHit & { score: number }> = [];
-  for (const file of await memoryPages(root, historyOnly)) {
+  const pages = await memoryPages(root, historyOnly);
+  let incomplete = pages.incomplete;
+  for (const file of pages.pages) {
     let text: string;
     try {
       const stat = await fsp.stat(file);
-      if (stat.size > MAX_MEMORY_PAGE_BYTES) continue;
+      if (stat.size > MAX_MEMORY_PAGE_BYTES) { incomplete = true; continue; }
       text = await fsp.readFile(file, 'utf-8');
     } catch {
       // telemetry-exempt: a page removed while searching
+      incomplete = true;
       continue;
     }
     const page = path.relative(root, file).split(path.sep).join('/');
@@ -221,7 +225,7 @@ async function searchMemory(root: string, terms: readonly string[], historyOnly:
       hits.push({ page, line: para.line, text: snippet(para.text, terms), link: `memory/${page}#L${para.line}`, score: score(lower, terms) });
     }
   }
-  return hits;
+  return { hits, incomplete };
 }
 
 // ── Transcript records ─────────────────────────────────────────────────────
@@ -540,7 +544,9 @@ export async function searchDispatcher(query: string, options: SearchOptions = {
   const limit = clampLimit(options.limit);
 
   if (scope !== 'transcripts') {
-    const hits = await searchMemory(options.memoryRoot ?? getDispatcherMemoryPath(), terms, scope === 'history');
+    const { hits, incomplete } = await searchMemory(options.memoryRoot ?? getDispatcherMemoryPath(), terms, scope === 'history');
+    // Preserve existing active-memory responses; make new history limits explicit.
+    if (scope === 'history' && incomplete) result.incomplete = true;
     hits.sort((a, b) => b.score - a.score || a.page.localeCompare(b.page) || a.line - b.line);
     if (hits.length > limit) result.more = true;
     result.memory = hits.slice(0, limit).map(({ score: _score, ...hit }) => hit);
