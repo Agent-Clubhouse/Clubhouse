@@ -50,6 +50,7 @@ describe('Group Project guidance against the shipped management catalog (#3618)'
     expect(controller).toContain('Shared edits, destructive changes, imports, restarts and cross-host writes retain their exact human/app/host gates');
     for (const [name, _capability, action] of GROUP_PROJECT_MANAGEMENT_TOOLS) {
       if (action === 'group_project.lead') {
+        expect(controller, name).not.toContain('`' + name + '`');
         expect(procedures, name).not.toContain('`' + name + '`');
       } else {
         expect(procedures, name).toContain('`' + name + '`');
