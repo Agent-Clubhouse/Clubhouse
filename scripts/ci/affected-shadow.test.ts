@@ -79,6 +79,8 @@ describe('report-only selector contract', () => {
     }
     expect(pureFormatter(source.replace('ms: number', 'ms: number = Date.now()'))).toBe(false);
     expect(pureFormatter(source.replace('export function', 'export async function'))).toBe(false);
+    expect(pureFormatter(source.replace('export function', 'export function*'))).toBe(false);
+    expect(pureFormatter(source.replace('ms: number', 'ms?: number'))).toBe(false);
   });
   it.each(['package.json', 'vitest.config.ts', 'test/setup-renderer.ts', 'src/shared/types.ts', 'src/preload/index.ts', 'test/__fixtures__/x.json', 'src/main/native.node', 'src/renderer/utils/other.ts', 'src/renderer/utils/Format.ts'])('unknown/config/shared/fixture/native/case paths fan out: %s', (name) => {
     expect(mutate(name, '').mode).toBe('full');

@@ -121,7 +121,7 @@ export function pureFormatter(text) {
   const ast = ts.createSourceFile(LEAF, text, ts.ScriptTarget.Latest, true);
   if (ast.parseDiagnostics.length || ast.statements.length !== 1) return false;
   const fn = ast.statements[0];
-  if (!ts.isFunctionDeclaration(fn) || fn.name?.text !== 'formatDuration' || fn.parameters.length !== 1 || fn.parameters[0].name.getText(ast) !== 'ms' || fn.parameters[0].type?.kind !== ts.SyntaxKind.NumberKeyword || fn.type?.kind !== ts.SyntaxKind.StringKeyword || fn.parameters[0].initializer || fn.parameters[0].dotDotDotToken || fn.typeParameters || fn.modifiers?.length !== 1 || fn.modifiers[0].kind !== ts.SyntaxKind.ExportKeyword || !fn.body) return false;
+  if (!ts.isFunctionDeclaration(fn) || fn.name?.text !== 'formatDuration' || fn.parameters.length !== 1 || fn.parameters[0].name.getText(ast) !== 'ms' || fn.parameters[0].type?.kind !== ts.SyntaxKind.NumberKeyword || fn.type?.kind !== ts.SyntaxKind.StringKeyword || fn.asteriskToken || fn.parameters[0].questionToken || fn.parameters[0].initializer || fn.parameters[0].dotDotDotToken || fn.typeParameters || fn.modifiers?.length !== 1 || fn.modifiers[0].kind !== ts.SyntaxKind.ExportKeyword || !fn.body) return false;
   const locals = new Set(['ms']);
   let valid = true;
   const operators = new Set([ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken, ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.LessThanToken, ts.SyntaxKind.GreaterThanToken, ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken]);
