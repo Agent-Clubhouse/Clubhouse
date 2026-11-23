@@ -444,7 +444,7 @@ describe('turning it on', () => {
     expect(fs.readFileSync(file, 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
   });
 
-  it('loads its memory index into the instructions file, on any CLI', async () => {
+  it('loads a fixed memory lookup, leaving current decisions in memory on any CLI', async () => {
     h.enabledProviders = ['codex-cli'];
     await svc.setDispatcherEnabled(true);
     fs.writeFileSync(path.join(dispatcherDir(), 'memory', 'index.md'), 'Release 1.0 is waiting on checkout.\n');
@@ -452,7 +452,9 @@ describe('turning it on', () => {
     await svc.initDispatcher();
     const written = fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8');
     expect(written.startsWith(svc.DISPATCHER_INSTRUCTIONS.trimEnd())).toBe(true);
-    expect(written).toContain('Release 1.0 is waiting on checkout.');
+    expect(written).toContain('call read_memory without a page');
+    expect(written).not.toContain('Release 1.0 is waiting on checkout.');
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'memory', 'index.md'), 'utf8')).toContain('Release 1.0 is waiting on checkout.');
   });
 
   it('sorts an existing notes/ folder into memory before writing its instructions', async () => {
@@ -460,7 +462,8 @@ describe('turning it on', () => {
     fs.writeFileSync(path.join(dispatcherDir(), 'notes', 'checkout.md'), '# Checkout\n\nwebapp-lead owns it.\n');
     await svc.setDispatcherEnabled(true);
     const written = fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8');
-    expect(written).toContain('topics/checkout.md');
+    expect(written).toContain('call read_memory without a page');
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'memory', 'index.md'), 'utf8')).toContain('topics/checkout.md');
     expect(fs.existsSync(path.join(dispatcherDir(), 'notes'))).toBe(false);
     expect(fs.readFileSync(path.join(dispatcherDir(), 'notes-archive', 'checkout.md'), 'utf-8')).toBe('# Checkout\n\nwebapp-lead owns it.\n');
   });
@@ -782,7 +785,7 @@ describe('two agents, one identity (#3036)', () => {
     expect(fs.readFileSync(chatFile, 'utf-8')).toBe('stale');
   });
 
-  it('starts each session with memory as it is now, in both agents (#3038)', async () => {
+  it('starts each session with a lookup of current memory in both agents (#3038)', async () => {
     await svc.setDispatcherEnabled(true);
     const index = path.join(dispatcherDir(), 'memory', 'index.md');
     fs.writeFileSync(index, '- webapp-lead owns checkout\n');
@@ -791,7 +794,8 @@ describe('two agents, one identity (#3036)', () => {
     for (const file of [path.join(chatDir(), 'CLAUDE.md'), path.join(dispatcherDir(), 'CLAUDE.md')]) {
       const text = fs.readFileSync(file, 'utf-8');
       expect(text).toContain('## Your memory index');
-      expect(text).toContain('- webapp-lead owns checkout');
+      expect(text).toContain('call read_memory without a page');
+      expect(text).not.toContain('- webapp-lead owns checkout');
     }
     // Reading never changes memory.
     expect(fs.readFileSync(index, 'utf-8')).toBe('- webapp-lead owns checkout\n');
@@ -803,7 +807,10 @@ describe('two agents, one identity (#3036)', () => {
     const files = [path.join(chatDir(), 'CLAUDE.md'), path.join(dispatcherDir(), 'CLAUDE.md')];
     fs.writeFileSync(index, '- forgotten now\n');
     await svc.refreshDispatcherInstructions();
-    for (const file of files) expect(fs.readFileSync(file, 'utf-8')).toContain('- forgotten now');
+    for (const file of files) {
+      expect(fs.readFileSync(file, 'utf-8')).toContain('call read_memory without a page');
+      expect(fs.readFileSync(file, 'utf-8')).not.toContain('- forgotten now');
+    }
 
     await svc.setDispatcherEnabled(false);
     for (const file of files) fs.writeFileSync(file, 'stale');

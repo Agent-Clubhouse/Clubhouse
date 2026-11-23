@@ -26,7 +26,8 @@ import { getAllProviders } from '../../orchestrators/registry';
 import { isSessionCapable } from '../../orchestrators/types';
 import { MEMORY_HISTORY_DIR, recordMemoryRead } from './dispatcher-memory';
 
-export type SearchScope = 'all' | 'memory' | 'transcripts';
+/** History is opt-in so obsolete versions never compete with current facts by default. */
+export type SearchScope = 'all' | 'memory' | 'transcripts' | 'history';
 
 /** Hits per source at most when the caller doesn't say. */
 export const DEFAULT_SEARCH_LIMIT = 10;
@@ -155,7 +156,7 @@ function clampLimit(limit: number | undefined): number {
 
 // ── Memory ─────────────────────────────────────────────────────────────────
 
-async function memoryPages(root: string): Promise<string[]> {
+async function memoryPages(root: string, historyOnly: boolean): Promise<string[]> {
   const pages: string[] = [];
   const walk = async (dir: string): Promise<void> => {
     let entries: fs.Dirent[];
@@ -171,7 +172,7 @@ async function memoryPages(root: string): Promise<string[]> {
       // Links are never followed: they could lead out of memory.
       if (entry.isSymbolicLink()) continue;
       const full = path.join(dir, entry.name);
-      if (dir === root && entry.name === MEMORY_HISTORY_DIR) continue;
+      if (dir === root && (historyOnly ? entry.name !== MEMORY_HISTORY_DIR : entry.name === MEMORY_HISTORY_DIR)) continue;
       if (entry.isDirectory()) await walk(full);
       else if (entry.isFile() && entry.name.endsWith('.md')) pages.push(full);
     }
@@ -201,9 +202,9 @@ export function paragraphs(text: string): Array<{ line: number; text: string }> 
   return out;
 }
 
-async function searchMemory(root: string, terms: readonly string[]): Promise<Array<MemoryHit & { score: number }>> {
+async function searchMemory(root: string, terms: readonly string[], historyOnly: boolean): Promise<Array<MemoryHit & { score: number }>> {
   const hits: Array<MemoryHit & { score: number }> = [];
-  for (const file of await memoryPages(root)) {
+  for (const file of await memoryPages(root, historyOnly)) {
     let text: string;
     try {
       const stat = await fsp.stat(file);
@@ -539,14 +540,14 @@ export async function searchDispatcher(query: string, options: SearchOptions = {
   const limit = clampLimit(options.limit);
 
   if (scope !== 'transcripts') {
-    const hits = await searchMemory(options.memoryRoot ?? getDispatcherMemoryPath(), terms);
+    const hits = await searchMemory(options.memoryRoot ?? getDispatcherMemoryPath(), terms, scope === 'history');
     hits.sort((a, b) => b.score - a.score || a.page.localeCompare(b.page) || a.line - b.line);
     if (hits.length > limit) result.more = true;
     result.memory = hits.slice(0, limit).map(({ score: _score, ...hit }) => hit);
     for (const page of new Set(result.memory.map((hit) => hit.page))) await recordMemoryRead(page, options.memoryRoot);
   }
 
-  if (scope !== 'memory') {
+  if (scope === 'all' || scope === 'transcripts') {
     const { hits, scores, incomplete } = await searchTranscripts(
       options.folders ?? getDispatcherFolders(),
       options.stores ?? providerTranscriptStores(),

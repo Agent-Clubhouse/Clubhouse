@@ -3,7 +3,7 @@
  * `~/.clubhouse/dispatcher/memory/`, so any provider can read and write it and
  * it survives a restart or a provider switch.
  *
- *   index.md           loaded at every start, capped at MEMORY_INDEX_CAP_BYTES
+ *   index.md           read before each task, capped at MEMORY_INDEX_CAP_BYTES
  *   agents/<agent>.md  the agent's own card, then the Dispatcher's notes
  *   timeline/          days, rolled into weeks, then months (dispatcher-memory-timeline.ts)
  *   topics/<topic>.md  one page per piece of work, confirmed or unconfirmed, with its source
@@ -21,7 +21,7 @@ import { getDispatcherMemoryPath } from './dispatcher-paths';
 
 /**
  * The most index.md may hold, in UTF-8 bytes (about 2,000 tokens). It is
- * enforced when Clubhouse writes the index and again when it is loaded, since
+ * enforced when Clubhouse writes the index and when read through its tools, since
  * the agent edits the file directly.
  */
 export const MEMORY_INDEX_CAP_BYTES = 8 * 1024;
@@ -48,7 +48,7 @@ export function memoryPaths(root: string = getDispatcherMemoryPath()): MemoryPat
 }
 
 /** What a new index says. It leads into the pages rather than repeating them. */
-export const DEFAULT_INDEX = `This index is loaded at every start. Keep it short, since it is cut at ${MEMORY_INDEX_CAP_BYTES / 1024} KB, and point to pages instead of copying them.
+export const DEFAULT_INDEX = `Read this index before each task. Keep it short, since it is cut at ${MEMORY_INDEX_CAP_BYTES / 1024} KB, and point to pages instead of copying them.
 
 - \`agents/\`: one page per agent. The agent writes its card at the top; you write your notes under it.
 - \`timeline/\`: what happened, one file per day. Older days roll into weeks, and weeks into months, each keeping links to transcripts.

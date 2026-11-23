@@ -179,9 +179,9 @@ registerConcealedTools((agentId) => (isDispatcherIdentityAgentId(agentId) ? DISP
 
 /**
  * What either agent's instructions file holds: its instructions, then the
- * memory index (#3038), cut to its cap. Runs at every write, and before every
+ * stable memory lookup (#3038). Runs at every write, and before every
  * session start (prepareDispatcherSessionStart), so each session starts with
- * memory as it is now. Memory trouble leaves the instructions without the index.
+ * a pointer to current memory, never a stale embedded snapshot.
  */
 export function withDispatcherMemory(instructions: string): Promise<string> {
   return withMemoryIndex(instructions);
@@ -189,7 +189,7 @@ export function withDispatcherMemory(instructions: string): Promise<string> {
 
 /**
  * Called on the spawn path before either of the Dispatcher's agents starts:
- * rewrites its instructions file, so the session loads memory as it is now,
+ * rewrites its instructions file with the current memory lookup contract,
  * and gives it its Behavior model (#3045), or the user's pick (#3191).
  * Resolves with that model, which the start uses over whatever model its
  * caller last saw, or null when neither set one. A pick also names its
@@ -883,7 +883,7 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
 /**
  * The chat's instructions (#3047): Clubhouse's text and its skills list
  * (#3051), then its name and the personality exactly as the user wrote it.
- * The memory index goes after.
+ * The stable memory lookup goes after.
  */
 export function chatInstructions(agent: Pick<DurableAgentConfig, 'name'>, skills?: SkillsConventions): string {
   return appendSection(instructionsWithSkills(DISPATCHER_CHAT_INSTRUCTIONS, 'chat', skills), personalityInstructions(agent.name, getDispatcherPersonality()));

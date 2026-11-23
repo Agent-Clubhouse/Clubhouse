@@ -7,7 +7,7 @@ vi.mock('../base-dir', () => ({ getBaseDirPath: () => '/nonexistent-base-dir' })
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 
 import { MEMORY_INDEX_CAP_BYTES, parseTopicPage } from './dispatcher-memory';
-import { MEMORY_INSTRUCTIONS_HEADING, listNotesArchives, migrateNotesToMemory, withMemoryIndex } from './dispatcher-memory-migration';
+import { MEMORY_INSTRUCTIONS_HEADING, MEMORY_LOOKUP_INSTRUCTIONS, listNotesArchives, migrateNotesToMemory, withMemoryIndex } from './dispatcher-memory-migration';
 
 let base: string;
 let notesDir: string;
@@ -166,14 +166,16 @@ describe('migrateNotesToMemory', () => {
 });
 
 describe('withMemoryIndex', () => {
-  it('migrates, then adds the capped index after the instructions', async () => {
+  it('migrates losslessly, then adds a fixed current-memory lookup', async () => {
     write('checkout.md', 'x');
     const out = await withMemoryIndex('# Instructions\n', opts());
     expect(out.startsWith('# Instructions\n\n')).toBe(true);
     // CRLF instructions, as a Windows checkout has them, are kept exactly.
     expect((await withMemoryIndex('# A\r\nb\r\n', opts())).startsWith('# A\r\nb\r\n\n## ')).toBe(true);
     expect(out).toContain(MEMORY_INSTRUCTIONS_HEADING);
-    expect(out).toContain('(topics/checkout.md)');
+    expect(out).toContain(MEMORY_LOOKUP_INSTRUCTIONS);
+    expect(out).not.toContain('(topics/checkout.md)');
+    expect(fs.readFileSync(path.join(memoryRoot, 'index.md'), 'utf8')).toContain('(topics/checkout.md)');
     expect(fs.existsSync(notesDir)).toBe(false);
   });
 
@@ -183,8 +185,8 @@ describe('withMemoryIndex', () => {
     expect(a.slice(a.indexOf(MEMORY_INSTRUCTIONS_HEADING))).toBe(b.slice(b.indexOf(MEMORY_INSTRUCTIONS_HEADING)));
   });
 
-  it('falls back to the plain instructions when memory cannot be read', async () => {
+  it('keeps the mandatory lookup when memory is unavailable', async () => {
     fs.writeFileSync(memoryRoot, 'a file where the folder should be');
-    expect(await withMemoryIndex('plain', opts())).toBe('plain');
+    expect(await withMemoryIndex('plain', opts())).toBe(`plain\n\n${MEMORY_LOOKUP_INSTRUCTIONS}`);
   });
 });

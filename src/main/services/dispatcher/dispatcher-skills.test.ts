@@ -40,7 +40,7 @@ describe('the skills Clubhouse ships', () => {
   });
 
   it('cover the procedures the instructions hand off to them', () => {
-    expect(dispatcherSkills('work').map((s) => s.name).sort()).toEqual(['agent-cards', 'check-ins', 'delegating-work', 'memory-upkeep', 'passing-on-news']);
+    expect(dispatcherSkills('work').map((s) => s.name).sort()).toEqual(['agent-cards', 'check-ins', 'delegating-work', 'memory-upkeep', 'passing-on-news', 'tool-procedures']);
     expect(dispatcherSkills('chat').map((s) => s.name).sort()).toEqual(['catching-up', 'what-else-can-you-do']);
     // Every skill an agent's instructions name is one that agent gets.
     for (const role of DISPATCHER_ROLES) {
@@ -55,20 +55,22 @@ describe('the skills Clubhouse ships', () => {
     await writeDispatcherSkills(dir, 'work', provider.conventions);
     await provider.writeInstructions(dir, instructionsWithSkills(DISPATCHER_INSTRUCTIONS, 'work', provider.conventions));
     const instructions = await provider.readInstructions(dir);
+    const procedures = fs.readFileSync(path.join(dir, skillFile(provider.conventions, 'tool-procedures')), 'utf8');
+    expect(instructions).toContain('Read the `tool-procedures` skill before acting');
     const delegation = fs.readFileSync(path.join(dir, skillFile(provider.conventions, 'delegating-work')), 'utf-8');
 
-    expect(instructions).toContain('`create_managed_agent` creates an agent in a project; it starts asleep');
+    expect(procedures).toContain('`create_managed_agent` creates an agent in a project; it starts asleep');
     expect(delegation).toContain('Before creation, read `list_agent_templates` if using a template');
     expect(delegation).toContain('Confirm the template and effective CLI, model, access and orchestration with the user');
     expect(delegation).toContain('Do not silently substitute a template\'s CLI for the user\'s choice');
     expect(delegation).toContain('Creating an asleep agent and waking it are separate choices: start it only when requested');
-    expect(instructions).toContain('Check `connectedToDispatcher` and its receipt');
+    expect(procedures).toContain('Check `connectedToDispatcher` and its receipt');
     expect(instructions).toContain('`list_agents` shows the agents connected to you');
-    expect(instructions).toContain('When a tool refuses for lack of permission, stop and tell the user');
-    expect(instructions).toContain('A shared edit or deletion first answers with who it affects; show that preview and ask the user before committing with its `confirm` token');
-    expect(instructions).toContain('A token is not user approval');
-    expect(instructions).toContain('`now: true` cuts off a turn: ask first unless losing it is already acceptable, as with forced sleep');
-    expect(instructions).toContain('pass `force` only when losing that turn is fine, and ask the user if you aren\'t sure');
+    expect(procedures).toContain('When a tool refuses for lack of permission, stop and tell the user');
+    expect(procedures).toContain('A shared edit or deletion first answers with who it affects; show that preview and ask the user before committing with its `confirm` token');
+    expect(procedures).toContain('A token is not user approval');
+    expect(procedures).toContain('`now: true` cuts off a turn: ask first unless losing it is already acceptable, as with forced sleep');
+    expect(procedures).toContain('pass `force` only when losing that turn is fine, and ask the user if you aren\'t sure');
     expect(instructions).not.toContain('You don\'t create projects, agents or connections');
   });
 

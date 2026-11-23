@@ -14,7 +14,7 @@ import { McpArgError, optionalNumber, optionalString, requireString } from './va
 /** The longest query taken. */
 export const MAX_QUERY_CHARS = 500;
 
-const SCOPES: readonly SearchScope[] = ['all', 'memory', 'transcripts'];
+const SCOPES: readonly SearchScope[] = ['all', 'memory', 'transcripts', 'history'];
 
 function text(value: string, isError = false): McpToolResult {
   return { content: [{ type: 'text', text: value }], ...(isError && { isError }) };
@@ -31,12 +31,12 @@ export function registerDispatcherSearchTools(): void {
       description:
         'Search your memory and past conversations for words or a "quoted phrase"; every word must appear. ' +
         'Memory hits give the page (what read_memory takes) and line. Conversation hits give the transcript ' +
-        'file and line, newest first, to link back to where something was said.',
+        'file and line, newest first, to link back to where something was said. Use scope history for retained older memory versions; historical evidence is not current authority.',
       inputSchema: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'Words to find. Put "quotes" around a phrase that must appear as written.' },
-          scope: { type: 'string', enum: [...SCOPES], description: 'memory, transcripts, or all (the default).' },
+          scope: { type: 'string', enum: [...SCOPES], description: 'memory, transcripts, all (the default), or history (retained older page versions only).' },
           limit: { type: 'number', description: `Hits per source at most (default 10, at most ${MAX_SEARCH_LIMIT}).` },
         },
         required: ['query'],
