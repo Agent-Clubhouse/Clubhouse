@@ -1,0 +1,90 @@
+name,os,sample_jobs,sample_seconds,estimated_jobs,estimated_seconds,sample_failures,sample_cancelled,sample_unknown_duration,estimated_failures,estimated_cancelled,estimated_seconds_per_census_run,group_census_runs,estimated_seconds_per_group_run
+Annex E2E Tests (${{ matrix.os }}),skipped,5,0,17.667,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+Annex E2E Tests (${{ matrix.os }}),unknown,4,0,68.667,0.0,0,4,0,0.0,68.667,0.0,2343,0.0
+"Annex E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/2)",skipped,2,0,47.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+"Annex E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/2)",unknown,5,0,128.333,0.0,0,5,0,0.0,128.333,0.0,2343,0.0
+Annex E2E Tests (ubuntu-latest),linux,39,4235.0,1204.333,142250.333,1,1,0,70.667,6.667,60.713,2343,60.713
+"Annex E2E Tests (ubuntu-latest, 1/2)",linux,45,11574.0,586.0,136596.667,1,0,0,15.667,0.0,58.3,2343,58.3
+"Annex E2E Tests (ubuntu-latest, 2/2)",linux,45,9502.0,586.0,117453.0,0,0,0,0.0,0.0,50.129,2343,50.129
+Annex E2E Tests (windows-2022),windows,39,6839.0,1204.333,231210.667,0,2,0,0.0,77.333,98.681,2343,98.681
+"Annex E2E Tests (windows-2022, 1/2)",windows,45,15213.0,586.0,185053.0,2,1,0,31.333,27.667,78.981,2343,78.981
+"Annex E2E Tests (windows-2022, 2/2)",windows,45,13154.0,586.0,168299.333,1,1,0,1.0,27.667,71.831,2343,71.831
+Build Linux (x64),linux,11,4553.0,15.0,6265.0,0,0,0,0.0,0.0,2.674,2343,2.674
+Build Windows (arm64),windows,11,6094.0,15.0,8298.667,0,0,0,0.0,0.0,3.542,2343,3.542
+Build Windows (x64),windows,11,5525.0,15.0,7694.333,0,0,0,0.0,0.0,3.284,2343,3.284
+Build app (${{ matrix.os }}),skipped,7,0,64.667,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+Build app (macos-latest),macos,2,36.0,2.0,36.0,0,2,0,0.0,2.0,0.015,2343,0.015
+Build app (ubuntu-latest),linux,92,31699.0,1959.333,650400.667,0,7,0,0.0,162.333,277.593,2343,277.593
+Build app (windows-2022),windows,93,39510.0,1987.333,834173.333,0,9,0,0.0,197.0,356.028,2343,356.028
+Build macOS (arm64),macos,12,10456.0,16.0,13794.0,1,0,0,1.0,0.0,5.887,2343,5.887
+Build macOS (x64),macos,11,11598.0,15.0,15924.0,0,0,0,0.0,0.0,6.796,2343,6.796
+"Chat E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/1)",unknown,1,0,6.667,0.0,0,1,0,0.0,6.667,0.0,2343,0.0
+"Chat E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/3)",skipped,6,0,55.667,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+"Chat E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/3)",unknown,8,0,190.333,0.0,0,8,0,0.0,190.333,0.0,2343,0.0
+"Chat E2E Tests (ubuntu-latest, 1/1)",linux,2,133.0,29.667,2200.333,0,0,0,0.0,0.0,0.939,2343,0.939
+"Chat E2E Tests (ubuntu-latest, 1/3)",linux,74,9745.0,1732.333,195959.667,2,0,0,29.0,0.0,83.636,2343,83.636
+"Chat E2E Tests (ubuntu-latest, 2/3)",linux,74,10641.0,1732.333,212712.667,1,0,0,70.667,0.0,90.786,2343,90.786
+"Chat E2E Tests (ubuntu-latest, 3/3)",linux,74,11787.0,1732.333,241960.667,1,0,0,15.667,0.0,103.27,2343,103.27
+"Chat E2E Tests (windows-2022, 1/1)",windows,2,256.0,29.667,4065.667,0,0,0,0.0,0.0,1.735,2343,1.735
+"Chat E2E Tests (windows-2022, 1/3)",windows,74,15321.0,1732.333,328741.333,2,1,0,32.667,70.667,140.308,2343,140.308
+"Chat E2E Tests (windows-2022, 2/3)",windows,74,14710.0,1732.333,309017.0,0,0,0,0.0,0.0,131.889,2343,131.889
+"Chat E2E Tests (windows-2022, 3/3)",windows,74,15969.0,1732.333,343902.0,1,0,0,15.667,0.0,146.778,2343,146.778
+"Classic layout E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/1)",skipped,2,0,47.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+"Classic layout E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/1)",unknown,5,0,128.333,0.0,0,5,0,0.0,128.333,0.0,2343,0.0
+Classic layout E2E Tests (ubuntu-latest),linux,1,153.0,147.333,22542.0,0,0,0,0.0,0.0,9.621,2343,9.621
+"Classic layout E2E Tests (ubuntu-latest, 1/1)",linux,45,7667.0,586.0,94359.0,0,0,0,0.0,0.0,40.273,2343,40.273
+Classic layout E2E Tests (windows-2022),windows,1,203.0,147.333,29908.667,0,0,0,0.0,0.0,12.765,2343,12.765
+"Classic layout E2E Tests (windows-2022, 1/1)",windows,45,9447.0,586.0,122407.667,0,1,0,0.0,27.667,52.244,2343,52.244
+Codex app-server schema drift,linux,94,1356.0,2012.0,26751.0,0,2,0,0.0,2.0,11.417,2343,11.417
+Codex app-server schema drift,skipped,5,0,12.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+Copilot SDK chunk (${{ matrix.os }}),skipped,4,0,53.667,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+Copilot SDK chunk (macos-latest),macos,2,36.0,2.0,36.0,0,2,0,0.0,2.0,0.015,2343,0.015
+Copilot SDK chunk (ubuntu-latest),linux,70,9056.0,1572.333,186868.667,0,2,0,0.0,2.0,79.756,2343,79.756
+Copilot SDK chunk (windows-2022),windows,70,11965.0,1572.333,246682.333,0,3,0,0.0,29.667,105.285,2343,105.285
+Dependabot,linux,39,3342.0,39.0,3342.0,13,0,0,13.0,0.0,1.426,2343,1.426
+Dependency resolution preflight,linux,1,12.0,4.667,56.0,0,0,0,0.0,0.0,0.024,2343,0.024
+Dependency resolution preflight,skipped,100,0,2068.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+"E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/3)",skipped,7,0,64.667,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+"E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/3)",unknown,9,0,197.0,0.0,0,9,0,0.0,197.0,0.0,2343,0.0
+"E2E Tests (ubuntu-latest, 1/3)",linux,84,17741.0,1790.333,370364.0,0,1,0,0.0,6.667,158.073,2343,158.073
+"E2E Tests (ubuntu-latest, 2/3)",linux,84,17563.0,1790.333,338939.667,0,1,0,0.0,6.667,144.661,2343,144.661
+"E2E Tests (ubuntu-latest, 3/3)",linux,84,17782.0,1790.333,374671.333,1,1,0,27.667,6.667,159.911,2343,159.911
+"E2E Tests (windows-2022, 1/3)",windows,84,21401.0,1790.333,440892.667,0,2,0,0.0,34.333,188.174,2343,188.174
+"E2E Tests (windows-2022, 2/3)",windows,84,20491.0,1790.333,407378.667,0,1,0,0.0,6.667,173.871,2343,173.871
+"E2E Tests (windows-2022, 3/3)",windows,84,21781.0,1790.333,464282.667,0,4,0,0.0,132.667,198.157,2343,198.157
+ESLint (errors only),linux,94,8242.0,2012.0,160446.667,0,2,0,0.0,2.0,68.479,2343,68.479
+ESLint (errors only),skipped,5,0,12.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+Linux Package Smoke Test,linux,53,22755.0,501.667,220521.0,3,2,0,9.0,2.0,94.119,2343,94.119
+Linux Package Smoke Test,skipped,48,0,1571.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+Native Windows stdout and exit parity (diagnostic only),windows,1,52.0,1.0,52.0,0,0,0,0.0,0.0,0.022,2343,0.022
+ONE fresh Windows1 observation (not release validation),windows,1,352.0,1.0,352.0,0,0,0,0.0,0.0,0.15,2343,0.15
+Plan the run,linux,94,1019.0,2012.0,20679.0,0,0,0,0.0,0.0,8.826,2343,8.826
+Plan the run,skipped,5,0,12.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+Publish,linux,11,1287.0,15.0,1761.667,0,0,0,0.0,0.0,0.752,2343,0.752
+Publish,skipped,1,0,1.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+Stable-mode E2E Tests (${{ matrix.os }}),skipped,4,0,53.667,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+Stable-mode E2E Tests (${{ matrix.os }}),unknown,6,0,156.0,0.0,0,6,0,0.0,156.0,0.0,2343,0.0
+Stable-mode E2E Tests (ubuntu-latest),linux,61,10048.0,1345.667,200475.0,0,0,0,0.0,0.0,85.563,2343,85.563
+Stable-mode E2E Tests (windows-2022),windows,61,12322.0,1345.667,252791.0,0,0,0,0.0,0.0,107.892,2343,107.892
+Typecheck + API surface,linux,94,7694.0,2012.0,151910.333,0,2,0,0.0,2.0,64.836,2343,64.836
+Typecheck + API surface,skipped,5,0,12.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+"Unit + Component Tests (${{ matrix.os }}, ${{ matrix.shard }}/2)",skipped,5,0,12.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+"Unit + Component Tests (macos-latest, 1/2)",macos,2,93.0,2.0,93.0,0,2,0,0.0,2.0,0.04,2343,0.04
+"Unit + Component Tests (macos-latest, 2/2)",macos,2,42.0,2.0,42.0,0,2,0,0.0,2.0,0.018,2343,0.018
+"Unit + Component Tests (ubuntu-latest, 1/2)",linux,95,34659.0,2040.0,708088.667,7,5,0,113.0,128.0,302.215,2343,302.215
+"Unit + Component Tests (ubuntu-latest, 2/2)",linux,94,29945.0,2012.0,599083.0,5,5,0,60.0,128.0,255.691,2343,255.691
+"Unit + Component Tests (windows-latest, 1/2)",windows,96,43245.0,2060.667,842326.333,15,6,0,192.0,156.0,359.508,2343,359.508
+"Unit + Component Tests (windows-latest, 2/2)",windows,95,61310.0,2040.0,1165732.667,19,10,0,184.667,309.667,497.538,2343,497.538
+Validate Update Scripts (macos-latest),macos,11,1177.0,15.0,1663.667,0,0,0,0.0,0.0,0.71,2343,0.71
+Validate Update Scripts (windows-2022),windows,11,936.0,15.0,1332.667,0,0,0,0.0,0.0,0.569,2343,0.569
+Verify Tag,linux,11,110.0,15.0,147.333,0,0,0,0.0,0.0,0.063,2343,0.063
+Workflow lint (actionlint),linux,67,531.0,1517.333,11851.333,0,1,0,0.0,1.0,5.058,2343,5.058
+Workflow lint (actionlint),skipped,3,0,10.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+"chat handshake (claude-code, zero tokens)",linux,16,1078.0,31.0,2054.333,9,0,0,17.333,0.0,0.877,2343,0.877
+"chat handshake (codex-cli, zero tokens)",linux,17,1131.0,32.0,2090.333,11,0,0,20.667,0.0,0.892,2343,0.892
+"chat handshake (copilot-cli, zero tokens)",linux,16,1132.0,31.0,2121.667,9,0,0,17.333,0.0,0.906,2343,0.906
+macOS build + E2E smoke,macos,25,17250.0,279.0,177734.667,1,2,0,7.333,28.667,75.858,2343,75.858
+macOS build + E2E smoke,skipped,76,0,1793.667,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+macOS unit,macos,60,21094.0,1662.667,739974.0,3,8,0,25.333,302.667,315.823,2343,315.823
+macOS unit,skipped,39,0,361.333,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+probe,windows,2,787.0,2.0,787.0,0,0,0,0.0,0.0,0.336,2343,0.336

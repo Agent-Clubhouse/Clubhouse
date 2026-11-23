@@ -1,0 +1,94 @@
+workflow,event,week_index,outcome,population,sample,weight
+Chat handshake (nightly),schedule,0,success,7,3,2.3333333333333335
+Chat handshake (nightly),schedule,1,success,7,3,2.3333333333333335
+Chat handshake (nightly),schedule,2,failure,1,1,1.0
+Chat handshake (nightly),schedule,2,success,6,3,2.0
+Chat handshake (nightly),schedule,3,success,7,3,2.3333333333333335
+Chat handshake (nightly),schedule,4,success,2,2,1.0
+Chat handshake (nightly),workflow_dispatch,1,success,2,2,1.0
+Release,push,0,success,3,3,1.0
+Release,push,1,success,5,3,1.6666666666666667
+Release,push,2,success,5,3,1.6666666666666667
+Release,push,3,success,2,2,1.0
+Throwaway flake probe,push,1,success,2,2,1.0
+Validate,pull_request,0,cancelled,20,3,6.666666666666667
+Validate,pull_request,0,failure,4,3,1.3333333333333333
+Validate,pull_request,0,skipped,2,2,1.0
+Validate,pull_request,0,success,62,3,20.666666666666668
+Validate,pull_request,1,cancelled,83,3,27.666666666666668
+Validate,pull_request,1,failure,52,3,17.333333333333332
+Validate,pull_request,1,success,262,3,87.33333333333333
+Validate,pull_request,2,cancelled,212,3,70.66666666666667
+Validate,pull_request,2,failure,84,3,28.0
+Validate,pull_request,2,skipped,10,3,3.3333333333333335
+Validate,pull_request,2,success,442,3,147.33333333333334
+Validate,pull_request,3,cancelled,83,3,27.666666666666668
+Validate,pull_request,3,failure,47,3,15.666666666666666
+Validate,pull_request,3,success,138,3,46.0
+Validate,pull_request,4,failure,14,3,4.666666666666667
+Validate,pull_request,4,success,12,3,4.0
+Validate,push,0,cancelled,7,3,2.3333333333333335
+Validate,push,0,failure,12,3,4.0
+Validate,push,0,success,27,3,9.0
+Validate,push,1,cancelled,36,3,12.0
+Validate,push,1,failure,22,3,7.333333333333333
+Validate,push,1,success,124,3,41.333333333333336
+Validate,push,2,cancelled,156,3,52.0
+Validate,push,2,failure,49,3,16.333333333333332
+Validate,push,2,success,131,3,43.666666666666664
+Validate,push,3,cancelled,31,3,10.333333333333334
+Validate,push,3,failure,24,3,8.0
+Validate,push,3,success,66,3,22.0
+Validate,push,4,failure,4,3,1.3333333333333333
+Validate,push,4,success,5,3,1.6666666666666667
+Validate,schedule,0,failure,1,1,1.0
+Validate,schedule,0,success,6,3,2.0
+Validate,schedule,1,failure,1,1,1.0
+Validate,schedule,1,success,6,3,2.0
+Validate,schedule,2,cancelled,1,1,1.0
+Validate,schedule,2,success,6,3,2.0
+Validate,schedule,3,failure,2,2,1.0
+Validate,schedule,3,success,5,3,1.6666666666666667
+Validate,schedule,4,success,2,2,1.0
+Validate,workflow_dispatch,2,cancelled,2,2,1.0
+Validate,workflow_dispatch,3,failure,1,1,1.0
+Windows query observation (not release validation),workflow_dispatch,2,success,1,1,1.0
+github_actions in /. - Update #1653926250,dynamic,0,success,1,1,1.0
+github_actions in /. - Update #1655737897,dynamic,0,success,1,1,1.0
+github_actions in /. - Update #1673173351,dynamic,1,success,1,1,1.0
+github_actions in /. - Update #1682285217,dynamic,1,success,1,1,1.0
+github_actions in /. - Update #1689454795,dynamic,2,success,1,1,1.0
+github_actions in /. - Update #1707901522,dynamic,3,success,1,1,1.0
+github_actions in /. - Update #1723515484,dynamic,4,success,1,1,1.0
+"npm_and_yarn in / for @anthropic-ai/claude-agent-sdk, @types/node - Update #1655737926",dynamic,0,success,1,1,1.0
+"npm_and_yarn in / for @anthropic-ai/claude-agent-sdk, marked, ws, zustand, @playwright/test, @tailwindcss/postcss, @testing-library/user-event, eslint-plugin-import-x, tailwindcss, typescript-eslint - Update #1723515584",dynamic,4,failure,1,1,1.0
+"npm_and_yarn in / for @anthropic-ai/claude-agent-sdk, ws, zustand, @playwright/test, @tailwindcss/postcss, eslint-plugin-import-x, tailwindcss - Update #1712694684",dynamic,3,success,1,1,1.0
+"npm_and_yarn in / for elkjs, marked, postcss, typescript-eslint - Update #1687270951",dynamic,2,success,1,1,1.0
+npm_and_yarn in / for follow-redirects - Update #1669364632,dynamic,1,success,1,1,1.0
+npm_and_yarn in / for hono - Update #1702181648,dynamic,2,success,1,1,1.0
+npm_and_yarn in / for node-forge - Update #1669396996,dynamic,1,success,1,1,1.0
+npm_and_yarn in / for pdfjs-dist - Update #1697906047,dynamic,2,success,1,1,1.0
+npm_and_yarn in /. - Update #1653927824,dynamic,0,success,1,1,1.0
+npm_and_yarn in /. - Update #1655737883,dynamic,0,success,1,1,1.0
+npm_and_yarn in /. - Update #1673173222,dynamic,1,success,1,1,1.0
+npm_and_yarn in /. - Update #1682285186,dynamic,1,success,1,1,1.0
+npm_and_yarn in /. - Update #1689454789,dynamic,2,success,1,1,1.0
+npm_and_yarn in /. - Update #1707901499,dynamic,3,success,1,1,1.0
+npm_and_yarn in /. - Update #1723515468,dynamic,4,success,1,1,1.0
+npm_and_yarn in /. for @hono/node-server - Update #1699794584,dynamic,2,success,1,1,1.0
+npm_and_yarn in /. for follow-redirects - Update #1669307272,dynamic,1,success,1,1,1.0
+npm_and_yarn in /. for hono - Update #1701983179,dynamic,2,success,1,1,1.0
+npm_and_yarn in /. for minimatch - Update #1669307271,dynamic,1,failure,1,1,1.0
+npm_and_yarn in /. for minimatch - Update #1669387551,dynamic,1,failure,1,1,1.0
+npm_and_yarn in /. for minimatch - Update #1669418132,dynamic,1,failure,1,1,1.0
+npm_and_yarn in /. for minimatch - Update #1681116121,dynamic,1,failure,1,1,1.0
+npm_and_yarn in /. for minimatch - Update #1681443268,dynamic,1,failure,1,1,1.0
+npm_and_yarn in /. for minimatch - Update #1681906315,dynamic,1,failure,1,1,1.0
+npm_and_yarn in /. for node-forge - Update #1669307273,dynamic,1,success,1,1,1.0
+npm_and_yarn in /. for node-forge - Update #1696500126,dynamic,2,success,1,1,1.0
+npm_and_yarn in /. for uuid - Update #1652386752,dynamic,0,failure,1,1,1.0
+npm_and_yarn in /. for uuid - Update #1653525080,dynamic,0,failure,1,1,1.0
+npm_and_yarn in /. for uuid - Update #1655701482,dynamic,0,failure,1,1,1.0
+npm_and_yarn in /. for zod - Update #1671517033,dynamic,1,failure,1,1,1.0
+npm_and_yarn in /. for zod - Update #1671624956,dynamic,1,failure,1,1,1.0
+npm_and_yarn in /. for zod - Update #1671720737,dynamic,1,failure,1,1,1.0

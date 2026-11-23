@@ -1,0 +1,6 @@
+os,sample_jobs,sample_seconds,estimated_jobs,estimated_seconds,sample_failures,sample_cancelled,sample_unknown_duration,estimated_failures,estimated_cancelled,estimated_seconds_per_census_run,group_census_runs,estimated_seconds_per_group_run
+linux,1681,288172.0,32886.333,5204923.0,64,32,0,479.667,456.0,2221.478,2343,2221.478
+macos,127,61782.0,1995.667,949297.333,5,18,0,33.667,339.333,405.163,2343,405.163
+skipped,329,0,6269.0,0.0,0,0,0,0.0,0.0,0.0,2343,0.0
+unknown,38,0,875.333,0.0,0,38,0,0.0,875.333,0.0,2343,0.0
+windows,1103,336883.0,22762.333,6395381.667,40,41,0,457.333,1097.0,2729.57,2343,2729.57
