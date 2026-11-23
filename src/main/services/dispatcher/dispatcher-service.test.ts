@@ -691,7 +691,7 @@ describe('routine instructions: isolate role delivery from saved settings and in
     vi.mocked(agentSystem.spawnAgent).mockClear();
     refuseInstructionGuide(dispatcherDir());
     let error: unknown;
-    const returned = await svc.completeDispatcherSetup({ name: 'Sample', color: 'rose', provider: 'claude-code', behavior: 'light', personality: { preset: 'custom', text: 'Exact new personality.' } }).catch((e) => { error = e; return undefined; });
+    const returned = await svc.completeDispatcherSetup({ name: 'Sample', color: 'rose', provider: 'claude-code', behavior: 'light', personality: { preset: 'custom', text: 'Exact new personality.' } }).catch((e): undefined => { error = e; return undefined; });
     await settle();
     expect.soft(error).toBeUndefined();
     expect.soft(returned).toMatchObject({ setup: { status: 'done' }, personality: { text: 'Exact new personality.' }, config: { name: 'Sample' } });
@@ -714,7 +714,7 @@ describe('routine instructions: isolate role delivery from saved settings and in
     vi.mocked(agentSystem.spawnAgent).mockClear();
     refuseInstructionGuide(chatDir(), 'what-else-can-you-do');
     let error: unknown;
-    const returned = await svc.setDispatcherPersonality({ preset: 'custom', text: 'New saved personality.' }).catch((e) => { error = e; return undefined; });
+    const returned = await svc.setDispatcherPersonality({ preset: 'custom', text: 'New saved personality.' }).catch((e): undefined => { error = e; return undefined; });
     expect.soft(error).toBeUndefined();
     expect.soft(returned?.personality.text).toBe('New saved personality.');
     expect.soft(svc.getDispatcherState().personality.text).toBe('New saved personality.');
