@@ -25,6 +25,8 @@ const h = vi.hoisted(() => ({
 // A forwarding module copy exposes a deterministic selected-write fault; all other IO stays native.
 vi.mock('fs/promises', async (original) => ({ ...await original<typeof fsp>() }));
 
+vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => h.baseDir }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../experimental-settings', () => ({ getSettings: () => h.experimental, isGraduatedFeatureOn: (key: string) => h.experimental[key] !== false }));
@@ -134,6 +136,9 @@ vi.mock('../agent-system', () => ({
   spawnAgent: vi.fn(),
 }));
 
+import { broadcastToAllWindows } from '../../util/ipc-broadcast';
+import { IPC } from '../../../shared/ipc-channels';
+import { appLog } from '../log-service';
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
 import * as svc from './dispatcher-service';
@@ -565,12 +570,13 @@ describe('built-in skills (#3051)', () => {
   it('required guide: missing provider conventions preserves the previous root instead of publishing one without guides', async () => {
     h.enabledProviders = ['future-cli'];
     const provider = providers.list.find((p) => p.id === 'future-cli')!;
+    await svc.setDispatcherEnabled(true);
     provider.conventions = undefined;
-    fs.mkdirSync(dispatcherDir(), { recursive: true });
     const root = path.join(dispatcherDir(), 'FUTURE.md');
     const previous = Buffer.from('Previous compact root; guide availability is not guaranteed.\r\nCustom text remains exact. 🧭');
     fs.writeFileSync(root, previous);
-    await expect(svc.setDispatcherEnabled(true)).rejects.toThrow(/skills folder/);
+    provider.writeInstructions.mockClear();
+    await expect(svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1')).rejects.toThrow(/skills folder/);
     expect(fs.readFileSync(root).equals(previous)).toBe(true);
     expect(provider.writeInstructions).not.toHaveBeenCalled();
   });
@@ -617,6 +623,136 @@ describe('built-in skills (#3051)', () => {
     expect(fs.readFileSync(guide, 'utf8')).toBe(dispatcherSkills('work').find((s) => s.name === 'tool-procedures')!.text);
     expect(provider.writeInstructions).toHaveBeenCalledTimes(1);
     expect(fs.readFileSync(root).equals(previous)).toBe(true);
+  });
+});
+
+/** Selected-write fault only: every other filesystem operation retains its original native behavior. */
+function refuseInstructionGuide(dir: string, name = 'tool-procedures') {
+  const guide = path.join(dir, '.claude', 'skills', name, 'SKILL.md');
+  const failure = new Error('instruction-path-DO-NOT-DISPLAY-CANARY');
+  const original = fsp.writeFile;
+  const spy = vi.spyOn(fsp, 'writeFile').mockImplementation((...args: Parameters<typeof fsp.writeFile>) => {
+    if (args[0] === guide) return Promise.reject(failure);
+    return original(...args);
+  });
+  return { failure, spy };
+}
+
+function instructionNotices() {
+  return vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel, , notice]) =>
+    channel === IPC.CHAT.RUNTIME_NOTICE && (notice as { code?: string })?.code === 'instruction_delivery');
+}
+
+function expectInstructionWarning(agentId: string, role: 'work' | 'chat') {
+  const notices = instructionNotices();
+  expect.soft(notices.length).toBeGreaterThan(0);
+  for (const [, target, notice] of notices) {
+    expect.soft(target).toBe(agentId);
+    expect.soft(notice).toMatchObject({ level: 'warn', code: 'instruction_delivery', message: expect.stringContaining('could not be refreshed') });
+    const text = (notice as { message: string }).message;
+    expect.soft(text).not.toContain('DO-NOT-DISPLAY-CANARY');
+    expect.soft(text).not.toContain(h.baseDir);
+    expect.soft(text).toContain(role === 'work' ? 'Dispatcher controller' : 'Dispatcher chat');
+  }
+}
+
+describe('routine instructions: isolate role delivery from saved settings and independent work', () => {
+  it.each(['available', 'throws'] as const)('init preserves chat refresh, state publication and idle wake when notice transport %s', async (transport) => {
+    await svc.setDispatcherEnabled(true);
+    await settle();
+    const workRoot = path.join(dispatcherDir(), 'CLAUDE.md');
+    const chatRoot = path.join(chatDir(), 'CLAUDE.md');
+    const previous = fs.readFileSync(workRoot);
+    fs.writeFileSync(chatRoot, 'Stale independent chat root');
+    svc._resetDispatcherForTesting();
+    const changed = vi.fn();
+    svc.onDispatcherChanged(changed);
+    vi.mocked(agentSystem.spawnAgent).mockClear();
+    if (transport === 'throws') vi.mocked(broadcastToAllWindows).mockImplementation(() => { throw new Error('notice unavailable'); });
+    const { failure } = refuseInstructionGuide(dispatcherDir());
+    await svc.initDispatcher();
+    await settle();
+    expect.soft(fs.readFileSync(workRoot).equals(previous)).toBe(true);
+    expect.soft(fs.readFileSync(chatRoot, 'utf8')).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
+    expect.soft(changed).toHaveBeenCalledWith(expect.objectContaining({ enabled: true, agentId: 'durable_1', chatAgentId: 'durable_2' }));
+    expect.soft(agentSystem.spawnAgent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ agentId: 'durable_1', mission: undefined }));
+    expectInstructionWarning('durable_1', 'work');
+    expect.soft(appLog).toHaveBeenCalledWith('core:dispatcher', 'warn', expect.any(String), expect.objectContaining({ meta: expect.objectContaining({ error: failure.message }) }));
+  });
+
+  it('completeDispatcherSetup preserves saved completion and chat refresh after a work guide failure', async () => {
+    await svc.setDispatcherEnabled(true);
+    const workRoot = path.join(dispatcherDir(), 'CLAUDE.md');
+    const previous = fs.readFileSync(workRoot);
+    const changed = vi.fn();
+    svc.onDispatcherChanged(changed);
+    vi.mocked(agentSystem.spawnAgent).mockClear();
+    refuseInstructionGuide(dispatcherDir());
+    let error: unknown;
+    const returned = await svc.completeDispatcherSetup({ name: 'Sample', color: 'rose', provider: 'claude-code', behavior: 'light', personality: { preset: 'custom', text: 'Exact new personality.' } }).catch((e) => { error = e; return undefined; });
+    await settle();
+    expect.soft(error).toBeUndefined();
+    expect.soft(returned).toMatchObject({ setup: { status: 'done' }, personality: { text: 'Exact new personality.' }, config: { name: 'Sample' } });
+    expect.soft(svc.getDispatcherState().setup.status).toBe('done');
+    expect.soft(changed).toHaveBeenCalledWith(expect.objectContaining({ setup: expect.objectContaining({ status: 'done' }) }));
+    expect.soft(fs.readFileSync(workRoot).equals(previous)).toBe(true);
+    expect.soft(chatFile()).toContain('Exact new personality.');
+    expect.soft(chatFile()).toContain('Your name is Sample.');
+    expect.soft(agentConfig.flushAgentConfig).toHaveBeenCalledWith(dispatcherDir());
+    expect.soft(agentConfig.flushAgentConfig).toHaveBeenCalledWith(chatDir());
+    expect.soft(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    expectInstructionWarning('durable_1', 'work');
+  });
+
+  it('setDispatcherPersonality reports saved completion while keeping a failed chat root unchanged', async () => {
+    await svc.setDispatcherEnabled(true);
+    const previous = fs.readFileSync(path.join(chatDir(), 'CLAUDE.md'));
+    const changed = vi.fn();
+    svc.onDispatcherChanged(changed);
+    vi.mocked(agentSystem.spawnAgent).mockClear();
+    refuseInstructionGuide(chatDir(), 'what-else-can-you-do');
+    let error: unknown;
+    const returned = await svc.setDispatcherPersonality({ preset: 'custom', text: 'New saved personality.' }).catch((e) => { error = e; return undefined; });
+    expect.soft(error).toBeUndefined();
+    expect.soft(returned?.personality.text).toBe('New saved personality.');
+    expect.soft(svc.getDispatcherState().personality.text).toBe('New saved personality.');
+    expect.soft(changed).toHaveBeenCalledWith(expect.objectContaining({ personality: expect.objectContaining({ text: 'New saved personality.' }) }));
+    expect.soft(fs.readFileSync(path.join(chatDir(), 'CLAUDE.md')).equals(previous)).toBe(true);
+    expect.soft(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    expectInstructionWarning('durable_2', 'chat');
+  });
+
+  it('dual-role refresh carries on with the chat without publishing the failed work root', async () => {
+    await svc.setDispatcherEnabled(true);
+    const workRoot = path.join(dispatcherDir(), 'CLAUDE.md');
+    const previous = fs.readFileSync(workRoot);
+    fs.writeFileSync(path.join(chatDir(), 'CLAUDE.md'), 'Independent chat needs refreshing');
+    const provider = providers.list.find((p) => p.id === 'claude-code')!;
+    provider.writeInstructions.mockClear();
+    refuseInstructionGuide(dispatcherDir());
+    let error: unknown;
+    await svc.refreshDispatcherInstructions().catch((e) => { error = e; });
+    expect.soft(error).toBeUndefined();
+    expect.soft(fs.readFileSync(workRoot).equals(previous)).toBe(true);
+    expect.soft(chatFile()).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
+    expect.soft(provider.writeInstructions).not.toHaveBeenCalledWith(dispatcherDir(), expect.any(String));
+    expect.soft(provider.writeInstructions).toHaveBeenCalledWith(chatDir(), expect.any(String));
+    expectInstructionWarning('durable_1', 'work');
+  });
+
+  it('config refresh publishes the saved identity and refreshes the other role after a work delivery failure', async () => {
+    await svc.setDispatcherEnabled(true);
+    const previous = fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'));
+    const changed = vi.fn();
+    svc.onDispatcherChanged(changed);
+    refuseInstructionGuide(dispatcherDir());
+    await agentConfig.updateDurable(dispatcherDir(), 'durable_1', { name: 'Renamed sample' });
+    await settle();
+    expect.soft(svc.getDispatcherState().config?.name).toBe('Renamed sample');
+    expect.soft(changed).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ name: 'Renamed sample' }) }));
+    expect.soft(chatFile()).toContain('Your name is Renamed sample.');
+    expect.soft(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md')).equals(previous)).toBe(true);
+    expectInstructionWarning('durable_1', 'work');
   });
 });
 

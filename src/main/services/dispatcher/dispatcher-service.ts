@@ -28,10 +28,9 @@
  * settings are shared (dispatcher-identity). Code calls the first the
  * coordinator; no user-facing text does.
  *
- * Its memory (#3038) is plain markdown in the folder's `memory/`. The index is
- * added to both agents' instructions files each time Clubhouse writes them,
- * and before each of their sessions starts, and an old `notes/` folder is
- * sorted into memory first (dispatcher-memory-migration.ts).
+ * Its memory (#3038) is plain markdown in the folder's `memory/`. Both role
+ * files require a current-memory lookup rather than embedding the index. Old
+ * `notes/` are sorted into memory first (dispatcher-memory-migration.ts).
  *
  * Behavior (#3045) sets each agent's model from the Auto mapping: before each
  * session starts, and at once when the level changes, switching a running
@@ -65,6 +64,8 @@ import { appendSection, instructionsWithSkills, writeDispatcherSkills, type Skil
 
 export { appendSection } from './dispatcher-skills';
 import { appLog } from '../log-service';
+import { broadcastToAllWindows } from '../../util/ipc-broadcast';
+import { IPC } from '../../../shared/ipc-channels';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
 import type { DurableAgentConfig, DurableConfigUpdates } from '../../../shared/types';
@@ -647,7 +648,7 @@ export async function setDispatcherPersonality(value: unknown): Promise<Dispatch
 }
 
 async function rewriteChatInstructions(): Promise<void> {
-  if (chatConfig && isDispatcherEnabled()) await writeInstructions(chatConfig, getDispatcherChatPath());
+  if (chatConfig && isDispatcherEnabled()) await refreshRoleInstructions(chatConfig, getDispatcherChatPath());
 }
 
 /**
@@ -692,7 +693,8 @@ export async function completeDispatcherSetup(input: DispatcherSetupInput): Prom
     await refreshAfterChange(dir);
     await rewriteChatInstructions();
     // Identity/provider writes are debounced. Finish acknowledges both records
-    // on disk, along with its settings and instructions, before publishing done.
+    // on disk and its settings before publishing done. Instruction-delivery
+    // failures are reported separately and do not roll back accepted settings.
     await agentConfig.flushAgentConfig(dir);
     await agentConfig.flushAgentConfig(getDispatcherChatPath());
     await saveDispatcherSetupStatus('done');
@@ -881,6 +883,33 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
 }
 
 /**
+ * Routine settings/startup work isolates each role's delivery failure. Only
+ * instruction publication is caught here; persistence/mirroring still reject.
+ * Session preparation deliberately calls strict writeInstructions instead.
+ */
+async function refreshRoleInstructions(agent: DurableAgentConfig, dir: string = getDispatcherPath()): Promise<void> {
+  try {
+    await writeInstructions(agent, dir);
+  } catch (err) {
+    const role: DispatcherRole = isDispatcherChatPath(dir) ? 'chat' : 'work';
+    appLog(NS, 'warn', 'Dispatcher instructions were not refreshed', {
+      meta: { role, agentId: agent.id, error: err instanceof Error ? err.message : String(err) },
+    });
+    // Existing best-effort renderer notice: no chat wake, delivery receipt,
+    // persistent status, raw error/custom text, or launch-failure code.
+    try {
+      broadcastToAllWindows(IPC.CHAT.RUNTIME_NOTICE, agent.id, {
+        level: 'warn', code: 'instruction_delivery',
+        message: `${role === 'work' ? 'Dispatcher controller' : 'Dispatcher chat'} instructions could not be refreshed. Required instruction files or guides may be missing, stale or incomplete.`,
+      });
+    } catch {
+      // telemetry-exempt: the original error is logged above; optional UI transport cannot abort the caller
+      appLog(NS, 'warn', 'Dispatcher instruction warning could not be displayed', { meta: { role, agentId: agent.id } });
+    }
+  }
+}
+
+/**
  * The chat's instructions (#3047): Clubhouse's text and its skills list
  * (#3051), then its name and the personality exactly as the user wrote it.
  * The stable memory lookup goes after.
@@ -935,8 +964,8 @@ async function reconcile(): Promise<void> {
     // First-run setup (#3047): an upgrade unless Clubhouse created its agent with setup.
     noteDispatcherOrigin(!(await createdWithSetup()));
     chatConfig = await ensureChat(config);
-    await writeInstructions(config);
-    await writeInstructions(chatConfig, getDispatcherChatPath());
+    await refreshRoleInstructions(config);
+    await refreshRoleInstructions(chatConfig, getDispatcherChatPath());
   } else {
     config = await readConfig();
     chatConfig = await readConfig(getDispatcherChatPath());
@@ -966,7 +995,7 @@ async function refreshAfterChange(changedDir: string): Promise<void> {
   chatConfig = chat;
   if (isDispatcherEnabled()) {
     for (const [agent, dir] of [[coordinator, getDispatcherPath()], [chat, chatDir]] as const) {
-      if (agent && instructionsKey(agent, dir) !== instructionsWrittenFor.get(dir)) await writeInstructions(agent, dir);
+      if (agent && instructionsKey(agent, dir) !== instructionsWrittenFor.get(dir)) await refreshRoleInstructions(agent, dir);
     }
   }
   emitChanged();
@@ -1064,8 +1093,8 @@ export function onExperimentalSettingsChanged(): Promise<void> {
 export function refreshDispatcherInstructions(): Promise<void> {
   return enqueue(async () => {
     if (!isDispatcherEnabled()) return;
-    if (config) await writeInstructions(config);
-    if (chatConfig) await writeInstructions(chatConfig, getDispatcherChatPath());
+    if (config) await refreshRoleInstructions(config);
+    if (chatConfig) await refreshRoleInstructions(chatConfig, getDispatcherChatPath());
   });
 }
 
