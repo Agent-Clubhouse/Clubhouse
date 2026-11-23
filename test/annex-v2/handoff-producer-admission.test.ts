@@ -481,7 +481,7 @@ function installFixture(owner: FixtureOwner, fixture: Fixture): void {
   if (owner.retiring) throw new Error('Producer fixture setup retired before caller wrapper installation.');
   const callTool = fixture.tools.callTool;
   vi.spyOn(fixture.tools, 'callTool').mockImplementation((...args) => {
-    if (args[0] !== caller) return callTool(...args);
+    if (args[0] !== caller) return preparationInvocation(owner.preparationStages, false, () => callTool(...args));
     if (owner.retiring) throw new Error('Producer fixture is retiring; no new test calls may start.');
     let trace: (typeof owner.toolWork)[number] | undefined;
     fixtureDiagnostic(() => {
