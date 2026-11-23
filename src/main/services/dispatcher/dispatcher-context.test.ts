@@ -34,7 +34,7 @@ describe('bounded durable Dispatcher context', () => {
     const procedural = fs.readFileSync(path.join(dir, skillFile(provider.conventions, 'tool-procedures')), 'utf8');
     expect(procedural).toContain('No hooks, filters, setup, submodules, installs or repository code are run by import.');
     expect(procedural).toContain('Only through Clubhouse tools.');
-    const inputs = [instructionsWithSkills(work, 'work', provider.conventions), appendSection(instructionsWithSkills(chat, 'chat', provider.conventions), personalityInstructions('Navi', { preset: 'custom', text: custom }))];
+    const inputs = [instructionsWithSkills(work, 'work', provider.conventions), appendSection(instructionsWithSkills(chat, 'chat', provider.conventions), personalityInstructions('Sample', { preset: 'custom', text: custom }))];
     for (const input of inputs) {
       const initial = await withMemoryIndex(input, opts);
       for (let n = 0; n < 8; n++) {
