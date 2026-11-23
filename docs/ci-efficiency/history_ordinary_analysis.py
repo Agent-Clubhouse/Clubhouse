@@ -103,7 +103,7 @@ def main():
     _,ratiose=estimate({rid:v.get(rid,0)-(mean or 0)*(rid in v) for rid in sample})
     out.append({'event':event,'epoch':ep,'kind':key[0],'os':key[1],'family':key[2],'phase_or_metric':key[3],'census_runs':len(domain),'sample_runs':len(sample&domain),'sample_runs_with_observation':len(v),'sample_job_or_endpoint_observations':sum(counts[key][rid] for rid in v),'sample_steps':sum(stepcounts[(key,rid)] for rid in v),'estimated_job_or_endpoint_observations':round(count,3),'estimated_total_s':round(total,3),'seconds_per_census_run':round(total/len(domain),3),'design_se_per_census_run_s':round(se/len(domain),3),'conditional_seconds_per_observed_run':round(mean,3) if mean is not None else None,'conditional_design_se_s':round(ratiose/nrun,3) if nrun else None})
  with (data/'history-phases.csv').open('w') as f:
-  w=csv.DictWriter(f,fieldnames=list(out[0]));w.writeheader();w.writerows(out)
+  w=csv.DictWriter(f,fieldnames=list(out[0]),lineterminator='\n');w.writeheader();w.writerows(out)
  # The phase decomposition must reconcile to the same accepted deduplicated jobs.
  for rid in sample:
   for fam in ['macos-unit','macos-build-smoke']:
