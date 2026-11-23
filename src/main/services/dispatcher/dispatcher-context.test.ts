@@ -10,7 +10,7 @@ import { CopilotCliProvider } from '../../orchestrators/copilot-cli-provider';
 import { DISPATCHER_NAME_MAX, personalityInstructions } from '../../../shared/dispatcher-personality';
 import { appendSection, boundBuiltinInstructions, DISPATCHER_BUILTIN_CAP_BYTES, instructionsWithSkills, skillFile, writeDispatcherSkills } from './dispatcher-skills';
 import { MEMORY_LOOKUP_INSTRUCTIONS, withMemoryIndex } from './dispatcher-memory-migration';
-import { memoryWrite } from './dispatcher-memory';
+import { MAX_MEMORY_ACCESS_PAGES, memoryAccessPath, memoryWrite, readMemoryAccess, recordMemoryRead } from './dispatcher-memory';
 import { readDispatcherMemory } from './dispatcher-memory-reader';
 import { searchDispatcher, MAX_MEMORY_PAGE_BYTES, type SearchOptions, type TranscriptStore } from './dispatcher-search';
 
@@ -91,6 +91,31 @@ describe('bounded durable Dispatcher context', () => {
     expect((await readDispatcherMemory(undefined, root)).text).toContain('current-canary');
     const stores: TranscriptStore[] = [{ provider: 'sentinel', listSessions: () => { throw new Error('history must not inspect transcripts'); }, transcriptPath: async () => null }];
     await expect(searchDispatcher('historic-canary', { memoryRoot: root, stores, folders: ['/unused'], scope: 'history' })).resolves.toMatchObject({ transcripts: [] });
+  });
+
+  it('history reads cannot evict active access metadata or refresh active facts', async () => {
+    const root = path.join(temp(), 'memory');
+    const page = 'history/index.md/1795464097096-aabb.md';
+    const target = path.join(root, page);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const historic = 'historic-pool-canary: old evidence, not current authority.\n';
+    fs.writeFileSync(target, historic);
+    const entries = Object.fromEntries(Array.from({ length: MAX_MEMORY_ACCESS_PAGES }, (_, n) => [
+      `topics/active-${n}.md`, { reads: 1, writes: 0, lastRead: n + 1 },
+    ]));
+    const access = memoryAccessPath(root);
+    fs.writeFileSync(access, JSON.stringify({ version: 1, pages: entries }));
+    const before = fs.readFileSync(access);
+    const beforeMtime = fs.statSync(target).mtimeMs;
+    expect((await searchDispatcher('historic-pool-canary', { memoryRoot: root, scope: 'history', stores: [], folders: [] })).memory).toHaveLength(1);
+    expect((await readDispatcherMemory(page, root)).text).toBe(historic);
+    expect(fs.readFileSync(access).equals(before)).toBe(true);
+    expect(fs.readFileSync(target, 'utf8')).toBe(historic);
+    expect(fs.statSync(target).mtimeMs).toBe(beforeMtime);
+    expect(Object.keys(await readMemoryAccess(root))).toHaveLength(MAX_MEMORY_ACCESS_PAGES);
+    // The guard is specific to history, not a blanket disabling of current-page access tracking.
+    await recordMemoryRead('topics/active-0.md', root, 12345);
+    expect((await readMemoryAccess(root))['topics/active-0.md']).toMatchObject({ reads: 2, lastRead: 12345 });
   });
 
   it('reports withheld historical coverage instead of claiming an absent fact', async () => {

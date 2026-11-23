@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import type { DurableAgentConfig, DurableConfigUpdates } from '../../../shared/types';
@@ -20,6 +21,9 @@ const h = vi.hoisted(() => ({
   auto: {} as Record<string, Record<string, { model: string; effort: string | null } | null>>,
   runtimes: new Map<string, { kind: 'chat'; setModel: ReturnType<typeof vi.fn> }>(),
 }));
+
+// A forwarding module copy exposes a deterministic selected-write fault; all other IO stays native.
+vi.mock('fs/promises', async (original) => ({ ...await original<typeof fsp>() }));
 
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => h.baseDir }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
@@ -180,8 +184,8 @@ beforeEach(async () => {
     fakeProvider('claude-code', 'CLAUDE.md', { configDir: '.claude', skillsDir: 'skills' }),
     fakeProvider('copilot-cli', path.join('.github', 'copilot-instructions.md'), { configDir: '.github', skillsDir: 'skills' }),
     fakeProvider('codex-cli', 'AGENTS.md', { configDir: '.codex', skillsDir: 'skills', skillsRoot: '.agents/skills', previousSkillsRoots: ['.codex/skills'] }),
-    // A provider with no Auto presets, for the missing-mapping path, and no skills folder.
-    fakeProvider('future-cli', 'FUTURE.md'),
+    // No Auto presets; its skill conventions stay valid so model-mapping tests remain about models.
+    fakeProvider('future-cli', 'FUTURE.md', { configDir: '.future', skillsDir: 'skills' }),
   ];
   svc._resetDispatcherForTesting();
   _resetDispatcherBehaviorForTesting();
@@ -558,12 +562,61 @@ describe('built-in skills (#3051)', () => {
     expect(chat.indexOf('## Skills')).toBeLessThan(chat.indexOf('## Your name and personality'));
   });
 
-  it('writes plain instructions, with no skills list, for a CLI with no skills folder', async () => {
+  it('required guide: missing provider conventions preserves the previous root instead of publishing one without guides', async () => {
     h.enabledProviders = ['future-cli'];
+    const provider = providers.list.find((p) => p.id === 'future-cli')!;
+    provider.conventions = undefined;
+    fs.mkdirSync(dispatcherDir(), { recursive: true });
+    const root = path.join(dispatcherDir(), 'FUTURE.md');
+    const previous = Buffer.from('Previous compact root; guide availability is not guaranteed.\r\nCustom text remains exact. 🧭');
+    fs.writeFileSync(root, previous);
+    await expect(svc.setDispatcherEnabled(true)).rejects.toThrow(/skills folder/);
+    expect(fs.readFileSync(root).equals(previous)).toBe(true);
+    expect(provider.writeInstructions).not.toHaveBeenCalled();
+  });
+
+  it('required guide: a missing delivery directory refuses session refresh without changing prior instruction bytes', async () => {
     await svc.setDispatcherEnabled(true);
-    const written = fs.readFileSync(path.join(dispatcherDir(), 'FUTURE.md'), 'utf-8');
-    expect(written.startsWith(svc.DISPATCHER_INSTRUCTIONS)).toBe(true);
-    expect(written).not.toContain('## Skills');
+    const root = path.join(dispatcherDir(), 'CLAUDE.md');
+    const previous = fs.readFileSync(root);
+    const provider = providers.list.find((p) => p.id === 'claude-code')!;
+    provider.writeInstructions.mockClear();
+    const skills = path.join(dispatcherDir(), '.claude', 'skills');
+    fs.rmSync(skills, { recursive: true, force: true });
+    fs.writeFileSync(skills, 'Native filesystem obstruction; no guide directory exists.');
+    await expect(svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1')).rejects.toThrow();
+    expect(fs.readFileSync(root).equals(previous)).toBe(true);
+    expect(provider.writeInstructions).not.toHaveBeenCalled();
+    expect(previous.toString()).toContain('If the guide is unavailable, report that blocker before acting');
+  });
+
+  it('required guide: partial delivery failure retains the original error and prior root; later success can publish normally', async () => {
+    await svc.setDispatcherEnabled(true);
+    const root = path.join(dispatcherDir(), 'CLAUDE.md');
+    const previous = fs.readFileSync(root);
+    const provider = providers.list.find((p) => p.id === 'claude-code')!;
+    provider.writeInstructions.mockClear();
+    const guide = path.join(dispatcherDir(), '.claude', 'skills', 'tool-procedures', 'SKILL.md');
+    const earlier = path.join(dispatcherDir(), '.claude', 'skills', 'delegating-work', 'SKILL.md');
+    fs.writeFileSync(earlier, 'Earlier skill before refresh');
+    const failure = new Error('Selected guide write refused');
+    const original = fsp.writeFile;
+    let refused = 0;
+    const spy = vi.spyOn(fsp, 'writeFile').mockImplementation((...args: Parameters<typeof fsp.writeFile>) => {
+      if (args[0] === guide) { refused++; return Promise.reject(failure); }
+      return original(...args);
+    });
+    await expect(svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1')).rejects.toBe(failure);
+    expect(refused).toBe(1);
+    expect(fs.readFileSync(earlier, 'utf8')).toBe(dispatcherSkills('work').find((s) => s.name === 'delegating-work')!.text);
+    expect(fs.existsSync(guide)).toBe(false);
+    expect(fs.readFileSync(root).equals(previous)).toBe(true);
+    expect(provider.writeInstructions).not.toHaveBeenCalled();
+    spy.mockRestore();
+    await svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1');
+    expect(fs.readFileSync(guide, 'utf8')).toBe(dispatcherSkills('work').find((s) => s.name === 'tool-procedures')!.text);
+    expect(provider.writeInstructions).toHaveBeenCalledTimes(1);
+    expect(fs.readFileSync(root).equals(previous)).toBe(true);
   });
 });
 

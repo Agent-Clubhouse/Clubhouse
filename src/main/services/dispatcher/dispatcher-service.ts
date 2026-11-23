@@ -875,7 +875,7 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
     return;
   }
   const role: DispatcherRole = isDispatcherChatPath(dir) ? 'chat' : 'work';
-  const skills = (await writeSkills(dir, role, provider)) ?? undefined;
+  const skills = await writeSkills(dir, role, provider);
   await provider.writeInstructions(dir, await withDispatcherMemory(role === 'chat' ? chatInstructions(agent, skills) : appendSection(instructionsWithSkills(DISPATCHER_INSTRUCTIONS, 'work', skills), `Your name is ${cleanDispatcherName(agent.name) || DEFAULT_DISPATCHER_NAME}. The user chose it; use it when you introduce yourself.`)));
   instructionsWrittenFor.set(dir, instructionsKey(agent, dir));
 }
@@ -897,22 +897,22 @@ function instructionsKey(agent: DurableAgentConfig, _dir: string): string {
 
 /**
  * Write the role's built-in skills (#3051) into the CLI's skills folder, so a
- * new app version's skills reach the agent with its instructions. Resolves
- * with the conventions they were written for, or null when they weren't:
- * then the instructions don't list them, and the agent keeps working.
+ * new app version's skills reach the agent with its instructions. Required
+ * delivery failure rejects before publishing a new root. Partial skill writes
+ * are not rolled back; a previous root/guide may itself be compact or stale.
  */
-async function writeSkills(dir: string, role: DispatcherRole, provider: OrchestratorProvider): Promise<SkillsConventions | null> {
-  const conventions = provider.conventions as SkillsConventions | undefined;
-  if (!conventions) return null;
+async function writeSkills(dir: string, role: DispatcherRole, provider: OrchestratorProvider): Promise<SkillsConventions> {
   try {
+    const conventions = provider.conventions as SkillsConventions | undefined;
+    if (!conventions) throw new Error('The Dispatcher needs a provider skills folder before its instructions can be written.');
     await writeDispatcherSkills(dir, role, conventions, getAllProviders().map((p) => p.conventions as SkillsConventions).filter(Boolean));
     return conventions;
   } catch (err) {
-    // telemetry-exempt: logged; the agent works from its instructions alone until the next write
+    // telemetry-exempt: logged and rethrown; keep prior instruction bytes, not a new incomplete root
     appLog(NS, 'warn', 'Could not write the Dispatcher\'s skills', {
       meta: { role, provider: provider.id, error: err instanceof Error ? err.message : String(err) },
     });
-    return null;
+    throw err;
   }
 }
 

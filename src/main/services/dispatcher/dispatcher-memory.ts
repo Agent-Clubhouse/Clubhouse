@@ -585,6 +585,9 @@ async function updateMemoryAccess(page: string, update: (entry: MemoryAccess) =>
 }
 
 export async function recordMemoryRead(page: string, root?: string, now: number = Date.now()): Promise<void> {
+  // Snapshot evidence must not consume the bounded active-page access pool or
+  // evict metadata used by upkeep. Readers pass confined canonical paths.
+  if (page.replace(/\\/g, '/').toLowerCase().startsWith(`${MEMORY_HISTORY_DIR}/`)) return;
   await updateMemoryAccess(page, (entry) => ({ ...entry, lastRead: now, reads: Math.min(entry.reads + 1, Number.MAX_SAFE_INTEGER) }), root);
 }
 
