@@ -222,7 +222,7 @@ function ownGrantIO<T>(owner: FixtureOwner, start: () => Promise<T>, fixture?: F
   let reject!: (error: unknown) => void;
   const claim = new Promise<unknown>((complete, failed) => { resolve = complete; reject = failed; });
   // Observe rejection immediately, but store the ORIGINAL rejecting claim for all-settlement.
-  void claim.then(undefined, () => undefined);
+  void claim.then(undefined, (): undefined => undefined);
   try { owner.operations.push(claim); } catch (error) { reject(error); throw error; }
   try {
     const actual = start();
@@ -765,7 +765,7 @@ describe('isolated real MCP producer domain admission', () => {
         if (settled[1].value.failures.length) errors.push(settled[1].value.error);
       }
       if (errors.length === 1) throw errors[0];
-      if (errors.length > 1) throw new AggregateError(errors, 'Original direct IO and core failures retained.');
+      if (errors.length > 1) throw Object.assign(new Error('Original direct IO and core failures retained.'), { errors: Object.freeze(errors) });
     }
   }));
 
