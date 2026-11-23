@@ -1,6 +1,7 @@
 import { CodexChatEventMapper } from '../../orchestrators/adapters/codex-chat-events';
 import { boundChatEvent } from '../annex-chat-bounds';
 import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from '../dispatcher-federation-context';
+import * as localCausalWork from '../dispatcher-federation-local-work';
 import type { FederatedRequest } from '../../../shared/dispatcher-federation-requests';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import type { ChatEvent, ChatCapabilities, ChatSendReceipt } from '../../../shared/chat';
@@ -111,6 +112,84 @@ it('does not retain future-turn debt when Codex accepts two prompts into one nat
 });
 
 describe('native submission ownership', () => {
+  it.each(['activation', 'before-prompt', 'fallback-steer'] as const)('does not resurrect old native ownership after replacement during %s', async (boundary) => {
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', { ...STEERLESS, steer: true });
+    let releaseStep!: () => void;
+    let enteredStep!: () => void;
+    let releaseClose!: () => void;
+    let enteredClose!: () => void;
+    const step = new Promise<void>((resolve) => { releaseStep = resolve; });
+    const stepEntered = new Promise<void>((resolve) => { enteredStep = resolve; });
+    const closing = new Promise<void>((resolve) => { releaseClose = resolve; });
+    const closeEntered = new Promise<void>((resolve) => { enteredClose = resolve; });
+    let heldPrompt = false;
+    const { runtime } = makeRuntime(driver, { beforePrompt: async () => {
+      if (boundary !== 'before-prompt' || heldPrompt) return;
+      heldPrompt = true; enteredStep(); await step;
+    } });
+    const actualActivate = localCausalWork.activateLocalCausalInput;
+    let actualRollback: (() => Promise<void>) | undefined;
+    const activation = boundary === 'before-prompt' ? undefined : vi.spyOn(localCausalWork, 'activateLocalCausalInput')
+      .mockImplementationOnce(async (...args) => {
+        actualRollback = await actualActivate(...args);
+        enteredStep(); await step;
+        return actualRollback;
+      });
+    const stopTracking = startFederationTurnTracking(runtime.agentId);
+    const settled = vi.fn();
+    await runtime.start();
+    const old = driver.last;
+    const originalClose = old.close.bind(old);
+    const close = vi.spyOn(old, 'close').mockImplementationOnce(async () => {
+      enteredClose(); await closing; await originalClose();
+    });
+    try {
+      Object.assign(old, { sendWithReceipt: async (...args: Parameters<typeof old.send>) => {
+        await old.send(...args);
+        return { delivery: 'prompt', nativeTurn: { id: 'same-native', completed: false } };
+      } });
+      const sending = runtime.sendMessage('old input', { source: 'user', delivery: boundary === 'fallback-steer' ? 'steer' : 'prompt' });
+      await stepEntered;
+      expect(old.sent).toHaveLength(0);
+      const clearing = runtime.clearContext();
+      await closeEntered;
+      releaseStep();
+      expect(await sending).toMatchObject({ delivery: 'prompt' });
+      if (activation) expect(await activation.mock.results[0].value).toBe(actualRollback);
+      // Existing source permits this modeled accepted operation while close
+      // is held. Its physical send/publication is not the discriminator.
+      expect(old.sent).toHaveLength(1);
+      releaseClose(); await clearing;
+      expect(driver.sessions).toHaveLength(2);
+      expect(runtime.getState()).toBe('idle');
+      expect.soft(runtime.hasPendingWork()).toBe(false);
+      let count = 0;
+      Object.assign(driver.last, { sendWithReceipt: async (...args: Parameters<typeof driver.last.send>) => ({
+        delivery: await driver.last.send(...args), nativeTurn: { id: ++count === 1 ? 'same-native' : `new-${count}`, completed: false },
+      }) });
+      await withFederationInput({ id: 'new-causal', cause: { rootId: 'new-causal', depth: 4 } } as FederatedRequest,
+        () => runtime.sendMessage('new first', { source: 'mcp' }));
+      expect(runtime.hasPendingWork()).toBe(true);
+      expect((await runtime.sendMessage('new second', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'new', onSettled: settled } })).delivery).toBe('queued');
+      expect((await runtime.sendMessage('new third', { source: 'user', delivery: 'queued' })).delivery).toBe('queued');
+      expect(driver.last.sent).toHaveLength(1);
+      expect(settled).not.toHaveBeenCalled();
+      for (const id of ['same-native', 'new-2', 'new-3']) {
+        driver.last.emit({ type: 'turn_started', data: { nativeTurnId: id } });
+        driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      }
+      expect(settled).toHaveBeenCalledExactlyOnceWith('delivered');
+      expect(driver.last.sent.map((x) => x.content)).toEqual(['new first', 'new second', 'new third'].map((text) => [{ type: 'text', text }]));
+      expect.soft(runtime.hasPendingWork()).toBe(false);
+      expect((await runtime.sendMessage('new fourth', { source: 'action', delivery: 'queued' })).delivery).toBe('prompt');
+      expect(old.sent).toHaveLength(1);
+      expect(driver.last.sent).toHaveLength(4);
+    } finally {
+      releaseStep(); releaseClose(); activation?.mockRestore(); close.mockRestore();
+      await runtime.stop(); stopTracking();
+    }
+  });
+
   it.each([
     ['strict-success', 'during-close'], ['strict-success', 'after-stop'],
     ['best-effort-failure', 'during-close'], ['best-effort-failure', 'after-stop'],
