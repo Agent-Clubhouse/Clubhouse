@@ -358,6 +358,13 @@ export interface ChatResumeTiming {
 /** Bytes for an image asset a driver referenced, or why there are none. */
 export type ChatMediaAssetResult = { ok: true; bytes: Uint8Array; reason?: undefined } | { ok: false; bytes?: undefined; reason: string };
 
+/** Main-process submission ownership; never serialized as a delivery result. */
+export interface ChatSendReceipt {
+  delivery: MessageDelivery;
+  /** Absent for an operation (steer/compact) which does not start a turn. */
+  nativeTurn?: { id: string; completed: boolean };
+}
+
 export interface ChatDriverSession {
   /**
    * Values known at start. Either may change later: the driver then emits a
@@ -384,6 +391,13 @@ export interface ChatDriverSession {
 
   /** Send content. Returns how it was delivered (a driver without steer reports 'queued' or 'prompt'). */
   send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery>;
+  /**
+   * When available, identifies the native operation instead of assuming one
+   * new turn per prompt. Notifications may precede this receipt, and multiple
+   * submissions may share a turn. A resolved receipt still reports delivery
+   * even if this session was replaced while the provider was answering.
+   */
+  sendWithReceipt?(content: ContentBlock[], delivery: MessageDelivery): Promise<ChatSendReceipt>;
   interrupt(): Promise<void>;
   respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void>;
   answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void>;
