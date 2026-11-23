@@ -1,5 +1,7 @@
 # Antigravity CLI provider: requirements and design
 
+Issue references written `#E` and `#A1`..`#A19` are draft keys from `antigravity-provider-issues.md`; they are replaced with real issue numbers on publish.
+
 Status: design only. Nothing here has been run against a signed-in Antigravity account. No Antigravity binary was installed, launched or logged in to while writing it.
 
 - Evidence snapshot: 2026-11-23, official docs at `https://antigravity.google/docs/` (no per-page "last updated" dates are shown). Changelog latest entries: CLI v1.5.12 (2026-11-19), App v2.34.0 (2026-11-20).
@@ -93,18 +95,19 @@ From https://antigravity.google/docs/ide/extensions/acp/ and https://antigravity
 
 ## 3. Plan and usage eligibility (documented statements only)
 
-These are the exact statements. This doc draws no legal conclusion from them.
+Paraphrased; read the linked pages for the exact wording. This doc draws no legal conclusion from them.
 
-1. FAQ, "Why can't I use third-party software (such as Claude Code, OpenClaw, or OpenCode) with my Antigravity login?": "Using third-party software, tools, or services to access Antigravity is a violation of our Terms of Service ... Such actions can result in suspension or termination of your account. To use a third-party coding agent with Gemini, we recommend using a Gemini Enterprise or Google AI Studio API key." https://antigravity.google/docs/faq/
-2. FAQ, "Can I use Antigravity CLI headless mode in third-party coding agents or automate account switching?": "Antigravity CLI headless mode (`agy -p`) is intended for direct scripting and CI workflows. Wrapping `agy` inside third-party coding agents or applications, or automating account rotation, is not supported under consumer plans." https://antigravity.google/docs/faq/
-3. ACP guide: "Any ACP client can launch Antigravity CLI", with cached interactive credentials reused by `agy acp`, and named community clients (VS Code ACP Client extension). https://antigravity.google/docs/ide/extensions/acp/
+1. FAQ ([link](https://antigravity.google/docs/faq/), entry on third-party software and Antigravity logins): using third-party software to access Antigravity with an Antigravity login violates the Terms of Service and can lead to account suspension; for third-party coding agents it recommends a Gemini Enterprise or Google AI Studio API key.
+2. FAQ ([link](https://antigravity.google/docs/faq/), entry on headless mode in third-party agents): `agy -p` is meant for direct scripting and CI; wrapping `agy` in third-party agents or apps, or automating account rotation, is not supported under consumer plans.
+3. ACP guide ([link](https://antigravity.google/docs/ide/extensions/acp/)): any ACP client can launch `agy acp`, which reuses credentials cached by an interactive `agy` sign-in; it lists a community VS Code client among the examples.
 
 What this means for the plan:
 
-- Statement 2 is specific to headless `agy -p` under consumer plans. The headless path (section 6.5) is therefore gated by auth type: enabled for `gemini-api-key`, `agent-platform` and `oauth-business`; for `oauth-personal` it stays off unless Google clarifies otherwise.
-- Statement 3 documents ACP for any ACP client and reuses cached interactive credentials. The ACP chat path is planned for every documented auth method. How statement 1 applies to an ACP client that launches the official `agy` binary is not stated; a clarification issue tracks it, and the chat driver ships behind the experimental flag until it is answered.
+- Statement 2 is a negative statement about consumer plans. It does not, by itself, document that headless wrapping is permitted for any other auth type. Statement 1's API-key recommendation concerns using Gemini from a third-party agent, not wrapping `agy`. Headless (6.5) is therefore off for every auth type until the eligibility decision (#A1) names the auth types it may be enabled for; API key, Agent Platform and Gemini Enterprise are the candidates, recorded as [Inference].
+- Statement 3 documents ACP for any ACP client with cached interactive credentials. The ACP chat path is planned for the documented auth methods behind the experimental flag. How statement 1 applies to an ACP client that launches the user's own `agy` is not stated; the clarification issue asks, and its answer can change the defaults.
+- The Python SDK documents API-key and Vertex/Enterprise auth only. That is not evidence about subscription use through the SDK either way; the SDK is out of scope.
 - Clubhouse never automates account switching or rotation, never reads or copies credentials from the keyring, and never sets `clientInfo` to anything but Clubhouse.
-- Running the user's own `agy` TUI in a Clubhouse terminal is not addressed by any statement. Nothing in the plan depends on an answer, but the clarification issue asks.
+- Running the user's own `agy` TUI in a Clubhouse terminal is not addressed by any statement. The clarification issue asks.
 
 ## 4. Capability matrix
 
@@ -121,11 +124,11 @@ What this means for the plan:
 | Steering mid-turn | Yes | Yes | Yes | ACP: a prompt mid-turn steers | `steer: true` |
 | Interrupt | Yes | Yes | Yes | ACP `session/cancel` | Yes |
 | Resume by id | Yes | Yes | Yes | `--conversation <id>`; ACP load/resume | Yes |
-| Session list | Yes | Yes | Yes | ACP `session/list`; TUI picker | ACP list; PTY by directory scan (format [Unknown]) |
-| Transcript file | Yes | Yes | Yes | `~/.gemini/antigravity-cli/brain/<conversationId>/.system_generated/logs/transcript.jsonl` (path documented, line format not) | Path via hooks; parsing after V5 |
+| Session list | Yes | Yes | Yes | ACP `session/list`; TUI picker | ACP `session/list` only; no directory scanning |
+| Transcript / history | Yes | Yes | Yes | ACP `session/load` replays history as `session/update`; hooks report a `transcriptPath` whose line format is not documented | ACP history only; no parsing of the transcript file unless Google publishes its schema |
 | Model list | handshake | handshake | SDK | `agy models`; ACP config option | Yes |
 | Effort | Yes | Yes | Yes | `--effort`; ACP thinking level | Yes |
-| Plan quota (token-free) | Yes | Yes | No | `/usage` interactive only | No (`readPlanQuota` absent) |
+| Plan quota (token-free) | Yes | Yes | No | `/usage` interactive only | No reader; Auto eligibility decided in #A18 |
 | Usage tokens | Yes | Yes | Yes | headless `usage`; ACP context-window updates | `usage: 'context'` in chat |
 | Images / attachments | Yes | Yes | Yes | ACP images + embedded resources; headless text only | Chat only |
 | Questions | Yes | Yes | Yes | ACP elicitation forms | Yes |
@@ -136,7 +139,7 @@ What this means for the plan:
 | Skills dir | `.claude/skills` | `.agents/skills` | `.github/skills` | `.agents/skills` | `.agents/skills` |
 | Project MCP file | `.mcp.json` | not read | not read | `.agents/mcp_config.json` | Workspace file + ACP `mcpServers` |
 | Config-dir override env | `CLAUDE_CONFIG_DIR` | `CODEX_HOME` | `COPILOT_HOME` | none documented | Not isolated (section 6.7) |
-| Desktop control off | n/a | `--disable plugins` | n/a | browser subagent; no documented per-session off switch | [Unknown] |
+| Desktop control off | n/a | `--disable plugins` | n/a | No dedicated flag. Documented controls: workspace `PreToolUse` hook returning `deny` (matcher e.g. `browser_.*`), `mcp(server/tool)` deny rules (apply to the `/browser` subagent's DevTools tools since 1.5.x), MCP `disabledTools` | Eligibility gate (#A14) |
 | Sandbox | n/a | Yes | n/a | seatbelt / bubblewrap; Windows non-admin | Map from execution policy |
 
 \* `auto` needs the sandbox and is not available to business or enterprise accounts.
@@ -152,10 +155,12 @@ Pointers are against `50c474b48`.
 5. **Instructions and skills overlap with Codex.** Antigravity reads `AGENTS.md` and `.agents/skills`, as Codex does (`codex-cli-provider.ts:249-264`). Managed delivery special-cases Copilot and Claude (`managed-agents/delivery.ts:482,692-695,707,851,1077-1090`). Antigravity additionally reads `GEMINI.md`, `.agents/rules`, parent folders up to the repo root, and the user's global `~/.gemini` rules, all cumulatively.
 6. **No config isolation.** `provider-profiles-removed.ts:33-37` maps each provider to a state-dir env var. Antigravity documents none, so sessions, settings, permissions and global customizations are the user's own. `GEMINI_HOME` appears only in an IDE-extension changelog line and is not a documented CLI setting.
 7. **Hooks writer.** `shared.ts:517` `writeTerminalHooksConfig` and `config-pipeline.ts:194,242,288` assume known paths per provider. Antigravity's `.agents/hooks.json` is a named-hook map (`{"<name>": {"PreToolUse": [...]}}`), unlike Claude's settings or Copilot's `hooks/hooks.json`.
-8. **Session capability.** `SessionCapable` (`types.ts:290-335`) assumes a readable on-disk transcript and an id parsed from PTY output (`extractSessionId`). For Antigravity the id and transcript path arrive in hook payloads (`conversationId`, `transcriptPath`), not in PTY text; the transcript line format is not documented. `extractSessionId` needs a hook-sourced alternative.
-9. **Quota and helper routing.** Auto routing needs `readPlanQuota`; Copilot already ranks last without it (`helper-routing.ts:70-73`). Antigravity has no token-free documented quota read.
+8. **Session capability.** `SessionCapable` (`types.ts:290-335`) assumes a readable on-disk transcript and an id parsed from PTY output (`extractSessionId`). For Antigravity the id arrives in hook payloads (`conversationId`), not in PTY text. The `transcript.jsonl` line format and the `brain/` directory layout are not documented as a stable format, so Clubhouse must not parse or scan them. History comes from ACP `session/load` and listing from ACP `session/list`. `extractSessionId` needs a hook-sourced alternative, and `readSessionTranscript` must be allowed to report "unsupported".
+9. **Quota and helper routing.** Auto routing ranks providers by `readPlanQuota`. Copilot has no reader and is still an Auto candidate, ranked last (`helper-routing.ts:70-73`). Eligibility and unknown-quota ranking are hard-coded per provider rather than declared, so a new provider has no stated policy. Antigravity has no token-free documented quota read.
 10. **Provider doc contract.** `provider-doc-contract.test.ts:49-53` and `settings-orchestrators.md:43-49` hard-code three providers.
 11. **No user-facing binary path override.** Only `CLUBHOUSE_TEST_CLI_BINARIES` (`shared.ts:48`) and launch wrappers. `agy` installs to `~/.local/bin`, which GUI-launched apps often miss on macOS; `getExtraBinaryPaths()` must include it and `%LOCALAPPDATA%\agy\bin`.
+12. **No written lifecycle contract for chat drivers.** Receipt, settlement and retry semantics live in `chat-runtime.ts` and each driver. #3782 shows the cost: the runtime keeps one pending token per prompt receipt and retires one per `turn_started`, so two accepted submissions that join one native turn leave a token behind. Antigravity's ACP server documents exactly that shape (a prompt sent mid-turn steers the running turn). A driver-independent conformance suite is needed before a new driver lands.
+13. **Chat and headless fall back to the terminal implicitly.** Copilot chat opens in the CLI view when its driver fails (`chat-spawn.ts:141-144`). A terminal agent has different approval and lifecycle semantics, so for Antigravity the switch must be explicit.
 
 ## 6. Proposed design
 
@@ -170,7 +175,7 @@ interface ProviderDescriptor {
   shortName: string;                  // 'AGY'
   telemetryCode: string;              // closed enum value, 'other' fallback stays
   accessLevels: { chat: AccessLevel[]; terminal: AccessLevel[] };
-  helperRouting: { preset: boolean; autoCandidate: boolean };
+  helperRouting: { preset: boolean; auto: 'candidate' | 'opt_in' | 'excluded'; quota: 'reader' | 'unknown' };
   capacityTracked: boolean;
   remoteHistory: boolean;
   install: { docsUrl: string; binaryHint: string };
@@ -191,17 +196,18 @@ Tradeoffs: a descriptor moves policy (access levels, routing eligibility) next t
 
 ### 6.3 Managed instructions, skills, agents
 
-- Instructions: write the managed block to `<worktree>/AGENTS.md`. Do not touch `GEMINI.md` or `.agents/rules/`. Respect the 24,000-byte per-file limit and warn in the inspector when the composed file exceeds it.
+- Instructions: write the managed block to `<worktree>/AGENTS.md`. Do not touch `GEMINI.md`.
+- Size limit: Antigravity documents a 24,000-byte per-file limit and a 20,000-token aggregate rules budget, and the docs do not say what happens to content past either. Clubhouse must not truncate user text and must not count over-limit instructions as delivered. If the composed `AGENTS.md` (user text plus managed block) exceeds 24,000 bytes, the start is refused with the size and the fix (shorten the persona, or move user text). A split across `AGENTS.md` and `.agents/rules/*.md` (`trigger: always_on`) is only allowed once the combined ordering is documented or proven by a test on the real binary, because the docs say rules are combined but not in what order. The aggregate budget includes the user's own global rules, which Clubhouse cannot see in full; delivery is recorded as "within per-file limit, aggregate unverified".
 - Skills: `skillsRoot: '.agents/skills'`, flat layout, the same root Codex uses, so the existing exclude and manifest logic (`managedSkillExcludes`, `delivery.ts:354`) applies.
 - Custom agents: personas may map to `.agents/agents/<name>.md` plus `--agent <name>` later; out of scope for the first slice.
 - Inherited customizations: Antigravity also loads the user's `~/.gemini` rules, skills, hooks and MCP. Clubhouse cannot isolate them (6.7). The agent settings view lists them as "also loaded from your Antigravity profile" using the documented paths, read-only.
-- Parent traversal stops at the repository root. A Clubhouse worktree has its own `.git` file, so traversal should stop there. [Unknown] whether a `.git` file counts as a root marker; fixture test with a dummy tree, no login needed.
+- Parent traversal stops at the repository root. A Clubhouse worktree has its own `.git` file, so traversal should stop there. [Unknown] whether a `.git` file counts as a root marker (V4).
 
 ### 6.4 MCP and identity
 
-- Terminal and headless: write the Clubhouse bridge into `<worktree>/.agents/mcp_config.json` under the reserved `clubhouse` name, merged with existing user entries, snapshotted and restored by `config-pipeline.ts` the same way `.mcp.json` is. No nonce or token in the file; the bridge reads `CLUBHOUSE_HOOK_NONCE`, `CLUBHOUSE_AGENT_ID`, `CLUBHOUSE_MCP_PORT` from the inherited env, so this depends on env inheritance ([Unknown], validation gate V3). Fallback if env is not inherited: stdio `env` field with a short-lived per-launch nonce, file mode 0600, git-excluded, deleted on stop.
-- Name collision: "the server that is already running keeps it". A user global server named `clubhouse` would win. The provider warns when `~/.gemini/config/mcp_config.json` defines `clubhouse`.
-- Chat (ACP): pass the bridge as a stdio `mcpServers` entry in `session/new`/`load`/`resume` with explicit `env` (ACP spec makes `env` explicit). Prefer stdio so `--process-per-session` is not required. Project servers that are HTTP go over ACP only when the agent advertises `mcpCapabilities.http`, else they are left to the workspace file with a notice.
+- Terminal and headless: write the Clubhouse bridge into `<worktree>/.agents/mcp_config.json` under the reserved `clubhouse` name, merged with existing user entries, snapshotted and restored by `config-pipeline.ts` the same way `.mcp.json` is. No nonce or token in the file; the bridge reads `CLUBHOUSE_HOOK_NONCE`, `CLUBHOUSE_AGENT_ID`, `CLUBHOUSE_MCP_PORT` from the inherited env, so this depends on env inheritance ([Unknown], validation gate V3). If env is not inherited, the bridge fails to authenticate and the start is refused (fail closed). Writing a nonce into the stdio `env` field of a workspace file is a candidate, not a prescription: it needs a written threat model (file readers, sync tools, crash leftovers, git) and security review before it is built.
+- Name collision: "the server that is already running keeps it", so a user or plugin server named `clubhouse` could take the bridge's place. Clubhouse fails closed: the start is refused when any readable MCP config (global, workspace, or a project server list) defines `clubhouse`, and an agent is only marked as having the Clubhouse MCP after the bridge has authenticated to Clubhouse with that launch's agent identity and nonce. A server that merely answers under the name is never trusted. Plugin-contributed servers cannot all be enumerated from documented files, so the authenticated-connection check is the real gate.
+- Chat (ACP): pass the bridge as a stdio `mcpServers` entry in `session/new`/`load`/`resume` with explicit `env` (ACP spec makes `env` explicit). Prefer stdio so `--process-per-session` is not required. The same authenticated-connection check applies. Project servers that are HTTP go over ACP only when the agent advertises `mcpCapabilities.http`, else they are left to the workspace file with a notice.
 - `ignoresToolListChanged`: unknown; default `true` (conservative re-list strategy) until the token-free probe from `reference_mcp_list_changed_by_cli` is run.
 - Permissions for Clubhouse tools: unconfigured MCP tools run in Ask mode. Pre-approve the bridge's read-only tools through a workspace permission rule only if Antigravity documents workspace-scoped `permissions` (it documents the user `settings.json` only). Otherwise approvals surface as normal permission requests in chat and as TUI prompts.
 
@@ -209,7 +215,8 @@ Tradeoffs: a descriptor moves policy (access levels, routing eligibility) next t
 
 - `buildHeadlessCommand`: `agy -p <prompt> --output-format stream-json [--model] [--effort] [--mode] [--conversation]`, with `--print-timeout` from the quick-agent deadline.
 - `createEventNormalizer`: map `init` to system init, `step_update` with `text_delta` to assistant deltas, `tool` steps to tool use/result, `result` to the final result with `usage`. Fixtures only.
-- Eligibility gate: headless is offered only when the configured auth type is `gemini-api-key`, `agent-platform` or `oauth-business` (section 3, statement 2). Clubhouse cannot read the keyring; it reads `auth.type` and `modelProvider` from `~/.gemini/antigravity-cli/settings.json` read-only and `AGY_ADC_AUTH` from the environment. When the auth type is personal or unknown, quick agents fall back to an interactive terminal quick agent, and Actions that require headless refuse with an explanation.
+- Eligibility gate: headless is off for every auth type until the decision in #A1 lists the auth types it may run under (section 3). The gate reads `auth.type` and `modelProvider` from `~/.gemini/antigravity-cli/settings.json` read-only and `AGY_ADC_AUTH` from the environment; it never reads the keyring. Unknown auth means not eligible.
+- When headless is not available, the request is refused with the reason. A quick agent can be started as an interactive terminal agent only if the person chooses that, with the different approval behaviour stated. Actions that need headless refuse. Nothing is converted or replayed automatically.
 - Soft-denied approvals exit 0. The normalizer must surface the stderr notice as a warning so an Action does not report success for work that was refused.
 
 ### 6.6 Chat: generic ACP driver plus Antigravity launch spec
@@ -219,7 +226,9 @@ Tradeoffs: a descriptor moves policy (access levels, routing eligibility) next t
 - Driver id `antigravity_acp` added to `CHAT_DRIVER_IDS` (and the kill-switch denylist validation), `optIn` until real-login QA passes.
 - Capabilities from `initialize`, not hard-coded: `loadSession`, `sessionCapabilities.{resume,list,close}`, `promptCapabilities.{image,embeddedContext}`, `mcpCapabilities`. Static claims for documented behaviour only: `steer: true`, `interrupt: true`, `questions: true` when elicitation is advertised, `slashCommands: true`, `usage: 'context'`, `modelSwitch`/`effortSwitch: 'live'` via `session/set_config_option`, `login: 'terminal'`, `systemPrompt: false` (instructions go through `AGENTS.md`).
 - Permission ladder to ACP modes: `plan`→`plan`, `ask`→`default`, `auto_edit`→`accept-edits`, `auto`→`auto` (only when offered by the session and not on business accounts), `full_access`→process flag `--dangerously-skip-permissions`, which needs a restart. `liveLevels` excludes `full_access`.
-- Auth: `needsLogin` when `initialize` returns `authMethods` and `session/new` fails with `-32000`. Clubhouse does not call `authenticate` for OAuth methods itself; it opens the terminal with `agy` (or `agy acp --login` over SSH) and retries. `gemini-api-key` works only if the user has set `modelProvider` and the key in their environment; Clubhouse does not store or inject the key in phase 3.
+- Auth: `needsLogin` when `initialize` returns `authMethods` and `session/new` fails with `-32000`. Clubhouse does not call `authenticate` for OAuth methods itself; it tells the person to run `agy` (or `agy acp --login` over SSH) and offers a retry.
+- Start failure: no automatic switch to the terminal. The agent shows the failure and two choices: retry chat, or open in terminal. The unsent first message stays in the composer; nothing is replayed into the terminal. A failure after a prompt was accepted settles that turn as failed with its known work (tool calls, edits) kept in the transcript.
+- Lifecycle: the driver must pass the conformance suite (#A19), including steering that joins a running native turn. `gemini-api-key` works only if the user has set `modelProvider` and the key in their environment; Clubhouse does not store or inject the key in phase 3.
 - Client identity: `clientInfo { name: 'clubhouse', title: 'Clubhouse', version }`. Never another client's name.
 - Models: show exactly the model option values the server returns. No local filtering to "third-party allowed" lists.
 
@@ -231,21 +240,21 @@ Tradeoffs: a descriptor moves policy (access levels, routing eligibility) next t
 
 ### 6.8 Hooks for terminal status
 
-- Named hooks `clubhouse-status` with `PreToolUse`, `PostToolUse`, `Stop` and `SessionStart` calling the existing curl hook command (`shared.ts:485`), which forwards the stdin JSON. `SessionStart` gives `conversationId` and `transcriptPath`; the provider records them as the agent's native session id and transcript location for resume (`--conversation <id>`).
+- Named hooks `clubhouse-status` with `PreToolUse`, `PostToolUse`, `Stop` and `SessionStart` calling the existing curl hook command (`shared.ts:485`), which forwards the stdin JSON. `SessionStart` gives `conversationId`, recorded as the agent's native session id for resume (`--conversation <id>`). The payload's `transcriptPath` is not read: the file's line format and the `brain/` layout are undocumented. Clubhouse status hooks always return `allow`.
 - `parseHookEvent` maps to `NormalizedHookEvent`. Permission-request hooks are not documented; `permission_request` events come only from chat.
 - Hooks add latency to every tool call; the default `timeout` stays small and failures must not block tools (handler exit code semantics per docs).
 
 ### 6.9 Remote, Annex, Dispatcher, helpers
 
 - Annex: provider id is already generic except `remote-session-history.ts:34` and `RemoteSessionHistory.tsx:52`; both move to the descriptor. Mobile refuses unknown ids (`orchestrator_unavailable`), so the phone needs the descriptor list from the desktop, not its own allowlist.
-- Dispatcher: never the default provider. Dispatcher agents require desktop control off (`agent-system.ts:792`); Antigravity has a browser subagent and no documented per-session off switch, so Antigravity is not offered as a Dispatcher CLI until one is documented.
-- Helpers: Antigravity can be chosen explicitly (`cli: 'antigravity-cli'`). It is excluded from `cli: 'auto'` (no quota reader, consumer headless restriction). Cross-project helpers inherit the same rules.
+- Dispatcher: never the default provider. The Dispatcher contract (#3185, `agent-system.ts:792`) is that the agent acts only through the Clubhouse MCP and never through the CLI's own computer use or browser control. Antigravity documents no dedicated flag, but documents controls that may satisfy the contract: a workspace `PreToolUse` hook that returns `deny` for browser tools, `mcp(server/tool)` deny rules that apply to the `/browser` subagent's DevTools tools, and the terminal sandbox's network rules. Eligibility is a gate (#A14): map each documented browser/desktop tool name to a control, prove the control fails closed (the changelog records a Windows bug where a blocking hook was silently skipped), then decide. Until the gate passes, Antigravity is not offered as a Dispatcher CLI.
+- Helpers: Antigravity can be chosen explicitly (`cli: 'antigravity-cli'`). For `cli: 'auto'`, the descriptor declares eligibility and quota kind (#A18). Copilot shows an unknown-quota provider can be a candidate ranked last, so unknown quota alone does not exclude Antigravity. Its initial setting is `opt_in` (off unless the person turns it on), recorded as a starting choice to revisit, not a conclusion. Helpers run in terminal or chat, never headless, unless the headless gate allows it. Cross-project helpers inherit the same rules.
 - `--remote-agent`, `--remote-control` and `/schedule` are Antigravity's own remote features; Clubhouse does not drive them.
 
 ### 6.10 Platforms
 
 - macOS: `~/.local/bin/agy`; sandbox seatbelt.
-- Linux: same path; bubblewrap must be installed for `--sandbox`/`auto`; glibc >= 2.28.
+- Linux: same path; bubblewrap must be installed for `--sandbox`/`auto`, and a sandboxed start refuses without it; glibc >= 2.28.
 - Windows: `%LOCALAPPDATA%\agy\bin\agy.exe`; `structured-spawn.ts` handles `.exe` and `.cmd`; ACP had a Windows-only startup crash fixed upstream (changelog), so the version floor must be at or above the fix; `auto` needs v1.4.4+.
 
 ### 6.11 Observability and security
@@ -275,29 +284,34 @@ Tradeoffs: a descriptor moves policy (access levels, routing eligibility) next t
 | 0 | Descriptor refactor; fake `agy` harness; eligibility clarification issue | No |
 | 1 | Terminal provider, binary/availability, models, access ladder, managed `AGENTS.md`/skills, workspace MCP, config preservation, help + contract matrix | No (fake CLI); live check in V-gates |
 | 2 | Hooks status, session id capture and resume | No (fixtures) |
+| 2b | Chat lifecycle conformance suite (#A19) | No |
 | 3 | Generic ACP driver restore; Antigravity launch spec, capabilities, auth handling, permissions, models | No (fixtures) |
 | 4 | Headless normalizer with auth gate; quick agents and Actions | No (fixtures) |
-| 5 | Annex, mobile, helpers, Dispatcher eligibility, telemetry, diagnostics | No |
+| 5 | Annex, mobile, helper Auto eligibility, Dispatcher eligibility gate, telemetry, diagnostics | No |
 | 6 | Real-login validation (V1-V12), then remove `optIn` / experimental per maintainer | Yes |
+
+Required for the epic to close, cannot be waived: terminal provider, managed instructions and skills, Clubhouse MCP with authenticated identity, ACP chat, config preservation, the lifecycle conformance suite, and the required real-login gates. Optional, may be deferred with a recorded reason: headless, Dispatcher eligibility, Auto routing, custom agents, transcript rendering beyond ACP history, business-account checks.
 
 ## Unknowns and validation gates
 
-None of these block phases 0-5; each is settled at the named gate. "V" gates need a signed-in account and run outside CI, without automation of the login itself.
+None of these block phases 0-5; each is settled at the named gate. Gates run outside CI on a real binary, some signed in, with no automation of the login itself. A gate marked required can fail and produce a fix, but cannot be waived to close the epic.
 
-| # | Unknown | Settled by |
-| --- | --- | --- |
-| V1 | Whether Google considers a Clubhouse ACP client or Clubhouse-hosted TUI covered by FAQ statement 1 for personal plans | Clarification request (eligibility issue); maintainer decision on defaults |
-| V2 | Which models a custom ACP client is offered (ACP guide vs 1.5.1 changelog) | Signed-in `session/new` config options, per plan |
-| V3 | Whether `agy` passes its environment to stdio MCP children (TUI and ACP) | Token-free: launch with a dummy stdio server that records its env; may need login only if MCP starts after auth |
-| V4 | Whether a worktree `.git` file stops parent rule traversal | Fixture tree, `/context` or ACP-reported rules if available |
-| V5 | Line format of the CLI `transcript.jsonl` (path is documented) | Signed-in session; until then `SessionCapable` lists ids and paths but does not render transcripts |
-| V6 | ACP `initialize` capabilities on the pinned version (`loadSession`, `sessionCapabilities`, `mcpCapabilities`, `promptCapabilities`, auth caps) | Token-free initialize probe. [Inference] works without login, since the ACP spec puts auth after initialize; confirm on the binary |
-| V7 | Workspace trust prompt in ACP sessions for a new worktree | Signed-in ACP session |
-| V8 | Whether ACP reports subagent activity | Signed-in session with a subagent |
-| V9 | Paste timing for the TUI | Signed-in PTY session |
-| V10 | `tools/list_changed` handling | Token-free MCP probe |
-| V11 | Business-account behaviour (`oauth-business`): no `auto`, admin policies | Enterprise account, if available |
-| V12 | Windows ACP startup and `.exe` spawn | Windows machine, signed in |
+| # | Unknown | Settled by | Required to close the epic |
+| --- | --- | --- | --- |
+| V1 | How the FAQ statements apply to a Clubhouse ACP client or Clubhouse-hosted TUI on personal plans | Clarification request and maintainer defaults (#A1) | Yes (a recorded decision, whatever it is) |
+| V2 | Which models a custom ACP client is offered (ACP guide vs 1.5.1 changelog) | Signed-in `session/new` config options, per plan | Yes |
+| V3 | Whether `agy` passes its environment to stdio MCP children (TUI and ACP) | Dummy stdio server that records its env; login only if MCP starts after auth | Yes |
+| V4 | Whether a worktree `.git` file stops parent rule traversal | Fixture tree on the real binary | Yes |
+| V5 | ACP `session/load` history replay fidelity | Signed-in session. The undocumented `transcript.jsonl` format is never parsed | Yes |
+| V6 | ACP `initialize` capabilities on the pinned version | Initialize probe. [Inference] works without login, since the ACP spec puts auth after initialize | Yes |
+| V7 | Workspace trust prompt in ACP sessions for a new worktree | Signed-in ACP session | Yes |
+| V8 | Whether ACP reports subagent activity | Signed-in session with a subagent | No |
+| V9 | Paste timing for the TUI | Signed-in PTY session | Yes |
+| V10 | `tools/list_changed` handling | Token-free MCP probe | Yes |
+| V11 | Business-account behaviour (`oauth-business`): no `auto`, admin policies | Enterprise account, if available | No |
+| V12 | Windows ACP startup and `.exe` spawn | Windows machine, signed in | Yes |
+| V13 | Steering, cancel and permission settlement on the real server match the conformance suite | Signed-in ACP session running the #A19 scenarios with minimal prompts | Yes |
+| V14 | Documented browser/desktop controls fail closed (Dispatcher gate) | Real binary, hook and deny rule scenarios | No (Dispatcher is optional) |
 
 ## Sources
 
