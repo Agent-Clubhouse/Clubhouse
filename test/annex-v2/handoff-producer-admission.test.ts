@@ -379,7 +379,12 @@ function preparationInvocation<T>(observer: PreparationObserver | undefined, sel
 function observePreparationMcp(observer: PreparationObserver, actual: Promise<McpToolResult>): void {
   try {
     void actual.then(
-      (value) => { markPreparation(observer, 'mcp', (elapsedMs) => ({ owner: 1, stage: 'mcp', event: 'fulfilled', elapsedMs, ...preparationMcp(value) })); },
+      (value) => { markPreparation(observer, 'mcp', (elapsedMs) => {
+        const outcome = preparationMcp(value);
+        if (observer.selected && outcome.ready === true && (['outer', 'transfer', 'snapshot', 'bundle'] as const).some((stage) =>
+          !observer.rows[`${stage}-entered`] || !observer.rows[`${stage}-settled`])) throw new Error('Unavailable successful-path stage coverage.');
+        return { owner: 1, stage: 'mcp', event: 'fulfilled', elapsedMs, ...outcome };
+      }); },
       (error: unknown) => { markPreparation(observer, 'mcp', (elapsedMs) => ({ owner: 1, stage: 'mcp', event: 'rejected', elapsedMs,
         ready: 'unknown', isError: 'absent', error: preparationCode(error) })); },
     );
@@ -1172,6 +1177,7 @@ describe('isolated real MCP producer domain admission', () => {
 
   it.each([
     { label: 'ready true absent error', result: { content: [{ type: 'text', text: '{"ready":true}' }] }, ready: true, isError: 'absent', error: 'none' },
+    { label: 'exact16KiB JSON', result: { content: [{ type: 'text', text: '{"ready":true}' + ' '.repeat(16 * 1024 - 14) }] }, ready: true, isError: 'absent', error: 'none' },
     { label: 'structured not ready without tool error', result: { content: [{ type: 'text', text: '{"ready":false,"reason":"filesystem_failed","findings":["private"]}' }] }, ready: false, isError: 'absent', error: 'filesystem_failed' },
     { label: 'generic tool error', result: { content: [{ type: 'text', text: 'Private generic error text.' }], isError: true }, ready: 'unknown', isError: true, error: 'unknown' },
     { label: 'explicit false tool error', result: { content: [{ type: 'text', text: '{"ready":true}' }], isError: false }, ready: true, isError: false, error: 'none' },
@@ -1190,6 +1196,39 @@ describe('isolated real MCP producer domain admission', () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).not.toContain('private');
     expect(Object.isFrozen(observer.rows.mcp)).toBe(true);
+  }));
+
+  it.each(['invalid-isError', 'throwing-content'] as const)('preparation observation retains actual %s metadata and marks unavailable', async (fault) => runFixtureBody(async () => {
+    const { observer, lines } = preparationControl();
+    const value = fault === 'invalid-isError' ? { isError: 'private invalid metadata' }
+      : Object.defineProperty({}, 'content', { get: () => { throw new Error('Private metadata getter failure.'); } });
+    const actual = Promise.resolve(value as McpToolResult);
+    observePreparationMcp(observer, actual);
+    expect(await actual).toBe(value);
+    expect(observer.unavailable).toBe(true);
+    expect(observer.rows.mcp).toBeUndefined();
+    expect(lines).toEqual([preparationUnavailable]);
+  }));
+
+  it('preparation observation retains original rejected MCP promise without inferring not-ready', async () => runFixtureBody(async () => {
+    const { observer, lines } = preparationControl(), error = Object.assign(new Error('Private MCP rejection.'), { code: 'git_failed' });
+    const actual = Promise.reject<McpToolResult>(error);
+    observePreparationMcp(observer, actual);
+    await expect(actual).rejects.toBe(error);
+    expect(observer.rows.mcp).toMatchObject({ event: 'rejected', ready: 'unknown', isError: 'absent', error: 'git_failed' });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('Private');
+  }));
+
+  it('preparation observation marks successful MCP with missing actual stage coverage unavailable', async () => runFixtureBody(async () => {
+    const { observer, lines } = preparationControl(), value: McpToolResult = { content: [{ type: 'text', text: '{"ready":true}' }] };
+    observer.selected = true;
+    const actual = Promise.resolve(value);
+    observePreparationMcp(observer, actual);
+    expect(await actual).toBe(value);
+    expect(observer.rows.mcp).toBeUndefined();
+    expect(observer.unavailable).toBe(true);
+    expect(lines).toEqual([preparationUnavailable]);
   }));
 
   it.each(['fulfilled', 'rejected', 'threw'] as const)('preparation observation preserves original this args promise value and %s outcome', async (kind) => runFixtureBody(async () => {
