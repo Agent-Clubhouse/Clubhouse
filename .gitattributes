@@ -20,3 +20,7 @@ test/chat-media/*.webm binary
 
 # Built-in agent text, manifest and index (scripts/sync-builtin-text.mjs); keep LF so the manifest and delivered text match on Windows.
 src/main/services/managed-agents/builtin-text/** eol=lf
+
+# Vendored ACP stable-v1 schema (src/main/chat/acp/schema/PROVENANCE.md); keep LF so the pinned sha256 matches on Windows.
+src/main/chat/acp/schema/schema.v1.json linguist-generated=true eol=lf
+src/main/chat/acp/schema/LICENSE eol=lf
