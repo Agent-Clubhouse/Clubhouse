@@ -24,6 +24,8 @@ describe('classify-changes', () => {
   it('docs-only changes need nothing', () => {
     expect(run(diff({ 'docs/ci.md': ['+x'], 'README.md': ['+y'], 'notes/a.md': ['+z'] })))
       .toEqual({ docsOnly: true, e2e: false, macosBuild: false });
+    expect(run(diff({ 'docs/ci.md': ['+x'], 'src/main/index.ts': ['+registerChatDrivers();'] })))
+      .toEqual({ docsOnly: false, e2e: true, macosBuild: false });
   });
 
   it('markdown inside src is app content, not docs', () => {

@@ -62,6 +62,41 @@ versus 432 full-suite executions. Fixed targeted-first ordering, just two trials
 and process startup costs limit the timing inference; this is not evidence of a
 repository-wide CI saving. The mutation score was identical for both strategies.
 
+## Regression follow-up
+
+Baseline commit `1728ec70f` preserves the original tests, runner and 7/8 result.
+The follow-up adds exactly one mixed docs+source expectation to the existing
+`docs-only changes need nothing` test. There are still 27 named test cases; the
+additional assertion requires `docsOnly: false, e2e: true, macosBuild: false`.
+No production classifier or workflow change is needed. The unchanged targeted
+selector now includes that expectation as well.
+
+[mutation-results-corrected.json](mutation-results-corrected.json) records
+**8 killed, 0 survived, 0 invalid, 0 equivalent, 0 unresolved** (100%). All eight
+have explicit non-equivalence witnesses and repeatable assertion failures in
+both trials of both strategies. Both original full-suite controls pass 27/27;
+all eight selected-test original controls pass 1/1. The repository-configured
+classifier test command also passes 27/27 after the regression.
+
+The final corrected pilot took **13.215s total**. Its 16 targeted mutant runs
+totaled **4.928s**, versus **5.173s** for 16 full-classifier mutant runs: a
+**0.245s / 4.7%** difference. These are subprocess wall times; full-pilot time
+also includes ten green controls, witness/setup and cleanup. The score improvement
+comes from the added expectation, not a change of production code or runner.
+The final timing sample ran without another validation command in this agent's
+lane; an earlier corrected sample was discarded because the separate repository
+test command overlapped it briefly.
+
+To repeat either state, use a dedicated checkout of baseline commit `1728ec70f`
+or the regression follow-up commit, with existing project dependencies available,
+and run the same command above. The runner reads the tests in that checkout;
+compare its recorded test/source/runner hashes with the corresponding JSON.
+For the corrected state, a safe evidence-preserving command is:
+
+```sh
+node scripts/ci/ci-efficiency-mutation.mjs /tmp/mutation-corrected.json
+```
+
 ## Outcome rules and boundaries
 
 Only an assertion failure in a completed test process kills a mutant. Import,
@@ -75,4 +110,5 @@ trial. Exact timings vary across reruns.
 
 The pilot covers eight chosen fault models, not all mutations or all classifier
 inputs. It establishes neither cross-platform execution evidence nor hosted CI
-economics. Independent review is deferred to the orchestrator; local syntax,+lint, original suite and whitespace checks passed.
+economics. Independent review is deferred to the orchestrator; local syntax,
+lint, original suite and whitespace checks passed.
