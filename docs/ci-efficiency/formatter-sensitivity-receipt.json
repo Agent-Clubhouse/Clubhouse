@@ -1,0 +1,1298 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-23T23:43:45.694Z",
+  "baselineCommit": "2c1397f519807739083f38d7f76f250c4c6556c5",
+  "scope": "Two fault-witness suites only; not the full retained shadow-policy suite",
+  "files": [
+    "src/renderer/utils/format.test.ts",
+    "src/renderer/features/agents/TranscriptViewer.test.tsx"
+  ],
+  "config": "vitest.config.ts",
+  "project": "renderer",
+  "runtime": {
+    "node": "v25.8.1",
+    "vitest": "4.1.12",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "limits": {
+    "mutants": 3,
+    "budgetMs": 120000,
+    "executionBudgetMs": 110000,
+    "cleanupBudgetMs": 10000,
+    "workers": 1,
+    "processTimeoutMs": 30000
+  },
+  "inputHashes": {
+    "src/renderer/utils/format.ts": "b85b3ff59bc6275967ae62afe24fd0a0b1644bf3f80a7a53a83d6db10f686884",
+    "src/renderer/utils/format.test.ts": "cdd9b5c1abe74554c462f0b6527f58b5c2a3bd752face18c30afdcd4a94ba722",
+    "src/renderer/features/agents/TranscriptViewer.test.tsx": "ec9c05266eeedb1e22e484f89a3086fab4781592d9358911f69d203843cbe628",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "test/setup-renderer.ts": "6e47beedacf3cab21257971d9d339ac5b7fcbb38aa26b26bd06a3ef326a7aa63"
+  },
+  "runnerSha256": "271dc9a114a5b1bd9943fb78eeb53202a35ada42bf99a622653a27702e59886a",
+  "baselines": [
+    {
+      "label": "original-before",
+      "command": [
+        "/opt/homebrew/Cellar/node/25.8.1_1/bin/node",
+        "/Users/masonallen/source/Clubhouse/node_modules/vitest/vitest.mjs",
+        "run",
+        "--config",
+        "vitest.config.ts",
+        "--project",
+        "renderer",
+        "src/renderer/utils/format.test.ts",
+        "src/renderer/features/agents/TranscriptViewer.test.tsx",
+        "--maxWorkers=1",
+        "--no-file-parallelism",
+        "--reporter=json",
+        "--outputFile",
+        "<sandbox>/fault-result.json"
+      ],
+      "elapsedMs": 1022.18,
+      "exitCode": 0,
+      "stderr": "(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\n",
+      "report": {
+        "numTotalTestSuites": 4,
+        "numPassedTestSuites": 4,
+        "numFailedTestSuites": 0,
+        "numPendingTestSuites": 0,
+        "numTotalTests": 14,
+        "numPassedTests": 14,
+        "numFailedTests": 0,
+        "numPendingTests": 0,
+        "numTodoTests": 0,
+        "snapshot": {
+          "added": 0,
+          "failure": false,
+          "filesAdded": 0,
+          "filesRemoved": 0,
+          "filesRemovedList": [],
+          "filesUnmatched": 0,
+          "filesUpdated": 0,
+          "matched": 0,
+          "total": 0,
+          "unchecked": 0,
+          "uncheckedKeysByFile": [],
+          "unmatched": 0,
+          "updated": 0,
+          "didUpdate": false
+        },
+        "startTime": 1795477426437,
+        "success": true,
+        "testResults": [
+          {
+            "assertionResults": [
+              {
+                "ancestorTitles": [
+                  "formatDuration"
+                ],
+                "fullName": "formatDuration formats sub-minute durations as seconds",
+                "status": "passed",
+                "title": "formats sub-minute durations as seconds",
+                "duration": 0.7279589999999985,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "formatDuration"
+                ],
+                "fullName": "formatDuration formats durations under an hour as minutes and seconds",
+                "status": "passed",
+                "title": "formats durations under an hour as minutes and seconds",
+                "duration": 0.08887499999997317,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "formatDuration"
+                ],
+                "fullName": "formatDuration formats durations over an hour as hours and minutes",
+                "status": "passed",
+                "title": "formats durations over an hour as hours and minutes",
+                "duration": 0.09083399999997255,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "formatDuration"
+                ],
+                "fullName": "formatDuration rounds seconds correctly",
+                "status": "passed",
+                "title": "rounds seconds correctly",
+                "duration": 0.05616700000001629,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              }
+            ],
+            "startTime": 1795477427223,
+            "endTime": 1795477427224.0908,
+            "status": "passed",
+            "message": "",
+            "name": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/utils/format.test.ts"
+          },
+          {
+            "assertionResults": [
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer renders loading state initially",
+                "status": "passed",
+                "title": "renders loading state initially",
+                "duration": 13.089167000000032,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer loads and displays transcript events",
+                "status": "passed",
+                "title": "loads and displays transcript events",
+                "duration": 7.596833000000004,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer shows cost and duration for result events",
+                "status": "passed",
+                "title": "shows cost and duration for result events",
+                "duration": 3.3974580000000287,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer shows event count footer",
+                "status": "passed",
+                "title": "shows event count footer",
+                "duration": 3.0231660000000034,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer shows error message on failure",
+                "status": "passed",
+                "title": "shows error message on failure",
+                "duration": 2.5321250000000077,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer shows empty state when no events",
+                "status": "passed",
+                "title": "shows empty state when no events",
+                "duration": 2.3253749999999513,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer shows large transcript warning for files > 50MB",
+                "status": "passed",
+                "title": "shows large transcript warning for files > 50MB",
+                "duration": 11.364332999999988,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer loads large transcript when warning dismissed",
+                "status": "passed",
+                "title": "loads large transcript when warning dismissed",
+                "duration": 6.211583000000019,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer truncates long text and shows expand button",
+                "status": "passed",
+                "title": "truncates long text and shows expand button",
+                "duration": 3.640457999999967,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer handles null transcript info",
+                "status": "passed",
+                "title": "handles null transcript info",
+                "duration": 2.7457089999999766,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              }
+            ],
+            "startTime": 1795477426853,
+            "endTime": 1795477426908.7456,
+            "status": "passed",
+            "message": "",
+            "name": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/features/agents/TranscriptViewer.test.tsx"
+          }
+        ]
+      },
+      "outcome": "reported"
+    },
+    {
+      "label": "original-after",
+      "command": [
+        "/opt/homebrew/Cellar/node/25.8.1_1/bin/node",
+        "/Users/masonallen/source/Clubhouse/node_modules/vitest/vitest.mjs",
+        "run",
+        "--config",
+        "vitest.config.ts",
+        "--project",
+        "renderer",
+        "src/renderer/utils/format.test.ts",
+        "src/renderer/features/agents/TranscriptViewer.test.tsx",
+        "--maxWorkers=1",
+        "--no-file-parallelism",
+        "--reporter=json",
+        "--outputFile",
+        "<sandbox>/fault-result.json"
+      ],
+      "elapsedMs": 910.04,
+      "exitCode": 0,
+      "stderr": "(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\n",
+      "report": {
+        "numTotalTestSuites": 4,
+        "numPassedTestSuites": 4,
+        "numFailedTestSuites": 0,
+        "numPendingTestSuites": 0,
+        "numTotalTests": 14,
+        "numPassedTests": 14,
+        "numFailedTests": 0,
+        "numPendingTests": 0,
+        "numTodoTests": 0,
+        "snapshot": {
+          "added": 0,
+          "failure": false,
+          "filesAdded": 0,
+          "filesRemoved": 0,
+          "filesRemovedList": [],
+          "filesUnmatched": 0,
+          "filesUpdated": 0,
+          "matched": 0,
+          "total": 0,
+          "unchecked": 0,
+          "uncheckedKeysByFile": [],
+          "unmatched": 0,
+          "updated": 0,
+          "didUpdate": false
+        },
+        "startTime": 1795477431167,
+        "success": true,
+        "testResults": [
+          {
+            "assertionResults": [
+              {
+                "ancestorTitles": [
+                  "formatDuration"
+                ],
+                "fullName": "formatDuration formats sub-minute durations as seconds",
+                "status": "passed",
+                "title": "formats sub-minute durations as seconds",
+                "duration": 0.7399580000000014,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "formatDuration"
+                ],
+                "fullName": "formatDuration formats durations under an hour as minutes and seconds",
+                "status": "passed",
+                "title": "formats durations under an hour as minutes and seconds",
+                "duration": 0.09662500000001728,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "formatDuration"
+                ],
+                "fullName": "formatDuration formats durations over an hour as hours and minutes",
+                "status": "passed",
+                "title": "formats durations over an hour as hours and minutes",
+                "duration": 0.09212499999995316,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "formatDuration"
+                ],
+                "fullName": "formatDuration rounds seconds correctly",
+                "status": "passed",
+                "title": "rounds seconds correctly",
+                "duration": 0.055375000000026375,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              }
+            ],
+            "startTime": 1795477431861,
+            "endTime": 1795477431862.0967,
+            "status": "passed",
+            "message": "",
+            "name": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/utils/format.test.ts"
+          },
+          {
+            "assertionResults": [
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer renders loading state initially",
+                "status": "passed",
+                "title": "renders loading state initially",
+                "duration": 11.315041000000008,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer loads and displays transcript events",
+                "status": "passed",
+                "title": "loads and displays transcript events",
+                "duration": 7.032459000000017,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer shows cost and duration for result events",
+                "status": "passed",
+                "title": "shows cost and duration for result events",
+                "duration": 3.256291000000033,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer shows event count footer",
+                "status": "passed",
+                "title": "shows event count footer",
+                "duration": 2.7670830000000137,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer shows error message on failure",
+                "status": "passed",
+                "title": "shows error message on failure",
+                "duration": 2.3338749999999777,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer shows empty state when no events",
+                "status": "passed",
+                "title": "shows empty state when no events",
+                "duration": 2.1138750000000073,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer shows large transcript warning for files > 50MB",
+                "status": "passed",
+                "title": "shows large transcript warning for files > 50MB",
+                "duration": 9.989125000000001,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer loads large transcript when warning dismissed",
+                "status": "passed",
+                "title": "loads large transcript when warning dismissed",
+                "duration": 5.607250000000022,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer truncates long text and shows expand button",
+                "status": "passed",
+                "title": "truncates long text and shows expand button",
+                "duration": 2.692875000000015,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              },
+              {
+                "ancestorTitles": [
+                  "TranscriptViewer"
+                ],
+                "fullName": "TranscriptViewer handles null transcript info",
+                "status": "passed",
+                "title": "handles null transcript info",
+                "duration": 2.0073340000000144,
+                "failureMessages": [],
+                "meta": {},
+                "tags": []
+              }
+            ],
+            "startTime": 1795477431534,
+            "endTime": 1795477431583.0073,
+            "status": "passed",
+            "message": "",
+            "name": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/features/agents/TranscriptViewer.test.tsx"
+          }
+        ]
+      },
+      "outcome": "reported"
+    }
+  ],
+  "mutants": [
+    {
+      "id": "rounding-floor",
+      "from": "Math.round(ms / 1000)",
+      "to": "Math.floor(ms / 1000)",
+      "witnessMs": 500,
+      "expected": "formatDuration formats sub-minute durations as seconds",
+      "witness": {
+        "original": "1s",
+        "mutant": "0s"
+      },
+      "run": {
+        "label": "rounding-floor",
+        "command": [
+          "/opt/homebrew/Cellar/node/25.8.1_1/bin/node",
+          "/Users/masonallen/source/Clubhouse/node_modules/vitest/vitest.mjs",
+          "run",
+          "--config",
+          "vitest.config.ts",
+          "--project",
+          "renderer",
+          "src/renderer/utils/format.test.ts",
+          "src/renderer/features/agents/TranscriptViewer.test.tsx",
+          "--maxWorkers=1",
+          "--no-file-parallelism",
+          "--reporter=json",
+          "--outputFile",
+          "<sandbox>/fault-result.json"
+        ],
+        "elapsedMs": 901.63,
+        "exitCode": 1,
+        "stderr": "(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\n",
+        "report": {
+          "numTotalTestSuites": 4,
+          "numPassedTestSuites": 2,
+          "numFailedTestSuites": 2,
+          "numPendingTestSuites": 0,
+          "numTotalTests": 14,
+          "numPassedTests": 12,
+          "numFailedTests": 2,
+          "numPendingTests": 0,
+          "numTodoTests": 0,
+          "snapshot": {
+            "added": 0,
+            "failure": false,
+            "filesAdded": 0,
+            "filesRemoved": 0,
+            "filesRemovedList": [],
+            "filesUnmatched": 0,
+            "filesUpdated": 0,
+            "matched": 0,
+            "total": 0,
+            "unchecked": 0,
+            "uncheckedKeysByFile": [],
+            "unmatched": 0,
+            "updated": 0,
+            "didUpdate": false
+          },
+          "startTime": 1795477427441,
+          "success": false,
+          "testResults": [
+            {
+              "assertionResults": [
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration formats sub-minute durations as seconds",
+                  "status": "failed",
+                  "title": "formats sub-minute durations as seconds",
+                  "duration": 2.7231669999999895,
+                  "failureMessages": [
+                    "AssertionError: expected '0s' to be '1s' // Object.is equality\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/utils/format.test.ts:7:33\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                  ],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration formats durations under an hour as minutes and seconds",
+                  "status": "passed",
+                  "title": "formats durations under an hour as minutes and seconds",
+                  "duration": 0.13254200000000083,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration formats durations over an hour as hours and minutes",
+                  "status": "passed",
+                  "title": "formats durations over an hour as hours and minutes",
+                  "duration": 0.0847079999999778,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration rounds seconds correctly",
+                  "status": "failed",
+                  "title": "rounds seconds correctly",
+                  "duration": 0.21550000000002,
+                  "failureMessages": [
+                    "AssertionError: expected '1s' to be '2s' // Object.is equality\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/utils/format.test.ts:28:34\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                  ],
+                  "meta": {},
+                  "tags": []
+                }
+              ],
+              "startTime": 1795477428133,
+              "endTime": 1795477428136.2156,
+              "status": "failed",
+              "message": "",
+              "name": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/utils/format.test.ts"
+            },
+            {
+              "assertionResults": [
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer renders loading state initially",
+                  "status": "passed",
+                  "title": "renders loading state initially",
+                  "duration": 10.945790999999986,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer loads and displays transcript events",
+                  "status": "passed",
+                  "title": "loads and displays transcript events",
+                  "duration": 6.877666000000033,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows cost and duration for result events",
+                  "status": "passed",
+                  "title": "shows cost and duration for result events",
+                  "duration": 3.117500000000007,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows event count footer",
+                  "status": "passed",
+                  "title": "shows event count footer",
+                  "duration": 2.8079999999999927,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows error message on failure",
+                  "status": "passed",
+                  "title": "shows error message on failure",
+                  "duration": 2.2988339999999994,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows empty state when no events",
+                  "status": "passed",
+                  "title": "shows empty state when no events",
+                  "duration": 2.077458999999976,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows large transcript warning for files > 50MB",
+                  "status": "passed",
+                  "title": "shows large transcript warning for files > 50MB",
+                  "duration": 9.932875000000024,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer loads large transcript when warning dismissed",
+                  "status": "passed",
+                  "title": "loads large transcript when warning dismissed",
+                  "duration": 5.617707999999993,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer truncates long text and shows expand button",
+                  "status": "passed",
+                  "title": "truncates long text and shows expand button",
+                  "duration": 2.7709580000000074,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer handles null transcript info",
+                  "status": "passed",
+                  "title": "handles null transcript info",
+                  "duration": 2.1181669999999713,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                }
+              ],
+              "startTime": 1795477427810,
+              "endTime": 1795477427858.1182,
+              "status": "passed",
+              "message": "",
+              "name": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/features/agents/TranscriptViewer.test.tsx"
+            }
+          ]
+        },
+        "outcome": "reported"
+      },
+      "outcomes": {
+        "formatter": "detected",
+        "consumer": "escaped"
+      }
+    },
+    {
+      "id": "minute-boundary",
+      "from": "totalSeconds < 60",
+      "to": "totalSeconds <= 60",
+      "witnessMs": 60000,
+      "expected": "formatDuration formats durations under an hour as minutes and seconds",
+      "witness": {
+        "original": "1m",
+        "mutant": "60s"
+      },
+      "run": {
+        "label": "minute-boundary",
+        "command": [
+          "/opt/homebrew/Cellar/node/25.8.1_1/bin/node",
+          "/Users/masonallen/source/Clubhouse/node_modules/vitest/vitest.mjs",
+          "run",
+          "--config",
+          "vitest.config.ts",
+          "--project",
+          "renderer",
+          "src/renderer/utils/format.test.ts",
+          "src/renderer/features/agents/TranscriptViewer.test.tsx",
+          "--maxWorkers=1",
+          "--no-file-parallelism",
+          "--reporter=json",
+          "--outputFile",
+          "<sandbox>/fault-result.json"
+        ],
+        "elapsedMs": 897.13,
+        "exitCode": 1,
+        "stderr": "(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\n",
+        "report": {
+          "numTotalTestSuites": 4,
+          "numPassedTestSuites": 2,
+          "numFailedTestSuites": 2,
+          "numPendingTestSuites": 0,
+          "numTotalTests": 14,
+          "numPassedTests": 13,
+          "numFailedTests": 1,
+          "numPendingTests": 0,
+          "numTodoTests": 0,
+          "snapshot": {
+            "added": 0,
+            "failure": false,
+            "filesAdded": 0,
+            "filesRemoved": 0,
+            "filesRemovedList": [],
+            "filesUnmatched": 0,
+            "filesUpdated": 0,
+            "matched": 0,
+            "total": 0,
+            "unchecked": 0,
+            "uncheckedKeysByFile": [],
+            "unmatched": 0,
+            "updated": 0,
+            "didUpdate": false
+          },
+          "startTime": 1795477428345,
+          "success": false,
+          "testResults": [
+            {
+              "assertionResults": [
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration formats sub-minute durations as seconds",
+                  "status": "passed",
+                  "title": "formats sub-minute durations as seconds",
+                  "duration": 0.7149580000000242,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration formats durations under an hour as minutes and seconds",
+                  "status": "failed",
+                  "title": "formats durations under an hour as minutes and seconds",
+                  "duration": 2.0990830000000074,
+                  "failureMessages": [
+                    "AssertionError: expected '60s' to be '1m' // Object.is equality\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/utils/format.test.ts:13:36\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                  ],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration formats durations over an hour as hours and minutes",
+                  "status": "passed",
+                  "title": "formats durations over an hour as hours and minutes",
+                  "duration": 0.10099999999999909,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration rounds seconds correctly",
+                  "status": "passed",
+                  "title": "rounds seconds correctly",
+                  "duration": 0.07287500000001046,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                }
+              ],
+              "startTime": 1795477428693,
+              "endTime": 1795477428696.101,
+              "status": "failed",
+              "message": "",
+              "name": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/utils/format.test.ts"
+            },
+            {
+              "assertionResults": [
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer renders loading state initially",
+                  "status": "passed",
+                  "title": "renders loading state initially",
+                  "duration": 11.135208999999975,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer loads and displays transcript events",
+                  "status": "passed",
+                  "title": "loads and displays transcript events",
+                  "duration": 6.778583000000026,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows cost and duration for result events",
+                  "status": "passed",
+                  "title": "shows cost and duration for result events",
+                  "duration": 3.218208000000004,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows event count footer",
+                  "status": "passed",
+                  "title": "shows event count footer",
+                  "duration": 2.807457999999997,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows error message on failure",
+                  "status": "passed",
+                  "title": "shows error message on failure",
+                  "duration": 2.2932500000000005,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows empty state when no events",
+                  "status": "passed",
+                  "title": "shows empty state when no events",
+                  "duration": 2.33058299999999,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows large transcript warning for files > 50MB",
+                  "status": "passed",
+                  "title": "shows large transcript warning for files > 50MB",
+                  "duration": 10.482166000000007,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer loads large transcript when warning dismissed",
+                  "status": "passed",
+                  "title": "loads large transcript when warning dismissed",
+                  "duration": 5.784749999999974,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer truncates long text and shows expand button",
+                  "status": "passed",
+                  "title": "truncates long text and shows expand button",
+                  "duration": 2.744916000000046,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer handles null transcript info",
+                  "status": "passed",
+                  "title": "handles null transcript info",
+                  "duration": 2.0977080000000115,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                }
+              ],
+              "startTime": 1795477428994,
+              "endTime": 1795477429043.0977,
+              "status": "passed",
+              "message": "",
+              "name": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/features/agents/TranscriptViewer.test.tsx"
+            }
+          ]
+        },
+        "outcome": "reported"
+      },
+      "outcomes": {
+        "formatter": "detected",
+        "consumer": "escaped"
+      }
+    },
+    {
+      "id": "seconds-text",
+      "from": "return `${totalSeconds}s`;",
+      "to": "return `${totalSeconds} sec`;",
+      "witnessMs": 30000,
+      "expected": "formatDuration formats sub-minute durations as seconds",
+      "witness": {
+        "original": "30s",
+        "mutant": "30 sec"
+      },
+      "run": {
+        "label": "seconds-text",
+        "command": [
+          "/opt/homebrew/Cellar/node/25.8.1_1/bin/node",
+          "/Users/masonallen/source/Clubhouse/node_modules/vitest/vitest.mjs",
+          "run",
+          "--config",
+          "vitest.config.ts",
+          "--project",
+          "renderer",
+          "src/renderer/utils/format.test.ts",
+          "src/renderer/features/agents/TranscriptViewer.test.tsx",
+          "--maxWorkers=1",
+          "--no-file-parallelism",
+          "--reporter=json",
+          "--outputFile",
+          "<sandbox>/fault-result.json"
+        ],
+        "elapsedMs": 1919.43,
+        "exitCode": 1,
+        "stderr": "(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\n",
+        "report": {
+          "numTotalTestSuites": 4,
+          "numPassedTestSuites": 0,
+          "numFailedTestSuites": 4,
+          "numPendingTestSuites": 0,
+          "numTotalTests": 14,
+          "numPassedTests": 11,
+          "numFailedTests": 3,
+          "numPendingTests": 0,
+          "numTodoTests": 0,
+          "snapshot": {
+            "added": 0,
+            "failure": false,
+            "filesAdded": 0,
+            "filesRemoved": 0,
+            "filesRemovedList": [],
+            "filesUnmatched": 0,
+            "filesUpdated": 0,
+            "matched": 0,
+            "total": 0,
+            "unchecked": 0,
+            "uncheckedKeysByFile": [],
+            "unmatched": 0,
+            "updated": 0,
+            "didUpdate": false
+          },
+          "startTime": 1795477429243,
+          "success": false,
+          "testResults": [
+            {
+              "assertionResults": [
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration formats sub-minute durations as seconds",
+                  "status": "failed",
+                  "title": "formats sub-minute durations as seconds",
+                  "duration": 2.858624999999961,
+                  "failureMessages": [
+                    "AssertionError: expected '0 sec' to be '0s' // Object.is equality\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/utils/format.test.ts:6:31\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                  ],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration formats durations under an hour as minutes and seconds",
+                  "status": "passed",
+                  "title": "formats durations under an hour as minutes and seconds",
+                  "duration": 0.1485410000000229,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration formats durations over an hour as hours and minutes",
+                  "status": "passed",
+                  "title": "formats durations over an hour as hours and minutes",
+                  "duration": 0.08108400000003257,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "formatDuration"
+                  ],
+                  "fullName": "formatDuration rounds seconds correctly",
+                  "status": "failed",
+                  "title": "rounds seconds correctly",
+                  "duration": 0.26025000000004184,
+                  "failureMessages": [
+                    "AssertionError: expected '1 sec' to be '1s' // Object.is equality\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/utils/format.test.ts:27:34\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64"
+                  ],
+                  "meta": {},
+                  "tags": []
+                }
+              ],
+              "startTime": 1795477429597,
+              "endTime": 1795477429600.2603,
+              "status": "failed",
+              "message": "",
+              "name": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/utils/format.test.ts"
+            },
+            {
+              "assertionResults": [
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer renders loading state initially",
+                  "status": "passed",
+                  "title": "renders loading state initially",
+                  "duration": 11.037666999999999,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer loads and displays transcript events",
+                  "status": "passed",
+                  "title": "loads and displays transcript events",
+                  "duration": 7.2431250000000205,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows cost and duration for result events",
+                  "status": "failed",
+                  "title": "shows cost and duration for result events",
+                  "duration": 1005.8198749999999,
+                  "failureMessages": [
+                    "Error: Unable to find an element with the text: 30s. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.\n\nIgnored nodes: comments, script, style\n\u001b[36m<body>\u001b[39m\n  \u001b[36m<div>\u001b[39m\n    \u001b[36m<div\u001b[39m\n      \u001b[33mclass\u001b[39m=\u001b[32m\"space-y-2 p-3 max-h-[400px] overflow-y-auto\"\u001b[39m\n    \u001b[36m>\u001b[39m\n      \u001b[36m<div\u001b[39m\n        \u001b[33mclass\u001b[39m=\u001b[32m\"text-xs text-ctp-text\"\u001b[39m\n      \u001b[36m>\u001b[39m\n        \u001b[36m<p\u001b[39m\n          \u001b[33mclass\u001b[39m=\u001b[32m\"whitespace-pre-wrap\"\u001b[39m\n        \u001b[36m>\u001b[39m\n          \u001b[0mHello world\u001b[0m\n        \u001b[36m</p>\u001b[39m\n      \u001b[36m</div>\u001b[39m\n      \u001b[36m<div\u001b[39m\n        \u001b[33mclass\u001b[39m=\u001b[32m\"flex items-center gap-1.5 text-xs\"\u001b[39m\n      \u001b[36m>\u001b[39m\n        \u001b[36m<span\u001b[39m\n          \u001b[33mclass\u001b[39m=\u001b[32m\"inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-0 text-ctp-subtext1 font-mono\"\u001b[39m\n        \u001b[36m>\u001b[39m\n          \u001b[36m<svg\u001b[39m\n            \u001b[33mfill\u001b[39m=\u001b[32m\"none\"\u001b[39m\n            \u001b[33mheight\u001b[39m=\u001b[32m\"10\"\u001b[39m\n            \u001b[33mstroke\u001b[39m=\u001b[32m\"currentColor\"\u001b[39m\n            \u001b[33mstroke-linecap\u001b[39m=\u001b[32m\"round\"\u001b[39m\n            \u001b[33mstroke-linejoin\u001b[39m=\u001b[32m\"round\"\u001b[39m\n            \u001b[33mstroke-width\u001b[39m=\u001b[32m\"2\"\u001b[39m\n            \u001b[33mviewBox\u001b[39m=\u001b[32m\"0 0 24 24\"\u001b[39m\n            \u001b[33mwidth\u001b[39m=\u001b[32m\"10\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<path\u001b[39m\n              \u001b[33md\u001b[39m=\u001b[32m\"M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z\"\u001b[39m\n            \u001b[36m/>\u001b[39m\n          \u001b[36m</svg>\u001b[39m\n          \u001b[0mRead\u001b[0m\n        \u001b[36m</span>\u001b[39m\n      \u001b[36m</div>\u001b[39m\n      \u001b[36m<div\u001b[39m\n        \u001b[33mclass\u001b[39m=\u001b[32m\"border-t border-surface-0 pt-2 mt-2\"\u001b[39m\n      \u001b[36m>\u001b[39m\n        \u001b[36m<p\u001b[39m\n          \u001b[33mclass\u001b[39m=\u001b[32m\"text-xs text-ctp-text mb-1\"\u001b[39m\n        \u001b[36m>\u001b[39m\n          \u001b[0mTask complete\u001b[0m\n        \u001b[36m</p>\u001b[39m\n        \u001b[36m<div\u001b[39m\n          \u001b[33mclass\u001b[39m=\u001b[32m\"flex gap-3 text-xs text-ctp-subtext0\"\u001b[39m\n        \u001b[36m>\u001b[39m\n          \u001b[36m<span>\u001b[39m\n            \u001b[0m$\u001b[0m\n            \u001b[0m0.0500\u001b[0m\n          \u001b[36m</span>\u001b[39m\n          \u001b[36m<span>\u001b[39m\n            \u001b[0m30 sec\u001b[0m\n          \u001b[36m</span>\u001b[39m\n        \u001b[36m</div>\u001b[39m\n      \u001b[36m</div>\u001b[39m\n      \u001b[36m<div\u001b[39m\n        \u001b[33mclass\u001b[39m=\u001b[32m\"text-xs text-ctp-subtext0 text-right\"\u001b[39m\n      \u001b[36m>\u001b[39m\n        \u001b[0m3\u001b[0m\n        \u001b[0m of \u001b[0m\n        \u001b[0m3\u001b[0m\n        \u001b[0m events loaded\u001b[0m\n      \u001b[36m</div>\u001b[39m\n    \u001b[36m</div>\u001b[39m\n  \u001b[36m</div>\u001b[39m\n\u001b[36m</body>\u001b[39m\n    at waitForWrapper (/Users/masonallen/source/Clubhouse/node_modules/@testing-library/dom/dist/wait-for.js:163:27)\n    at /Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/features/agents/TranscriptViewer.test.tsx:47:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/masonallen/source/Clubhouse/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)"
+                  ],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows event count footer",
+                  "status": "passed",
+                  "title": "shows event count footer",
+                  "duration": 4.107375000000047,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows error message on failure",
+                  "status": "passed",
+                  "title": "shows error message on failure",
+                  "duration": 2.6082920000001195,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows empty state when no events",
+                  "status": "passed",
+                  "title": "shows empty state when no events",
+                  "duration": 2.5821670000000267,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer shows large transcript warning for files > 50MB",
+                  "status": "passed",
+                  "title": "shows large transcript warning for files > 50MB",
+                  "duration": 14.270709000000124,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer loads large transcript when warning dismissed",
+                  "status": "passed",
+                  "title": "loads large transcript when warning dismissed",
+                  "duration": 5.101957999999968,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer truncates long text and shows expand button",
+                  "status": "passed",
+                  "title": "truncates long text and shows expand button",
+                  "duration": 3.069541999999956,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                },
+                {
+                  "ancestorTitles": [
+                    "TranscriptViewer"
+                  ],
+                  "fullName": "TranscriptViewer handles null transcript info",
+                  "status": "passed",
+                  "title": "handles null transcript info",
+                  "duration": 2.215791999999965,
+                  "failureMessages": [],
+                  "meta": {},
+                  "tags": []
+                }
+              ],
+              "startTime": 1795477429895,
+              "endTime": 1795477430953.2158,
+              "status": "failed",
+              "message": "",
+              "name": "/Users/masonallen/source/Clubhouse/.clubhouse/agents/CINov23Mutation/.formatter-sensitivity-stsqjj/src/renderer/features/agents/TranscriptViewer.test.tsx"
+            }
+          ]
+        },
+        "outcome": "reported"
+      },
+      "outcomes": {
+        "formatter": "detected",
+        "consumer": "detected"
+      }
+    }
+  ],
+  "sandboxRemoved": true,
+  "originalsUnchanged": true,
+  "elapsedMs": 6522
+}
