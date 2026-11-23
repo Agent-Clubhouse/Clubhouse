@@ -111,6 +111,47 @@ it('does not retain future-turn debt when Codex accepts two prompts into one nat
 });
 
 describe('native submission ownership', () => {
+  it.each(['resolve', 'reject'] as const)('resumes FIFO input held after turn end when the late receipt %ss', async (outcome) => {
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
+    const { runtime } = makeRuntime(driver);
+    const stopTracking = startFederationTurnTracking(runtime.agentId);
+    let resolve!: (receipt: ChatSendReceipt) => void;
+    let reject!: (error: Error) => void;
+    const reply = new Promise<ChatSendReceipt>((r, j) => { resolve = r; reject = j; });
+    try {
+      await runtime.start();
+      let count = 0;
+      Object.assign(driver.last, { sendWithReceipt: async (...args: Parameters<typeof driver.last.send>) => {
+        await driver.last.send(...args);
+        return ++count === 1 ? reply : { delivery: 'prompt', nativeTurn: { id: `native-${count}`, completed: false } };
+      } });
+      const first = withFederationInput({ id: 'late-causal', cause: { rootId: 'late-causal', depth: 4 } } as FederatedRequest,
+        () => runtime.sendMessage('first', { source: 'mcp' }));
+      const result = first.then((value) => value, (error) => error as Error);
+      await flush();
+      driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'native-1' } });
+      driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(runtime.getState()).toBe('idle');
+      expect(runtime.hasPendingWork()).toBe(true);
+      expect((await runtime.sendMessage('second', { source: 'user' })).delivery).toBe('queued');
+      expect((await runtime.sendMessage('third', { source: 'user' })).delivery).toBe('queued');
+      expect(driver.last.sent).toHaveLength(1);
+      if (outcome === 'resolve') resolve({ delivery: 'prompt', nativeTurn: { id: 'native-1', completed: false } });
+      else reject(new Error('receipt failed after provider completion'));
+      expect(await result).toMatchObject(outcome === 'resolve' ? { delivery: 'prompt' } : { message: 'receipt failed after provider completion' });
+      await flush();
+      expect(driver.last.sent).toHaveLength(2);
+      driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'native-2' } });
+      driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(driver.last.sent).toHaveLength(3);
+      driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'native-3' } });
+      driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(runtime.hasPendingWork()).toBe(false);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+      expect(driver.last.sent.map((x) => x.content)).toEqual(['first', 'second', 'third'].map((text) => [{ type: 'text', text }]));
+    } finally { await runtime.stop(); stopTracking(); }
+  });
+
   it.each([undefined, { id: 'completed', completed: true }])('does not await a future start for a receipt with native turn %j', async (nativeTurn) => {
     const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
     const { runtime } = makeRuntime(driver);
