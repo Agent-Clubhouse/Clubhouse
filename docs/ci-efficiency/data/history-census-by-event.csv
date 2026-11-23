@@ -1,0 +1,6 @@
+group,runs,success,failure,cancelled,incomplete,rerun_runs,observed_attempts
+dynamic,39,26,13,0,0,0,39
+pull_request,1527,916,201,398,0,169,1747
+push,711,370,111,230,0,10,724
+schedule,60,54,5,1,0,0,60
+workflow_dispatch,6,3,1,2,0,0,6

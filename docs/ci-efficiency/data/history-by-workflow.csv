@@ -1,0 +1,52 @@
+workflow,os,sample_jobs,sample_seconds,estimated_jobs,estimated_seconds,sample_failures,sample_cancelled,sample_unknown_duration,estimated_failures,estimated_cancelled,estimated_seconds_per_census_run,group_census_runs,estimated_seconds_per_group_run
+Chat handshake (nightly),linux,49,3341.0,94.0,6266.333,29,0,0,55.333,0.0,2.674,32,195.823
+Release,linux,33,5950.0,45.0,8174.0,0,0,0,0.0,0.0,3.489,15,544.933
+Release,macos,34,23231.0,46.0,31381.667,1,0,0,1.0,0.0,13.394,15,2092.111
+Release,skipped,1,0,1.0,0.0,0,0,0,0.0,0.0,0.0,15,0.0
+Release,windows,33,12555.0,45.0,17325.667,0,0,0,0.0,0.0,7.395,15,1155.044
+Throwaway flake probe,windows,2,787.0,2.0,787.0,0,0,0,0.0,0.0,0.336,2,393.5
+Validate,linux,1560,275539.0,32708.333,5187140.667,22,32,0,411.333,456.0,2213.888,2254,2301.305
+Validate,macos,93,38551.0,1949.667,917915.667,4,18,0,32.667,339.333,391.769,2254,407.239
+Validate,skipped,328,0,6268.0,0.0,0,0,0,0.0,0.0,0.0,2254,0.0
+Validate,unknown,38,0,875.333,0.0,0,38,0,0.0,875.333,0.0,2254,0.0
+Validate,windows,1066,323137.0,22713.333,6376865.0,40,41,0,457.333,1097.0,2721.667,2254,2829.133
+Windows query observation (not release validation),windows,2,404.0,2.0,404.0,0,0,0,0.0,0.0,0.172,1,404.0
+github_actions in /. - Update #1653926250,linux,1,54.0,1.0,54.0,0,0,0,0.0,0.0,0.023,1,54.0
+github_actions in /. - Update #1655737897,linux,1,63.0,1.0,63.0,0,0,0,0.0,0.0,0.027,1,63.0
+github_actions in /. - Update #1673173351,linux,1,54.0,1.0,54.0,0,0,0,0.0,0.0,0.023,1,54.0
+github_actions in /. - Update #1682285217,linux,1,58.0,1.0,58.0,0,0,0,0.0,0.0,0.025,1,58.0
+github_actions in /. - Update #1689454795,linux,1,36.0,1.0,36.0,0,0,0,0.0,0.0,0.015,1,36.0
+github_actions in /. - Update #1707901522,linux,1,55.0,1.0,55.0,0,0,0,0.0,0.0,0.023,1,55.0
+github_actions in /. - Update #1723515484,linux,1,56.0,1.0,56.0,0,0,0,0.0,0.0,0.024,1,56.0
+"npm_and_yarn in / for @anthropic-ai/claude-agent-sdk, @types/node - Update #1655737926",linux,1,133.0,1.0,133.0,0,0,0,0.0,0.0,0.057,1,133.0
+"npm_and_yarn in / for @anthropic-ai/claude-agent-sdk, marked, ws, zustand, @playwright/test, @tailwindcss/postcss, @testing-library/user-event, eslint-plugin-import-x, tailwindcss, typescript-eslint - Update #1723515584",linux,1,175.0,1.0,175.0,1,0,0,1.0,0.0,0.075,1,175.0
+"npm_and_yarn in / for @anthropic-ai/claude-agent-sdk, ws, zustand, @playwright/test, @tailwindcss/postcss, eslint-plugin-import-x, tailwindcss - Update #1712694684",linux,1,181.0,1.0,181.0,0,0,0,0.0,0.0,0.077,1,181.0
+"npm_and_yarn in / for elkjs, marked, postcss, typescript-eslint - Update #1687270951",linux,1,158.0,1.0,158.0,0,0,0,0.0,0.0,0.067,1,158.0
+npm_and_yarn in / for follow-redirects - Update #1669364632,linux,1,59.0,1.0,59.0,0,0,0,0.0,0.0,0.025,1,59.0
+npm_and_yarn in / for hono - Update #1702181648,linux,1,67.0,1.0,67.0,0,0,0,0.0,0.0,0.029,1,67.0
+npm_and_yarn in / for node-forge - Update #1669396996,linux,1,54.0,1.0,54.0,0,0,0,0.0,0.0,0.023,1,54.0
+npm_and_yarn in / for pdfjs-dist - Update #1697906047,linux,1,162.0,1.0,162.0,0,0,0,0.0,0.0,0.069,1,162.0
+npm_and_yarn in /. - Update #1653927824,linux,1,142.0,1.0,142.0,0,0,0,0.0,0.0,0.061,1,142.0
+npm_and_yarn in /. - Update #1655737883,linux,1,62.0,1.0,62.0,0,0,0,0.0,0.0,0.026,1,62.0
+npm_and_yarn in /. - Update #1673173222,linux,1,147.0,1.0,147.0,0,0,0,0.0,0.0,0.063,1,147.0
+npm_and_yarn in /. - Update #1682285186,linux,1,141.0,1.0,141.0,0,0,0,0.0,0.0,0.06,1,141.0
+npm_and_yarn in /. - Update #1689454789,linux,1,133.0,1.0,133.0,0,0,0,0.0,0.0,0.057,1,133.0
+npm_and_yarn in /. - Update #1707901499,linux,1,189.0,1.0,189.0,0,0,0,0.0,0.0,0.081,1,189.0
+npm_and_yarn in /. - Update #1723515468,linux,1,40.0,1.0,40.0,0,0,0,0.0,0.0,0.017,1,40.0
+npm_and_yarn in /. for @hono/node-server - Update #1699794584,linux,1,55.0,1.0,55.0,0,0,0,0.0,0.0,0.023,1,55.0
+npm_and_yarn in /. for follow-redirects - Update #1669307272,linux,1,51.0,1.0,51.0,0,0,0,0.0,0.0,0.022,1,51.0
+npm_and_yarn in /. for hono - Update #1701983179,linux,1,57.0,1.0,57.0,0,0,0,0.0,0.0,0.024,1,57.0
+npm_and_yarn in /. for minimatch - Update #1669307271,linux,1,70.0,1.0,70.0,1,0,0,1.0,0.0,0.03,1,70.0
+npm_and_yarn in /. for minimatch - Update #1669387551,linux,1,84.0,1.0,84.0,1,0,0,1.0,0.0,0.036,1,84.0
+npm_and_yarn in /. for minimatch - Update #1669418132,linux,1,91.0,1.0,91.0,1,0,0,1.0,0.0,0.039,1,91.0
+npm_and_yarn in /. for minimatch - Update #1681116121,linux,1,82.0,1.0,82.0,1,0,0,1.0,0.0,0.035,1,82.0
+npm_and_yarn in /. for minimatch - Update #1681443268,linux,1,95.0,1.0,95.0,1,0,0,1.0,0.0,0.041,1,95.0
+npm_and_yarn in /. for minimatch - Update #1681906315,linux,1,99.0,1.0,99.0,1,0,0,1.0,0.0,0.042,1,99.0
+npm_and_yarn in /. for node-forge - Update #1669307273,linux,1,55.0,1.0,55.0,0,0,0,0.0,0.0,0.023,1,55.0
+npm_and_yarn in /. for node-forge - Update #1696500126,linux,1,50.0,1.0,50.0,0,0,0,0.0,0.0,0.021,1,50.0
+npm_and_yarn in /. for uuid - Update #1652386752,linux,1,65.0,1.0,65.0,1,0,0,1.0,0.0,0.028,1,65.0
+npm_and_yarn in /. for uuid - Update #1653525080,linux,1,60.0,1.0,60.0,1,0,0,1.0,0.0,0.026,1,60.0
+npm_and_yarn in /. for uuid - Update #1655701482,linux,1,74.0,1.0,74.0,1,0,0,1.0,0.0,0.032,1,74.0
+npm_and_yarn in /. for zod - Update #1671517033,linux,1,42.0,1.0,42.0,1,0,0,1.0,0.0,0.018,1,42.0
+npm_and_yarn in /. for zod - Update #1671624956,linux,1,50.0,1.0,50.0,1,0,0,1.0,0.0,0.021,1,50.0
+npm_and_yarn in /. for zod - Update #1671720737,linux,1,43.0,1.0,43.0,1,0,0,1.0,0.0,0.018,1,43.0
