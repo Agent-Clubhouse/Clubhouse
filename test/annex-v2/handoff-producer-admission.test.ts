@@ -829,6 +829,97 @@ describe('isolated real MCP producer domain admission', () => {
     return { pending, release: finish };
   }
 
+  async function heldSelection(fx: Fixture, args: Record<string, unknown>, afterSelection = false) {
+    const entered = deferred(), release = deferred();
+    fixtureOwner().releases.push(release.resolve);
+    const select = fx.preparation.selectPreparedHandoff;
+    let selected: Awaited<ReturnType<typeof select>> | undefined;
+    vi.spyOn(fx.preparation, 'selectPreparedHandoff').mockImplementation(async (...input) => {
+      if (afterSelection) selected = await select(...input);
+      entered.resolve();
+      await release.promise;
+      return selected ?? select(...input);
+    });
+    const pending = fx.tools.callTool(caller, 'offer_handoff', args);
+    fixtureOwner().operations.push(pending);
+    await entered.promise;
+    return { pending, release: release.resolve, selected: () => selected };
+  }
+
+  function heldRename(fx: Fixture, filename: string, eligible = () => true) {
+    const entered = deferred(), release = deferred();
+    fixtureOwner().releases.push(release.resolve);
+    const rename: typeof nativeFs.promises.rename = nativeFs.promises.rename.bind(nativeFs.promises);
+    vi.spyOn(nativeFs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (to === path.join(fx.userData, filename) && eligible()) {
+        entered.resolve();
+        await release.promise;
+      }
+      return rename(from, to);
+    });
+    return { entered: entered.promise, release: release.resolve };
+  }
+
+  function remote(fx: Fixture) {
+    return ownGrantIO(fixtureOwner(), async () => {
+      const { publicKey } = generateKeyPairSync('ed25519');
+      const publicKeyBase64 = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+      const fingerprint = fx.machine.identity.computeFingerprint(publicKeyBase64);
+      fx.machine.peers.addPeer({
+        fingerprint, publicKey: publicKeyBase64, alias: 'Remote fixture', icon: 'computer', color: 'indigo',
+        role: 'member', kind: 'desktop', pairedAt: '2026-01-01T00:00:00.000Z', lastSeen: '',
+      });
+      await fx.grants.updateAgentGrantChanges(caller, () => ({
+        changes: [
+          { action: 'handoff.offer', target: { kind: 'connected' }, mode: 'allow' },
+          { action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'allow' },
+        ],
+      }));
+      vi.spyOn(fx.machine.client, 'isMachineConnected').mockImplementation((machine) => machine === fingerprint);
+      return fingerprint;
+    }, fx);
+  }
+
+  async function configuredSource(fx: Fixture) {
+    const config = await import('../../src/main/services/agent-config');
+    const row: DurableAgentConfig = { id: caller, name: 'Original source', color: 'indigo',
+      createdAt: '2026-01-01T00:00:00.000Z', worktreePath: fx.repository };
+    const directory = path.join(fx.repository, '.clubhouse');
+    await fs.mkdir(directory, { recursive: true });
+    const write = async () => {
+      await fs.writeFile(path.join(directory, 'agents.json'), JSON.stringify([row]));
+      config.clearAgentConfigCache(fx.repository);
+    };
+    await write();
+    fx.gate.forgetMcpCaller(caller);
+    fx.gate.setMcpCaller(caller, fx.repository, row);
+    return { row, write };
+  }
+
+  async function heldStandalonePreparation(fx: Fixture, mode: 'branch' | 'worktree') {
+    const entered = deferred(), release = deferred(), selected = deferred();
+    fixtureOwner().releases.push(release.resolve);
+    const originalSource = fx.source.callerHandoffSource, select = fx.preparation.selectPreparedHandoff;
+    let first = true;
+    vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
+      const source = await originalSource(...args);
+      if (first) {
+        first = false; entered.resolve();
+        await release.promise;
+      }
+      return source;
+    });
+    vi.spyOn(fx.preparation, 'selectPreparedHandoff').mockImplementation((...args) => {
+      const pending = select(...args);
+      selected.resolve();
+      return pending;
+    });
+    const pending = fx.tools.callTool(caller, 'prepare_handoff', { mode });
+    fixtureOwner().operations.push(pending);
+    await entered.promise;
+    return { pending, release: release.resolve, selected: selected.promise };
+  }
+
   describe('real fixture', () => {
     beforeEach(setupReal);
     afterEach(cleanupContext);
@@ -2058,96 +2149,15 @@ describe('isolated real MCP producer domain admission', () => {
       expect(nativeFs.existsSync(fx.userData)).toBe(true);
     }));
 
-    async function heldSelection(fx: Fixture, args: Record<string, unknown>, afterSelection = false) {
-      const entered = deferred(), release = deferred();
-      fixtureOwner().releases.push(release.resolve);
-      const select = fx.preparation.selectPreparedHandoff;
-      let selected: Awaited<ReturnType<typeof select>> | undefined;
-      vi.spyOn(fx.preparation, 'selectPreparedHandoff').mockImplementation(async (...input) => {
-        if (afterSelection) selected = await select(...input);
-        entered.resolve();
-        await release.promise;
-        return selected ?? select(...input);
-      });
-      const pending = fx.tools.callTool(caller, 'offer_handoff', args);
-      fixtureOwner().operations.push(pending);
-      await entered.promise;
-      return { pending, release: release.resolve, selected: () => selected };
-    }
 
-    function heldRename(fx: Fixture, filename: string, eligible = () => true) {
-      const entered = deferred(), release = deferred();
-      fixtureOwner().releases.push(release.resolve);
-      const rename: typeof nativeFs.promises.rename = nativeFs.promises.rename.bind(nativeFs.promises);
-      vi.spyOn(nativeFs.promises, 'rename').mockImplementation(async (from, to) => {
-        if (to === path.join(fx.userData, filename) && eligible()) {
-          entered.resolve();
-          await release.promise;
-        }
-        return rename(from, to);
-      });
-      return { entered: entered.promise, release: release.resolve };
-    }
 
-    function remote(fx: Fixture) {
-      return ownGrantIO(fixtureOwner(), async () => {
-        const { publicKey } = generateKeyPairSync('ed25519');
-        const publicKeyBase64 = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
-        const fingerprint = fx.machine.identity.computeFingerprint(publicKeyBase64);
-        fx.machine.peers.addPeer({
-          fingerprint, publicKey: publicKeyBase64, alias: 'Remote fixture', icon: 'computer', color: 'indigo',
-          role: 'member', kind: 'desktop', pairedAt: '2026-01-01T00:00:00.000Z', lastSeen: '',
-        });
-        await fx.grants.updateAgentGrantChanges(caller, () => ({
-          changes: [
-            { action: 'handoff.offer', target: { kind: 'connected' }, mode: 'allow' },
-            { action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'allow' },
-          ],
-        }));
-        vi.spyOn(fx.machine.client, 'isMachineConnected').mockImplementation((machine) => machine === fingerprint);
-        return fingerprint;
-      }, fx);
-    }
 
-    async function configuredSource(fx: Fixture) {
-      const config = await import('../../src/main/services/agent-config');
-      const row: DurableAgentConfig = { id: caller, name: 'Original source', color: 'indigo',
-        createdAt: '2026-01-01T00:00:00.000Z', worktreePath: fx.repository };
-      const directory = path.join(fx.repository, '.clubhouse');
-      await fs.mkdir(directory, { recursive: true });
-      const write = async () => {
-        await fs.writeFile(path.join(directory, 'agents.json'), JSON.stringify([row]));
-        config.clearAgentConfigCache(fx.repository);
-      };
-      await write();
-      fx.gate.forgetMcpCaller(caller);
-      fx.gate.setMcpCaller(caller, fx.repository, row);
-      return { row, write };
-    }
 
-    async function heldStandalonePreparation(fx: Fixture, mode: 'branch' | 'worktree') {
-      const entered = deferred(), release = deferred(), selected = deferred();
-      fixtureOwner().releases.push(release.resolve);
-      const originalSource = fx.source.callerHandoffSource, select = fx.preparation.selectPreparedHandoff;
-      let first = true;
-      vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
-        const source = await originalSource(...args);
-        if (first) {
-          first = false; entered.resolve();
-          await release.promise;
-        }
-        return source;
-      });
-      vi.spyOn(fx.preparation, 'selectPreparedHandoff').mockImplementation((...args) => {
-        const pending = select(...args);
-        selected.resolve();
-        return pending;
-      });
-      const pending = fx.tools.callTool(caller, 'prepare_handoff', { mode });
-      fixtureOwner().operations.push(pending);
-      await entered.promise;
-      return { pending, release: release.resolve, selected: selected.promise };
-    }
+
+
+
+
+
 
     describe('original producer continuity and admitted persistence', () => {
       it('retains original grant retirement even when Allow is restored before the queue resumes', async () => runFixtureBody(async () => {
