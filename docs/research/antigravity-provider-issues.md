@@ -1,6 +1,6 @@
 # Antigravity provider: epic and child issue drafts
 
-Draft for parent readback. Each block between `<!-- issue ... -->` markers becomes one GitHub issue. `#3785` means the epic and `#3786`..`#3804` mean the children; they are replaced by real numbers on publish. Design reference for every issue: `docs/research/antigravity-provider-design.md` on branch `antigravity-provider-design/design-epic`.
+Published 2026-11-23: epic #3785, children #3786-#3804, linked as GitHub sub-issues. Each block between `<!-- issue ... -->` markers was one issue; numbers are substituted here and GitHub is authoritative from now on. Design reference for every issue: `docs/research/antigravity-provider-design.md` on branch `antigravity-provider-design/design-epic`.
 
 Labels: every issue gets `antigravity-2026-11-23` (new dated batch label) plus the existing labels listed.
 

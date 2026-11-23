@@ -1,6 +1,6 @@
 # Antigravity CLI provider: requirements and design
 
-Issue references written `#3785` and `#3786`..`#3804` are draft keys from `antigravity-provider-issues.md`; they are replaced with real issue numbers on publish.
+Published 2026-11-23 as epic #3785 with children #3786-#3804.
 
 Status: design only. Nothing here has been run against a signed-in Antigravity account. No Antigravity binary was installed, launched or logged in to while writing it.
 
