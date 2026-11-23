@@ -244,6 +244,11 @@ class AcpDriverSession implements ChatDriverSession {
     return this.sessionId;
   }
 
+  /** True once nothing more can reach the agent: closing, or the transport has ended. */
+  isClosed(): boolean {
+    return this.closing || this.conn.ended !== undefined;
+  }
+
   connect(connector: AcpConnector): void {
     this.conn = new AcpConnection(connector, {
       log: this.log,

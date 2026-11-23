@@ -77,6 +77,8 @@ async function open(agentOpts: ScriptedAgentOptions = {}, start: Partial<ChatDri
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+// ChatDriverSession.isClosed comes with the #3804 contract; read it structurally until then.
+const closed = (session: ChatDriverSession) => (session as { isClosed?(): boolean }).isClosed?.();
 
 describe('ACP driver: negotiation', () => {
   it('sends its own client identity and only the capabilities it serves', async () => {
@@ -232,6 +234,18 @@ describe('ACP driver: prompt turns', () => {
     // Nothing is left looking like a running turn.
     await session.send([{ type: 'text', text: 'next' }], 'prompt');
     expect(agent.sentRequests('session/prompt')).toHaveLength(1);
+  });
+
+  it('fails the send, with no turn, when the transport refuses the prompt write', async () => {
+    const { agent, session, drafts } = await open();
+    agent.refuseNextPromptWrite();
+    await expect(session.send([{ type: 'text', text: 'x' }], 'prompt')).rejects.toThrow(/refused the write/);
+    await settle();
+    expect(agent.promptsWritten).toBe(0);
+    expect(drafts.of('turn_started')).toEqual([]);
+    expect(closed(session)).toBe(false);
+    await session.send([{ type: 'text', text: 'next' }], 'prompt');
+    expect(agent.promptsWritten).toBe(1);
   });
 
   it('delivers an answer written just before the agent exits', async () => {
@@ -399,6 +413,7 @@ describe('ACP driver: cancel', () => {
 describe('ACP driver: disconnect', () => {
   it('reports the exit and leaves the running turn and open requests unresolved', async () => {
     const { agent, session, drafts } = await open();
+    expect(closed(session)).toBe(false);
     await session.send([{ type: 'text', text: 'x' }], 'prompt');
     const prompt = await agent.nextPrompt();
     agent.requestPermission(prompt.sessionId, { toolCallId: 't1', title: 'Run' });
@@ -408,6 +423,7 @@ describe('ACP driver: disconnect', () => {
     expect(drafts.of('error')[0].data).toMatchObject({ code: 'process_exited', fatal: true, message: expect.stringContaining('unknown') });
     expect(drafts.of('turn_ended')).toEqual([]);
     expect(drafts.of('permission_resolved')).toEqual([]);
+    expect(closed(session)).toBe(true);
     await expect(session.send([{ type: 'text', text: 'again' }], 'prompt')).rejects.toThrow(/not open/);
   });
 
