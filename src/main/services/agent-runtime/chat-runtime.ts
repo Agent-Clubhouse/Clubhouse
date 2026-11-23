@@ -230,6 +230,15 @@ export class ChatAgentRuntime implements AgentRuntime {
   private draining = false;
   private queueWaitingForWork = false;
   private pendingTurns = new Set<symbol>();
+  /** Replaced only when clearContext revokes this conversation's reservations. */
+  private submissionOwner = Symbol();
+  /** Native receipts can share a turn. Ownership is local to one driver session. */
+  private readonly nativeSubmissions = new WeakMap<ChatDriverSession, {
+    inFlight: number;
+    active?: string;
+    observed: Set<string>;
+    pending: Map<symbol, string>;
+  }>();
   private readonly permissions = new Map<string, PendingPermission>();
   /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
   private readonly questions = new Set<string>();
@@ -446,7 +455,19 @@ export class ChatAgentRuntime implements AgentRuntime {
     switch (draft.type) {
       case 'turn_started':
         this.receivedInput = true;
-        {
+        if (this.session?.sendWithReceipt) {
+          const submissions = this.submissionsFor(this.session);
+          const nativeId = draft.data.nativeTurnId;
+          submissions.active = nativeId;
+          if (nativeId) {
+            if (submissions.inFlight) submissions.observed.add(nativeId);
+            for (const [token, id] of submissions.pending) {
+              if (id !== nativeId) continue;
+              this.pendingTurns.delete(token);
+              submissions.pending.delete(token);
+            }
+          }
+        } else {
           const pending = this.pendingTurns.values().next().value;
           if (pending) this.pendingTurns.delete(pending);
         }
@@ -502,6 +523,11 @@ export class ChatAgentRuntime implements AgentRuntime {
         await this.setState('running');
         break;
       case 'turn_ended':
+        if (this.session?.sendWithReceipt) {
+          const submissions = this.submissionsFor(this.session);
+          submissions.active = undefined;
+          if (!submissions.inFlight) submissions.observed.clear();
+        }
         this.turnTrace = undefined;
         this.turnId = undefined;
         this.turnStartedAt = null;
@@ -672,8 +698,69 @@ export class ChatAgentRuntime implements AgentRuntime {
     return this.receivedInput;
   }
 
+  private submissionsFor(session: ChatDriverSession) {
+    let submissions = this.nativeSubmissions.get(session);
+    if (!submissions) {
+      submissions = { inFlight: 0, observed: new Set<string>(), pending: new Map<symbol, string>() };
+      this.nativeSubmissions.set(session, submissions);
+    }
+    return submissions;
+  }
+
+  private reserveTurn(session: ChatDriverSession, owner: symbol, token = Symbol()): symbol {
+    // Generic drivers retain their existing registration behavior. Native
+    // ownership cannot be granted after an await crossed real replacement.
+    if (!session.sendWithReceipt || (!this.ended && owner === this.submissionOwner)) this.pendingTurns.add(token);
+    return token;
+  }
+
+  private async submit(session: ChatDriverSession, content: ContentBlock[], delivery: MessageDelivery, owner: symbol, pending?: symbol): Promise<MessageDelivery> {
+    if (!session.sendWithReceipt) return session.send(content, delivery);
+    // Supplied tokens were registered by the caller before activation. Never
+    // re-grant a removed token; fallback steer creates one under the same owner.
+    const token = pending ?? this.reserveTurn(session, owner);
+    const submissions = this.submissionsFor(session);
+    submissions.inFlight++;
+    try {
+      const receipt = await session.sendWithReceipt(content, delivery);
+      const turn = receipt.nativeTurn;
+      // Strict close temporarily detaches this pointer and may restore the
+      // same live session. Clear revokes ownership even if registration or
+      // receipt handling resumes while the captured old close is still held.
+      if (this.ended || owner !== this.submissionOwner || !this.pendingTurns.has(token) || !turn || turn.completed
+        || submissions.active === turn.id || submissions.observed.has(turn.id)) {
+        this.pendingTurns.delete(token);
+      } else {
+        submissions.pending.set(token, turn.id);
+      }
+      return receipt.delivery;
+    } catch (err) {
+      // Only this submission failed. Another accepted operation may still
+      // await its own start, even when the renderer currently reads idle.
+      this.pendingTurns.delete(token);
+      throw err;
+    } finally {
+      submissions.inFlight--;
+      // Remember early notifications only while a receipt can still name
+      // them; long-lived controllers must not retain every historical turn.
+      if (!submissions.inFlight) submissions.observed.clear();
+    }
+  }
+
+  private resumeReceiptQueue(session: ChatDriverSession): void {
+    // A turn can finish before its submission RPC settles. Input held during
+    // that remaining operation then has no future turn-end to wake the queue.
+    if (!session.sendWithReceipt || this.session !== session || this.state !== 'idle'
+      || this.turnId || this.draining || this.pendingTurns.size || !this.queued.length) return;
+    void this.drainQueue().catch(() => {
+      // telemetry-exempt: locally records a failed wake; no payload or provider error text.
+      appLog('core:chat', 'warn', 'Could not resume chat queue after a native receipt', { meta: { agentId: this.agentId } });
+    });
+  }
+
   private async deliverMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
     const session = this.requireSession();
+    const owner = this.submissionOwner;
     const federationInputs = captureFederationInputs();
     this.receivedInput = true;
     const blocks: ContentBlock[] = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
@@ -763,16 +850,16 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.pendingTraceAssigned = true;
     }
     let delivered: MessageDelivery;
-    const pending = wanted === 'prompt' || wanted === 'queued' ? Symbol() : undefined;
-    if (pending) this.pendingTurns.add(pending);
+    const pending = wanted === 'prompt' || wanted === 'queued' ? this.reserveTurn(session, owner) : undefined;
     const rollbackAssignment = wanted === 'queued' ? async () => {} : await activateLocalCausalInput(this.agentId, wanted === 'steer' ? [...federationTurnInputs(this.agentId), ...federationInputs] : federationInputs);
     const federation = prepareFederationInputs(this.agentId, federationInputs, wanted);
-    try { delivered = await session.send(outgoing, wanted); }
+    try { delivered = await this.submit(session, outgoing, wanted, owner, pending); }
     catch (error) {
       for (const context of federation) context?.refused();
       await rollbackAssignment();
       if (pending) this.pendingTurns.delete(pending);
       if (this.pendingTrace === traceContext) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
+      this.resumeReceiptQueue(session);
       throw error;
     }
     for (const context of federation) context?.accepted(delivered);
@@ -782,6 +869,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.pendingTraceAssigned = false;
     }
     await this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: delivered } });
+    this.resumeReceiptQueue(session);
     return { delivery: delivered, messageId };
   }
 
@@ -978,11 +1066,13 @@ export class ChatAgentRuntime implements AgentRuntime {
   private async deliverQueuedMessage(): Promise<void> {
     const session = this.session;
     if (!session) return;
+    const owner = this.submissionOwner;
     const next = this.queued.shift();
     if (!next) return;
     this.pendingDispatch = next;
     this.armHeldWarning();
     let failed = false;
+    let accepted = false;
     const pending = Symbol();
     let federation: ReturnType<typeof prepareFederationInput>[] = [];
     let rollbackAssignment: (() => Promise<void>) | undefined;
@@ -1004,12 +1094,13 @@ export class ChatAgentRuntime implements AgentRuntime {
         this.logQueueChange('dispatched', next);
         this.pendingTrace = this.pendingTraceAssigned ? undefined : next.trace;
         this.pendingTraceAssigned = true;
-        this.pendingTurns.add(pending);
+        this.reserveTurn(session, owner, pending);
         rollbackAssignment = await activateLocalCausalInput(this.agentId, next.federationInputs ?? []);
         federation = prepareFederationInputs(this.agentId, next.federationInputs ?? []);
-        const delivered = await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+        const delivered = await this.submit(session, [...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt', owner, pending);
         for (const context of federation) context?.accepted(delivered);
         this.settleQueued(next, 'delivered');
+        accepted = true;
         if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
       }
     } catch (err) {
@@ -1031,6 +1122,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       if (this.pendingDispatch === next) this.pendingDispatch = undefined;
       this.draining = false;
       this.armQueueExpiry();
+      if (accepted) this.resumeReceiptQueue(session);
     }
     // Nothing was sent, so no turn will end to drain the rest: go on with the next one.
     if (failed) await this.drainQueue();
@@ -1134,6 +1226,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.discardQueue('clearContext');
       this.pendingTrace = undefined;
       this.pendingTraceAssigned = false;
+      this.submissionOwner = Symbol();
       this.pendingTurns.clear();
       this.turnTrace = undefined;
       this.turnId = undefined;
