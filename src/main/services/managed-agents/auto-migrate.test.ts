@@ -5,6 +5,22 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
+import { FixtureObservationSelection, observeSeedCleanup, type FixtureObservation } from '../../../../test/two-fixture-observation';
+
+const observation = vi.hoisted(() => ({ selection: undefined as FixtureObservationSelection | undefined }));
+vi.mock('../asset-catalog/store', async (importOriginal) => {
+  // Factory and installer retain the SAME module's private WeakMap and exact store.
+  const actual = await importOriginal<typeof import('../asset-catalog/store')>();
+  return { ...actual, installBuiltinAsset: function (this: unknown, ...args: Parameters<typeof actual.installBuiltinAsset>) {
+    const receiver = this;
+    const invoke = () => Reflect.apply(actual.installBuiltinAsset, receiver, args) as ReturnType<typeof actual.installBuiltinAsset>;
+    const scope = observation.selection?.selected;
+    if (!scope?.ownsStore(args[0])) return invoke();
+    let kind: unknown;
+    try { kind = Object.getOwnPropertyDescriptor(args[1], 'kind')?.value; } catch { scope.noteFault(); }
+    return scope.call('install', invoke, kind);
+  } };
+});
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
@@ -103,7 +119,8 @@ vi.mock('./state-store', async (importOriginal) => ({
 }));
 
 import { appLog } from '../log-service';
-import { createAssetCatalogStore } from '../asset-catalog/store';
+import { createAssetCatalogStore, installBuiltinAsset } from '../asset-catalog/store';
+import { builtinParts } from './builtins';
 import { _resetSettingsAuditForTesting, withSettingsSurface } from '../settings-audit';
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
@@ -138,16 +155,39 @@ const get = (projectPath: string, id: string) => h.projects.get(projectPath)!.ge
 // once per file and copy the result in for each test; ensureBuiltins then finds
 // them current and writes nothing. Each test still has its own folder (#3027's pattern).
 let seed: string;
-beforeAll(async () => {
+const seedObservation = new FixtureObservationSelection('auto-seed');
+observation.selection = seedObservation;
+async function originalSeedBody(scope?: FixtureObservation): Promise<void> {
   seed = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-auto-seed-'));
+  scope?.bindDirectory(seed);
   _resetSettingsAuditForTesting(false);
-  await createManagedAgentsService({
-    catalog: createAssetCatalogStore({ dir: path.join(seed, 'catalog') }),
+  const catalog = createAssetCatalogStore({ dir: path.join(seed, 'catalog') });
+  scope?.bindStore(catalog);
+  if (scope) {
+    const read = catalog.read;
+    catalog.read = function (...args) { return scope.call('catalog', () => Reflect.apply(read, this, args)); };
+    const readRevision = catalog.readRevision;
+    catalog.readRevision = function (...args) { return scope.call('revision', () => Reflect.apply(readRevision, this, args)); };
+  }
+  const actualService = createManagedAgentsService({
+    catalog,
     state: createManagedStateStore(path.join(seed, 'managed')),
     listProjects: async () => [], listAgents: async () => [], getAgent: async () => null, setManagedSetup: async () => {}, isRunning: () => false,
-  }).ensureBuiltins();
+  });
+  scope?.setPhase('ensure');
+  await (scope ? scope.call('ensure', () => actualService.ensureBuiltins()) : actualService.ensureBuiltins());
+  scope?.completePhase();
+}
+beforeAll(() => {
+  const scope = seedObservation.claim();
+  return scope ? scope.call('body', () => originalSeedBody(scope)) : originalSeedBody();
 });
-afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+afterAll(() => {
+  // Capture all original functional arguments before any observer callback.
+  const directory = seed; const remove = fs.rmSync; const receiver = fs;
+  const options = { recursive: true, force: true };
+  return observeSeedCleanup(seedObservation, directory, () => Reflect.apply(remove, receiver, [directory, options]));
+});
 
 beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-auto-'));
@@ -190,6 +230,21 @@ beforeEach(async () => {
 });
 
 const parts = async (kind: 'block' | 'skill' | 'mcp') => (await withSettingsSurface('ui', undefined, () => service.listParts(kind))).filter((p) => !p.builtin);
+
+it('fixture observation contract: actual seed binding and unrelated original store', async () => {
+  const scope = seedObservation.selected!;
+  expect(scope.read()).toMatchObject({ body: 'fulfilled', ensure: 'fulfilled', rejectedInstalls: 0, observerFault: false });
+  expect(scope.read().enteredInstalls).toBeGreaterThan(0);
+  expect(scope.read().fulfilledInstalls).toBe(scope.read().enteredInstalls);
+  const before = scope.read();
+  const unrelated = createAssetCatalogStore({ dir: path.join(root, 'unrelated') });
+  const part = builtinParts().find((candidate) => !candidate.retired && candidate.kind === 'block')!;
+  const installed = await withSettingsSurface('system', undefined, () => installBuiltinAsset(unrelated, {
+    assetId: part.id, kind: part.kind, name: part.name, builtinId: part.id, expectedRevision: 0, payload: part.payload,
+  }));
+  expect(installed.id).toBe(part.id);
+  expect(scope.read()).toEqual(before);
+});
 
 describe('which agents are legacy-configured (D59)', () => {
   it('Clubhouse Mode on and not turned off for it, or a persona; plain and managed agents are not', () => {

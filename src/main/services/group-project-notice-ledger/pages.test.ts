@@ -8,9 +8,20 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { NOTICE_INDEX_PAGE_BYTES, NoticePageIndex, type NoticePageRoot, type NoticePageFailurePoint } from './pages';
 
+import { FixtureObservationSelection, observeCleanupBatch, type FixtureObservation } from '../../../../test/two-fixture-observation';
+
+const pageObservation = new FixtureObservationSelection('pages-large');
 const homes: string[] = [];
 async function home() { const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'q5-pages-')); homes.push(directory); return directory; }
-afterEach(async () => { await Promise.all(homes.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true }))); });
+afterEach(async (context) => {
+  const batch = homes.splice(0); const remove = fs.rm; const receiver = fs;
+  let task: object | undefined;
+  try { task = context.task; } catch { pageObservation.selected?.noteFault(); }
+  await observeCleanupBatch(pageObservation, task, batch, (directory) => {
+    const options = { recursive: true, force: true };
+    return () => Reflect.apply(remove, receiver, [directory, options]);
+  });
+});
 const key = (index: number) => `synthetic-${String(index).padStart(8, '0')}`;
 async function temps(directory: string) {
   const result: string[] = [];
@@ -34,32 +45,78 @@ async function child(directory: string, mode: string) {
 }
 
 describe('lazy immutable notice index', () => {
-  it('keeps >64KiB of exact ID data paged and bounds detail cache to256 rows on write and cold reads', async () => {
+  async function originalLargeBody(scope?: FixtureObservation): Promise<void> {
+    scope?.setPhase('home');
     const directory = await home();
+    scope?.bindDirectory(directory);
+    scope?.completePhase();
+    scope?.setPhase('open');
     let index = await NoticePageIndex.open(directory);
+    scope?.completePhase();
     let root: NoticePageRoot | undefined;
-    for (let n = 0; n < 1024; n++) root = await index.set(root, key(n), { postId: `${key(n)}-${'x'.repeat(180)}`, status: 'uncertain' });
+    scope?.setPhase('updates');
+    for (let n = 0; n < 1024; n++) {
+      scope?.updateStarted(n + 1);
+      root = await index.set(root, key(n), { postId: `${key(n)}-${'x'.repeat(180)}`, status: 'uncertain' });
+      scope?.updateCompleted(n + 1);
+    }
+    scope?.completePhase();
+    scope?.setPhase('pre-flush-check');
     expect(index.cacheStats.pendingDirectoryCount).toBeLessThanOrEqual(258);
+    scope?.completePhase();
+    scope?.setPhase('flush');
     await index.flush();
+    scope?.completePhase();
+    scope?.setPhase('post-flush-checks');
     expect(root?.count).toBe(1024);
     expect(index.cacheStats.peakLeafEntries).toBeLessThanOrEqual(256);
     expect(index.cacheStats.leafPages).toBeLessThanOrEqual(4);
     expect(index.cacheStats.indexPages).toBeLessThanOrEqual(16);
+    scope?.completePhase();
+    scope?.setPhase('manifest-check');
     expect((await fs.readdir(directory)).some((name) => name === 'manifest.json')).toBe(false);
+    scope?.completePhase();
+    scope?.setPhase('reopen');
     index = await NoticePageIndex.open(directory);
+    scope?.completePhase();
+    scope?.setPhase('cold-cache-check');
     expect(index.cacheStats.leafEntries).toBe(0);
+    scope?.completePhase();
+    scope?.setPhase('cold-get');
     expect(await index.get(root, key(700))).toMatchObject({ postId: `${key(700)}-${'x'.repeat(180)}` });
+    scope?.completePhase();
+    scope?.setPhase('cold-get-budget');
     expect(index.cacheStats.diskReads).toBeLessThanOrEqual(4);
+    scope?.completePhase();
+    scope?.setPhase('cold-list');
     const page = await index.list(root, { after: key(699), limit: 200 });
+    scope?.completePhase();
+    scope?.setPhase('cold-list-checks');
     expect(page.entries).toHaveLength(200);
     expect(page.entries[0].key).toBe(key(700));
     expect(page.entries[199].key).toBe(key(899));
     expect(index.cacheStats.peakLeafEntries).toBeLessThanOrEqual(256);
     expect(index.cacheStats.diskReads).toBeLessThan(20);
+    scope?.completePhase();
+    scope?.setPhase('cold-miss');
     expect(await index.get(root, key(1024))).toBeUndefined();
+    scope?.completePhase();
+    scope?.setPhase('size-checks');
     for (const prefix of await fs.readdir(directory)) for (const name of await fs.readdir(path.join(directory, prefix))) {
-      if (name.endsWith('.json')) expect((await fs.stat(path.join(directory, prefix, name))).size).toBeLessThanOrEqual(NOTICE_INDEX_PAGE_BYTES);
+      if (name.endsWith('.json')) {
+        expect((await fs.stat(path.join(directory, prefix, name))).size).toBeLessThanOrEqual(NOTICE_INDEX_PAGE_BYTES);
+        scope?.fileChecked();
+      }
     }
+    scope?.completePhase();
+    scope?.setPhase('body-complete');
+  }
+  it('keeps >64KiB of exact ID data paged and bounds detail cache to256 rows on write and cold reads', (context) => {
+    const scope = pageObservation.claim();
+    if (scope) {
+      try { scope.bindTask(context.task, () => context.signal.aborted); } catch { scope.noteFault(); }
+    }
+    return scope ? scope.call('body', () => originalLargeBody(scope)) : originalLargeBody();
   }, 30000);
 
   it('preserves old roots through update/delete and returns no mutable cached details', async () => {
