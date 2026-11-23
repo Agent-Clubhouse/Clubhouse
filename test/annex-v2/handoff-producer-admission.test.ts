@@ -179,6 +179,7 @@ function observePhaseSettlement(owner: FixtureOwner, pending: Promise<unknown>, 
   });
 }
 type FixtureOwner = {
+  preparationStages?: PreparationObserver;
   phases?: PhaseObserver;
   directory?: string;
   fixture?: Fixture;
@@ -231,6 +232,185 @@ function ownGrantIO<T>(owner: FixtureOwner, start: () => Promise<T>, fixture?: F
   } catch (error) {
     reject(error);
     throw error;
+  }
+}
+
+type PreparationStage = 'outer' | 'transfer' | 'snapshot' | 'bundle';
+type PreparationSlot = `${PreparationStage}-${'entered' | 'settled'}` | 'mcp';
+type PreparationReady = boolean | 'unknown';
+type PreparationToolError = boolean | 'absent';
+const preparationCodes = ['not_a_repository', 'no_commits', 'invalid_repository', 'unsupported_repository', 'uncommitted_branch',
+  'git_failed', 'unsafe_entry', 'source_changed', 'bounds_exceeded', 'secret_blocked', 'hash_mismatch', 'filesystem_failed', 'invalid_staging'] as const;
+type PreparationCode = (typeof preparationCodes)[number] | 'none' | 'unknown';
+type PreparationRow = Readonly<{ owner: 1; stage: PreparationStage | 'mcp'; event: 'entered' | 'fulfilled' | 'rejected' | 'threw';
+  elapsedMs: number; error?: PreparationCode; ready?: PreparationReady; isError?: PreparationToolError }>;
+type PreparationObserver = {
+  baseline?: number; last?: number; selected: boolean; unavailable: boolean; noticeAttempted: boolean;
+  context: AsyncLocalStorage<PreparationObserver | undefined>;
+  started: Set<PreparationStage>; claimed: Set<PreparationSlot>; rows: Partial<Record<PreparationSlot, PreparationRow>>;
+  clock: () => number; build: (row: PreparationRow) => PreparationRow;
+  serialize: (row: PreparationRow) => string; publish: (line: string) => void;
+};
+// Nine reserved rich attempts <=256 ASCII bytes INCLUDING prefix/newline, plus one <=128-byte notice.
+// Added <=2432 bytes/10 calls; with the unchanged old observer <=5885 bytes/23 calls. No ACK/retry/drain.
+const preparationPrefix = 'Producer fixture preparation: ';
+const preparationUnavailable = 'Producer fixture preparation unavailable (owner 1; missing stages/outcome unobserved)';
+let firstPreparationOwner: FixtureOwner | undefined;
+
+function preparationUnavailableOnce(observer: PreparationObserver): void {
+  observer.unavailable = true;
+  if (observer.noticeAttempted) return;
+  observer.noticeAttempted = true;
+  try { observer.publish(preparationUnavailable); } catch { /* One optional emission attempt, never delivery ACK. */ }
+}
+
+function newPreparationObserver(baseline: number | undefined): PreparationObserver {
+  return { baseline, last: baseline, selected: false, unavailable: false, noticeAttempted: false,
+    context: new AsyncLocalStorage(), started: new Set(), claimed: new Set(), rows: {}, clock: () => performance.now(),
+    build: (row) => Object.freeze(row), serialize: (row) => JSON.stringify(row), publish: (line) => { console.error(line); } };
+}
+
+function preparationCode(value: unknown): PreparationCode {
+  const code = value && typeof value === 'object' ? (value as { code?: unknown }).code : undefined;
+  return preparationCodes.some((known) => known === code) ? code as (typeof preparationCodes)[number] : 'unknown';
+}
+
+function preparationReady(value: unknown): PreparationReady {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unknown';
+  const ready = (value as { ready?: unknown }).ready;
+  return typeof ready === 'boolean' ? ready : 'unknown';
+}
+
+function preparationMcp(value: unknown): { ready: PreparationReady; isError: PreparationToolError; error: PreparationCode } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { ready: 'unknown', isError: 'absent', error: 'unknown' };
+  const result = value as { isError?: unknown; content?: unknown };
+  let isError: PreparationToolError = 'absent';
+  if (Object.prototype.hasOwnProperty.call(result, 'isError')) {
+    if (typeof result.isError !== 'boolean') throw new Error('Unavailable tool error metadata.');
+    isError = result.isError;
+  }
+  const unknown = { ready: 'unknown' as const, isError, error: 'unknown' as const };
+  if (!Array.isArray(result.content) || result.content.length !== 1) return unknown;
+  const first = result.content[0] as { type?: unknown; text?: unknown } | undefined;
+  if (first?.type !== 'text' || typeof first.text !== 'string' || first.text.length > 16 * 1024
+    || Buffer.byteLength(first.text, 'utf8') > 16 * 1024) return unknown;
+  let parsed: unknown;
+  try { parsed = JSON.parse(first.text); } catch { return unknown; }
+  const ready = preparationReady(parsed);
+  const reason = parsed && typeof parsed === 'object' ? (parsed as { reason?: unknown }).reason : undefined;
+  return { ready, isError, error: ready === true ? 'none' : preparationCode({ code: reason }) };
+}
+
+function markPreparation(observer: PreparationObserver, slot: PreparationSlot, build: (elapsedMs: number) => PreparationRow): void {
+  try {
+    if (observer.unavailable) return;
+    if (observer.claimed.has(slot)) { preparationUnavailableOnce(observer); return; }
+    observer.claimed.add(slot); // BEFORE optional clock/build/storage/serialization/publication reentry.
+    const now = observer.clock(), baseline = observer.baseline;
+    if (baseline === undefined || observer.last === undefined || !Number.isFinite(baseline) || baseline < 0
+      || !Number.isFinite(now) || now < observer.last || now < baseline) throw new Error('Unavailable preparation clock.');
+    observer.last = now;
+    const input = Object.freeze(build(now - baseline)), row = observer.build(input);
+    const keys = Object.keys(input) as Array<keyof PreparationRow>;
+    if (!Object.isFrozen(row) || Object.keys(row).length !== keys.length || keys.some((key) => row[key] !== input[key])) {
+      throw new Error('Unavailable preparation row.');
+    }
+    observer.rows[slot] = row;
+    const encoded = observer.serialize(row);
+    if (typeof encoded !== 'string' || /[^\x20-\x7e]/.test(encoded) || preparationPrefix.length + encoded.length + 1 > 256) {
+      throw new Error('Unavailable bounded preparation serialization.');
+    }
+    const line = preparationPrefix + encoded;
+    observer.publish(line);
+  } catch { preparationUnavailableOnce(observer); }
+}
+
+function observePreparationStage<A extends unknown[], T>(observer: PreparationObserver, stage: PreparationStage,
+  original: (...args: A) => Promise<T>, receiver: unknown, args: A): Promise<T> {
+  let selected = false;
+  try {
+    selected = observer.context.getStore() === observer && !observer.unavailable;
+    if (selected) {
+      if (observer.started.has(stage)) { preparationUnavailableOnce(observer); selected = false; }
+      else {
+        observer.started.add(stage);
+        markPreparation(observer, `${stage}-entered`, (elapsedMs) => ({ owner: 1, stage, event: 'entered', elapsedMs }));
+      }
+    }
+  } catch { preparationUnavailableOnce(observer); }
+  let actual: Promise<T>;
+  try { actual = Reflect.apply(original, receiver, args); }
+  catch (error) {
+    if (selected) markPreparation(observer, `${stage}-settled`, (elapsedMs) => ({ owner: 1, stage, event: 'threw', elapsedMs, error: preparationCode(error) }));
+    throw error;
+  }
+  if (selected) {
+    try {
+      void actual.then(
+        (value) => { markPreparation(observer, `${stage}-settled`, (elapsedMs) => ({ owner: 1, stage, event: 'fulfilled', elapsedMs,
+          error: 'none', ...(stage === 'outer' && { ready: preparationReady(value) }) })); },
+        (error: unknown) => { markPreparation(observer, `${stage}-settled`, (elapsedMs) => ({ owner: 1, stage, event: 'rejected', elapsedMs, error: preparationCode(error) })); },
+      );
+    } catch { preparationUnavailableOnce(observer); }
+  }
+  return actual;
+}
+
+function preparationInvocation<T>(observer: PreparationObserver | undefined, selected: boolean, invoke: () => T): T {
+  if (!observer) return invoke();
+  let invoked = false, failed = false, originalError: unknown, result!: T;
+  try {
+    // Mask unrelated calls, including publisher reentry; nested stages of the admitted call retain its context.
+    return observer.context.run(selected ? observer : undefined, () => {
+      invoked = true;
+      try { result = invoke(); return result; } catch (error) { failed = true; originalError = error; throw error; }
+    });
+  } catch {
+    if (failed) throw originalError;
+    observer.unavailable = true; // Notice is deferred until the actual caller promise is in the sole work ledger.
+    return invoked ? result : invoke();
+  }
+}
+
+function observePreparationMcp(observer: PreparationObserver, actual: Promise<McpToolResult>): void {
+  try {
+    void actual.then(
+      (value) => { markPreparation(observer, 'mcp', (elapsedMs) => ({ owner: 1, stage: 'mcp', event: 'fulfilled', elapsedMs, ...preparationMcp(value) })); },
+      (error: unknown) => { markPreparation(observer, 'mcp', (elapsedMs) => ({ owner: 1, stage: 'mcp', event: 'rejected', elapsedMs,
+        ready: 'unknown', isError: 'absent', error: preparationCode(error) })); },
+    );
+  } catch { preparationUnavailableOnce(observer); }
+}
+
+async function installPreparationObserver(owner: FixtureOwner): Promise<void> {
+  if (owner !== firstPreparationOwner) return;
+  let observer: PreparationObserver | undefined;
+  try {
+    observer = newPreparationObserver(owner.phases?.baseline);
+    owner.preparationStages = observer;
+    if (observer.baseline === undefined || !Number.isFinite(observer.baseline) || observer.baseline < 0) throw new Error('Unavailable preparation baseline.');
+    const preparation = await import('../../src/main/services/handoff-preparations');
+    const transfer = await import('../../src/main/services/handoff-transfer-preparation');
+    const snapshot = await import('../../src/main/services/handoff-snapshot');
+    const bundle = await import('../../src/main/services/handoff-git-bundle');
+    const outerOriginal = preparation.prepareCallerHandoff, transferOriginal = transfer.prepareHandoffTransfer;
+    const snapshotOriginal = snapshot.prepareHandoffSnapshot, bundleOriginal = bundle.prepareHandoffBundle;
+    const captured = observer;
+    vi.spyOn(preparation, 'prepareCallerHandoff').mockImplementation(function (this: unknown, ...args) {
+      return observePreparationStage(captured, 'outer', outerOriginal, this, args);
+    });
+    vi.spyOn(transfer, 'prepareHandoffTransfer').mockImplementation(function (this: unknown, ...args) {
+      return observePreparationStage(captured, 'transfer', transferOriginal, this, args);
+    });
+    vi.spyOn(snapshot, 'prepareHandoffSnapshot').mockImplementation(function (this: unknown, ...args) {
+      return observePreparationStage(captured, 'snapshot', snapshotOriginal, this, args);
+    });
+    vi.spyOn(bundle, 'prepareHandoffBundle').mockImplementation(function (this: unknown, ...args) {
+      return observePreparationStage(captured, 'bundle', bundleOriginal, this, args);
+    });
+  } catch {
+    if (observer) preparationUnavailableOnce(observer);
+    else { try { console.error(preparationUnavailable); } catch { /* Optional initialization status, never ACK. */ } }
   }
 }
 
@@ -300,7 +480,10 @@ function installFixture(owner: FixtureOwner, fixture: Fixture): void {
       owner.toolWork.splice(0, Math.max(0, owner.toolWork.length - 7));
       owner.toolWork.push(trace);
     });
-    const pending = callTool(...args).then((result) => {
+    const stages = owner.preparationStages;
+    const selected = !!stages && !stages.selected && args[1] === 'prepare_handoff';
+    if (selected) stages.selected = true; // No optional port is called before actual caller admission/registration.
+    const pending = preparationInvocation(stages, selected, () => callTool(...args)).then((result) => {
       fixtureDiagnostic(() => { if (trace) trace.state = 'completed'; });
       return result;
     }, (error) => {
@@ -308,6 +491,8 @@ function installFixture(owner: FixtureOwner, fixture: Fixture): void {
       throw error;
     });
     owner.operations.push(pending);
+    if (stages?.unavailable && !stages.noticeAttempted) preparationUnavailableOnce(stages);
+    if (stages && selected) observePreparationMcp(stages, pending);
     return pending;
   });
 }
@@ -320,6 +505,7 @@ function fixtureDiagnostic(observe: () => void): void {
 
 beforeEach(async (context) => {
   const owner = admitOwner();
+  firstPreparationOwner ??= owner;
   hookOwners.set(context, owner);
   owner.teardown = [
     async () => { await owner.stop?.(); },
@@ -333,6 +519,7 @@ beforeEach(async (context) => {
   await observe(owner, 'setup', async () => {
     allocateDirectory(owner, await fs.mkdtemp(path.join(os.tmpdir(), 'handoff-producer-admission-')));
     installFixture(owner, await setup(fixtureDirectory(owner), owner));
+    await installPreparationObserver(owner);
   });
 });
 
@@ -972,6 +1159,173 @@ describe('isolated real MCP producer domain admission', () => {
     ];
     return owner;
   }
+
+  function preparationControl() {
+    const observer = newPreparationObserver(performance.now()), lines: string[] = [];
+    observer.publish = (line) => { lines.push(line); };
+    return { observer, lines };
+  }
+
+  it.each([
+    { label: 'ready true absent error', result: { content: [{ type: 'text', text: '{"ready":true}' }] }, ready: true, isError: 'absent', error: 'none' },
+    { label: 'structured not ready without tool error', result: { content: [{ type: 'text', text: '{"ready":false,"reason":"filesystem_failed","findings":["private"]}' }] }, ready: false, isError: 'absent', error: 'filesystem_failed' },
+    { label: 'generic tool error', result: { content: [{ type: 'text', text: 'Private generic error text.' }], isError: true }, ready: 'unknown', isError: true, error: 'unknown' },
+    { label: 'explicit false tool error', result: { content: [{ type: 'text', text: '{"ready":true}' }], isError: false }, ready: true, isError: false, error: 'none' },
+    { label: 'malformed JSON', result: { content: [{ type: 'text', text: '{private' }] }, ready: 'unknown', isError: 'absent', error: 'unknown' },
+    { label: 'oversize ASCII', result: { content: [{ type: 'text', text: ' '.repeat(16 * 1024) + '{"ready":true}' }] }, ready: 'unknown', isError: 'absent', error: 'unknown' },
+    { label: 'oversize UTF8', result: { content: [{ type: 'text', text: 'é'.repeat(9 * 1024) }] }, ready: 'unknown', isError: 'absent', error: 'unknown' },
+    { label: 'unexpected content', result: { content: [{ type: 'image', text: '{"ready":true}' }] }, ready: 'unknown', isError: 'absent', error: 'unknown' },
+    { label: 'nonboolean ready', result: { content: [{ type: 'text', text: '{"ready":"true"}' }] }, ready: 'unknown', isError: 'absent', error: 'unknown' },
+    { label: 'unknown reason', result: { content: [{ type: 'text', text: '{"ready":false,"reason":"private/path"}' }] }, ready: false, isError: 'absent', error: 'unknown' },
+  ])('preparation observation classifies $label without changing actual metadata', async ({ result, ready, isError, error }) => runFixtureBody(async () => {
+    const { observer, lines } = preparationControl(), actual = Promise.resolve(result as McpToolResult);
+    observePreparationMcp(observer, actual);
+    expect(await actual).toBe(result);
+    expect(preparationMcp(result)).toEqual({ ready, isError, error });
+    expect(observer.rows.mcp).toMatchObject({ ready, isError, error, event: 'fulfilled' });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('private');
+    expect(Object.isFrozen(observer.rows.mcp)).toBe(true);
+  }));
+
+  it.each(['fulfilled', 'rejected', 'threw'] as const)('preparation observation preserves original this args promise value and %s outcome', async (kind) => runFixtureBody(async () => {
+    const { observer, lines } = preparationControl(), receiver = Object.freeze({ identity: 'original receiver' }), arg = Object.freeze({ identity: 'original argument' });
+    const value = Object.freeze({ ready: true, manifest: 'not serialized' }), error = Object.assign(new Error('Private original stage error.'), { code: 'filesystem_failed' });
+    let calls = 0;
+    const actual = kind === 'rejected' ? Promise.reject(error) : Promise.resolve(value);
+    function original(this: unknown, input: typeof arg) {
+      calls++;
+      expect(this).toBe(receiver);
+      expect(input).toBe(arg);
+      if (kind === 'threw') throw error;
+      return actual;
+    }
+    if (kind === 'threw') expect(() => observer.context.run(observer, () => observePreparationStage(observer, 'outer', original, receiver, [arg]))).toThrow(error);
+    else {
+      const returned = observer.context.run(observer, () => observePreparationStage(observer, 'outer', original, receiver, [arg]));
+      expect(returned).toBe(actual);
+      if (kind === 'rejected') await expect(returned).rejects.toBe(error);
+      else expect(await returned).toBe(value);
+    }
+    expect(calls).toBe(1);
+    expect(observer.rows['outer-entered']?.event).toBe('entered');
+    expect(observer.rows['outer-settled']).toMatchObject({ event: kind, error: kind === 'fulfilled' ? 'none' : 'filesystem_failed' });
+    expect(lines).toHaveLength(2);
+    expect(lines.join('\n')).not.toContain('Private');
+  }));
+
+  it('preparation observation retains early entry and actual pending settlement without manufacturing readiness', async () => runFixtureBody(async () => {
+    const { observer, lines } = preparationControl(), gate = deferred(), value = Object.freeze({ ready: true });
+    const raw = gate.promise.then(() => value);
+    const actual = observer.context.run(observer, () => observePreparationStage(observer, 'outer', () => raw, undefined, []));
+    expect(actual).toBe(raw);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(observer.rows['outer-entered']?.event).toBe('entered');
+    expect(observer.rows['outer-settled']).toBeUndefined();
+    expect(observer.rows.mcp).toBeUndefined();
+    expect(lines).toHaveLength(1);
+    gate.resolve();
+    expect(await actual).toBe(value);
+    expect(observer.rows['outer-settled']).toMatchObject({ event: 'fulfilled', ready: true });
+  }));
+
+  it('preparation observation masks unrelated reentrant calls and marks repeated selected coverage unavailable', async () => runFixtureBody(async () => {
+    const { observer, lines } = preparationControl(), value = Object.freeze({ ready: true });
+    let calls = 0;
+    const original = () => { calls++; return Promise.resolve(value); };
+    await observer.context.run(observer, () => observePreparationStage(observer, 'outer', original, undefined, []));
+    const prior = lines.length;
+    expect(await observer.context.run(observer, () => preparationInvocation(observer, false, () => observePreparationStage(observer, 'outer', original, undefined, [])))).toBe(value);
+    expect(lines).toHaveLength(prior);
+    expect(observer.unavailable).toBe(false);
+    expect(await observer.context.run(observer, () => observePreparationStage(observer, 'outer', original, undefined, []))).toBe(value);
+    expect(calls).toBe(3);
+    expect(observer.unavailable).toBe(true);
+    expect(lines.filter((line) => line === preparationUnavailable)).toHaveLength(1);
+  }));
+
+  it.each(['clock', 'regression', 'nonfinite', 'construction', 'slot-storage', 'storage', 'serialization', 'publisher', 'baseline'] as const)(
+    'preparation observation contains %s fault while original work and teardown settle', async (fault) => runFixtureBody(async () => {
+      const owner = await sentinelOwner(), { observer, lines } = preparationControl();
+      const marker = path.join(fixtureDirectory(owner), 'actual-stage-work');
+      let calls = 0, attempts = 0, teardowns = 0;
+      owner.teardown.unshift(() => { teardowns++; });
+      const publish = observer.publish;
+      observer.publish = (line) => { attempts++; if (fault === 'publisher') throw new Error('Optional publisher failure.'); publish(line); };
+      if (fault === 'clock') observer.clock = () => { throw new Error('Optional clock failure.'); };
+      if (fault === 'regression') observer.clock = () => observer.baseline! - 1;
+      if (fault === 'nonfinite') observer.clock = () => Number.NaN;
+      if (fault === 'construction') observer.build = () => { throw new Error('Optional builder failure.'); };
+      if (fault === 'slot-storage') vi.spyOn(observer.claimed, 'add').mockImplementation(() => { throw new Error('Optional slot storage failure.'); });
+      if (fault === 'storage') observer.rows = new Proxy({}, { set: () => { throw new Error('Optional row storage failure.'); } });
+      if (fault === 'serialization') observer.serialize = () => 'x'.repeat(256);
+      if (fault === 'baseline') observer.baseline = undefined;
+      const raw = fs.writeFile(marker, 'actual'); owner.operations.push(raw);
+      const actual = observer.context.run(observer, () => observePreparationStage(observer, 'snapshot', () => { calls++; return raw; }, undefined, []));
+      expect(actual).toBe(raw);
+      await actual;
+      expect(calls).toBe(1);
+      expect(observer.unavailable).toBe(true);
+      expect(observer.noticeAttempted).toBe(true);
+      expect(attempts).toBe(fault === 'publisher' ? 2 : 1);
+      expect(lines).toEqual(fault === 'publisher' ? [] : [preparationUnavailable]);
+      expect((await hookCompletion(owner)).failures).toEqual([]);
+      expect(teardowns).toBe(1);
+      expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+    }));
+
+  it.each(['before', 'after'] as const)('preparation observation preserves once forwarding through context failure %s invocation', async (when) => runFixtureBody(async () => {
+    const { observer, lines } = preparationControl(), value = Object.freeze({ ready: true });
+    const raw = Promise.resolve(value);
+    let calls = 0;
+    vi.spyOn(observer.context, 'run').mockImplementation((_store, callback) => {
+      if (when === 'after') callback();
+      throw new Error('Optional context failure.');
+    });
+    const actual = preparationInvocation(observer, true, () => { calls++; return raw; });
+    expect(actual).toBe(raw);
+    expect(await actual).toBe(value);
+    expect(calls).toBe(1);
+    expect(observer.unavailable).toBe(true);
+    expect(lines).toEqual([]); // Functional caller ledger registration precedes this deferred optional notice.
+    preparationUnavailableOnce(observer);
+    expect(lines).toEqual([preparationUnavailable]);
+  }));
+
+  it('preparation observation forwards nested already-admitted work after fenced publisher reentry', async () => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), { observer, lines } = preparationControl(), release = deferred();
+    const marker = path.join(fixtureDirectory(owner), 'nested-work');
+    let calls = 0, lateStarts = 0, refusal: unknown, joined: Promise<CoreCompletion> | undefined, hook: Promise<Completion> | undefined, present = false;
+    owner.teardown.unshift(() => { present = nativeFs.readFileSync(marker, 'utf8') === 'actual nested work'; });
+    const publish = observer.publish;
+    observer.publish = (line) => {
+      publish(line);
+      if (line.includes('"stage":"outer"') && line.includes('"event":"entered"')) {
+        hook = hookCompletion(owner); joined = coreCompletion(owner);
+        try { bodyOwner.run(owner, () => runFixtureBody(async () => { lateStarts++; })); } catch (error) { refusal = error; }
+      }
+    };
+    const raw = observer.context.run(observer, () => release.promise.then(() => observePreparationStage(observer, 'transfer', () => {
+      calls++; expect(owner.retiring).toBe(true); return fs.writeFile(marker, 'actual nested work');
+    }, undefined, [])));
+    owner.operations.push(raw);
+    const actual = observer.context.run(observer, () => observePreparationStage(observer, 'outer', () => raw, undefined, []));
+    expect(actual).toBe(raw);
+    expect(owner.retiring).toBe(true);
+    expect(coreCompletion(owner)).toBe(joined);
+    expect(hookCompletion(owner)).toBe(hook);
+    expect(refusal).toBeInstanceOf(Error);
+    expect(lateStarts).toBe(0);
+    try { expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(true); }
+    finally { release.resolve(); }
+    await actual;
+    expect((await coreCompletion(owner)).failures).toEqual([]);
+    expect((await hookCompletion(owner)).failures).toEqual([]);
+    expect(calls).toBe(1);
+    expect(present).toBe(true);
+    expect(observer.rows['transfer-settled']?.event).toBe('fulfilled');
+    expect(lines.length).toBeLessThanOrEqual(9);
+  }));
 
   it('grant IO ownership reserves before synchronous start reentry and returns actual work unchanged', async () => runFixtureBody(async () => {
     const owner = await sentinelOwner(), gate = deferred(), marker = path.join(fixtureDirectory(owner), 'actual-write');
