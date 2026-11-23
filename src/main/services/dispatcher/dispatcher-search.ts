@@ -165,6 +165,7 @@ async function memoryPages(root: string, historyOnly: boolean): Promise<{ pages:
       entries = await fsp.readdir(dir, { withFileTypes: true });
     } catch {
       // telemetry-exempt: no memory yet, or a folder removed while searching
+      if (historyOnly) incomplete = true;
       return;
     }
     entries.sort((a, b) => a.name.localeCompare(b.name));

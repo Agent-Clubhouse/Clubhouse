@@ -101,6 +101,9 @@ describe('bounded durable Dispatcher context', () => {
     const result = await searchDispatcher('canary', { memoryRoot: root, scope: 'history', stores: [], folders: [] });
     expect(result.memory).toEqual([]);
     expect(result.incomplete).toBe(true);
+    const unreadable = path.join(temp(), 'not-a-directory');
+    fs.writeFileSync(unreadable, 'x');
+    expect((await searchDispatcher('canary', { memoryRoot: unreadable, scope: 'history', stores: [], folders: [] })).incomplete).toBe(true);
   });
 
   it('does not follow a history symlink outside memory or expose history in the default directory', async () => {
