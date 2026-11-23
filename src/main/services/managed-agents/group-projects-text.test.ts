@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_MANIFEST, BUILTIN_BLOCK_IDS } from './builtins';
 import { BUILTIN_TEXT } from './builtin-text/index';
+import { dispatcherSkills } from '../dispatcher/dispatcher-skills';
 
 const text = BUILTIN_TEXT['group-projects.md'];
 const help = readFileSync(join(__dirname, '../../../renderer/features/help/content/group-projects.md'), 'utf8');
@@ -45,6 +46,7 @@ const lead = BUILTIN_TEXT['group-project-lead.md'];
 const admin = BUILTIN_TEXT['group-project-admin.md'];
 const boardSkill = source('builtin-text/skills/post-result-board/SKILL.md');
 const controller = source('../dispatcher/dispatcher-instructions.md');
+const procedures = dispatcherSkills('work').find((s) => s.name === 'tool-procedures')!.text;
 const chat = source('../dispatcher/dispatcher-chat-instructions.md');
 const toolSource = source('../clubhouse-mcp/tools/group-project-tools.ts');
 const connectionSource = source('../clubhouse-mcp/tools/connection-tools.ts');
@@ -67,7 +69,7 @@ describe('Group Project guidance parity across delivered surfaces (#3618)', () =
   });
 
   it.each([
-    ['board result skill', boardSkill], ['controller', controller], ['chat', chat],
+    ['board result skill', boardSkill], ['controller', procedures], ['chat', chat],
   ])('%s distinguishes pending offline changes and direct wakes from completion', (_name, guidance) => {
     expect(guidance).toMatch(/host.*offline|offline.*(host|copies)/i);
     expect(guidance).toMatch(/pending/i);
@@ -78,16 +80,19 @@ describe('Group Project guidance parity across delivered surfaces (#3618)', () =
   });
 
   it('removes retired tools from every delivered group instruction', () => {
-    for (const guidance of [text, lead, admin, basics, boardSkill, controller, chat]) {
+    for (const guidance of [text, lead, admin, basics, boardSkill, controller, procedures, chat]) {
       expect(guidance).not.toMatch(/shoulder_tap|broadcast|query_polling|toggle_polling|nudge_polling/);
     }
   });
 
   it('teaches Dispatcher membership checks through its offered management tools', () => {
-    expect(controller).toContain('`get_group_project_management`');
-    expect(controller).toContain('do not assume they are in your catalog');
+    expect(controller).toContain('Read the `tool-procedures` skill before acting');
+    expect(controller).toContain('within verified membership and grants');
+    expect(controller).toContain('do not invent tools or assume a connection establishes board membership');
+    expect(procedures).toContain('`get_group_project_management`');
+    expect(procedures).toContain('do not assume they are in your catalog');
     for (const name of ['list_members', 'get_project_info', 'read_topic', 'read_bulletin', 'read_message']) {
-      expect(controller).not.toContain('`' + name + '`');
+      for (const guidance of [controller, procedures]) expect(guidance).not.toContain('`' + name + '`');
     }
   });
 
@@ -103,7 +108,7 @@ describe('Group Project guidance parity across delivered surfaces (#3618)', () =
     // Assert against the actual registration metadata: a rename must update guidance too.
     const boardNames = new Set([...toolSource.matchAll(/nameSuffix: '([^']+)'/g)].map(m => m[1]));
     const connectionNames = new Set([...connectionSource.matchAll(/registerGlobalTool\('([^']+)'/g)].map(m => m[1]));
-    for (const guidance of [basics, text, lead, admin, boardSkill, controller]) {
+    for (const guidance of [basics, text, lead, admin, boardSkill, controller, procedures]) {
       for (const name of ['get_project_info', 'list_members', 'read_bulletin', 'read_topic', 'read_message',
         'post_bulletin', 'subscribe_topic', 'set_project_info', 'clear_topic', 'delete_messages', 'wake_agent', 'sleep_agent',
         'compact_agent', 'clear_agent']) {
@@ -111,7 +116,7 @@ describe('Group Project guidance parity across delivered surfaces (#3618)', () =
       }
     }
     for (const name of ['join_group_project', 'leave_group_project']) {
-      expect(controller).toContain('`' + name + '`');
+      expect(procedures).toContain('`' + name + '`');
       expect(connectionNames.has(name), name).toBe(true);
     }
   });

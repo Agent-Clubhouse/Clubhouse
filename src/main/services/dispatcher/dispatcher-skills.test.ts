@@ -90,6 +90,16 @@ describe.each(PROVIDERS.map((p) => [p.id, p] as const))('on %s', (_id, provider)
       expect(fs.readFileSync(path.join(dir, rel), 'utf-8')).toBe(skill.text);
       expect(instructions).toContain(`\`${skill.name}\` (\`${rel}\`): ${skill.description}`);
     }
+    if (role === 'work') {
+      expect(instructions).toContain('Read the `tool-procedures` skill before acting');
+      expect(instructions).toContain('If the guide is unavailable, report that blocker before acting; do not guess a substitute');
+      const guide = dispatcherSkills('work').find((s) => s.name === 'tool-procedures')!;
+      const delivered = fs.readFileSync(path.join(dir, skillFile(provider.conventions, guide.name)), 'utf8');
+      expect(delivered).toBe(guide.text);
+      expect(delivered).toContain('A token is not user approval');
+      expect(delivered).toContain('A connection or canvas card does not establish membership');
+      expect(delivered).toContain('Report pending changes as pending until accepted by the host');
+    }
     // The section lists only files that exist.
     for (const [, rel] of skillsSection(role, provider.conventions).matchAll(/\(`([^`]+)`\)/g)) expect(fs.existsSync(path.join(dir, rel)), rel).toBe(true);
   });

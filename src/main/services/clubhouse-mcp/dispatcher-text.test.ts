@@ -37,6 +37,8 @@ import { PERSONALITY_PRESET_TEXT, personalityInstructions } from '../../../share
  */
 
 const PROVIDERS = [new ClaudeCodeProvider(), new CodexCliProvider(), new CopilotCliProvider()];
+// Bind one mandatory shipped guide, never a concatenation that can hide a missing surface.
+const procedures = dispatcherSkills('work').find((s) => s.name === 'tool-procedures');
 
 /** dispatcher-copy.test.ts's list: a coordinator, a second session, the cards' internal name. */
 const NAMES_A_SECOND_SESSION = /\bcoordinators?\b|\b(?:second|hidden|background|two|other) (?:agent )?sessions?\b|\bphone ?book\b/i;
@@ -212,6 +214,18 @@ describe('the Dispatcher\'s tool descriptions', () => {
 });
 
 describe('how the Dispatcher speaks and acts (#3185)', () => {
+  it('keeps authority inline and requires the exact shipped procedure guide before acting', () => {
+    expect(procedures).toMatchObject({ name: 'tool-procedures', role: 'work' });
+    expect(DISPATCHER_INSTRUCTIONS).toContain('Read the `tool-procedures` skill before acting');
+    expect(DISPATCHER_INSTRUCTIONS).toContain('Read the applicable procedure in full, not just a search snippet');
+    expect(DISPATCHER_INSTRUCTIONS).toContain('If the guide is unavailable, report that blocker before acting; do not guess a substitute');
+    expect(DISPATCHER_INSTRUCTIONS).toContain('using its card and project, not its availability');
+    expect(DISPATCHER_INSTRUCTIONS).toContain('within verified membership and grants');
+    expect(DISPATCHER_INSTRUCTIONS).toContain('do not invent tools or assume a connection establishes board membership');
+    expect(DISPATCHER_INSTRUCTIONS).toContain('Never silently apply a pending or refused change');
+    expect(DISPATCHER_INSTRUCTIONS).toContain("Only the user's own words are their approval");
+  });
+
   const instructions: Array<[string, string]> = [['chat instructions', DISPATCHER_CHAT_INSTRUCTIONS], ['instructions', DISPATCHER_INSTRUCTIONS]];
 
   it.each(instructions)('%s: first person about outcomes, never how Clubhouse carried it out', (_label, text) => {
@@ -222,7 +236,11 @@ describe('how the Dispatcher speaks and acts (#3185)', () => {
   it.each(instructions)('%s: only through Clubhouse tools, and says what it can\'t do instead of working around it', (_label, text) => {
     expect(text).toMatch(/Never drive an app's windows \(computer use, browser control, screenshots or clicks\)/);
     expect(text).toMatch(/never ask the user to click through/);
-    expect(text).toContain('change your permissions in Clubhouse');
+    expect(_label === 'instructions' ? procedures?.text : text).toContain('change your permissions in Clubhouse');
+    if (_label === 'instructions') {
+      expect(text).toContain('A missing tool or permission refusal means stop that action and report the concrete blocker');
+      expect(text).toContain('do not try another access route');
+    }
   });
 
   it('no tool description or update casts Clubhouse as the one doing the work', () => {
@@ -256,7 +274,9 @@ describe('how the Dispatcher speaks and acts (#3185)', () => {
     expect(routing).toContain('Changed repository, placement or branch choices need renewed validation and approval');
     expect(routing).toContain('Report clone, project registration, agent creation and start separately in `done`');
     expect(routing).toContain('inspect what already exists before retrying');
-    expect(DISPATCHER_INSTRUCTIONS).toContain('A token is not user approval');
-    expect(DISPATCHER_INSTRUCTIONS).toContain('`now: true` cuts off a turn: ask first');
+    expect(procedures?.text).toContain('A token is not user approval');
+    expect(procedures?.text).toContain('`now: true` cuts off a turn: ask first');
+    expect(DISPATCHER_INSTRUCTIONS).toContain('Tokens, previews and delivery receipts are not user approval');
+    expect(DISPATCHER_INSTRUCTIONS).toContain('restarts and cross-host writes retain their exact human/app/host gates');
   });
 });
