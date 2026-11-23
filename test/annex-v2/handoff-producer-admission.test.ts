@@ -120,8 +120,9 @@ function phaseUnavailableOnce(observer: PhaseObserver): void {
 }
 
 function attachPhaseObserver(owner: FixtureOwner): void {
-  fixtureDiagnostic(() => {
-    const observer: PhaseObserver = {
+  let observer: PhaseObserver | undefined;
+  try {
+    observer = {
       claimed: new Set(), rows: {}, unavailable: false, noticeAttempted: false,
       clock: () => performance.now(),
       build: (elapsedMs, phase) => Object.freeze({ owner: 1, elapsedMs, phase }),
@@ -129,23 +130,27 @@ function attachPhaseObserver(owner: FixtureOwner): void {
       publish: (line) => { console.error(line); },
     };
     owner.phases = observer;
-    try {
-      const baseline = observer.clock();
-      if (!Number.isFinite(baseline) || baseline < 0) throw new Error('Unavailable monotonic baseline.');
-      observer.baseline = baseline;
-      observer.last = baseline;
-    } catch { phaseUnavailableOnce(observer); }
-  });
+    const baseline = observer.clock();
+    if (!Number.isFinite(baseline) || baseline < 0) throw new Error('Unavailable monotonic baseline.');
+    observer.baseline = baseline;
+    observer.last = baseline;
+  } catch {
+    if (observer) phaseUnavailableOnce(observer);
+    else {
+      // Initialization itself may be unavailable before state can be attached.
+      try { console.error(phaseUnavailable); } catch { /* One optional fixed status attempt. */ }
+    }
+  }
 }
 
 function markPhase(owner: FixtureOwner, slot: PhaseSlot, phase: Phase): void {
   fixtureDiagnostic(() => {
     const observer = owner.phases;
-    if (!observer || observer.claimed.has(slot)) return;
-    // Reserve BEFORE any optional clock/build/publisher can synchronously reenter.
-    observer.claimed.add(slot);
-    if (observer.unavailable) return;
+    if (!observer || observer.unavailable) return;
     try {
+      if (observer.claimed.has(slot)) return;
+      // Reserve BEFORE any optional clock/build/publisher can synchronously reenter.
+      observer.claimed.add(slot);
       const now = observer.clock();
       if (observer.baseline === undefined || observer.last === undefined || !Number.isFinite(now)
         || now < observer.last || now < observer.baseline) throw new Error('Unavailable monotonic reading.');
@@ -972,7 +977,7 @@ describe('isolated real MCP producer domain admission', () => {
     expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
   }));
 
-  it.each(['clock', 'regression', 'nonfinite', 'construction', 'serialization', 'publisher'] as const)('phase observer contains %s faults without changing actual promises errors or teardown', async (fault) => runFixtureBody(async () => {
+  it.each(['clock', 'regression', 'nonfinite', 'construction', 'slot-storage', 'storage', 'serialization', 'publisher'] as const)('phase observer contains %s faults without changing actual promises errors or teardown', async (fault) => runFixtureBody(async () => {
     const owner = await sentinelOwner(), { observer, lines } = phaseControl(owner);
     const releaseError = new Error('Original actual phase-control release failure.');
     const bodyError = new Error('Original actual phase-control body failure.');
@@ -988,6 +993,8 @@ describe('isolated real MCP producer domain admission', () => {
     if (fault === 'regression') observer.clock = () => (observer.baseline ?? 0) - 1;
     if (fault === 'nonfinite') observer.clock = () => Number.NaN;
     if (fault === 'construction') observer.build = () => { throw new Error('Optional construction fault.'); };
+    if (fault === 'slot-storage') vi.spyOn(observer.claimed, 'add').mockImplementation(() => { throw new Error('Optional slot reservation fault.'); });
+    if (fault === 'storage') observer.rows = new Proxy({}, { set: () => { throw new Error('Optional row storage fault.'); } });
     if (fault === 'serialization') observer.serialize = () => { throw new Error('Optional serialization fault.'); };
     const release = heldRelease(owner, () => { releases++; throw releaseError; }, true);
     const actual = observe(owner, 'body', async () => { throw bodyError; });
