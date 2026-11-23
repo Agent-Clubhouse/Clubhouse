@@ -1059,8 +1059,7 @@ export function onExperimentalSettingsChanged(): Promise<void> {
 }
 
 /**
- * Write both agents' instructions again, so the memory index they carry is the
- * one on disk now. Forget everything (#3046) calls it. Nothing while it's off.
+ * Write both agents' instructions again with their fixed current-memory lookup. Forget everything (#3046) calls it. Nothing while it's off.
  */
 export function refreshDispatcherInstructions(): Promise<void> {
   return enqueue(async () => {

@@ -169,7 +169,7 @@ export async function writeIndex(content: string, root?: string, cap: number = M
   return capped;
 }
 
-/** The index as a start loads it: created if missing, and never over its cap. */
+/** Create/read a bounded index without modifying an existing oversized file. */
 export async function loadIndex(root?: string, cap: number = MEMORY_INDEX_CAP_BYTES): Promise<string> {
   await ensureMemoryLayout(root);
   return capIndex(await readIndex(root), cap);

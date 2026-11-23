@@ -7,7 +7,7 @@ import chat from './dispatcher-chat-instructions.md';
 import { ClaudeCodeProvider } from '../../orchestrators/claude-code-provider';
 import { CodexCliProvider } from '../../orchestrators/codex-cli-provider';
 import { CopilotCliProvider } from '../../orchestrators/copilot-cli-provider';
-import { personalityInstructions } from '../../../shared/dispatcher-personality';
+import { DISPATCHER_NAME_MAX, personalityInstructions } from '../../../shared/dispatcher-personality';
 import { appendSection, boundBuiltinInstructions, DISPATCHER_BUILTIN_CAP_BYTES, instructionsWithSkills, skillFile, writeDispatcherSkills } from './dispatcher-skills';
 import { MEMORY_LOOKUP_INSTRUCTIONS, withMemoryIndex } from './dispatcher-memory-migration';
 import { memoryWrite } from './dispatcher-memory';
@@ -47,6 +47,7 @@ describe('bounded durable Dispatcher context', () => {
         expect(rendered).toContain(MEMORY_LOOKUP_INSTRUCTIONS);
         expect((await readDispatcherMemory(undefined, root)).text).toContain(`Current decision ${n}`);
         expect(fs.readFileSync(path.join(root, 'index.md'), 'utf8')).toBe(facts);
+        expect(fs.readdirSync(path.join(root, 'history', 'index.md')).length).toBeLessThanOrEqual(5);
       }
       // Stored custom text is copied whole; it is not part of a truncation budget.
       if (input.includes(custom)) expect(initial).toContain(custom);
@@ -58,13 +59,15 @@ describe('bounded durable Dispatcher context', () => {
     const exact = 'x'.repeat(DISPATCHER_BUILTIN_CAP_BYTES);
     expect(boundBuiltinInstructions(exact)).toBe(exact);
     expect(() => boundBuiltinInstructions(`${exact}x`)).toThrow(/context budget/);
+    expect(() => instructionsWithSkills(exact, 'work', providers[0].conventions)).toThrow(/context budget/);
     expect(() => boundBuiltinInstructions('🧭'.repeat(DISPATCHER_BUILTIN_CAP_BYTES / 4 + 1))).toThrow(/context budget/);
     for (const provider of providers) {
       for (const [role, base] of [['work', work], ['chat', chat]] as const) {
         expect(Buffer.byteLength(instructionsWithSkills(base, role, provider.conventions))).toBeLessThanOrEqual(DISPATCHER_BUILTIN_CAP_BYTES);
+        expect(Buffer.byteLength(instructionsWithSkills(base.replace(/\n/g, '\r\n'), role, provider.conventions))).toBeLessThanOrEqual(DISPATCHER_BUILTIN_CAP_BYTES);
       }
       const maximumCustom = '界'.repeat(2_000);
-      const full = appendSection(instructionsWithSkills(chat, 'chat', provider.conventions), personalityInstructions('Navi', { preset: 'custom', text: maximumCustom }));
+      const full = appendSection(instructionsWithSkills(chat, 'chat', provider.conventions), personalityInstructions('界'.repeat(DISPATCHER_NAME_MAX), { preset: 'custom', text: maximumCustom }));
       expect(full).toContain(maximumCustom);
       expect(Buffer.byteLength(full + MEMORY_LOOKUP_INSTRUCTIONS)).toBeLessThan(24 * 1024);
     }
