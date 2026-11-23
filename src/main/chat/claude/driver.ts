@@ -552,6 +552,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private turnRunning = false;
   private interrupting = false;
   private closing = false;
+  /** The transport reported its session ended; set before the driver closes its own turn and requests. */
+  private transportEnded = false;
   private level: PermissionLevel;
   private model: string | undefined;
   private effort: string | undefined;
@@ -781,6 +783,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       priority: actual === 'steer' ? 'next' : actual === 'queued' ? 'later' : undefined,
     });
     return actual;
+  }
+
+  isClosed(): boolean {
+    return this.transportEnded;
   }
 
   async interrupt(): Promise<void> {
@@ -1300,6 +1306,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.push({ type: 'protocol_unknown', data: { driver: this.driverId, kind: 'field', name: ev.subtype ? `${ev.type}/${ev.subtype}` : ev.type } });
         return;
       case 'session_ended':
+        this.transportEnded = true;
         this.compacting = false;
         if (this.turnRunning) {
           this.push({ type: 'turn_ended', data: { stopReason: this.closing || this.interrupting ? 'cancelled' : 'error' } }, true);
