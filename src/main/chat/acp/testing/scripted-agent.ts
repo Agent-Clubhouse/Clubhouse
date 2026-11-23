@@ -32,6 +32,8 @@ export interface ScriptedAgentOptions {
   configOptions?: SessionConfigOption[];
   /** Answer `session/new` with this error instead. */
   newSessionError?: { code: number; message: string };
+  /** Updates sent for a new session before `session/new` is answered. */
+  beforeNewReply?: SessionUpdate[];
 }
 
 export interface ScriptedPrompt {
@@ -56,6 +58,10 @@ export class ScriptedAcpAgent {
   readonly connector: AcpConnector;
   /** Number of times a client connected. */
   connections = 0;
+  /** session/prompt requests the client wrote, counted at the write (before delivery). */
+  promptsWritten = 0;
+  /** Ids of this agent's requests to the client, in the order sent. */
+  readonly clientRequestIds: JsonRpcId[] = [];
 
   private client: { onMessage(m: JsonRpcMessage): void; onEnd(e: AcpTransportEnd): void } | undefined;
   private open = false;
@@ -67,6 +73,7 @@ export class ScriptedAcpAgent {
   private readonly promptWaiters: Array<Waiter<ScriptedPrompt>> = [];
   private readonly outgoing = new Map<JsonRpcId, Waiter<JsonRpcMessage>>();
   private readonly cancelWaiters: Array<() => void> = [];
+  private nextPromptError: { code: number; message: string } | undefined;
 
   constructor(private readonly opts: ScriptedAgentOptions = {}) {
     this.sessions = { ...opts.sessions };
@@ -77,6 +84,7 @@ export class ScriptedAcpAgent {
       this.open = true;
       return {
         send: (message) => {
+          if (message.method === ACP_AGENT_METHODS.sessionPrompt) this.promptsWritten++;
           // Deliver on a later tick, as a pipe would.
           queueMicrotask(() => { if (this.open) this.receive(message); });
         },
@@ -90,6 +98,11 @@ export class ScriptedAcpAgent {
     const ready = this.prompts.shift();
     if (ready) return Promise.resolve(ready);
     return new Promise((resolve) => this.promptWaiters.push({ resolve }));
+  }
+
+  /** Answer the next `session/prompt` with this JSON-RPC error as soon as it arrives. */
+  failNextPrompt(code: number, message: string): void {
+    this.nextPromptError = { code, message };
   }
 
   /** Resolves when the client sends `session/cancel`. */
@@ -113,6 +126,7 @@ export class ScriptedAcpAgent {
   /** Send the client any request (e.g. one it never advertised). */
   requestClient(method: string, params: unknown): { id: JsonRpcId; response: Promise<JsonRpcMessage> } {
     const id = `agent-${this.nextId++}`;
+    this.clientRequestIds.push(id);
     const response = new Promise<JsonRpcMessage>((resolve) => this.outgoing.set(id, { resolve }));
     this.toClient({ jsonrpc: '2.0', id, method, params });
     return { id, response };
@@ -139,10 +153,16 @@ export class ScriptedAcpAgent {
     return this.received.filter((r) => r.method === method).map((r) => r.params);
   }
 
+  /** False once the transport has ended. */
+  get isOpen(): boolean {
+    return this.open;
+  }
+
   private toClient(message: JsonRpcMessage): void {
     if (!this.open) return;
+    // Written before a disconnect means delivered before it, as with a pipe.
     const client = this.client;
-    queueMicrotask(() => { if (this.open) client?.onMessage(message); });
+    queueMicrotask(() => client?.onMessage(message));
   }
 
   private reply(id: JsonRpcId, result: unknown): void {
@@ -174,6 +194,7 @@ export class ScriptedAcpAgent {
         if (this.opts.newSessionError) return this.replyError(id, this.opts.newSessionError.code, this.opts.newSessionError.message);
         const sessionId = `session-${this.nextSession++}`;
         this.sessions[sessionId] = [];
+        for (const update of this.opts.beforeNewReply ?? []) this.update(sessionId, update);
         return this.reply(id, { sessionId, configOptions: this.configOptions });
       }
       case ACP_AGENT_METHODS.sessionLoad: {
@@ -194,6 +215,11 @@ export class ScriptedAcpAgent {
         return this.reply(id, { configOptions: this.configOptions });
       }
       case ACP_AGENT_METHODS.sessionPrompt: {
+        if (this.nextPromptError) {
+          const { code, message } = this.nextPromptError;
+          this.nextPromptError = undefined;
+          return this.replyError(id, code, message);
+        }
         const prompt: ScriptedPrompt = {
           sessionId: params.sessionId as string,
           prompt: params.prompt as ContentBlock[],

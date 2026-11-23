@@ -39,6 +39,18 @@ describe('AcpConnection', () => {
     await expect(conn.request('slow', {})).rejects.toBeInstanceOf(AcpRequestTimeoutError);
     expect(sent[1]).toEqual({ jsonrpc: '2.0', method: '$/cancel_request', params: { requestId: 1 } });
     deliver({ jsonrpc: '2.0', id: 1, result: 'late' });
+    // The late answer settles nothing; the next request gets a fresh id and its own answer.
+    const next = conn.request('next', {});
+    expect(sent[2]).toMatchObject({ id: 2, method: 'next' });
+    deliver({ jsonrpc: '2.0', id: 2, result: 'ok' });
+    await expect(next).resolves.toBe('ok');
+  });
+
+  it('throws at once, with nothing pending, when the transport cannot take a request', async () => {
+    const conn = new AcpConnection(() => ({ send: () => { throw new Error('stdin closed'); }, close: async () => undefined }), {
+      onRequest: vi.fn(), onNotification: vi.fn(),
+    });
+    expect(() => conn.request('a', {})).toThrow('stdin closed');
   });
 
   it('waits without a timeout when asked', async () => {

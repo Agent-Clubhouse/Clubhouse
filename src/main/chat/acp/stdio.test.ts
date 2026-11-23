@@ -10,7 +10,7 @@ const AGENT = path.join(__dirname, 'testing', 'stdio-agent.mjs');
 const driver = createAcpChatDriver({
   id: 'acp_neutral_test' as ChatDriverId,
   provider: 'acp-test',
-  command: ({ binaryPath }) => ({ binary: binaryPath, args: [AGENT] }),
+  args: () => [AGENT],
 });
 
 async function collect(events: AsyncIterable<ChatEventDraft>, until: (d: ChatEventDraft) => boolean): Promise<ChatEventDraft[]> {

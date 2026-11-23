@@ -32,11 +32,19 @@ public docs. A claim never enables something `initialize` left off, and
   stop reason it reported or with an error (a reported failure). ACP has no
   turn id, so no `nativeTurnId` is reported and `sendWithReceipt` isn't
   implemented.
-- No steer: stable v1 has one prompt per turn, so `send` during a turn throws
-  and the runtime queues (`queue: 'client'`).
+- No steer in this neutral driver: the stable schema has no steer method, so
+  it advertises none, `send` during a turn throws, and the runtime queues
+  (`queue: 'client'`). A provider that documents its own mid-turn behaviour
+  (Antigravity steers, #3797) needs its own mapping, admitted through the
+  #3804 contract. The neutral driver doesn't rule that out.
 - `interrupt` answers open permission requests and questions as cancelled (the
   protocol asks the client to) and sends `session/cancel`. The turn ends only
-  when the agent answers the prompt, which it must do with `cancelled`.
+  when the agent answers the prompt, which it must do with `cancelled`. If the
+  agent is lost before that answer, the outcome stays unknown.
+- An error answer to `session/prompt` is a reported failure: the session
+  stays open, the turn ends as `error`, and the prompt isn't sent again. It
+  arrives after `send` has returned, since a prompt is answered only when its
+  turn ends.
 - The agent withdrawing a request with `$/cancel_request` is reported as
   cancelled by the agent.
 - When the transport ends, the driver reports `process_exited` and nothing

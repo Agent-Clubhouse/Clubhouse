@@ -81,7 +81,8 @@ export function selectOption(options: readonly SessionConfigOption[], category: 
 export function acpChatCapabilities(n: AcpNegotiated, facts: AcpSessionFacts, claims: AcpStaticClaims = {}): ChatCapabilities {
   return {
     ...MINIMAL_CHAT_CAPABILITIES,
-    // Stable v1 has one session/prompt per turn and no steer method.
+    // The stable schema has no steer method; a provider mapping of its own
+    // documented mid-turn behaviour is outside this neutral derivation.
     steer: false,
     // No protocol queue; the chat runtime holds messages until the turn ends.
     queue: 'client',
@@ -104,8 +105,10 @@ export function acpChatCapabilities(n: AcpNegotiated, facts: AcpSessionFacts, cl
     effortSwitch: selectOption(facts.configOptions, 'thought_level') ? 'live' : 'none',
     // Permission levels map onto provider-specific modes; that's provider policy.
     liveLevels: [],
-    // Clubhouse never calls `authenticate`; a login happens in the CLI itself.
-    login: n.authMethods.length ? 'terminal' : 'none',
+    // Not negotiated: Clubhouse doesn't advertise terminal auth or call
+    // `authenticate`, and an empty authMethods list doesn't prove no login is
+    // needed. The baseline (log in with the CLI itself) stands.
+    login: MINIMAL_CHAT_CAPABILITIES.login,
     systemPrompt: n.systemPrompt,
   };
 }
