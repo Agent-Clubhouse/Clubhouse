@@ -53,7 +53,8 @@ export function toAcpPrompt(content: ChatContentBlock[], prompt: AcpNegotiated['
         return { type: 'text', text: block.text };
       case 'image':
         if (prompt.image && block.data) return { type: 'image', data: block.data, mimeType: block.mimeType };
-        return link(block.path ?? block.uri ?? '', block.name, block.mimeType);
+        if (!block.path && !block.uri) throw new Error("This agent can't take images, and the image has no file to link to");
+        return link(block.path ?? block.uri!, block.name, block.mimeType);
       case 'resource':
         if (prompt.embeddedContext && block.text !== undefined) {
           return { type: 'resource', resource: { uri: block.uri, text: block.text, ...(block.mimeType && { mimeType: block.mimeType }) } };
@@ -305,11 +306,15 @@ export class AcpUpdateMapper {
           effects: { usage: true },
         };
       }
-      default:
-        // Known to the pinned schema but not mapped yet (user_message_chunk
-        // echoes, current_mode_update without a provider level map, plan
-        // edits, notices, compaction, subagents, session messages).
+      case 'user_message_chunk':
+        // The agent echoing the user's own words; the runtime already wrote them.
         return { drafts: [], effects: {} };
+      default:
+        // Known to the pinned schema but not mapped: mode changes (levels are
+        // provider policy), and kinds gated on client capabilities Clubhouse
+        // doesn't advertise (plan edits, notices, compaction, subagents,
+        // session messages). Reported rather than dropped silently.
+        return { drafts: [{ type: 'protocol_unknown', data: { driver: this.driverId, kind: 'field', name: `session/update:${kind}` } }], effects: {} };
     }
   }
 
