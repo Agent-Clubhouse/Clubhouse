@@ -170,18 +170,24 @@ describe('native submission ownership', () => {
       await withFederationInput({ id: 'new-causal', cause: { rootId: 'new-causal', depth: 4 } } as FederatedRequest,
         () => runtime.sendMessage('new first', { source: 'mcp' }));
       expect(runtime.hasPendingWork()).toBe(true);
-      expect((await runtime.sendMessage('new second', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'new', onSettled: settled } })).delivery).toBe('queued');
-      expect((await runtime.sendMessage('new third', { source: 'user', delivery: 'queued' })).delivery).toBe('queued');
-      expect(driver.last.sent).toHaveLength(1);
+      driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'same-native' } });
+      driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['new-causal']);
+      expect.soft(runtime.hasPendingWork()).toBe(false);
+      // Probe admission while the genuine completed causal turn is retained;
+      // later unrelated turns would legitimately clear that context.
+      expect((await runtime.sendMessage('new second', { source: 'action', delivery: 'queued' })).delivery).toBe('prompt');
+      expect((await runtime.sendMessage('new third', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'new', onSettled: settled } })).delivery).toBe('queued');
+      expect((await runtime.sendMessage('new fourth', { source: 'user', delivery: 'queued' })).delivery).toBe('queued');
+      expect(driver.last.sent).toHaveLength(2);
       expect(settled).not.toHaveBeenCalled();
-      for (const id of ['same-native', 'new-2', 'new-3']) {
+      for (const id of ['new-2', 'new-3', 'new-4']) {
         driver.last.emit({ type: 'turn_started', data: { nativeTurnId: id } });
         driver.last.emit({ type: 'turn_ended', data: {} }); await flush();
       }
       expect(settled).toHaveBeenCalledExactlyOnceWith('delivered');
-      expect(driver.last.sent.map((x) => x.content)).toEqual(['new first', 'new second', 'new third'].map((text) => [{ type: 'text', text }]));
-      expect.soft(runtime.hasPendingWork()).toBe(false);
-      expect((await runtime.sendMessage('new fourth', { source: 'action', delivery: 'queued' })).delivery).toBe('prompt');
+      expect(driver.last.sent.map((x) => x.content)).toEqual(['new first', 'new second', 'new third', 'new fourth'].map((text) => [{ type: 'text', text }]));
+      expect(runtime.hasPendingWork()).toBe(false);
       expect(old.sent).toHaveLength(1);
       expect(driver.last.sent).toHaveLength(4);
     } finally {
