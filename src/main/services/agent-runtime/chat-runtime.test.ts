@@ -111,6 +111,61 @@ it('does not retain future-turn debt when Codex accepts two prompts into one nat
 });
 
 describe('native submission ownership', () => {
+  it('retains an accepted native reservation when strict close fails after its receipt resolves during detach', async () => {
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
+    const { runtime } = makeRuntime(driver);
+    const stopTracking = startFederationTurnTracking(runtime.agentId);
+    let resolveReceipt!: (receipt: ChatSendReceipt) => void;
+    let rejectClose!: (error: Error) => void;
+    const receipt = new Promise<ChatSendReceipt>((resolve) => { resolveReceipt = resolve; });
+    const closing = new Promise<void>((_, reject) => { rejectClose = reject; });
+    const closeError = new Error('strict close failed');
+    const settled = vi.fn();
+    await runtime.start();
+    const session = driver.last;
+    const close = vi.spyOn(session, 'close').mockImplementationOnce(() => closing);
+    try {
+      let count = 0;
+      Object.assign(session, { sendWithReceipt: async (...args: Parameters<typeof session.send>) => {
+        await session.send(...args);
+        return ++count === 1 ? receipt : { delivery: 'prompt', nativeTurn: { id: `native-${count}`, completed: false } };
+      } });
+      const sending = withFederationInput({ id: 'strict-causal', cause: { rootId: 'strict-causal', depth: 4 } } as FederatedRequest,
+        () => runtime.sendMessage('first', { source: 'mcp' }));
+      await flush();
+      expect(session.sent).toHaveLength(1);
+      expect(runtime.hasPendingWork()).toBe(true);
+      const stopping = runtime.stop({ throwOnFailure: true }).catch((error: unknown) => error);
+      await flush();
+      expect(close).toHaveBeenCalledOnce();
+      resolveReceipt({ delivery: 'prompt', nativeTurn: { id: 'native-1', completed: false } });
+      expect(await sending).toMatchObject({ delivery: 'prompt' });
+      rejectClose(closeError);
+      expect(await stopping).toBe(closeError);
+      expect(runtime.isRunning()).toBe(true);
+      expect(driver.sessions).toEqual([session]);
+      expect.soft(runtime.hasPendingWork()).toBe(true);
+      const second = await runtime.sendMessage('second', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'second', onSettled: settled } });
+      expect(second.delivery).toBe('queued');
+      expect((await runtime.sendMessage('third', { source: 'user' })).delivery).toBe('queued');
+      expect(session.sent).toHaveLength(1);
+      expect(settled).not.toHaveBeenCalled();
+      session.emit({ type: 'turn_started', data: { nativeTurnId: 'native-1' } });
+      session.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(session.sent).toHaveLength(2);
+      expect(settled).toHaveBeenCalledExactlyOnceWith('delivered');
+      session.emit({ type: 'turn_started', data: { nativeTurnId: 'native-2' } });
+      session.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(session.sent).toHaveLength(3);
+      session.emit({ type: 'turn_started', data: { nativeTurnId: 'native-3' } });
+      session.emit({ type: 'turn_ended', data: {} }); await flush();
+      expect(runtime.hasPendingWork()).toBe(false);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+      expect(session.sent.map((x) => x.content)).toEqual(['first', 'second', 'third'].map((text) => [{ type: 'text', text }]));
+      expect(settled).toHaveBeenCalledExactlyOnceWith('delivered');
+    } finally { close.mockRestore(); await runtime.stop(); stopTracking(); }
+  });
+
   it('resumes input held after a queued native turn ends before its receipt', async () => {
     const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
     const { runtime } = makeRuntime(driver);
