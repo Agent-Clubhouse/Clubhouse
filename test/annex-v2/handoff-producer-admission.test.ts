@@ -5,6 +5,7 @@ import * as nativeFs from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { performance } from 'perf_hooks';
 import { promisify } from 'util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GrantChangeMode } from '../../src/shared/agent-grant-changes';
@@ -83,7 +84,96 @@ type FailureStage = 'setup' | 'work' | 'release' | 'teardown' | 'body';
 type Failure = Readonly<{ stage: FailureStage; error: unknown }>;
 type Completion = Readonly<{ failures: readonly Failure[] }>;
 type CoreCompletion = Completion & Readonly<{ teardown: readonly Completion[]; error?: unknown }>;
+type RetirementOrigin = 'manual' | 'hook' | 'other';
+type ReleaseOrigin = 'body' | 'hook' | 'core' | 'other';
+type PhaseSlot = 'bodyEntry' | 'rejection' | 'sourceEntry' | 'coreEntry' | 'hookEntry' | 'releaseEntry'
+  | 'releaseReturn' | 'preparation' | 'core' | 'body' | 'complete' | 'hook';
+type Phase = 'body-entry' | 'rejection-fulfilled' | 'rejection-rejected' | 'source-entered'
+  | `core-created-${RetirementOrigin}` | 'hook-request-fenced'
+  | `hold-release-${ReleaseOrigin}-enter` | `hold-release-${ReleaseOrigin}-${'returned' | 'threw'}`
+  | `${'preparation' | 'core' | 'body' | 'hook'}-${'fulfilled' | 'rejected'}` | 'owner-complete';
+type PhaseRow = Readonly<{ owner: number; elapsedMs: number; phase: Phase }>;
+type PhaseObserver = {
+  claimed: Set<PhaseSlot>;
+  rows: Partial<Record<PhaseSlot, PhaseRow>>;
+  baseline?: number;
+  last?: number;
+  unavailable: boolean;
+  noticeAttempted: boolean;
+  clock: () => number;
+  build: (elapsedMs: number, phase: Phase) => PhaseRow;
+  serialize: (row: PhaseRow) => string;
+  publish: (line: string) => void;
+};
+// One console channel: <=12 rows, each <=256 ASCII bytes plus this fixed prefix/newline.
+// On any known observer fault, stop rich publication and attempt this one prebuilt notice.
+// Console return is only an emission attempt; there is no raw mirror, retry, drain or ACK.
+const phasePrefix = 'Producer fixture phase: ';
+const phaseUnavailable = 'Producer fixture phase observer unavailable (owner 1; missing phases unobserved)';
+let firstActualOwner = true;
+
+function phaseUnavailableOnce(observer: PhaseObserver): void {
+  observer.unavailable = true;
+  if (observer.noticeAttempted) return;
+  observer.noticeAttempted = true;
+  try { observer.publish(phaseUnavailable); } catch { /* Optional status attempt, never an ACK. */ }
+}
+
+function attachPhaseObserver(owner: FixtureOwner): void {
+  fixtureDiagnostic(() => {
+    const observer: PhaseObserver = {
+      claimed: new Set(), rows: {}, unavailable: false, noticeAttempted: false,
+      clock: () => performance.now(),
+      build: (elapsedMs, phase) => Object.freeze({ owner: 1, elapsedMs, phase }),
+      serialize: (row) => JSON.stringify(row),
+      publish: (line) => { console.error(line); },
+    };
+    owner.phases = observer;
+    try {
+      const baseline = observer.clock();
+      if (!Number.isFinite(baseline) || baseline < 0) throw new Error('Unavailable monotonic baseline.');
+      observer.baseline = baseline;
+      observer.last = baseline;
+    } catch { phaseUnavailableOnce(observer); }
+  });
+}
+
+function markPhase(owner: FixtureOwner, slot: PhaseSlot, phase: Phase): void {
+  fixtureDiagnostic(() => {
+    const observer = owner.phases;
+    if (!observer || observer.claimed.has(slot)) return;
+    // Reserve BEFORE any optional clock/build/publisher can synchronously reenter.
+    observer.claimed.add(slot);
+    if (observer.unavailable) return;
+    try {
+      const now = observer.clock();
+      if (observer.baseline === undefined || observer.last === undefined || !Number.isFinite(now)
+        || now < observer.last || now < observer.baseline) throw new Error('Unavailable monotonic reading.');
+      observer.last = now;
+      const row = Object.freeze(observer.build(now - observer.baseline, phase));
+      observer.rows[slot] = row;
+      const serialized = observer.serialize(row);
+      if (typeof serialized !== 'string' || serialized.length > 256 || /[^\x20-\x7e]/.test(serialized)) {
+        throw new Error('Unavailable bounded phase serialization.');
+      }
+      const line = phasePrefix + serialized;
+      observer.publish(line);
+    } catch { phaseUnavailableOnce(observer); }
+  });
+}
+
+function observePhaseSettlement(owner: FixtureOwner, pending: Promise<unknown>, slot: 'rejection' | 'preparation' | 'core' | 'body' | 'hook'): void {
+  fixtureDiagnostic(() => {
+    if (!owner.phases) return;
+    // Observe the original raw promise, never replace it with this detached branch.
+    void pending.then(
+      () => { markPhase(owner, slot, `${slot}-fulfilled`); },
+      () => { markPhase(owner, slot, `${slot}-rejected`); },
+    );
+  });
+}
 type FixtureOwner = {
+  phases?: PhaseObserver;
   directory?: string;
   fixture?: Fixture;
   stop?: () => Promise<void>;
@@ -93,8 +183,8 @@ type FixtureOwner = {
   complete: boolean;
   hookRequested: boolean;
   operations: Promise<unknown>[];
-  releases: Array<() => void>;
-  holds: Array<() => void>;
+  releases: Array<(origin?: ReleaseOrigin) => void>;
+  holds: Array<(origin?: ReleaseOrigin) => void>;
   released: Set<() => void>;
   releaseFailures: Failure[];
   toolWork: Array<{ tool: string; started: number; state: 'pending' | 'completed' | 'failed' }>;
@@ -145,15 +235,23 @@ function admitOwner(): FixtureOwner {
   if (activeOwner && !activeOwner.complete) throw new Error('Previous producer fixture owner is unfinished; shared setup refused.');
   const owner = newOwner();
   activeOwner = owner;
+  if (firstActualOwner) {
+    firstActualOwner = false;
+    attachPhaseObserver(owner);
+  }
   return owner;
 }
 
 function observe(owner: FixtureOwner, stage: 'setup' | 'body', callback: () => Promise<void>): Promise<void> {
-  const pending = Promise.resolve().then(() => bodyOwner.run(owner, callback));
+  const pending = Promise.resolve().then(() => bodyOwner.run(owner, () => {
+    if (stage === 'body') markPhase(owner, 'bodyEntry', 'body-entry');
+    return callback();
+  }));
   owner[stage] = pending.then(
     () => Object.freeze({ failures: Object.freeze([]) }),
     (error: unknown) => Object.freeze({ failures: Object.freeze([Object.freeze({ stage, error })]) }),
   );
+  if (stage === 'body') observePhaseSettlement(owner, pending, 'body');
   return pending;
 }
 
@@ -213,12 +311,12 @@ beforeEach(async (context) => {
   });
 });
 
-function releaseOwned(owner: FixtureOwner, callbacks: Array<() => void>): void {
+function releaseOwned(owner: FixtureOwner, callbacks: Array<(origin?: ReleaseOrigin) => void>, origin: ReleaseOrigin): void {
   for (const release of callbacks.splice(0)) {
     if (owner.released.has(release)) continue;
     owner.released.add(release);
     const before = owner.releaseFailures.length;
-    try { release(); } catch (error) {
+    try { release(origin); } catch (error) {
       if (!owner.releaseFailures.slice(before).some((failure) => failure.error === error)) {
         owner.releaseFailures.push(Object.freeze({ stage: 'release', error }));
       }
@@ -226,18 +324,21 @@ function releaseOwned(owner: FixtureOwner, callbacks: Array<() => void>): void {
   }
 }
 
-function heldRelease(owner: FixtureOwner, release: () => void): () => void {
+function heldRelease(owner: FixtureOwner, release: () => void, preparationPhase = false): (origin?: ReleaseOrigin) => void {
   let released = false;
-  const finish = () => {
+  const finish = (origin: ReleaseOrigin = 'body') => {
     if (released) return;
     released = true;
+    if (preparationPhase) markPhase(owner, 'releaseEntry', `hold-release-${origin}-enter`);
     try { release(); } catch (error) {
       owner.releaseFailures.push(Object.freeze({ stage: 'release', error }));
+      if (preparationPhase) markPhase(owner, 'releaseReturn', `hold-release-${origin}-threw`);
       throw error;
     }
+    if (preparationPhase) markPhase(owner, 'releaseReturn', `hold-release-${origin}-returned`);
   };
   owner.holds.push(finish);
-  if (owner.hookRequested) releaseOwned(owner, owner.holds);
+  if (owner.hookRequested) releaseOwned(owner, owner.holds, 'hook');
   return finish;
 }
 
@@ -259,7 +360,7 @@ async function retireCore(owner: FixtureOwner): Promise<CoreCompletion> {
       }
     }
   });
-  releaseOwned(owner, owner.releases);
+  releaseOwned(owner, owner.releases, 'core');
   const failures: Failure[] = [...(await owner.setup)?.failures ?? []];
   const drained = new Set<Promise<unknown>>();
   while (owner.operations.length) {
@@ -271,7 +372,7 @@ async function retireCore(owner: FixtureOwner): Promise<CoreCompletion> {
     for (const outcome of await Promise.allSettled(batch)) {
       if (outcome.status === 'rejected') failures.push(Object.freeze({ stage: 'work', error: outcome.reason }));
     }
-    releaseOwned(owner, owner.releases);
+    releaseOwned(owner, owner.releases, 'core');
   }
   const teardown: Completion[] = [];
   for (const finish of owner.teardown) {
@@ -284,19 +385,21 @@ async function retireCore(owner: FixtureOwner): Promise<CoreCompletion> {
   return Object.freeze({ failures: Object.freeze(failures), teardown: Object.freeze(teardown), error: failureError(failures) });
 }
 
-function coreCompletion(owner: FixtureOwner): Promise<CoreCompletion> {
+function coreCompletion(owner: FixtureOwner, origin: RetirementOrigin = 'other'): Promise<CoreCompletion> {
   if (!owner.core) {
     owner.retiring = true;
     let resolve!: (record: CoreCompletion) => void;
     let reject!: (error: unknown) => void;
     owner.core = new Promise<CoreCompletion>((complete, failed) => { resolve = complete; reject = failed; });
+    observePhaseSettlement(owner, owner.core, 'core');
+    markPhase(owner, 'coreEntry', `core-created-${origin}`);
     retireCore(owner).then(resolve, reject);
   }
   return owner.core;
 }
 
 async function cleanupFixture(owner = fixtureOwner()): Promise<void> {
-  const record = await coreCompletion(owner);
+  const record = await coreCompletion(owner, 'manual');
   if (record.failures.length) throw record.error;
 }
 
@@ -326,8 +429,10 @@ function hookCompletion(owner: FixtureOwner): Promise<Completion> {
     let reject!: (error: unknown) => void;
     owner.hook = new Promise<Completion>((complete, failed) => { resolve = complete; reject = failed; });
     owner.hookRequested = true;
-    const retiring = coreCompletion(owner);
-    releaseOwned(owner, owner.holds);
+    const retiring = coreCompletion(owner, 'hook');
+    observePhaseSettlement(owner, owner.hook, 'hook');
+    markPhase(owner, 'hookEntry', 'hook-request-fenced');
+    releaseOwned(owner, owner.holds, 'hook');
     (async () => {
       const core = await retiring;
       const body = await owner.body;
@@ -335,6 +440,7 @@ function hookCompletion(owner: FixtureOwner): Promise<Completion> {
       owner.final = Object.freeze({ failures: Object.freeze(all) });
       owner.complete = true;
       if (activeOwner === owner) activeOwner = undefined;
+      markPhase(owner, 'complete', 'owner-complete');
       return Object.freeze({ failures: Object.freeze(all.filter((failure) => !owner.acknowledged.has(failure))) });
     })().then(resolve, reject);
   }
@@ -464,15 +570,18 @@ describe('isolated real MCP producer domain admission', () => {
 
   async function heldFixturePreparation(fx: Fixture) {
     const entered = deferred(), release = deferred();
-    const finish = heldRelease(fixtureOwner(), release.resolve);
+    const owner = fixtureOwner();
+    const finish = heldRelease(owner, release.resolve, true);
     const source = fx.source.callerHandoffSource;
     vi.spyOn(fx.source, 'callerHandoffSource').mockImplementation(async (...args) => {
       const selected = await source(...args);
+      markPhase(owner, 'sourceEntry', 'source-entered');
       entered.resolve();
       await release.promise;
       return selected;
     });
     const pending = fx.tools.callTool(caller, 'prepare_handoff', { mode: 'worktree' });
+    observePhaseSettlement(owner, pending, 'preparation');
     await Promise.race([
       entered.promise,
       pending.then(() => { throw new Error('Preparation settled before its actual source hold.'); }),
@@ -489,7 +598,9 @@ describe('isolated real MCP producer domain admission', () => {
       description: 'Isolated actual overlapping teardown rejection control.',
       inputSchema: { type: 'object', properties: { to: { type: 'string' } }, required: ['to'] },
     }, async () => { throw failure; }, { grant });
-    const rejection = await fx.tools.callTool(caller, 'fixture_overlap_rejection', { to: receiver }).then(
+    const rejecting = fx.tools.callTool(caller, 'fixture_overlap_rejection', { to: receiver });
+    observePhaseSettlement(fixtureOwner(), rejecting, 'rejection');
+    const rejection = await rejecting.then(
       () => { throw new Error('Expected an actual registered caller rejection.'); },
       (error: unknown) => error,
     );
@@ -734,6 +845,181 @@ describe('isolated real MCP producer domain admission', () => {
     ];
     return owner;
   }
+
+  function phaseControl(owner: FixtureOwner) {
+    attachPhaseObserver(owner);
+    const observer = owner.phases;
+    if (!observer) throw new Error('Expected isolated diagnostic observer.');
+    const lines: string[] = [];
+    observer.publish = (line) => { lines.push(line); };
+    return { observer, lines };
+  }
+
+  it.each(['manual', 'hook'] as const)('phase observer retains first %s origin and reserved late terminal slots through actual release reentry', async (origin) => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), { observer, lines } = phaseControl(owner);
+    const bodyGate = deferred(), workGate = deferred(), reached = deferred();
+    let releases = 0, teardowns = 0;
+    const fences: Array<{ retiring: boolean; core?: Promise<CoreCompletion> }> = [];
+    owner.teardown.unshift(() => { teardowns++; });
+    const work = workGate.promise.then(() => fs.writeFile(path.join(fixtureDirectory(owner), 'actual-work'), 'owned'));
+    owner.operations.push(work);
+    observePhaseSettlement(owner, work, 'preparation');
+    let reenteredHook: Promise<Completion> | undefined, reenteredCore: Promise<CoreCompletion> | undefined;
+    const release = heldRelease(owner, () => {
+      releases++;
+      reenteredHook = hookCompletion(owner);
+      reenteredCore = coreCompletion(owner, 'other');
+      workGate.resolve();
+    }, true);
+    const publishing = observer.publish;
+    observer.publish = (line) => {
+      publishing(line);
+      if (line.includes('core-created-')) {
+        fences.push({ retiring: owner.retiring, core: owner.core });
+        reenteredCore = coreCompletion(owner, 'other');
+      }
+      if (line.includes('hold-release-') && line.includes('-enter')) release('other');
+    };
+    const actual = observe(owner, 'body', async () => { reached.resolve(); await bodyGate.promise; });
+    await reached.promise;
+    let joining: Promise<Completion> | undefined;
+    if (origin === 'manual') {
+      const original = coreCompletion(owner, 'manual');
+      for (let repeat = 0; repeat < 20; repeat++) expect(coreCompletion(owner, 'other')).toBe(original);
+      release('body');
+      await original;
+    } else joining = hookCompletion(owner);
+    const core = coreCompletion(owner);
+    expect(fences).toEqual([{ retiring: true, core }]);
+    expect((await core).failures).toEqual([]);
+    expect(reenteredCore).toBe(core);
+    expect(reenteredHook).toBe(joining ?? hookCompletion(owner));
+    joining ??= hookCompletion(owner);
+    expect(owner.complete).toBe(false);
+    expect(observer.rows.complete).toBeUndefined();
+    expect(observer.rows.hook).toBeUndefined();
+    expect(observer.rows.coreEntry?.phase).toBe(`core-created-${origin}`);
+    expect(observer.rows.releaseEntry?.phase).toBe(`hold-release-${origin === 'manual' ? 'body' : 'hook'}-enter`);
+    expect(observer.rows.releaseReturn?.phase).toBe(`hold-release-${origin === 'manual' ? 'body' : 'hook'}-returned`);
+    bodyGate.resolve();
+    await actual;
+    expect((await joining).failures).toEqual([]);
+    for (let repeat = 0; repeat < 20; repeat++) { release('other'); expect(hookCompletion(owner)).toBe(joining); }
+    expect(releases).toBe(1);
+    expect(teardowns).toBe(1);
+    expect(observer.rows.body?.phase).toBe('body-fulfilled');
+    expect(observer.rows.complete?.phase).toBe('owner-complete');
+    expect(observer.rows.hook?.phase).toBe('hook-fulfilled');
+    expect(lines).toHaveLength(Object.keys(observer.rows).length);
+    expect(lines.length).toBeLessThanOrEqual(12);
+    for (const row of Object.values(observer.rows)) expect(Object.isFrozen(row)).toBe(true);
+    expect(new Set(lines).size).toBe(lines.length);
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it('phase observer leaves owner and hook terminal slots for a genuinely late original hook', async () => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), { observer, lines } = phaseControl(owner);
+    const actual = observe(owner, 'body', async () => { await cleanupFixture(owner); });
+    await actual;
+    const core = coreCompletion(owner);
+    expect((await core).failures).toEqual([]);
+    for (let repeat = 0; repeat < 20; repeat++) expect(coreCompletion(owner, 'hook')).toBe(core);
+    expect(observer.rows.body?.phase).toBe('body-fulfilled');
+    expect(observer.rows.complete).toBeUndefined();
+    expect(observer.rows.hook).toBeUndefined();
+    expect(owner.complete).toBe(false);
+    const hook = hookCompletion(owner);
+    expect((await hook).failures).toEqual([]);
+    expect(observer.rows.coreEntry?.phase).toBe('core-created-manual');
+    expect(observer.rows.hookEntry?.phase).toBe('hook-request-fenced');
+    expect(observer.rows.complete?.phase).toBe('owner-complete');
+    expect(observer.rows.hook?.phase).toBe('hook-fulfilled');
+    expect(lines).toHaveLength(7);
+  }));
+
+  it('phase observer baseline failure remains unavailable while actual owner accounting continues', async () => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), lines: unknown[] = [];
+    const logging = vi.spyOn(console, 'error').mockImplementation((line: unknown) => { lines.push(line); });
+    const clock = vi.spyOn(performance, 'now').mockImplementationOnce(() => { throw new Error('Optional baseline fault.'); });
+    try { attachPhaseObserver(owner); } finally { clock.mockRestore(); logging.mockRestore(); }
+    expect(owner.phases?.unavailable).toBe(true);
+    expect(lines).toEqual([phaseUnavailable]);
+    await observe(owner, 'body', async () => { await fs.writeFile(path.join(fixtureDirectory(owner), 'actual'), 'owned'); });
+    expect((await hookCompletion(owner)).failures).toEqual([]);
+    expect(owner.complete).toBe(true);
+    expect(owner.phases?.rows).toEqual({});
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it.each(['clock', 'regression', 'nonfinite', 'construction', 'serialization', 'publisher'] as const)('phase observer contains %s faults without changing actual promises errors or teardown', async (fault) => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), { observer, lines } = phaseControl(owner);
+    const releaseError = new Error('Original actual phase-control release failure.');
+    const bodyError = new Error('Original actual phase-control body failure.');
+    let releases = 0, teardowns = 0, publicationAttempts = 0;
+    owner.teardown.unshift(() => { teardowns++; });
+    const publish = observer.publish;
+    observer.publish = (line) => {
+      publicationAttempts++;
+      if (fault === 'publisher') throw new Error('Optional publisher fault.');
+      publish(line);
+    };
+    if (fault === 'clock') observer.clock = () => { throw new Error('Optional clock fault.'); };
+    if (fault === 'regression') observer.clock = () => (observer.baseline ?? 0) - 1;
+    if (fault === 'nonfinite') observer.clock = () => Number.NaN;
+    if (fault === 'construction') observer.build = () => { throw new Error('Optional construction fault.'); };
+    if (fault === 'serialization') observer.serialize = () => { throw new Error('Optional serialization fault.'); };
+    const release = heldRelease(owner, () => { releases++; throw releaseError; }, true);
+    const actual = observe(owner, 'body', async () => { throw bodyError; });
+    await expect(actual).rejects.toBe(bodyError);
+    expect(owner.body).not.toBe(actual);
+    const hook = hookCompletion(owner), core = coreCompletion(owner);
+    expect(coreCompletion(owner)).toBe(core);
+    expect(hookCompletion(owner)).toBe(hook);
+    const record = await core, final = await hook;
+    release();
+    expect(record.failures.some((failure) => failure.stage === 'release' && failure.error === releaseError)).toBe(true);
+    expect(final.failures.some((failure) => failure.stage === 'body' && failure.error === bodyError)).toBe(true);
+    expect(final.failures.filter((failure) => failure.error === releaseError)).toHaveLength(1);
+    expect(releases).toBe(1);
+    expect(teardowns).toBe(1);
+    expect(owner.complete).toBe(true);
+    expect(observer.unavailable).toBe(true);
+    expect(observer.noticeAttempted).toBe(true);
+    expect(publicationAttempts).toBe(fault === 'publisher' ? 2 : 1);
+    expect(lines).toEqual(fault === 'publisher' ? [] : [phaseUnavailable]);
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it('phase observer reserves before optional reentry and records release throw without swallowing the original', async () => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), { observer, lines } = phaseControl(owner);
+    const original = new Error('Original release throw after optional reentry.');
+    let releases = 0;
+    const fences: Array<{ retiring: boolean; core?: Promise<CoreCompletion>; joined: Promise<CoreCompletion> }> = [];
+    const release = heldRelease(owner, () => { releases++; throw original; }, true);
+    const publish = observer.publish;
+    observer.publish = (line) => {
+      publish(line);
+      if (line.includes('hold-release-body-enter')) release('other');
+      if (line.includes('core-created-')) {
+        fences.push({ retiring: owner.retiring, core: owner.core, joined: coreCompletion(owner, 'hook') });
+      }
+    };
+    expect(() => release('body')).toThrow(original);
+    release('hook');
+    const core = coreCompletion(owner, 'manual');
+    expect(fences).toEqual([{ retiring: true, core, joined: core }]);
+    const record = await core;
+    expect(record.error).toBe(original);
+    await expect(cleanupFixture(owner)).rejects.toBe(original);
+    expect((await hookCompletion(owner)).failures[0].error).toBe(original);
+    expect(observer.rows.releaseEntry?.phase).toBe('hold-release-body-enter');
+    expect(observer.rows.releaseReturn?.phase).toBe('hold-release-body-threw');
+    expect(observer.rows.coreEntry?.phase).toBe('core-created-manual');
+    expect(releases).toBe(1);
+    expect(lines.filter((line) => line.includes('hold-release-body-enter'))).toHaveLength(1);
+    expect(observer.rows.complete?.phase).toBe('owner-complete');
+    expect(observer.rows.hook?.phase).toBe('hook-fulfilled');
+  }));
 
   it.each(['caller', 'body'] as const)('owner lifecycle closes automatic hook intake before synchronous release admission (%s)', async (kind) => runFixtureBody(async () => {
     const fx = current(), owner = kind === 'caller' ? fixtureOwner() : await sentinelOwner();
