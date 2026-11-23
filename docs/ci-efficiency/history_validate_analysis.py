@@ -9,7 +9,7 @@ def main():
  def write(name,rows):
   if not rows:return
   with (data/name).open('w') as f:
-   w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
+   w=csv.DictWriter(f,fieldnames=list(rows[0]),lineterminator='\n');w.writeheader();w.writerows(rows)
  runs={r['run_id']:r for r in read('history-runs.csv') if r['workflow']=='Validate'}
  js=collections.defaultdict(list)
  for j in read('history-jobs.csv'):

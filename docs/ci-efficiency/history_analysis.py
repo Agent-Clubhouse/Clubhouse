@@ -54,7 +54,7 @@ def main():
   rows=list(rows)
   if not rows and not fields: return
   with (out/name).open('w') as f:
-   w=csv.DictWriter(f,fieldnames=fields or list(rows[0])); w.writeheader(); w.writerows(rows)
+   w=csv.DictWriter(f,fieldnames=fields or list(rows[0]),lineterminator='\n'); w.writeheader(); w.writerows(rows)
  def stratum(r):
   week=(stamp(r['created_at']).date()-stamp(START).date()).days//7
   return (r.get('name') or str(r['workflow_id']),r['event'],str(week),r.get('conclusion') or r['status'])
