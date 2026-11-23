@@ -696,8 +696,8 @@ describe('routine instructions: isolate role delivery from saved settings and in
     expect.soft(svc.getDispatcherState().setup.status).toBe('done');
     expect.soft(changed).toHaveBeenCalledWith(expect.objectContaining({ setup: expect.objectContaining({ status: 'done' }) }));
     expect.soft(fs.readFileSync(workRoot).equals(previous)).toBe(true);
-    expect.soft(chatFile()).toContain('Exact new personality.');
-    expect.soft(chatFile()).toContain('Your name is Sample.');
+    expect.soft(fs.readFileSync(path.join(chatDir(), 'CLAUDE.md'), 'utf8')).toContain('Exact new personality.');
+    expect.soft(fs.readFileSync(path.join(chatDir(), 'CLAUDE.md'), 'utf8')).toContain('Your name is Sample.');
     expect.soft(agentConfig.flushAgentConfig).toHaveBeenCalledWith(dispatcherDir());
     expect.soft(agentConfig.flushAgentConfig).toHaveBeenCalledWith(chatDir());
     expect.soft(agentSystem.spawnAgent).not.toHaveBeenCalled();
@@ -734,7 +734,7 @@ describe('routine instructions: isolate role delivery from saved settings and in
     await svc.refreshDispatcherInstructions().catch((e) => { error = e; });
     expect.soft(error).toBeUndefined();
     expect.soft(fs.readFileSync(workRoot).equals(previous)).toBe(true);
-    expect.soft(chatFile()).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
+    expect.soft(fs.readFileSync(path.join(chatDir(), 'CLAUDE.md'), 'utf8')).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
     expect.soft(provider.writeInstructions).not.toHaveBeenCalledWith(dispatcherDir(), expect.any(String));
     expect.soft(provider.writeInstructions).toHaveBeenCalledWith(chatDir(), expect.any(String));
     expectInstructionWarning('durable_1', 'work');
@@ -750,7 +750,7 @@ describe('routine instructions: isolate role delivery from saved settings and in
     await settle();
     expect.soft(svc.getDispatcherState().config?.name).toBe('Renamed sample');
     expect.soft(changed).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ name: 'Renamed sample' }) }));
-    expect.soft(chatFile()).toContain('Your name is Renamed sample.');
+    expect.soft(fs.readFileSync(path.join(chatDir(), 'CLAUDE.md'), 'utf8')).toContain('Your name is Renamed sample.');
     expect.soft(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md')).equals(previous)).toBe(true);
     expectInstructionWarning('durable_1', 'work');
   });
