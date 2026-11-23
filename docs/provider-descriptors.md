@@ -64,6 +64,10 @@ declared `quota: 'unknown'` has no reader at all and ranks `last_resort`,
 behind every other eligible tier. Today that is Copilot. Settings explains the
 ranking: "Its quota is unknown."
 
+Status: the generic policy and ranking are implemented. No provider uses
+`opt_in` or `excluded` yet. The Antigravity entry and its starting Auto value
+(proposed `opt_in`) are deferred to the provider integration (#3789, #3803).
+
 ## Adding a provider
 
 Add a descriptor. Its telemetry code also needs a reviewed addition to

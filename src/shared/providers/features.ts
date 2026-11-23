@@ -72,10 +72,10 @@ export interface ProviderFeatureDeclarations {
  * that decides each. Only direct mappings belong here.
  */
 export const SESSION_FEATURE_FIELDS = {
-  steering: (c) => c.steer,
-  cancellation: (c) => c.interrupt,
-  images: (c) => c.images,
-  questions: (c) => c.questions,
+  steering: (c) => c.steer === true,
+  cancellation: (c) => c.interrupt === true,
+  images: (c) => c.images === true,
+  questions: (c) => c.questions === true,
   session_resume: (c) => c.resume !== 'none',
   usage: (c) => c.usage !== 'none',
   model_switch: (c) => c.modelSwitch !== 'none',

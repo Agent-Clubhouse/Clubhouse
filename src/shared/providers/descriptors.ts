@@ -72,7 +72,8 @@ export interface ProviderDescriptor {
   glyph: string;
   badgeColor: ProviderBadgeColor;
   mascot: ProviderMascot;
-  telemetryCode: ProviderTelemetryCode;
+  /** `other` until a reviewed addition to `PROVIDER_TELEMETRY_CODES`. */
+  telemetryCode: ProviderTelemetryCode | 'other';
   install: { docsUrl: string };
   /**
    * The Access levels each runtime can start at. Chat follows each driver's
@@ -241,6 +242,13 @@ export type AutoProviderId = IdsWhere<{ helperRouting: { auto: 'candidate' | 'op
 export type BudgetReserveProviderId = IdsWhere<{ helperRouting: { budgetReserve: true } }>;
 /** Providers reported in handoff capacity. */
 export type CapacityProviderId = IdsWhere<{ capacityTracked: true }>;
+
+/**
+ * The order handoff capacity lists its providers in, as sent to peers before
+ * descriptors existed. Peers check the key set only; the order is kept so the
+ * JSON is byte-for-byte the same. Every capacity-tracked provider must be here.
+ */
+export const CAPACITY_WIRE_ORDER: readonly CapacityProviderId[] = ['claude-code', 'copilot-cli', 'codex-cli'];
 
 export function isBuiltinProviderId(id: unknown): id is BuiltinProviderId {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(PROVIDER_DESCRIPTORS, id);

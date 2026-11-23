@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { BUILTIN_PROVIDER_IDS, PROVIDER_DESCRIPTORS, providerDescriptor, providerIdsWhere, providerTelemetryCode } from './descriptors';
+import { BUILTIN_PROVIDER_IDS, CAPACITY_WIRE_ORDER, PROVIDER_DESCRIPTORS, providerDescriptor, providerIdsWhere, providerTelemetryCode } from './descriptors';
 import { accessLevelsFor } from '../agent-access';
 import { AUTO_CANDIDATE_PROVIDERS, BUILTIN_PRESETS, PRESET_PROVIDERS, autoPolicySkip, autoPolicySkipFor, isLastResortProvider } from '../helper-routing';
 import { AUTO_RESERVE_PROVIDERS, defaultAutoBudgetPolicy } from '../helper-auto-budget';
@@ -47,13 +47,14 @@ describe('descriptors reproduce the former lists exactly', () => {
   });
 
   it('handoff capacity keys (handoff-capacity.ts); peers check the set, not the order', () => {
-    expect([...CAPACITY_PROVIDERS].sort()).toEqual(['claude-code', 'codex-cli', 'copilot-cli']);
+    expect(CAPACITY_PROVIDERS).toEqual(['claude-code', 'copilot-cli', 'codex-cli']);
+    expect([...CAPACITY_WIRE_ORDER].sort()).toEqual([...providerIdsWhere((d) => d.capacityTracked)].sort());
     const parsed = parseHandoffCapacity({
       machine: Array(32).fill('ab').join(':'), online: true, sampledAt: 1, lastSeen: null,
       agents: { running: 0, sleeping: 0, idleDurable: 0 }, load: 'low', disk: 'ample',
       providers: { 'claude-code': 'available', 'copilot-cli': 'limited', 'codex-cli': 'unknown' }, accepting_handoffs: true,
     });
-    expect(parsed.online && parsed.providers).toEqual({ 'claude-code': 'available', 'copilot-cli': 'limited', 'codex-cli': 'unknown' });
+    expect(JSON.stringify(parsed.online && parsed.providers)).toBe('{"claude-code":"available","copilot-cli":"limited","codex-cli":"unknown"}');
   });
 
   it('display strings per surface', () => {
@@ -89,6 +90,10 @@ describe('descriptors reproduce the former lists exactly', () => {
     expect(ATTR.orchestrator('antigravity-cli' as never).value).toBe('other');
     expect(ATTR.helperRoutingRequestedCli('auto').value).toBe('auto');
     expect(ATTR.helperAskerCli('none').value).toBe('none');
+  });
+
+  it('every Auto candidate has presets', () => {
+    for (const id of AUTO_CANDIDATE_PROVIDERS) expect(PROVIDER_DESCRIPTORS[id].helperRouting.presets).toBeDefined();
   });
 
   it('only own keys resolve', () => {
@@ -143,7 +148,6 @@ describe('provider lists come from descriptors', () => {
   /** Files that may name every provider, and why. Keep this short. */
   const EXEMPT_FILES: Record<string, string> = {
     'renderer/features/agents/chat/fixtures/providers.ts': 'design-gallery fixtures, one sample session per provider',
-    'renderer/features/agents/SleepingMascots.tsx': 'each drawing tags its own provider in data-mascot; selection uses the descriptor',
   };
   const isTest = (rel: string) => /\.(test|spec|qa)\.tsx?$|\.runtime\.qa\.ts$|(^|\/)__(tests|fixtures)__\//.test(rel);
 
@@ -161,7 +165,8 @@ describe('provider lists come from descriptors', () => {
       .map((file) => path.relative(root, file).split(path.sep).join('/'))
       .filter((rel) => !isTest(rel) && !EXEMPT_DIRS.some((d) => rel.startsWith(d)) && !(rel in EXEMPT_FILES))
       .filter((rel) => {
-        const text = fs.readFileSync(path.join(root, rel), 'utf8');
+        // A mascot drawing tags its own provider (`data-mascot="codex-cli"`); that is one id per element, not a list.
+        const text = fs.readFileSync(path.join(root, rel), 'utf8').replace(/\bdata-mascot="[a-z-]+"/g, '');
         return BUILTIN_PROVIDER_IDS.every((id) => text.includes(`'${id}'`) || text.includes(`"${id}"`));
       });
     expect(offenders).toEqual([]);

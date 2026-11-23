@@ -69,12 +69,12 @@ export function isPresetProvider(value: unknown): value is PresetProvider {
 }
 
 /**
- * The providers `cli: "auto"` chooses between: descriptors whose Auto policy is
- * `candidate` or `opt_in` (#3803). Ranking follows the descriptor's quota kind:
+ * The providers `cli: "auto"` chooses between: descriptors with presets whose
+ * Auto policy is `candidate` or `opt_in` (#3803). Ranking follows the descriptor's quota kind:
  * an `unknown`-quota provider (Copilot) ranks last, behind even low and
  * temporarily unmeasured providers (#3279).
  */
-export const AUTO_CANDIDATE_PROVIDERS: readonly AutoCandidateProvider[] = providerIdsWhere<AutoCandidateProvider>((d) => d.helperRouting.auto !== 'excluded');
+export const AUTO_CANDIDATE_PROVIDERS: readonly AutoCandidateProvider[] = providerIdsWhere<AutoCandidateProvider>((d) => d.helperRouting.auto !== 'excluded' && d.helperRouting.presets !== undefined);
 export type AutoCandidateProvider = AutoProviderId & PresetProvider;
 
 export function isAutoCandidateProvider(value: unknown): value is AutoCandidateProvider {

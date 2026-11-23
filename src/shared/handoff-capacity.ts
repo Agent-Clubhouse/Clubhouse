@@ -1,8 +1,8 @@
 import { isMachineFingerprint } from './agent-address';
-import { providerIdsWhere, type CapacityProviderId } from './providers/descriptors';
+import { CAPACITY_WIRE_ORDER, providerIdsWhere, type CapacityProviderId } from './providers/descriptors';
 
 /** Descriptors with `capacityTracked`. Peers validate this exact key set, so changing it is a wire change. */
-export const CAPACITY_PROVIDERS: readonly CapacityProviderId[] = providerIdsWhere<CapacityProviderId>((d) => d.capacityTracked);
+export const CAPACITY_PROVIDERS: readonly CapacityProviderId[] = CAPACITY_WIRE_ORDER.filter((id) => providerIdsWhere((d) => d.capacityTracked).includes(id));
 export type CapacityProvider = CapacityProviderId;
 export type ProviderCapacity = 'available' | 'limited' | 'unavailable' | 'unknown';
 export interface CapacityAgentCounts {
