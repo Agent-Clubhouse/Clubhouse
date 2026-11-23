@@ -28,10 +28,9 @@
  * settings are shared (dispatcher-identity). Code calls the first the
  * coordinator; no user-facing text does.
  *
- * Its memory (#3038) is plain markdown in the folder's `memory/`. The index is
- * added to both agents' instructions files each time Clubhouse writes them,
- * and before each of their sessions starts, and an old `notes/` folder is
- * sorted into memory first (dispatcher-memory-migration.ts).
+ * Its memory (#3038) is plain markdown in the folder's `memory/`. Both role
+ * files require a current-memory lookup rather than embedding the index. Old
+ * `notes/` are sorted into memory first (dispatcher-memory-migration.ts).
  *
  * Behavior (#3045) sets each agent's model from the Auto mapping: before each
  * session starts, and at once when the level changes, switching a running
@@ -65,6 +64,8 @@ import { appendSection, instructionsWithSkills, writeDispatcherSkills, type Skil
 
 export { appendSection } from './dispatcher-skills';
 import { appLog } from '../log-service';
+import { broadcastToAllWindows } from '../../util/ipc-broadcast';
+import { IPC } from '../../../shared/ipc-channels';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
 import type { DurableAgentConfig, DurableConfigUpdates } from '../../../shared/types';
@@ -179,9 +180,9 @@ registerConcealedTools((agentId) => (isDispatcherIdentityAgentId(agentId) ? DISP
 
 /**
  * What either agent's instructions file holds: its instructions, then the
- * memory index (#3038), cut to its cap. Runs at every write, and before every
+ * stable memory lookup (#3038). Runs at every write, and before every
  * session start (prepareDispatcherSessionStart), so each session starts with
- * memory as it is now. Memory trouble leaves the instructions without the index.
+ * a pointer to current memory, never a stale embedded snapshot.
  */
 export function withDispatcherMemory(instructions: string): Promise<string> {
   return withMemoryIndex(instructions);
@@ -189,7 +190,7 @@ export function withDispatcherMemory(instructions: string): Promise<string> {
 
 /**
  * Called on the spawn path before either of the Dispatcher's agents starts:
- * rewrites its instructions file, so the session loads memory as it is now,
+ * rewrites its instructions file with the current memory lookup contract,
  * and gives it its Behavior model (#3045), or the user's pick (#3191).
  * Resolves with that model, which the start uses over whatever model its
  * caller last saw, or null when neither set one. A pick also names its
@@ -647,7 +648,7 @@ export async function setDispatcherPersonality(value: unknown): Promise<Dispatch
 }
 
 async function rewriteChatInstructions(): Promise<void> {
-  if (chatConfig && isDispatcherEnabled()) await writeInstructions(chatConfig, getDispatcherChatPath());
+  if (chatConfig && isDispatcherEnabled()) await refreshRoleInstructions(chatConfig, getDispatcherChatPath());
 }
 
 /**
@@ -692,7 +693,8 @@ export async function completeDispatcherSetup(input: DispatcherSetupInput): Prom
     await refreshAfterChange(dir);
     await rewriteChatInstructions();
     // Identity/provider writes are debounced. Finish acknowledges both records
-    // on disk, along with its settings and instructions, before publishing done.
+    // on disk and its settings before publishing done. Instruction-delivery
+    // failures are reported separately and do not roll back accepted settings.
     await agentConfig.flushAgentConfig(dir);
     await agentConfig.flushAgentConfig(getDispatcherChatPath());
     await saveDispatcherSetupStatus('done');
@@ -875,15 +877,42 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
     return;
   }
   const role: DispatcherRole = isDispatcherChatPath(dir) ? 'chat' : 'work';
-  const skills = (await writeSkills(dir, role, provider)) ?? undefined;
+  const skills = await writeSkills(dir, role, provider);
   await provider.writeInstructions(dir, await withDispatcherMemory(role === 'chat' ? chatInstructions(agent, skills) : appendSection(instructionsWithSkills(DISPATCHER_INSTRUCTIONS, 'work', skills), `Your name is ${cleanDispatcherName(agent.name) || DEFAULT_DISPATCHER_NAME}. The user chose it; use it when you introduce yourself.`)));
   instructionsWrittenFor.set(dir, instructionsKey(agent, dir));
 }
 
 /**
+ * Routine settings/startup work isolates each role's delivery failure. Only
+ * instruction publication is caught here; persistence/mirroring still reject.
+ * Session preparation deliberately calls strict writeInstructions instead.
+ */
+async function refreshRoleInstructions(agent: DurableAgentConfig, dir: string = getDispatcherPath()): Promise<void> {
+  try {
+    await writeInstructions(agent, dir);
+  } catch (err) {
+    const role: DispatcherRole = isDispatcherChatPath(dir) ? 'chat' : 'work';
+    appLog(NS, 'warn', 'Dispatcher instructions were not refreshed', {
+      meta: { role, agentId: agent.id, error: err instanceof Error ? err.message : String(err) },
+    });
+    // Existing best-effort renderer notice: no chat wake, delivery receipt,
+    // persistent status, raw error/custom text, or launch-failure code.
+    try {
+      broadcastToAllWindows(IPC.CHAT.RUNTIME_NOTICE, agent.id, {
+        level: 'warn', code: 'instruction_delivery',
+        message: `${role === 'work' ? 'Dispatcher controller' : 'Dispatcher chat'} instructions could not be refreshed. Required instruction files or guides may be missing, stale or incomplete.`,
+      });
+    } catch {
+      // telemetry-exempt: the original error is logged above; optional UI transport cannot abort the caller
+      appLog(NS, 'warn', 'Dispatcher instruction warning could not be displayed', { meta: { role, agentId: agent.id } });
+    }
+  }
+}
+
+/**
  * The chat's instructions (#3047): Clubhouse's text and its skills list
  * (#3051), then its name and the personality exactly as the user wrote it.
- * The memory index goes after.
+ * The stable memory lookup goes after.
  */
 export function chatInstructions(agent: Pick<DurableAgentConfig, 'name'>, skills?: SkillsConventions): string {
   return appendSection(instructionsWithSkills(DISPATCHER_CHAT_INSTRUCTIONS, 'chat', skills), personalityInstructions(agent.name, getDispatcherPersonality()));
@@ -897,22 +926,22 @@ function instructionsKey(agent: DurableAgentConfig, _dir: string): string {
 
 /**
  * Write the role's built-in skills (#3051) into the CLI's skills folder, so a
- * new app version's skills reach the agent with its instructions. Resolves
- * with the conventions they were written for, or null when they weren't:
- * then the instructions don't list them, and the agent keeps working.
+ * new app version's skills reach the agent with its instructions. Required
+ * delivery failure rejects before publishing a new root. Partial skill writes
+ * are not rolled back; a previous root/guide may itself be compact or stale.
  */
-async function writeSkills(dir: string, role: DispatcherRole, provider: OrchestratorProvider): Promise<SkillsConventions | null> {
-  const conventions = provider.conventions as SkillsConventions | undefined;
-  if (!conventions) return null;
+async function writeSkills(dir: string, role: DispatcherRole, provider: OrchestratorProvider): Promise<SkillsConventions> {
   try {
+    const conventions = provider.conventions as SkillsConventions | undefined;
+    if (!conventions) throw new Error('The Dispatcher needs a provider skills folder before its instructions can be written.');
     await writeDispatcherSkills(dir, role, conventions, getAllProviders().map((p) => p.conventions as SkillsConventions).filter(Boolean));
     return conventions;
   } catch (err) {
-    // telemetry-exempt: logged; the agent works from its instructions alone until the next write
+    // telemetry-exempt: logged and rethrown; keep prior instruction bytes, not a new incomplete root
     appLog(NS, 'warn', 'Could not write the Dispatcher\'s skills', {
       meta: { role, provider: provider.id, error: err instanceof Error ? err.message : String(err) },
     });
-    return null;
+    throw err;
   }
 }
 
@@ -935,8 +964,8 @@ async function reconcile(): Promise<void> {
     // First-run setup (#3047): an upgrade unless Clubhouse created its agent with setup.
     noteDispatcherOrigin(!(await createdWithSetup()));
     chatConfig = await ensureChat(config);
-    await writeInstructions(config);
-    await writeInstructions(chatConfig, getDispatcherChatPath());
+    await refreshRoleInstructions(config);
+    await refreshRoleInstructions(chatConfig, getDispatcherChatPath());
   } else {
     config = await readConfig();
     chatConfig = await readConfig(getDispatcherChatPath());
@@ -966,7 +995,7 @@ async function refreshAfterChange(changedDir: string): Promise<void> {
   chatConfig = chat;
   if (isDispatcherEnabled()) {
     for (const [agent, dir] of [[coordinator, getDispatcherPath()], [chat, chatDir]] as const) {
-      if (agent && instructionsKey(agent, dir) !== instructionsWrittenFor.get(dir)) await writeInstructions(agent, dir);
+      if (agent && instructionsKey(agent, dir) !== instructionsWrittenFor.get(dir)) await refreshRoleInstructions(agent, dir);
     }
   }
   emitChanged();
@@ -1059,14 +1088,13 @@ export function onExperimentalSettingsChanged(): Promise<void> {
 }
 
 /**
- * Write both agents' instructions again, so the memory index they carry is the
- * one on disk now. Forget everything (#3046) calls it. Nothing while it's off.
+ * Write both agents' instructions again with their fixed current-memory lookup. Forget everything (#3046) calls it. Nothing while it's off.
  */
 export function refreshDispatcherInstructions(): Promise<void> {
   return enqueue(async () => {
     if (!isDispatcherEnabled()) return;
-    if (config) await writeInstructions(config);
-    if (chatConfig) await writeInstructions(chatConfig, getDispatcherChatPath());
+    if (config) await refreshRoleInstructions(config);
+    if (chatConfig) await refreshRoleInstructions(chatConfig, getDispatcherChatPath());
   });
 }
 

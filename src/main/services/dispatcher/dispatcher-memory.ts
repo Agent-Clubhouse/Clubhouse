@@ -3,7 +3,7 @@
  * `~/.clubhouse/dispatcher/memory/`, so any provider can read and write it and
  * it survives a restart or a provider switch.
  *
- *   index.md           loaded at every start, capped at MEMORY_INDEX_CAP_BYTES
+ *   index.md           read before each task, capped at MEMORY_INDEX_CAP_BYTES
  *   agents/<agent>.md  the agent's own card, then the Dispatcher's notes
  *   timeline/          days, rolled into weeks, then months (dispatcher-memory-timeline.ts)
  *   topics/<topic>.md  one page per piece of work, confirmed or unconfirmed, with its source
@@ -21,7 +21,7 @@ import { getDispatcherMemoryPath } from './dispatcher-paths';
 
 /**
  * The most index.md may hold, in UTF-8 bytes (about 2,000 tokens). It is
- * enforced when Clubhouse writes the index and again when it is loaded, since
+ * enforced when Clubhouse writes the index and when read through its tools, since
  * the agent edits the file directly.
  */
 export const MEMORY_INDEX_CAP_BYTES = 8 * 1024;
@@ -48,7 +48,7 @@ export function memoryPaths(root: string = getDispatcherMemoryPath()): MemoryPat
 }
 
 /** What a new index says. It leads into the pages rather than repeating them. */
-export const DEFAULT_INDEX = `This index is loaded at every start. Keep it short, since it is cut at ${MEMORY_INDEX_CAP_BYTES / 1024} KB, and point to pages instead of copying them.
+export const DEFAULT_INDEX = `Read this index before each task. Keep it short, since it is cut at ${MEMORY_INDEX_CAP_BYTES / 1024} KB, and point to pages instead of copying them.
 
 - \`agents/\`: one page per agent. The agent writes its card at the top; you write your notes under it.
 - \`timeline/\`: what happened, one file per day. Older days roll into weeks, and weeks into months, each keeping links to transcripts.
@@ -169,7 +169,7 @@ export async function writeIndex(content: string, root?: string, cap: number = M
   return capped;
 }
 
-/** The index as a start loads it: created if missing, and never over its cap. */
+/** Create/read a bounded index without modifying an existing oversized file. */
 export async function loadIndex(root?: string, cap: number = MEMORY_INDEX_CAP_BYTES): Promise<string> {
   await ensureMemoryLayout(root);
   return capIndex(await readIndex(root), cap);
@@ -585,6 +585,9 @@ async function updateMemoryAccess(page: string, update: (entry: MemoryAccess) =>
 }
 
 export async function recordMemoryRead(page: string, root?: string, now: number = Date.now()): Promise<void> {
+  // Snapshot evidence must not consume the bounded active-page access pool or
+  // evict metadata used by upkeep. Readers pass confined canonical paths.
+  if (page.replace(/\\/g, '/').toLowerCase().startsWith(`${MEMORY_HISTORY_DIR}/`)) return;
   await updateMemoryAccess(page, (entry) => ({ ...entry, lastRead: now, reads: Math.min(entry.reads + 1, Number.MAX_SAFE_INTEGER) }), root);
 }
 

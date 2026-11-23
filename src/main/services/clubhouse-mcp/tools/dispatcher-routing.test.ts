@@ -249,8 +249,14 @@ describe('Dispatcher desktop/mobile routing and a concurrent project pivot (#258
     expect(instructions).toContain(`\`delegating-work\` (\`${skillPath}\`)`);
     const skill = fs.readFileSync(path.join(dispatcherDir, skillPath), 'utf-8');
     expect(skill).toBe(dispatcherSkills('work').find((s) => s.name === 'delegating-work')!.text);
-    expect(instructions).toContain('Being awake, free, an orchestrator or recently busy doesn\'t make an agent the owner');
-    expect(instructions).toContain('through that agent\'s `send_message`, or its `wake_agent` with the task as the message when it is asleep');
+    const proceduresPath = skillFile(provider.conventions, 'tool-procedures');
+    expect(instructions).toContain('Read the `tool-procedures` skill before acting');
+    expect(instructions).toContain(`\`tool-procedures\` (\`${proceduresPath}\`)`);
+    expect(instructions).toContain('using its card and project, not its availability');
+    const procedures = fs.readFileSync(path.join(dispatcherDir, proceduresPath), 'utf-8');
+    expect(procedures).toBe(dispatcherSkills('work').find((s) => s.name === 'tool-procedures')!.text);
+    expect(procedures).toContain('Being awake, free, an orchestrator or recently busy doesn\'t make an agent the owner');
+    expect(procedures).toContain('through that agent\'s `send_message`, or its `wake_agent` with the task as the message when it is asleep');
     expect(skill).toContain('When one piece depends on another, start the dependent piece only after its prerequisite finishes.');
     expect(skill).toContain('Only independent work runs in parallel.');
     expect(skill).toContain('Send the feature decisions and relevant pointers to the mobile owner');
