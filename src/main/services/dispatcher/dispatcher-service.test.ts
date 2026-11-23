@@ -668,7 +668,9 @@ describe('routine instructions: isolate role delivery from saved settings and in
     const changed = vi.fn();
     svc.onDispatcherChanged(changed);
     vi.mocked(agentSystem.spawnAgent).mockClear();
-    if (transport === 'throws') vi.mocked(broadcastToAllWindows).mockImplementation(() => { throw new Error('notice unavailable'); });
+    if (transport === 'throws') vi.mocked(broadcastToAllWindows).mockImplementation((channel, ...args) => {
+      if (channel === IPC.CHAT.RUNTIME_NOTICE && (args[1] as { code?: string })?.code === 'instruction_delivery') throw new Error('notice unavailable');
+    });
     const { failure } = refuseInstructionGuide(dispatcherDir());
     await svc.initDispatcher();
     await settle();
@@ -738,6 +740,25 @@ describe('routine instructions: isolate role delivery from saved settings and in
     expect.soft(provider.writeInstructions).not.toHaveBeenCalledWith(dispatcherDir(), expect.any(String));
     expect.soft(provider.writeInstructions).toHaveBeenCalledWith(chatDir(), expect.any(String));
     expectInstructionWarning('durable_1', 'work');
+  });
+
+  it('unrelated saved-identity failure still rejects with its original error', async () => {
+    await svc.setDispatcherEnabled(true);
+    const failure = new Error('saved identity refused');
+    vi.mocked(agentConfig.updateDurable).mockRejectedValueOnce(failure);
+    await expect(svc.completeDispatcherSetup({ name: 'Sample', color: 'rose', provider: 'claude-code', behavior: 'light', personality: DEFAULT_DISPATCHER_PERSONALITY })).rejects.toBe(failure);
+    expect(svc.getDispatcherState().setup.status).not.toBe('done');
+    expect(instructionNotices()).toEqual([]);
+  });
+
+  it('unrelated config-flush failure still rejects instead of publishing setup done', async () => {
+    await svc.setDispatcherEnabled(true);
+    const failure = new Error('saved config flush refused');
+    vi.mocked(agentConfig.flushAgentConfig).mockRejectedValueOnce(failure);
+    await expect(svc.completeDispatcherSetup({ name: 'Sample', color: 'rose', provider: 'claude-code', behavior: 'light', personality: DEFAULT_DISPATCHER_PERSONALITY })).rejects.toBe(failure);
+    await settle();
+    expect(svc.getDispatcherState().setup.status).not.toBe('done');
+    expect(instructionNotices()).toEqual([]);
   });
 
   it('config refresh publishes the saved identity and refreshes the other role after a work delivery failure', async () => {
