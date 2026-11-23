@@ -1,0 +1,725 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-23T23:31:47.798Z",
+  "baseCommit": "817ef3827c266dab9fef40c9ab06cd23d06fb394",
+  "runtime": {
+    "node": "v25.8.1",
+    "vitest": "4.1.12",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpus": 10
+  },
+  "inputs": {
+    "source": "scripts/ci/classify-changes.mjs",
+    "sourceSha256": "050bb76f206e2468940e5735b2cb96bc64231d59b12774a9c8c5fafff22858e3",
+    "tests": "scripts/ci/ci-scripts.test.ts",
+    "testsSha256": "8179bbb5a21dd42c85a8f0167140d987dec9f61157b9d67af745c61a6924420b",
+    "runnerSha256": "a693ed73438522edded3aa9763ce45c2ba47e2f86267443bf57ae4ea3353e5ad"
+  },
+  "limits": {
+    "hypotheses": 8,
+    "repetitions": 2,
+    "workers": 1,
+    "budgetMs": 600000,
+    "processTimeoutMs": 30000
+  },
+  "strategies": {
+    "targeted": "Existing classifier suite filtered to one named test per hypothesis",
+    "full": "All existing classifier tests (not the repository suite)"
+  },
+  "baselines": [
+    {
+      "phase": "before",
+      "strategy": "full",
+      "elapsedMs": 337.49,
+      "exitCode": 0,
+      "outcome": "survived",
+      "passed": 27,
+      "failed": []
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "docs-only changes need nothing",
+      "elapsedMs": 305.03,
+      "exitCode": 0,
+      "outcome": "survived",
+      "passed": 1,
+      "failed": []
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "with no file list it runs everything",
+      "elapsedMs": 305.08,
+      "exitCode": 0,
+      "outcome": "survived",
+      "passed": 1,
+      "failed": []
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "a unit-test-only change skips the E2E build",
+      "elapsedMs": 310.76,
+      "exitCode": 0,
+      "outcome": "survived",
+      "passed": 1,
+      "failed": []
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "the dispatch-only stable candidate files need neither E2E nor the macOS build",
+      "elapsedMs": 304.47,
+      "exitCode": 0,
+      "outcome": "survived",
+      "passed": 1,
+      "failed": []
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+      "elapsedMs": 303.31,
+      "exitCode": 0,
+      "outcome": "survived",
+      "passed": 1,
+      "failed": []
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "dependency changes count only for Electron, native modules and forge",
+      "elapsedMs": 303.14,
+      "exitCode": 0,
+      "outcome": "survived",
+      "passed": 1,
+      "failed": []
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "the macOS build for darwin lines in window chrome, preload or the renderer",
+      "elapsedMs": 302.05,
+      "exitCode": 0,
+      "outcome": "survived",
+      "passed": 1,
+      "failed": []
+    },
+    {
+      "phase": "before",
+      "strategy": "targeted",
+      "name": "parses changed lines per file from git diff -U0",
+      "elapsedMs": 303.54,
+      "exitCode": 0,
+      "outcome": "survived",
+      "passed": 1,
+      "failed": []
+    },
+    {
+      "phase": "after",
+      "strategy": "full",
+      "elapsedMs": 307.7,
+      "exitCode": 0,
+      "outcome": "survived",
+      "passed": 27,
+      "failed": []
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "docs-any",
+      "from": "const docsOnly = changed.every(",
+      "to": "const docsOnly = changed.some(",
+      "targetedTest": "docs-only changes need nothing",
+      "witnessInput": {
+        "files": [
+          "docs/ci.md",
+          "src/main/index.ts"
+        ],
+        "lines": []
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 305.35,
+            "exitCode": 0,
+            "outcome": "survived",
+            "passed": 1,
+            "failed": []
+          },
+          {
+            "elapsedMs": 311.33,
+            "exitCode": 0,
+            "outcome": "survived",
+            "passed": 1,
+            "failed": []
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 313.11,
+            "exitCode": 0,
+            "outcome": "survived",
+            "passed": 27,
+            "failed": []
+          },
+          {
+            "elapsedMs": 312.88,
+            "exitCode": 0,
+            "outcome": "survived",
+            "passed": 27,
+            "failed": []
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        },
+        "mutant": {
+          "docsOnly": true,
+          "e2e": false,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "classification": "survived"
+    },
+    {
+      "id": "empty-e2e",
+      "from": "docsOnly: false, e2e: true, macosBuild: true, macosBuildReason: 'no changed files listed'",
+      "to": "docsOnly: false, e2e: false, macosBuild: true, macosBuildReason: 'no changed files listed'",
+      "targetedTest": "with no file list it runs everything",
+      "witnessInput": {
+        "files": [],
+        "lines": []
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 308.79,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes with no file list it runs everything"
+            ]
+          },
+          {
+            "elapsedMs": 307.99,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes with no file list it runs everything"
+            ]
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 324.27,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 26,
+            "failed": [
+              "classify-changes with no file list it runs everything"
+            ]
+          },
+          {
+            "elapsedMs": 313.63,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 26,
+            "failed": [
+              "classify-changes with no file list it runs everything"
+            ]
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": true,
+          "macosBuildReason": "no changed files listed"
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": false,
+          "macosBuild": true,
+          "macosBuildReason": "no changed files listed"
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "classification": "killed"
+    },
+    {
+      "id": "test-e2e",
+      "from": "&& !isTest(f) && !isStableCandidateOnly(f)",
+      "to": "&& !isStableCandidateOnly(f)",
+      "targetedTest": "a unit-test-only change skips the E2E build",
+      "witnessInput": {
+        "files": [
+          "src/main/a.test.ts"
+        ],
+        "lines": []
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 305.67,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes a unit-test-only change skips the E2E build"
+            ]
+          },
+          {
+            "elapsedMs": 309.16,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes a unit-test-only change skips the E2E build"
+            ]
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 317.61,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 26,
+            "failed": [
+              "classify-changes a unit-test-only change skips the E2E build"
+            ]
+          },
+          {
+            "elapsedMs": 314.53,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 26,
+            "failed": [
+              "classify-changes a unit-test-only change skips the E2E build"
+            ]
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": false,
+          "macosBuild": false
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "classification": "killed"
+    },
+    {
+      "id": "stable-e2e",
+      "from": "&& !isStableCandidateOnly(f) && !isCliDenylistOnly(f)",
+      "to": "&& !isCliDenylistOnly(f)",
+      "targetedTest": "the dispatch-only stable candidate files need neither E2E nor the macOS build",
+      "witnessInput": {
+        "files": [
+          "scripts/ci/stable-candidate.mjs"
+        ],
+        "lines": []
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 311.61,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build"
+            ]
+          },
+          {
+            "elapsedMs": 307.89,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build"
+            ]
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 320.54,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 26,
+            "failed": [
+              "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build"
+            ]
+          },
+          {
+            "elapsedMs": 322.72,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 26,
+            "failed": [
+              "classify-changes the dispatch-only stable candidate files need neither E2E nor the macOS build"
+            ]
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": false,
+          "macosBuild": false
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "classification": "killed"
+    },
+    {
+      "id": "path-build",
+      "from": "if (byPath) reason =",
+      "to": "if (false) reason =",
+      "targetedTest": "the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+      "witnessInput": {
+        "files": [
+          "forge.config.ts"
+        ],
+        "lines": []
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 312.43,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself"
+            ]
+          },
+          {
+            "elapsedMs": 306.73,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself"
+            ]
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 321.39,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 23,
+            "failed": [
+              "classify-changes the stable candidate exception covers only its own files",
+              "classify-changes the CLI kill switch exception covers only that file",
+              "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+              "classify-changes the CLI reads a diff on stdin and writes GITHUB_OUTPUT"
+            ]
+          },
+          {
+            "elapsedMs": 320.51,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 23,
+            "failed": [
+              "classify-changes the stable candidate exception covers only its own files",
+              "classify-changes the CLI kill switch exception covers only that file",
+              "classify-changes the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself",
+              "classify-changes the CLI reads a diff on stdin and writes GITHUB_OUTPUT"
+            ]
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": true,
+          "macosBuildReason": "path forge.config.ts"
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "classification": "killed"
+    },
+    {
+      "id": "dependency-build",
+      "from": "else if (byDependency) reason =",
+      "to": "else if (false) reason =",
+      "targetedTest": "dependency changes count only for Electron, native modules and forge",
+      "witnessInput": {
+        "files": [
+          "package.json"
+        ],
+        "lines": [
+          [
+            "package.json",
+            [
+              "\"electron\": \"1\""
+            ]
+          ]
+        ]
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 310.69,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes dependency changes count only for Electron, native modules and forge"
+            ]
+          },
+          {
+            "elapsedMs": 312.52,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes dependency changes count only for Electron, native modules and forge"
+            ]
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 315.75,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 26,
+            "failed": [
+              "classify-changes dependency changes count only for Electron, native modules and forge"
+            ]
+          },
+          {
+            "elapsedMs": 317.71,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 26,
+            "failed": [
+              "classify-changes dependency changes count only for Electron, native modules and forge"
+            ]
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": true,
+          "macosBuildReason": "Electron or native-module dependency change in package.json"
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "classification": "killed"
+    },
+    {
+      "id": "marker-build",
+      "from": "else if (byMarker) reason =",
+      "to": "else if (false) reason =",
+      "targetedTest": "the macOS build for darwin lines in window chrome, preload or the renderer",
+      "witnessInput": {
+        "files": [
+          "src/main/index.ts"
+        ],
+        "lines": [
+          [
+            "src/main/index.ts",
+            [
+              "process.platform === 'darwin'"
+            ]
+          ]
+        ]
+      },
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 307.75,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer"
+            ]
+          },
+          {
+            "elapsedMs": 305.31,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer"
+            ]
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 333.19,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 16,
+            "failed": [
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   if (process.platform === 'darwin') return;",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   const isMac = platform === \"mac\";",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   if (e.metaKey && e.key === \"k\") open();",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   accelerator: 'CmdOrCtrl+Shift+N',",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   const brew = '/opt/homebrew/bin/claude';",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   titleBarStyle: 'hiddenInset',",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   titleBarOverlay: { height: 30 },",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   trafficLightPosition: { x: 12, y: 10 },",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   app.dock.setBadge(String(n));",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   safeStorage.encryptString(token)",
+              "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer"
+            ]
+          },
+          {
+            "elapsedMs": 328.93,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 16,
+            "failed": [
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   if (process.platform === 'darwin') return;",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   const isMac = platform === \"mac\";",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   if (e.metaKey && e.key === \"k\") open();",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   accelerator: 'CmdOrCtrl+Shift+N',",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   const brew = '/opt/homebrew/bin/claude';",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   titleBarStyle: 'hiddenInset',",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   titleBarOverlay: { height: 30 },",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   trafficLightPosition: { x: 12, y: 10 },",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   app.dock.setBadge(String(n));",
+              "classify-changes a changed source line with a macOS marker needs the macOS build:   safeStorage.encryptString(token)",
+              "classify-changes the macOS build for darwin lines in window chrome, preload or the renderer"
+            ]
+          }
+        ]
+      },
+      "witness": {
+        "original": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": true,
+          "macosBuildReason": "macOS-specific lines changed in src/main/index.ts"
+        },
+        "mutant": {
+          "docsOnly": false,
+          "e2e": true,
+          "macosBuild": false
+        }
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "classification": "killed"
+    },
+    {
+      "id": "removed-lines",
+      "from": "(line.startsWith('+') || line.startsWith('-'))",
+      "to": "line.startsWith('+')",
+      "targetedTest": "parses changed lines per file from git diff -U0",
+      "witnessInput": "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +0 @@\n-removed\n",
+      "runs": {
+        "targeted": [
+          {
+            "elapsedMs": 309.74,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes parses changed lines per file from git diff -U0"
+            ]
+          },
+          {
+            "elapsedMs": 309.51,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 0,
+            "failed": [
+              "classify-changes parses changed lines per file from git diff -U0"
+            ]
+          }
+        ],
+        "full": [
+          {
+            "elapsedMs": 332.09,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 26,
+            "failed": [
+              "classify-changes parses changed lines per file from git diff -U0"
+            ]
+          },
+          {
+            "elapsedMs": 318.81,
+            "exitCode": 1,
+            "outcome": "killed",
+            "passed": 26,
+            "failed": [
+              "classify-changes parses changed lines per file from git diff -U0"
+            ]
+          }
+        ]
+      },
+      "witness": {
+        "original": [
+          [
+            "a.ts",
+            [
+              "removed"
+            ]
+          ]
+        ],
+        "mutant": [
+          [
+            "a.ts",
+            []
+          ]
+        ]
+      },
+      "equivalence": "non-equivalent (explicit counterexample)",
+      "classification": "killed"
+    }
+  ],
+  "originalsUnchanged": true,
+  "sandboxRemoved": true,
+  "elapsedMs": 13188,
+  "summary": {
+    "killed": 7,
+    "survived": 1,
+    "invalid": 0,
+    "equivalent": 0,
+    "unresolved": 0
+  },
+  "strategyElapsedMs": {
+    "targeted": 4942,
+    "full": 5128
+  }
+}
