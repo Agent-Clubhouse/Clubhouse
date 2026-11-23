@@ -73,6 +73,43 @@ function makeRuntime(driver: FakeChatDriver, extra: Partial<ConstructorParameter
 
 const STEERLESS: ChatCapabilities = { ...MINIMAL_CHAT_CAPABILITIES, steer: false, queue: 'client', interrupt: true };
 
+it('does not retain future-turn debt when Codex accepts two prompts into one native turn', async () => {
+  const driver = new FakeChatDriver('codex_app_server', 'codex-cli', STEERLESS);
+  const { runtime } = makeRuntime(driver);
+  const stopTracking = startFederationTurnTracking(runtime.agentId);
+  try {
+    await runtime.start();
+    // Modeled RPC receipts: both submissions belong to the same native turn.
+    // The incident transcript contains both inputs in one native task, but
+    // does not contain the original RPC response IDs.
+    Object.assign(driver.last, { sendWithReceipt: async (...args: Parameters<typeof driver.last.send>) => ({
+      delivery: await driver.last.send(...args), nativeTurn: { id: 'shared-native', completed: false },
+    }) });
+    await runtime.sendMessage('first Action', { source: 'action', delivery: 'prompt' });
+    await runtime.sendMessage('second Action', { source: 'action', delivery: 'prompt' });
+    expect(driver.last.sent).toHaveLength(2);
+    driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'shared-native' } });
+    driver.last.emit({ type: 'turn_ended', data: {} });
+    await flush();
+    expect.soft(runtime.hasPendingWork()).toBe(false);
+
+    // A later genuine causal turn must finish without inheriting that debt.
+    Object.assign(driver.last, { sendWithReceipt: async (...args: Parameters<typeof driver.last.send>) => ({
+      delivery: await driver.last.send(...args), nativeTurn: { id: 'causal-native', completed: false },
+    }) });
+    await withFederationInput({ id: 'remote-input', cause: { rootId: 'remote-input', depth: 3 } } as FederatedRequest,
+      () => runtime.sendMessage('causal input', { source: 'mcp', delivery: 'prompt' }));
+    driver.last.emit({ type: 'turn_started', data: { nativeTurnId: 'causal-native' } });
+    driver.last.emit({ type: 'turn_ended', data: {} });
+    await flush();
+    expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['remote-input']);
+    expect.soft(runtime.hasPendingWork()).toBe(false);
+    expect(await runtime.sendMessage('next Action', { source: 'action', delivery: 'queued' })).toMatchObject({ delivery: 'prompt' });
+    expect(driver.last.sent).toHaveLength(4);
+    expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+  } finally { await runtime.stop(); stopTracking(); }
+});
+
 beforeEach(() => {
   broadcasts.calls.length = 0;
   transcript.length = 0;
