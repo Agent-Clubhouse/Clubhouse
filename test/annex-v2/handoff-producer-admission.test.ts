@@ -76,7 +76,8 @@ async function setup(dir: string, owner: FixtureOwner) {
   await host.ready;
   const preparation = await import('../../src/main/services/handoff-preparations');
   const source = await import('../../src/main/services/handoff-preflight-host');
-  return { userData, repository, project, registry, gate, grants, tools, hostApi, host, preparation, source, requests, setGrant, machine, binding };
+  return { userData, repository, project, registry, gate, grants, tools, hostApi, host, preparation, source, requests,
+    setGrant: (mode: GrantChangeMode) => ownGrantIO(owner, () => setGrant(mode)), machine, binding };
 }
 
 type Fixture = Awaited<ReturnType<typeof setup>>;
@@ -212,6 +213,25 @@ function newOwner(): FixtureOwner {
     holds: [], released: new Set(), releaseFailures: [], toolWork: [], teardown: [],
     expected: [], acknowledged: new Set(),
   };
+}
+
+function ownGrantIO<T>(owner: FixtureOwner, start: () => Promise<T>, fixture?: Fixture): Promise<T> {
+  if (owner.retiring || owner.disposed || owner.complete) throw new Error('Producer fixture grant IO cannot be admitted.');
+  if (fixture && owner.fixture !== fixture) throw new Error('Producer grant IO requires its original fixture owner.');
+  let resolve!: (value: unknown) => void;
+  let reject!: (error: unknown) => void;
+  const claim = new Promise<unknown>((complete, failed) => { resolve = complete; reject = failed; });
+  // Observe rejection immediately, but store the ORIGINAL rejecting claim for all-settlement.
+  void claim.then(undefined, () => undefined);
+  try { owner.operations.push(claim); } catch (error) { reject(error); throw error; }
+  try {
+    const actual = start();
+    void actual.then(resolve, reject);
+    return actual;
+  } catch (error) {
+    reject(error);
+    throw error;
+  }
 }
 
 function fixtureOwner(): FixtureOwner {
@@ -595,95 +615,6 @@ describe('isolated real MCP producer domain admission', () => {
     return { pending, release: finish };
   }
 
-  it('keeps admitted direct grant IO ahead of original owner directory removal', async () => runFixtureBody(async () => {
-    const fx = current(), owner = fixtureOwner(), directory = fixtureDirectory(owner);
-    const destination = path.join(fx.userData, 'agent-grants.json');
-    const entered = deferred(), release = deferred();
-    const rename: typeof nativeFs.promises.rename = nativeFs.promises.rename.bind(nativeFs.promises);
-    const stop = fx.hostApi.stopHandoffs, reset = fx.requests._resetGrantRequestsForTesting;
-    let stopCalls = 0, resetCalls = 0, renameEntries = 0, nativeCalls = 0, ioSettled = false, coreFinished = false;
-    let source: string | undefined, nativePromise: Promise<void> | undefined, nativeError: unknown;
-    let core: Promise<CoreCompletion> | undefined;
-    vi.spyOn(fx.hostApi, 'stopHandoffs').mockImplementation(async () => { stopCalls++; await stop(); });
-    vi.spyOn(fx.requests, '_resetGrantRequestsForTesting').mockImplementation(() => { resetCalls++; reset(); });
-    vi.spyOn(nativeFs.promises, 'rename').mockImplementation((from, to) => {
-      if (to !== destination) return rename(from, to);
-      renameEntries++;
-      return (async () => {
-        if (typeof from !== 'string') throw new Error('Expected the actual settings temporary path.');
-        source = from;
-        expect(path.dirname(from)).toBe(fx.userData);
-        expect(path.basename(from).startsWith('.agent-grants.json.tmp-')).toBe(true);
-        expect((await fs.stat(from)).isFile()).toBe(true);
-        expect(JSON.parse(await fs.readFile(from, 'utf8'))).toMatchObject({ agents: { [caller]: {
-          changes: expect.arrayContaining([expect.objectContaining({ action: 'handoff.offer', mode: 'off' })]),
-        } } });
-        entered.resolve();
-        await release.promise;
-        nativeCalls++;
-        nativePromise = rename(from, to);
-        void nativePromise.then(() => {}, (error: unknown) => { nativeError = error; });
-        return nativePromise;
-      })();
-    });
-    const actual = fx.setGrant('off');
-    const outcome = actual.then(
-      (value) => { ioSettled = true; return { status: 'fulfilled' as const, value }; },
-      (error: unknown) => { ioSettled = true; return { status: 'rejected' as const, error }; },
-    );
-    try {
-      await Promise.race([
-        entered.promise,
-        outcome.then((settled) => {
-          if (settled.status === 'rejected') throw settled.error;
-          throw new Error('Direct grant update settled before its actual native rename hold.');
-        }),
-      ]);
-      expect(renameEntries).toBe(1);
-      expect(nativeCalls).toBe(0);
-      expect(ioSettled).toBe(false);
-      expect(owner.operations).toHaveLength(0);
-      expect(nativeFs.existsSync(directory)).toBe(true);
-      expect(source && nativeFs.existsSync(source)).toBe(true);
-      const hook = hookCompletion(owner);
-      core = coreCompletion(owner);
-      expect(hookCompletion(owner)).toBe(hook);
-      expect(coreCompletion(owner)).toBe(core);
-      const observedCore = core.then(() => { coreFinished = true; }, () => {});
-      await Promise.race([observedCore, new Promise((resolve) => setTimeout(resolve, 25))]);
-      expect.soft({
-        ioSettled, nativeCalls, coreFinished,
-        originalDirectoryPresent: nativeFs.existsSync(directory),
-        originalUserDataPresent: nativeFs.existsSync(fx.userData),
-      }, 'An already-admitted actual grant rename must precede original core completion/removal.').toEqual({
-        ioSettled: false, nativeCalls: 0, coreFinished: false,
-        originalDirectoryPresent: true, originalUserDataPresent: true,
-      });
-    } finally {
-      release.resolve();
-      if (!core) { hookCompletion(owner); core = coreCompletion(owner); }
-      const settled = await Promise.allSettled([actual, core] as const);
-      expect.soft(renameEntries).toBe(1);
-      expect.soft(nativeCalls).toBe(1);
-      expect.soft(nativePromise).toBeInstanceOf(Promise);
-      expect.soft(stopCalls).toBe(1);
-      expect.soft(resetCalls).toBe(1);
-      expect.soft(nativeFs.existsSync(directory)).toBe(false);
-      const errors: unknown[] = [];
-      if (settled[0].status === 'rejected') {
-        if (nativePromise) expect.soft(settled[0].reason).toBe(nativeError);
-        errors.push(settled[0].reason);
-      }
-      if (settled[1].status === 'rejected') errors.push(settled[1].reason);
-      else {
-        expect.soft(settled[1].value.teardown).toHaveLength(7);
-        if (settled[1].value.failures.length) errors.push(settled[1].value.error);
-      }
-      if (errors.length === 1) throw errors[0];
-      if (errors.length > 1) throw new AggregateError(errors, 'Original direct IO and core failures retained.');
-    }
-  }));
-
   it('keeps overlapping cleanup behind the original actual preparation drain', async () => runFixtureBody(async () => {
     const fx = current(), failure = new Error('Original overlap fixture caller rejection.');
     registerExpected(fixtureOwner(), [failure]);
@@ -734,6 +665,107 @@ describe('isolated real MCP producer domain admission', () => {
         expect.soft(stopCalls).toBe(1);
         expect.soft(nativeFs.existsSync(fx.userData)).toBe(false);
       }
+    }
+  }));
+
+  it('keeps admitted direct grant IO ahead of original owner directory removal', async () => runFixtureBody(async () => {
+    const fx = current(), owner = fixtureOwner(), directory = fixtureDirectory(owner);
+    const destination = path.join(fx.userData, 'agent-grants.json');
+    const entered = deferred(), release = deferred();
+    const rename: typeof nativeFs.promises.rename = nativeFs.promises.rename.bind(nativeFs.promises);
+    const stop = fx.hostApi.stopHandoffs, reset = fx.requests._resetGrantRequestsForTesting;
+    let stopCalls = 0, resetCalls = 0, renameEntries = 0, nativeCalls = 0, ioSettled = false, coreFinished = false;
+    let source: string | undefined, nativePromise: Promise<void> | undefined, nativeError: unknown;
+    let core: Promise<CoreCompletion> | undefined;
+    vi.spyOn(fx.hostApi, 'stopHandoffs').mockImplementation(async () => { stopCalls++; await stop(); });
+    vi.spyOn(fx.requests, '_resetGrantRequestsForTesting').mockImplementation(() => { resetCalls++; reset(); });
+    vi.spyOn(nativeFs.promises, 'rename').mockImplementation((from, to) => {
+      if (to !== destination) return rename(from, to);
+      renameEntries++;
+      return (async () => {
+        if (typeof from !== 'string') throw new Error('Expected the actual settings temporary path.');
+        source = from;
+        expect(path.dirname(from)).toBe(fx.userData);
+        expect(path.basename(from).startsWith('.agent-grants.json.tmp-')).toBe(true);
+        expect((await fs.stat(from)).isFile()).toBe(true);
+        expect(JSON.parse(await fs.readFile(from, 'utf8'))).toMatchObject({ agents: { [caller]: {
+          changes: expect.arrayContaining([expect.objectContaining({ action: 'handoff.offer', mode: 'off' })]),
+        } } });
+        entered.resolve();
+        await release.promise;
+        nativeCalls++;
+        nativePromise = rename(from, to);
+        void nativePromise.then(() => {}, (error: unknown) => { nativeError = error; });
+        return nativePromise;
+      })();
+    });
+    const update = fx.grants.updateAgentGrantChanges;
+    let originalGrant: ReturnType<typeof update> | undefined;
+    vi.spyOn(fx.grants, 'updateAgentGrantChanges').mockImplementation((...args) => { originalGrant = update(...args); return originalGrant; });
+    const actual = fx.setGrant('off');
+    expect(actual).toBe(originalGrant);
+    const outcome = actual.then(
+      (value) => { ioSettled = true; return { status: 'fulfilled' as const, value }; },
+      (error: unknown) => { ioSettled = true; return { status: 'rejected' as const, error }; },
+    );
+    try {
+      await Promise.race([
+        entered.promise,
+        outcome.then((settled) => {
+          if (settled.status === 'rejected') throw settled.error;
+          throw new Error('Direct grant update settled before its actual native rename hold.');
+        }),
+      ]);
+      expect(renameEntries).toBe(1);
+      expect(nativeCalls).toBe(0);
+      expect(ioSettled).toBe(false);
+      // The frozen red has zero work; this successor must reserve before invocation.
+      expect(owner.operations).toHaveLength(1);
+      expect(owner.operations[0]).not.toBe(actual);
+      expect(nativeFs.existsSync(directory)).toBe(true);
+      expect(source && nativeFs.existsSync(source)).toBe(true);
+      const hook = hookCompletion(owner);
+      core = coreCompletion(owner);
+      expect(hookCompletion(owner)).toBe(hook);
+      expect(coreCompletion(owner)).toBe(core);
+      const observedCore = core.then(() => { coreFinished = true; }, () => {});
+      await Promise.race([observedCore, new Promise((resolve) => setTimeout(resolve, 25))]);
+      expect.soft({
+        ioSettled, nativeCalls, coreFinished,
+        originalDirectoryPresent: nativeFs.existsSync(directory),
+        originalUserDataPresent: nativeFs.existsSync(fx.userData),
+      }, 'An already-admitted actual grant rename must precede original core completion/removal.').toEqual({
+        ioSettled: false, nativeCalls: 0, coreFinished: false,
+        originalDirectoryPresent: true, originalUserDataPresent: true,
+      });
+    } finally {
+      release.resolve();
+      if (!core) { hookCompletion(owner); core = coreCompletion(owner); }
+      const settled = await Promise.allSettled([actual, core] as const);
+      expect.soft(renameEntries).toBe(1);
+      expect.soft(nativeCalls).toBe(1);
+      expect.soft(nativePromise).toBeInstanceOf(Promise);
+      expect.soft(stopCalls).toBe(1);
+      expect.soft(resetCalls).toBe(1);
+      expect.soft(nativeFs.existsSync(directory)).toBe(false);
+      const errors: unknown[] = [];
+      if (settled[0].status === 'fulfilled') {
+        const originalOutcome = await outcome;
+        expect.soft(originalOutcome.status).toBe('fulfilled');
+        if (originalOutcome.status === 'fulfilled') expect.soft(settled[0].value).toBe(originalOutcome.value);
+        expect.soft(settled[0].value).toMatchObject({ changes: expect.arrayContaining([expect.objectContaining({ action: 'handoff.offer', mode: 'off' })]) });
+      }
+      if (settled[0].status === 'rejected') {
+        if (nativePromise) expect.soft(settled[0].reason).toBe(nativeError);
+        errors.push(settled[0].reason);
+      }
+      if (settled[1].status === 'rejected') errors.push(settled[1].reason);
+      else {
+        expect.soft(settled[1].value.teardown).toHaveLength(7);
+        if (settled[1].value.failures.length) errors.push(settled[1].value.error);
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, 'Original direct IO and core failures retained.');
     }
   }));
 
@@ -940,6 +972,178 @@ describe('isolated real MCP producer domain admission', () => {
     ];
     return owner;
   }
+
+  it('grant IO ownership reserves before synchronous start reentry and returns actual work unchanged', async () => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), gate = deferred(), marker = path.join(fixtureDirectory(owner), 'actual-write');
+    const value = Object.freeze({ original: 'actual result' });
+    let starts = 0, refusedStarts = 0, visible = false, coreFinished = false, sawFile = false;
+    let original: Promise<typeof value> | undefined, core: Promise<CoreCompletion> | undefined, hook: Promise<Completion> | undefined, refusal: unknown;
+    owner.teardown.unshift(() => { sawFile = nativeFs.readFileSync(marker, 'utf8') === 'owned'; });
+    const actual = ownGrantIO(owner, () => {
+      starts++;
+      visible = owner.operations.length === 1;
+      hook = hookCompletion(owner);
+      core = coreCompletion(owner);
+      try { ownGrantIO(owner, () => { refusedStarts++; return fs.writeFile(marker, 'unadmitted'); }); }
+      catch (error) { refusal = error; }
+      original = gate.promise.then(async () => { await fs.writeFile(marker, 'owned'); return value; });
+      return original;
+    });
+    expect(actual).toBe(original);
+    expect(visible).toBe(true);
+    expect(starts).toBe(1);
+    expect(refusedStarts).toBe(0);
+    expect(refusal).toBeInstanceOf(Error);
+    expect(coreCompletion(owner)).toBe(core);
+    expect(hookCompletion(owner)).toBe(hook);
+    const observed = coreCompletion(owner).then(() => { coreFinished = true; });
+    try {
+      await Promise.race([observed, new Promise((resolve) => setTimeout(resolve, 25))]);
+      expect.soft(coreFinished).toBe(false);
+      expect.soft(nativeFs.existsSync(fixtureDirectory(owner))).toBe(true);
+    } finally { gate.resolve(); }
+    expect(await actual).toBe(value);
+    expect((await coreCompletion(owner)).failures).toEqual([]);
+    expect((await hookCompletion(owner)).failures).toEqual([]);
+    expect(sawFile).toBe(true);
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it.each(['sync', 'async'] as const)('grant IO ownership preserves original %s rejection through one rejected claim', async (kind) => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), syncError = new Error('Original synchronous grant-work failure.');
+    let original: Promise<string> | undefined, returned: Promise<string> | undefined, error: unknown, starts = 0;
+    try {
+      returned = ownGrantIO(owner, () => {
+        starts++;
+        if (kind === 'sync') throw syncError;
+        original = fs.readFile(path.join(fixtureDirectory(owner), 'actual-missing'), 'utf8');
+        return original;
+      });
+    } catch (reason) { error = reason; }
+    if (kind === 'async') {
+      expect(returned).toBe(original);
+      error = await returned!.then(() => { throw new Error('Expected the actual missing-file error.'); }, (reason: unknown) => reason);
+      expect(await original!.catch((reason: unknown) => reason)).toBe(error);
+    } else expect(error).toBe(syncError);
+    expect(starts).toBe(1);
+    if (!(error instanceof Error)) throw new Error('Expected an original operation Error reference.');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    registerExpected(owner, [error]);
+    const record = await coreCompletion(owner);
+    expect(record.failures).toHaveLength(1);
+    expect(record.failures[0].stage).toBe('work');
+    expect(record.failures[0].error).toBe(error);
+    expect(record.error).toBe(error);
+    await acknowledgeExpected(owner, error);
+    expect((await hookCompletion(owner)).failures).toEqual([]);
+    expect(owner.final?.failures[0].error).toBe(error);
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it.each(['before', 'after'] as const)('grant IO ownership does not invoke work when registration fails %s insertion', async (when) => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), error = new Error('Original reservation registration fault.');
+    let starts = 0, joined: Promise<CoreCompletion> | undefined;
+    if (when === 'after') registerExpected(owner, [error]);
+    const push = owner.operations.push.bind(owner.operations);
+    const registration = vi.spyOn(owner.operations, 'push').mockImplementation((...claims) => {
+      if (when === 'after') { push(...claims); joined = coreCompletion(owner); }
+      throw error;
+    });
+    expect(() => ownGrantIO(owner, () => { starts++; return fs.writeFile(path.join(fixtureDirectory(owner), 'unstarted'), 'bad'); })).toThrow(error);
+    registration.mockRestore();
+    expect(starts).toBe(0);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const core = coreCompletion(owner);
+    if (joined) expect(core).toBe(joined);
+    const record = await core;
+    if (when === 'after') {
+      expect(record.failures).toHaveLength(1);
+      expect(record.failures[0].error).toBe(error);
+      await acknowledgeExpected(owner, error);
+    } else expect(record.failures).toEqual([]);
+    expect((await hookCompletion(owner)).failures).toEqual([]);
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it('grant IO ownership retains an extra teardown error outside expected work acknowledgment', async () => runFixtureBody(async () => {
+    const owner = await sentinelOwner(), workError = new Error('Original grant IO failure.'), teardownError = new Error('Original additional teardown failure.');
+    registerExpected(owner, [workError]);
+    owner.teardown.unshift(() => { throw teardownError; });
+    const actual = ownGrantIO(owner, () => Promise.reject(workError));
+    await expect(actual).rejects.toBe(workError);
+    const record = await coreCompletion(owner);
+    expect(record.failures.map((failure) => failure.error)).toEqual([workError, teardownError]);
+    await expect(acknowledgeExpected(owner, record.error)).rejects.toThrow();
+    expect(owner.acknowledged.size).toBe(0);
+    expect((await hookCompletion(owner)).failures).toEqual(record.failures);
+    expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+  }));
+
+  it('grant IO ownership permits body-to-core completion while retaining later body lifetime and stale admission', async () => runFixtureBody(async () => {
+    const original = fixtureOwner(), owner = await sentinelOwner(), ioGate = deferred(), bodyGate = deferred(), reached = deferred();
+    const marker = path.join(fixtureDirectory(owner), 'actual-owned-write');
+    activeOwner = owner;
+    const actualBody = observe(owner, 'body', async () => {
+      const actualIO = ownGrantIO(owner, () => ioGate.promise.then(() => fs.writeFile(marker, 'owned')));
+      const cleaning = cleanupFixture(owner);
+      ioGate.resolve();
+      await actualIO;
+      await cleaning;
+      reached.resolve();
+      await bodyGate.promise;
+    });
+    let hook: Promise<Completion> | undefined;
+    try {
+      await Promise.race([reached.promise, actualBody.then(() => { throw new Error('Body ended before its continuation hold.'); })]);
+      hook = hookCompletion(owner);
+      expect(owner.complete).toBe(false);
+      expect(() => admitOwner()).toThrow('Previous producer fixture owner is unfinished');
+    } finally {
+      bodyGate.resolve();
+      try { await actualBody; await (hook ?? hookCompletion(owner)); }
+      finally { activeOwner = original; }
+    }
+    activeOwner = owner;
+    const next = await sentinelOwner(admitOwner());
+    let starts = 0;
+    try {
+      expect(() => ownGrantIO(owner, () => { starts++; return fs.writeFile(path.join(fixtureDirectory(next), 'late'), 'bad'); })).toThrow('Producer fixture grant IO cannot be admitted.');
+      expect(starts).toBe(0);
+      expect(nativeFs.existsSync(fixtureDirectory(next))).toBe(true);
+      expect(next.operations).toHaveLength(0);
+    } finally { await hookCompletion(next); activeOwner = original; }
+  }));
+
+  it('grant IO ownership binds exposed grants and rejects a mismatched fixture before remote effects', async () => runFixtureBody(async () => {
+    const fx = current(), owner = fixtureOwner(), update = fx.grants.updateAgentGrantChanges;
+    let starts = 0, original: ReturnType<typeof update> | undefined;
+    vi.spyOn(fx.grants, 'updateAgentGrantChanges').mockImplementation((...args) => { starts++; original = update(...args); return original; });
+    const peer = vi.spyOn(fx.machine.peers, 'addPeer');
+    expect(() => remote({ ...fx })).toThrow('Producer grant IO requires its original fixture owner.');
+    expect(starts).toBe(0);
+    expect(peer).not.toHaveBeenCalled();
+    const actual = fx.setGrant('off');
+    expect(actual).toBe(original);
+    expect((await actual)?.changes).toEqual(expect.arrayContaining([expect.objectContaining({ mode: 'off' })]));
+    expect(starts).toBe(1);
+    await cleanupFixture(owner);
+    expect(() => fx.setGrant('allow')).toThrow('Producer fixture grant IO cannot be admitted.');
+    expect(() => remote(fx)).toThrow('Producer fixture grant IO cannot be admitted.');
+    expect(owner.operations).toHaveLength(0);
+  }));
+
+  it('grant IO ownership records a whole remote helper rejection once without a nested claim', async () => runFixtureBody(async () => {
+    const fx = current(), owner = fixtureOwner(), error = new Error('Original remote grant rejection.'), ready = fx.machine.client.isMachineConnected;
+    registerExpected(owner, [error]);
+    vi.spyOn(fx.grants, 'updateAgentGrantChanges').mockRejectedValueOnce(error);
+    await expect(remote(fx)).rejects.toBe(error);
+    expect(fx.machine.client.isMachineConnected).toBe(ready);
+    const record = await coreCompletion(owner);
+    expect(record.failures).toHaveLength(1);
+    expect(record.failures[0].stage).toBe('work');
+    expect(record.failures[0].error).toBe(error);
+    await acknowledgeExpected(owner, error);
+  }));
 
   function phaseControl(owner: FixtureOwner) {
     attachPhaseObserver(owner);
@@ -1393,22 +1597,24 @@ describe('isolated real MCP producer domain admission', () => {
     return { entered: entered.promise, release: release.resolve };
   }
 
-  async function remote(fx: Fixture) {
-    const { publicKey } = generateKeyPairSync('ed25519');
-    const publicKeyBase64 = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
-    const fingerprint = fx.machine.identity.computeFingerprint(publicKeyBase64);
-    fx.machine.peers.addPeer({
-      fingerprint, publicKey: publicKeyBase64, alias: 'Remote fixture', icon: 'computer', color: 'indigo',
-      role: 'member', kind: 'desktop', pairedAt: '2026-01-01T00:00:00.000Z', lastSeen: '',
-    });
-    await fx.grants.updateAgentGrantChanges(caller, () => ({
-      changes: [
-        { action: 'handoff.offer', target: { kind: 'connected' }, mode: 'allow' },
-        { action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'allow' },
-      ],
-    }));
-    vi.spyOn(fx.machine.client, 'isMachineConnected').mockImplementation((machine) => machine === fingerprint);
-    return fingerprint;
+  function remote(fx: Fixture) {
+    return ownGrantIO(fixtureOwner(), async () => {
+      const { publicKey } = generateKeyPairSync('ed25519');
+      const publicKeyBase64 = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+      const fingerprint = fx.machine.identity.computeFingerprint(publicKeyBase64);
+      fx.machine.peers.addPeer({
+        fingerprint, publicKey: publicKeyBase64, alias: 'Remote fixture', icon: 'computer', color: 'indigo',
+        role: 'member', kind: 'desktop', pairedAt: '2026-01-01T00:00:00.000Z', lastSeen: '',
+      });
+      await fx.grants.updateAgentGrantChanges(caller, () => ({
+        changes: [
+          { action: 'handoff.offer', target: { kind: 'connected' }, mode: 'allow' },
+          { action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'allow' },
+        ],
+      }));
+      vi.spyOn(fx.machine.client, 'isMachineConnected').mockImplementation((machine) => machine === fingerprint);
+      return fingerprint;
+    }, fx);
   }
 
   async function configuredSource(fx: Fixture) {
@@ -1636,9 +1842,9 @@ describe('isolated real MCP producer domain admission', () => {
       'fences %s during real postpositive source verification', async (change) => runFixtureBody(async () => {
         const fx = current(), summary = await prepare(fx), peer = await remote(fx);
         const mode = change.startsWith('fresh Allow') ? 'allow' : 'ask';
-        await fx.grants.updateAgentGrantChanges(caller, () => ({
+        await ownGrantIO(fixtureOwner(), () => fx.grants.updateAgentGrantChanges(caller, () => ({
           changes: [{ action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode }],
-        }));
+        })), fx);
         const args = { ...offerArgs(summary), to: `machine:${peer}` };
         if (mode === 'ask') {
           expect((await fx.tools.callTool(caller, 'offer_handoff', args)).isError).toBe(true);
@@ -1714,9 +1920,9 @@ describe('isolated real MCP producer domain admission', () => {
         else fx.gate.setMcpCallerQuick(receiver, projectB);
         (await import('../../src/main/services/clubhouse-mcp/orchestration-gate'))
           .setOrchestrationEnabled(caller, true, { crossProject: true });
-        await fx.grants.updateAgentGrantChanges(caller, () => ({
+        await ownGrantIO(fixtureOwner(), () => fx.grants.updateAgentGrantChanges(caller, () => ({
           changes: [{ action: 'handoff.offer', target: { kind: 'project', project: { path: projectB } }, mode }],
-        }));
+        })), fx);
         const summary = await prepare(fx), args = offerArgs(summary);
         if (mode === 'ask') {
           expect((await fx.tools.callTool(caller, 'offer_handoff', args)).isError).toBe(true);
