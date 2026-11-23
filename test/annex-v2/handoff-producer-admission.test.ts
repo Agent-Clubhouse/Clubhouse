@@ -708,6 +708,7 @@ describe('isolated real MCP producer domain admission', () => {
       (value) => { ioSettled = true; return { status: 'fulfilled' as const, value }; },
       (error: unknown) => { ioSettled = true; return { status: 'rejected' as const, error }; },
     );
+    const errors: unknown[] = [];
     try {
       await Promise.race([
         entered.promise,
@@ -738,7 +739,7 @@ describe('isolated real MCP producer domain admission', () => {
         ioSettled: false, nativeCalls: 0, coreFinished: false,
         originalDirectoryPresent: true, originalUserDataPresent: true,
       });
-    } finally {
+    } catch (error) { errors.push(error); } finally {
       release.resolve();
       if (!core) { hookCompletion(owner); core = coreCompletion(owner); }
       const settled = await Promise.allSettled([actual, core] as const);
@@ -748,7 +749,6 @@ describe('isolated real MCP producer domain admission', () => {
       expect.soft(stopCalls).toBe(1);
       expect.soft(resetCalls).toBe(1);
       expect.soft(nativeFs.existsSync(directory)).toBe(false);
-      const errors: unknown[] = [];
       if (settled[0].status === 'fulfilled') {
         const originalOutcome = await outcome;
         expect.soft(originalOutcome.status).toBe('fulfilled');
@@ -764,9 +764,9 @@ describe('isolated real MCP producer domain admission', () => {
         expect.soft(settled[1].value.teardown).toHaveLength(7);
         if (settled[1].value.failures.length) errors.push(settled[1].value.error);
       }
-      if (errors.length === 1) throw errors[0];
-      if (errors.length > 1) throw Object.assign(new Error('Original direct IO and core failures retained.'), { errors: Object.freeze(errors) });
     }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw Object.assign(new Error('Original direct IO and core failures retained.'), { errors: Object.freeze(errors) });
   }));
 
   it.each([1, 9])('drains a real held preparation and completes teardown before reporting its original caller rejection (%i failures)', async (count) => runFixtureBody(async () => {
