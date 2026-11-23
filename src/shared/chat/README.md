@@ -54,7 +54,9 @@ What a driver and the chat runtime promise about submissions, turns and requests
 ### Stop, interrupt and settlement
 
 - **A turn ends when the provider says so.** `interrupt()` asks. The turn ends with whatever the driver later reports (`cancelled`, `end_turn`, `error`). The runtime never ends a turn on its own, and a provider that reports nothing leaves the turn running.
-- **Requests.** The runtime writes `permission_resolved` / `question_resolved` only for an answer it gave (`by: 'user'` or `'annex'`), once, and drops the driver's echo of it. A driver's own resolution of a request the runtime never answered (a provider cancel or timeout, an interrupt) is written as the driver reports it, and closes the request in Clubhouse: its options and desktop/Annex queue entry are withdrawn (reason `closed by provider`), the state returns to `running`, and a later answer is refused without reaching the provider. If the provider closes a request while Clubhouse's answer to it is in flight and the driver then refuses that answer, the provider's record is written and the request stays closed.
+- **Requests.** The runtime writes `permission_resolved` / `question_resolved` only for an answer it gave (`by: 'user'` or `'annex'`), once, and drops the driver's echo of it. A driver's own resolution of a request the runtime never answered (a provider cancel or timeout, an interrupt) is written as the driver reports it, and closes the request in Clubhouse: its options and desktop/Annex queue entry are withdrawn (reason `closed by provider`), the state returns to `running`, and a later answer is ignored locally and never forwarded (the caller gets no error, as for a request already answered). If the provider closes a request while Clubhouse's answer to it is in flight:
+  - the driver accepts the answer: the answer stands as `by: 'user'` (or `'annex'`), and the provider's competing closure record is discarded as an echo;
+  - the driver refuses the answer: the provider's record is written and the request stays closed.
 - **Stale sessions.** After `clearContext()` the old driver session's events are ignored, and its late receipts cannot re-grant a reservation in the new conversation.
 
 ### Disconnect and unknown outcomes
@@ -72,6 +74,8 @@ Today the runtime and transcript keep driver events whole; the driver event queu
 
 The conformance matrix in each `*.conformance.test.ts` lists what each driver runs, skips by trait, or is blocked on.
 
-- **Copilot requests settled elsewhere.** SDK 2.0.0 reports them as `permission.completed` and `user_input.completed`; the driver does not map them, and its permission handler is given no request id (only `toolCallId`). Blocked for Copilot and pinned in its conformance file.
+- **Copilot requests settled elsewhere.** SDK 2.0.0 reports them as `permission.completed` and `user_input.completed`; the driver does not map them, and its permission handler is given no request id (only `toolCallId`). `permission_closed_by_provider` and `question_closed_by_provider` are blocked for Copilot and pinned in its conformance file.
 - **Questions.** A question the provider closes while Clubhouse's answer is in flight, then refused by the driver, is reopened as before; only permissions handle that race.
-- **Provenance.** A driver's local closure on disconnect still reads like a provider outcome in the transcript (see "Local closure is not a provider outcome").
+- **Provenance.** Unchanged: a driver's local closure on disconnect still reads like a provider outcome in the transcript (see "Local closure is not a provider outcome").
+- **Codex spawn error.** If app-server fails to spawn, its `exitCode` stays null, so the driver does not report `isClosed()`. A held item may then be dispatched; the request is rejected at once (stdin not writable), and the item settles `failed` instead of `dropped`.
+- **What the suite proves.** It runs the real driver code against fakes at existing test seams. No real SDK, CLI, Annex or end-to-end run is part of this proof.
