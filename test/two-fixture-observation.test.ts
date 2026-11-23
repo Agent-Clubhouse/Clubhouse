@@ -65,7 +65,7 @@ describe('two-fixture observation contract', () => {
 
   it.each(['clock', 'beforeBuild', 'serialize', 'sink', 'classify'] as const)('contains %s throw and reentry with once-reserved slots and original failure', async (dependency) => {
     for (const throws of [true, false]) {
-      let scope!: ReturnType<typeof harness>['scope']; let first = true; const lines: string[] = [];
+      let first = true; const lines: string[] = [];
       const callback = () => { if (first) { first = false; if (throws) throw new Error('sensitive-canary'); scope.publish('pre-deadline'); } };
       const h = harness({
         clock: () => { if (dependency === 'clock') callback(); return 1; },
@@ -73,7 +73,7 @@ describe('two-fixture observation contract', () => {
         serialize: (row) => { if (dependency === 'serialize') callback(); return JSON.stringify(row); },
         sink: (line) => { if (dependency === 'sink') callback(); lines.push(line); },
         classify: () => { if (dependency === 'classify') callback(); return 'unknown'; },
-      }); scope = h.scope;
+      }); const scope = h.scope;
       const error = new Error('sensitive-canary'); const actual = Promise.reject(error);
       expect(scope.call('body', () => actual)).toBe(actual); await expect(actual).rejects.toBe(error);
       for (const slot of allSlots) scope.publish(slot);
@@ -98,12 +98,12 @@ describe('two-fixture observation contract', () => {
   });
 
   it('does not let an older classifier overwrite a newer reentrant error', () => {
-    let scope!: ReturnType<typeof harness>['scope']; let first = true;
+    let first = true;
     const newer = new Error('newer-private'); const older = new Error('older-private');
     const h = harness({ classify: (error) => {
       if (first) { first = false; expect(() => scope.call('revision', () => { throw newer; })).toThrow(newer); }
       return error === newer ? 'native-busy' : 'native-denied';
-    } }); scope = h.scope;
+    } }); const scope = h.scope;
     expect(() => scope.call('catalog', () => { throw older; })).toThrow(older);
     expect(scope.read()).toMatchObject({ observerFault: true, errorCategory: 'native-busy' });
   });

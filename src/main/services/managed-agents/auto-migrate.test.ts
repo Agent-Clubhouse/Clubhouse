@@ -12,8 +12,7 @@ vi.mock('../asset-catalog/store', async (importOriginal) => {
   // Factory and installer retain the SAME module's private WeakMap and exact store.
   const actual = await importOriginal<typeof import('../asset-catalog/store')>();
   return { ...actual, installBuiltinAsset: function (this: unknown, ...args: Parameters<typeof actual.installBuiltinAsset>) {
-    const receiver = this;
-    const invoke = () => Reflect.apply(actual.installBuiltinAsset, receiver, args) as ReturnType<typeof actual.installBuiltinAsset>;
+    const invoke = () => Reflect.apply(actual.installBuiltinAsset, this, args) as ReturnType<typeof actual.installBuiltinAsset>;
     const scope = observation.selection?.selected;
     if (!scope?.ownsStore(args[0])) return invoke();
     let kind: unknown;
