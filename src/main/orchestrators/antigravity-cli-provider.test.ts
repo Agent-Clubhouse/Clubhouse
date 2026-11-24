@@ -27,7 +27,7 @@ vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
 import { execFile } from 'child_process';
 import { findBinaryInPath } from './shared';
 import { AntigravityCliProvider, parseAgyVersion } from './antigravity-cli-provider';
-import { parseAgyModels } from './antigravity/models';
+import { parseAgyModels, probeAgyModels } from './antigravity/models';
 import type { ModelList } from './types';
 
 type ExecCallback = (err: Error | null, stdout: string, stderr: string) => void;
@@ -213,6 +213,28 @@ describe('AntigravityCliProvider', () => {
       const many = Array.from({ length: 501 }, (_, i) => `m-${i}  Model ${i}`).join('\n');
       expect(() => parseAgyModels(many)).toThrow(/more than 500/);
       expect(parseAgyModels(many.split('\n').slice(0, 500).join('\n'))).toHaveLength(500);
+    });
+
+    it('turns an oversized listing into a rejected probe inside the execFile callback, not an uncaught error', async () => {
+      const many = Array.from({ length: 501 }, (_, i) => `m-${i}  Model ${i}`).join('\n');
+      execReturns(many);
+      const uncaught = vi.fn();
+      process.on('uncaughtException', uncaught);
+      try {
+        const ctx = { binary: '/x/agy', cwd: '/tmp', signal: new AbortController().signal, timeoutMs: 1000 };
+        await expect(probeAgyModels(ctx)).rejects.toThrow(/agy models output refused: .*more than 500/);
+        await new Promise((r) => setTimeout(r, 0));
+        expect(uncaught).not.toHaveBeenCalled();
+      } finally {
+        process.off('uncaughtException', uncaught);
+      }
+    });
+
+    it('resolves a normal listing through the same callback', async () => {
+      execReturns('gemini-4-neon-high   Gemini 4 Neon (High)\n');
+      const ctx = { binary: '/x/agy', cwd: '/tmp', signal: new AbortController().signal, timeoutMs: 1000 };
+      expect(await probeAgyModels(ctx)).toEqual([{ id: 'gemini-4-neon-high', label: 'Gemini 4 Neon (High)' }]);
+      expect(vi.mocked(execFile).mock.calls[0][1]).toEqual(['models']);
     });
 
     it('accepts only listed slugs and default', () => {

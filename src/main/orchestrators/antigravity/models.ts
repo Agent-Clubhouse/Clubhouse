@@ -70,7 +70,13 @@ export function probeAgyModels(ctx: ModelProbeContext): Promise<ModelInfo[] | nu
         reject(new Error(`agy models failed: ${err.message.split('\n')[0]}`));
         return;
       }
-      resolve(parseAgyModels(String(stdout)));
+      // The parser throws on an oversized list; inside this callback that must
+      // become a rejection (so the caller falls back), never an uncaught error.
+      try {
+        resolve(parseAgyModels(String(stdout)));
+      } catch (parseErr) {
+        reject(new Error(`agy models output refused: ${parseErr instanceof Error ? parseErr.message : 'unreadable'}`));
+      }
     });
   });
 }
