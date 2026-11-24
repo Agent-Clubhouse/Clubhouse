@@ -502,6 +502,29 @@ describe('annex-client', () => {
       } finally { off(); }
     });
 
+    it('re-drives listeners when a direct route drops, returns or the reverse link is replaced while still reachable (#3613)', () => {
+      const heard: string[] = [];
+      const off = annexClient.onMachineReachable((machine) => heard.push(machine));
+      try {
+        annexClient._addConnectedSatelliteForTesting(fingerprint);
+        devicesChanged();
+        expect(heard).toEqual([fingerprint]);
+        // The direct socket drops mid-send; the reverse link stays ready, so the machine stays reachable.
+        annexClient._receiveSatelliteDisconnectForTesting(fingerprint);
+        expect(annexClient.canReachMachine(fingerprint)).toBe(true);
+        expect(heard).toEqual([fingerprint, fingerprint]);
+        // The direct connection comes back: consumers hear it again, as onSatelliteConnected told them.
+        annexClient._addConnectedSatelliteForTesting(fingerprint);
+        devicesChanged();
+        expect(heard).toEqual([fingerprint, fingerprint, fingerprint]);
+        devicesChanged();
+        expect(heard).toHaveLength(3);
+        epoch++;
+        devicesChanged();
+        expect(heard).toHaveLength(4);
+      } finally { off(); }
+    });
+
     it.each([
       ['a phone', { kind: 'phone' as const }],
       ['a pending member', { networkPending: true }],

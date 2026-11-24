@@ -360,16 +360,31 @@ function reconcileSatelliteStreams(): void {
 }
 
 const reachableListeners = new Set<(machine: string) => void>();
-const reachableMachines = new Set<string>();
+/** Each reachable machine's routes: its direct connection generation and accepted reverse link epoch, null when that route is down. */
+const reachableMachines = new Map<string, string>();
 
-/** Tells listeners about machines requests can newly reach, over this machine's connection or an accepted reverse link (#3613). */
+function reachableRoutes(sat: SatelliteConnectionInternal): string {
+  return JSON.stringify([
+    directSatelliteReady(sat.fingerprint) ? connectionEpochs.get(sat.id) ?? 0 : null,
+    reverseControllerReadReady(sat.fingerprint) ? annexControl.getAcceptedLinkEpoch(sat.fingerprint) : null,
+  ]);
+}
+
+/**
+ * Tells listeners about each machine whose routes changed while requests can
+ * reach it (#3613): it became reachable, a direct connection (re)opened, the
+ * accepted reverse link was replaced, or one of two routes went. A send that
+ * failed on the route that went is then re-driven, as a reconnect did before.
+ */
 function noteReachability(): void {
-  const now = new Set<string>();
-  for (const sat of satellites.values()) if (canRequestSatellite(sat.fingerprint)) now.add(sat.fingerprint.toLowerCase());
-  const opened = [...now].filter((machine) => !reachableMachines.has(machine));
+  const now = new Map<string, string>();
+  for (const sat of satellites.values()) {
+    if (canRequestSatellite(sat.fingerprint)) now.set(sat.fingerprint.toLowerCase(), reachableRoutes(sat));
+  }
+  const changed = [...now].filter(([machine, routes]) => reachableMachines.get(machine) !== routes).map(([machine]) => machine);
   reachableMachines.clear();
-  for (const machine of now) reachableMachines.add(machine);
-  for (const machine of opened) {
+  for (const [machine, routes] of now) reachableMachines.set(machine, routes);
+  for (const machine of changed) {
     for (const listener of [...reachableListeners]) {
       try {
         listener(machine);
@@ -389,7 +404,7 @@ export function canReachMachine(machine: string): boolean {
   return canRequestSatellite(satelliteFor(machine)?.fingerprint ?? machine.toLowerCase());
 }
 
-/** Told each time requests to a machine become possible, with its lowercased fingerprint (#3613). */
+/** Told each time requests to a machine become possible or its routes change, with its lowercased fingerprint (#3613). */
 export function onMachineReachable(listener: (machine: string) => void): () => void {
   reachableListeners.add(listener);
   return () => { reachableListeners.delete(listener); };
