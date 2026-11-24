@@ -35,7 +35,10 @@ import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode, 
 import type { AgentRuntime, RoutedMessagePart } from '../../shared/chat';
 import { claudeMcpToolPrefix } from '../../shared/chat/provider-inventory';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
-import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
+import { waitReady as waitMcpBridgeReady, getCurrentAgentConnection } from './clubhouse-mcp/bridge-server';
+import { onAgentMcpConnected } from './clubhouse-mcp/connection-events';
+import { ANTIGRAVITY_BRIDGE_AUTH_DEADLINE_MS, AntigravityMcpConfigError, awaitAuthenticatedBridge, checkClubhouseCollisions, FENCE_REASONS } from '../orchestrators/antigravity/mcp-config';
+import { ANTIGRAVITY_PROVIDER_ID } from '../../shared/providers/antigravity';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { isTrackedDispatcherChat, syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
 import { setMcpCaller, setMcpCallerQuick } from './clubhouse-mcp/mcp-call-gate';
@@ -895,11 +898,14 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         // first, restored on exit), which Claude reads, and in the launch flags
         // for CLIs that take MCP servers only that way (Codex, Copilot).
         const mcpPort = await waitMcpBridgeReady().catch(() => 0);
+        if (provider.id === ANTIGRAVITY_PROVIDER_ID) await refuseAntigravityMcpCollisions(params.projectPath, undefined, null);
         // Not for a TOML CLI (Codex): the launch flags below are its only path (#1728).
         if (mcpPort > 0 && provider.conventions.settingsFormat !== 'toml') {
           const mcpConfigPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
           configPipeline.snapshotFile(params.agentId, mcpConfigPath);
           await tel.step('clubhouse.mcp.inject', () => injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions)).catch((err) => {
+            // Antigravity refused its config (#3793): launching would run an unintended MCP setup.
+            if (err instanceof AntigravityMcpConfigError) throw err;
             appLog('core:mcp', 'warn', 'MCP bridge injection skipped', {
               meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
             });
@@ -1035,6 +1041,40 @@ async function noteTerminalMcpProblems(projectPath: string, agentId: string, con
   }
 }
 
+/**
+ * Antigravity runs whichever server already holds a name, so a `clubhouse`
+ * server in the project's list or the person's global config refuses the
+ * start before anything is written (#3793).
+ */
+async function refuseAntigravityMcpCollisions(
+  projectPath: string,
+  durableConfig: DurableAgentConfig | null | undefined,
+  quickManaged: QuickManagedLaunch | null,
+): Promise<void> {
+  const { resolveProjectMcpServers } = await import('./agent-mcp-servers');
+  const projectServers = quickManaged ? quickManaged.servers : await resolveProjectMcpServers(projectPath, durableConfig ?? undefined);
+  const check = await checkClubhouseCollisions({ projectServers });
+  if (check.ok === false) throw new AntigravityMcpConfigError(check.code, check.reason);
+}
+
+/**
+ * An Antigravity terminal counts as having the Clubhouse MCP only once the
+ * bridge authenticated with this launch's nonce (#3793). If it doesn't in
+ * time, the run is stopped with the reason; a newer run (new nonce) is left alone.
+ */
+async function enforceAntigravityBridgeIdentity(agentId: string, nonce: string, launchedAt: number): Promise<void> {
+  const result = await awaitAuthenticatedBridge({ agentId, expectedNonce: nonce, launchedAt, deadlineMs: ANTIGRAVITY_BRIDGE_AUTH_DEADLINE_MS }, {
+    getAgentNonce: (id) => agentRegistry.get(id)?.nonce,
+    getCurrentAgentConnection,
+    onAgentMcpConnected,
+    onAuthChange: (listener) => agentRegistry.onAuthChange(listener),
+  });
+  if (result.ok === true || result.reason === 'nonce_changed' || agentRegistry.get(agentId)?.nonce !== nonce) return;
+  appLog('core:mcp', 'warn', 'Antigravity bridge did not authenticate; stopping the run', { meta: { agentId, reason: result.reason } });
+  broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, agentId, FENCE_REASONS[result.reason]);
+  ptyManager.kill(agentId);
+}
+
 async function spawnPtyAgent(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
@@ -1079,6 +1119,14 @@ async function spawnPtyAgent(
   // as in chat. Writing it into .codex/config.toml too only made a folder
   // Codex asks the user to trust (#1728).
   const injectMcpFile = provider.conventions.settingsFormat !== 'toml';
+  if (provider.id === ANTIGRAVITY_PROVIDER_ID) {
+    await refuseAntigravityMcpCollisions(params.projectPath, durableConfig, quickManaged).catch(async (err) => {
+      // Release the hooks snapshot taken above without a cleanup write: nothing was written yet.
+      if (hookConfigPath) await configPipeline.preserveUnchangedSnapshot(hookConfigPath);
+      await configPipeline.restoreForAgent(params.agentId);
+      throw err;
+    });
+  }
   if (!managed && injectMcpFile) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
@@ -1108,6 +1156,8 @@ async function spawnPtyAgent(
       mcpPort = port;
       if (injectMcpFile) await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions);
     })).catch((err) => {
+      // Antigravity refused its config (#3793): launching would run an unintended MCP setup.
+      if (err instanceof AntigravityMcpConfigError) throw err;
       // A helper without the bridge couldn't report to its parent, so it doesn't start (#2610).
       if (durableConfig?.parentAgentId) throw helperMcpError(err);
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped', {
@@ -1288,6 +1338,7 @@ async function spawnPtyAgent(
     rollbackAssignment = await activateLocalCausalInput(params.agentId, inputs);
     federation = prepareFederationInputs(params.agentId, inputs);
     await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(...spawnArgs)));
+    if (provider.id === ANTIGRAVITY_PROVIDER_ID) void enforceAntigravityBridgeIdentity(params.agentId, nonce, spawnedAt);
     for (const context of federation) context?.accepted('prompt');
   } catch (err) {
     for (const context of federation) context?.refused();

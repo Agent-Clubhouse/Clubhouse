@@ -5,6 +5,7 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import { OrchestratorProvider } from '../orchestrators/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
+import { isAntigravityWorkspaceMcpPath, restoreAntigravityWorkspaceMcp } from '../orchestrators/antigravity/mcp-config';
 import { scrubClubhouseNonce, scrubClubhouseNonceToml, stripClubhouseMcp, stripClubhouseMcpToml } from './clubhouse-mcp/injection';
 
 /** Optional observer for a cleanup that needs manual repair; existing callers need no changes. */
@@ -100,12 +101,29 @@ function withMutex<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * The snapshot key. Antigravity's workspace MCP file is keyed by its real
+ * path, like its ownership receipt, so agents reaching one worktree through a
+ * symlink alias share one refcount and the first to stop can't strip the
+ * bridge line another still uses. Other files keep `path.resolve` as before.
+ */
+async function snapshotKey(filePath: string): Promise<string> {
+  const absPath = path.resolve(filePath);
+  if (!isAntigravityWorkspaceMcpPath(absPath)) return absPath;
+  const worktree = path.dirname(path.dirname(absPath));
+  try { return path.join(await fsp.realpath(worktree), path.relative(worktree, absPath)); }
+  catch {
+    // telemetry-exempt: an unresolvable worktree can't be written either; its merge refuses on its own.
+    return absPath;
+  }
+}
+
+/**
  * Snapshot a config file before the first agent writes to it.
  * Increments refCount for subsequent agents referencing the same file.
  */
 export function snapshotFile(agentId: string, filePath: string): Promise<void> {
   return withMutex(async () => {
-    const absPath = path.resolve(filePath);
+    const absPath = await snapshotKey(filePath);
 
     if (!snapshots.has(absPath)) {
       let originalContent: string | null = null;
@@ -182,7 +200,7 @@ export function hasSnapshot(filePath: string): boolean {
 /** A refused hook setup must not turn its untouched snapshot into a cleanup write. */
 export function preserveUnchangedSnapshot(filePath: string): Promise<void> {
   return withMutex(async () => {
-    const snapshot = snapshots.get(path.resolve(filePath));
+    const snapshot = snapshots.get(await snapshotKey(filePath));
     if (snapshot) snapshot.preserveIfUnchanged = true;
   });
 }
@@ -370,6 +388,13 @@ async function restoreSnapshot(absPath: string, snapshot: FileSnapshot, options?
       return;
     }
   }
+  // Antigravity's workspace MCP file is cleaned from its current bytes only:
+  // the bridge line comes out, everything else stays (#3794). Never the
+  // generic re-serialize, unlink-on-corrupt or snapshot fallback.
+  if (isAntigravityWorkspaceMcpPath(absPath)) {
+    await restoreAntigravityMcpFile(absPath, options);
+    return;
+  }
   // Keep Copilot out of generic corrupt-file unlink/snapshot-fallback recovery.
   if (isCopilotHooksPath(absPath)) {
     await cleanupCopilotHooksFile(absPath, options);
@@ -401,6 +426,26 @@ async function restoreSnapshot(absPath: string, snapshot: FileSnapshot, options?
       meta: { filePath: absPath, error: err instanceof Error ? err.message : String(err) },
       telemetry: { event: 'clubhouse.config.restore_failed', attrs: [ATTR.configFormat(isTomlFile(absPath) ? 'toml' : 'json')] },
     });
+  }
+}
+
+async function restoreAntigravityMcpFile(absPath: string, options?: ConfigCleanupOptions): Promise<void> {
+  let result: Awaited<ReturnType<typeof restoreAntigravityWorkspaceMcp>>;
+  try { result = await restoreAntigravityWorkspaceMcp(absPath); }
+  catch (err) {
+    // telemetry-exempt: becomes the repair notice and warning below; user bytes are left as they are.
+    result = { repair: `cleanup failed (${err instanceof Error ? err.message : String(err)})` };
+  }
+  if (typeof result === 'string') {
+    appLog('core:config-pipeline', 'info', 'Restored Antigravity MCP config', { meta: { filePath: absPath, result } });
+    return;
+  }
+  const message = `Antigravity MCP config at ${absPath}: ${result.repair}; left unchanged. Review the file and remove any "clubhouse" entry Clubhouse added.`;
+  appLog('core:config-pipeline', 'warn', 'Antigravity MCP config requires manual repair', { meta: { filePath: absPath, detail: result.repair } });
+  try { options?.onRepairRequired?.(message); }
+  catch (err) {
+    // telemetry-exempt: a failed observer cannot authorize cleanup or change a skipped outcome; logged.
+    appLog('core:config-pipeline', 'warn', 'Antigravity repair notice failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }
 }
 

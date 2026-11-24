@@ -23,6 +23,7 @@ import { agentRegistry, untrackAgent } from '../agent-registry';
 import * as configPipeline from '../config-pipeline';
 import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp, buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV } from '../clubhouse-mcp/injection';
+import { AntigravityMcpConfigError } from '../../orchestrators/antigravity/mcp-config';
 import { resolveAgentMcpServers } from '../agent-mcp-servers';
 import { touchSessionEntry } from '../agent-config';
 import { broadcastAgentExit } from '../agent-exit-broadcast';
@@ -573,6 +574,8 @@ async function runChatStart(
       if (injectFile) await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions);
     } catch (err) {
       if (err instanceof ChatStartCancelledError) throw err;
+      // Antigravity refused its config (#3793): starting would run an unintended MCP setup.
+      if (err instanceof AntigravityMcpConfigError) throw err;
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped for chat agent', {
         meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
       });
