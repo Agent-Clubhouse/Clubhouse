@@ -100,7 +100,7 @@ export const MAX_IN_FLIGHT = 16;
 export const CONTROL_SEND_BUFFER_MAX_BYTES = 16 * 1024 * 1024;
 /** Requests a requester has waiting on one connection. */
 export const MAX_PENDING = 64;
-/** A locally cancelled request tolerates one delayed bulk offer, only on that connection. */
+/** A request given up on locally (cancelled or timed out) tolerates one delayed bulk offer, only on that connection. */
 export const CANCELLED_REQUEST_TTL_MS = 30_000;
 export const CANCELLED_REQUEST_MAX_PER_LINK = MAX_PENDING;
 /** How long a target remembers a finished non-read request, so a retry with its id gets the same answer. */
@@ -269,7 +269,6 @@ interface Pending {
 interface CancelledRequest {
   method: ControlMethod;
   path: string;
-  maxResponseBytes?: number;
   at: number;
 }
 
@@ -294,7 +293,7 @@ interface Link {
   heartbeat: ReturnType<typeof setInterval> | null;
   alive: boolean;
   pending: Map<string, Pending>;
-  /** Requester: locally cancelled requests whose late bulk response is refused once, not treated as a protocol fault. */
+  /** Requester: requests given up on locally (cancelled or timed out) whose late bulk response is refused once, not treated as a protocol fault. */
   cancelled: Map<string, CancelledRequest>;
   /** Requester: subscriptions this machine holds over this connection (at most one). */
   subscriptions: Map<string, SubscriptionHandlers>;
@@ -539,7 +538,7 @@ function rememberCancelledRequest(link: Link, request: Pending): void {
     const oldest = link.cancelled.keys().next().value;
     if (oldest !== undefined) link.cancelled.delete(oldest);
   }
-  link.cancelled.set(request.id, { method: request.method, path: request.path, maxResponseBytes: request.maxResponseBytes, at: Date.now() });
+  link.cancelled.set(request.id, { method: request.method, path: request.path, at: Date.now() });
 }
 function makeBulkLane(link: Link): ControlBulkLane {
   return new ControlBulkLane({
@@ -562,12 +561,12 @@ function makeBulkLane(link: Link): ControlBulkLane {
     rejectStart: (kind, id, meta, size) => {
       const message = bulkMeta(kind, id, meta);
       const pending = link.pending.get(id);
-      // A response to a locally cancelled request may already be on its way: refuse it once, within its original bounds.
+      // A response to a request given up on locally may already be on its way: refuse it once, within its route's envelope.
       if (kind === 'response' && message?.type === 'response' && link.direction === 'in' && link.features?.has('request') && !pending) {
         pruneCancelledRequests(link);
         const cancelled = link.cancelled.get(id);
-        if (cancelled && size <= responseBodyLimit(cancelled.path, cancelled.method)
-          && (cancelled.maxResponseBytes === undefined || size <= cancelled.maxResponseBytes)) {
+        // Refusing allocates nothing, so only the route envelope bounds it, not the caller's own limit.
+        if (cancelled && size <= responseBodyLimit(cancelled.path, cancelled.method)) {
           link.cancelled.delete(id);
           return true;
         }
@@ -1268,7 +1267,7 @@ export function request(fingerprint: string, input: ControlRequestInput, options
       const pending = link!.pending.get(id);
       if (!pending) return;
       link!.pending.delete(id);
-      if (code === 'cancelled') rememberCancelledRequest(link!, pending);
+      if (code === 'cancelled' || code === 'timeout') rememberCancelledRequest(link!, pending);
       cleanup();
       link!.bulk.cancel(id);
       rawSend(link!, { v: 1, type: 'cancel', id });

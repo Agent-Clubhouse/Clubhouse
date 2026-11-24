@@ -271,18 +271,28 @@ describe('locally cancelled late bulk response offers', () => {
     expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
   });
 
-  it.each(['metadata', 'request kind', 'client kind', 'route limit', 'local limit'])('does not exempt an offer with invalid %s', async (invalid) => {
+  it.each(['metadata', 'request kind', 'client kind', 'route limit'])('does not exempt an offer with invalid %s', async (invalid) => {
     const { requesterWs } = await connected();
     requesterWs.peer = null;
     const path = '/api/v1/icons/agents/a';
-    await cancel('invalid', { method: 'GET', path }, invalid === 'local limit' ? 0 : undefined);
+    await cancel('invalid', { method: 'GET', path });
     const offer = lateResponse('invalid');
     if (invalid === 'metadata') requesterWs.deliver({ ...offer, meta: { status: '200', headers: {} } });
     if (invalid === 'request kind') requesterWs.deliver({ ...offer, kind: 'request', meta: { method: 'GET', path } });
     if (invalid === 'client kind') requesterWs.deliver({ ...offer, kind: 'client', meta: { frame: { type: 'clipboard:image', payload: {} } } });
     if (invalid === 'route limit') requesterWs.deliver({ ...offer, size: control.responseBodyLimit(path, 'GET') + 1 });
-    if (invalid === 'local limit') requesterWs.deliver(offer);
     expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('refuses an offer above the caller limit but within the route envelope without retiring the link', async () => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    const path = '/api/v1/network/replica';
+    await cancel('local-limit', { method: 'POST', path, body: '{}' }, 1024 * 1024);
+    const offer = { ...lateResponse('local-limit'), size: 1024 * 1024 + 1 };
+    requesterWs.deliver(offer);
+    expect(requesterWs.sent).toContainEqual({ ...offer, op: 'cancel' });
+    expect(requesterWs.closed).toBeNull();
   });
 
   it.each([
@@ -352,7 +362,7 @@ describe('locally cancelled late bulk response offers', () => {
     expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
   });
 
-  it('does not broaden the exception to request timeouts', async () => {
+  it('refuses a late offer for a timed-out request without retiring the link', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { requesterWs } = await connected();
     requesterWs.peer = null;
@@ -360,6 +370,11 @@ describe('locally cancelled late bulk response offers', () => {
       .rejects.toMatchObject({ code: 'timeout' });
     await vi.advanceTimersByTimeAsync(1);
     await result;
+    const offer = lateResponse('timeout');
+    requesterWs.deliver(offer);
+    expect(requesterWs.sent).toContainEqual({ ...offer, op: 'cancel' });
+    expect(sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit')).toHaveLength(0);
+    expect(requesterWs.closed).toBeNull();
     requesterWs.deliver(lateResponse('timeout'));
     expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
   });
