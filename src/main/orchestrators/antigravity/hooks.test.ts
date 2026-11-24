@@ -4,11 +4,11 @@ import * as path from 'path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   antigravityHookCommand,
+  antigravityHooksCleanup,
   antigravityHooksSupported,
   buildAntigravityStatusHook,
-  isClubhouseStatusHook,
   parseAntigravityHookEvent,
-  stripAntigravityStatusHook,
+  renderAntigravityHooksFile,
   validConversationId,
   writeAntigravityHooks,
 } from './hooks';
@@ -55,60 +55,71 @@ describe('the workspace hooks file', () => {
   const file = () => path.join(dir, '.agents', 'hooks.json');
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-hooks-'));
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-hooks-')));
   });
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('creates the file with only Clubhouse\'s hook when there was none', async () => {
-    await writeAntigravityHooks(dir, HOOK_URL);
-    const doc = JSON.parse(fs.readFileSync(file(), 'utf-8'));
-    expect(Object.keys(doc)).toEqual(['clubhouse-status']);
-    expect(isClubhouseStatusHook(doc['clubhouse-status'])).toBe(true);
+  it('creates the file with exactly its own bytes when there is none, and cleanup may delete it', async () => {
+    expect(await writeAntigravityHooks(dir, HOOK_URL)).toBe('created');
+    const text = fs.readFileSync(file(), 'utf-8');
+    expect(text).toBe(renderAntigravityHooksFile(HOOK_URL));
+    expect(Object.keys(JSON.parse(text))).toEqual(['clubhouse-status']);
+    expect(antigravityHooksCleanup(text)).toBe('delete');
   });
 
-  it('keeps the person\'s hooks and other keys exactly, and strips back to them', async () => {
-    const user = {
-      'my-linter-hook': { PostToolUse: [{ matcher: 'run_command', hooks: [{ type: 'command', command: './lint.sh', timeout: 10 }] }] },
-      'safety-gate': { enabled: false, PreToolUse: [{ matcher: 'run_command', hooks: [{ command: './check.sh' }] }] },
-    };
-    fs.mkdirSync(path.dirname(file()), { recursive: true });
-    fs.writeFileSync(file(), '﻿' + JSON.stringify(user));
-    await writeAntigravityHooks(dir, HOOK_URL);
-    const doc = JSON.parse(fs.readFileSync(file(), 'utf-8'));
-    expect(doc['my-linter-hook']).toEqual(user['my-linter-hook']);
-    expect(doc['safety-gate']).toEqual(user['safety-gate']);
-    expect(stripAntigravityStatusHook(doc)).toEqual(user);
-  });
-
-  it('writes nothing when its hook is already current', async () => {
+  it('is a no-op when its own file is already there', async () => {
     await writeAntigravityHooks(dir, HOOK_URL);
     const before = fs.statSync(file()).mtimeMs;
-    const text = fs.readFileSync(file(), 'utf-8');
-    await writeAntigravityHooks(dir, HOOK_URL);
-    expect(fs.readFileSync(file(), 'utf-8')).toBe(text);
+    expect(await writeAntigravityHooks(dir, HOOK_URL)).toBe('unchanged');
     expect(fs.statSync(file()).mtimeMs).toBe(before);
   });
 
-  it('refuses, and leaves the file alone, when the person has their own clubhouse-status hook', async () => {
-    const user = { 'clubhouse-status': { Stop: [{ type: 'command', command: './mine.sh' }] } };
+  it.each([
+    ['the person\'s hooks', JSON.stringify({ 'my-linter-hook': { PostToolUse: [{ matcher: 'run_command', hooks: [{ command: './lint.sh' }] }] } })],
+    ['a hook of the same name', JSON.stringify({ 'clubhouse-status': { Stop: [{ type: 'command', command: './mine.sh' }] } })],
+    ['not JSON', '{ nope'],
+    ['a BOM and comments', '\uFEFF// mine\n{}'],
+  ])('never edits an existing file with %s, byte for byte', async (_label, text) => {
     fs.mkdirSync(path.dirname(file()), { recursive: true });
-    const text = JSON.stringify(user);
     fs.writeFileSync(file(), text);
-    await expect(writeAntigravityHooks(dir, HOOK_URL)).rejects.toThrow(/did not write/);
+    expect(await writeAntigravityHooks(dir, HOOK_URL)).toBe('skipped_existing_file');
     expect(fs.readFileSync(file(), 'utf-8')).toBe(text);
-    expect(stripAntigravityStatusHook(user)).toBe(user);
+    expect(antigravityHooksCleanup(text)).toBe('keep');
   });
 
-  it.each([
-    ['not JSON', '{ nope'],
-    ['an array', '[]'],
-  ])('refuses a file that is %s, untouched', async (_label, text) => {
-    fs.mkdirSync(path.dirname(file()), { recursive: true });
-    fs.writeFileSync(file(), text);
-    await expect(writeAntigravityHooks(dir, HOOK_URL)).rejects.toThrow(/did not modify/);
-    expect(fs.readFileSync(file(), 'utf-8')).toBe(text);
+  it('never claims a copy of its file that the person changed, even by one space or one event', () => {
+    const ours = renderAntigravityHooksFile(HOOK_URL);
+    expect(antigravityHooksCleanup(ours.replace('\n}', ' \n}'))).toBe('keep');
+    const doc = JSON.parse(ours);
+    doc['clubhouse-status'].Stop[0].command += ' && ./mine.sh';
+    expect(antigravityHooksCleanup(`${JSON.stringify(doc, null, 2)}\n`)).toBe('keep');
+    doc['clubhouse-status'].Stop[0].command = 'echo X-Clubhouse-Nonce CLUBHOUSE_AGENT_ID';
+    expect(antigravityHooksCleanup(`${JSON.stringify(doc, null, 2)}\n`)).toBe('keep');
+    const extra = JSON.parse(ours);
+    extra.mine = {};
+    expect(antigravityHooksCleanup(`${JSON.stringify(extra, null, 2)}\n`)).toBe('keep');
+  });
+
+  it('claims its file whatever the callback host and path were', () => {
+    expect(antigravityHooksCleanup(renderAntigravityHooksFile('http://localhost:9/hook'))).toBe('delete');
+  });
+
+  it.runIf(process.platform !== 'win32')('refuses a symlinked .agents folder or hooks file, writing nothing through it', async () => {
+    const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-outside-')));
+    try {
+      fs.symlinkSync(outside, path.join(dir, '.agents'));
+      await expect(writeAntigravityHooks(dir, HOOK_URL)).rejects.toThrow(/symbolic link/);
+      expect(fs.readdirSync(outside)).toEqual([]);
+      fs.unlinkSync(path.join(dir, '.agents'));
+      fs.mkdirSync(path.join(dir, '.agents'));
+      fs.symlinkSync(path.join(outside, 'target.json'), file());
+      await expect(writeAntigravityHooks(dir, HOOK_URL)).rejects.toThrow(/symbolic link/);
+      expect(fs.readdirSync(outside)).toEqual([]);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 
