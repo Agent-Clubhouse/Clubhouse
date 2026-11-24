@@ -26,7 +26,7 @@ beforeEach(async () => {
 afterEach(async () => {
   // Windows: a killed hook's process tree can hold the folder for a moment after taskkill.
   await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
-});
+}, 30_000);
 
 async function writeConfig(config: Json): Promise<string> {
   const file = path.join(tmp, `config-${Math.random().toString(36).slice(2)}.json`);
@@ -359,7 +359,9 @@ describe('fake agy: TUI stub and hooks', () => {
   });
 
   it('a handler past its timeout is killed and reported', async () => {
-    await writeHooks({ slow: { SessionStart: [{ command: node('slow.js'), timeout: 1 }] } }, { 'slow.js': 'setTimeout(()=>{}, 60000);' });
+    // Ends on its own after 2 s, well past the 300 ms timeout under test, so a
+    // Windows process tree that survives the kill can't hold the folder for long.
+    await writeHooks({ slow: { SessionStart: [{ command: node('slow.js'), timeout: 1 }] } }, { 'slow.js': 'setTimeout(()=>{}, 2000);' });
     const config = await writeConfig({ hooks: { maxTimeoutMs: 300 } });
     const started = Date.now();
     await run([], { config, stdin: '/exit\n' });
