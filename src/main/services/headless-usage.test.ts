@@ -40,6 +40,8 @@ describe('headless run usage', () => {
     expect(feed(([{ type: 'turn.completed', usage: {} }] as unknown as StreamJsonEvent[]).flatMap(normalize)).result()).toBeUndefined();
     expect(feed([{ type: 'result', message: { usage: { input_tokens: 0, output_tokens: 0 } } }]).result()?.tokens).toEqual({ input: 0, output: 0 });
     expect(readStreamUsage({ output_tokens: 3 })).toEqual({ output: 3 });
+    // Cache parts without input_tokens: the total input isn't known, only its parts.
+    expect(readStreamUsage({ cache_read_input_tokens: 7, output_tokens: 1 })).toEqual({ cachedInput: 7, output: 1 });
     expect(readStreamUsage({ input_tokens: -1, output_tokens: 'x' })).toBeUndefined();
   });
 });

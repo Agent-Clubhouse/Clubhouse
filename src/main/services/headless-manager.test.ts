@@ -2211,6 +2211,15 @@ describe('headless-manager', () => {
         expect(lines[0][3]?.meta).toMatchObject({ agentId: 'test-agent', kind: 'run', driver: 'headless', input: 10, cachedInput: 7, output: 2, source: 'summed_calls', stopReason: 'completed' });
         expect(JSON.stringify(lines)).not.toContain('private words');
       });
+
+      it('names the CLI, model and effort a durable agent run started with, having no quick-run record', async () => {
+        await spawnHeadless('test-agent', '/project', '/usr/bin/codex', ['exec'], undefined, 'stream-json', undefined, undefined, undefined, undefined, undefined, { provider: 'codex-cli', model: 'gpt-x', effort: 'high' });
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify({ type: 'result', result: 'done', message: { usage: { input_tokens: 5, output_tokens: 1 } } }) + '\n'));
+        mockProcess.emit('close', 0);
+
+        const [line] = vi.mocked(appLog).mock.calls.filter((c) => c[0] === 'core:usage');
+        expect(line[3]?.meta).toMatchObject({ provider: 'codex-cli', model: 'gpt-x', effort: 'high', requested: true, input: 5, output: 1 });
+      });
     });
   });
 

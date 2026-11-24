@@ -30,7 +30,8 @@ export function readStreamUsage(usage: unknown): TokenUsage | undefined {
   const cacheRead = count(usage.cache_read_input_tokens);
   const cacheWrite = count(usage.cache_creation_input_tokens);
   const out: TokenUsage = {};
-  if (base !== undefined || cacheRead !== undefined || cacheWrite !== undefined) out.input = (base ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0);
+  // Total input only when input_tokens itself was reported: cache parts alone would make a lower bound look like a total.
+  if (base !== undefined) out.input = base + (cacheRead ?? 0) + (cacheWrite ?? 0);
   const cached = cacheRead ?? count(usage.cached_input_tokens);
   if (cached !== undefined) out.cachedInput = cached;
   if (cacheWrite !== undefined) out.cacheWrite = cacheWrite;

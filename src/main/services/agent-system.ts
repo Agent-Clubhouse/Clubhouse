@@ -975,6 +975,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           // The caller's fence, after the spawn's own awaits and just before the process starts (#3613).
           params.beforeCreate,
           quickRun ? observeQuickRuntime : undefined,
+          { provider: provider.id, ...(params.model && { model: params.model }), ...(params.effort && { effort: params.effort }) },
         ));
         facts.noPid = !headlessManager.hasPid(params.agentId);
         announceAwake(params.agentId);
