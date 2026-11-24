@@ -1,5 +1,6 @@
 import { app } from 'electron';
-import { CAPACITY_PROVIDERS, type CapacityAgentCounts, type CapacityProvider, type ProviderCapacity } from '../../shared/handoff-capacity';
+import { CAPACITY_PROVIDERS, capacityForWire, type CapacityAgentCounts, type CapacityProvider, type HandoffCapacity, type ProviderCapacity } from '../../shared/handoff-capacity';
+import { peerAgreedFeature } from './annex-control';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { getOrCreateIdentity } from './annex-identity';
 import { getSettings, networkEnabled } from './annex-settings';
@@ -86,12 +87,24 @@ export async function sampleLocalHandoffCapacity() {
 
 /** Per authenticated member, before sampling. Bounded even with a hostile peer. */
 const rates = new Map<string, number[]>();
-export async function receiveCapacityProbe(machine: string, raw: unknown, now = Date.now()) {
+/**
+ * A peer's probe. The local sample keeps every tracked provider; the answer
+ * carries them all only when that machine's current control link agreed to
+ * `capacity-providers`, checked after sampling. Otherwise it carries the
+ * frozen legacy keys, so an older peer never sees a key it would refuse.
+ */
+export async function receiveCapacityProbe(
+  machine: string,
+  raw: unknown,
+  now = Date.now(),
+  agreed: (machine: string) => boolean = (m) => peerAgreedFeature(m, 'capacity-providers'),
+): Promise<HandoffCapacity> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).length) throw new Error('Invalid capacity request.');
   const times = (rates.get(machine) ?? []).filter((at) => now >= at && now - at < 60_000);
   if (times.length >= 30) throw new Error('Capacity probe rate limit reached.');
   for (const [key, values] of rates) if (values.every((at) => now - at >= 60_000)) rates.delete(key);
   if (!rates.has(machine) && rates.size >= 200) throw new Error('Capacity probe rate limit reached.');
   rates.set(machine, [...times, now]);
-  return withCapacityDeadline(() => sampleLocalHandoffCapacity());
+  const sample = await withCapacityDeadline(() => sampleLocalHandoffCapacity());
+  return capacityForWire(sample, agreed(machine));
 }

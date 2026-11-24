@@ -246,8 +246,9 @@ const ANTIGRAVITY_DOCS = 'https://antigravity.google/docs';
  * - No presets, so Auto never considers it; the declared policy is `opt_in`
  *   (#3803), off unless a later change adds presets and an allow setting.
  * - Telemetry reports `other` until the enum addition is reviewed (#3800).
- * - Not capacity-tracked: peers validate the exact capacity key set, so adding
- *   a key needs a compatible wire change first (#3799).
+ * - Capacity-tracked, sent only to peers whose control link agreed to
+ *   `capacity-providers`; others get the frozen legacy keys (#3799). With no
+ *   quota reader its value is `unknown`.
  * - No state folder: Antigravity documents no config-dir override.
  */
 const ANTIGRAVITY_CLI = {
@@ -270,7 +271,7 @@ const ANTIGRAVITY_CLI = {
     quota: 'unknown',
     budgetReserve: false,
   },
-  capacityTracked: false,
+  capacityTracked: true,
   experimental: true,
   features: {
     common: {
@@ -317,11 +318,12 @@ export type BudgetReserveProviderId = IdsWhere<{ helperRouting: { budgetReserve:
 export type CapacityProviderId = IdsWhere<{ capacityTracked: true }>;
 
 /**
- * The order handoff capacity lists its providers in, as sent to peers before
- * descriptors existed. Peers check the key set only; the order is kept so the
- * JSON is byte-for-byte the same. Every capacity-tracked provider must be here.
+ * The order handoff capacity lists its providers in. The first three are the
+ * order sent before descriptors existed, kept so a legacy response is
+ * byte-for-byte the same; later providers follow. Every capacity-tracked
+ * provider must be here.
  */
-export const CAPACITY_WIRE_ORDER: readonly CapacityProviderId[] = ['claude-code', 'copilot-cli', 'codex-cli'];
+export const CAPACITY_WIRE_ORDER: readonly CapacityProviderId[] = ['claude-code', 'copilot-cli', 'codex-cli', ANTIGRAVITY_PROVIDER_ID];
 
 export function isBuiltinProviderId(id: unknown): id is BuiltinProviderId {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(PROVIDER_DESCRIPTORS, id);

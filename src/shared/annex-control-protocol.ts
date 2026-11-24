@@ -48,7 +48,7 @@ export const CONTROL_EVENT_FRAME_MAX_BYTES = CONTROL_FRAME_MAX_BYTES + 64 * 1024
  *   (terminals, agent lifecycle, canvas, clipboard image) to it (P5).
  * - `bulk`: credit-controlled binary bodies with sequence and final digest (P6).
  */
-export const CONTROL_FEATURES = ['request', 'subscribe', 'ws-control', 'bulk'] as const;
+export const CONTROL_FEATURES = ['request', 'subscribe', 'ws-control', 'bulk', 'capacity-providers'] as const;
 
 /**
  * The /ws client frames a subscriber may send over `ws-control` (P5): the /ws
