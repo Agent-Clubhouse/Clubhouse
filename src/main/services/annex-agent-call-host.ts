@@ -71,6 +71,14 @@ export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promis
     return refuse('The receiving Dispatcher or its controller link is unavailable.');
   }
   const direction = getConnectionDirection({ agentId: callerId }, { agentId: item.body.to, machineId: item.machine });
+  if (!direction && isDispatcherAgentId(callerId) && isNetworkComputer(item.machine) && !remoteFederationController(item.machine)?.agentId) {
+    // This Dispatcher's controller link to a member that hasn't published its controller yet: a restart (#3829).
+    // It waits only while the sender's own grant still allows it; anything else is final.
+    const waiting = evaluateGrant({ caller: { kind: 'agent', agentId: callerId, projectPath }, action: 'agent.message', target: { kind: 'agent', relations: ['connected'] } }, grants);
+    return waiting.outcome === 'allow'
+      ? { allowed: false, reason: 'The receiving Dispatcher has not published its controller yet.', notReady: true }
+      : refuse('The sender no longer has an Allow grant for agent.message on this connection.');
+  }
   if ((!direction?.link && !direction?.cardLink && !activeAgentLinks(direction).length) || direction.disabledTools.includes(item.body.tool)) return refuse('The sender connection or its tool permission was removed.');
   const decision = evaluateGrant({
     caller: { kind: 'agent', agentId: callerId, projectPath },

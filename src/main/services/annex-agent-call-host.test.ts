@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   },
   records: new Map<string, ActionRun>(), record: vi.fn(), ready: true,
   settingsRead: vi.fn(async () => ({ targets: [{ model: 'safe-model' }] })),
-  permissionHash: 'approved', member: true, controller: 'controller', controllerEnabled: true, published: true, hostOff: false, configRead: vi.fn(async () => ({ instructions: { text: 'Rules' } })),
+  permissionHash: 'approved', member: true, controller: 'controller', controllerEnabled: true, published: true, dispatcherCaller: false, noDirection: false, hostOff: false, configRead: vi.fn(async () => ({ instructions: { text: 'Rules' } })),
 }));
 vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async () => mocks.grants }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => undefined } }));
@@ -19,8 +19,8 @@ vi.mock('./agent-config', () => ({
   peekDurableConfigs: async (dir: string) => dir === '/dispatcher' ? (mocks.savedDispatcher ? [{ id: 'saved-controller' }] : []) : [{ id: 'sender' }],
   getDurableConfig: async (_dir: string, id: string) => ({ id, ...(mocks.disposed && { disposedAt: '2026-01-01T00:00:00Z' }) }),
 }));
-vi.mock('./connection-grants-store', () => ({ getConnectionDirection: () => ({ link: mocks.link ? {} : undefined, disabledTools: mocks.disabled }) }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherPath: () => '/dispatcher', getDispatcherState: () => ({ enabled: mocks.dispatcherEnabled, path: null }), isDispatcherAgentId: () => false, isDispatcherChatAgentId: () => false }));
+vi.mock('./connection-grants-store', () => ({ getConnectionDirection: () => mocks.noDirection ? undefined : ({ link: mocks.link ? {} : undefined, disabledTools: mocks.disabled }) }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherPath: () => '/dispatcher', getDispatcherState: () => ({ enabled: mocks.dispatcherEnabled, path: mocks.dispatcherCaller ? '/dispatcher' : null }), isDispatcherAgentId: () => mocks.dispatcherCaller, isDispatcherChatAgentId: () => false }));
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ path: '/project' }] }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => mocks.runtime }));
 vi.mock('./actions', () => ({ actionsReady: () => mocks.ready, recordExternalRun: mocks.record }));
@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.clearAllMocks(); mocks.records.clear(); mocks.runtime = undefined; mocks.ready = true;
   mocks.savedDispatcher = false; mocks.dispatcherEnabled = true;
   mocks.link = true; mocks.disabled = []; mocks.disposed = false;
-  mocks.permissionHash = 'approved'; mocks.member = true; mocks.controller = 'controller'; mocks.controllerEnabled = true; mocks.published = true; mocks.hostOff = false;
+  mocks.permissionHash = 'approved'; mocks.member = true; mocks.controller = 'controller'; mocks.controllerEnabled = true; mocks.published = true; mocks.dispatcherCaller = false; mocks.noDirection = false; mocks.hostOff = false;
   mocks.grants = [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'allow' }];
   mocks.record.mockImplementation(async (run: ActionRun) => { mocks.records.set(run.id, run); });
 });
@@ -116,6 +116,25 @@ describe('durable Annex host integration', () => {
       change();
       const queued = name === 'the tool is not a message' ? { ...direct, body: { ...direct.body, tool: 'wake_agent' } } : direct;
       const answer = await authorizeQueuedAnnexCall(queued);
+      expect(answer).toMatchObject({ allowed: false });
+      expect(answer).not.toHaveProperty('notReady');
+    });
+  });
+  describe('this Dispatcher\'s controller link to a restarting member (#3829)', () => {
+    beforeEach(() => { mocks.dispatcherCaller = true; mocks.noDirection = true; mocks.published = false; mocks.dispatcherEnabled = true; });
+    const handOff = { ...item, body: { ...item.body, tool: 'hand_off_request' } };
+    it('waits while the member has published no controller', async () => {
+      mocks.dispatcherEnabled = true;
+      expect(await authorizeQueuedAnnexCall(handOff)).toMatchObject({ allowed: false, notReady: true });
+    });
+    it.each([
+      ['the member published a controller (another one, or the link is gone)', () => { mocks.published = true; }],
+      ['the member was removed', () => { mocks.member = false; }],
+      ['the sender is not this Dispatcher', () => { mocks.dispatcherCaller = false; }],
+      ['the sender grant was withdrawn', () => { mocks.grants = []; }],
+    ])('stays final when %s', async (_name, change) => {
+      change();
+      const answer = await authorizeQueuedAnnexCall(handOff);
       expect(answer).toMatchObject({ allowed: false });
       expect(answer).not.toHaveProperty('notReady');
     });

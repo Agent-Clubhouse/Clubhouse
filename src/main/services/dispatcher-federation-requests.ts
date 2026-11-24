@@ -147,6 +147,11 @@ export interface FederationRequestDependencies {
   /** Both pairing epochs and the derived controller direction must still match. */
   authorized(machine: string, agentId: string, epoch: AnnexDeliveryEpoch): boolean;
   authorizedNews?(machine: string, epoch: AnnexDeliveryEpoch): boolean;
+  /**
+   * Not authorized only because that member, same pairing, hasn't published its
+   * controller yet: a restart (#3829). Such a request waits, until its expiry.
+   */
+  awaitingController?(machine: string, epoch: AnnexDeliveryEpoch): boolean;
   epoch(machine: string): AnnexDeliveryEpoch;
   send(callerId: string, machine: string, targetId: string, envelope: FederationRequestEnvelope, cause: AnnexCallContext, key: string): Promise<{ deliveryId: string; error?: string }>;
   flush?(machine: string): Promise<void>;
@@ -570,16 +575,21 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
         await sendPending(request);
         await showNotice(request);
         if (request.direction === 'incoming' && request.promptState === 'pending' && this.allowed(request.machineId, {})) await presentIncoming(request);
-        if (!current(request) && request.direction === 'incoming' && !request.revocationNotified) {
+        const authorizedNow = current(request);
+        const waiting = !authorizedNow && !!d.awaitingController?.(request.machineId, request.epoch);
+        if (!authorizedNow && !waiting && request.direction === 'incoming' && !request.revocationNotified) {
           const revoked = await replace(request.id, (r) => { r.revocationNotified = true; r.noticePending = 'failure'; r.reason = 'The origin computer or controller link was removed. Queued replies have been dropped.'; });
           await showNotice({ ...revoked, delivery: 'refused' });
         }
         const status = request.deliveryId && d.delivery(request.callerId, request.deliveryId);
-        const state = request.delivery !== 'accepted' ? request.delivery : !current(request) ? 'refused' : status && status.state === 'delivered' ? 'delivered' : d.now() >= request.expiresAt && request.delivery === 'accepted' ? 'expired'
+        const expired = d.now() >= request.expiresAt;
+        const state = request.delivery !== 'accepted' ? request.delivery
+          : waiting ? expired ? 'expired' : request.delivery
+          : !authorizedNow ? 'refused' : status && status.state === 'delivered' ? 'delivered' : expired ? 'expired'
           : status && ['refused', 'expired', 'indeterminate'].includes(status.state) ? status.state === 'expired' ? 'expired' : 'refused'
           : request.delivery;
         if (state === request.delivery) continue;
-        const updated = await replace(request.id, (r) => { r.delivery = state; if (state === 'refused' || state === 'expired') r.noticePending = 'failure'; r.reason = !current(request) ? 'The network member or controller link was removed.' : status ? status.reason : 'The request expired while waiting for the other machine.'; });
+        const updated = await replace(request.id, (r) => { r.delivery = state; if (state === 'refused' || state === 'expired') r.noticePending = 'failure'; r.reason = !authorizedNow && !waiting ? 'The network member or controller link was removed.' : status && !waiting ? status.reason : 'The request expired while waiting for the other machine.'; });
         d.record(updated, 'crossing');
         if (state === 'refused' || state === 'expired') await showNotice(updated);
       }

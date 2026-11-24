@@ -146,6 +146,43 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     const g = fixture(); await g.offer(); g.revoke(); await g.a.api.reconcile();
     expect(g.a.api.list(g.a.self.agentId)[0]).toMatchObject({ delivery: 'refused', outcome: 'under_way', reason: expect.stringContaining('removed') });
   });
+  describe('a receiver whose Dispatcher is restarting (#3829)', () => {
+    it('keeps the request accepted while that member has not published its controller, then delivers', async () => {
+      const f = fixture(); const r = await f.offer();
+      f.revoke(); f.a.deps.awaitingController = () => true;
+      await f.a.api.reconcile();
+      expect(f.a.api.list(f.a.self.agentId)[0]).toMatchObject({ id: r.id, delivery: 'accepted' });
+      expect(f.a.deps.present).not.toHaveBeenCalledWith(expect.objectContaining({ id: r.id }), 'failure');
+      f.a.deps.awaitingController = () => false; f.a.deps.authorized = () => true; f.b.deps.authorized = () => true;
+      await f.pump(); await f.a.api.reconcile();
+      expect(f.a.api.list(f.a.self.agentId)[0]).toMatchObject({ delivery: 'delivered', outcome: 'under_way' });
+    });
+
+    it('still expires at its own expiry while waiting', async () => {
+      const f = fixture(); const r = await f.offer();
+      f.revoke(); f.a.deps.awaitingController = () => true;
+      f.advance(FEDERATED_REQUEST_LIMITS.ttl + 1); await f.a.api.reconcile();
+      expect(f.a.api.list(f.a.self.agentId)[0]).toMatchObject({ delivery: 'expired', reason: expect.stringContaining('expired') });
+      expect(f.a.deps.present).toHaveBeenCalledWith(expect.objectContaining({ id: r.id, delivery: 'expired' }), 'failure');
+    });
+
+    it('refuses for good when the member or pairing is really gone', async () => {
+      const f = fixture(); await f.offer();
+      f.revoke(); f.a.deps.awaitingController = () => false;
+      await f.a.api.reconcile();
+      expect(f.a.api.list(f.a.self.agentId)[0]).toMatchObject({ delivery: 'refused', reason: expect.stringContaining('removed') });
+    });
+
+    it('does not tell the receiver its origin was removed while the origin is only restarting', async () => {
+      const f = fixture(); const r = await f.offer(); await f.pump();
+      f.revoke(); f.b.deps.awaitingController = () => true;
+      await f.b.api.reconcile();
+      expect(f.b.file().requests.find((q) => q.id === r.id)?.revocationNotified).toBeFalsy();
+      f.b.deps.awaitingController = () => false;
+      await f.b.api.reconcile();
+      expect(f.b.file().requests.find((q) => q.id === r.id)?.revocationNotified).toBe(true);
+    });
+  });
   it('keeps bounded independent requests and explicit replies independent across desktops (#3553)', async () => {
     const f = fixture();
     for (let i = 0; i < 12; i++) {
