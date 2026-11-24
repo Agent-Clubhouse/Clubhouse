@@ -1100,6 +1100,7 @@ export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'goobers',
   DISPATCHER_DEBUG_FLAG,
   'copilotSdk', // Legacy preference retained for downgrade compatibility only.
+  'antigravityProvider', // ANTIGRAVITY_EXPERIMENTAL_FLAG (#3785).
 ];
 
 // --- Security settings ---

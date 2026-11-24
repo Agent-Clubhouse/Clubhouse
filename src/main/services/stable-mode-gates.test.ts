@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { ANTIGRAVITY_EXPERIMENTAL_FLAG } from '../../shared/providers/antigravity';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -165,7 +166,7 @@ describe('chat and rich content, in any build', () => {
 describe('the preview-only list', () => {
   it('names each feature by the same key its reader uses', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
-      'goobers', COPILOT_SDK_FLAG, DISPATCHER_DEBUG_FLAG,
+      'goobers', COPILOT_SDK_FLAG, DISPATCHER_DEBUG_FLAG, ANTIGRAVITY_EXPERIMENTAL_FLAG,
     ].sort());
   });
 });
