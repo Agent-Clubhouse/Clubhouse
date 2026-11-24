@@ -304,9 +304,10 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
 - **Children:** `c.provider.resolve`, `c.provider.check_availability`, `c.agent.materialize` (a managed agent's setup delivery, non-fatal; a quick agent's template, which fails the start), then for PTY `c.agent.prepare_pty` with its three parallel children (`c.hooks.configure`, `c.mcp.inject`, `c.provider.build_command`) and `c.pty.spawn`, or `c.headless.spawn` for headless. `c.chat.start` covers a chat start from the moment a driver and CLI are found (`tryStartChatAgent`'s `onStarting`) to started, fallen back or cancelled; a fallback to the terminal is `error.type = chat_start_failed`, a cancel is outcome `cancelled`, and spawns that were never chat record no chat span. Its attributes (#2304): `c.chat.start.result` (`chat`, `fallback` for chat on a lower driver, `terminal`, `cancelled`, `failed`), `c.chat.start.reason` (a closed set), the driver it ended on, `c.chat.drivers_tried`, `c.chat.check_ms`, `c.chat.session_start_ms`, `c.chat.cli_version.status`, `c.agent.resume`, `c.chat.resume_honored` and, for ACP, `c.chat.resume.load_ms` / `.first_reply_ms`. Each driver a start leaves, and a chat agent sent to the terminal before any driver was checked (no driver, binary missing), is a `c.chat.fallback` event (Standard) with the driver, `c.chat.fallback.to` (`driver` or `terminal`), the reason and a registered `error.type`; the reason's text stays in the local log. Turns and the rest of chat come from the chat event bus (§9.1). `provider.check_availability` matters most: it can run a **synchronous `execFileSync(shell -ilc which)` for up to 5 s on the main thread** (`orchestrators/shared.ts:100`), and Codex also runs `codex --version` on every spawn. The lookup tier is recorded on every lookup as `c.provider.binary_lookup.duration` (§4.4 metrics), not on the span.
 - **Attributes:**
   - `c.agent.kind` (`durable`/`quick`/`companion`)
-  - `c.orchestrator` (`claude-code`/`codex-cli`/`copilot-cli`/`other`)
+  - `c.orchestrator` (`claude-code`/`codex-cli`/`copilot-cli`/`antigravity-cli`/`other`; `antigravity-cli` added for #3800, reviewed with the Antigravity provider, existing values unchanged)
   - `c.agent.runtime` (`pty`/`headless`/`chat`)
-  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_sdk`), from chat's capability record. Data from before #2868 can also carry `copilot_acp`, and the allowlist sends anything else as `other`. It is added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
+  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_sdk`/`antigravity_acp`; `antigravity_acp` added for #3800), from chat's capability record. Data from before #2868 can also carry `copilot_acp`, and the allowlist sends anything else as `other`. It is added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
+  - Antigravity (#3800) adds only those two enum values and no attribute. Its auth type, plan, quota, raw model ids, prompts, log paths and CLI version are not exported.
   - `c.agent.resume` (bool)
   - `c.model.family` (bucketed from the model string: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`; the raw model is never sent)
   - `c.hooks.enabled`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
@@ -712,7 +713,7 @@ All attribute keys are declared in **one file**, `src/shared/telemetry/attribute
 ```ts
 export const ATTR = {
   agentKind:     enumAttr('clubhouse.agent.kind', ['durable', 'quick', 'companion']),
-  orchestrator:  enumAttr('clubhouse.orchestrator', ['claude-code', 'codex-cli', 'copilot-cli', 'other']),
+  orchestrator:  enumAttr('clubhouse.orchestrator', ['claude-code', 'codex-cli', 'copilot-cli', 'antigravity-cli', 'other']),
   agentRuntime:  enumAttr('clubhouse.agent.runtime', ['pty', 'headless']),   // 'chat' added by whichever of chat/telemetry lands second
   exitCode:      intAttr('process.exit.code'),
   agentIdHash:   hashAttr('clubhouse.agent.id_hash'),
