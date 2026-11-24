@@ -812,10 +812,11 @@ function snapshotAdmissionCurrent(sat: SatelliteConnectionInternal): boolean {
 }
 
 function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection {
+  const alias = annexPeers.peekPeerAlias(s.fingerprint) || s.alias;
   const liveStream = s.stream && s.stream.snapshotAccepted && satelliteStreamCurrent(s, s.stream);
   return {
     id: s.id,
-    alias: s.alias,
+    alias,
     icon: s.icon,
     color: s.color,
     fingerprint: s.fingerprint,
@@ -829,7 +830,7 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
     lastError: s.lastError,
     ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
     ...(s.needsPairing && { needsPairing: true }),
-    ...(s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, s.alias, { ...s.problem, host: s.host }) }),
+    ...(s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, alias, { ...s.problem, host: s.host }) }),
   };
 }
 
