@@ -20,7 +20,8 @@
  *   not more use: never add them to the turn lines.
  *
  * Role and parent come from the last read of the agent's config. An agent
- * that read doesn't know is `unknown`, with no parent. An agent running in a
+ * that read doesn't know yet is `unknown`, with no parent, and is looked up
+ * again on its next line. An agent running in a
  * terminal publishes no chat events, so it logs nothing here.
  *
  * No message text, tool input or output, prompt or credential is read.
@@ -107,6 +108,8 @@ function agentInfo(agentId: string): UsageAgentInfo {
 }
 
 function who(s: SessionState): Record<string, unknown> {
+  // The agent registry fills in after startup, and a new helper's config is read a moment after it starts.
+  if (s.info.role === 'unknown') s.info = agentInfo(s.agentId);
   return {
     agentId: s.agentId,
     role: s.info.role,
@@ -169,8 +172,9 @@ export function logUsageChatEvent(event: ChatEvent): void {
       if (event.data.model) s.model = event.data.model;
       return;
     case 'model_changed':
+      // Each change carries the whole state: no effort means the model has none (or the provider didn't say).
       s.model = event.data.modelId;
-      s.effort = event.data.effort ?? s.effort;
+      s.effort = event.data.effort;
       return;
     case 'turn_started':
       s.tracker.turnStarted(event.turnId, event.ts);

@@ -13,7 +13,9 @@ const count = (ts: string, total: number) => line({ timestamp: ts, type: 'event_
 describe('codex usage summary', () => {
   it('names the agent from its Clubhouse folder', () => {
     expect(agentLabel('/u/src/Proj/.clubhouse/agents/ux-root')).toBe('ux-root');
-    expect(agentLabel('/u/.clubhouse/dispatcher/work')).toBe('Dispatcher');
+    expect(agentLabel('/u/.clubhouse/dispatcher')).toBe('Dispatcher');
+    expect(agentLabel('/u/.clubhouse/dispatcher-chat')).toBe('Dispatcher');
+    expect(agentLabel('/u/src/dispatcher-tools')).toBe('dispatcher-tools');
     expect(agentLabel(undefined)).toBe('(unknown)');
   });
 

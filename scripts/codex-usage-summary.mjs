@@ -37,7 +37,9 @@ export function agentLabel(cwd) {
   const parts = cwd.split(/[\\/]+/).filter(Boolean);
   const at = parts.lastIndexOf('agents');
   if (at > 0 && parts[at - 1] === '.clubhouse' && parts[at + 1]) return parts[at + 1];
-  if (parts.some((p) => /dispatcher/i.test(p))) return 'Dispatcher';
+  // The Dispatcher's two agents work in ~/.clubhouse/dispatcher and ~/.clubhouse/dispatcher-chat.
+  const at2 = parts.lastIndexOf('.clubhouse');
+  if (at2 !== -1 && /^dispatcher(-chat)?$/.test(parts[at2 + 1] ?? '')) return 'Dispatcher';
   return parts[parts.length - 1] ?? '(unknown)';
 }
 

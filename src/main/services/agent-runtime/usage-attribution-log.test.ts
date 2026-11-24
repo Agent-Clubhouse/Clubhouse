@@ -103,6 +103,25 @@ describe('usage attribution log', () => {
     expect(lines[0].meta).not.toHaveProperty('parentAgentId');
   });
 
+  it('looks an unknown agent up again on its next line', () => {
+    start('late');
+    agents.late = { role: 'helper', parentAgentId: 'orch' };
+    emit('late', 'turn_started', {}, 't1');
+    emit('late', 'turn_ended', { stopReason: 'end_turn' }, 't1');
+    delete agents.late;
+    expect(lines[0].meta.role).toBe('unknown');
+    expect(turnLines()[0]).toMatchObject({ role: 'helper', parentAgentId: 'orch' });
+  });
+
+  it('drops an earlier effort when a model change carries none', () => {
+    start('orch');
+    emit('orch', 'model_changed', { modelId: 'a', effort: 'high' });
+    emit('orch', 'model_changed', { modelId: 'b' });
+    emit('orch', 'turn_started', {}, 't1');
+    emit('orch', 'turn_ended', { stopReason: 'end_turn' }, 't1');
+    expect(turnLines()[0]).toMatchObject({ model: 'b', effort: 'unknown' });
+  });
+
   it('ignores events from a session it did not see start', () => {
     emit('orch', 'turn_started', {}, 't1');
     emit('orch', 'turn_ended', { stopReason: 'end_turn', usage: { input: 1 } }, 't1');
