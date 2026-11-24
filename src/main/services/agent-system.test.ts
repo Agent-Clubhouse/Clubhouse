@@ -3390,6 +3390,19 @@ describe('agent-system', () => {
       expect(mockPtySpawn).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
     });
 
+    it('does not start when the copy before a Codex write could not be made (#3792)', async () => {
+      const { ManagedStartRefused } = await import('./managed-agents/start-refused');
+      const refusal = new ManagedStartRefused('antigravity_codex_backup_failed', 'Clubhouse couldn\'t keep a copy of AGENTS.md');
+      mockDeliverForSpawn.mockRejectedValueOnce(refusal);
+      mockPtySpawn.mockClear(); mockTryStartChatAgent.mockClear();
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1', orchestrator: 'codex-cli',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] },
+      });
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'codex-cli' })).rejects.toBe(refusal);
+      expect(mockPtySpawn).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+    });
+
     it('still starts after a delivery error that is not a refusal', async () => {
       mockDeliverForSpawn.mockRejectedValueOnce(Object.assign(new Error('EACCES'), { code: 'antigravity_instructions_too_large' }));
       mockPtySpawn.mockClear();

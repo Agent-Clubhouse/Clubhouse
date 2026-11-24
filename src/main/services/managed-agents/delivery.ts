@@ -916,24 +916,52 @@ export async function deliverManagedSetup(params: {
  * (#3792): with the person's text beside a valid Clubhouse block, the file's
  * exact bytes are copied to app data (never over an earlier copy); a copy
  * that can't be made refuses the start, so nothing is overwritten. Markers
- * that can't be read, or a linked or non-file AGENTS.md with markers, also
- * refuse with how to fix it. An AGENTS.md without Antigravity markers is
- * Codex's as before.
+ * that can't be read, or a link whose file has markers, also refuse with how
+ * to fix it. So does an AGENTS.md whose text can't be known: unreadable, a
+ * link Clubhouse can't follow, or something other than a plain file or
+ * folder (never read, since that could block). An AGENTS.md that is
+ * missing, a folder, a link to nothing, or text without Antigravity markers
+ * is Codex's as before.
  */
 async function keepTextBesideAntigravityBlock(agentId: string, worktree: string): Promise<void> {
   const file = path.join(worktree, ANTIGRAVITY_PATHS.instructions);
+  const unknown = (why: string) => new ManagedStartRefused('antigravity_instructions_unsafe',
+    `Clubhouse can't read ${ANTIGRAVITY_PATHS.instructions} (${why}), so it can't tell whether an Antigravity start left your text in it, and Codex won't write over it. Nothing was written and the agent did not start. Make AGENTS.md a plain, readable file (or remove it), then start it again.`);
+  const code = (err: unknown) => (err as NodeJS.ErrnoException).code ?? 'unknown';
   let st;
-  try { st = await fsp.lstat(file); } catch { return; /* telemetry-exempt: no AGENTS.md, nothing to keep */ }
-  if (st.isSymbolicLink() || !st.isFile()) {
-    // Read through the link only to see whether an Antigravity start wrote there; never written through.
-    const through = st.isSymbolicLink() ? await fsp.readFile(file).catch((): null => null) : null;
-    if (through && hasAntigravityMarkerLine(through)) {
-      throw new ManagedStartRefused('antigravity_instructions_unsafe',
-        `${ANTIGRAVITY_PATHS.instructions} is a link and has Clubhouse's Antigravity block markers, so Codex won't write over it. Nothing was written and the agent did not start. Replace the link with a plain file, or take the clubhouse-managed block out of the file it points to.`);
-    }
-    return;
+  try {
+    st = await fsp.lstat(file);
+  } catch (err) {
+    if (code(err) === 'ENOENT') return;
+    throw unknown(code(err));
   }
-  const bytes = await fsp.readFile(file);
+  // A folder can't be written over (Codex's write fails, as before); any other non-file is never read, which could block.
+  if (st.isDirectory()) return;
+  if (st.isSymbolicLink()) {
+    let target;
+    try {
+      target = await fsp.stat(file);
+    } catch (err) {
+      // A link to nothing holds no text to lose: Codex's write goes ahead as before.
+      if (code(err) === 'ENOENT') return;
+      throw unknown(`a link Clubhouse can't follow: ${code(err)}`);
+    }
+    if (!target.isFile()) throw unknown('a link to something other than a plain file');
+  } else if (!st.isFile()) {
+    throw unknown('not a plain file');
+  }
+  let bytes: Buffer;
+  try {
+    bytes = await fsp.readFile(file);
+  } catch (err) {
+    throw unknown(code(err));
+  }
+  if (st.isSymbolicLink()) {
+    // Read through the link only to see whether an Antigravity start wrote there; never written through when it did.
+    if (!hasAntigravityMarkerLine(bytes)) return;
+    throw new ManagedStartRefused('antigravity_instructions_unsafe',
+      `${ANTIGRAVITY_PATHS.instructions} is a link and has Clubhouse's Antigravity block markers, so Codex won't write over it. Nothing was written and the agent did not start. Replace the link with a plain file, or take the clubhouse-managed block out of the file it points to.`);
+  }
   if (!hasAntigravityMarkerLine(bytes)) return;
   let outside: Buffer;
   try {

@@ -376,6 +376,49 @@ describe('Antigravity managed delivery (#3792)', () => {
       expect(copies()).toEqual([]);
     });
 
+    it('refuses an AGENTS.md whose text can\'t be known, never reading a non-file; keeps Codex as before where it can be', async () => {
+      await codexSetup();
+      const posix = process.platform !== 'win32';
+      // A folder: Codex's write fails as it always did, and it is not a refusal.
+      fs.mkdirSync(agentsMd());
+      const dirErr = await deliver(other('codex-cli')).catch((e: unknown) => e);
+      expect(dirErr).toBeInstanceOf(Error);
+      expect(isManagedStartRefused(dirErr)).toBe(false);
+      fs.rmSync(agentsMd(), { recursive: true });
+      if (posix) {
+        // A FIFO is never opened (a read would block): refused.
+        execFileSync('mkfifo', [agentsMd()]);
+        await expect(deliver(other('codex-cli'))).rejects.toMatchObject({ code: 'antigravity_instructions_unsafe' });
+        expect(fs.lstatSync(agentsMd()).isFIFO()).toBe(true);
+        fs.rmSync(agentsMd());
+        // A file that can't be read: its text is unknown, so refused, and it stays as it was.
+        if (process.getuid?.() !== 0) {
+          fs.writeFileSync(agentsMd(), withBlock);
+          fs.chmodSync(agentsMd(), 0o200);
+          await expect(deliver(other('codex-cli'))).rejects.toMatchObject({ code: 'antigravity_instructions_unsafe' });
+          fs.chmodSync(agentsMd(), 0o644);
+          expect(fs.readFileSync(agentsMd()).equals(withBlock)).toBe(true);
+          fs.rmSync(agentsMd());
+        }
+      }
+      try { fs.symlinkSync(path.join(root, 'nowhere.md'), agentsMd()); } catch { return; /* no symlink rights (Windows without developer mode) */ }
+      // A link to nothing holds no text: Codex writes through it as before.
+      await deliver(other('codex-cli'));
+      expect(fs.readFileSync(path.join(root, 'nowhere.md'), 'utf-8')).toBe('codex text');
+      fs.rmSync(agentsMd());
+      // A link to a folder: not a plain file, refused.
+      fs.mkdirSync(path.join(root, 'a-folder'));
+      fs.symlinkSync(path.join(root, 'a-folder'), agentsMd());
+      await expect(deliver(other('codex-cli'))).rejects.toMatchObject({ code: 'antigravity_instructions_unsafe' });
+      fs.rmSync(agentsMd());
+      // A link to a file without markers: Codex as before.
+      fs.writeFileSync(path.join(root, 'plain.md'), 'plain\n');
+      fs.symlinkSync(path.join(root, 'plain.md'), agentsMd());
+      await deliver(other('codex-cli'));
+      expect(fs.readFileSync(path.join(root, 'plain.md'), 'utf-8')).toBe('codex text');
+      expect(copies()).toEqual([]);
+    });
+
     it('refuses a linked AGENTS.md with Antigravity markers, and writes through no link', async () => {
       await codexSetup();
       const target = path.join(root, 'elsewhere.md');
