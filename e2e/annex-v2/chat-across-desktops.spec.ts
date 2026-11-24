@@ -161,8 +161,6 @@ test('a controller reads and drives a chat agent on another desktop', async () =
   await expect(controller.window.getByTestId('chat-image-viewer')).toContainText('Copied');
   await controller.window.getByTestId('chat-image-viewer').getByRole('button', { name: 'Close', exact: true }).click();
   // The returned tool image is a satellite mediaRef too, independent of the uploaded echo.
-  const tools = remoteView.getByTestId('chat-group-toggle').last();
-  if ((await tools.getAttribute('aria-expanded')) === 'false') await tools.click();
   await expect(remoteView.getByTestId('chat-tool-images').getByTestId('chat-image-thumb')).toBeVisible();
   await remoteView.getByRole('link', { name: 'remote fixture file' }).click();
   await expect(controller.window.getByTestId('local-file-preview')).toHaveCount(0);
