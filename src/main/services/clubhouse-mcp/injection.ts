@@ -29,7 +29,7 @@ import { pathExists } from '../fs-utils';
 import { injectMcpServerSection, stripMcpServerSection } from '../toml-utils';
 import type { McpServerDef } from '../../../shared/types';
 // Used only inside functions, so the import cycle with this module is safe.
-import { isAntigravityWorkspaceMcpPath, mergeAntigravityWorkspaceMcp, mergeAntigravityMcpServers } from '../../orchestrators/antigravity/mcp-config';
+import { isAntigravityWorkspaceMcpPath, mergeAntigravityWorkspaceMcp, addAntigravityTemplateMcpServers } from '../../orchestrators/antigravity/mcp-config';
 
 /** Commands that should never be allowed as MCP server commands. */
 const DANGEROUS_COMMANDS = new Set([
@@ -331,10 +331,10 @@ export function injectTemplateMcpServers(
     const conv = { ...DEFAULT_CONVENTIONS, ...conventions };
     const mcpConfigPath = path.join(cwd, conv.mcpConfigFile);
 
-    // Antigravity: merged beside the person's entries; a name they already use is refused (#3794).
+    // Antigravity: added beside the person's entries; a name they already use is refused (#3794).
     if (isAntigravityWorkspaceMcpPath(mcpConfigPath)) {
       for (const [name, def] of Object.entries(servers)) validateMcpServerDef(name, def);
-      await mergeAntigravityMcpServers(cwd, servers as Record<string, McpServerDef>);
+      await addAntigravityTemplateMcpServers(cwd, servers as Record<string, McpServerDef>);
       appLog('core:mcp', 'info', 'Injected template MCP servers into Antigravity workspace config', {
         meta: { cwd, serverNames: Object.keys(servers), configPath: mcpConfigPath },
       });
