@@ -379,7 +379,8 @@ describe('ACP driver: cancel', () => {
     await cancelled;
     expect((await perm.response).result).toEqual({ outcome: { outcome: 'cancelled' } });
     expect((await question.response).result).toEqual({ action: 'cancel' });
-    expect(drafts.of('permission_resolved')[0].data).toMatchObject({ decision: 'cancelled', by: 'user' });
+    // The driver's own cancellation, not an answer from the user (QA A-2).
+    expect(drafts.of('permission_resolved')[0].data).toMatchObject({ decision: 'cancelled', by: 'agent' });
     expect(drafts.of('question_resolved')[0].data).toMatchObject({ cancelled: true });
     // Cancel sent is not the turn ending.
     await settle();
@@ -566,11 +567,19 @@ describe('ACP driver: config and unknowns', () => {
     expect(agent.sentRequests('session/set_config_option')).toHaveLength(2);
   });
 
-  it('switches effort alone when the agent offers no model choice', async () => {
-    const { agent, session } = await open({ configOptions: [MODEL_OPTIONS[1]] });
-    expect(session.capabilities).toMatchObject({ modelSwitch: 'none', effortSwitch: 'live' });
-    await session.setModel('whatever', 'high');
+  it('changes effort alone when the caller passes the current model (the UI and Annex do)', async () => {
+    const { agent, session } = await open({ configOptions: MODEL_OPTIONS });
+    await session.setModel('small', 'high');
     expect(agent.sentRequests('session/set_config_option')).toEqual([{ sessionId: 'session-1', configId: 'thinking', value: 'high' }]);
-    await expect(session.setModel('whatever')).rejects.toThrow(/no model choice/);
+  });
+
+  it('rejects a model it cannot apply instead of ignoring it (QA A-3)', async () => {
+    const effortOnly = await open({ configOptions: [MODEL_OPTIONS[1]] });
+    expect(effortOnly.session.capabilities).toMatchObject({ modelSwitch: 'none', effortSwitch: 'live' });
+    await expect(effortOnly.session.setModel('whatever', 'high')).rejects.toThrow(/no model choice/);
+    await expect(effortOnly.session.setModel('whatever')).rejects.toThrow(/no model choice/);
+    const offered = await open({ configOptions: MODEL_OPTIONS });
+    await expect(offered.session.setModel('huge', 'high')).rejects.toThrow(/doesn't offer model "huge"/);
+    expect([...effortOnly.agent.sentRequests('session/set_config_option'), ...offered.agent.sentRequests('session/set_config_option')]).toEqual([]);
   });
 });
