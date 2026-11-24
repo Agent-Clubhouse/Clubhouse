@@ -12,8 +12,8 @@
  * mean the agent lacks it (session/cancel, for one, has no advertise bit).
  */
 
-import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities } from '../../../shared/chat/capabilities';
-import type { AuthMethod, Implementation, InitializeResponse, SessionConfigOption } from './protocol';
+import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type PermissionLevel } from '../../../shared/chat/capabilities';
+import type { AuthMethod, Implementation, InitializeResponse, SessionConfigOption, SessionModeState } from './protocol';
 
 export interface AcpNegotiated {
   protocolVersion: number;
@@ -42,7 +42,70 @@ export interface AcpStaticClaims {
   questions?: boolean;
   /** The agent sends `usage_update` (context fill). ACP has no bit for it. */
   usageContext?: boolean;
+  /**
+   * A `session/prompt` written while a turn runs joins that turn instead of
+   * starting a new one (Antigravity documents this). ACP v1 has no steer
+   * method or bit, and the docs don't say how each prompt is answered, so the
+   * driver keeps one turn open until every prompt in it has been answered.
+   */
+  steer?: boolean;
 }
+
+/**
+ * Provider policy mapping Clubhouse's permission levels onto the agent's
+ * session modes. ACP has modes but no shared meaning for their ids, so this
+ * is the provider's mapping from its docs. A level only counts as available
+ * when the session itself offers the mapped mode.
+ */
+export interface AcpLevelPolicy {
+  /** The mode id for a level, or undefined when the level isn't a session mode. */
+  mode(level: PermissionLevel): string | undefined;
+  /**
+   * Levels set only by how the process is launched (a CLI flag in
+   * `AcpLaunchSpec.args`), so changing to or from one needs a restart.
+   */
+  processLevels?: readonly PermissionLevel[];
+}
+
+/** The session's mode choice, from a `mode` config option or the `modes` state, whichever the agent sent. */
+export interface AcpModeChoice {
+  current: string;
+  available: string[];
+  /** How a change is sent: `session/set_config_option` with this option id, or `session/set_mode`. */
+  via: { configId: string } | 'set_mode';
+}
+
+export function modeChoice(configOptions: readonly SessionConfigOption[], modes: SessionModeState | undefined): AcpModeChoice | undefined {
+  const option = selectOption(configOptions, 'mode');
+  if (option) {
+    const available = option.options.flatMap((o) => ('group' in o ? o.options : [o])).map((o) => o.value);
+    return { current: option.currentValue, available, via: { configId: option.id } };
+  }
+  if (modes && typeof modes.currentModeId === 'string' && Array.isArray(modes.availableModes)) {
+    return { current: modes.currentModeId, available: modes.availableModes.map((m) => m.id), via: 'set_mode' };
+  }
+  return undefined;
+}
+
+/** Levels the session can switch to live: mapped, offered by the session, and not set by the launch. */
+export function liveLevelsFor(policy: AcpLevelPolicy | undefined, choice: AcpModeChoice | undefined, launchedLevel: PermissionLevel | undefined): PermissionLevel[] {
+  if (!policy || !choice) return [];
+  // A process-level launch (e.g. skip all permission prompts) can't be left without a restart.
+  if (launchedLevel && policy.processLevels?.includes(launchedLevel)) return [];
+  return PERMISSION_LEVEL_ORDER.filter((level) => {
+    const mode = policy.mode(level);
+    return mode !== undefined && !policy.processLevels?.includes(level) && choice.available.includes(mode);
+  });
+}
+
+/** The level a mode id maps back to, when exactly one level maps to it. */
+export function levelForMode(policy: AcpLevelPolicy | undefined, modeId: string): PermissionLevel | undefined {
+  if (!policy) return undefined;
+  const matches = PERMISSION_LEVEL_ORDER.filter((level) => policy.mode(level) === modeId);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+const PERMISSION_LEVEL_ORDER: readonly PermissionLevel[] = ['plan', 'ask', 'auto_edit', 'auto', 'full_access'];
 
 /** Observed in this session's setup responses and updates. */
 export interface AcpSessionFacts {
@@ -51,6 +114,8 @@ export interface AcpSessionFacts {
   commands: boolean;
   /** A `usage_update` arrived. */
   usage: boolean;
+  /** The `modes` state from the setup answer, kept current by `current_mode_update`. */
+  modes?: SessionModeState;
 }
 
 export function negotiate(init: InitializeResponse, clientElicitationForm: boolean): AcpNegotiated {
@@ -78,12 +143,17 @@ export function selectOption(options: readonly SessionConfigOption[], category: 
   return options.find((o): o is Extract<SessionConfigOption, { type: 'select' }> => o.category === category && o.type === 'select');
 }
 
-export function acpChatCapabilities(n: AcpNegotiated, facts: AcpSessionFacts, claims: AcpStaticClaims = {}): ChatCapabilities {
+export function acpChatCapabilities(
+  n: AcpNegotiated,
+  facts: AcpSessionFacts,
+  claims: AcpStaticClaims = {},
+  levels?: { policy?: AcpLevelPolicy; launched?: PermissionLevel },
+): ChatCapabilities {
   return {
     ...MINIMAL_CHAT_CAPABILITIES,
-    // The stable schema has no steer method; a provider mapping of its own
-    // documented mid-turn behaviour is outside this neutral derivation.
-    steer: false,
+    // The stable schema has no steer method. Only a provider that documents
+    // that a prompt sent mid-turn joins the turn claims it.
+    steer: claims.steer === true,
     // No protocol queue; the chat runtime holds messages until the turn ends.
     queue: 'client',
     // session/cancel is baseline for every agent (SessionCapabilities), and the
@@ -103,8 +173,9 @@ export function acpChatCapabilities(n: AcpNegotiated, facts: AcpSessionFacts, cl
     slashCommands: facts.commands,
     modelSwitch: selectOption(facts.configOptions, 'model') ? 'live' : 'none',
     effortSwitch: selectOption(facts.configOptions, 'thought_level') ? 'live' : 'none',
-    // Permission levels map onto provider-specific modes; that's provider policy.
-    liveLevels: [],
+    // Permission levels map onto provider-specific modes (the launch spec's
+    // policy); only modes this session offers count.
+    liveLevels: liveLevelsFor(levels?.policy, modeChoice(facts.configOptions, facts.modes), levels?.launched),
     // Not negotiated: Clubhouse doesn't advertise terminal auth or call
     // `authenticate`, and an empty authMethods list doesn't prove no login is
     // needed. The baseline (log in with the CLI itself) stands.
