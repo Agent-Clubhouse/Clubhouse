@@ -86,10 +86,11 @@ describe('descriptors reproduce the former lists exactly', () => {
   });
 
   it('telemetry codes stay closed (attributes.ts and the six knownCli checks)', () => {
-    for (const id of ['claude-code', 'codex-cli', 'copilot-cli']) expect(providerTelemetryCode(id)).toBe(id);
-    for (const id of ['antigravity-cli', '', null, undefined, '__proto__', 'toString']) expect(providerTelemetryCode(id)).toBe('other');
+    for (const id of ['claude-code', 'codex-cli', 'copilot-cli', 'antigravity-cli']) expect(providerTelemetryCode(id)).toBe(id);
+    for (const id of ['gemini-cli', '', null, undefined, '__proto__', 'toString']) expect(providerTelemetryCode(id)).toBe('other');
     expect(ATTR.orchestrator('claude-code').value).toBe('claude-code');
-    expect(ATTR.orchestrator('antigravity-cli' as never).value).toBe('other');
+    expect(ATTR.orchestrator('antigravity-cli').value).toBe('antigravity-cli');
+    expect(ATTR.orchestrator('gemini-cli' as never).value).toBe('other');
     expect(ATTR.helperRoutingRequestedCli('auto').value).toBe('auto');
     expect(ATTR.helperAskerCli('none').value).toBe('none');
   });
@@ -124,8 +125,8 @@ describe('Antigravity descriptor', () => {
     expect(PRESET_PROVIDERS).not.toContain('antigravity-cli');
   });
 
-  it('reports other in telemetry and stays out of capacity until those reviewed changes land', () => {
-    expect(d.telemetryCode).toBe('other');
+  it('has its reviewed telemetry value, and stays out of capacity until a peer-compatible wire change', () => {
+    expect(d.telemetryCode).toBe('antigravity-cli');
     expect(CAPACITY_PROVIDERS).not.toContain('antigravity-cli');
     expect(AUTO_RESERVE_PROVIDERS).not.toContain('antigravity-cli');
   });
