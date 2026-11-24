@@ -371,7 +371,7 @@ Metrics: `c.agent.turn.duration` (s), `c.agent.tokens` counter (unit `{token}`, 
 - `c.chat.protocol.unknown` is a counter by `c.chat.driver` and `c.chat.protocol.kind`. The native method or field name isn't sent, because attributes are closed enums and there is no per-driver allowlist yet.
 - `c.agent.turn.stalled` counts a turn with no event for 5 minutes, once per turn. Time spent waiting on a permission or a question doesn't count.
 - `session_started` opens a `chat` agent run (`c.agent.runtime=chat`) that the exit broadcast closes. A context clear stays in the same run.
-- `c.chat.start` is not from the bus. It's a child of `c.agent.spawn` added in Phase 4b (#1978), recorded only when a chat driver actually starts. `c.chat.fallback` (#2304) comes from the same spawn path, not from the bus's `session_ended` with reason `fallback`, which only discards the run.
+- `c.chat.start` is not from the bus. It's a child of `c.agent.spawn` added in Phase 4b (#1978), recorded only when a chat driver actually starts. `c.chat.fallback` (#2304) comes from the same spawn path (its `c.chat.fallback.to` is `driver`, `terminal`, or `none` for a provider whose failed start opens no terminal, #3800; `none` is not a destination, and `c.chat.start.result` is `failed` for that start as for one that threw), not from the bus's `session_ended` with reason `fallback`, which only discards the run.
 - Not mapped yet: `c.chat.rpc`, because the bus carries no protocol calls.
 - The Workbook has a Chat tab for these signals.
 

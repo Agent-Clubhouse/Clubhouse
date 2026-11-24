@@ -474,7 +474,8 @@ export const ATTR = {
   /**
    * `chat` on the first driver, `fallback` in chat on a lower driver,
    * `terminal` opened in the terminal instead, `cancelled` killed or
-   * replaced by a newer start, `failed` the start threw.
+   * replaced by a newer start, `failed` the start threw, or ended as a
+   * failure with no terminal fallback (#3800, a provider that doesn't fall back).
    */
   chatStartResult: enumAttr('clubhouse.chat.start.result', ['chat', 'fallback', 'terminal', 'cancelled', 'failed']),
   /** Why a driver was skipped or the start ended where it did. A closed set; the message itself goes to diag only. */
@@ -482,8 +483,13 @@ export const ATTR = {
     'no_driver', 'binary_missing', 'paused', 'handshake_failed', 'login_required', 'version_below_min',
     'version_known_bad', 'start_failed', 'failed_after_session_start', 'killed', 'superseded', 'error',
   ]),
-  /** Where a fallback went: the provider's next driver, or the terminal. */
-  chatFallbackTo: enumAttr('clubhouse.chat.fallback.to', ['driver', 'terminal']),
+  /**
+   * Where a fallback went: the provider's next driver, or the terminal. `none` is
+   * a driver left with nowhere to go, for a provider whose start fails without
+   * opening the terminal (#3800). It is not a fallback destination, so a count of
+   * fallbacks to the terminal stays a count of real ones.
+   */
+  chatFallbackTo: enumAttr('clubhouse.chat.fallback.to', ['driver', 'terminal', 'none']),
   /** The CLI version policy's verdict; `lookup_failed` when no version could be read this time (#2275). */
   chatCliVersionStatus: enumAttr('clubhouse.chat.cli_version.status', [
     'ok', 'untested', 'below_min', 'known_bad', 'unknown', 'lookup_failed',
