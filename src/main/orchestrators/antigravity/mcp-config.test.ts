@@ -240,6 +240,24 @@ describe('workspace files on disk', () => {
     expect(await read()).toBe('{"mcpServers": {"clubhouse": {"command": "x"}}}');
   });
 
+  it('shared worktree: the first agent to stop leaves the line for the one still running (QA M2)', async () => {
+    await writeUserFile();
+    await configPipeline.snapshotFile('agent-a', file);
+    await mergeAntigravityWorkspaceMcp(worktree, { bridgeScriptPath: BRIDGE });
+    await configPipeline.snapshotFile('agent-b', file);
+    await mergeAntigravityWorkspaceMcp(worktree, { bridgeScriptPath: BRIDGE });
+    expect((await read()).match(/clubhouse-mcp-bridge\.js/g)).toHaveLength(1);
+    await configPipeline.restoreForAgent('agent-a');
+    expect(await read()).toContain(bridgeMemberText(BRIDGE));
+    await configPipeline.restoreForAgent('agent-b');
+    expect(await read()).toBe(USER_FILE);
+  });
+
+  it('an interrupted start\'s own line is refused with a repair hint, not adopted (QA M1)', async () => {
+    await writeUserFile((insertLines(USER_FILE, 'mcpServers', [bridgeMemberText(BRIDGE)]) as { text: string }).text);
+    await expect(mergeAntigravityWorkspaceMcp(worktree, opts())).rejects.toThrow(/interrupted Clubhouse start/);
+  });
+
   describe('symlinks', () => {
     it('refuses a .agents link into HOME/.gemini and leaves the target bytes', async () => {
       const target = path.join(home, '.gemini', 'config');

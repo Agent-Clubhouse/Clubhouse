@@ -131,7 +131,8 @@ export async function mergeAntigravityWorkspaceMcp(worktree: string, options: Fi
     const stripped = stripOwned(current ?? CREATED_SKELETON, owned, (slot) => slot === BRIDGE_SLOT);
     if (stripped.ok === false) return fail(MCP, stripped.code, stripped.reason);
     if (namesOf(stripped.text).includes(CLUBHOUSE_MCP_SERVER_NAME)) {
-      return fail(MCP, 'collision', 'a "clubhouse" server that Clubhouse has no record of writing is configured');
+      // No adoption from matching bytes (a start interrupted before its receipt was committed lands here too).
+      return fail(MCP, 'collision', 'a "clubhouse" server that Clubhouse has no record of writing is configured. If an interrupted Clubhouse start left it, remove that entry');
     }
     const next = insertLines(stripped.text, SERVERS, [line]);
     if (next.ok === false) return fail(MCP, next.code, next.reason);

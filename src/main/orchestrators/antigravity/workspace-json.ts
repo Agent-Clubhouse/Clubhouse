@@ -53,7 +53,11 @@ export type AntigravityWorkspaceErrorCode =
   /** The file changed while Clubhouse edited it. */
   | 'concurrent_edit'
   /** A symlink, a non-regular file, a path outside the worktree, or a target inside `~/.gemini`. */
-  | 'unsafe_path';
+  | 'unsafe_path'
+  /** The file system refused the write (for example no hard links); the earlier bytes are back in place. */
+  | 'write_failed'
+  /** An earlier Clubhouse edit was interrupted and its state can't be proven; the person must repair it. */
+  | 'interrupted';
 
 export class AntigravityWorkspaceError extends Error {
   constructor(readonly code: AntigravityWorkspaceErrorCode, message: string) {
@@ -109,28 +113,71 @@ export function memoryReceiptStore(): ReceiptStore {
   };
 }
 
-/** A JSON map in one owner-only file, replaced atomically. */
+const isHashList = (v: unknown): v is string[] => Array.isArray(v) && v.every((h) => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h));
+const isNullableHash = (v: unknown): boolean => v === null || (typeof v === 'string' && /^[0-9a-f]{64}$/.test(v));
+
+/** A loaded entry is used only when its shape is exactly what Clubhouse writes. */
+function isFileReceipt(v: unknown): v is FileReceipt {
+  if (!v || typeof v !== 'object') return false;
+  const r = v as Record<string, unknown>;
+  const c = r.committed as Record<string, unknown> | undefined;
+  if (!c || typeof c !== 'object' || typeof c.created !== 'boolean' || typeof c.createdDir !== 'boolean') return false;
+  if (!c.members || typeof c.members !== 'object' || Array.isArray(c.members) || !Object.values(c.members).every(isHashList)) return false;
+  if (!Array.isArray(c.containers) || !c.containers.every((x) => typeof x === 'string')) return false;
+  if (r.pending === undefined) return true;
+  const p = r.pending as Record<string, unknown>;
+  return !!p && typeof p === 'object' && typeof p.txid === 'string' && isNullableHash(p.beforeHash) && isNullableHash(p.afterHash);
+}
+
+/** One chain per store file, so concurrent edits of different workspace files never lose each other's entries. */
+const storeLocks = new Map<string, Promise<unknown>>();
+function withStoreLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = storeLocks.get(key) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  const tail = next.then(() => {}, () => {});
+  storeLocks.set(key, tail);
+  void tail.then(() => { if (storeLocks.get(key) === tail) storeLocks.delete(key); });
+  return next;
+}
+
+/**
+ * A JSON map in one owner-only file, replaced atomically (written, synced,
+ * renamed). Every read-modify-write is serialized per store file in this
+ * process. A malformed entry refuses rather than being trusted.
+ */
 export function fileReceiptStore(storeFile: () => string): ReceiptStore {
-  const load = async (): Promise<Record<string, FileReceipt>> => {
+  const load = async (target: string): Promise<Record<string, unknown>> => {
     try {
-      const parsed: unknown = JSON.parse(await fsp.readFile(storeFile(), 'utf-8'));
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, FileReceipt> : {};
+      const parsed: unknown = JSON.parse(await fsp.readFile(target, 'utf-8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return {};
-      // An unreadable store proves nothing: refuse rather than act without ownership.
-      throw new AntigravityWorkspaceError('unparsable', 'Clubhouse could not read its Antigravity workspace ownership record');
     }
+    // An unreadable store proves nothing: refuse rather than act without ownership.
+    throw new AntigravityWorkspaceError('unparsable', 'Clubhouse could not read its Antigravity workspace ownership record');
   };
   return {
-    get: async (file) => (await load())[file],
-    set: async (file, receipt) => {
-      const all = await load();
-      if (receipt) all[file] = receipt; else delete all[file];
+    get: (file) => {
       const target = storeFile();
-      await fsp.mkdir(path.dirname(target), { recursive: true });
-      const tmp = `${target}.tmp.${randomUUID().slice(0, 8)}`;
-      await fsp.writeFile(tmp, JSON.stringify(all), { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
-      await fsp.rename(tmp, target);
+      return withStoreLock(target, async () => {
+        const entry = (await load(target))[file];
+        if (entry === undefined) return undefined;
+        if (!isFileReceipt(entry)) throw new AntigravityWorkspaceError('unparsable', 'Clubhouse\'s Antigravity workspace ownership record is malformed');
+        return entry;
+      });
+    },
+    set: (file, receipt) => {
+      const target = storeFile();
+      return withStoreLock(target, async () => {
+        const all = await load(target);
+        if (receipt) all[file] = receipt; else delete all[file];
+        await fsp.mkdir(path.dirname(target), { recursive: true });
+        const tmp = `${target}.tmp.${randomUUID().slice(0, 8)}`;
+        const handle = await fsp.open(tmp, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600);
+        try { await handle.writeFile(JSON.stringify(all), 'utf-8'); await handle.sync(); }
+        finally { await handle.close(); }
+        await fsp.rename(tmp, target);
+      });
     },
   };
 }
@@ -363,29 +410,57 @@ async function linkOrConflict(from: string, to: string): Promise<'done' | 'confl
   catch (err) { if ((err as NodeJS.ErrnoException).code === 'EEXIST') return 'conflict'; throw err; }
 }
 
+const errCode = (err: unknown): string => String((err as NodeJS.ErrnoException)?.code ?? 'error');
+
 /**
  * Replace `file` (holding `expected`, null: absent) with `next` (null:
  * delete). The current file is moved aside and compared before the new one is
  * linked in; `link` fails if a file appeared meanwhile. Returns 'conflict'
- * with the bytes left in place when the file was not what was expected.
+ * with the bytes back in place when the file was not what was expected. On
+ * any failure after the move, the moved bytes are linked back; if that is
+ * impossible the error names where they are, and nothing is deleted.
  */
 async function swapFile(file: string, relFile: string, expected: string | null, next: string | null): Promise<'done' | 'conflict'> {
   const mode = (await lstatOrNull(file))?.mode ?? 0o644;
   const tmp = next === null ? null : await writeTemp(file, next, mode & 0o777);
   try {
-    if (expected === null) return tmp === null ? 'done' : await linkOrConflict(tmp, file);
+    if (expected === null) {
+      if (tmp === null) return 'done';
+      try { return await linkOrConflict(tmp, file); }
+      catch (err) { throw new AntigravityWorkspaceError('write_failed', `${relFile}: the file system refused the write (${errCode(err)}); nothing was changed`); }
+    }
     const aside = path.join(path.dirname(file), `.${path.basename(file)}.prev.${randomUUID().slice(0, 8)}`);
     try { await fsp.rename(file, aside); }
-    catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 'conflict'; throw err; }
-    const moved = await readNoFollow(aside, relFile);
-    if (moved !== expected || (tmp !== null && await linkOrConflict(tmp, file) === 'conflict')) {
-      // Put the moved bytes back unless something new took the path meanwhile.
-      if (await linkOrConflict(aside, file) === 'done') await fsp.unlink(aside);
-      else throw new AntigravityWorkspaceError('concurrent_edit', `${relFile} changed while Clubhouse edited it; the earlier contents are kept at ${aside}.`);
-      return 'conflict';
+    catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 'conflict';
+      throw new AntigravityWorkspaceError('write_failed', `${relFile}: the file could not be moved for the edit (${errCode(err)}); nothing was changed`);
     }
-    await fsp.unlink(aside);
-    return 'done';
+    let outcome: 'done' | 'conflict';
+    let failure: unknown;
+    try {
+      const moved = await readNoFollow(aside, relFile);
+      outcome = moved !== expected ? 'conflict' : tmp === null ? 'done' : await linkOrConflict(tmp, file);
+    } catch (err) {
+      failure = err;
+      outcome = 'conflict';
+    }
+    if (outcome === 'done') {
+      await fsp.unlink(aside).catch(() => { /* telemetry-exempt: a leftover copy of the old bytes is harmless and kept */ });
+      return 'done';
+    }
+    // Put the moved bytes back unless something new took the path meanwhile.
+    let restored: 'done' | 'conflict' | 'failed';
+    try { restored = await linkOrConflict(aside, file); }
+    catch { restored = 'failed'; }
+    if (restored !== 'done') {
+      throw new AntigravityWorkspaceError('concurrent_edit', `${relFile} changed or could not be written while Clubhouse edited it; the earlier contents are kept at ${aside}.`);
+    }
+    await fsp.unlink(aside).catch(() => { /* telemetry-exempt: the bytes are back in place; the extra link is harmless */ });
+    if (failure !== undefined) {
+      if (failure instanceof AntigravityWorkspaceError) throw failure;
+      throw new AntigravityWorkspaceError('write_failed', `${relFile}: the file system refused the write (${errCode(failure)}); the earlier contents are back in place`);
+    }
+    return 'conflict';
   } finally {
     if (tmp) await fsp.unlink(tmp).catch(() => { /* telemetry-exempt: already linked into place and removed */ });
   }
@@ -402,13 +477,42 @@ function withFileLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-/** The committed receipt, after settling a pending record a crash left (it never confers ownership). */
-async function committedFor(file: string): Promise<CommittedOwnership> {
+/**
+ * The committed receipt, after settling a pending record a crash left. A
+ * pending record never confers ownership (no promotion from matching bytes):
+ * it is dropped, except when the file is missing although the interrupted
+ * edit meant to leave one. Then the bytes moved aside for that edit are put
+ * back if exactly one copy matches the recorded before-hash; otherwise the
+ * edit refuses and the pending record stays, so nothing ever creates a fresh
+ * file over the person's displaced config.
+ */
+async function committedFor(file: string, relFile: string): Promise<CommittedOwnership> {
   const receipt = await receiptStore.get(file);
   if (!receipt) return emptyOwnership();
   const committed: CommittedOwnership = { ...emptyOwnership(), ...receipt.committed };
-  if (receipt.pending) await receiptStore.set(file, ownsNothing(committed) && !committed.created ? undefined : { committed });
+  const pending = receipt.pending;
+  if (pending) {
+    if (pending.beforeHash !== null && pending.afterHash !== null && await lstatOrNull(file) === null) {
+      await restoreMovedAside(file, relFile, pending.beforeHash);
+    }
+    await receiptStore.set(file, ownsNothing(committed) && !committed.created ? undefined : { committed });
+  }
   return committed;
+}
+
+async function restoreMovedAside(file: string, relFile: string, beforeHash: string): Promise<void> {
+  const prefix = `.${path.basename(file)}.prev.`;
+  const names = (await fsp.readdir(path.dirname(file)).catch((): string[] => [])).filter((n) => n.startsWith(prefix));
+  const matches: string[] = [];
+  for (const name of names) {
+    const candidate = path.join(path.dirname(file), name);
+    const text = await readNoFollow(candidate, relFile).catch((): null => null);
+    if (text !== null && sha256(text) === beforeHash) matches.push(candidate);
+  }
+  const interrupted = (detail: string) => new AntigravityWorkspaceError('interrupted', `${relFile}: an earlier Clubhouse edit was interrupted and the file is missing; ${detail}. Restore the file, then start the agent again.`);
+  if (matches.length !== 1) throw interrupted(matches.length ? `${matches.length} saved copies match, so Clubhouse can't choose` : 'no saved copy of its contents was found');
+  if (await linkOrConflict(matches[0], file).catch((): 'failed' => 'failed') !== 'done') throw interrupted(`its earlier contents are at ${matches[0]}`);
+  await fsp.unlink(matches[0]).catch(() => { /* telemetry-exempt: the bytes are back in place; the extra link is harmless */ });
 }
 
 const hashOrNull = (t: string | null): string | null => t === null ? null : sha256(t);
@@ -429,8 +533,8 @@ export async function transact(
 ): Promise<{ file: string; changed: boolean; created: boolean; deleted: boolean }> {
   const { file, dir } = await safeTarget(worktree, relFile, options.home);
   return withFileLock(file, async () => {
+    const owned = await committedFor(file, relFile);
     const current = await readNoFollow(file, relFile);
-    const owned = await committedFor(file);
     if (current === null && (owned.created || !ownsNothing(owned))) {
       // The file is gone: nothing Clubhouse wrote is left to own.
       owned.created = false; owned.members = {}; owned.containers = [];

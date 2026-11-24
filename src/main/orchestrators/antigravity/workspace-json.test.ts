@@ -10,11 +10,25 @@ import * as os from 'os';
 import * as path from 'path';
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/clubhouse-test' } }));
+// Real file operations, with link and open wrapped so tests can inject failures.
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return {
+    ...actual,
+    default: actual,
+    link: vi.fn((...a: Parameters<typeof actual.link>) => actual.link(...a)),
+    open: vi.fn((...a: Parameters<typeof actual.open>) => actual.open(...a)),
+  };
+});
 
+import { createHash } from 'crypto';
 import {
-  AntigravityWorkspaceError, emptyOwnership, insertOwnedMember, memoryReceiptStore, removeOwnedMember,
+  AntigravityWorkspaceError, emptyOwnership, fileReceiptStore, insertOwnedMember, memoryReceiptStore, removeOwnedMember,
   setAntigravityReceiptStore, slotOf, TOP_LEVEL_SKELETON, type ReceiptStore,
 } from './workspace-json';
+
+const errno = (code: string) => Object.assign(new Error(code), { code });
+const hashOf = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
 
 const REL = '.agents/hooks.json';
 const HOOK = { container: null, key: 'clubhouse-status' } as const;
@@ -180,5 +194,112 @@ describe('path containment', () => {
     await fsp.symlink(outside, file);
     await expect(insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts())).rejects.toMatchObject({ code: 'unsafe_path' });
     expect(await fsp.readFile(outside, 'utf-8')).toBe('{}');
+  });
+});
+
+describe('swap failure recovery (QA B2)', () => {
+  let realLink: typeof fsp.link;
+  let realOpen: typeof fsp.open;
+  beforeEach(async () => {
+    const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+    realLink = actual.link; realOpen = actual.open;
+    vi.mocked(fsp.link).mockImplementation((...a) => realLink(...a));
+    vi.mocked(fsp.open).mockImplementation((...a) => realOpen(...a));
+  });
+
+  it('a non-EEXIST link failure after the move puts the person\'s bytes back', async () => {
+    await write(USER_HOOKS);
+    vi.mocked(fsp.link).mockImplementationOnce(async () => { throw errno('EPERM'); });
+    await expect(insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts())).rejects.toMatchObject({ code: 'write_failed' });
+    expect(await read()).toBe(USER_HOOKS);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(['hooks.json']);
+    expect(await store.get(file)).toBeUndefined();
+  });
+
+  it('a failure reading the moved bytes puts them back', async () => {
+    await write(USER_HOOKS);
+    vi.mocked(fsp.open).mockImplementation(async (...a) => {
+      if (String(a[0]).includes('.prev.')) throw errno('EIO');
+      return realOpen(...a);
+    });
+    await expect(insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts())).rejects.toMatchObject({ code: 'write_failed' });
+    expect(await read()).toBe(USER_HOOKS);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(['hooks.json']);
+  });
+
+  it('when the bytes can\'t be put back, the error names where they are and nothing is deleted', async () => {
+    await write(USER_HOOKS);
+    vi.mocked(fsp.link).mockImplementation(async () => { throw errno('EPERM'); });
+    const err = await insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts()).catch((e: unknown) => e) as AntigravityWorkspaceError;
+    expect(err.code).toBe('concurrent_edit');
+    const aside = fs.readdirSync(path.dirname(file)).find((n) => n.includes('.prev.'))!;
+    expect(err.message).toContain(aside);
+    expect(await fsp.readFile(path.join(path.dirname(file), aside), 'utf-8')).toBe(USER_HOOKS);
+  });
+
+  it('creating an absent file on a file system without hard links refuses and writes nothing', async () => {
+    vi.mocked(fsp.link).mockImplementationOnce(async () => { throw errno('ENOTSUP'); });
+    await expect(insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts())).rejects.toMatchObject({ code: 'write_failed' });
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it('crash after the move: the single matching saved copy is put back, never a fresh file', async () => {
+    await write(USER_HOOKS);
+    const aside = path.join(path.dirname(file), '.hooks.json.prev.deadbeef');
+    await fsp.rename(file, aside);
+    await store.set(file, { committed: emptyOwnership(), pending: { txid: 't', beforeHash: hashOf(USER_HOOKS), afterHash: hashOf('x') } });
+    await insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts());
+    expect(fs.existsSync(aside)).toBe(false);
+    await removeOwnedMember(worktree, REL, HOOK, opts());
+    expect(await read()).toBe(USER_HOOKS);
+  });
+
+  it('crash after the move with no matching copy: refused, no file created, pending kept', async () => {
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    await store.set(file, { committed: emptyOwnership(), pending: { txid: 't', beforeHash: hashOf(USER_HOOKS), afterHash: hashOf('x') } });
+    await expect(insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts())).rejects.toMatchObject({ code: 'interrupted' });
+    expect(fs.existsSync(file)).toBe(false);
+    expect(await removeOwnedMember(worktree, REL, HOOK, opts())).toMatchObject({ repair: expect.stringContaining('interrupted') });
+    expect((await store.get(file))?.pending).toBeTruthy();
+  });
+
+  it('a planned delete that completed before its commit is simply settled', async () => {
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    await store.set(file, { committed: { ...emptyOwnership(), created: true }, pending: { txid: 't', beforeHash: hashOf('{}'), afterHash: null } });
+    expect(await removeOwnedMember(worktree, REL, HOOK, opts())).toBe('clean');
+  });
+});
+
+describe('receipt store (QA B1)', () => {
+  it('concurrent edits of different files through one real store file both commit', async () => {
+    const storeFile = path.join(tmp, 'userData', 'receipts.json');
+    setAntigravityReceiptStore(fileReceiptStore(() => storeFile));
+    const trees = await Promise.all(Array.from({ length: 6 }, async (_, i) => {
+      const wt = path.join(tmp, `wt${i}`);
+      await fsp.mkdir(path.join(wt, '.agents'), { recursive: true });
+      await fsp.writeFile(path.join(wt, REL), USER_HOOKS);
+      return wt;
+    }));
+    await Promise.all(trees.map((wt) => insertOwnedMember(wt, REL, { ...HOOK, valueJsonText: VALUE }, opts())));
+    const all = JSON.parse(await fsp.readFile(storeFile, 'utf-8')) as Record<string, { committed: { members: Record<string, string[]> }; pending?: unknown }>;
+    expect(Object.keys(all)).toHaveLength(6);
+    for (const entry of Object.values(all)) {
+      expect(entry.pending).toBeUndefined();
+      expect(entry.committed.members[slotOf(null, 'clubhouse-status')]).toHaveLength(1);
+    }
+    await Promise.all(trees.map((wt) => removeOwnedMember(wt, REL, HOOK, opts())));
+    for (const wt of trees) expect(await fsp.readFile(path.join(wt, REL), 'utf-8')).toBe(USER_HOOKS);
+    expect(JSON.parse(await fsp.readFile(storeFile, 'utf-8'))).toEqual({});
+    expect(fs.statSync(storeFile).mode & 0o077).toBe(0);
+  });
+
+  it('a malformed store entry refuses rather than being trusted', async () => {
+    const storeFile = path.join(tmp, 'userData', 'receipts.json');
+    await fsp.mkdir(path.dirname(storeFile), { recursive: true });
+    await write(USER_HOOKS);
+    await fsp.writeFile(storeFile, JSON.stringify({ [file]: { committed: { members: 'nope' } } }));
+    setAntigravityReceiptStore(fileReceiptStore(() => storeFile));
+    await expect(insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts())).rejects.toMatchObject({ code: 'unparsable' });
+    expect(await read()).toBe(USER_HOOKS);
   });
 });
