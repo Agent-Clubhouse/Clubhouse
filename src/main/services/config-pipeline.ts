@@ -101,12 +101,29 @@ function withMutex<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * The snapshot key. Antigravity's workspace MCP file is keyed by its real
+ * path, like its ownership receipt, so agents reaching one worktree through a
+ * symlink alias share one refcount and the first to stop can't strip the
+ * bridge line another still uses. Other files keep `path.resolve` as before.
+ */
+async function snapshotKey(filePath: string): Promise<string> {
+  const absPath = path.resolve(filePath);
+  if (!isAntigravityWorkspaceMcpPath(absPath)) return absPath;
+  const worktree = path.dirname(path.dirname(absPath));
+  try { return path.join(await fsp.realpath(worktree), path.relative(worktree, absPath)); }
+  catch {
+    // telemetry-exempt: an unresolvable worktree can't be written either; its merge refuses on its own.
+    return absPath;
+  }
+}
+
+/**
  * Snapshot a config file before the first agent writes to it.
  * Increments refCount for subsequent agents referencing the same file.
  */
 export function snapshotFile(agentId: string, filePath: string): Promise<void> {
   return withMutex(async () => {
-    const absPath = path.resolve(filePath);
+    const absPath = await snapshotKey(filePath);
 
     if (!snapshots.has(absPath)) {
       let originalContent: string | null = null;
@@ -183,7 +200,7 @@ export function hasSnapshot(filePath: string): boolean {
 /** A refused hook setup must not turn its untouched snapshot into a cleanup write. */
 export function preserveUnchangedSnapshot(filePath: string): Promise<void> {
   return withMutex(async () => {
-    const snapshot = snapshots.get(path.resolve(filePath));
+    const snapshot = snapshots.get(await snapshotKey(filePath));
     if (snapshot) snapshot.preserveIfUnchanged = true;
   });
 }

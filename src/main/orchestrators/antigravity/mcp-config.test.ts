@@ -253,6 +253,21 @@ describe('workspace files on disk', () => {
     expect(await read()).toBe(USER_FILE);
   });
 
+  it('shared worktree through a symlink alias shares one refcount', async () => {
+    await writeUserFile();
+    const alias = path.join(tmp, 'wt-alias');
+    await fsp.symlink(worktree, alias);
+    const aliasFile = antigravityWorkspaceMcpPath(alias);
+    await configPipeline.snapshotFile('agent-a', aliasFile);
+    await mergeAntigravityWorkspaceMcp(alias, { bridgeScriptPath: BRIDGE });
+    await configPipeline.snapshotFile('agent-b', file);
+    await mergeAntigravityWorkspaceMcp(worktree, { bridgeScriptPath: BRIDGE });
+    await configPipeline.restoreForAgent('agent-a');
+    expect(await read()).toContain(bridgeMemberText(BRIDGE));
+    await configPipeline.restoreForAgent('agent-b');
+    expect(await read()).toBe(USER_FILE);
+  });
+
   it('an interrupted start\'s own line is refused with a repair hint, not adopted (QA M1)', async () => {
     await writeUserFile((insertLines(USER_FILE, 'mcpServers', [bridgeMemberText(BRIDGE)]) as { text: string }).text);
     await expect(mergeAntigravityWorkspaceMcp(worktree, opts())).rejects.toThrow(/interrupted Clubhouse start/);
