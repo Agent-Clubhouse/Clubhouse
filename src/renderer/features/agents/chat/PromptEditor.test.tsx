@@ -137,6 +137,6 @@ it('replaces a source range while preserving adjacent text and emphasis', () => 
   const { editor, handle, onChange } = mount(draft);
   const start = draft.indexOf('/co');
   act(() => handle.current!.replace(start, start + '/co'.length, '/compact'));
-  expect(onChange).toHaveBeenLastCalledWith('- **hello** /compact later');
+  expect(onChange.mock.lastCall?.[0]).toBe('- **hello** /compact later');
   expect(editor.querySelector('li strong')?.textContent).toBe('hello');
 });
