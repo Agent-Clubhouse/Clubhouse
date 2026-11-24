@@ -152,4 +152,8 @@ export const remoteChat = {
     // null is the provider's default; left out, the effort stays as it is.
     await command(nsId, 'chat.setModel', { sessionId: needSession(sessionId), model, ...(effort !== undefined && { effort }) });
   },
+  /** Effort alone: chat.setModel without a model, for an agent that offers no model choice. */
+  async setEffort(nsId: string, sessionId: string | null | undefined, effort: string | null): Promise<void> {
+    await command(nsId, 'chat.setModel', { sessionId: needSession(sessionId), effort });
+  },
 };

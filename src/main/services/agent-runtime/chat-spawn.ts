@@ -19,11 +19,14 @@ import * as path from 'path';
 import type { OrchestratorProvider } from '../../orchestrators';
 import type { FreeAgentPermissionMode, DurableAgentConfig } from '../../../shared/types';
 import type { AgentRuntime, ChatEventDataMap, PermissionLevel, RoutedMessagePart, SessionEndReason } from '../../../shared/chat';
-import { agentRegistry, untrackAgent } from '../agent-registry';
+import { agentRegistry, getAgentNonce, untrackAgent } from '../agent-registry';
 import * as configPipeline from '../config-pipeline';
 import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
-import { injectClubhouseMcp, buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV } from '../clubhouse-mcp/injection';
-import { AntigravityMcpConfigError } from '../../orchestrators/antigravity/mcp-config';
+import { injectClubhouseMcp, buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV, isClubhouseMcpEntry } from '../clubhouse-mcp/injection';
+import { getCurrentAgentConnection } from '../clubhouse-mcp/bridge-server';
+import { onAgentMcpConnected } from '../clubhouse-mcp/connection-events';
+import { ANTIGRAVITY_BRIDGE_AUTH_DEADLINE_MS, AntigravityMcpConfigError, awaitAuthenticatedBridge, checkClubhouseCollisions, FENCE_REASONS } from '../../orchestrators/antigravity/mcp-config';
+import { CHAT_START_FAILED_AFTER_START_NOTICE, CHAT_START_FAILED_NOTICE, chatFailsExplicitly } from '../../../shared/chat/start-failure';
 import { resolveAgentMcpServers } from '../agent-mcp-servers';
 import { touchSessionEntry } from '../agent-config';
 import { broadcastAgentExit } from '../agent-exit-broadcast';
@@ -202,6 +205,8 @@ export interface ChatStartFacts {
   /** Set when the session opened with a requested resume. */
   resumeHonored?: boolean;
   resumeTiming?: ChatResumeTiming;
+  /** Why a start ended in 'failed' (explicit-failure providers), in the user's words. */
+  failure?: string;
 }
 
 interface DriverCheck {
@@ -252,7 +257,28 @@ async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, 
  * terminal; or cancelled (the agent was killed, or a newer start for it took
  * over), so the caller does nothing more.
  */
-export type ChatStartResult = 'chat' | 'terminal' | 'cancelled';
+export type ChatStartResult = 'chat' | 'terminal' | 'cancelled' | 'failed';
+
+
+/** A start refused before any driver ran it, with the reason to show. */
+class ChatStartRefusedError extends Error {}
+
+/** Why an explicit-failure start ended in 'failed', for the caller to announce after the agent's exit. */
+function chatStartFailed(facts: ChatStartFacts, providerId: string, reason: string): 'failed' {
+  facts.failure = `${cliLabel(providerId)} chat didn't start: ${reason}`;
+  return 'failed';
+}
+
+/**
+ * Say why a start ended in 'failed'. Sent after the agent's exit broadcast,
+ * so the agent shows as failed with this reason, not as asleep.
+ */
+export function announceChatStartFailure(agentId: string, facts: ChatStartFacts, context: { mission?: string; systemPrompt?: string }): void {
+  // After the session started, the mission may have reached the agent: the
+  // renderer then doesn't put it back in the composer as unsent.
+  const mayHaveSent = facts.attempts.some((a) => a.reason === 'failed_after_session_start');
+  notifyFallback(agentId, { level: 'warn', code: mayHaveSent ? CHAT_START_FAILED_AFTER_START_NOTICE : CHAT_START_FAILED_NOTICE, message: facts.failure ?? "Chat didn't start." }, context);
+}
 
 interface InflightStart {
   controller: AbortController;
@@ -359,6 +385,10 @@ export async function tryStartChatAgent(
   const unavailablePreference = resolved.driver && candidates[0]?.id !== resolved.driver
     ? `${DRIVER_LABELS[resolved.driver] ?? resolved.driver} is not registered for ${cliLabel(provider.id)}`
     : undefined;
+  if (candidates.length === 0 && chatFailsExplicitly(provider.id)) {
+    facts.reason = 'no_driver';
+    return chatStartFailed(facts, provider.id, unavailablePreference ?? 'no chat driver is available for it');
+  }
   if (candidates.length === 0) {
     if (unavailablePreference) notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${unavailablePreference}${copilotRecoveryHint(provider.id, resolved.driver)}` }, params);
     appLog('core:chat', 'info', 'No chat driver registered for provider; using the terminal', {
@@ -381,6 +411,9 @@ export async function tryStartChatAgent(
     });
     recordBreadcrumb('error', `chat.binary_missing.${codePart(provider.id)}`);
     facts.reason = 'binary_missing';
+    if (chatFailsExplicitly(provider.id)) {
+      return chatStartFailed(facts, provider.id, `${cliLabel(provider.id)} wasn't found`);
+    }
     return 'terminal';
   }
 
@@ -453,7 +486,7 @@ async function runChatStart(
       binaryPath,
     },
   });
-  let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; mcpHttpEndpoints: Record<string, McpHttpEndpoint>; mcpNotices: ChatRuntimeNotice[]; nextStartNotices: ChatRuntimeNotice[]; continued?: { sessionId: string; lastSeq: number } } | undefined;
+  let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; mcpHttpEndpoints: Record<string, McpHttpEndpoint>; mcpNotices: ChatRuntimeNotice[]; nextStartNotices: ChatRuntimeNotice[]; continued?: { sessionId: string; lastSeq: number }; nonce: string } | undefined;
 
   // Probe lazily, in order, and stop at the first usable driver: the
   // preferred driver working means no other driver is probed or reported.
@@ -489,7 +522,14 @@ async function runChatStart(
       if (check.login) { login = check.login; break; }
       continue;
     }
-    prepared ??= await prepare();
+    try {
+      prepared ??= await prepare();
+    } catch (err) {
+      if (!(err instanceof ChatStartRefusedError)) throw err;
+      attempt.reason = 'start_failed';
+      skipped.push(err.message);
+      break;
+    }
     checkpoint();
     const fallbackNotice: ChatRuntimeNotice | undefined = index > 0 || unavailablePreference !== undefined
       ? { level: 'warn', code: 'fallback', message: `Using ${driverLabel(driver)}: ${skipped.join('; ')}` }
@@ -541,6 +581,9 @@ async function runChatStart(
     }
   }
   facts.reason = facts.attempts[facts.attempts.length - 1]?.reason ?? 'error';
+  if (chatFailsExplicitly(provider.id)) {
+    return chatStartFailed(facts, provider.id, skipped.join('; ') || 'the chat session ended before it started');
+  }
   // The terminal is where the CLI's own login flow works.
   notifyFallback(params.agentId, login
     ? {
@@ -560,11 +603,23 @@ async function runChatStart(
     const mcpNotices: ChatRuntimeNotice[] = [];
     const configuredServers = await resolveAgentMcpServers(params.projectPath, durableConfig ?? undefined, { cwd: params.cwd, conventions: provider.conventions, onNotice: (message) => mcpNotices.push({ level: 'warn', code: 'mcp_configuration', message }) });
     checkpoint();
+    const explicitMcp = chatFailsExplicitly(provider.id);
+    if (explicitMcp) {
+      // A configured server named `clubhouse` would run instead of the bridge
+      // ("the server that is already running keeps it"): refuse. A bridge
+      // entry left by Clubhouse itself isn't one.
+      const others = Object.fromEntries(Object.entries(configuredServers).filter(([, def]) => !isClubhouseMcpEntry(def)));
+      const collision = await checkClubhouseCollisions({ projectServers: others });
+      checkpoint();
+      if (collision.ok === false) throw new ChatStartRefusedError(collision.reason);
+    }
     agentRegistry.setNonce(params.agentId, nonce);
     agentRegistry.setRuntime(params.agentId, 'chat');
     start.prepared = true;
     const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
-    const injectFile = provider.conventions.settingsFormat !== 'toml';
+    // Antigravity chat gets the bridge only in session/new: the workspace file
+    // too would put two `clubhouse` servers in one session.
+    const injectFile = provider.conventions.settingsFormat !== 'toml' && !explicitMcp;
     if (injectFile) configPipeline.snapshotFile(params.agentId, mcpJsonPath);
     let mcpPort = 0;
     try {
@@ -610,7 +665,7 @@ async function runChatStart(
     const continued = resumeNativeSessionId ? await findChatSessionFor(params.agentId, resumeNativeSessionId) : undefined;
     // Such as "started fresh" (#3240): said once, in whichever session starts.
     const nextStartNotices = takeNextStartNotices(params.agentId);
-    return { env, mcpServers, mcpHttpEndpoints, mcpNotices, nextStartNotices, continued };
+    return { env, mcpServers, mcpHttpEndpoints, mcpNotices, nextStartNotices, continued, nonce };
   }
 
   /**
@@ -620,7 +675,7 @@ async function runChatStart(
   async function startChatRuntime(
     driver: ChatDriver,
     startNotices: ChatRuntimeNotice[],
-    { env, mcpServers, mcpHttpEndpoints, continued }: NonNullable<typeof prepared>,
+    { env, mcpServers, mcpHttpEndpoints, continued, nonce }: NonNullable<typeof prepared>,
   ): Promise<{ ok: true } | { ok: false; error: string; errorCode?: string; sessionStarted: boolean }> {
     let sessionStarted = false;
     let guardPending = true;
@@ -687,6 +742,7 @@ async function runChatStart(
         }
         guardPending = false;
         assertExecutionPolicy(provider.id, 'chat', params, params.resume);
+        const launchedAt = Date.now();
         const session = await driver.start({
         agentId: params.agentId,
         provider: provider.id,
@@ -712,6 +768,20 @@ async function runChatStart(
         if (params.strictResume && resumeId && (session.nativeSessionId !== resumeId || session.resumeFallback)) {
           await session.close();
           throw new Error('resume_not_honored');
+        }
+        if (chatFailsExplicitly(provider.id)) {
+          // The agent has the Clubhouse MCP only once the bridge authenticated
+          // with this launch's nonce (#3793); otherwise the start is refused,
+          // before any message is sent. The deadline is the terminal path's,
+          // unmeasured until V3 shows when agy starts stdio MCP servers.
+          const fence = await awaitAuthenticatedBridge(
+            { agentId: params.agentId, expectedNonce: nonce, launchedAt, deadlineMs: ANTIGRAVITY_BRIDGE_AUTH_DEADLINE_MS, ...(startSignal && { signal: startSignal }) },
+            { getAgentNonce, getCurrentAgentConnection, onAgentMcpConnected, onAuthChange: (listener) => agentRegistry.onAuthChange(listener) },
+          );
+          if (fence.ok === false) {
+            await session.close();
+            throw new Error(FENCE_REASONS[fence.reason]);
+          }
         }
         sessionStarted = true;
         if (resumeId) resumeResult = chatResumeResult(resumeId, session.nativeSessionId, session.resumeFallback);

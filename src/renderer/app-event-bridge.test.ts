@@ -710,6 +710,44 @@ describe('initAppEventBridge', () => {
     expect(mockNoteLaunchFailure).not.toHaveBeenCalled();
   });
 
+  describe('a chat start that failed with no terminal (#3785)', () => {
+    async function failWith(code: string, mission: string | undefined, draft = '') {
+      const { useChatDraftStore } = await import('./features/agents/chat/useChatSession');
+      useChatDraftStore.setState({ drafts: draft ? { 'agent-1': draft } : {} });
+      const updateAgentStatus = vi.fn();
+      // The handler reads the store once per notice.
+      vi.mocked(useAgentStore.getState).mockReturnValueOnce({
+        ...useAgentStore.getState(),
+        agents: { 'agent-1': { id: 'agent-1', name: 'bold-falcon', mission } },
+        updateAgentStatus,
+        noteLaunchFailure: mockNoteLaunchFailure,
+      } as unknown as ReturnType<typeof useAgentStore.getState>);
+      const onRuntimeNotice = vi.mocked(window.clubhouse.chat.onRuntimeNotice).mock.calls[0][0];
+      onRuntimeNotice('agent-1', { level: 'warn', code, message: "Antigravity CLI chat didn't start: sign in" });
+      return { updateAgentStatus, drafts: useChatDraftStore.getState().drafts };
+    }
+
+    it('marks the agent failed with the reason, however long the start took', async () => {
+      const { updateAgentStatus } = await failWith('chat_start_failed', undefined);
+      expect(updateAgentStatus).toHaveBeenCalledWith('agent-1', 'error', 1, "Antigravity CLI chat didn't start: sign in");
+      expect(mockNoteLaunchFailure).toHaveBeenCalledWith('agent-1', "Antigravity CLI chat didn't start: sign in");
+    });
+
+    it('puts a first message that never reached the agent back in its chat draft, unsent', async () => {
+      expect((await failWith('chat_start_failed', 'fix the build')).drafts['agent-1']).toBe('fix the build');
+    });
+
+    it('never overwrites a draft the person already has', async () => {
+      expect((await failWith('chat_start_failed', 'fix the build', 'my own words')).drafts['agent-1']).toBe('my own words');
+    });
+
+    it('does not restore a message that may have been sent (failed after the session started)', async () => {
+      const { updateAgentStatus, drafts } = await failWith('chat_start_failed_after_start', 'fix the build');
+      expect(updateAgentStatus).toHaveBeenCalledWith('agent-1', 'error', 1, expect.any(String));
+      expect(drafts['agent-1']).toBeUndefined();
+    });
+  });
+
   it('should register keyboard event listener', () => {
     expect(window.addEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
   });
