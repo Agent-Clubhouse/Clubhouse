@@ -20,6 +20,7 @@ CI never sends a real prompt (docs/structured-chat-research.md §8, decision 4).
 - `src/main/orchestrators/adapters/testing/fake-cli.ts` is the vitest helper: `createFakeCli`, `writeFakeCliShims`, `EventLog` and `NdjsonPeer`.
 - `src/main/services/agent-runtime/chat-fake-cli-flows.test.ts` drives each chat driver, inside the chat runtime, through the committed fixtures the E2E flows use. `src/main/chat/claude/fixture-replay.test.ts` does the same for `ClaudeStreamTransport` and its normalizer. `src/main/chat/copilot/fixture-replay.test.ts` runs `CopilotSdkChatDriver` and the real SDK through theirs. Start there for examples.
 - `src/main/chat/fake-model-smoke.test.ts` runs the Dispatcher flow with a real CLI and driver against `src/main/chat/testing/fake-model-server.ts`, a model server on 127.0.0.1. It needs no login and sends no paid request. Set `CLUBHOUSE_FAKE_MODEL_SMOKE=1` and `CLUBHOUSE_FAKE_MODEL_BIN_DIR`.
+- `scripts/chat-fixtures/fake-agy.mjs` is a fake Antigravity CLI (`agy`). It is scripted rather than a replay, and is built only from public docs. `src/main/orchestrators/adapters/testing/fake-agy.ts` is its vitest helper. See [Antigravity](#antigravity-fake-agy).
 - `e2e/chat-fake-cli.ts` installs fake `claude`/`codex`/`copilot` executables on the app's PATH for Playwright.
 - `src/main/orchestrators/adapters/testing/chat-script.ts` builds fixtures from scripted turns at run time (tool images, Markdown with paths, AskUserQuestion, approvals, held turns and steers; Copilot's in SDK shapes, checked through the real SDK driver in `chat-script.test.ts`). The rich chat E2E specs use it; see docs/testing/chat-e2e-plan.md.
 
@@ -161,6 +162,71 @@ Some shapes in the hand-made fixtures have no capture behind them at all; they c
 | `claude/subagent-task` | The `task_started` / `task_progress` / `task_notification` field sets and the Task `tool_use_result` shape |
 
 If the recording disagrees, change the driver to match the recording. The fixture and the replay test that encode the old guess change with it.
+
+## Antigravity (fake `agy`)
+
+There is no Antigravity binary or account in CI (#3788). `scripts/chat-fixtures/fake-agy.mjs` stands in for `agy`. It is a scripted fake, not a fixture replayer, and it doesn't use the JSONL format above or `fake-cli.mjs`.
+
+**Nothing in it is a recording.** Every shape comes from Google's public docs (the CLI reference, headless, ACP and hooks pages, read 2026-11-23) or from the vendored ACP v1 schema (`src/main/chat/acp/schema`). Reports carry `"source": "document-derived"` and a `synthesized` list of what the docs don't give, which the fake made up. A test that passes against it shows Clubhouse agrees with the docs as we read them. It doesn't validate anything against the real CLI: that needs the real-login gates in the design (V2, V3, V5, V6, V13).
+
+### Personalities
+
+The fake picks one from its `agy` arguments, as the real CLI would:
+
+| Arguments | Behaviour | From |
+|---|---|---|
+| `--version` | Prints `version` (default `1.5.12`) or `versionOutput` | Output format synthesized |
+| `models` | Padded slug column, then the display name (`gemini-4-neon-high   Gemini 4 Neon (High)`) | Headless page example |
+| `agents` | One name per line | Synthesized |
+| `-p`, `--print`, `--prompt`; `--input-format stream-json` | Headless `text`, `json` and `stream-json` (`init`, `step_update` ACTIVE/DONE, `result`). Scenarios: `success`, `tool`, `soft-deny` (exit 0, stderr notice), `error`, `auth-required`. An unknown `--model` exits 1 with the documented envelope. Stream input follows the documented error table (exit 1 or 2) | Headless page; exit code for auth and notice text synthesized |
+| `acp` | ACP v1 agent on stdio, below | ACP guide and schema |
+| `acp --help`, `acp --login` | Usage text, exit 0. `--login` exits 2: it's interactive and not simulated | |
+| anything else | TUI stub for PTY tests. Prints `fake-agy tui argv=[…]` on stderr (`tui.banner`), runs hooks, echoes each line, exits on `/exit` or `/quit` | CLI reference |
+
+Headless support exists for tests only. Nothing in the fake enables or implies headless eligibility (#3786).
+
+### ACP
+
+- `initialize` answers protocol 1 (`acp.protocolVersion` to test a mismatch), `agentInfo.name` `Antigravity ACP Server`, and the documented auth methods. `terminal-login` is offered only to a client that sets `clientCapabilities.auth.terminal`. `mcpCapabilities.http` is true only with `--process-per-session`.
+- `acp.auth: "required"`: `initialize` still answers, and every session request fails with `-32000` `Authentication required`. `authenticate` is refused and counted in the report (`acp.authenticate: "succeed"` flips auth on), so a test can prove Clubhouse never calls it.
+- `session/new` returns `modes` (`default`, `accept-edits`, `plan`, and `auto` unless `acp.autoMode` is false) and two select options: `category: "model"` (the `models` slugs) and `category: "thought_level"` (`Low`, `Medium`, `High`, `Extra`, `Max`). Their ids are synthesized. Rename them with `acp.configOptionIds` to prove a driver selects by category. `session/set_config_option` and `session/set_mode` validate their values.
+- `session/load` replays the conversation as `session/update` before answering. `session/resume` doesn't. `session/list` and `session/close` work, and a prompt on a closed session gets `-32002`. `acp.sessions` seeds stored conversations (default: `agy-session-stored`).
+- A prompt whose text is `agy:<name>` runs a script: `text`, `tool` (an edit with a diff), `permission` (Allow and Deny), `question` (an elicitation form if the client advertised one, else the question in chat), `hold` (waits for a cancel or a steer), `usage`, `title`, `refusal`, `max-tokens`, `error`, `auth`, `exit:<n>`. Any other text echoes back in two chunks. `acp.scripts` adds scripts from steps (`chunk`, `update`, `permission` with `outcomes`, `question`, `hold`, `end`, `error`, `exit`).
+- `--dangerously-skip-permissions` approves without asking.
+- `session/cancel` (and `session/close` mid-turn) ends open tool calls as `failed`, abandons a pending permission request and answers `cancelled`. A later answer to the abandoned request is kept in the report's `late`.
+- **Steer.** The docs say a prompt sent mid-turn steers the running turn. They don't say how the steering request itself is answered, so `acp.steer` offers each answer we can't yet rule out. All three are assumptions:
+  - `both-end` (default): the request is held, then answered with the turn's stop reason, after the first.
+  - `join-first-ends`: the request is answered with `end_turn` at once, and only the first one carries the turn's end.
+  - `second-rejected`: the request gets a JSON-RPC error, and the turn continues.
+
+### Hooks
+
+The TUI stub reads `.agents/hooks.json` from its working directory, and nowhere else: never `HOME` or `~/.gemini`. It uses the documented shape, a map from hook name to events with optional `enabled`. `PreToolUse`/`PostToolUse` take `[{ "matcher", "hooks": [handler] }]`. `SessionStart`, `PreInvocation`, `PostInvocation` and `Stop` take `[handler]`. A handler is `{ "type": "command", "command", "timeout" }` (seconds, default 30). Each input line runs PreInvocation, then a simulated tool (`tui.tool`) through PreToolUse and PostToolUse, then PostInvocation and Stop. The camelCase payloads carry the documented fields. A PreToolUse `deny` blocks the tool. A Stop `continue` re-enters the loop, at most `tui.stopContinueLimit` times.
+
+The docs don't define these, so the fake makes each one an option:
+
+- `hooks.onFailure`: what a non-zero exit, timeout or non-JSON stdout means. Default `allow` (ignored).
+- `hooks.env`: whether handlers inherit the launch environment. Default `inherit`. `minimal` passes only `PATH`.
+- `hooks.maxTimeoutMs`: a cap on handler timeouts for tests.
+
+`transcriptPath` and `artifactDirectoryPath` are doc-shaped strings. Nothing reads or creates them.
+
+### Report
+
+Pass `--fake-agy-report <file>` (or `CLUBHOUSE_FAKE_AGY_REPORT`). Session personalities (`acp`, `headless`, `tui`) rewrite it after every step, and also write `<file>.<personality>.json`, plus `<file>.agent-<sha256>.json` when `CLUBHOUSE_AGENT_ID` is set. Probes (`--version`, `models`, `agents`, `acp --help`) leave the report alone. It holds argv, cwd, `CLUBHOUSE_AGENT_ID`, `CLUBHOUSE_MCP_PORT` and `AGY_CLI_DISABLE_AUTO_UPDATE`, whether `CLUBHOUSE_HOOK_NONCE` was set (not its value), and the names of credential variables that were set (`GEMINI_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, …), never their values. ACP traffic is recorded with MCP servers reduced to names and env or header key names.
+
+### Using it
+
+```ts
+const agy = await createFakeAgy({ acp: { steer: 'second-rejected' } });
+const shim = await agy.shim(); // `agy`, or `agy.cmd` on Windows
+process.env.CLUBHOUSE_TEST_CLI_BINARIES = fakeAgyTestBinaries(shim, process.env.CLUBHOUSE_TEST_CLI_BINARIES);
+// …start the provider or driver…
+const report = await agy.readReport('acp');
+await agy.dispose();
+```
+
+`scripts/chat-fixtures/fake-agy.test.ts` covers every personality and checks each ACP message the fake writes against the vendored schema's methods, required fields, update kinds and stop reasons. `src/main/orchestrators/adapters/testing/fake-agy.test.ts` runs the neutral ACP driver against the fake through the shim.
 
 ## Recording a fixture
 
