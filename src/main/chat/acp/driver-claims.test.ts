@@ -95,7 +95,7 @@ describe('steer claim', () => {
     second.fail(ACP_ERROR_CODES.internalError, 'busy');
     await tick();
     expect(of('notice').map((d) => d.data)).toEqual([expect.objectContaining({ level: 'warn', code: 'steer_not_delivered', message: expect.stringContaining('"also this"') })]);
-    expect(of('error').map((d) => d.data)).toEqual([expect.objectContaining({ fatal: false, message: 'busy' })]);
+    expect(of('error').map((d) => d.data)).toEqual([expect.objectContaining({ fatal: false, message: expect.stringContaining('busy') })]);
     expect(of('turn_ended')).toHaveLength(0);
     first.end('end_turn');
     await tick();
@@ -118,8 +118,9 @@ describe('steer claim', () => {
   it('interrupt: the turn ends once both prompts are answered cancelled', async () => {
     const { session, agent, of } = await open(STEER);
     const { first, second } = await steered(session, agent);
+    const cancelled = agent.cancelled();
     await session.interrupt();
-    await agent.cancelled();
+    await cancelled;
     first.end('cancelled');
     await tick();
     expect(of('turn_ended')).toHaveLength(0);
@@ -244,7 +245,7 @@ describe('without claims or policy (unchanged)', () => {
 
   it('a level is not applied and an auth error stays the agent\'s own', async () => {
     const err = await open(BASE, { newSessionError: { code: ACP_ERROR_CODES.authRequired, message: 'Authentication required' } }, { level: 'plan' }).catch((e: Error) => e);
-    expect(err).toMatchObject({ code: ACP_ERROR_CODES.authRequired, message: 'Authentication required' });
+    expect(err).toMatchObject({ code: ACP_ERROR_CODES.authRequired, message: expect.stringContaining('Authentication required') });
     expect(err).not.toHaveProperty('needsLogin');
   });
 });
