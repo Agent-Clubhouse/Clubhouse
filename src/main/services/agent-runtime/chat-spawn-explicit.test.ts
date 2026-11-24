@@ -47,6 +47,8 @@ const mcpConfig = vi.hoisted(() => ({
   fence: { ok: true, connectedAt: Date.now() + 1 } as { ok: true; connectedAt: number } | { ok: false; reason: 'timeout' | 'nonce_changed' | 'aborted' },
 }));
 vi.mock('../../orchestrators/antigravity/mcp-config', () => ({
+  ANTIGRAVITY_BRIDGE_AUTH_DEADLINE_MS: 60_000,
+  AntigravityMcpConfigError: class AntigravityMcpConfigError extends Error {},
   checkClubhouseCollisions: vi.fn(async () => mcpConfig.collision),
   awaitAuthenticatedBridge: vi.fn(async () => mcpConfig.fence),
   FENCE_REASONS: { timeout: 'The Clubhouse MCP bridge did not authenticate in time.', nonce_changed: 'restarted', aborted: 'cancelled' },
@@ -92,7 +94,7 @@ describe('explicit chat start failure (Antigravity)', () => {
     const d = driver();
     try {
       expect(await tryStartChatAgent(params, agy, undefined, null)).toBe('chat');
-      expect(awaitAuthenticatedBridge).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent-1', expectedNonce: expect.any(String) }), expect.any(Object));
+      expect(awaitAuthenticatedBridge).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent-1', expectedNonce: expect.any(String), deadlineMs: 60_000 }), expect.any(Object));
       expect(injection.injectClubhouseMcp).not.toHaveBeenCalled();
       expect(pipeline.snapshotFile).not.toHaveBeenCalled();
       expect(d.sessions).toHaveLength(1);
