@@ -44,7 +44,7 @@ export function stdioConnector(opts: AcpStdioOpts): AcpConnector {
       // spawn can throw synchronously (EINVAL on Windows): report it as the transport ending.
       const error = err instanceof Error ? err : new Error(String(err));
       log('error', 'ACP agent spawn error', { error: error.message });
-      queueMicrotask(() => onEnd({ code: null, signal: null, error }));
+      queueMicrotask(() => onEnd({ code: null, signal: null, error, spawn: true }));
       return { send() { /* never started */ }, async close() { /* nothing to stop */ } };
     }
     const redactor = new LogRedactor(opts.command.args).startRun();
@@ -56,12 +56,12 @@ export function stdioConnector(opts: AcpStdioOpts): AcpConnector {
     let stderrTail = '';
     const exited = new Promise<void>((resolve) => child.once('close', () => resolve()));
 
-    const end = (code: number | null, signal: string | null, error?: Error) => {
+    const end = (code: number | null, signal: string | null, error?: Error, spawn = false) => {
       if (ended) return;
       ended = true;
       redactor.endRun();
       if (stderrTail.trim()) opts.onStderrTail?.(stderrTail);
-      onEnd({ code, signal, ...(error && { error }) });
+      onEnd({ code, signal, ...(error && { error }), ...(spawn && { spawn }) });
     };
 
     const handleLine = (line: string) => {
@@ -112,7 +112,7 @@ export function stdioConnector(opts: AcpStdioOpts): AcpConnector {
     child.on('error', (err) => {
       spawnFailed = true;
       log('error', 'ACP agent spawn error', { error: err.message });
-      end(null, null, err);
+      end(null, null, err, true);
     });
     child.on('close', (code, signal) => {
       logStderr(stderrLog.flush());
@@ -121,11 +121,18 @@ export function stdioConnector(opts: AcpStdioOpts): AcpConnector {
       log(code === 0 ? 'info' : 'warn', 'ACP agent exited', { code, signal });
       end(code, signal);
     });
-    child.stdin.on('error', (err) => log('warn', 'ACP agent stdin error', { error: err.message }));
+    child.stdin.on('error', (err) => {
+      // The agent stopped reading (EPIPE and the like): nothing more can reach
+      // it, so the session ends here instead of waiting on answers that can't come.
+      log('warn', 'ACP agent stdin error; ending the session', { error: err.message });
+      end(null, null, err);
+      void killStructuredChild(child);
+    });
 
     return {
       send(message: JsonRpcMessage) {
-        if (ended || !child.stdin.writable) return;
+        // A message that can't be written is refused, never reported as sent.
+        if (ended || !child.stdin.writable) throw new Error('The ACP agent is not accepting input');
         child.stdin.write(`${JSON.stringify(message)}\n`);
       },
       async close() {
