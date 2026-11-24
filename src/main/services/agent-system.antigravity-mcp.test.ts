@@ -17,9 +17,9 @@ import { resolveHelperAccess, type AgentLaunchAccess } from '../../shared/orches
 // Mock config-pipeline
 const mockSnapshotFile = vi.fn();
 const mockRestoreForAgent = vi.fn();
-const mockGetHooksConfigPath = vi.fn(() => '/project/.claude/settings.local.json');
-const mockStripClubhouseHooksFromFile = vi.fn(async () => false);
-const mockPreserveUnchangedSnapshot = vi.fn(async () => {});
+const mockGetHooksConfigPath = vi.fn((..._args: unknown[]) => '/project/.claude/settings.local.json');
+const mockStripClubhouseHooksFromFile = vi.fn(async (..._args: unknown[]) => false);
+const mockPreserveUnchangedSnapshot = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('./config-pipeline', () => ({
   preserveUnchangedSnapshot: (...args: unknown[]) => mockPreserveUnchangedSnapshot(...(args as [])),
   stripClubhouseHooksFromFile: (...args: unknown[]) => mockStripClubhouseHooksFromFile(...args),
@@ -32,8 +32,8 @@ vi.mock('./config-pipeline', () => ({
 // Mock pty-manager
 const mockPtySpawn = vi.fn();
 const mockPtyGracefulKill = vi.fn();
-const mockStopCreatedProcess = vi.fn(() => false);
-const mockPtyIsRunning = vi.fn(() => false);
+const mockStopCreatedProcess = vi.fn((..._args: unknown[]) => false);
+const mockPtyIsRunning = vi.fn((..._args: unknown[]) => false);
 const mockPtyProcessIdentity = vi.fn((): string | undefined => undefined);
 const mockPtyKill = vi.fn();
 vi.mock('./pty-manager', () => ({
@@ -48,7 +48,7 @@ vi.mock('./pty-manager', () => ({
 // Mock headless-manager
 const mockHeadlessSpawn = vi.fn();
 const mockHeadlessKill = vi.fn();
-const mockIsHeadless = vi.fn(() => false);
+const mockIsHeadless = vi.fn((..._args: unknown[]) => false);
 vi.mock('./headless-manager', () => ({
   spawnHeadless: (...args: unknown[]) => mockHeadlessSpawn(...args),
   kill: (...args: unknown[]) => mockHeadlessKill(...args),
@@ -57,7 +57,7 @@ vi.mock('./headless-manager', () => ({
 }));
 
 // Mock headless-settings
-const mockGetSpawnMode = vi.fn(() => 'interactive' as const);
+const mockGetSpawnMode = vi.fn((..._args: unknown[]) => 'interactive' as const);
 vi.mock('./headless-settings', () => ({
   getSpawnMode: (...args: unknown[]) => mockGetSpawnMode(...args),
 }));
@@ -87,11 +87,11 @@ vi.mock('./clubhouse-mcp/mcp-call-gate', async (importOriginal) => {
 });
 
 // Mock agent-config
-const mockGetDurableConfig = vi.fn(() => null);
+const mockGetDurableConfig = vi.fn((..._args: unknown[]) => null);
 const mockAddSessionEntry = vi.fn();
-const mockUpdateSessionId = vi.fn(async () => {});
+const mockUpdateSessionId = vi.fn(async (..._args: unknown[]) => {});
 const mockGetSessionHistory = vi.fn(async (): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> => []);
-const mockRemoveSessionEntries = vi.fn(async () => {});
+const mockRemoveSessionEntries = vi.fn(async (..._args: unknown[]) => {});
 const mockContextWindowForLaunch = vi.fn();
 vi.mock('./context-window', () => ({
   contextWindowForLaunch: (...args: unknown[]) => mockContextWindowForLaunch(...args),
@@ -111,7 +111,7 @@ vi.mock('./agent-config', () => ({
   updateSessionId: (...args: unknown[]) => mockUpdateSessionId(...args),
   updateDurableConfig: (...args: unknown[]) => mockUpdateDurableConfig(...args),
 }));
-const mockUpdateDurableConfig = vi.fn(async () => {});
+const mockUpdateDurableConfig = vi.fn(async (..._args: unknown[]) => {});
 
 // One folder stands for the Dispatcher's (#3185), another for its chat's (#3578).
 vi.mock('./dispatcher/dispatcher-paths', async (importOriginal) => ({
@@ -145,8 +145,8 @@ vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
 });
 
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
-const mockStripLegacyClubhouseBridgeToml = vi.fn(async () => false);
-const mockDeliverForSpawn = vi.fn(async () => {});
+const mockStripLegacyClubhouseBridgeToml = vi.fn(async (..._args: unknown[]) => false);
+const mockDeliverForSpawn = vi.fn(async (..._args: unknown[]) => {});
 const mockManagedProviderStartGuard = vi.hoisted(() => vi.fn(async () => () => {}));
 vi.mock('./managed-provider-transition', () => ({ managedProviderStartGuard: mockManagedProviderStartGuard }));
 const mockQuickLaunchFor = vi.fn();
@@ -169,10 +169,10 @@ vi.mock('./toml-config-cleanup', () => ({
 }));
 
 // Mock agent-settings-service
-const mockReadProjectAgentDefaults = vi.fn(() => ({}));
-const mockReadLaunchWrapper = vi.fn(() => undefined);
-const mockReadDefaultMcps = vi.fn(() => []);
-const mockReadMcpConfigs = vi.fn(() => ({}));
+const mockReadProjectAgentDefaults = vi.fn((..._args: unknown[]) => ({}));
+const mockReadLaunchWrapper = vi.fn((..._args: unknown[]) => undefined);
+const mockReadDefaultMcps = vi.fn((..._args: unknown[]) => []);
+const mockReadMcpConfigs = vi.fn((..._args: unknown[]) => ({}));
 vi.mock('./agent-settings-service', () => ({
   UnsupportedPermissionRulesError: class UnsupportedPermissionRulesError extends Error {},
   readProjectAgentDefaults: (...args: unknown[]) => mockReadProjectAgentDefaults(...args),
@@ -191,7 +191,7 @@ vi.mock('./log-service', () => ({
 const mockApplyLaunchWrapper = vi.fn(
   (_cfg: unknown, _id: string, binary: string, args: string[], _mcpIds?: string[], _mcpConfigs?: unknown) => ({ binary: '/wrapped/bin', args: ['--wrap', ...args] }),
 );
-const mockValidateWrapperConfig = vi.fn(() => ({ ok: true as const }));
+const mockValidateWrapperConfig = vi.fn((..._args: unknown[]) => ({ ok: true as const }));
 vi.mock('../orchestrators/shared', () => ({
   applyLaunchWrapper: (...args: unknown[]) => mockApplyLaunchWrapper(...args),
   validateWrapperConfig: (...args: unknown[]) => mockValidateWrapperConfig(...(args as [unknown, string, { isPluginEnabled: (id: string) => boolean }])),
@@ -212,7 +212,7 @@ vi.mock('../util/ipc-broadcast', () => ({
 }));
 
 // Mock fs/promises for readProjectOrchestrator
-const mockReadFile = vi.fn(() => Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })));
+const mockReadFile = vi.fn((..._args: unknown[]): Promise<string> => Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })));
 const mockWriteFile = vi.fn(async (_file: unknown, _content: unknown, _encoding?: unknown) => {});
 const mockRename = vi.fn(async (_from: unknown, _to: unknown) => {});
 vi.mock('fs/promises', async (importOriginal) => ({
@@ -320,7 +320,7 @@ vi.mock('../orchestrators/antigravity/mcp-config', async (importOriginal) => ({
 // Mocks for the MCP bridge/injection path exercised when mcpPort > 0.
 // Default to the real module's "not started" rejection so existing tests
 // (which don't care about MCP injection) keep seeing mcpPort stay 0.
-const mockMcpWaitReady = vi.fn(() => Promise.reject(new Error('MCP bridge server not started')));
+const mockMcpWaitReady = vi.fn((..._args: unknown[]): Promise<number> => Promise.reject(new Error('MCP bridge server not started')));
 const mockGetCurrentAgentConnection = vi.fn((_agentId: string): { connectedAt: number } | null => null);
 vi.mock('./clubhouse-mcp/bridge-server', () => ({
   waitReady: (...args: unknown[]) => mockMcpWaitReady(...args),
@@ -329,7 +329,7 @@ vi.mock('./clubhouse-mcp/bridge-server', () => ({
   agentEndpointUrl: (port: number, agentId: string) => `http://127.0.0.1:${port}/mcp/${agentId}`,
 }));
 
-const mockInjectClubhouseMcp = vi.fn(() => Promise.resolve());
+const mockInjectClubhouseMcp = vi.fn((..._args: unknown[]) => Promise.resolve());
 const mockBuildClubhouseMcpDef = vi.fn((port: number) => ({
   command: 'node',
   args: ['bridge.js'],
@@ -359,7 +359,7 @@ vi.mock('../orchestrators', () => ({
 
 // Per-orchestrator hook server gating. Defaults to enabled so existing
 // injection assertions hold; individual tests override it to exercise the gate.
-const mockIsHookServerEnabled = vi.fn(() => true);
+const mockIsHookServerEnabled = vi.fn((..._args: unknown[]) => true);
 vi.mock('./orchestrator-settings', () => ({
   isHookServerEnabled: (...args: unknown[]) => mockIsHookServerEnabled(...(args as [])),
 }));

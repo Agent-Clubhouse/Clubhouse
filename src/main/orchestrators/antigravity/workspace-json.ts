@@ -549,7 +549,17 @@ export async function transact(
     }
     const committed: CommittedOwnership = { ...result.owned, createdDir: result.owned.createdDir || createdDir };
     await receiptStore.set(file, { committed: owned, pending: { txid: randomUUID(), beforeHash: hashOrNull(current), afterHash: hashOrNull(result.next) } });
-    if (await swapFile(file, relFile, current, result.next) === 'conflict') {
+    let swapped: 'done' | 'conflict';
+    try { swapped = await swapFile(file, relFile, current, result.next); }
+    catch (err) {
+      // write_failed means the earlier bytes are back in place: the pending record goes.
+      // Anything else (bytes kept aside) leaves it, so recovery can find them.
+      if (err instanceof AntigravityWorkspaceError && err.code === 'write_failed') {
+        await receiptStore.set(file, ownsNothing(owned) && !owned.created ? undefined : { committed: owned });
+      }
+      throw err;
+    }
+    if (swapped === 'conflict') {
       await receiptStore.set(file, ownsNothing(owned) && !owned.created ? undefined : { committed: owned });
       throw new AntigravityWorkspaceError('concurrent_edit', `${relFile} changed while Clubhouse edited it; nothing was written. Start the agent again.`);
     }

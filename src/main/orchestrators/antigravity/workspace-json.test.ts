@@ -31,7 +31,7 @@ const errno = (code: string) => Object.assign(new Error(code), { code });
 const hashOf = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
 
 const REL = '.agents/hooks.json';
-const HOOK = { container: null, key: 'clubhouse-status' } as const;
+const HOOK: { container: string | null; key: string } = { container: null, key: 'clubhouse-status' };
 const VALUE = JSON.stringify({ SessionStart: [{ type: 'command', command: 'clubhouse-hook', timeout: 5 }] });
 const USER_HOOKS = '﻿{\n  // mine\n  "my-hook": { "Stop": [{"type": "command", "command": "say done"}] },\n}\n';
 
