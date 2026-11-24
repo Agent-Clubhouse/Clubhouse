@@ -13,7 +13,7 @@ failures, nonempty execution and exact selected codec identities. Initial setup
 runs executed zero tests and are explicitly invalid in `setup-attempts.json`.
 
 The original local dependency tree lacked usable ProseMirror packages. The
-orchestrator supplied `/tmp/codec-audit-VUZtL9/node_modules`: twelve cached package
+orchestrator supplied a task-private temporary module overlay: twelve cached package
 archives verified against lockfile integrity, in a private overlay, plus existing
 local dependencies. Runtime was Node 25.8.1 and the Vitest version recorded in
 `results.json`; reused tooling can differ from the lockfile. These results are a
@@ -106,13 +106,75 @@ With an existing complete local dependency directory:
 CODEC_NODE_MODULES=/absolute/path/to/node_modules node scripts/ci/prompt-codec-behavior-value.mjs
 ```
 
-The runner copies source and setup into a temporary tree, retains the historical
-setup-attempt cost in its limits, checks unique mutation anchors, runs selections
-sequentially, and removes isolation in `finally`. It overwrites reports, so copy
-this evidence elsewhere before reproducing. The default now uses the final
-three shipped assertions. `--refine` appends stronger runs to existing results;
-`--final-subset` appends the five control/survivor checks. Both enforce aggregate
-90-process/180-second limits. A fresh default run differs from the historical
-three-phase sequence above. Original codec preservation is recorded as true.
-Independent review is owned by the orchestrator; integration acceptance remains
-subject to that review and normal project checks.
+The future runner refuses to overwrite an existing `results.json`. Use
+`--output-dir /absolute/fresh/evidence-directory` for a new experiment. It copies
+source/setup into a temporary tree and runs the final shipped assertions. A new
+full run has no inherited historical setup cost; append phases retain their
+actual prior execution cost and process count. `--refine` appends the currently
+checked-out focused tests for all nine variants; `--final-subset` appends the
+five control/survivor checks. These switches describe current tests, not a replay
+of experimental assertions removed from the source file. Each new phase records
+its hashes, test manifest, starting index and phase name, and rejects changed
+production/baseline sources. No such new experiment was executed in this update.
+
+## Offline audit and timing data (successor)
+
+Run `node scripts/ci/prompt-codec-behavior-audit.mjs` to regenerate `audit.json`
+and the four CSVs without test execution. The strict retained-case audit found
+zero name/count/exit-status/known-assertion errors across all 86 historical valid
+runs. It confirms the four baseline assertion holds, two final additional holds,
+and that stale numeric-array/tie-direction results are excluded from the final
+subset. Both setup receipts remain invalid, never kills.
+
+**Unknown:** the original receipts did not retain raw suite statuses/messages,
+aggregate reporter counts or unhandled errors. Therefore all 86 rows explicitly
+mark global suite/runtime integrity unknown. This cannot be repaired by offline
+inference. The historical case-level evidence remains useful; full strict global
+acceptance is deferred. The future runner retains raw reporters and an independent
+run-end unhandled-error capture, requires consistent counters/statuses and exact
+identities, and rejects mixed/unknown errors, missing metadata, or exit codes
+other than 0 for passes and 1 for assertion failures. Anchored known assertion
+headers replace the former broad substring match. Six tiny Node verifier controls
+exercise runtime, mixed, suite, count, identity, exit and property-header cases;
+no additional Vitest experiment was run.
+
+* `baseline-test-mutant.csv`: all 55 baseline identities × seven faults, original
+  per-test duration, sampled statuses/durations and unique kills within that set.
+* `shipped-additions-test-mutant.csv`: all three final additions, only actually
+  executed final-phase variants. Four other faults are explicitly **not run** in
+  that phase. The mapping and fence tests each uniquely kill their sampled fault;
+  no unexecuted direct marks result is implied.
+* `consumer-test-mutant.csv`: all ten consumer identities × seven faults.
+* `group-runtime-loo.csv`: all 45 executed complements, removed/remaining counts,
+  per-test duration sums, full and complement wall times and signed wall deltas.
+
+Within the original finite baseline sample, normalization is the sole detector
+of default-exact and the semantic document property is the sole detector of
+dropped-marks. Unique means unique within this observed test/fault set, not
+unique product protection. No test deletion is recommended.
+
+Across the nine variants, median observed durations are:
+
+| Omitted group | Tests removed | Removed per-test sum ms | LOO wall ms | LOO minus full wall ms |
+| --- | ---: | ---: | ---: | ---: |
+| preservation | 34 | 7.47 | 683.45 | -326.56 |
+| structure | 4 | 63.26 | 637.85 | -367.09 |
+| exact | 7 | 0.45 | 684.18 | -326.70 |
+| marks | 9 | 73.60 | 610.83 | -396.37 |
+| mapping | 1 | 0.19 | 689.87 | -321.24 |
+
+Wall deltas are correlated single-run observations, **not causal time savings**:
+full baseline runs also include an observational witness file, hence another
+worker/file startup (still one worker at a time), and ordered cache/startup effects.
+Assertion failures can stop expensive property work early. Median columns are
+computed independently, so subtracting medians need not match median deltas.
+
+Current distribution JSON masks local user/temp stack paths and canonicalizes
+macOS `/var` versus `/private/var` file identities to repository-relative paths.
+Assertion headers/diffs, test names and numeric measurements are unchanged.
+`redaction.json` records pre/post hashes; raw milestone bytes remain recoverable
+from commit `c92abd0b81547089fbe2b7ded914b98f90e63aca`. That original receipt is
+immutable, not silently replaced by a new experimental claim. The runner's future
+macOS path normalization also uses real paths before making file identities
+relative. `predeclared.json` and historical hashes remain as originally captured.
+Independent review and integration acceptance remain owned by the orchestrator.

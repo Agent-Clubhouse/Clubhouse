@@ -1,0 +1,18 @@
+{
+  "rawMilestoneCommit": "c92abd0b81547089fbe2b7ded914b98f90e63aca",
+  "policy": "Only distribution filesystem/stack paths masked. Assertion headers/diffs and test identities retained. File identities canonicalized from macOS /var symlink form to repo-relative src paths. Raw bytes recoverable from immutable milestone commit.",
+  "files": {
+    "results.json": {
+      "originalSha256": "b2c224873dbb360342a65690e948fe28cd486bc01d91dac88a083f8af132edc6",
+      "sanitizedSha256": "161f5c8ae9f5d82c707fde4a39d9cad794dac1f7f2b36c63713ff859f76934d2"
+    },
+    "setup-attempts.json": {
+      "originalSha256": "827e9415d2d48499e3dae46d0f5fa8cc92c1fb93369b31c7dbd72a004a6c4a77",
+      "sanitizedSha256": "60f03435b7639836d1e555ad0c55e8d17e173a45a8169cc91b40dd01ad3b9161"
+    },
+    "dependencies.json": {
+      "originalSha256": "8e4ced0f1c6d36a647fa13f2b5c8b41bc824a7d2a60673990d3b430a02464423",
+      "sanitizedSha256": "609790509b454bff6031da703baa9698e67e0e1ad9da2212385c876123d1cf3b"
+    }
+  }
+}

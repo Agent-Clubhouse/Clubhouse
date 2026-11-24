@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {reportVerdict, testEvidence, assertionReason} from './prompt-codec-behavior-verdict.mjs';
+const names=['codec::known'];
+const row=(status, failures=[])=>({file:'codec',identity:'known',status,failures});
+const message="AssertionError: expected 'co' to be '/co' // Object.is equality\n    at <sandbox>/codec.test.ts:1:1";
+const data=(status)=>({numRuntimeErrorTestSuites:0,unhandledErrors:[],numTotalTestSuites:1,numPassedTestSuites:status==='passed'?1:0,numPendingTestSuites:0,numPendingTests:0,numTodoTests:0,numPassedTests:status==='passed'?1:0,numFailedTests:status==='failed'?1:0,numTotalTests:1,numFailedTestSuites:status==='failed'?1:0,testResults:[{status,assertionResults:[{status}]}]});
+test('known assertion and pass require matching exit',()=>{assert.equal(reportVerdict(data('failed'),1,[row('failed',[message])],names).outcome,'assertion-kill');assert.equal(reportVerdict(data('passed'),0,[row('passed')],names).outcome,'pass');assert.equal(testEvidence([row('failed',[message])],2,names).outcome,'invalid');});
+test('runtime text containing assertion words is not a kill',()=>assert.equal(testEvidence([row('failed',['TypeError: expected a to be b; AssertionError'])],1,names).outcome,'invalid'));
+test('mixed failure messages and combined causes fail closed',()=>{assert.equal(testEvidence([row('failed',[message,'ReferenceError: bad'])],1,names).outcome,'invalid');assert.equal(assertionReason(row('failed',[message.replace('\n    at','\nTypeError: bad\n    at')])),null);});
+test('suite and unhandled failures invalidate genuine assertions',()=>{for(const patch of [{unhandledErrors:['error']},{numRuntimeErrorTestSuites:1},{numFailedTests:2}])assert.equal(reportVerdict({...data('failed'),...patch},1,[row('failed',[message])],names).outcome,'invalid');const d=data('failed');d.testResults[0].message='import failure';assert.equal(reportVerdict(d,1,[row('failed',[message])],names).outcome,'invalid');});
+test('missing and duplicate names fail closed',()=>{assert.equal(testEvidence([row('passed'),row('passed')],0,names).outcome,'invalid');assert.equal(testEvidence([],0,names).outcome,'invalid');});
+test('only named property accepts its multiline seed discriminator',()=>{const m="AssertionError: seed case 0: text\nline: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]";assert.equal(assertionReason(row('failed',[m])),null);assert.ok(assertionReason({...row('failed',[m]),identity:'property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists'}));});
