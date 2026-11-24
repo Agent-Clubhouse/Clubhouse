@@ -88,7 +88,16 @@ export function recordChatStart(
   startMs: number | undefined,
   end: ChatStartEnd,
   facts: ChatStartFacts,
-  context: { orchestrator: string | undefined; resume: boolean },
+  context: {
+    orchestrator: string | undefined;
+    resume: boolean;
+    /**
+     * The start ended `failed` and nothing opened in the terminal (a provider with no implicit
+     * fallback, #3800), so the driver it left had nowhere to go. A start that threw does not set
+     * this: its last driver is still reported as going to the terminal, as before.
+     */
+    noTerminalFallback?: boolean;
+  },
   atMs = Date.now(),
 ): void {
   const orchestrator = ATTR.orchestrator(orchestratorAttr(context.orchestrator));
@@ -108,8 +117,9 @@ export function recordChatStart(
     const last = i === attempts.length - 1;
     tel.event('clubhouse.chat.fallback', [
       orchestrator,
-      // The last driver left goes to the terminal, unless the start was cancelled.
-      ATTR.chatFallbackTo(last && end !== 'cancelled' ? 'terminal' : 'driver'),
+      // The last driver left goes to the terminal, unless the start was cancelled or the
+      // provider ends a failed start without one.
+      ATTR.chatFallbackTo(!last || end === 'cancelled' ? 'driver' : end === 'failed' && context.noTerminalFallback ? 'none' : 'terminal'),
       ...attemptAttrs(a),
     ]);
   });
