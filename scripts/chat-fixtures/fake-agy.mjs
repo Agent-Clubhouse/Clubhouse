@@ -129,7 +129,6 @@ export const DEFAULTS = {
   },
 };
 
-const HOOK_EVENTS = ['SessionStart', 'PreToolUse', 'PostToolUse', 'PreInvocation', 'PostInvocation', 'Stop'];
 const TOOL_EVENTS = new Set(['PreToolUse', 'PostToolUse']);
 const ACP_THOUGHT_LEVELS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['extra', 'Extra'], ['max', 'Max']];
 const ACP_MODES = [['default', 'Default'], ['accept-edits', 'Accept edits'], ['plan', 'Plan'], ['auto', 'Auto']];
@@ -308,7 +307,7 @@ function loadWorkspaceHooks() {
   const file = join(process.cwd(), '.agents', 'hooks.json');
   if (!existsSync(file)) return { file: null, hooks: {} };
   try {
-    const text = readFileSync(file, 'utf8').replace(/^﻿/, '');
+    const text = readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
     return { file, hooks: JSON.parse(text) ?? {} };
   } catch (err) {
     report.hooks.push({ event: null, name: null, error: `unreadable hooks file: ${err.message}` });

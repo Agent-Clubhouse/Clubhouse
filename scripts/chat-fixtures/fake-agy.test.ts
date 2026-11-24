@@ -8,13 +8,15 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ACP_SESSION_UPDATE_KINDS } from '../../src/main/chat/acp/protocol';
+import schemaJson from '../../src/main/chat/acp/schema/schema.v1.json';
 import { DEFAULTS, SYNTHESIZED, handlersFor } from './fake-agy.mjs';
 
 const FAKE_AGY = path.join(__dirname, 'fake-agy.mjs');
-const SCHEMA = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'chat', 'acp', 'schema', 'schema.v1.json'), 'utf8')) as {
+const SCHEMA = schemaJson as unknown as {
   $defs: Record<string, { 'x-side'?: string; 'x-method'?: string; required?: string[]; oneOf?: Array<{ const?: string }> }>;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped JSON-RPC traffic from a child process
 type Json = Record<string, any>;
 
 let tmp: string;
@@ -48,6 +50,7 @@ function run(agyArgs: string[], opts: { config?: string; stdin?: string; cwd?: s
   });
 }
 
+const last = <T>(items: T[]): T => items[items.length - 1];
 const ndjson = (text: string): Json[] => text.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
 
 /** A JSON-RPC peer on the fake's `agy acp`. Every message the fake writes is kept and checked against the schema. */
@@ -268,7 +271,7 @@ describe('fake agy: headless', () => {
   ])('stream-json input: %s ends the session with exit %i', async (_what, line, exitCode) => {
     const { code, stdout } = await run(['--input-format', 'stream-json', '--output-format', 'stream-json'], { stdin: `${line}\n` });
     expect(code).toBe(exitCode);
-    expect(ndjson(stdout).at(-1)).toMatchObject({ event: 'result', result: { status: 'ERROR' } });
+    expect(last(ndjson(stdout))).toMatchObject({ event: 'result', result: { status: 'ERROR' } });
   });
 });
 
@@ -402,7 +405,7 @@ describe('fake agy: ACP', () => {
 
     const withTerminal = new Acp(['--process-per-session']);
     const init2 = (await withTerminal.call('initialize', { protocolVersion: 1, clientCapabilities: { auth: { terminal: true } } })).result;
-    expect(init2.authMethods.at(-1)).toMatchObject({ type: 'terminal', id: 'terminal-login' });
+    expect(last(init2.authMethods as Json[])).toMatchObject({ type: 'terminal', id: 'terminal-login' });
     expect(init2.agentCapabilities.mcpCapabilities.http).toBe(true);
     await withTerminal.close();
   });
@@ -526,7 +529,7 @@ describe('fake agy: ACP', () => {
     acp.send({ id: ask.id, result: { outcome: { outcome: 'selected', optionId } } });
     expect((await acp.waitFor((m) => m.id === promptId && !('method' in m))).result.stopReason).toBe('end_turn');
     expect(acp.updates(sessionId).find((u) => u.sessionUpdate === 'tool_call_update')).toMatchObject({ status });
-    expect(acp.updates(sessionId).at(-1).content.text).toBe(text);
+    expect(last(acp.updates(sessionId)).content.text).toBe(text);
     await acp.close();
   });
 
@@ -546,7 +549,7 @@ describe('fake agy: ACP', () => {
     const ask = await acp.waitFor((m) => m.method === 'session/request_permission');
     acp.send({ method: 'session/cancel', params: { sessionId } });
     expect((await acp.waitFor((m) => m.id === promptId && !('method' in m))).result).toEqual({ stopReason: 'cancelled' });
-    expect(acp.updates(sessionId).at(-1)).toEqual({ sessionUpdate: 'tool_call_update', toolCallId: 'call-run', status: 'failed' });
+    expect(last(acp.updates(sessionId))).toEqual({ sessionUpdate: 'tool_call_update', toolCallId: 'call-run', status: 'failed' });
     acp.send({ id: ask.id, result: { outcome: { outcome: 'cancelled' } } });
     // The session takes the next prompt.
     expect((await acp.call('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'next' }] })).result.stopReason).toBe('end_turn');
@@ -628,14 +631,14 @@ describe('fake agy: ACP', () => {
     expect(ask.params).toMatchObject({ sessionId, mode: 'form', message: 'Which file?', requestedSchema: { type: 'object' } });
     acp.send({ id: ask.id, result: { action: 'accept', content: { file: 'a.txt' } } });
     await acp.waitFor((m) => m.id === promptId && !('method' in m));
-    expect(acp.updates(sessionId).at(-1).content.text).toBe('answer: accept {"file":"a.txt"}');
+    expect(last(acp.updates(sessionId)).content.text).toBe('answer: accept {"file":"a.txt"}');
     await acp.close();
 
     const plain = new Acp();
     const plainSession = await plain.start();
     await plain.call('session/prompt', { sessionId: plainSession, prompt: [{ type: 'text', text: 'agy:question' }] });
     expect(plain.messages.some((m) => m.method === 'elicitation/create')).toBe(false);
-    expect(plain.updates(plainSession).at(-1).content.text).toBe('Which file?');
+    expect(last(plain.updates(plainSession)).content.text).toBe('Which file?');
     await plain.close();
   });
 

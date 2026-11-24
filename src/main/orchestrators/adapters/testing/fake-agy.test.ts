@@ -26,7 +26,7 @@ const driver = createAcpChatDriver({
 const fakes: FakeAgy[] = [];
 const sessions: ChatDriverSession[] = [];
 afterEach(async () => {
-  for (const s of sessions.splice(0)) await s.close().catch(() => undefined);
+  for (const s of sessions.splice(0)) await s.close().catch((): undefined => undefined);
   for (const f of fakes.splice(0)) await f.dispose();
 });
 
