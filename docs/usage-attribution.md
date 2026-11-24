@@ -53,9 +53,21 @@ node scripts/usage-rollup.mjs [--by day,provider,role,agentId] [--since YYYY-MM-
 
 ### Not covered
 
-- **Terminal (TUI) agents** of any provider publish no chat events and log
-  nothing here. For Codex, the rollout script covers them after the fact.
-  There is no equivalent for Claude Code or Copilot in a terminal.
+- **Terminal (TUI) agents** publish no chat events. When a terminal run ends,
+  Clubhouse reads that run's usage from the CLI's own session file and logs
+  one `kind: run` line (`driver: terminal`, `src/main/services/terminal-usage.ts`).
+  - **What it reads.** Claude Code `assistant` usage, once per message id.
+    Codex `token_usage_record` usage, once per response id, plus model and
+    effort from `turn_context`. Ids, times, model, effort and counts only:
+    no text, and no model call.
+  - **Which file.** The session captured at exit, located by the provider's
+    own `transcriptPath`.
+  - **Which lines.** Only lines stamped within the run, so a resumed
+    session's earlier runs are left out. The file is read backwards from its
+    end, up to 256 MB. A run bigger than that is marked `partial`.
+  - **When there are no figures.** `coverage` says why: `not_supported`
+    (Copilot and other CLIs, whose files aren't read), `no_session` (the
+    run's session wasn't found) or `read_failed`.
 - **Headless runs** (`codex exec`, `claude -p`) are not chat sessions. Each
   run logs one `Usage turn` line of `kind: run`, `driver: headless`
   (`src/main/services/headless-usage.ts`), which the rollup adds like a turn.

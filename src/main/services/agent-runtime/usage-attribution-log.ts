@@ -27,10 +27,10 @@
  *
  * No message text, tool input or output, prompt or credential is read.
  */
-import type { ChatEvent } from '../../../shared/chat';
+import type { ChatEvent, TokenUsage } from '../../../shared/chat';
 import type { ChatDriverId } from '../../../shared/chat/capabilities';
 import { RunUsageTracker, type UsageSample } from '../../telemetry/helper-usage-accounting';
-import { USAGE_FIGURE_KEYS, usageCompleteness, type UsageFigures } from '../../../shared/telemetry/helper-usage-contract';
+import { USAGE_FIGURE_KEYS, usageCompleteness, type UsageDedup, type UsageFigures, type UsageSource } from '../../../shared/telemetry/helper-usage-contract';
 import type { HeadlessRunUsage } from '../headless-usage';
 import { appLog } from '../log-service';
 import { knownAgent } from '../app-event-sources';
@@ -220,6 +220,67 @@ export function logUsageChatEvent(event: ChatEvent): void {
   }
 }
 
+/** What one run used, however it was read: headless stream events or a terminal session's own file. */
+export interface RunUsage {
+  tokens: TokenUsage;
+  source: UsageSource;
+  dedup: UsageDedup;
+}
+
+interface RunLine {
+  agentId: string;
+  sessionId: string;
+  nativeSessionId?: string;
+  driver: 'headless' | 'terminal';
+  provider?: string;
+  model?: string;
+  effort?: string;
+  /** Model and effort are what the run was started with, not a provider report. */
+  requested: boolean;
+  outcome: string;
+  durationMs?: number;
+  usage: RunUsage | undefined;
+  /** Why a run has no figures, when the reader knows (e.g. `not_supported`). */
+  coverage?: string;
+  /** The reader stopped before the start of the run: figures cover only its latest part. */
+  partial?: boolean;
+}
+
+function writeRunLine(run: RunLine): void {
+  try {
+    const info = agentInfo(run.agentId);
+    const figures: UsageFigures = {};
+    for (const k of USAGE_FIGURE_KEYS) if (run.usage?.tokens[k] !== undefined) figures[k] = run.usage.tokens[k];
+    write('Usage turn', {
+      agentId: run.agentId,
+      role: info.role,
+      ...(info.parentAgentId && { parentAgentId: info.parentAgentId }),
+      ...(info.projectId && { projectId: info.projectId }),
+      sessionId: run.sessionId,
+      ...(run.nativeSessionId && { nativeSessionId: run.nativeSessionId }),
+      turnId: 'run',
+      resumed: false,
+      driver: run.driver,
+      provider: run.provider ?? 'unknown',
+      model: run.model ?? 'unknown',
+      effort: run.effort ?? 'unknown',
+      ...(run.requested && { requested: true }),
+      kind: 'run',
+      source: run.usage?.source ?? 'unknown',
+      dedup: run.usage?.dedup ?? 'none',
+      scope: 'unscoped',
+      completeness: run.partial && usageCompleteness(figures) === 'complete' ? 'partial' : usageCompleteness(figures),
+      ...figures,
+      ...(run.durationMs !== undefined && { durationMs: run.durationMs }),
+      ...(run.coverage && { coverage: run.coverage }),
+      ...(run.partial && { partial: true }),
+      stopReason: run.outcome,
+    });
+  } catch {
+    // telemetry-exempt: a usage line never affects the run it describes
+  }
+}
+
 /**
  * One line for a finished headless run (`codex exec`, `claude -p`): not a chat
  * session, so it has no turns of its own. Logged as a `Usage turn` of kind
@@ -236,35 +297,29 @@ export function logHeadlessRunUsage(run: {
   durationMs?: number;
   usage: HeadlessRunUsage | undefined;
 }): void {
-  try {
-    const info = agentInfo(run.agentId);
-    const figures: UsageFigures = {};
-    for (const k of USAGE_FIGURE_KEYS) if (run.usage?.tokens[k] !== undefined) figures[k] = run.usage.tokens[k];
-    write('Usage turn', {
-      agentId: run.agentId,
-      role: info.role,
-      ...(info.parentAgentId && { parentAgentId: info.parentAgentId }),
-      ...(info.projectId && { projectId: info.projectId }),
-      sessionId: `headless:${run.startedAt}`,
-      turnId: 'run',
-      resumed: false,
-      driver: 'headless',
-      provider: run.provider ?? 'unknown',
-      model: run.model ?? 'unknown',
-      effort: run.effort ?? 'unknown',
-      requested: true,
-      kind: 'run',
-      source: run.usage?.source ?? 'unknown',
-      dedup: run.usage?.dedup ?? 'none',
-      scope: 'unscoped',
-      completeness: usageCompleteness(figures),
-      ...figures,
-      ...(run.durationMs !== undefined && { durationMs: run.durationMs }),
-      stopReason: run.outcome,
-    });
-  } catch {
-    // telemetry-exempt: a usage line never affects the run it describes
-  }
+  writeRunLine({ ...run, sessionId: `headless:${run.startedAt}`, driver: 'headless', requested: true });
+}
+
+/**
+ * One line for a finished terminal (TUI) run, read from the CLI's own session
+ * file (terminal-usage.ts). Model and effort are the file's own when it names
+ * them. `coverage` says why a run has no figures (`not_supported` for a CLI
+ * whose files aren't read, `no_session` when the run's session wasn't found).
+ */
+export function logTerminalRunUsage(run: {
+  agentId: string;
+  startedAt: number;
+  provider: string;
+  nativeSessionId?: string;
+  model?: string;
+  effort?: string;
+  outcome: string;
+  durationMs?: number;
+  usage: RunUsage | undefined;
+  coverage?: string;
+  partial?: boolean;
+}): void {
+  writeRunLine({ ...run, sessionId: `terminal:${run.startedAt}`, driver: 'terminal', requested: false });
 }
 
 /** Start logging. Idempotent. */
