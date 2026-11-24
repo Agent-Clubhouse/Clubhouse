@@ -203,6 +203,19 @@ describe('level policy', () => {
     await expect(session.setLevel('full_access')).rejects.toThrow(/without a restart/);
   });
 
+  it('a set_mode answer updates the session\'s mode: the agent confirming it later is not a new change', async () => {
+    const { session, agent, of } = await open(LEVELS, { modes: MODES });
+    await session.setLevel('plan');
+    agent.update('session-1', { sessionUpdate: 'current_mode_update', currentModeId: 'plan' });
+    await tick();
+    expect(of('mode_changed')).toEqual([]);
+    expect(session.capabilities.liveLevels).toEqual(['plan', 'ask', 'auto_edit']);
+    // A later change the agent makes itself is still reported.
+    agent.update('session-1', { sessionUpdate: 'current_mode_update', currentModeId: 'default' });
+    await tick();
+    expect(of('mode_changed').map((d) => d.data)).toEqual([{ level: 'ask', nativeMode: 'default' }]);
+  });
+
   it('reports the agent\'s own mode change as a level', async () => {
     const { agent, of } = await open(LEVELS, { modes: MODES });
     agent.update('session-1', { sessionUpdate: 'current_mode_update', currentModeId: 'plan' });
