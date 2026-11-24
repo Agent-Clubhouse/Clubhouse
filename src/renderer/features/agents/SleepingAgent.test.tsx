@@ -10,6 +10,7 @@ import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { rendererLog } from '../../plugins/renderer-logger';
 import { useAgentSettingsPages } from './agentSettingsPages';
+import { useChatDraftStore } from './chat/useChatSession';
 
 vi.mock('../../plugins/renderer-logger', async (orig) => {
   const actual = await orig<typeof import('../../plugins/renderer-logger')>();
@@ -170,6 +171,100 @@ describe('SleepingAgent', () => {
       await waitFor(() => expect(mockSpawnDurableAgent).toHaveBeenCalledWith(
         'proj-1', '/projects/test', saved, false, undefined,
       ));
+    });
+  });
+
+  // #3785: a provider whose failed chat start doesn't open the terminal by itself.
+  describe('failed chat start with no implicit terminal (Antigravity)', () => {
+    const agy = { status: 'error' as const, orchestrator: 'antigravity-cli', errorMessage: "Antigravity CLI chat didn't start: sign in" };
+    const saved = { id: 'agent-1', name: 'bold-falcon', orchestrator: 'antigravity-cli' };
+
+    beforeEach(() => {
+      useChatDraftStore.setState({ drafts: {} });
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([saved]);
+      window.clubhouse.agent.updateDurableConfig = vi.fn().mockResolvedValue(undefined);
+    });
+
+    it('shows the unsent message from the agent\'s chat draft, with Retry chat and Open in terminal', async () => {
+      useChatDraftStore.getState().setDraft('agent-1', 'fix the build');
+      renderComponent(agy);
+      expect(screen.getByTestId('wake-task-input')).toHaveValue('fix the build');
+      expect(screen.getByTestId('wake-button')).toHaveTextContent('Retry chat');
+      expect(screen.getByTestId('open-in-terminal-button')).toBeInTheDocument();
+      expect(screen.getByTestId('copy-message-button')).toBeInTheDocument();
+    });
+
+    it('Retry chat starts with no first message and keeps the draft', async () => {
+      useChatDraftStore.getState().setDraft('agent-1', 'fix the build');
+      renderComponent(agy);
+      await waitForReady();
+      fireEvent.click(screen.getByTestId('wake-button'));
+      await waitFor(() => expect(mockSpawnDurableAgent).toHaveBeenCalledWith('proj-1', '/projects/test', saved, false, undefined));
+      expect(useChatDraftStore.getState().drafts['agent-1']).toBe('fix the build');
+    });
+
+    it('typing edits the chat draft itself', () => {
+      renderComponent(agy);
+      fireEvent.change(screen.getByTestId('wake-task-input'), { target: { value: 'new text' } });
+      expect(useChatDraftStore.getState().drafts['agent-1']).toBe('new text');
+    });
+
+    it('Open in terminal saves the terminal runtime, then starts with no first message, keeping the draft', async () => {
+      useChatDraftStore.getState().setDraft('agent-1', 'fix the build');
+      renderComponent(agy);
+      await waitForReady();
+      fireEvent.click(screen.getByTestId('open-in-terminal-button'));
+      await waitFor(() => expect(mockSpawnDurableAgent).toHaveBeenCalledWith('proj-1', '/projects/test', saved, false, undefined));
+      expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/projects/test', 'agent-1', { runtimeMode: 'terminal' });
+      expect(vi.mocked(window.clubhouse.agent.updateDurableConfig).mock.invocationCallOrder[0]).toBeLessThan(mockSpawnDurableAgent.mock.invocationCallOrder[0]);
+      expect(useChatDraftStore.getState().drafts['agent-1']).toBe('fix the build');
+    });
+
+    it('a second Open in terminal or Retry during the switch is ignored: one switch, one start', async () => {
+      let release!: () => void;
+      window.clubhouse.agent.updateDurableConfig = vi.fn(() => new Promise<void>((r) => { release = r; }));
+      renderComponent(agy);
+      await waitForReady();
+      fireEvent.click(screen.getByTestId('open-in-terminal-button'));
+      await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledTimes(1));
+      // Mid-switch: both are disabled, and a click that lands anyway does nothing.
+      expect(screen.getByTestId('open-in-terminal-button')).toBeDisabled();
+      fireEvent.click(screen.getByTestId('open-in-terminal-button'));
+      fireEvent.click(screen.getByTestId('wake-button'));
+      fireEvent.keyDown(screen.getByTestId('wake-task-input'), { key: 'Enter', metaKey: true });
+      release();
+      await waitFor(() => expect(mockSpawnDurableAgent).toHaveBeenCalledTimes(1));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledTimes(1);
+      expect(mockSpawnDurableAgent).toHaveBeenCalledTimes(1);
+    });
+
+    it('a failed switch shows why and starts nothing', async () => {
+      window.clubhouse.agent.updateDurableConfig = vi.fn().mockRejectedValue(new Error('disk full'));
+      renderComponent(agy);
+      await waitForReady();
+      fireEvent.click(screen.getByTestId('open-in-terminal-button'));
+      await waitFor(() => expect(screen.getByText(/Couldn't switch bold-falcon to the terminal: disk full/)).toBeInTheDocument());
+      expect(mockSpawnDurableAgent).not.toHaveBeenCalled();
+    });
+
+    it('copies the message only when asked', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.assign(navigator, { clipboard: { writeText } });
+      useChatDraftStore.getState().setDraft('agent-1', 'fix the build');
+      renderComponent(agy);
+      await waitForReady();
+      fireEvent.click(screen.getByTestId('open-in-terminal-button'));
+      await waitFor(() => expect(mockSpawnDurableAgent).toHaveBeenCalled());
+      expect(writeText).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId('copy-message-button'));
+      expect(writeText).toHaveBeenCalledWith('fix the build');
+    });
+
+    it('other providers keep Retry and no terminal button', () => {
+      renderComponent({ status: 'error', orchestrator: 'copilot-cli' });
+      expect(screen.getByTestId('wake-button')).toHaveTextContent(/^Retry$/);
+      expect(screen.queryByTestId('open-in-terminal-button')).toBeNull();
     });
   });
 
