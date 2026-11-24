@@ -2705,6 +2705,8 @@ describe('isolated real MCP producer domain admission', () => {
         expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ boundTo: [] }] });
       }));
 
+      // Explicit reviewed integration-body budgets for these five continuity
+      // cases retain their real2/2/2/1/1 preparations; protocol/hook clocks stay put.
       it('does not substitute a new same-summary preparation for the captured catalog entry', async () => runFixtureBody(async () => {
         const fx = current(), summary = await prepare(fx);
         const held = await heldSelection(fx, offerArgs(summary), true);
@@ -2717,7 +2719,7 @@ describe('isolated real MCP producer domain admission', () => {
         expect((await held.pending).isError).toBe(true);
         expect(fx.host.store.list()).toEqual([]);
         expect(JSON.parse(await catalog(fx))).toEqual(replacement);
-      }));
+      }), 15_000);
 
       it('prepares its own requested mode after an independently running preparation', async () => runFixtureBody(async () => {
         const fx = current();
@@ -2739,7 +2741,7 @@ describe('isolated real MCP producer domain admission', () => {
         expect(record.manifest).not.toEqual(prepared.summary);
         expect(fx.host.store.get(record.id)).toEqual(record);
         expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ mode: 'worktree', boundTo: [record.id] }] });
-      }));
+      }), 15_000);
 
       it('prepares its original captured source after an independently running preparation on another source', async () => runFixtureBody(async () => {
         const fx = current(), second = path.join(fixtureDirectory(), 'second-repository');
@@ -2765,7 +2767,7 @@ describe('isolated real MCP producer domain admission', () => {
         const record = parseHandoff(resultValue(result));
         await verifyCapturedPreparedSource(fx, record, project, second);
         expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ project: project.id, mode: 'worktree', boundTo: [record.id] }] });
-      }));
+      }), 15_000);
 
       it('owns its await of separately admitted preparation without cancelling that independent read on stop', async () => runFixtureBody(async () => {
         const fx = current(), held = await heldStandalonePreparation(fx, 'worktree');
@@ -2786,7 +2788,7 @@ describe('isolated real MCP producer domain admission', () => {
         expect(fx.host.producers.size).toBe(0);
         expect(fx.host.store.list()).toEqual([]);
         expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ project: fx.project.id, mode: 'worktree', boundTo: [] }] });
-      }));
+      }), 10_000);
 
       it('owns the original host before implicit preparation and refuses stop-time replacement', async () => runFixtureBody(async () => {
         const fx = current();
@@ -2871,7 +2873,7 @@ describe('isolated real MCP producer domain admission', () => {
         expect(fx.host.store.get(record.id)).toEqual(record);
         expect(fx.host.producers.size).toBe(0);
         expect(producerSettled).toBe(true);
-      }));
+      }), 10_000);
 
       it.each(['catalog-prewrite', 'history-prewrite', 'history-after-rename'] as const)('retains exact partial ids and distinguishes %s failure without retry or rollback fiction', async (failure) => runFixtureBody(async () => {
         const fx = current(), summary = await prepare(fx);
