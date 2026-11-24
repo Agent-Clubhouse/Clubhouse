@@ -33,6 +33,7 @@ export const PREPARE_HANDOFF_SKILL_TOPIC_CONTENT = [
 ].join('\n');
 import agentsDispatcherChrome from './content/agents-dispatcher.chrome.md';
 import settingsOrchestrators from './content/settings-orchestrators.md';
+import agentsAntigravity from './content/agents-antigravity.md';
 import pluginsOverview from './content/plugins-overview.md';
 import pluginsPermissions from './content/plugins-permissions.md';
 import pluginsCreating from './content/plugins-creating.md';
@@ -109,6 +110,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-handoffs', title: 'Handoffs', content: agentsHandoffs },
       { id: 'agents-prepare-handoff', title: 'The prepare-handoff skill', content: PREPARE_HANDOFF_SKILL_TOPIC_CONTENT },
       { id: 'orchestrators', title: 'Agent providers', content: settingsOrchestrators },
+      { id: 'agents-antigravity', title: 'Antigravity CLI', content: agentsAntigravity },
     ],
   },
   {
@@ -181,6 +183,7 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-handoffs', title: 'Handoffs', content: agentsHandoffs },
       { id: 'agents-prepare-handoff', title: 'The prepare-handoff skill', content: PREPARE_HANDOFF_SKILL_TOPIC_CONTENT },
       { id: 'orchestrators', title: 'Agent providers', content: settingsOrchestrators },
+      { id: 'agents-antigravity', title: 'Antigravity CLI', content: agentsAntigravity },
     ],
   },
   {

@@ -11,6 +11,7 @@ An orchestrator agent is a different thing. It's an agent that starts and manage
 | **Claude Code** | Anthropic's CLI for Claude. Most complete Clubhouse integration. | Stable |
 | **Copilot CLI** | GitHub Copilot's CLI. Best for GitHub-centric workflows. | Stable |
 | **Codex CLI** | OpenAI's Codex CLI. Sandbox-based permissions, `--full-auto` mode. | Beta |
+| **Antigravity CLI** | Google's `agy` CLI. Terminal and chat, no headless mode. See **Antigravity CLI**. | Experimental |
 
 ## Setup
 
@@ -40,13 +41,13 @@ While **Rich chat content** is on, paired phones (Clubhouse Go) can read any fil
 
 ## Capability matrix
 
-| Capability | Claude Code | Copilot CLI | Codex CLI |
-|-----------|:-----------:|:-----------:|:---------:|
-| Headless mode | Yes | Yes | Yes |
-| Structured output | Yes | Yes | Yes |
-| Hooks | Yes | Yes | Yes |
-| Session resume | Yes | Yes | Yes (`--last` / most recent only; no resume-by-ID) |
-| Permissions | Yes | Yes | Yes (sandbox) |
+| Capability | Claude Code | Copilot CLI | Codex CLI | Antigravity CLI |
+|-----------|:-----------:|:-----------:|:---------:|:---------------:|
+| Headless mode | Yes | Yes | Yes | No (not offered; see **Antigravity CLI**) |
+| Structured output | Yes | Yes | Yes | No |
+| Hooks | Yes | Yes | Yes | Yes |
+| Session resume | Yes | Yes | Yes (`--last` / most recent only; no resume-by-ID) | Yes (by conversation ID) |
+| Permissions | Yes | Yes | Yes (sandbox) | Yes |
 
 ### Codex hooks
 
