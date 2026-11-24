@@ -41,7 +41,7 @@ export async function answerFollowerApproval(machine: string, requestId: string,
     throw new Error('That computer isn’t in this Annex Network.');
   }
   const key = annexClient.satelliteKeyFor(fp);
-  if (!key || !annexClient.isMachineConnected(fp)) throw new Error('That computer is offline. Answer it when it’s back, or on that computer.');
+  if (!key || !annexClient.canReachMachine(fp)) throw new Error('That computer is offline. Answer it when it’s back, or on that computer.');
   const row = annexClient.getSatellites().find((sat) => sat.fingerprint.toLowerCase() === fp)?.snapshot?.grantRequests
     ?.find((request) => request.requestId === requestId);
   if (!row) throw new Error(REFUSALS.grant_request_not_found);
