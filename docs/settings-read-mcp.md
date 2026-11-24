@@ -71,10 +71,10 @@ Only the keys below ever come out. Each is read by name from its source, never b
 | `agent.idle` | `idle_sleep` |
 | `agent.orchestration` | `orchestrate`, `access`, `control`, `max_helpers`, `cross_project_helpers`, `connect_to_dispatcher`, `auto_helpers` |
 | `project.identity` | `name`, `display_name`, `color`, `emoji`, `has_image` |
-| `project.defaults` | `orchestrator`, `persona` (always null), `mission` (always null), `free_agent_mode`, `profile_id` (always null: provider profiles were removed, #2749), `source_control_provider`, `default_mcps` |
+| `project.defaults` | `orchestrator`, `persona` (always null), `mission` (always null), `free_agent_mode` (always null: the project free agent default was retired with Access, #2761, #3245), `profile_id` (always null: provider profiles were removed, #2749), `source_control_provider`, `default_mcps` |
 | `project.modes` | `clubhouse_mode` (always null), `mcp` (always on), `permission_mode` |
 | `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled` (always on), `clubhouse_mode_enabled` (always null), `permission_mode`, `default_access`, `global_helper_cap`, `enabled_orchestrators` |
-| `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `experimental_copilot_legacy_acp`, `annex_server_enabled`, `annex_client_enabled` |
+| `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `experimental_copilot_legacy_acp` (always null: the legacy ACP driver was removed, #2868), `annex_server_enabled`, `annex_client_enabled`, `annex_network_enabled`, `annex_loopback_only`, `annex_discovery_enabled` |
 
 `app.defaults` is open to every agent because those values feed its own effective settings.
 
