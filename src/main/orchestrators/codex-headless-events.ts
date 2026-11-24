@@ -139,18 +139,17 @@ export function createCodexHeadlessNormalizer(): (raw: StreamJsonEvent) => Strea
       }
 
       case 'turn.completed': {
+        // A figure Codex left out stays out: a turn that reported no usage is not a zero-token turn.
         const usage = (raw.usage ?? {}) as Record<string, unknown>;
+        const reported: { input_tokens?: number; output_tokens?: number } = {};
+        if (isCount(usage.input_tokens)) reported.input_tokens = usage.input_tokens;
+        if (isCount(usage.output_tokens)) reported.output_tokens = usage.output_tokens;
         return [{
           type: 'result',
           subtype: 'success',
           result: lastAgentText,
           is_error: false,
-          message: {
-            usage: {
-              input_tokens: Number(usage.input_tokens ?? 0),
-              output_tokens: Number(usage.output_tokens ?? 0),
-            },
-          },
+          ...(Object.keys(reported).length > 0 && { message: { usage: reported } }),
         }];
       }
 
@@ -168,4 +167,8 @@ export function createCodexHeadlessNormalizer(): (raw: StreamJsonEvent) => Strea
         return [];
     }
   };
+}
+
+function isCount(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0;
 }
