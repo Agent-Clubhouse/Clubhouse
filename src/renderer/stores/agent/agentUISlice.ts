@@ -1,4 +1,6 @@
 import { AgentUISlice, GetAgentState, SetAgentState } from './types';
+import { useAnnexClientStore } from '../annexClientStore';
+import { isRemoteAgentId, parseNamespacedId, useRemoteProjectStore } from '../remoteProjectStore';
 
 export function createUISlice(set: SetAgentState, get: GetAgentState): AgentUISlice {
   return {
@@ -19,7 +21,17 @@ export function createUISlice(set: SetAgentState, get: GetAgentState): AgentUISl
     restoreProjectAgent: (projectId) => {
       const saved = get().projectActiveAgent[projectId];
       if (saved) {
-        const agent = get().agents[saved];
+        // The sidebar can select a remote agent while switching projects. Remote
+        // agents live outside the local map; disconnected catalogs are retained
+        // for display, so only restore them while their host is connected.
+        const remote = isRemoteAgentId(saved);
+        const parsed = remote ? parseNamespacedId(saved) : null;
+        const connected = parsed && useAnnexClientStore.getState().satellites.some(
+          (satellite) => satellite.id === parsed.satelliteId && satellite.state === 'connected',
+        );
+        const agent = remote
+          ? connected ? useRemoteProjectStore.getState().remoteAgents[saved] : undefined
+          : get().agents[saved];
         if (agent && agent.projectId === projectId) {
           set({ activeAgentId: saved, agentSettingsOpenFor: null });
           return;
