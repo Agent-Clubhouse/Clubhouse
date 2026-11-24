@@ -356,6 +356,43 @@ function reconcileSatelliteStreams(): void {
       }
     }
   } finally { reconcilingStreams = false; }
+  noteReachability();
+}
+
+const reachableListeners = new Set<(machine: string) => void>();
+const reachableMachines = new Set<string>();
+
+/** Tells listeners about machines requests can newly reach, over this machine's connection or an accepted reverse link (#3613). */
+function noteReachability(): void {
+  const now = new Set<string>();
+  for (const sat of satellites.values()) if (canRequestSatellite(sat.fingerprint)) now.add(sat.fingerprint.toLowerCase());
+  const opened = [...now].filter((machine) => !reachableMachines.has(machine));
+  reachableMachines.clear();
+  for (const machine of now) reachableMachines.add(machine);
+  for (const machine of opened) {
+    for (const listener of [...reachableListeners]) {
+      try {
+        listener(machine);
+      } catch {
+        // telemetry-exempt: one listener failing must not stop the others
+      }
+    }
+  }
+}
+
+/**
+ * Whether requests to `machine` can go now: over this machine's own connection,
+ * or over the reverse control link it accepted from that member (#3613). The
+ * target still applies its own grants; this only says whether a route exists.
+ */
+export function canReachMachine(machine: string): boolean {
+  return canRequestSatellite(satelliteFor(machine)?.fingerprint ?? machine.toLowerCase());
+}
+
+/** Told each time requests to a machine become possible, with its lowercased fingerprint (#3613). */
+export function onMachineReachable(listener: (machine: string) => void): () => void {
+  reachableListeners.add(listener);
+  return () => { reachableListeners.delete(listener); };
 }
 
 /** Discovered but unpaired services visible on the LAN. */
@@ -884,6 +921,7 @@ function setState(
       }
     }
   }
+  noteReachability();
 }
 
 const connectedListeners = new Set<(machine: string) => void>();
@@ -3548,6 +3586,7 @@ export function forgetAllSatellites(): void {
     disposeRemoteBuffers(sat.id);
   }
   satellites.clear();
+  reachableMachines.clear();
   seededBuffers.clear();
   networkChannel.closeAll('out');
   annexControl.closeAll('out');
@@ -3666,6 +3705,7 @@ export function stopClient(): void {
     disposeRemoteBuffers(sat.id);
   }
   satellites.clear();
+  reachableMachines.clear();
   seededBuffers.clear();
   discoveredServices.clear();
   networkChannel.closeAll('out');

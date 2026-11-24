@@ -19,7 +19,7 @@ vi.mock('./dispatcher-federation-lead', () => ({ leadRole: () => h.role }));
 vi.mock('./annex-peers', () => ({ listPeers: () => h.peers, peerNeedsPairing: (p: { needsPairing?: boolean }) => !!p.needsPairing }));
 vi.mock('./annex-client', () => ({
   satelliteKeyFor: (m: string) => (m === 'laptop' ? 'LAPTOP' : undefined),
-  isMachineConnected: () => h.connected,
+  canReachMachine: () => h.connected,
   getSatellites: () => [{ fingerprint: 'LAPTOP', snapshot: { grantRequests: h.rows } }],
   answerRemoteGrantRequest: vi.fn(async () => h.receipt),
 }));

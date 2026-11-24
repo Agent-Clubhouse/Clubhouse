@@ -15,7 +15,7 @@ vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: state.machine
 vi.mock('./dispatcher-federation', () => ({ remoteFederationController: () => ({ agentId: 'remote-work', name: 'Dispatcher controller', enabled: true }) }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => null }));
 vi.mock('./annex-agent-calls', () => ({ rememberRemoteAgentName: vi.fn() }));
-vi.mock('./annex-client', () => ({ isMachineConnected: () => false }));
+vi.mock('./annex-client', () => ({ canReachMachine: () => false }));
 vi.mock('./group-project-registry', () => ({ groupProjectRegistry: { list: async () => [{ id: 'g', name: 'Group' }, { id: 'rec', name: 'Record' }] } }));
 // 'rec' takes its members from its membership record (#3357); 'g' still uses wires.
 const membership = vi.hoisted(() => ({ addMember: vi.fn(async () => undefined), excludeMember: vi.fn(async () => undefined) }));

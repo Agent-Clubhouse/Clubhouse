@@ -62,7 +62,7 @@ vi.mock('./annex-peers', async (original) => {
 });
 vi.mock('./annex-client', () => ({
   satelliteKeyFor: (fp: string) => here().peers.has(fp) ? fp : undefined,
-  isMachineConnected: (fp: string) => here().peers.has(fp),
+  canReachMachine: (fp: string) => here().peers.has(fp),
   getSatellites: () => here().snapshots,
   answerRemoteGrantRequest: async (fp: string, requestId: string, answer: string, reviewedDigest?: string) => {
     const caller = here();
