@@ -1,6 +1,6 @@
 # Antigravity CLI
 
-Antigravity CLI is Google's `agy` command line agent. Clubhouse can run it in a terminal and, through its Agent Client Protocol (ACP) server, in chat. It is experimental and off by default. It never becomes your default agent provider, and the Dispatcher does not offer it.
+Antigravity CLI is Google's `agy` command line agent. Clubhouse runs it in a terminal (the CLI view). Chat through its Agent Client Protocol (ACP) server is built but not offered yet: it turns on once its remaining checks pass. It is experimental and off by default. It never becomes your default agent provider, and the Dispatcher does not offer it.
 
 This page paraphrases Google's documentation as read on 2026-11-23. Google changes these pages without dated notes, so follow the links when a detail matters to you.
 
@@ -17,7 +17,7 @@ Clubhouse does not change Antigravity's trust list. The first time `agy` opens a
 | View | Needs | Notes |
 |------|-------|-------|
 | CLI view | `agy` installed and signed in | The `agy` terminal app runs as it does in your own terminal. |
-| Chat | `agy` with ACP support and a cached sign-in | Google's changelog shows `agy acp` added in 1.5.0. Chat needs 1.5.10 or newer, because earlier releases have documented ACP cancel and permission fixes, and Clubhouse checks the version before it opens chat. |
+| Chat | Not offered yet | When chat is offered, it needs `agy` with ACP support and a cached sign-in. Google's changelog shows `agy acp` added in 1.5.0. Chat will need 1.5.10 or newer, because earlier releases have documented ACP cancel and permission fixes, and Clubhouse checks the version before it opens chat. |
 | Headless | Not offered | See **Why headless is not offered**. |
 
 Chat and the CLI view never stand in for each other. If chat can't start, the agent says so and you choose whether to retry or open it in the CLI view. Clubhouse does not replay a message into a different view.
@@ -52,7 +52,7 @@ On Windows Clubhouse writes no hooks. Google does not say which shell runs a hoo
 
 Resume uses the conversation id a hook reports, and otherwise the most recent conversation in the agent's folder. Clubhouse does not list or read your Antigravity conversations or transcripts, and nothing under `~/.gemini` is scanned.
 
-Your own entries in these files are kept, and Clubhouse restores them when the agent stops. Antigravity also reads rules from parent folders, so a rules file above the agent's folder can apply too.
+Your own entries in these files are kept, and Clubhouse restores them when the agent stops. If one of these files already has a `clubhouse` MCP server or a `clubhouse-status` hook that Clubhouse did not add, or your global Antigravity MCP settings name a `clubhouse` server, the agent does not start and says why. An agent also stops with a reason if its Clubhouse MCP connection does not sign in to Clubhouse soon after it starts. Antigravity also reads rules from parent folders, so a rules file above the agent's folder can apply too.
 
 ## Models and effort
 
