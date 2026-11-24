@@ -6,13 +6,10 @@ import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 
-vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
+// Each test's home folder is its own, so app data (the copy Codex delivery keeps) is real files under the test's folder.
+const h = vi.hoisted(() => ({ home: '' }));
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => h.home } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
-// The copy Codex delivery keeps goes to app data; here it is recorded in memory, so no test writes outside its folder.
-const h = vi.hoisted(() => ({ copies: [] as Array<{ agentId: string; file: string; content: string }> }));
-vi.mock('./before-managed', () => ({
-  backupInstructions: async (agentId: string, file: string, content: string) => { h.copies.push({ agentId, file, content }); return file; },
-}));
 
 import { createAssetCatalogStore } from '../asset-catalog/store';
 import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
@@ -92,7 +89,7 @@ beforeEach(() => {
   project = path.join(root, 'project');
   wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
   fs.mkdirSync(wt, { recursive: true });
-  h.copies = [];
+  h.home = path.join(root, 'home');
   _resetSettingsAuditForTesting(false);
   service = createManagedAgentsService({
     catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
@@ -296,20 +293,99 @@ describe('Antigravity managed delivery (#3792)', () => {
     expect(fs.readFileSync(agentsMd(), 'utf-8')).toBe('');
   });
 
-  it('leaves Codex delivery as it was (AGENTS.md written whole), keeping a copy of the person\'s text beside the block first', async () => {
-    const rules = await blockPart('codex text');
-    agent.managed = { version: 1, blocks: [rules.id], skills: [], mcps: [] };
-    const before = `${ANTIGRAVITY_BLOCK_BEGIN}\nold\n${ANTIGRAVITY_BLOCK_END}\nmine\n`;
-    fs.writeFileSync(agentsMd(), before);
-    const record = await deliver(other('codex-cli'));
-    expect(fs.readFileSync(agentsMd(), 'utf-8')).toBe('codex text');
-    expect(record?.instructionsLimit).toBeUndefined();
-    expect(h.copies).toEqual([{ agentId: agent.id, file: 'AGENTS.md', content: before }]);
-    // No block, or only the block: nothing to keep, so no copy.
-    await deliver(other('codex-cli'));
-    fs.writeFileSync(agentsMd(), `${ANTIGRAVITY_BLOCK_BEGIN}\nold\n${ANTIGRAVITY_BLOCK_END}\n`);
-    await deliver(other('codex-cli'));
-    expect(h.copies).toHaveLength(1);
+  describe('Codex over an AGENTS.md an Antigravity start left', () => {
+    const copiesDir = () => path.join(h.home, '.clubhouse-dev', 'managed-agents', 'before-managed', agent.id);
+    const copies = () => (fs.existsSync(copiesDir()) ? fs.readdirSync(copiesDir()).sort().map((n) => ({ name: n, bytes: fs.readFileSync(path.join(copiesDir(), n)) })) : []);
+    // The person's text, with bytes that aren't UTF-8.
+    const MINE = Buffer.concat([Buffer.from('mine é\r\n'), Buffer.from([0xff, 0xfe, 0x00]), Buffer.from('\nend')]);
+    const withBlock = Buffer.concat([Buffer.from(`${ANTIGRAVITY_BLOCK_BEGIN}\nold\n${ANTIGRAVITY_BLOCK_END}\n`), MINE]);
+
+    async function codexSetup() {
+      const rules = await blockPart('codex text');
+      agent.managed = { version: 1, blocks: [rules.id], skills: [], mcps: [] };
+    }
+
+    it('copies the exact bytes to app data, then writes AGENTS.md whole as before; never over an earlier copy', async () => {
+      await codexSetup();
+      // An earlier copy from a switch to managed stays as it was.
+      fs.mkdirSync(copiesDir(), { recursive: true });
+      fs.writeFileSync(path.join(copiesDir(), 'AGENTS.md'), 'earlier copy');
+      fs.writeFileSync(agentsMd(), withBlock);
+      const record = await deliver(other('codex-cli'));
+      expect(fs.readFileSync(agentsMd(), 'utf-8')).toBe('codex text');
+      expect(record?.instructionsLimit).toBeUndefined();
+      const kept = copies();
+      expect(kept).toHaveLength(2);
+      expect(kept.find((c) => c.name === 'AGENTS.md')!.bytes.toString()).toBe('earlier copy');
+      const copy = kept.find((c) => c.name !== 'AGENTS.md')!;
+      expect(copy.name).toMatch(/^AGENTS\.md\.\d+$/);
+      expect(copy.bytes.equals(withBlock)).toBe(true);
+      // Codex's own file now: no block, so no more copies.
+      await deliver(other('codex-cli'));
+      expect(copies()).toHaveLength(2);
+    });
+
+    it('makes no copy for a file with only Clubhouse\'s block, or no Antigravity markers', async () => {
+      await codexSetup();
+      fs.writeFileSync(agentsMd(), `${ANTIGRAVITY_BLOCK_BEGIN}\nold\n${ANTIGRAVITY_BLOCK_END}\n`);
+      await deliver(other('codex-cli'));
+      expect(fs.readFileSync(agentsMd(), 'utf-8')).toBe('codex text');
+      fs.writeFileSync(agentsMd(), 'plain project text\n');
+      await deliver(other('codex-cli'));
+      expect(fs.readFileSync(agentsMd(), 'utf-8')).toBe('codex text');
+      expect(copies()).toEqual([]);
+    });
+
+    it('refuses, writing nothing, when no copy can be made: names used up, or app data not writable', async () => {
+      await codexSetup();
+      fs.writeFileSync(agentsMd(), withBlock);
+      const before = snapshot(wt);
+      const stamp = 1_795_500_000_000;
+      vi.spyOn(Date, 'now').mockReturnValue(stamp);
+      fs.mkdirSync(copiesDir(), { recursive: true });
+      for (let n = 0; n < 100; n++) fs.writeFileSync(path.join(copiesDir(), n === 0 ? 'AGENTS.md' : n === 1 ? `AGENTS.md.${stamp}` : `AGENTS.md.${stamp}-${n}`), `earlier ${n}`);
+      const err = await deliver(other('codex-cli')).catch((e: unknown) => e);
+      expect(isManagedStartRefused(err)).toBe(true);
+      expect(err).toMatchObject({ code: 'antigravity_codex_backup_failed' });
+      expect((err as Error).message).toMatch(/did not start/);
+      expect(snapshot(wt)).toEqual(before);
+      expect(copies()).toHaveLength(100);
+      expect(copies().every((c) => c.bytes.toString().startsWith('earlier'))).toBe(true);
+
+      // App data's folder for copies is a file: the copy fails the same way.
+      fs.rmSync(copiesDir(), { recursive: true });
+      fs.writeFileSync(copiesDir(), 'in the way');
+      await expect(deliver(other('codex-cli'))).rejects.toMatchObject({ code: 'antigravity_codex_backup_failed' });
+      expect(snapshot(wt)).toEqual(before);
+    });
+
+    it('refuses, writing nothing, over unreadable Antigravity markers', async () => {
+      await codexSetup();
+      for (const body of [
+        Buffer.concat([Buffer.from(`${ANTIGRAVITY_BLOCK_BEGIN} edited\nold\n${ANTIGRAVITY_BLOCK_END}\n`), MINE]),
+        Buffer.concat([Buffer.from(`${ANTIGRAVITY_BLOCK_BEGIN}\na\n${ANTIGRAVITY_BLOCK_END}\n${ANTIGRAVITY_BLOCK_BEGIN}\nb\n${ANTIGRAVITY_BLOCK_END}\n`), MINE]),
+        Buffer.concat([MINE, Buffer.from(`\n${ANTIGRAVITY_BLOCK_END}\n`)]),
+      ]) {
+        fs.writeFileSync(agentsMd(), body);
+        const err = await deliver(other('codex-cli')).catch((e: unknown) => e);
+        expect(isManagedStartRefused(err)).toBe(true);
+        expect(err).toMatchObject({ code: 'antigravity_instructions_markers' });
+        expect((err as Error).message).toMatch(/Codex won't write over it/);
+        expect(fs.readFileSync(agentsMd()).equals(body)).toBe(true);
+      }
+      expect(copies()).toEqual([]);
+    });
+
+    it('refuses a linked AGENTS.md with Antigravity markers, and writes through no link', async () => {
+      await codexSetup();
+      const target = path.join(root, 'elsewhere.md');
+      fs.writeFileSync(target, withBlock);
+      try { fs.symlinkSync(target, agentsMd()); } catch { return; /* no symlink rights (Windows without developer mode) */ }
+      await expect(deliver(other('codex-cli'))).rejects.toMatchObject({ code: 'antigravity_instructions_unsafe' });
+      expect(fs.readFileSync(target).equals(withBlock)).toBe(true);
+      expect(fs.lstatSync(agentsMd()).isSymbolicLink()).toBe(true);
+      expect(copies()).toEqual([]);
+    });
   });
 
   it('keeps untracked text that equals the instructions as the person\'s, through a delivery and a switch away', async () => {

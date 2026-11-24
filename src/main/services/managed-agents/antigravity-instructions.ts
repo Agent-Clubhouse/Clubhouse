@@ -39,6 +39,16 @@ function instructionsPath(worktree: string): string {
 const BEGIN_FAMILY = Buffer.from('<!-- BEGIN clubhouse-managed', 'utf-8');
 const END_FAMILY = Buffer.from('<!-- END clubhouse-managed', 'utf-8');
 
+/** Whether any line starts like a Clubhouse Antigravity marker, valid or not. */
+export function hasAntigravityMarkerLine(file: Buffer): boolean {
+  for (const family of [BEGIN_FAMILY, END_FAMILY]) {
+    for (let i = file.indexOf(family); i !== -1; i = file.indexOf(family, i + 1)) {
+      if (i === 0 || file[i - 1] === 0x0a) return true;
+    }
+  }
+  return false;
+}
+
 const markersRefused = () => new ManagedStartRefused('antigravity_instructions_markers',
   `${ANTIGRAVITY_PATHS.instructions} has Clubhouse's block markers more than once, out of order or edited, so Clubhouse can't tell its text from yours. Nothing was written. Leave one BEGIN and one END clubhouse-managed line exactly as Clubhouse wrote them, or remove both.`);
 

@@ -12,6 +12,8 @@ export type ManagedStartRefusedCode =
   | 'antigravity_instructions_markers'
   /** AGENTS.md changed between Clubhouse reading and writing it; it was left as it is. */
   | 'antigravity_instructions_changed'
+  /** Before Codex writes AGENTS.md over an Antigravity start's, the copy of the person's text couldn't be made. */
+  | 'antigravity_codex_backup_failed'
   /** A write failed after the checks passed, so the folder may hold part of this start's setup. */
   | 'antigravity_delivery_incomplete'
   /** Other Antigravity refusals, such as the MCP and hooks config checks. */

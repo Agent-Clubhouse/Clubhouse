@@ -40,7 +40,7 @@ import { BUILTIN_BLOCK_IDS, withWorkingIdentity } from './builtins';
 import { MANAGED_SKILLS_MANIFEST, skillsFolderOf } from '../../../shared/skills-folder';
 import { helperTemplateFor } from './helpers';
 import { ANTIGRAVITY_PATHS, ANTIGRAVITY_PROVIDER_ID } from '../../../shared/providers/antigravity';
-import { antigravityPlainResults, commitAntigravityInstructions, planAntigravityInstructions, removeAntigravityInstructionsBlock, type AntigravityInstructionsReceipt } from './antigravity-instructions';
+import { commitAntigravityInstructions, hasAntigravityMarkerLine, parseAntigravityInstructions, planAntigravityInstructions, removeAntigravityInstructionsBlock, type AntigravityInstructionsReceipt } from './antigravity-instructions';
 import { isManagedStartRefused, ManagedStartRefused } from './start-refused';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
@@ -855,7 +855,7 @@ export async function deliverManagedSetup(params: {
   try {
     if (agyInstructions) await commitAntigravityInstructions(agyInstructions);
     else {
-      // Codex writes AGENTS.md whole, as it always has. Text the person kept beside an Antigravity block is copied to app data first.
+      // Codex writes AGENTS.md whole, as it always has. An AGENTS.md from an Antigravity start is checked first (#3792).
       if (provider.id === CODEX_ID) await keepTextBesideAntigravityBlock(agent.id, worktree);
       await provider.writeInstructions(worktree, instructions);
     }
@@ -911,13 +911,49 @@ export async function deliverManagedSetup(params: {
   };
 }
 
-/** A copy of AGENTS.md in app data (never over an earlier one) when it has the person's text beside Clubhouse's Antigravity block. */
+/**
+ * Before Codex writes AGENTS.md whole, over a file an Antigravity start left
+ * (#3792): with the person's text beside a valid Clubhouse block, the file's
+ * exact bytes are copied to app data (never over an earlier copy); a copy
+ * that can't be made refuses the start, so nothing is overwritten. Markers
+ * that can't be read, or a linked or non-file AGENTS.md with markers, also
+ * refuse with how to fix it. An AGENTS.md without Antigravity markers is
+ * Codex's as before.
+ */
 async function keepTextBesideAntigravityBlock(agentId: string, worktree: string): Promise<void> {
-  const results = await antigravityPlainResults(worktree);
-  if (!results || results.outside.length === 0) return;
+  const file = path.join(worktree, ANTIGRAVITY_PATHS.instructions);
+  let st;
+  try { st = await fsp.lstat(file); } catch { return; /* telemetry-exempt: no AGENTS.md, nothing to keep */ }
+  if (st.isSymbolicLink() || !st.isFile()) {
+    // Read through the link only to see whether an Antigravity start wrote there; never written through.
+    const through = st.isSymbolicLink() ? await fsp.readFile(file).catch((): null => null) : null;
+    if (through && hasAntigravityMarkerLine(through)) {
+      throw new ManagedStartRefused('antigravity_instructions_unsafe',
+        `${ANTIGRAVITY_PATHS.instructions} is a link and has Clubhouse's Antigravity block markers, so Codex won't write over it. Nothing was written and the agent did not start. Replace the link with a plain file, or take the clubhouse-managed block out of the file it points to.`);
+    }
+    return;
+  }
+  const bytes = await fsp.readFile(file);
+  if (!hasAntigravityMarkerLine(bytes)) return;
+  let outside: Buffer;
+  try {
+    const parsed = parseAntigravityInstructions(bytes);
+    outside = parsed.hasBlock ? Buffer.concat([parsed.before, parsed.after]) : bytes;
+  } catch (err) {
+    if (!isManagedStartRefused(err)) throw err;
+    throw new ManagedStartRefused('antigravity_instructions_markers',
+      `${ANTIGRAVITY_PATHS.instructions} has Clubhouse's Antigravity block markers repeated, out of order or edited, so Codex won't write over it: your text in it could be lost. Nothing was written and the agent did not start. Leave one BEGIN and one END clubhouse-managed line exactly as Clubhouse wrote them, or remove both.`);
+  }
+  if (outside.length === 0) return;
   // Loaded here, not at the top: before-managed reads state-store, which already imports this module through service.
   const { backupInstructions } = await import('./before-managed');
-  const kept = await backupInstructions(agentId, ANTIGRAVITY_PATHS.instructions, results.current.toString('utf-8'));
+  let kept: string | null;
+  try {
+    kept = await backupInstructions(agentId, ANTIGRAVITY_PATHS.instructions, bytes);
+  } catch (err) {
+    throw new ManagedStartRefused('antigravity_codex_backup_failed',
+      `Clubhouse couldn't keep a copy of ${ANTIGRAVITY_PATHS.instructions} (${err instanceof Error ? err.message : String(err)}), which has your text beside the Antigravity block, so Codex won't write over it. Nothing was written and the agent did not start. Move your text out of AGENTS.md, or free space in Clubhouse's app data, then start it again.`, { cause: err });
+  }
   // A file name in app data only, never content.
   appLog('core:managed', 'info', 'Kept a copy of AGENTS.md before Codex replaces it', { meta: { agentId, copy: kept } });
 }
