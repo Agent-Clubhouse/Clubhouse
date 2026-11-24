@@ -10,12 +10,16 @@
 import * as path from 'path';
 import { execFile } from 'child_process';
 import type {
+  HookCapable,
+  NormalizedHookEvent,
   OrchestratorConventions,
   ProviderCapabilities,
   PasteSubmitTiming,
+  SessionCapable,
   SpawnOpts,
   SpawnCommandResult,
 } from './types';
+import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { BaseProvider } from './base-provider';
 import type { ModelProbeContext } from './model-probes';
 import { homePath } from './shared';
@@ -25,6 +29,7 @@ import { resolveProcessLaunch } from '../util/process-launch';
 import { ANTIGRAVITY_PATHS, ANTIGRAVITY_PROVIDER_ID } from '../../shared/providers/antigravity';
 import { probeAgyModels } from './antigravity/models';
 import { antigravityAccessArgs, antigravityStartLevel } from './antigravity/access';
+import { antigravityHooksSupported, parseAntigravityHookEvent, writeAntigravityHooks } from './antigravity/hooks';
 
 /** stdout of a short command; rejects on a non-zero exit or timeout. */
 function runForStdout(binary: string, args: string[], options: { env: Record<string, string>; windowsVerbatimArguments?: boolean }): Promise<string> {
@@ -47,7 +52,7 @@ export function parseAgyVersion(stdout: string): string | null {
   return /(?:^|[^\d.])(\d+\.\d+\.\d+)(?![\d])/.exec(stdout)?.[1] ?? null;
 }
 
-export class AntigravityCliProvider extends BaseProvider {
+export class AntigravityCliProvider extends BaseProvider implements HookCapable, SessionCapable {
   readonly id = ANTIGRAVITY_PROVIDER_ID;
   readonly displayName = 'Antigravity CLI';
   readonly shortName = 'AGY';
@@ -119,8 +124,10 @@ export class AntigravityCliProvider extends BaseProvider {
       // Off until the eligibility decision (#3786) names the auth types it may run under.
       headless: false,
       structuredOutput: false,
-      hooks: false,
-      sessionResume: false,
+      // Hook commands are verified for POSIX shells only (antigravity/hooks.ts).
+      hooks: antigravityHooksSupported(),
+      // Resume by the conversation id hooks report; no session store is read.
+      sessionResume: true,
       supportsPositionalMission: false,
       supportsAutoResumeAfterUpdate: false,
       permissions: true,
@@ -179,5 +186,38 @@ export class AntigravityCliProvider extends BaseProvider {
     }
 
     return { binary, args };
+  }
+
+  // ── HookCapable (#3795) ─────────────────────────────────────────────────
+
+  async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
+    if (!antigravityHooksSupported()) return;
+    await writeAntigravityHooks(cwd, hookUrl);
+  }
+
+  parseHookEvent(raw: unknown): NormalizedHookEvent | null {
+    return parseAntigravityHookEvent(raw);
+  }
+
+  // ── SessionCapable (#3795) ──────────────────────────────────────────────
+  //
+  // Antigravity documents no session store layout or transcript format
+  // (https://antigravity.google/docs/hooks/ names a transcript path but not
+  // its line format), so Clubhouse lists and reads nothing. The session id
+  // comes from hooks (NormalizedHookEvent.sessionId) and resumes with
+  // `--conversation <id>`.
+
+  async listSessions(): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+    return [];
+  }
+
+  /** Always null: there is no documented transcript to read. */
+  async readSessionTranscript(): Promise<StreamJsonEvent[] | null> {
+    return null;
+  }
+
+  /** Antigravity prints no documented session id to the terminal. */
+  extractSessionId(): string | null {
+    return null;
   }
 }

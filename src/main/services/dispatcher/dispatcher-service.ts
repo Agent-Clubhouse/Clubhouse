@@ -49,7 +49,7 @@
  * running, loses its connections, and can't be started again until MCP is back,
  * when it returns to what its saved values say and wakes the controller idle.
  */
-import { ANTIGRAVITY_PROVIDER_ID } from '../../../shared/providers/antigravity';
+import { pickDispatcherDefault } from './dispatcher-default';
 import { withSavedAccess } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -749,10 +749,7 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
  * New agent page picks it (the first enabled provider in registration order).
  */
 export function defaultDispatcherOrchestrator(): OrchestratorId | undefined {
-  const enabled = getOrchestratorSettings().enabled ?? [];
-  // Antigravity isn't a Dispatcher CLI until its desktop-control gate passes (#3799).
-  const providers = getAllProviders().filter((p) => p.id !== ANTIGRAVITY_PROVIDER_ID);
-  return (providers.find((p) => enabled.includes(p.id)) ?? providers[0])?.id;
+  return pickDispatcherDefault(getAllProviders().map((p) => p.id), getOrchestratorSettings().enabled ?? []);
 }
 
 async function readConfig(dir: string = getDispatcherPath()): Promise<DurableAgentConfig | null> {

@@ -101,6 +101,11 @@ export interface ProviderDescriptor {
   stateDir?: { env: string; fallback: string };
   /** Static feature policy; see `./features`. */
   features: ProviderFeatureDeclarations;
+  /**
+   * Behind an experimental flag: registered only when the flag is on, and
+   * never enabled by first-run detection, so it is only ever chosen explicitly.
+   */
+  experimental?: true;
 }
 
 const ALL_LEVELS: readonly PermissionLevel[] = ['plan', 'ask', 'auto_edit', 'auto', 'full_access'];
@@ -266,6 +271,7 @@ const ANTIGRAVITY_CLI = {
     budgetReserve: false,
   },
   capacityTracked: false,
+  experimental: true,
   features: {
     common: {
       managed_instructions: {
@@ -334,6 +340,11 @@ export function providerDescriptors(): readonly ProviderDescriptor[] {
 /** Built-in ids whose descriptor matches, in `BUILTIN_PROVIDER_IDS` order. */
 export function providerIdsWhere<T extends BuiltinProviderId = BuiltinProviderId>(test: (d: ProviderDescriptor) => boolean): readonly T[] {
   return BUILTIN_PROVIDER_IDS.filter((id) => test(PROVIDER_DESCRIPTORS[id])) as T[];
+}
+
+/** Whether a provider is behind an experimental flag (see `ProviderDescriptor.experimental`). */
+export function isExperimentalProvider(id: string | null | undefined): boolean {
+  return providerDescriptor(id)?.experimental === true;
 }
 
 /** The closed telemetry value for a provider id; anything not reviewed into the enum is `other`. */

@@ -1,4 +1,5 @@
 import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
+import { takeHookSessionId } from './hook-session-ids';
 import { assertExecutionPolicy, validateStoredExecutionPolicy, helperExecutionPolicy, type ExecutionPolicy } from '../../shared/execution-policy';
 import { activateLocalCausalInput, withLocalCausalInput } from './dispatcher-federation-local-work';
 import { captureFederationInputs, prepareFederationInputs } from './dispatcher-federation-context';
@@ -1397,6 +1398,12 @@ async function captureSession(
     // run's own; it's checked too, as the CLI may have quit before creating it.
     let sessionId: string | null = assignedId ? await exists(assignedId, true) : null;
     if (sessionId) source = 'assigned';
+    // An id the CLI's own hooks reported during this run (Antigravity, #3795).
+    const hooked = takeHookSessionId(agentId, provider.id, Date.now() - runMs);
+    if (!sessionId && hooked) {
+      sessionId = await exists(hooked);
+      if (sessionId) source = 'provider_reported';
+    }
     if (!sessionId && buffer && isSessionCapable(provider)) {
       sessionId = await scraped(provider.extractSessionId(buffer));
       if (sessionId) source = 'output_scrape';

@@ -69,14 +69,20 @@ describe('AntigravityCliProvider', () => {
       });
     });
 
-    it('keeps headless, hooks and session listing off until their gates land', () => {
+    it('keeps headless off; hooks on POSIX only; resumes by hook-reported id', () => {
       expect(provider.getCapabilities()).toMatchObject({
         headless: false,
-        hooks: false,
-        sessionResume: false,
+        hooks: process.platform !== 'win32',
+        sessionResume: true,
         supportsPositionalMission: false,
         ignoresToolListChanged: true,
       });
+    });
+
+    it('lists and reads no sessions: no store layout or transcript format is documented', async () => {
+      expect(await provider.listSessions()).toEqual([]);
+      expect(await provider.readSessionTranscript()).toBeNull();
+      expect(provider.extractSessionId()).toBeNull();
     });
 
     it('exits with /exit', () => {
@@ -144,9 +150,10 @@ describe('AntigravityCliProvider', () => {
       await expect(provider.buildSpawnCommand({ cwd, access: 'auto' })).rejects.toThrow(/cannot start at Auto/);
     });
 
-    it('maps the legacy free-agent pair to the nearest level it has', async () => {
+    it('maps the legacy free-agent pair the same way: skip-all is Full access, auto is refused', async () => {
       expect((await provider.buildSpawnCommand({ cwd, freeAgentMode: true, permissionMode: 'skip-all' })).args).toEqual(['--dangerously-skip-permissions']);
-      expect((await provider.buildSpawnCommand({ cwd, freeAgentMode: true, permissionMode: 'auto' })).args).toEqual(['--mode', 'accept-edits']);
+      await expect(provider.buildSpawnCommand({ cwd, freeAgentMode: true, permissionMode: 'auto' })).rejects.toThrow(/cannot start at Auto/);
+      await expect(provider.buildSpawnCommand({ cwd, freeAgentMode: true })).rejects.toThrow(/cannot start at Auto/);
     });
 
     it('resumes a known conversation by id, else the most recent', async () => {
@@ -173,7 +180,7 @@ describe('AntigravityCliProvider', () => {
       await expect(provider.buildSpawnCommand({ cwd, sandbox: 'read-only' })).rejects.toThrow(/No verified mapping/);
     });
 
-    it('sets no environment, so no credential or key is passed', async () => {
+    it('adds no environment variables of its own (the launch shell env is inherited as for every provider)', async () => {
       const result = await provider.buildSpawnCommand({ cwd, access: 'full_access' });
       expect(result.env).toBeUndefined();
     });
@@ -195,10 +202,17 @@ describe('AntigravityCliProvider', () => {
       ]);
     });
 
-    it('skips lines that could read as a flag, and returns null for no models', () => {
+    it('skips lines outside the slug-column-name format', () => {
       expect(parseAgyModels('--model  x\n-rf\n')).toBeNull();
       expect(parseAgyModels('')).toBeNull();
-      expect(parseAgyModels('a\r\na\r\nb  B\r\n')).toEqual([{ id: 'a', label: 'a' }, { id: 'b', label: 'B' }]);
+      expect(parseAgyModels('Warning\nAvailable models:\nWarning: update available\n')).toBeNull();
+      expect(parseAgyModels('Warning: something\na-1  A One\r\na-1  dup\r\nb\tB\r\n')).toEqual([{ id: 'a-1', label: 'A One' }, { id: 'b', label: 'B' }]);
+    });
+
+    it('refuses output with more model lines than it accepts, rather than cutting it off', () => {
+      const many = Array.from({ length: 501 }, (_, i) => `m-${i}  Model ${i}`).join('\n');
+      expect(() => parseAgyModels(many)).toThrow(/more than 500/);
+      expect(parseAgyModels(many.split('\n').slice(0, 500).join('\n'))).toHaveLength(500);
     });
 
     it('accepts only listed slugs and default', () => {

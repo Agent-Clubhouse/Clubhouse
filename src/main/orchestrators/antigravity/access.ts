@@ -24,9 +24,9 @@ export class AntigravityAccessError extends Error {}
 export function antigravityStartLevel(opts: Pick<SpawnOpts, 'access' | 'freeAgentMode' | 'permissionMode'>): PermissionLevel {
   if (opts.access) return opts.access;
   if (!opts.freeAgentMode) return 'ask';
-  // The legacy pair: skip-all is Full access; Claude's auto classifier has no
-  // Antigravity equivalent here, so it starts at the nearest lower level.
-  return opts.permissionMode === 'skip-all' ? 'full_access' : 'auto_edit';
+  // The legacy pair: skip-all is Full access, anything else is Auto, which is
+  // refused like an explicit Auto rather than quietly started lower.
+  return opts.permissionMode === 'skip-all' ? 'full_access' : 'auto';
 }
 
 /** The start flags for a level. Throws for a level Antigravity can't start at. */

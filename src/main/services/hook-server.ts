@@ -12,6 +12,7 @@ import { publishFromHookEvent } from './app-event-bus';
 import { noteAgentToolCall } from './git-command-log';
 import * as permissionQueue from './annex-permission-queue';
 import { recordHookEvent, recordPermission } from '../telemetry/agent-signals';
+import { noteHookSessionId } from './hook-session-ids';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 
@@ -352,6 +353,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     });
 
     recordHookEvent(provider.id, normalized.kind, normalized.toolName, agentId);
+    if (normalized.sessionId) noteHookSessionId(agentId, provider.id, normalized.sessionId);
     // A terminal agent's live level, for its helpers' ceiling (#2228). The
     // agent's own shell holds this endpoint's id and nonce, so a report is
     // only trusted up to the spawn cap: it can lower the record or restore
