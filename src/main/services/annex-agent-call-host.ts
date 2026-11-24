@@ -21,7 +21,7 @@ import { federationMessageDirection, federationRequestRouter } from './dispatche
 import { remoteDispatcherPermissionHash } from './dispatcher-remote-permissions';
 
 /** Recovered work uses saved grants too: a sleeping sender is not revoked. */
-export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promise<{ allowed: true } | { allowed: false; reason: string }> {
+export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promise<{ allowed: true } | { allowed: false; reason: string; notReady?: true }> {
   const callerId = item.body.from.agentId;
   const refuse = (reason: string) => ({ allowed: false as const, reason });
   if (isDispatcherChatAgentId(callerId)) return refuse('The Dispatcher chat cannot deliver controller messages.');
@@ -55,11 +55,20 @@ export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promis
   const grants = await effectiveAgentGrants(projectPath, callerId);
   if (item.remoteDispatcherAuthorization) {
     if (!['send_message', 'send_file'].includes(item.body.tool)
-      || !federationMessageDirection({ agentId: callerId }, { agentId: item.body.to, machineId: item.machine })
       || federationRequestRouter()?.allowed(item.machine, item.body.args, item.body.tool) === false) return refuse('The receiving Dispatcher or its controller link is unavailable.');
+    // The sender's own permission is final whatever the receiver's state, so it is checked first.
     const decision = evaluateGrant({ caller: { kind: 'agent', agentId: callerId, projectPath }, action: 'agent.message', target: { kind: 'agent', remoteDispatcher: true } }, grants);
-    return decision.outcome !== 'refuse' && remoteDispatcherPermissionHash(callerId, grants) === item.remoteDispatcherAuthorization.policyHash
-      ? { allowed: true } : refuse('The sender permission changed after this delivery was approved.');
+    if (decision.outcome === 'refuse' || remoteDispatcherPermissionHash(callerId, grants) !== item.remoteDispatcherAuthorization.policyHash) {
+      return refuse('The sender permission changed after this delivery was approved.');
+    }
+    if (federationMessageDirection({ agentId: callerId }, { agentId: item.body.to, machineId: item.machine })) return { allowed: true };
+    // A member whose Dispatcher is restarting publishes no controller, or one not yet enabled (#3829).
+    // Only that waits; a removed member or a different controller is final.
+    const published = remoteFederationController(item.machine);
+    if (isNetworkComputer(item.machine) && (!published?.agentId || published.agentId === item.body.to) && !published?.enabled) {
+      return { allowed: false, reason: 'The receiving Dispatcher has not published its controller yet.', notReady: true };
+    }
+    return refuse('The receiving Dispatcher or its controller link is unavailable.');
   }
   const direction = getConnectionDirection({ agentId: callerId }, { agentId: item.body.to, machineId: item.machine });
   if ((!direction?.link && !direction?.cardLink && !activeAgentLinks(direction).length) || direction.disabledTools.includes(item.body.tool)) return refuse('The sender connection or its tool permission was removed.');

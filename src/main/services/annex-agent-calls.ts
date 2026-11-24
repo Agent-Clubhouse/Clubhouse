@@ -204,7 +204,8 @@ export function remoteMachineOf(targetId: string): string | null {
 let deliveries = createAnnexDeliveryStore();
 export type AgentCallBody = DurableAgentCall;
 type OutboxItem = DeliveryOutboxItem;
-type DeliveryAuthorization = { allowed: true } | { allowed: false; reason: string };
+/** `notReady`: the receiver hasn't published what this needs yet (#3829); nothing was sent and it waits, until expiry. */
+type DeliveryAuthorization = { allowed: true } | { allowed: false; reason: string; notReady?: true };
 let authorizeQueuedCall: ((item: OutboxItem) => Promise<DeliveryAuthorization>) | undefined;
 let onDeliveryFailure: ((notice: AnnexDeliveryFailure) => Promise<boolean | void>) | undefined;
 
@@ -434,6 +435,24 @@ async function deliverFailureNotices(): Promise<void> {
   }
 }
 
+/**
+ * Waits for a receiver that hasn't published what this delivery needs (#3829).
+ * No input was sent. The wait grows with the item's age, between the readiness
+ * retry and the ordinary maximum, and the seven-day expiry still ends it.
+ */
+async function deferNotReady(item: OutboxItem, machine: string, detail: string): Promise<void> {
+  const age = Date.now() - Date.parse(item.queuedAt);
+  const retry = Math.min(RETRY_MAX_MS, Math.max(READINESS_RETRY_MS, Math.floor(age / 4)));
+  await deliveries.update((file) => {
+    const saved = file.deliveries.find((r) => r.callId === item.id)!;
+    // Marked sending just before the last check, but nothing went: this attempt doesn't count.
+    if (saved.state === 'sending' && saved.attempts > 0) saved.attempts--;
+    Object.assign(saved, { state: 'retry_later', reason: 'receiver_not_ready', readinessRetry: false, nextAttemptAt: new Date(Date.now() + retry).toISOString(), updatedAt: new Date().toISOString() });
+  });
+  appLog('core:annex', 'info', 'An agent delivery waits for the receiver', { meta: { callId: item.id, targetAgent: item.body.to, detail, retryMs: retry } });
+  retryLater(machine, retry);
+}
+
 async function finishDelivery(item: OutboxItem, state: 'delivered' | 'refused' | 'expired' | 'indeterminate', result: McpToolResult, reason?: string): Promise<void> {
   await deliveries.update((file) => {
     const status = file.deliveries.find((r) => r.callId === item.id)!;
@@ -443,7 +462,9 @@ async function finishDelivery(item: OutboxItem, state: 'delivered' | 'refused' |
     file.outbox = file.outbox.filter((i) => i.id !== item.id);
   });
   if (state !== 'delivered') {
-    appLog('core:annex', 'warn', 'An agent delivery ended without confirmed delivery', { meta: { callId: item.id, targetAgent: item.body.to, state, reason } });
+    // The refusal text names which check refused (#3829); it is fixed product text, never message content.
+    const detail = reason === 'authorization_revoked' ? result.content.find((part) => part.type === 'text')?.text : undefined;
+    appLog('core:annex', 'warn', 'An agent delivery ended without confirmed delivery', { meta: { callId: item.id, targetAgent: item.body.to, state, reason, ...(detail && { detail }) } });
     await notifyFailures();
   }
 }
@@ -547,6 +568,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       const authorization = authorize ? await authorize(item) : { allowed: false as const, reason: 'Sender authorization is unavailable; this delivery cannot be sent.' };
       if (generation !== lifecycle) return;
       if (authorization.allowed === false) {
+        if (authorization.notReady) { await deferNotReady(item, machine, authorization.reason); deferred.add(deliveryLane(item.body)); continue; }
         await finishDelivery(item, 'refused', text(authorization.reason, true), 'authorization_revoked');
         continue;
       }
@@ -586,6 +608,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       const currentAuthorization = await authorize!(item);
       if (generation !== lifecycle) return;
       if (currentAuthorization.allowed === false) {
+        if (currentAuthorization.notReady) { await deferNotReady(item, machine, currentAuthorization.reason); deferred.add(deliveryLane(item.body)); continue; }
         await finishDelivery(item, 'refused', text(currentAuthorization.reason, true), 'authorization_revoked');
         continue;
       }
