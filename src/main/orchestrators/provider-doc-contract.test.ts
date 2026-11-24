@@ -96,6 +96,14 @@ describe('settings-orchestrators.md capability matrix', () => {
     // The help names the four providers, in this order.
     expect(Object.keys(matrix['Headless mode'] ?? {})).toEqual(['Claude Code', 'Copilot CLI', 'Codex CLI', 'Antigravity CLI']);
 
+    // Antigravity hooks follow the platform (#3800 M2), so the cell has to name both sides.
+    const agyHooks = (matrix['Hooks']?.['Antigravity CLI'] ?? '').toLowerCase();
+    expect(agyHooks).toContain('macos and linux');
+    expect(agyHooks).toContain('windows');
+    const agyResume = (matrix['Session resume']?.['Antigravity CLI'] ?? '').toLowerCase();
+    expect(agyResume).toContain('hook-reported id');
+    expect(agyResume).toContain('most recent');
+
     const codexSessionCell = matrix['Session resume']?.['Codex CLI'] ?? '';
     expect(codexSessionCell.toLowerCase()).toContain('yes');
     expect(codexSessionCell.toLowerCase()).toMatch(/most recent|--last|--continue/);

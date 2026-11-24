@@ -200,6 +200,7 @@ describe('Antigravity CLI help (#3801)', () => {
   it('is a row and a column in the provider matrix', () => {
     const matrix = find(HELP_SECTIONS) && HELP_SECTIONS.flatMap((s) => s.topics).find((t) => t.id === 'orchestrators')!.content;
     expect(matrix).toContain('| **Antigravity CLI** |');
+    expect(matrix).toContain('| Hooks | Yes | Yes | Yes | Yes on macOS and Linux, no on Windows |');
     expect(matrix).toMatch(/\| Capability \| Claude Code \| Copilot CLI \| Codex CLI \| Antigravity CLI \|/);
   });
 });

@@ -46,7 +46,11 @@ What Clubhouse adds goes in the agent's own folder:
 | `AGENTS.md` | The agent's managed instructions |
 | `.agents/skills/` | Managed skills |
 | `.agents/mcp_config.json` | The Clubhouse MCP connection |
-| `.agents/hooks.json` | Status hooks |
+| `.agents/hooks.json` | Status hooks, on macOS and Linux |
+
+On Windows Clubhouse writes no hooks. Google does not say which shell runs a hook command there, so terminal status comes only from the terminal app until that is checked, and a resumed agent always continues the most recent conversation in its folder.
+
+Resume uses the conversation id a hook reports, and otherwise the most recent conversation in the agent's folder. Clubhouse does not list or read your Antigravity conversations or transcripts, and nothing under `~/.gemini` is scanned.
 
 Your own entries in these files are kept, and Clubhouse restores them when the agent stops. Antigravity also reads rules from parent folders, so a rules file above the agent's folder can apply too.
 

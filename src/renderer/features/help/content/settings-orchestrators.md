@@ -45,8 +45,8 @@ While **Rich chat content** is on, paired phones (Clubhouse Go) can read any fil
 |-----------|:-----------:|:-----------:|:---------:|:---------------:|
 | Headless mode | Yes | Yes | Yes | No (not offered; see **Antigravity CLI**) |
 | Structured output | Yes | Yes | Yes | No |
-| Hooks | Yes | Yes | Yes | No |
-| Session resume | Yes | Yes | Yes (`--last` / most recent only; no resume-by-ID) | No |
+| Hooks | Yes | Yes | Yes | Yes on macOS and Linux, no on Windows |
+| Session resume | Yes | Yes | Yes (`--last` / most recent only; no resume-by-ID) | Yes (by hook-reported id, else most recent in folder) |
 | Permissions | Yes | Yes | Yes (sandbox) | Yes |
 
 ### Codex hooks
