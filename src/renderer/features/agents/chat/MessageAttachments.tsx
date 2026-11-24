@@ -10,6 +10,7 @@
  * agent markdown do. Both go through main and wait until near the viewport.
  */
 
+import { isRemoteAgentId } from '../../../stores/remoteProjectStore';
 import { useContext, useEffect, useState } from 'react';
 import type { ChatFileInfo, ContentBlock } from '../../../../shared/chat';
 import { attachmentName } from './attachments';
@@ -69,7 +70,7 @@ async function loadAttachedImage(agentId: string, block: ImageBlock): Promise<Sh
     const loaded = await loadThumbnail(agentId, block.mediaRef);
     if (loaded) return { mediaRef: block.mediaRef, mimeType: block.mimeType, width: block.width, height: block.height, thumb: loaded.thumb };
   }
-  if (!block.path) return null;
+  if (isRemoteAgentId(agentId) || !block.path) return null;
   const imported = await importLocal(agentId, block.path);
   if (!imported.ok) return null;
   const loaded = await loadThumbnail(agentId, imported.mediaRef);

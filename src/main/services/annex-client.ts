@@ -1,3 +1,4 @@
+import { readRemoteChatMedia, uploadRemoteChatImage } from './annex-chat-images';
 import { isSelectedDispatcherDetails, isSelectedDispatcherPage, isSelectedDispatcherPageQuery, type SelectedDispatcherDetails, type SelectedDispatcherPageQuery } from '../../shared/selected-dispatcher-details';
 import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
 import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
@@ -3028,6 +3029,14 @@ export function requestControllerChatPage(machine: string, opts: ControllerChatQ
 
 export function requestControllerChatSessions(machine: string): Promise<ControllerReadResult<ControllerChatSessions>> {
   return controllerChatRead(machine, `${CONTROLLER_CHAT_PATH}/sessions`);
+}
+
+/** Bounded ref/byte-only image operations; the raw transport retains its current pinned lease. */
+export function requestChatMedia(machine: string, agentId: string, mediaRef: string): Promise<{ mimeType: string; data: Uint8Array }> {
+  return readRemoteChatMedia(requestSatelliteRaw, machine, agentId, mediaRef);
+}
+export function requestChatImageUpload(machine: string, agentId: string, data: Uint8Array) {
+  return uploadRemoteChatImage(requestSatelliteRaw, machine, agentId, data);
 }
 
 /** A satellite chat agent's sessions, for its history. */

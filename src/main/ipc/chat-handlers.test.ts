@@ -27,6 +27,8 @@ vi.mock('electron', () => ({
   ClipboardItem: class { constructor(public data: Record<string, Blob>) {} },
   nativeImage: { createFromBuffer: () => ({ isEmpty: () => false, toPNG: () => Buffer.from('encoded-png') }) },
 }));
+const remoteImages = vi.hoisted(() => ({ read: vi.fn(), upload: vi.fn() }));
+vi.mock('../services/annex-client', () => ({ requestChatMedia: remoteImages.read, requestChatImageUpload: remoteImages.upload }));
 const richContent = vi.hoisted(() => ({ on: true }));
 vi.mock('../services/agent-runtime/handshake-retry', () => ({ retryAgentHandshake: vi.fn(async () => ({ status: 'passed', message: 'synthetic handshake only' })) }));
 vi.mock('../services/experimental-settings', () => ({ isGraduatedFeatureOn: () => richContent.on }));
@@ -312,5 +314,68 @@ describe('chat handlers: agent runtime (#2206)', () => {
     await expect(call(IPC.CHAT.GET_AGENT_RUNTIME, 'agent-1', 'claude-code', { projectPath: 'x'.repeat(5000) })).rejects.toThrow(/projectPath/);
     await expect(call(IPC.CHAT.GET_AGENT_RUNTIME, 'agent-1', 'claude-code', { starting: 'yes' })).rejects.toThrow(/starting/);
     expect(getAgentRuntimeInfo).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('remote image IPC never resolves a controller-local path', () => {
+  const id = 'remote||host-a||agent';
+  const ref = `${'a'.repeat(64)}.png`;
+  beforeEach(() => {
+    richContent.on = true;
+    remoteImages.read.mockResolvedValue({ data: new Uint8Array(PNG), mimeType: 'image/png' });
+    remoteImages.upload.mockResolvedValue({ attachmentId: 'satellite-id', mimeType: 'image/png', bytes: PNG.length });
+  });
+  it('dispatches refs and image bytes to the exact host and returns an opaque ID', async () => {
+    await expect(call(IPC.CHAT.READ_MEDIA, id, ref)).resolves.toMatchObject({ mimeType: 'image/png' });
+    expect(remoteImages.read).toHaveBeenCalledWith('host-a', 'agent', ref);
+    await expect(call(IPC.CHAT.STAGE_ATTACHMENT, id, { data: new Uint8Array(PNG), name: 'shot.png', imagesAllowed: true })).resolves.toEqual({ id: 'satellite-id', name: 'shot.png', kind: 'image', mimeType: 'image/png', size: PNG.length, pasted: true });
+    expect(remoteImages.upload).toHaveBeenCalledWith('host-a', 'agent', new Uint8Array(PNG));
+    expect(fs.existsSync(path.join(paths.userData, 'chat-attachments'))).toBe(false);
+    await call(IPC.CHAT.READ_MEDIA, 'remote||host-b||agent', ref);
+    expect(remoteImages.read).toHaveBeenLastCalledWith('host-b', 'agent', ref);
+  });
+  it.each(['remote||', 'remote||host', 'remote||||agent', 'remote||host||'])('malformed remote intent never falls back to local staging/media: %s', async (bad) => {
+    await expect(call(IPC.CHAT.READ_MEDIA, bad, ref)).rejects.toThrow('remote image target');
+    await expect(call(IPC.CHAT.STAGE_ATTACHMENT, bad, { data: new Uint8Array(PNG), imagesAllowed: true })).rejects.toThrow('remote image target');
+    expect(remoteImages.read).not.toHaveBeenCalled(); expect(remoteImages.upload).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(paths.userData, 'chat-attachments'))).toBe(false);
+  });
+  it('refuses paths/both forms/capability-off before upload or local staging', async () => {
+    for (const input of [{ path: '/controller/image.png' }, { path: '/controller/image.png', data: new Uint8Array(PNG), imagesAllowed: true }, { data: new Uint8Array(PNG), imagesAllowed: false }]) {
+      await expect(call(IPC.CHAT.STAGE_ATTACHMENT, id, input)).rejects.toThrow();
+    }
+    expect(remoteImages.upload).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(paths.userData, 'chat-attachments'))).toBe(false);
+  });
+  it('refuses every remote path-only API and reveal even when renderer attempts them directly', async () => {
+    for (const [channel, args] of [[IPC.CHAT.STAT_PATHS, [['/etc/passwd']]], [IPC.CHAT.READ_FILE_PREVIEW, ['/etc/passwd']], [IPC.CHAT.IMPORT_LOCAL_IMAGE, ['/etc/passwd']], [IPC.CHAT.FILE_ACTION, ['/etc/passwd', 'link']], [IPC.CHAT.MEDIA_ACTION, [ref, 'reveal']]] as const) {
+      await expect(call(channel, id, ...args)).rejects.toThrow(/another computer/);
+    }
+    expect(remoteImages.read).not.toHaveBeenCalled();
+  });
+  it('copies only fetched bytes, awaits clipboard, and fails closed on stale/revoked targets', async () => {
+    await call(IPC.CHAT.MEDIA_ACTION, id, ref, 'copy');
+    expect(remoteImages.read).toHaveBeenCalledWith('host-a', 'agent', ref);
+    expect(clipboardWrite).toHaveBeenCalledOnce();
+    clipboardWrite.mockClear(); remoteImages.read.mockRejectedValue(new Error('authorization_revoked'));
+    await expect(call(IPC.CHAT.MEDIA_ACTION, id, ref, 'copy')).rejects.toThrow('authorization_revoked');
+    expect(clipboardWrite).not.toHaveBeenCalled();
+  });
+  it('withholds fetched bytes and clipboard if the local rich flag switches off during IO', async () => {
+    remoteImages.read.mockImplementation(async () => { richContent.on = false; return { data: new Uint8Array(PNG), mimeType: 'image/png' }; });
+    await expect(call(IPC.CHAT.READ_MEDIA, id, ref)).rejects.toThrow('off');
+    richContent.on = true;
+    await expect(call(IPC.CHAT.MEDIA_ACTION, id, ref, 'copy')).rejects.toThrow('off');
+    expect(clipboardWrite).not.toHaveBeenCalled(); richContent.on = true;
+  });
+  it('retains top-frame, flag and ref validation before remote IO', async () => {
+    await expect(callFrom({ sender: appWindow, senderFrame: {} }, IPC.CHAT.READ_MEDIA, id, ref)).rejects.toThrow('Clubhouse window');
+    await expect(callFrom({}, IPC.CHAT.STAGE_ATTACHMENT, id, { data: new Uint8Array(PNG), imagesAllowed: true })).rejects.toThrow('Clubhouse window');
+    await expect(call(IPC.CHAT.READ_MEDIA, id, '../../secret')).rejects.toThrow('media reference');
+    richContent.on = false;
+    await expect(call(IPC.CHAT.READ_MEDIA, id, ref)).rejects.toThrow('off');
+    expect(remoteImages.read).not.toHaveBeenCalled(); expect(remoteImages.upload).not.toHaveBeenCalled();
+    richContent.on = true;
   });
 });

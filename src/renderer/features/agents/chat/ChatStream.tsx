@@ -12,6 +12,7 @@ import { RichLinkProvider } from './rich/RichLinks';
 import { useRichChatContent } from './rich/rich-flag';
 import { ChatMediaContext } from './rich/ChatImages';
 import { FileChipProvider } from './rich/FileChips';
+import { isRemoteAgentId } from '../../../stores/remoteProjectStore';
 import { useRemoteChat } from './remote-chat';
 import { rendererLog } from '../../../plugins/renderer-logger';
 import { fnv1a } from '../../../../shared/telemetry/diag';
@@ -352,9 +353,10 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const onJumpResultRef = useRef(onJumpResult);
   onJumpResultRef.current = onJumpResult;
   const { items, subagents, capabilities, commands } = state;
-  // Rich content reads files and media by path on this machine: not for an agent on another desktop (#2390).
+  // Stored refs can load over Annex; path-based enrichment stays on the agent's own host.
   const remoteChat = useRemoteChat();
-  const rich = useRichChatContent() && !remoteChat;
+  const rich = useRichChatContent();
+  const localPaths = rich && !remoteChat && !isRemoteAgentId(state.agentId);
   // Tool calls whose permission request is still open (only those say "waiting for approval").
   const awaitingKey = state.pendingPermissions.map((p) => p.toolCallId ?? '').join('\n');
   const awaiting = useMemo(() => new Set(awaitingKey.split('\n').filter(Boolean)), [awaitingKey]);
@@ -827,7 +829,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
         ))}
         <TranscriptExpansionProvider store={expansionStore}>
           <RichLinkProvider agentId={state.agentId}>
-          <FileChipProvider agentId={rich ? state.agentId : null}>
+          <FileChipProvider agentId={localPaths ? state.agentId : null}>
             {visibleBlocks.map((b, index) => (
               <div key={b.key} data-testid="chat-stream-block" data-block-index={start + index} data-block-key={b.key}>
                 {runs && runOfBlock && (() => {

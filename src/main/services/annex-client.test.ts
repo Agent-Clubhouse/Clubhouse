@@ -4832,6 +4832,40 @@ describe('annex-client', () => {
       annexClient._addConnectedSatelliteForTesting(FP);
     });
 
+    describe('remote image transport (#2398)', () => {
+      const ref = `${'a'.repeat(64)}.png`;
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const caps = { richContent: { version: 1, enabled: true, maximumBytes: 8 * 1024 * 1024 }, attachments: { version: 1, imageTypes: ['image/png'], maxImageBytes: 3932160, maxCount: 10 } };
+      const image = { kind: 'image', name: ref, mimeType: 'image/png', base64: png.toString('base64') };
+      beforeEach(() => { vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as never); });
+      it('reads only the pinned host ref route through the actual bounded request path', async () => {
+        answers.push({ status: 200, body: caps }, { status: 200, body: image });
+        expect(await annexClient.requestChatMedia(FP, 'a?/#', ref)).toEqual({ mimeType: 'image/png', data: new Uint8Array(png) });
+        expect(requests.map((r) => r.url)).toEqual([expect.stringContaining('/api/v1/mobile/capabilities'), expect.stringContaining(`/api/v1/mobile/agents/a%3F%2F%23/content?mediaRef=${ref}`)]);
+      });
+      it.each(['disconnect', 'pin'])('discards a valid media response after %s without local fallback', async (change) => {
+        let finish: (() => void) | undefined;
+        answers.push({ status: 200, body: caps }, { status: 200, body: image, hold: (done) => { finish = done; } });
+        const pending = annexClient.requestChatMedia(FP, 'a', ref);
+        const rejected = expect(pending).rejects.toThrow(/aborted|revoked/);
+        await vi.waitFor(() => expect(finish).toBeDefined());
+        if (change === 'disconnect') annexClient._receiveSatelliteDisconnectForTesting(FP);
+        else vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'replacement-pin' } as never);
+        finish!(); await rejected;
+      });
+      it('writes raw image bytes, never a JSON path or base64 wrapper', async () => {
+        const writes: Buffer[] = [];
+        vi.mocked(https.request).mockImplementation(((_url: string, options: https.RequestOptions, callback: (response: unknown) => void) => Object.assign(new EventEmitter(), {
+          destroy: vi.fn(), write: (bytes: Buffer) => writes.push(bytes), end: () => {
+            const response = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(response);
+            response.emit('data', Buffer.from(JSON.stringify(options.method === 'GET' ? caps : { version: 1, attachmentId: 'id', mimeType: 'image/png', bytes: png.length }))); response.emit('end');
+          },
+        })) as never);
+        expect(await annexClient.requestChatImageUpload(FP, 'agent', png)).toMatchObject({ attachmentId: 'id' });
+        expect(writes).toEqual([png]);
+      });
+    });
+
     describe('selected Dispatcher role transport', () => {
       const response = (): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: { version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null,
         sessionId: null, nativeSessionId: null, settings: null, cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) } });
@@ -4988,6 +5022,31 @@ describe('annex-client', () => {
         annexClient.stopClient();
         vi.mocked(annexControl.getLinkReadiness).mockRestore();
         vi.mocked(annexControl.request).mockRestore();
+      });
+
+      it('routes remote image refs and raw upload bytes through the existing reverse lease and bulk request', async () => {
+        const ref = `${'a'.repeat(64)}.png`;
+        const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+        const caps = { richContent: { version: 1, enabled: true, maximumBytes: 8388608 }, attachments: { version: 1, imageTypes: ['image/png'], maxImageBytes: 3932160, maxCount: 10 } };
+        vi.mocked(annexControl.request).mockImplementation(async (_fp, input) => ({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(input.path.endsWith('capabilities') ? caps : input.method === 'POST' ? { version: 1, attachmentId: 'id', mimeType: 'image/png', bytes: png.length } : { kind: 'image', name: ref, mimeType: 'image/png', base64: png.toString('base64') })) }));
+        await expect(annexClient.requestChatMedia(FP, 'agent', ref)).resolves.toEqual({ mimeType: 'image/png', data: new Uint8Array(png) });
+        await expect(annexClient.requestChatImageUpload(FP, 'agent', png)).resolves.toMatchObject({ attachmentId: 'id' });
+        expect(annexControl.request).toHaveBeenCalledWith(FP, expect.objectContaining({ method: 'POST', path: '/api/v1/mobile/agents/agent/attachments', body: png }), expect.objectContaining({ maxResponseBytes: 65536, signal: expect.any(AbortSignal) }));
+        expect(https.request).not.toHaveBeenCalled();
+      });
+      it('withholds reverse image content if the original trust changes during the read', async () => {
+        const ref = `${'a'.repeat(64)}.png`;
+        let finish: ((value: annexControl.ControlResult) => void) | undefined;
+        vi.mocked(annexControl.request).mockImplementation((_fp, input) => input.path.endsWith('capabilities')
+          ? Promise.resolve({ status: 200, headers: {}, body: Buffer.from(JSON.stringify({ richContent: { version: 1, enabled: true, maximumBytes: 8388608 } })) })
+          : new Promise((resolve) => { finish = resolve; }));
+        const pending = annexClient.requestChatMedia(FP, 'agent', ref);
+        const rejected = expect(pending).rejects.toThrow(/revoked|aborted/);
+        await vi.waitFor(() => expect(finish).toBeDefined());
+        targetPeer!.tlsCertificateFingerprint = 'new-pin';
+        finish!({ status: 200, headers: {}, body: Buffer.from(JSON.stringify({ kind: 'image', name: ref, mimeType: 'image/png', base64: 'iVBORw0KGgo=' })) });
+        await rejected;
+        expect(https.request).not.toHaveBeenCalled();
       });
 
       it('preserves read revision across one actual notification burst without revising unrelated presence', async () => {

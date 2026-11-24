@@ -1,3 +1,4 @@
+import { addressFromNamespacedId } from '../../shared/agent-address';
 /**
  * IPC for the chat runtime. Every action resolves the agent's runtime through
  * the registry, so a request for an agent that isn't running in chat fails
@@ -21,6 +22,21 @@ import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '..
 import { fetchRemoteImage, mediaFilePath, readMedia } from '../services/agent-runtime/chat-media';
 import { importChatImage, MAX_STAT_PATHS, readChatFilePreview, resolveChatFile, resolveChatLink, statChatPaths } from '../services/agent-runtime/chat-files';
 import { isGraduatedFeatureOn } from '../services/experimental-settings';
+
+/** Classify remote intent before any local resolution, including malformed namespaces. */
+function remoteImageTarget(agentId: string): { machine: string; agentId: string } | null {
+  if (!agentId.startsWith('remote||')) return null;
+  const target = addressFromNamespacedId(agentId);
+  if (!target?.machine || !target.agentId || target.machine.length > 256 || target.agentId.length > 256) throw new Error('Invalid remote image target');
+  return { machine: target.machine, agentId: target.agentId };
+}
+function localPathOnly(agentId: string): void {
+  if (agentId.startsWith('remote||')) throw new Error('Files on another computer cannot be opened on this computer');
+}
+async function imageBytes(agentId: string, mediaRef: string) {
+  const target = remoteImageTarget(agentId);
+  return target ? (await import('../services/annex-client')).requestChatMedia(target.machine, target.agentId, mediaRef) : readMedia(agentId, mediaRef);
+}
 
 /** An effort: a level, omitted to keep the current one, or null for the provider's default. */
 const effortArg: ArgValidator<string | null | undefined> = (value, argName) => (value === null ? null : stringArg({ optional: true })(value, argName));
@@ -198,6 +214,13 @@ export function registerChatHandlers(): void {
     async (event, agentId, input) => {
       assertTopFrameOfAppWindow(event);
       const name = typeof input.name === 'string' ? input.name.slice(0, 255) : undefined;
+      const target = remoteImageTarget(agentId);
+      if (target) {
+        if (input.path !== undefined || !(input.data instanceof Uint8Array)) throw new Error('Remote attachments must be image bytes, never a path');
+        if (input.imagesAllowed !== true) throw new Error("This agent's chat can't take images");
+        const result = await (await import('../services/annex-client')).requestChatImageUpload(target.machine, target.agentId, input.data);
+        return { id: result.attachmentId, name: name || 'image', kind: 'image' as const, mimeType: result.mimeType, size: result.bytes, pasted: true };
+      }
       if (typeof input.path === 'string') return stageAttachmentPath(agentId, input.path, name);
       if (input.data instanceof Uint8Array) {
         // Refuse before saving, so a paste the agent can't take leaves no file behind.
@@ -213,20 +236,25 @@ export function registerChatHandlers(): void {
     [stringArg(), mediaRefArg],
     async (event, agentId, mediaRef) => {
       assertRichMedia(event);
-      return readMedia(agentId, mediaRef);
+      const bytes = await imageBytes(agentId, mediaRef);
+      assertRichMedia(event);
+      return bytes;
     },
   ));
 
   handleRich(IPC.CHAT.MEDIA_ACTION, withValidatedArgs(
     [stringArg(), mediaRefArg, stringArg()],
     async (event, agentId, mediaRef, action) => {
+      const target = remoteImageTarget(agentId);
+      if (target && action !== 'copy') throw new Error('Images on another computer cannot be revealed here');
       assertRichMedia(event);
       if (action === 'reveal') {
         shell.showItemInFolder(mediaFilePath(agentId, mediaRef));
         return;
       }
       if (action === 'copy') {
-        const { data } = await readMedia(agentId, mediaRef);
+        const { data } = await imageBytes(agentId, mediaRef);
+        assertRichMedia(event);
         const image = nativeImage.createFromBuffer(Buffer.from(data));
         if (image.isEmpty()) throw new Error("This image can't be copied");
         await clipboard.write([new ClipboardItem({
@@ -252,6 +280,7 @@ export function registerChatHandlers(): void {
     [stringArg(), arrayArg(stringArg({ maxLength: 1024 }), { maxLength: MAX_STAT_PATHS })],
     async (event, agentId, paths) => {
       assertRichMedia(event);
+      localPathOnly(agentId);
       return statChatPaths(agentId, paths);
     },
   ));
@@ -260,6 +289,7 @@ export function registerChatHandlers(): void {
     [stringArg(), stringArg({ maxLength: 1024 })],
     async (event, agentId, filePath) => {
       assertRichMedia(event);
+      localPathOnly(agentId);
       return readChatFilePreview(agentId, filePath);
     },
   ));
@@ -270,6 +300,7 @@ export function registerChatHandlers(): void {
     [stringArg(), stringArg({ maxLength: 1024 })],
     async (event, agentId, src) => {
       assertRichMedia(event);
+      localPathOnly(agentId);
       return importChatImage(agentId, src);
     },
   ));
@@ -277,6 +308,7 @@ export function registerChatHandlers(): void {
   handleRich(IPC.CHAT.FILE_ACTION, withValidatedArgs(
     [stringArg(), stringArg({ maxLength: 1024 }), stringArg()],
     async (event, agentId, filePath, action) => {
+      localPathOnly(agentId);
       assertRichMedia(event);
       // A Markdown link the agent wrote (#3189): a file chat can show goes back to
       // the renderer's viewer; a folder, or a file it can't show, is revealed.

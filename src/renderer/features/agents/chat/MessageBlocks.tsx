@@ -1,3 +1,4 @@
+import { useRemoteChat } from './remote-chat';
 import { PromptMarkdown } from './PromptMarkdown';
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
@@ -65,7 +66,9 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
   const richLinks = useRichLinks();
   const richHandlers = useTokenHandlers(richLinks);
   const fileAgent = useFileChips();
-  const onClick = useSafeMarkdownLinks(!isRemoteAgentId(mediaAgent || fileAgent || '') && !isRemoteProjectId(richLinks?.projectId || ''));
+  // Keep host provenance even when rich content is off and its contexts are null.
+  const remote = !!useRemoteChat() || isRemoteAgentId(richLinks?.agentId || mediaAgent || fileAgent || '');
+  const onClick = useSafeMarkdownLinks(!remote && !isRemoteProjectId(richLinks?.projectId || ''));
   // Returned audio and video become inline cards (#2425), placed once their chips are confirmed.
   const mediaCards = useMediaCards(fileAgent);
   const { scan: scanMedia } = mediaCards;
@@ -88,9 +91,9 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
     // The rebuilt DOM has no card hosts yet: drop the old cards (pausing them).
     scanMedia(root);
     // Local images wait too, then load as they near the viewport.
-    if (rich && !streaming) return hydrateLocalImages(root, mediaAgent);
+    if (rich && !streaming) return hydrateLocalImages(root, remote ? null : mediaAgent);
     return undefined;
-  }, [html, rich, richLinks, fileAgent, streaming, mediaAgent, scanMedia]);
+  }, [html, rich, richLinks, fileAgent, streaming, mediaAgent, remote, scanMedia]);
   if (rich || richLinks) {
     const linkClick = richHandlers.onClick ?? onClick;
     const onRichClick = (e: React.MouseEvent<HTMLDivElement>) => {
