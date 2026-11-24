@@ -79,6 +79,20 @@ describe('TimelineBuilder', () => {
     expect(b.totals).toMatchObject({ inputTokens: 150, outputTokens: 15 });
   });
 
+  it('leaves tokens out until reported, keeps a reported 0, and keeps one side when only it was reported', () => {
+    const none = new TimelineBuilder();
+    none.push([{ type: 'result', _ts: T0, result: 'ok' }]);
+    expect(none.totals).not.toHaveProperty('inputTokens');
+    expect(none.totals).not.toHaveProperty('outputTokens');
+    const zero = new TimelineBuilder();
+    zero.push([{ type: 'result', _ts: T0, result: 'ok', message: { usage: { input_tokens: 0, output_tokens: 0 } } }]);
+    expect(zero.totals).toMatchObject({ inputTokens: 0, outputTokens: 0 });
+    const partial = new TimelineBuilder();
+    partial.push([{ type: 'result', _ts: T0, result: 'ok', message: { usage: { output_tokens: 3 } } }]);
+    expect(partial.totals.outputTokens).toBe(3);
+    expect(partial.totals).not.toHaveProperty('inputTokens');
+  });
+
   it('falls back to the last assistant text when the result is empty', () => {
     const b = new TimelineBuilder();
     b.push([assistant(T0, { type: 'text', text: 'Fixed it.' }), { type: 'result', _ts: T0, result: '' }]);

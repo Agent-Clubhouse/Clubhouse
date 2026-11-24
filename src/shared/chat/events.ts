@@ -207,6 +207,20 @@ export interface PermissionOption {
  * input, cache reads and cache writes included; `cachedInput` is the part of
  * it served from cache and `cacheWrite` the part written to it. (Anthropic
  * reports input excluding both, so the Claude driver adds them in.)
+ *
+ * The usage contract every adapter follows (docs/usage-attribution.md):
+ * - Units are tokens as the provider counts them. Never derive a token figure
+ *   from cost, context fill or a limit's utilization.
+ * - `reasoning` is the part of `output` spent reasoning, not added to it.
+ *   `total` is the provider's own total, when it reports one.
+ * - A figure the provider did not report, or can't, is absent. Zero is only a
+ *   reported zero.
+ * - A turn's own figures go on `turn_ended.usage` (or a `usage` event with
+ *   `scope: 'turn'`), with `turn_ended.usageSource` saying who computed them.
+ *   Running totals go on `usage` events with `scope: 'session'`, per thread,
+ *   and are never also reported as a turn's figure.
+ * - On resume, a running total carries the earlier runs' use; a turn figure
+ *   never does. A running total that goes down was reset or compacted.
  */
 export interface TokenUsage {
   input?: number;
@@ -216,6 +230,13 @@ export interface TokenUsage {
   reasoning?: number;
   total?: number;
 }
+
+/**
+ * How a turn's token figures were obtained: the provider's own figure for the
+ * turn, our sum of its per-call figures, or our difference of its running totals.
+ */
+export const TURN_USAGE_SOURCES = ['provider_turn', 'summed_calls', 'cumulative_delta'] as const;
+export type TurnUsageSource = (typeof TURN_USAGE_SOURCES)[number];
 
 export interface UsageLimit {
   /** e.g. '5h', 'week', 'week_opus', 'week:<model>' (Claude's per-model weekly), 'overage', or a provider-specific name. */
@@ -396,7 +417,18 @@ export interface ChatEventDataMap {
     /** The provider's own turn id, when it has one. */
     nativeTurnId?: string;
   };
-  turn_ended: { stopReason: TurnStopReason; durationMs?: number; usage?: TokenUsage; costUsd?: number };
+  turn_ended: {
+    stopReason: TurnStopReason;
+    durationMs?: number;
+    usage?: TokenUsage;
+    costUsd?: number;
+    /**
+     * Who computed this turn's token figures (here or on its `scope: 'turn'`
+     * usage event). New adapters set it; absent, a known driver's own method
+     * is assumed and any other driver's is `unknown`.
+     */
+    usageSource?: TurnUsageSource;
+  };
 
   user_message: {
     messageId: string;

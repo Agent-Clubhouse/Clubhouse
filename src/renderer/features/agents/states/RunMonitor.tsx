@@ -14,8 +14,7 @@ import {
   type FoldStep, type RunTotals, type Step, type TextStep, type ToolGlyph, type ToolStep,
 } from './timeline';
 import { DiffStat, FileRow, SectionHead, StateDot, StateToolbar, type StateDotKind } from './parts';
-import { formatAgo, formatDuration, formatUsd, plural } from './format';
-import { formatTokens } from '../chat/view-model';
+import { formatAgo, formatDuration, formatRunTokens, formatUsd, plural } from './format';
 import { Markdown } from '../chat/MessageBlocks';
 import { getOrchestratorLabel } from '../orchestrator-colors';
 import { matchStat } from './useDiffStats';
@@ -311,7 +310,7 @@ export function RunMonitor({ run, steps, totals, files, cwd, now, actions, stack
         <SectionHead title="Progress" />
         <Stat label="Elapsed" value={formatDuration(elapsed)} />
         <Stat label="Tool calls" value={String(totals.toolCalls)} />
-        <Stat label="Tokens" value={totals.inputTokens || totals.outputTokens ? `${formatTokens(totals.inputTokens)} in, ${formatTokens(totals.outputTokens)} out` : '0'} />
+        <Stat label="Tokens" value={formatRunTokens(totals.inputTokens, totals.outputTokens)} />
         <Stat label="Cost" value={cost} />
         {buckets.length > 0 && (
           <div aria-label="Tool calls per 20 seconds" role="img">
