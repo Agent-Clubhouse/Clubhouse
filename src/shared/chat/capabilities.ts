@@ -18,6 +18,7 @@ export const CHAT_DRIVER_IDS = [
   'claude_stream_json',
   'codex_app_server',
   'copilot_sdk',
+  'antigravity_acp',
 ] as const;
 
 export type ChatDriverId = (typeof CHAT_DRIVER_IDS)[number];
