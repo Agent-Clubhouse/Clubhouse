@@ -154,6 +154,46 @@ afterEach(() => {
   control.resetControlForTests();
 });
 
+describe('GET bulletin and transcript envelope boundary (#3613)', () => {
+  const formerLimit = CONTROL_FRAME_MAX_BYTES + 64 * 1024;
+  const paths = [
+    '/api/v1/group-projects/g%20p/bulletin/messages?limit=100',
+    '/api/v1/group-projects/g/bulletin/topics/general?limit=100',
+    '/api/v1/agents/a/sessions/s/transcript?offset=0&limit=5',
+  ];
+
+  it.each(paths)('preserves a complete body above the former boundary for %s', async (path) => {
+    const body = Buffer.alloc(formerLimit + 1, 0x61);
+    handler = async () => ({ status: 200, headers: { 'content-type': 'application/json' }, body });
+    const { requesterWs, targetWs } = await connected(['request', 'bulk']);
+    const result = await control.request(TARGET, { method: 'GET', path });
+    expect(result.body.equals(body)).toBe(true);
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+  });
+
+  it.each(paths)('refuses one byte over the finite 32 MiB envelope for %s without retiring the link', async (path) => {
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(32 * 1024 * 1024 + 1) });
+    const { requesterWs } = await connected(['request', 'bulk']);
+    await expect(control.request(TARGET, { method: 'GET', path })).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    expect(sentOfType(requesterWs, 'bulk').some((frame) => frame.op === 'credit')).toBe(false);
+    expect(requesterWs.closed).toBeNull();
+  });
+
+  it.each([
+    ['POST', '/api/v1/group-projects/g/bulletin/messages'],
+    ['DELETE', '/api/v1/group-projects/g/bulletin/topics/general'],
+    [undefined, '/api/v1/group-projects/g/bulletin/messages'],
+    ['GET', '/api/v1/group-projects/g/bulletin/digest'],
+    ['GET', '/api/v1/group-projects/g/bulletin/topics/general/messages/m'],
+    ['GET', '/api/v1/group-projects//bulletin/messages'],
+    ['GET', '/api/v1/agents/a/sessions/s/transcript/extra'],
+    ['GET', '/other?x=/api/v1/agents/a/sessions/s/transcript'],
+  ] as const)('keeps the ordinary envelope for %s %s', (method, path) => {
+    expect(control.responseBodyLimit(path, method)).toBe(formerLimit);
+  });
+});
+
 describe('GET Git diff envelope boundary', () => {
   const path = '/api/v1/projects/project%20name/git/diff';
   const formerLimit = CONTROL_FRAME_MAX_BYTES + 64 * 1024;
