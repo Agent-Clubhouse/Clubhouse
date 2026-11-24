@@ -1,7 +1,7 @@
 /** One selected, membership-bound saved board from the same passive primary read as memberships. No recovery, content or write. */
 import { createHash } from 'crypto';
 import { REMOVED_CANVAS_VIEW_TYPES } from '../../shared/canvas-persistence';
-import { isRemoteCanvasBoardQuery, REMOTE_CANVAS_BOARD_MAX_VIEWS, REMOTE_CANVAS_BOARD_SOURCE, type RemoteCanvasBoardPage, type RemoteCanvasBoardQuery, type RemoteCanvasBoardView } from '../../shared/remote-canvas-board-page';
+import { isRemoteCanvasBoardQuery, REMOTE_CANVAS_BOARD_MAX_VIEWS, REMOTE_CANVAS_BOARD_SOURCE, REMOTE_CANVAS_BOARD_VIEW_TYPES, type RemoteCanvasBoardPage, type RemoteCanvasBoardQuery, type RemoteCanvasBoardView } from '../../shared/remote-canvas-board-page';
 import type { AgentConfigTarget } from './agent-config-reader';
 import type { DisplayReceipt } from './display-settings';
 import { display } from './remote-details-presentation';
@@ -29,7 +29,10 @@ export async function readSelectedCanvasBoardPage(target: AgentConfigTarget, que
   const board = collected.stores.find((store) => store.scope === row.scope)?.raw.find((b) => record(b) && b.id === row.canvasId);
   if (!record(board) || !Array.isArray(board.views)) return unavailable('changed');
   try {
-    const shown = board.views.filter((v) => record(v) && typeof v.type === 'string' && !REMOVED_CANVAS_VIEW_TYPES.has(v.type)) as Array<Record<string, unknown>>;
+    // Only the view types the page contract knows; any other (future) type is left out rather than failing the page.
+    // The shared membership walk currently refuses unknown types first, so this is defense in depth.
+    const shown = board.views.filter((v) => record(v) && typeof v.type === 'string' && !REMOVED_CANVAS_VIEW_TYPES.has(v.type)
+      && (REMOTE_CANVAS_BOARD_VIEW_TYPES as readonly string[]).includes(v.type)) as Array<Record<string, unknown>>;
     if (shown.length > REMOTE_CANVAS_BOARD_MAX_VIEWS) return unavailable('limit');
     const views = shown.map((v): RemoteCanvasBoardView => {
       const type = v.type as RemoteCanvasBoardView['type'], isMember = v.id === row.viewId;

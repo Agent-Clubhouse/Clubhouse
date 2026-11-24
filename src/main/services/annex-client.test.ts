@@ -5332,6 +5332,8 @@ describe('annex-client', () => {
       // A membership request never accepts a board page.
       answers.push({ status: 200, body: value }); expect(await annexClient.requestAgentDetails(FP, 'a1', { card: 'canvases', source: 'selected-canvas-memberships' })).toEqual({ status: 'error' });
       answers.push({ status: 400, body: { error: 'unsupported_inventory_page' } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
+      // An older host's route refuses the unknown member key as invalid_details_query: also unavailable, never an error.
+      answers.push({ status: 400, body: { error: 'invalid_details_query' } }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'unavailable' });
       answers.push({ status: 403, body: {} }); expect(await annexClient.requestAgentDetails(FP, 'a1', query)).toEqual({ status: 'forbidden' });
       const before = requests.length;
       for (const bad of [{ ...query, offset: 0 }, { ...query, member: 'x' }, { ...query, canvasId: 'board-1' }]) expect(await annexClient.requestAgentDetails(FP, 'a1', bad as never)).toEqual({ status: 'error' });
