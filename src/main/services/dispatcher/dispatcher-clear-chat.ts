@@ -76,6 +76,14 @@ async function stopAndWait(dir: string, agentId: string, provider: string): Prom
   await agentSystem.killAgent(agentId, dir, provider as OrchestratorId, 'user', { waitForExit: true, throwOnFailure: true });
 }
 
+/** Stop it on its old provider, and make sure it did: a failed or unfinished stop throws before anything is written. */
+async function stopForProvider(dir: string, agentId: string, provider: string, deps: ClearChatDeps): Promise<void> {
+  await (deps.stopRunning ?? stopAndWait)(dir, agentId, provider);
+  if ((deps.isRunning ?? agentSystem.isAgentRunning)(agentId)) {
+    throw new Error('It didn’t stop, so it still runs on its old provider. Try again.');
+  }
+}
+
 /** The old provider a running agent is still on, when its record now names another; else null. */
 async function staleProvider(dir: string, agentId: string, deps: ClearChatDeps): Promise<string | null> {
   const running = (deps.runningProvider ?? ((id) => agentRegistry.get(id)?.orchestrator))(agentId);
@@ -110,16 +118,17 @@ async function clearChatOnce(chatId: string, deps: ClearChatDeps): Promise<Clear
   // Before the clear, so a second request confirmed for the same conversation can't run it again.
   clearGeneration++;
   if ((deps.isRunning ?? agentSystem.isAgentRunning)(chatId)) {
-    // The new conversation reads its instructions and memory index as a fresh start does.
-    await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, chatId);
     const stale = await staleProvider(dir, chatId, deps);
     if (stale) {
-      // Its next message starts a new chat on the saved provider. The record dropped the old CLI's session already; this keeps it so.
-      await (deps.stopRunning ?? stopAndWait)(dir, chatId, stale);
+      // Nothing is written until the old CLI has stopped. Its next message starts a new chat on the saved
+      // provider, prepared as any start is. The record dropped the old CLI's session already; this keeps it so.
+      await stopForProvider(dir, chatId, stale, deps);
       await (deps.forgetSession ?? ((d, id) => agentConfig.updateSessionId(d, id, null)))(dir, chatId);
       appLog('core:dispatcher', 'info', 'Dispatcher chat cleared by stopping it, for its new provider', { meta: { from: stale } });
       return { cleared: 'next_start' };
     }
+    // The new conversation reads its instructions and memory index as a fresh start does.
+    await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, chatId);
     await (deps.clearContext ?? clearRunning)(chatId);
     appLog('core:dispatcher', 'info', 'Dispatcher chat cleared', { meta: { running: true } });
     return { cleared: 'now' };
@@ -148,6 +157,14 @@ export interface StartFreshDeps extends ClearChatDeps {
   endWaiting?: (waiting: WaitingRequests) => void;
   /** Start the stopped controller again, idle. */
   wakeWork?: () => Promise<void>;
+  /** Run with hand-offs to the controller held. */
+  holdDeliveries?: <T>(workId: string, fn: () => Promise<T>) => Promise<T>;
+}
+
+/** Loaded here: the delivery module reaches agent-system and the MCP tools. */
+async function holdControllerDeliveries<T>(workId: string, fn: () => Promise<T>): Promise<T> {
+  const { holdDispatcherDeliveries } = await import('../clubhouse-mcp/tools/dispatcher-delivery');
+  return holdDispatcherDeliveries(workId, fn);
 }
 
 /** Start the controller again after a stop. One that won't start now starts at its next message, so that is logged, not thrown. */
@@ -208,33 +225,43 @@ async function startWorkFreshOnce(workId: string, reason: StartFreshReason, deps
   const dir = getDispatcherPath();
   await (deps.verifyPolicy ?? ((d, id) => agentConfig.getDurableConfig(d, id, { forLaunch: true })))(dir, workId);
   const sessionId = await (deps.workSessionId ?? currentWorkSession)(dir, workId);
-  if (sessionId) await (deps.quarantine ?? agentConfig.quarantineSession)(dir, workId, sessionId);
-  else await (deps.forgetSession ?? ((d, id) => agentConfig.updateSessionId(d, id, null)))(dir, workId);
+  const setAside = async () => {
+    if (sessionId) await (deps.quarantine ?? agentConfig.quarantineSession)(dir, workId, sessionId);
+    else await (deps.forgetSession ?? ((d, id) => agentConfig.updateSessionId(d, id, null)))(dir, workId);
+  };
   const notice: ChatEventDataMap['notice'] = { level: reason === 'user' ? 'info' : 'warn', code: 'started_fresh', message: WORK_NOTICE[reason] };
+  const running = (deps.isRunning ?? agentSystem.isAgentRunning)(workId);
+  const stale = running ? await staleProvider(dir, workId, deps) : null;
   let result: 'now' | 'next_start';
-  if ((deps.isRunning ?? agentSystem.isAgentRunning)(workId)) {
-    await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, workId);
-    const stale = await staleProvider(dir, workId, deps);
-    // Taken first: a hand-off that lands during the clear goes to the new conversation and stays under way.
-    const waiting = (deps.takeWaiting ?? waitingRequests)();
-    if (stale) {
-      // Stopped and started again, so it runs on its saved provider: clearing would keep the old CLI.
-      // A stop that fails throws to the caller with nothing ended: it keeps running, still on the old provider.
-      await (deps.stopRunning ?? stopAndWait)(dir, workId, stale);
-      (deps.endWaiting ?? ((w) => { endWaitingRequests('cancelled', w); }))(waiting);
+  if (stale) {
+    // Stopped and started again, so it runs on its saved provider: clearing would keep the old CLI. Hand-offs
+    // wait meanwhile, and nothing is written until it has stopped, so a stop that fails leaves its session,
+    // its resume id and its requests as they were, still on the old provider.
+    await (deps.holdDeliveries ?? holdControllerDeliveries)(workId, async () => {
+      await stopForProvider(dir, workId, stale, deps);
+      await setAside();
+      // Taken once it has stopped: every request the old conversation took, up to its last moment, ended with it.
+      (deps.endWaiting ?? ((w) => { endWaitingRequests('cancelled', w); }))((deps.takeWaiting ?? waitingRequests)());
       (deps.noteNextStart ?? noteNextStartNotice)(workId, notice);
-      result = await startControllerAgain(deps);
-      appLog('core:dispatcher', 'info', 'Dispatcher controller stopped for its new provider', { meta: { from: stale, started: result === 'now' } });
-    } else {
+    });
+    // Outside the hold: the start goes through the same delivery queue. A hand-off that waited may have started it already.
+    result = await startControllerAgain(deps);
+    appLog('core:dispatcher', 'info', 'Dispatcher controller stopped for its new provider', { meta: { from: stale, started: result === 'now' } });
+  } else {
+    await setAside();
+    if (running) {
+      await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, workId);
+      // Taken first: a hand-off that lands during the clear goes to the new conversation and stays under way.
+      const waiting = (deps.takeWaiting ?? waitingRequests)();
       await (deps.clearContext ?? clearRunning)(workId);
       // Its queue and any open turn went with the old conversation: those requests are told as stopped.
       (deps.endWaiting ?? ((w) => { endWaitingRequests('cancelled', w); }))(waiting);
       await (deps.addNotice ?? addRunningNotice)(workId, notice);
       result = 'now';
+    } else {
+      (deps.noteNextStart ?? noteNextStartNotice)(workId, notice);
+      result = 'next_start';
     }
-  } else {
-    (deps.noteNextStart ?? noteNextStartNotice)(workId, notice);
-    result = 'next_start';
   }
   appLog('core:dispatcher', reason === 'user' ? 'info' : 'warn', 'Dispatcher controller started fresh', { meta: { reason, running: result === 'now', quarantined: !!sessionId } });
   return result;
