@@ -18,7 +18,11 @@ vi.mock('../../handoff-host', () => ({
   resolveHandoffTarget: async () => state.target, localHandoffAgent: (agentId: string) => ({ agentId, machine: Array(16).fill('ab').join(':') }), handoffSenderName: async () => 'Caller name',
   prepareNewHandoffHelper: (...args: unknown[]) => state.prepare(...args),
   defaultHandoffReceivingAgent: (...args: unknown[]) => state.defaultTarget(...args),
-  handoffHost: () => ({ coordinator: { offer: state.offer, respond: state.respond, cancel: state.cancel, service: { get: state.get, list: state.list } }, commands: { list: () => [] } }),
+  handoffHost: () => ({ coordinator: { offer: state.offer, respond: state.respond, cancel: state.cancel, service: { get: state.get, list: state.list } }, commands: { list: (): [] => [] } }),
+  offerCallerHandoff: async (agentId: string, input: Parameters<typeof import('../../handoff-host')['offerCallerHandoff']>[1]) => state.offer({
+    to: state.target, senderName: 'Caller name', task: input.task, mode: input.mode,
+    manifest: await state.ensure(agentId, input.mode, input.manifest),
+  }, { agentId, machine: state.target.machine }),
 }));
 import { registerHandoffTools } from './handoff-tools';
 const id = '17551191-93a4-4c8b-82d2-22629701d891';
