@@ -39,7 +39,9 @@ The selected orchestrator applies to new and restarted agents. Only orchestrator
 
 Toggle plugins on/off for this specific project. A plugin must first be enabled at the app level. Changes take effect immediately.
 
-## Danger Zone
+## Remove Project
+
+At the bottom of the project's **General** settings page.
 
 | Action | Effect |
 |--------|--------|

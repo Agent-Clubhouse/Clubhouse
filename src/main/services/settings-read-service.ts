@@ -350,7 +350,9 @@ const PROJECT_SECTIONS: ReadonlyArray<Section<ProjectContext>> = [
       })],
       ['persona', retired],
       ['mission', retired],
-      ['free_agent_mode', ({ defaults }) => held(defaults.freeAgentMode, 'project')],
+      // The project's free agent default was retired with Access (#2761, #3245): new agents
+      // start at the app's Default access, so a saved value decides nothing. Always null.
+      ['free_agent_mode', retired],
       // Provider profiles were removed (#2749): always null, kept so phones and read_settings callers keep the key.
       ['profile_id', retired],
       ['source_control_provider', ({ defaults }) => held(defaults.sourceControlProvider, 'project')],
