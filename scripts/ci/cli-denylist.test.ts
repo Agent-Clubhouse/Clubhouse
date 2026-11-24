@@ -158,8 +158,8 @@ describe('the known ids', () => {
     expect([...KNOWN_DRIVERS].sort()).toEqual([...CHAT_DRIVER_IDS].sort());
   });
 
-  it('are exactly the built-in providers', () => {
-    registerBuiltinProviders();
+  it('are exactly the built-in providers, experimental ones included', () => {
+    registerBuiltinProviders({ antigravity: true });
     expect([...KNOWN_PROVIDERS].sort()).toEqual(getAllProviders().map((p) => p.id).sort());
   });
 });

@@ -25,7 +25,7 @@ describe('descriptors reproduce the former lists exactly', () => {
       expect(accessLevelsFor(id, 'chat')).toEqual(row.chat);
       expect(accessLevelsFor(id, 'terminal')).toEqual(row.terminal);
     }
-    expect(accessLevelsFor('antigravity-cli')).toEqual(['ask']);
+    expect(accessLevelsFor('gemini-cli')).toEqual(['ask']);
     expect(accessLevelsFor(undefined, 'chat')).toEqual(['ask']);
   });
 
@@ -78,8 +78,10 @@ describe('descriptors reproduce the former lists exactly', () => {
   });
 
   it('state folders (provider-profiles-removed.ts STATE_DIR)', () => {
-    expect(BUILTIN_PROVIDER_IDS.map((id) => PROVIDER_DESCRIPTORS[id].stateDir)).toEqual([
+    expect(BUILTIN_PROVIDER_IDS.map((id) => providerDescriptor(id)?.stateDir)).toEqual([
       { env: 'CLAUDE_CONFIG_DIR', fallback: '.claude' }, { env: 'CODEX_HOME', fallback: '.codex' }, { env: 'COPILOT_HOME', fallback: '.copilot' },
+      // Antigravity documents no config-dir override.
+      undefined,
     ]);
   });
 
@@ -99,6 +101,37 @@ describe('descriptors reproduce the former lists exactly', () => {
   it('only own keys resolve', () => {
     expect(providerDescriptor('constructor')).toBeUndefined();
     expect(providerIdsWhere(() => true)).toEqual(BUILTIN_PROVIDER_IDS);
+  });
+});
+
+/**
+ * Antigravity (#3785) is added with conservative values. None of them changes
+ * a list the existing three providers produce (the tests above).
+ */
+describe('Antigravity descriptor', () => {
+  const d = PROVIDER_DESCRIPTORS['antigravity-cli'];
+
+  it('offers no Auto level, in either runtime (#3791)', () => {
+    expect(accessLevelsFor('antigravity-cli', 'terminal')).toEqual(['plan', 'ask', 'auto_edit', 'full_access']);
+    expect(accessLevelsFor('antigravity-cli', 'chat')).toEqual(['plan', 'ask', 'auto_edit', 'full_access']);
+  });
+
+  it('is opt-in for Auto with unknown quota, and has no presets, so Auto never picks it (#3803)', () => {
+    expect(d.helperRouting.auto).toBe('opt_in');
+    expect(d.helperRouting.quota).toBe('unknown');
+    expect('presets' in d.helperRouting).toBe(false);
+    expect(AUTO_CANDIDATE_PROVIDERS).not.toContain('antigravity-cli');
+    expect(PRESET_PROVIDERS).not.toContain('antigravity-cli');
+  });
+
+  it('reports other in telemetry and stays out of capacity until those reviewed changes land', () => {
+    expect(d.telemetryCode).toBe('other');
+    expect(CAPACITY_PROVIDERS).not.toContain('antigravity-cli');
+    expect(AUTO_RESERVE_PROVIDERS).not.toContain('antigravity-cli');
+  });
+
+  it('declares no session history, since the transcript format is undocumented', () => {
+    expect(d.features.common.session_history.support).toBe('unsupported');
   });
 });
 

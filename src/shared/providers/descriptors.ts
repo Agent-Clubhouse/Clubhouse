@@ -17,9 +17,14 @@
 
 import type { PermissionLevel } from '../chat/capabilities';
 import type { ProviderFeatureDeclarations } from './features';
+import { ANTIGRAVITY_PROVIDER_ID } from './antigravity';
 
-/** The built-in providers, in the order surfaces list them. */
-export const BUILTIN_PROVIDER_IDS = ['claude-code', 'codex-cli', 'copilot-cli'] as const;
+/**
+ * The built-in providers, in the order surfaces list them. Antigravity is last
+ * and experimental: its descriptor exists whether or not the provider is
+ * enabled, so saved agents keep their names and glyphs (#3785).
+ */
+export const BUILTIN_PROVIDER_IDS = ['claude-code', 'codex-cli', 'copilot-cli', ANTIGRAVITY_PROVIDER_ID] as const;
 export type BuiltinProviderId = (typeof BUILTIN_PROVIDER_IDS)[number];
 
 /**
@@ -47,11 +52,11 @@ export type ProviderAutoPolicy = 'candidate' | 'opt_in' | 'excluded';
  */
 export type ProviderQuotaKind = 'reader' | 'unknown';
 
-/** Mascot art keys; the renderer owns the drawings. */
+/** Mascot art keys; the renderer owns the drawings. A provider without one gets the generic robot. */
 export type ProviderMascot = 'claude' | 'codex' | 'copilot';
 
 /** Badge colors from the `--ctp-badge-*` theme variables. */
-export type ProviderBadgeColor = 'orange' | 'teal' | 'blue';
+export type ProviderBadgeColor = 'orange' | 'teal' | 'blue' | 'indigo';
 
 export interface ProviderPresetCell {
   model: string;
@@ -71,7 +76,7 @@ export interface ProviderDescriptor {
   command: string;
   glyph: string;
   badgeColor: ProviderBadgeColor;
-  mascot: ProviderMascot;
+  mascot?: ProviderMascot;
   /** `other` until a reviewed addition to `PROVIDER_TELEMETRY_CODES`. */
   telemetryCode: ProviderTelemetryCode | 'other';
   install: { docsUrl: string };
@@ -225,10 +230,72 @@ const COPILOT_CLI = {
   },
 } as const satisfies ProviderDescriptor;
 
+const ANTIGRAVITY_DOCS = 'https://antigravity.google/docs';
+
+/**
+ * Antigravity CLI (#3785): experimental, hidden unless its flag and provider
+ * toggle are on. Values are deliberately conservative:
+ * - Access has no Auto level. `--mode auto` needs the terminal sandbox, a
+ *   minimum version per platform and a non-business account, none of which
+ *   Clubhouse has evidence for yet (#3791).
+ * - No presets, so Auto never considers it; the declared policy is `opt_in`
+ *   (#3803), off unless a later change adds presets and an allow setting.
+ * - Telemetry reports `other` until the enum addition is reviewed (#3800).
+ * - Not capacity-tracked: peers validate the exact capacity key set, so adding
+ *   a key needs a compatible wire change first (#3799).
+ * - No state folder: Antigravity documents no config-dir override.
+ */
+const ANTIGRAVITY_CLI = {
+  id: ANTIGRAVITY_PROVIDER_ID,
+  displayName: 'Antigravity CLI',
+  shortName: 'Antigravity',
+  cliLabel: 'Antigravity CLI',
+  command: 'agy',
+  glyph: 'A',
+  badgeColor: 'indigo',
+  telemetryCode: 'other',
+  install: { docsUrl: `${ANTIGRAVITY_DOCS}/getting-started/` },
+  access: {
+    chat: ['plan', 'ask', 'auto_edit', 'full_access'],
+    terminal: ['plan', 'ask', 'auto_edit', 'full_access'],
+  },
+  helperRouting: {
+    auto: 'opt_in',
+    // No token-free quota read is documented (`/usage` is interactive).
+    quota: 'unknown',
+    budgetReserve: false,
+  },
+  capacityTracked: false,
+  features: {
+    common: {
+      managed_instructions: {
+        support: 'conditional',
+        conditions: [{ kind: 'setting', id: 'antigravity:instructions_within_limit', description: 'AGENTS.md, including your own text, must be 24,000 bytes or less.' }],
+        note: 'Your global Antigravity rules also count toward its rules budget.',
+      },
+      mcp: {
+        support: 'conditional',
+        conditions: [{ kind: 'setting', id: 'antigravity:bridge_authenticated', description: 'The Clubhouse MCP counts as connected only after it authenticates for this launch.' }],
+      },
+      session_history: { support: 'unsupported', reason: 'Antigravity does not document its transcript format, so Clubhouse does not read it.' },
+    },
+    chat: {
+      cancellation: { support: 'supported' },
+      model_switch: { support: 'unknown', note: 'Models are whatever the session offers.' },
+      effort_switch: { support: 'unknown', note: 'Thinking level, when the session offers it.' },
+      steering: { support: 'unknown', note: 'Documented; settlement on the real server is unverified.' },
+    },
+    terminal: {
+      session_resume: { support: 'supported', note: 'By conversation id from hooks, else the most recent in the folder.' },
+    },
+  },
+} as const satisfies ProviderDescriptor;
+
 export const PROVIDER_DESCRIPTORS = {
   'claude-code': CLAUDE_CODE,
   'codex-cli': CODEX_CLI,
   'copilot-cli': COPILOT_CLI,
+  [ANTIGRAVITY_PROVIDER_ID]: ANTIGRAVITY_CLI,
 } as const satisfies Readonly<Record<BuiltinProviderId, ProviderDescriptor>>;
 
 type Descriptors = typeof PROVIDER_DESCRIPTORS;

@@ -35,14 +35,17 @@ import { refreshInstalledCli } from '../services/cli-install';
 import { registerBuiltinProviders, getAllProviders } from '../orchestrators';
 import { registerBuiltinChatDrivers } from '../services/agent-runtime/builtin-chat-drivers';
 import { autoDetectDefaults } from '../services/orchestrator-settings';
+import { getSettings as getExperimentalSettings } from '../services/experimental-settings';
+import { ANTIGRAVITY_EXPERIMENTAL_FLAG } from '../../shared/providers/antigravity';
 import * as logService from '../services/log-service';
 import { runStartupRetention } from '../telemetry/local-control';
 import { registerDefaultBroadcastPolicies } from '../util/ipc-broadcast-policies';
 
 export function registerAllHandlers(): void {
   enableSettingsAudit();
-  // Register orchestrator providers before anything else
-  registerBuiltinProviders();
+  // Register orchestrator providers before anything else. Experimental
+  // providers follow their flag as saved at startup; changing it needs a restart.
+  registerBuiltinProviders({ antigravity: getExperimentalSettings()[ANTIGRAVITY_EXPERIMENTAL_FLAG] === true });
   // Chat drivers only make chat available; the experimental Chat flag still decides.
   registerBuiltinChatDrivers();
 
