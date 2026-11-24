@@ -346,7 +346,8 @@ export interface FileOptions {
   home?: string;
 }
 
-const NOFOLLOW = fs.constants.O_NOFOLLOW ?? 0;
+/** Read at call time, so loading this module never touches `fs` (callers' test mocks may lack `constants`). */
+const nofollow = (): number => fs.constants.O_NOFOLLOW ?? 0;
 const unsafe = (relFile: string, what: string) =>
   new AntigravityWorkspaceError('unsafe_path', `${relFile}: ${what}; Clubhouse will not write through it. Fix the path, then start the agent again.`);
 
@@ -389,7 +390,7 @@ async function safeTarget(worktree: string, relFile: string, home: string = os.h
 
 async function readNoFollow(file: string, relFile: string): Promise<string | null> {
   let handle: fsp.FileHandle;
-  try { handle = await fsp.open(file, fs.constants.O_RDONLY | NOFOLLOW); }
+  try { handle = await fsp.open(file, fs.constants.O_RDONLY | nofollow()); }
   catch (err) {
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code === 'ENOENT') return null;
@@ -402,7 +403,7 @@ async function readNoFollow(file: string, relFile: string): Promise<string | nul
 
 async function writeTemp(file: string, text: string, mode: number): Promise<string> {
   const tmp = path.join(path.dirname(file), `.${path.basename(file)}.tmp.${randomUUID().slice(0, 8)}`);
-  const handle = await fsp.open(tmp, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | NOFOLLOW, mode);
+  const handle = await fsp.open(tmp, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | nofollow(), mode);
   try { await handle.writeFile(text, 'utf-8'); }
   finally { await handle.close(); }
   return tmp;

@@ -85,7 +85,9 @@ Design: the one-release negotiated option from the independent review (`qa-antig
 - Responder: the `{}` request body is unchanged. The local sample keeps every tracked provider. The answer carries them all only when the requesting machine's current control link agreed the feature, checked after sampling; otherwise exactly the legacy keys.
 - Antigravity is `capacityTracked`. With no quota reader its value is `unknown`.
 
-Status: source and unit proof on `antigravity-integration/provider` (commit 525f9b578). Tests include an old-parser fixture copied from `d2b89cf9f` that accepts every non-agreed response and refuses a full one, reader tables, responder shape with and without the feature and after a lost link, and `hello` agreement with an old offer and after close. Not yet independently reviewed as implemented; no CI.
+External limit: whether the phone (or any non-desktop Annex client) acts as a capacity acceptor, and how it treats an unknown control feature, is UNKNOWN. Its owner could not be reached and no recorded evidence was found. The verified compatibility covers desktop peers only: the legacy-three projection and the `hello` feature intersection. This stays open as an external compatibility limit, not a known blocker and not waived.
+
+Status: source independently reviewed and approved (`qa-antigravity-capacity-525f`, sha256 `d093e461580b30c2f3e6d54017478bd5c6b9d8756e9958045acb3fafd51a0eb6`). The design is implemented at commit 525f9b578; that commit's 316/316 run is not credited, and acceptance needs exact composed-head proof. Tests include an old-parser fixture copied from `d2b89cf9f` that accepts every non-agreed response and refuses a full one, reader tables, responder shape with and without the feature and after a lost link, and `hello` agreement with an old offer and after close. Not yet independently reviewed as implemented; no CI.
 
 ## Open items outside the gate tables
 
