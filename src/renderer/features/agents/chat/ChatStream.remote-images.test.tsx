@@ -80,8 +80,8 @@ describe('remote stored image rendering', () => {
     window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ richChatContent: true }));
     showImage();
     const thumb = await screen.findByTestId('chat-attachment-thumb');
-    expect(window.clubhouse.chat.readMedia).toHaveBeenCalledWith(id, ref);
     await vi.waitFor(() => expect(thumb).toHaveAttribute('aria-busy', 'false'));
+    expect(window.clubhouse.chat.readMedia).toHaveBeenCalledWith(id, ref);
     fireEvent.click(thumb);
     await screen.findByTestId('chat-image-full');
     expect(screen.queryByText(/Show in Finder|Show in Explorer|Show in folder/)).toBeNull();
