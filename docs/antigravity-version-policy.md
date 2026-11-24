@@ -35,12 +35,16 @@ Also relevant, not floors:
 - `AGY_CLI_DISABLE_AUTO_UPDATE` is documented at https://antigravity.google/docs/cli/troubleshooting/. Clubhouse does not set it.
 - `--disable-telemetry` is not passed. It is the person's Antigravity setting.
 
-## Diagnostics (paths only, nothing sent)
+## Diagnostics (#3800): what is done and what stays open
 
-Feedback diagnostics (`feedback-diagnostics.ts`) are an allowlist, and Framebriar's report contract is closed. It has `provider` and `driver` word attributes and no version or path attribute, and the SDK contract is not ours to extend. So:
+#3800 asks that feedback diagnostics carry "the CLI version, driver, and the paths (not contents)" of the Clubhouse `--log-file` and `~/.gemini/antigravity-cli/log/acp-*.log`. Status per item:
 
-- The provider (`antigravity-cli`) and driver (`antigravity_acp`) reach a report as the closed words they already are, once both are in the reviewed lists. Nothing else about Antigravity is added.
-- The CLI version and the log paths are not sent. A path holds a user name, and a version has no attribute to travel in.
-- The two log locations are shown to the person instead, so they can attach a file themselves: `~/.gemini/antigravity-cli/log/acp-*.log` (Antigravity's own, documented) and the Clubhouse `--log-file`. See the Antigravity help article.
+| Item | Status |
+|---|---|
+| Driver and provider | Done. Both are closed words (`antigravity_acp`, `antigravity-cli`) the report already carries once they are in the reviewed lists. Tested. |
+| CLI version in a report | **Open, retained acceptance gap.** Framebriar's diagnostics contract has no version attribute. A version is nonsecret and would fit the existing word pattern, but adding an attribute changes a private SDK contract, which is not ours to do from here. |
+| Log paths in a report | **Open, retained acceptance gap, and not recommended for the contract as asked.** The contract has no path attribute, and a path holds a user name. If a path is ever sent it should be a closed location word (for example `agy-acp-log`), never text. |
+| Safe local representation | Done as a pure helper, not wired: `src/main/services/antigravity-diagnostics.ts` returns the plain version, Antigravity's documented glob (already home-relative) and Clubhouse's log file home-relative (`<elsewhere>/name` outside the home folder). The driver owner writes it to Clubhouse's local log, which is never exported, at chat start. |
+| Person-attached | Done in help: the article tells the person the version command and the log path, and that a report does not include them, so they can attach a log themselves. |
 
-If the maintainer wants the version in reports, that needs a new attribute in the Framebriar diagnostics contract first.
+Nothing is sent automatically, and paths are never sent. The requirement is therefore **not** met by omission: version and path in reports stay open until the Framebriar contract has an attribute for each, and the helper and help text are the local stand-in.

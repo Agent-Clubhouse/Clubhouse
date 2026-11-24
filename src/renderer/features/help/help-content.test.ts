@@ -192,6 +192,8 @@ describe('Antigravity CLI help (#3801)', () => {
     expect(content).not.toContain('\u2014');
     expect(content).not.toMatch(/[A-Z]{4,} [A-Z]{4,}/);
     expect(content).toContain('**Settings > Agents & providers**');
+    expect(content).toContain('**Antigravity CLI provider** in **Settings > Experimental**');
+    expect(content).not.toContain('antigravityProvider');
     expect(content).not.toMatch(/\b(orchestrator|persona)\b/i);
   });
 
@@ -248,7 +250,7 @@ describe('help-content in the new shell', () => {
 
   it('points only at settings pages that exist', () => {
     const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Smart selection', 'Actions', 'Dispatcher', 'Display & UI', 'External editor', 'Keyboard shortcuts',
-      'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', 'Group Projects', "What's new"];
+      'Notifications & alerts', 'Experimental', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', 'Group Projects', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {
         const page = m[1].split(' > ')[0];

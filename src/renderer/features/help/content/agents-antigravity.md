@@ -8,7 +8,7 @@ This page paraphrases Google's documentation as read on 2026-11-23. Google chang
 
 1. **Install it.** Follow Google's [getting started guide](https://antigravity.google/docs/getting-started/), then run `agy --version` in a terminal to check that it works.
 2. **Sign in once.** Run `agy` in a terminal and finish its sign-in. Chat reuses that sign-in. Over SSH or on a computer without a browser, run `agy acp --login` instead. Clubhouse does not sign in for you, and it never reads, copies or stores your Antigravity credentials.
-3. **Turn it on.** While the `antigravityProvider` experimental flag is off, Antigravity CLI is hidden. Changing the flag takes effect after you restart Clubhouse. Then open **Settings > Agents & providers**, where it shows an Experimental badge, and switch it on once Clubhouse finds the `agy` command. A project or agent chooses it through its **Runs on** setting like any other provider.
+3. **Turn it on.** It takes two steps. First switch on **Antigravity CLI provider** in **Settings > Experimental** and restart Clubhouse. Until then Antigravity CLI is hidden. Then open **Settings > Agents & providers**, where it shows an Experimental badge, and switch it on once Clubhouse finds the `agy` command. A project or agent chooses it through its **Runs on** setting like any other provider. Clubhouse never turns it on or picks it for you.
 
 Clubhouse does not change Antigravity's trust list. The first time `agy` opens a folder it has not seen, it asks whether you trust that folder. A new agent folder counts as a new folder, so answer the prompt in the agent's CLI view.
 
@@ -17,7 +17,7 @@ Clubhouse does not change Antigravity's trust list. The first time `agy` opens a
 | View | Needs | Notes |
 |------|-------|-------|
 | CLI view | `agy` installed and signed in | The `agy` terminal app runs as it does in your own terminal. |
-| Chat | `agy` with ACP support and a cached sign-in | Google's changelog shows `agy acp` added in 1.5.0. Clubhouse checks the version before it opens chat. |
+| Chat | `agy` with ACP support and a cached sign-in | Google's changelog shows `agy acp` added in 1.5.0. Chat needs 1.5.10 or newer, because earlier releases have documented ACP cancel and permission fixes, and Clubhouse checks the version before it opens chat. |
 | Headless | Not offered | See **Why headless is not offered**. |
 
 Chat and the CLI view never stand in for each other. If chat can't start, the agent says so and you choose whether to retry or open it in the CLI view. Clubhouse does not replay a message into a different view.
@@ -69,6 +69,6 @@ Antigravity can use a Gemini API key. Google's [install guide](https://antigravi
 - **Not found in Settings.** Make sure `agy --version` works in a terminal, then press **Check again**.
 - **Chat says sign-in is needed.** Run `agy` once in a terminal, or `agy acp --login` over SSH, then retry.
 - **Chat won't start.** Update `agy`. Google's changelog lists ACP fixes in most releases.
-- **More detail.** Antigravity writes ACP logs to `~/.gemini/antigravity-cli/log/acp-*.log`. Feedback reports never include log contents. See **Logging and diagnostics**.
+- **More detail.** `agy --version` shows the version. Antigravity writes ACP logs to `~/.gemini/antigravity-cli/log/acp-*.log`. A feedback report does not include the version, these paths or any log contents, so attach a log yourself if it helps. See **Logging and diagnostics**.
 
 Antigravity may update itself. Google documents `AGY_CLI_DISABLE_AUTO_UPDATE=true` to turn that off, and Clubhouse does not set it.
