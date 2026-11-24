@@ -24,7 +24,7 @@ Each line carries:
 | --- | --- |
 | `agentId`, `role`, `parentAgentId`, `projectPath` | Who used it. `role` is `dispatcher`, `helper`, `orchestrator`, `quick`, `agent` or `unknown`. `unknown` (with no parent) means the agent config hasn't been read yet; it is looked up again on the next line |
 | `sessionId`, `nativeSessionId`, `resumed` | The Clubhouse chat session, the provider's session or thread id, and whether this run continues an earlier native session |
-| `driver`, `provider`, `model`, `effort` | `unknown` when not established |
+| `driver`, `provider`, `model`, `effort` | `unknown` when not established. A model change that names no effort (a model without effort levels, or a Codex server reroute) leaves effort `unknown` rather than carrying the earlier one |
 | `kind` | `turn`: one finished turn. `final`: a session's running total when it ends |
 | `input`, `cachedInput`, `cacheWrite`, `output`, `reasoning` | Tokens, in the convention below. A figure the provider didn't report is absent |
 | `source`, `scope`, `dedup`, `completeness`, `baseline` | Provenance, from `RunUsageTracker` (`src/main/telemetry/helper-usage-accounting.ts`) |
@@ -42,8 +42,8 @@ hour turns.
   There is no equivalent for Claude Code or Copilot in a terminal.
 - **Headless runs** (`codex exec`, `claude -p`) are not chat sessions and log
   nothing here. Their transcript summary
-  (`src/shared/headless-transcript.ts`) still reports a run with no usage as
-  0 input and 0 output tokens.
+  (`src/shared/headless-transcript.ts`) and run view keep a side no event
+  reported absent. The view shows "Not reported" or "unknown" for it, never 0.
 
 ## Adapter contract
 
