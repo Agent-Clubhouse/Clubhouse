@@ -535,10 +535,10 @@ describe('Antigravity launch: MCP config refusals and the identity fence', () =>
     try {
       mockMcpWaitReady.mockResolvedValueOnce(23456);
       await spawnAntigravity();
+      const { agentRegistry } = await import('./agent-registry');
       mockGetCurrentAgentConnection.mockImplementation(() => { throw new Error('bridge registry unavailable'); });
       emitAgentMcpConnected('agent-1');
-      // A newer run took over before the failure was handled.
-      const { agentRegistry } = await import('./agent-registry');
+      // A newer run takes over before the failure is handled (same tick).
       agentRegistry.setNonce('agent-1', 'newer-run-nonce');
       await new Promise((r) => setTimeout(r, 50));
       expect(mockPtyKill).not.toHaveBeenCalled();
