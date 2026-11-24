@@ -62,6 +62,7 @@ import dispatcherChatInstructions from './dispatcher-chat-instructions.md';
 import { DISPATCHER_INTERNAL_TOOLS } from './dispatcher-internal-tools';
 import { withMemoryIndex } from './dispatcher-memory-migration';
 import { appendSection, instructionsWithSkills, writeDispatcherSkills, type SkillsConventions } from './dispatcher-skills';
+import { removeLegacyMemoryIndexCopies } from './dispatcher-instruction-cleanup';
 
 export { appendSection } from './dispatcher-skills';
 import { appLog } from '../log-service';
@@ -880,7 +881,11 @@ async function ensureChat(coordinator: DurableAgentConfig): Promise<DurableAgent
   return mirror(coordinator, fresh, dir);
 }
 
-/** Write each agent's instructions to its CLI's instructions file in its folder. */
+/**
+ * Write each agent's instructions to its CLI's instructions file in its folder.
+ * The file is written whole, never added to. A CLI it no longer runs on has its
+ * file cleaned of the old memory index copy (dispatcher-instruction-cleanup.ts).
+ */
 async function writeInstructions(agent: DurableAgentConfig, dir: string = getDispatcherPath()): Promise<void> {
   const providerId = agent.orchestrator ?? defaultDispatcherOrchestrator();
   const provider = providerId ? getProvider(providerId) : undefined;
@@ -889,6 +894,8 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
     return;
   }
   const role: DispatcherRole = isDispatcherChatPath(dir) ? 'chat' : 'work';
+  // First, so a failed skills write below still leaves the other CLIs' files cleaned.
+  await removeLegacyMemoryIndexCopies(dir, provider, getAllProviders());
   const skills = await writeSkills(dir, role, provider);
   await provider.writeInstructions(dir, await withDispatcherMemory(role === 'chat' ? chatInstructions(agent, skills) : appendSection(instructionsWithSkills(DISPATCHER_INSTRUCTIONS, 'work', skills), `Your name is ${cleanDispatcherName(agent.name) || DEFAULT_DISPATCHER_NAME}. The user chose it; use it when you introduce yourself.`)));
   instructionsWrittenFor.set(dir, instructionsKey(agent, dir));

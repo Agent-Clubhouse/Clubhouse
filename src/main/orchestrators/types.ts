@@ -463,6 +463,8 @@ export interface OrchestratorProvider {
   /** Bounded primary-file inspection; unlike the editor read, errors must not look empty. */
   inspectInstructions?(worktreePath: string): Promise<string>;
   writeInstructions(worktreePath: string, content: string): Promise<void>;
+  /** Replaces the primary file only if it is still the regular file whose text was `expected`; false when it isn't. Temp file plus rename. */
+  replaceInstructionsIfUnchanged?(worktreePath: string, expected: string, content: string): Promise<boolean>;
 
   // Conventions
   readonly conventions: OrchestratorConventions;
