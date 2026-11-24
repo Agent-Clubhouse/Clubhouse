@@ -6,11 +6,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // They don't replace a real-process check of an agent that stops reading.
 
 const spawned: FakeChild[] = [];
+/** Runs on each new child before spawn() returns, so it sees the first write. */
+let onSpawn: ((child: FakeChild) => void) | undefined;
 vi.mock('child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('child_process')>()),
   spawn: vi.fn(() => {
     const child = new FakeChild();
     spawned.push(child);
+    onSpawn?.(child);
     return child;
   }),
 }));
@@ -59,7 +62,7 @@ class FakeChild extends EventEmitter {
   }
 }
 
-const COMMAND = { binary: 'acp-agent', args: [] };
+const COMMAND = { binary: 'acp-agent', args: [] as string[] };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function connect() {
@@ -68,7 +71,7 @@ function connect() {
   return { transport, ends, child: spawned[spawned.length - 1] };
 }
 
-beforeEach(() => { spawned.length = 0; });
+beforeEach(() => { spawned.length = 0; onSpawn = undefined; });
 
 describe('stdio connector guard (deterministic)', () => {
   it('refuses a message while stdin is not writable, before the transport has ended, and writes nothing', () => {
@@ -117,13 +120,13 @@ describe('stdio connector through the driver (deterministic)', () => {
 
   /** A started session whose fake agent answers initialize and session/new. */
   async function started() {
-    const opening = driver.start({ agentId: 'a', provider: 'acp-test', cwd: 'workspace', binaryPath: 'acp-agent', level: 'ask' });
-    const child = spawned[spawned.length - 1];
-    child.stdin.on('wrote', (msg: JsonRpcMessage) => {
+    // start() writes initialize before it returns, so the agent answers from spawn on.
+    onSpawn = (child) => child.stdin.on('wrote', (msg: JsonRpcMessage) => {
       if (msg.method === 'initialize') child.say({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
       if (msg.method === 'session/new') child.say({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 's1' } });
     });
-    const session = await opening;
+    const session = await driver.start({ agentId: 'a', provider: 'acp-test', cwd: 'workspace', binaryPath: 'acp-agent', level: 'ask' });
+    const child = spawned[spawned.length - 1];
     const drafts: ChatEventDraft[] = [];
     const ended = (async () => { for await (const d of session.events) drafts.push(d); })();
     return { child, session, drafts, ended, prompts: () => child.stdin.writes.filter((m) => m.method === 'session/prompt') };
