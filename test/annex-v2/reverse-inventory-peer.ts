@@ -245,8 +245,8 @@ export async function createInventoryPeer(alias: string) {
   registerAgentTools();
   const stopAgentCalls = agentCalls.startAgentCalls({
     transport: {
-      connected: client.isMachineConnected, post: client.postToMachine,
-      machineName: client.machineAlias, onConnected: client.onSatelliteConnected,
+      connected: client.canReachMachine, post: client.postToMachine,
+      machineName: client.machineAlias, onConnected: client.onMachineReachable,
       supportsDurableDelivery: async (machine) => {
         const reply = await client.postToMachine(machine, '/api/v1/network/agent-delivery-capabilities', {});
         if (reply.status === 404) return false;
@@ -268,8 +268,8 @@ export async function createInventoryPeer(alias: string) {
     onMembershipChanged,
   };
   const transport = {
-    connected: client.isMachineConnected, post: client.postToMachine,
-    machineName: client.machineAlias, onConnected: client.onSatelliteConnected,
+    connected: client.canReachMachine, post: client.postToMachine,
+    machineName: client.machineAlias, onConnected: client.onMachineReachable,
   };
   const stopGroups = startGroupProjectNetwork({ ...memberOptions, transport });
   const stopGroupMembership = watchGroupProjectMembership();

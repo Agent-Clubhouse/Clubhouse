@@ -204,8 +204,8 @@ export async function createClientPeer(alias: string) {
       await setConnectionLink({ agentId: 'sender', machineId: remote.fingerprint }, { agentId: 'receiver' }, true);
       stopAgentCalls = agentCalls.startAgentCalls({
         transport: {
-          connected: client.isMachineConnected, post: client.postToMachine,
-          machineName: client.machineAlias, onConnected: client.onSatelliteConnected,
+          connected: client.canReachMachine, post: client.postToMachine,
+          machineName: client.machineAlias, onConnected: client.onMachineReachable,
           supportsDurableDelivery: async () => false,
         },
         runTool: async () => ({ content: [{ type: 'text', text: `agent:${alias}` }] }),
