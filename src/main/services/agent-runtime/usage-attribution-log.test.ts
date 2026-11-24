@@ -112,12 +112,24 @@ describe('usage attribution log', () => {
     emit('late', 'turn_started', {}, 't1');
     emit('late', 'turn_ended', { stopReason: 'end_turn' }, 't1');
     delete agents.late;
+    emit('late', 'turn_started', {}, 't2');
+    emit('late', 'turn_ended', { stopReason: 'end_turn' }, 't2');
     expect(lines[0].meta.role).toBe('unknown');
-    expect(turnLines()[0]).toMatchObject({ role: 'helper', parentAgentId: 'orch' });
+    // Once known, it stays: a later lookup miss doesn't take it back.
+    expect(turnLines().map((l) => l.role)).toEqual(['helper', 'helper']);
   });
 
-  it('drops an earlier effort when a model change carries none', () => {
+  it('keeps the effort through a Codex server reroute, which names only the model', () => {
     start('orch');
+    emit('orch', 'model_changed', { modelId: 'a', effort: 'high' });
+    emit('orch', 'model_changed', { modelId: 'rerouted' });
+    emit('orch', 'turn_started', {}, 't1');
+    emit('orch', 'turn_ended', { stopReason: 'end_turn' }, 't1');
+    expect(turnLines()[0]).toMatchObject({ model: 'rerouted', effort: 'high' });
+  });
+
+  it('drops an earlier effort when another driver changes to a model without one', () => {
+    start('orch', { driver: 'claude_agent_sdk' });
     emit('orch', 'model_changed', { modelId: 'a', effort: 'high' });
     emit('orch', 'model_changed', { modelId: 'b' });
     emit('orch', 'turn_started', {}, 't1');

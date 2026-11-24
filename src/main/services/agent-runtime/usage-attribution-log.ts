@@ -172,9 +172,11 @@ export function logUsageChatEvent(event: ChatEvent): void {
       if (event.data.model) s.model = event.data.model;
       return;
     case 'model_changed':
-      // Each change carries the whole state: no effort means the model has none (or the provider didn't say).
+      // Each change carries the whole state: no effort means the model has none. Except a Codex
+      // server reroute (model/rerouted), which names only the model; the driver keeps sending its effort.
+      // Known gap: a Codex switch to a model with no effort levels looks the same and keeps the old effort.
       s.model = event.data.modelId;
-      s.effort = event.data.effort;
+      s.effort = event.data.effort ?? (s.driver === 'codex_app_server' ? s.effort : undefined);
       return;
     case 'turn_started':
       s.tracker.turnStarted(event.turnId, event.ts);

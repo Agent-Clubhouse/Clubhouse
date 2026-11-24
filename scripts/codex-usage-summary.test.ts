@@ -16,6 +16,8 @@ describe('codex usage summary', () => {
     expect(agentLabel('/u/.clubhouse/dispatcher')).toBe('Dispatcher');
     expect(agentLabel('/u/.clubhouse/dispatcher-chat')).toBe('Dispatcher');
     expect(agentLabel('/u/src/dispatcher-tools')).toBe('dispatcher-tools');
+    expect(agentLabel('C:\\u\\.clubhouse\\dispatcher\\')).toBe('Dispatcher');
+    expect(agentLabel('C:\\p\\.clubhouse\\agents\\ux-root\\')).toBe('ux-root');
     expect(agentLabel(undefined)).toBe('(unknown)');
   });
 
