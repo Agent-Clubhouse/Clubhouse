@@ -5,9 +5,12 @@ vi.mock('../dispatcher/dispatcher-service', () => ({ isDispatcherIdentityAgentId
 vi.mock('../app-event-sources', () => ({ knownAgent: () => undefined }));
 
 import type { ChatEvent } from '../../../shared/chat';
+import { appLog } from '../log-service';
+import { createDiagnosticsRing, DIAGNOSTICS_CATALOG } from '../framebriar/feedback-diagnostics';
 import { publishChatEvent, removeAllChatEventListeners } from './chat-event-bus';
 import {
   USAGE_LOG_MAX_LINES_PER_HOUR,
+  USAGE_LOG_NS,
   _resetUsageAttributionForTesting,
   _setUsageAttributionDepsForTesting,
   startUsageAttributionLog,
@@ -147,5 +150,28 @@ describe('usage attribution log', () => {
     emit('orch', 'turn_ended', { stopReason: 'end_turn', usage: { input: 1, output: 1 } }, 'late');
     expect(lines.at(-2)).toMatchObject({ msg: 'Usage lines dropped over the hourly limit', meta: { dropped: 6 } });
     expect(lines.at(-1)!.meta.turnId).toBe('late');
+  });
+
+  it('writes through appLog at info, with no telemetry bridge, when no test sink is set', () => {
+    _setUsageAttributionDepsForTesting(null);
+    vi.mocked(appLog).mockClear();
+    start('orch');
+    emit('orch', 'turn_started', {}, 't1');
+    emit('orch', 'turn_ended', { stopReason: 'end_turn', usage: { input: 3, output: 1 } }, 't1');
+    const calls = vi.mocked(appLog).mock.calls;
+    expect(calls.map((c) => [c[0], c[1], c[2]])).toEqual([[USAGE_LOG_NS, 'info', 'Usage session started'], [USAGE_LOG_NS, 'info', 'Usage turn']]);
+    for (const call of calls) expect(call[3]).not.toHaveProperty('telemetry');
+    expect(calls[1][3]?.meta).toMatchObject({ role: 'unknown', input: 3, output: 1 });
+  });
+
+  it('never reaches a feedback report: the diagnostics allowlist keeps no usage line', () => {
+    expect(DIAGNOSTICS_CATALOG[USAGE_LOG_NS]).toBeUndefined();
+    start('helper', { nativeSessionId: 'thread-1' });
+    emit('helper', 'turn_started', {}, 't1');
+    emit('helper', 'turn_ended', { stopReason: 'end_turn', usage: { input: 3, output: 1 } }, 't1');
+    emit('helper', 'session_ended', { reason: 'exited' });
+    const ring = createDiagnosticsRing({ now: () => now });
+    for (const { msg, meta } of lines) ring.note({ ns: USAGE_LOG_NS, level: 'info', msg, meta });
+    expect(ring.collect().lines).toEqual([]);
   });
 });
