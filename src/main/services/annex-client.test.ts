@@ -1722,8 +1722,12 @@ describe('annex-client', () => {
         pendingPermissions: [],
         lastSeq: 7,
         protocolVersion: 2,
+        agentRunStateVersion: 1,
       };
       messageHandler!(JSON.stringify({ type: 'snapshot', payload: accepted }));
+      expect(annexClient.getSatellite(FINGERPRINT)?.snapshot).toMatchObject({ agentRunStateVersion: 1 });
+      expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX_CLIENT.SATELLITE_EVENT,
+        expect.objectContaining({ type: 'snapshot', payload: expect.objectContaining({ agentRunStateVersion: 1 }) }));
 
       const mismatched = {
         ...accepted,

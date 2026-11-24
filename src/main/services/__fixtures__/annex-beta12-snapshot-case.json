@@ -1,0 +1,11 @@
+{
+  "commit": "90ad3811d1b663d3c01badf20dd91e0cb95cef78",
+  "tag": "v0.42.0-beta.12",
+  "path": "src/main/services/annex-client.ts",
+  "blob": "95f3a8301e2f59946458b9c803466d971635a4b8",
+  "fileSHA256": "8c63c7f42fd7a3ed617724e654482534ac6aac60ba3ed5603225cef6d25f1d0a",
+  "caseSHA256": "1dd7bc68747e2f16a9f4a03ad9bbfb6a47d982de3d0d7483cb6333fe550e93c1",
+  "caseSource": "    case 'snapshot': {\n      const incoming = msg.payload as SatelliteSnapshot;\n      if (incoming.protocolVersion !== ANNEX_PROTOCOL_VERSION) {\n        setState(sat, 'disconnected', 'Incompatible Annex version');\n        return;\n      }\n      connectSucceeded(sat.fingerprint);\n      if (!sat.snapshot || incoming.lastSeq >= sat.snapshot.lastSeq) {\n        sat.lastError = null;\n        sat.snapshot = incoming;\n        broadcastSatellitesChanged();\n        broadcastSatelliteEvent(sat.id, 'snapshot', msg.payload);\n      }\n      break;\n    }\n\n",
+  "protocolVersion": 2,
+  "erasure": "Remove exactly one type-only assertion: as SatelliteSnapshot. No semantic changes."
+}

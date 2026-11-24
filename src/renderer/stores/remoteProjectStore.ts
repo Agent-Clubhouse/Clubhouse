@@ -119,7 +119,7 @@ interface RemoteProjectStoreState {
   /** Remote group project members keyed by "satelliteId::projectId" */
   remoteGroupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
 
-  /** Apply a satellite snapshot to the store. */
+  /** Apply a full snapshot; undeclared run states keep the legacy wake guard. Cached updates use their delta API. */
   applySatelliteSnapshot: (satelliteId: string, satelliteName: string, snapshot: SatelliteSnapshot) => void;
 
   /** Reconcile cached source changes without replaying unchanged live projection fields. */
@@ -379,6 +379,9 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   remoteGroupProjectMembers: {},
 
   applySatelliteSnapshot: (satelliteId, satelliteName, snapshot) => {
+    // A declaration belongs to this payload only; never remember it as a host capability.
+    const marker = Object.getOwnPropertyDescriptor(snapshot, 'agentRunStateVersion');
+    const currentRunStates = typeof marker?.value === 'number' && marker.value === 1;
     const projected = projectSnapshot(satelliteId, satelliteName, snapshot);
     const projects = projected.satelliteProjects[satelliteId];
     const newAgents = projected.remoteAgents;
@@ -415,12 +418,13 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         if (key.startsWith(prefix)) delete filteredAgentIcons[key];
       }
 
-      // Preserve "running" status for agents the controller already
-      // knows are running — a snapshot built concurrently with the
-      // wake may still report "sleeping".
-      for (const [nsId, agent] of Object.entries(newAgents)) {
-        if (agent.status === 'sleeping' && runningAgentIds.has(nsId)) {
-          newAgents[nsId] = { ...agent, status: 'running' };
+      // Legacy hosts can capture sleeping before a later wake and finish the build afterward.
+      // Preserve their existing protection; only declared atomic frames replace run state outright.
+      if (!currentRunStates) {
+        for (const [nsId, agent] of Object.entries(newAgents)) {
+          if (agent.status === 'sleeping' && runningAgentIds.has(nsId)) {
+            newAgents[nsId] = { ...agent, status: 'running' };
+          }
         }
       }
 
