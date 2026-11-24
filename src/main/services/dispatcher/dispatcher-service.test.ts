@@ -74,6 +74,11 @@ function fakeProvider(id: string, file: string, conventions?: { configDir: strin
       await fs.promises.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
       await fs.promises.writeFile(path.join(dir, file), content);
     }),
+    replaceInstructionsIfUnchanged: vi.fn(async (dir: string, expected: string, content: string) => {
+      if (await fs.promises.readFile(path.join(dir, file), 'utf-8') !== expected) return false;
+      await fs.promises.writeFile(path.join(dir, file), content);
+      return true;
+    }),
   };
 }
 const providers = vi.hoisted(() => ({ list: [] as Array<ReturnType<typeof fakeProvider>> }));

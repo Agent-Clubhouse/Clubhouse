@@ -198,6 +198,44 @@ export abstract class BaseProvider implements OrchestratorProvider {
     await fsp.writeFile(filePath, content, 'utf-8');
   }
 
+  /**
+   * Replace the primary instructions file only if it is still the regular file
+   * whose text was `expected`: never through a symlink, and never over an edit
+   * made since the read. The new text goes to a temporary file in the same
+   * folder and is renamed over it, so a reader sees the old file or the new one.
+   * Returns false, writing nothing, when the file is not as expected.
+   */
+  async replaceInstructionsIfUnchanged(worktreePath: string, expected: string, content: string): Promise<boolean> {
+    const filePath = this.getInstructionsPath(worktreePath);
+    const before = await fsp.lstat(filePath);
+    if (!before.isFile() || before.isSymbolicLink()) return false;
+    const file = await fsp.open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    let current: string;
+    try {
+      const opened = await file.stat();
+      if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) return false;
+      current = await file.readFile('utf-8');
+    } finally { await file.close(); }
+    if (current !== expected) return false;
+
+    const temp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      await fsp.writeFile(temp, content, { encoding: 'utf-8', flag: 'wx', mode: before.mode & 0o777 });
+      // Changed or swapped while the new text was being written: leave it.
+      const after = await fsp.lstat(filePath);
+      if (!after.isFile() || after.isSymbolicLink() || after.dev !== before.dev || after.ino !== before.ino
+        || after.mtimeMs !== before.mtimeMs || after.size !== before.size) {
+        await fsp.rm(temp, { force: true });
+        return false;
+      }
+      await fsp.rename(temp, filePath);
+      return true;
+    } catch (err) {
+      await fsp.rm(temp, { force: true }).catch(() => undefined);
+      throw err;
+    }
+  }
+
   /** Model options for the pickers: listModels without hidden models, as `{ id, label }`. */
   async getModelOptions(opts?: ListModelsOptions): Promise<Array<{ id: string; label: string }>> {
     const { models } = await this.listModels(opts);

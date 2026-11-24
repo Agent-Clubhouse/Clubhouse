@@ -11,8 +11,10 @@
  * What goes is the section from the heading to the end of the file: the old
  * writer put it last. The file is kept as it was, once, in
  * `.clubhouse/instruction-backups/`, so text a person added after the copy
- * isn't lost either.
+ * isn't lost either. The file is replaced only if it is still the plain file
+ * that was read, through a temporary file and a rename.
  */
+import { createHash } from 'crypto';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import type { OrchestratorProvider } from '../../orchestrators/types';
@@ -35,18 +37,24 @@ export function withoutLegacyMemoryIndex(text: string): string | null {
   return before ? `${before}${text.includes('\r\n') ? '\r\n' : '\n'}` : '';
 }
 
-/** Keep `content` under a name no earlier backup has. */
+/**
+ * Keep `content`, named by what it holds, so the same text is kept once however
+ * many starts find it (a write that keeps failing doesn't add a backup each time).
+ * An earlier backup is never overwritten.
+ */
 async function keepBackup(dir: string, providerId: string, content: string): Promise<void> {
   const folder = path.join(dir, '.clubhouse', 'instruction-backups');
   await fsp.mkdir(folder, { recursive: true });
-  const stamp = Date.now();
+  const hash = createHash('sha256').update(content, 'utf-8').digest('hex').slice(0, 16);
   for (let n = 0; n < 100; n++) {
-    const name = `${providerId}-instructions-${stamp}${n === 0 ? '' : `-${n}`}.md`;
+    const file = path.join(folder, `${providerId}-instructions-${hash}${n === 0 ? '' : `-${n}`}.md`);
     try {
-      await fsp.writeFile(path.join(folder, name), content, { encoding: 'utf-8', flag: 'wx' });
+      await fsp.writeFile(file, content, { encoding: 'utf-8', flag: 'wx' });
       return;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      // Already kept (the usual case), unless the name is held by something else.
+      if (await fsp.readFile(file, 'utf-8').then((kept) => kept === content, () => false)) return;
     }
   }
   throw new Error('No free backup name');
@@ -71,7 +79,11 @@ export async function removeLegacyMemoryIndexCopies(
       const cleaned = withoutLegacyMemoryIndex(text);
       if (cleaned === null) continue;
       await keepBackup(dir, provider.id, text);
-      await provider.writeInstructions(dir, cleaned);
+      if (!provider.replaceInstructionsIfUnchanged) throw new Error('This CLI cannot replace its instructions file safely.');
+      if (!await provider.replaceInstructionsIfUnchanged(dir, text, cleaned)) {
+        appLog(NS, 'info', 'An inactive CLI\'s Dispatcher instructions changed or are not a plain file; left as they are', { meta: { provider: provider.id } });
+        continue;
+      }
       appLog(NS, 'info', 'Removed an old memory index copy from an inactive CLI\'s Dispatcher instructions', {
         meta: { provider: provider.id, bytesBefore: Buffer.byteLength(text, 'utf8'), bytesAfter: Buffer.byteLength(cleaned, 'utf8') },
       });

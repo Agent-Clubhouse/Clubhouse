@@ -50,6 +50,11 @@ describe('removeLegacyMemoryIndexCopies', () => {
         fs.mkdirSync(path.dirname(path.join(d, file)), { recursive: true });
         fs.writeFileSync(path.join(d, file), content);
       }),
+      replaceInstructionsIfUnchanged: vi.fn(async (d: string, expected: string, content: string) => {
+        if (fs.readFileSync(path.join(d, file), 'utf-8') !== expected) return false;
+        fs.writeFileSync(path.join(d, file), content);
+        return true;
+      }),
     } as unknown as OrchestratorProvider;
   }
 
@@ -77,7 +82,7 @@ describe('removeLegacyMemoryIndexCopies', () => {
     const backups = fs.readdirSync(path.join(dir, '.clubhouse', 'instruction-backups')).sort();
     expect(backups).toHaveLength(2);
     for (const name of backups) expect(fs.readFileSync(path.join(dir, '.clubhouse', 'instruction-backups', name), 'utf-8')).toBe(original);
-    expect(claude.writeInstructions).not.toHaveBeenCalled();
+    expect(claude.replaceInstructionsIfUnchanged).not.toHaveBeenCalled();
   });
 
   it('keeps text a person added after the copied index, in the backup', async () => {
@@ -108,5 +113,60 @@ describe('removeLegacyMemoryIndexCopies', () => {
     expect(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf-8')).toBe(once);
     expect(fs.readdirSync(path.join(dir, '.clubhouse', 'instruction-backups'))).toHaveLength(1);
     expect(fs.existsSync(path.join(dir, 'CLAUDE.md'))).toBe(false);
+  });
+
+  it('keeps one backup however many starts find the same file, when the write keeps failing', async () => {
+    const claude = provider('claude-code', 'CLAUDE.md');
+    const codex = provider('codex-cli', 'AGENTS.md');
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), beta7File());
+    (codex.replaceInstructionsIfUnchanged as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('EACCES'));
+
+    for (let start = 0; start < 3; start++) await removeLegacyMemoryIndexCopies(dir, claude, [claude, codex]);
+
+    expect(fs.readdirSync(path.join(dir, '.clubhouse', 'instruction-backups'))).toHaveLength(1);
+    expect(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf-8')).toBe(beta7File());
+  });
+
+  it('writes nothing when the backup cannot be kept', async () => {
+    const claude = provider('claude-code', 'CLAUDE.md');
+    const codex = provider('codex-cli', 'AGENTS.md');
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), beta7File());
+    // A file where the backup folder's parent should be.
+    fs.writeFileSync(path.join(dir, '.clubhouse'), 'not a folder');
+
+    await removeLegacyMemoryIndexCopies(dir, claude, [claude, codex]);
+
+    expect(codex.replaceInstructionsIfUnchanged).not.toHaveBeenCalled();
+    expect(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf-8')).toBe(beta7File());
+  });
+
+  it('leaves the file alone, with its backup kept, when it changed since the read', async () => {
+    const claude = provider('claude-code', 'CLAUDE.md');
+    const codex = provider('codex-cli', 'AGENTS.md');
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), beta7File());
+    (codex.replaceInstructionsIfUnchanged as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+
+    await removeLegacyMemoryIndexCopies(dir, claude, [claude, codex]);
+    expect(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf-8')).toBe(beta7File());
+
+    // The next start finds it unchanged and cleans it, with no second backup of the same text.
+    await removeLegacyMemoryIndexCopies(dir, claude, [claude, codex]);
+    expect(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf-8')).not.toContain('Your memory index');
+    expect(fs.readdirSync(path.join(dir, '.clubhouse', 'instruction-backups'))).toHaveLength(1);
+  });
+
+  it('keeps a byte order mark before the text that stays, and leaves alone a file whose first line is the heading', async () => {
+    const claude = provider('claude-code', 'CLAUDE.md');
+    const codex = provider('codex-cli', 'AGENTS.md');
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), `\uFEFF${beta7File()}`);
+
+    await removeLegacyMemoryIndexCopies(dir, claude, [claude, codex]);
+    expect(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf-8')).toBe('\uFEFF# Dispatcher\n\nRole text from an older build.\n\nMY OWN RULE: never page me before 9am.\n');
+
+    // With the mark in front of the heading itself, nothing matches and nothing changes.
+    const headingFirst = `\uFEFF## Your memory index\n\nThis is \`memory/index.md\` as it was when this file was written.\n\n# Dispatcher memory\n`;
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), headingFirst);
+    await removeLegacyMemoryIndexCopies(dir, claude, [claude, codex]);
+    expect(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf-8')).toBe(headingFirst);
   });
 });
