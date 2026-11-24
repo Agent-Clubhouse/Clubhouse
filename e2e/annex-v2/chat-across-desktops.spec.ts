@@ -147,8 +147,8 @@ test('a controller reads and drives a chat agent on another desktop', async () =
   const bytes = await fs.promises.readFile(CHAT_MEDIA.png);
   await remoteView.getByTestId('chat-attach-input').setInputFiles({ name: 'remote-image.png', mimeType: 'image/png', buffer: bytes });
   await expect(remoteView.getByTestId('chat-attachment')).toHaveCount(1);
-  await remoteView.getByLabel('Message').fill('Inspect this image.');
-  await remoteView.getByLabel('Message').press('Enter');
+  await remoteView.getByRole('textbox', { name: 'Message', exact: true }).fill('Inspect this image.');
+  await remoteView.getByRole('textbox', { name: 'Message', exact: true }).press('Enter');
   await expect(footers).toHaveCount(3, { timeout: 20_000 });
   await expect(remoteView).toHaveAttribute('data-state', 'idle');
   const attachment = remoteView.getByTestId('chat-attachment-thumb');
