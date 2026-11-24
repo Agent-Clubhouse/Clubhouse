@@ -1,0 +1,64 @@
+{
+  "source": "18a907edd89f833a5956e0794c0d20ded1207d20",
+  "variants": [
+    {
+      "variant": "original",
+      "codec_sha256": "e59339f076ad73ed6da6eb282655366886fcb92323fe9530404ab25d520d267b",
+      "wall_seconds": 0.9003,
+      "deselected": 74,
+      "tests": [
+        {
+          "name": "replaces a source range while preserving adjacent text and emphasis",
+          "status": "passed",
+          "ms": 19.01070900000002
+        },
+        {
+          "name": "maps slash-token offsets through list and emphasis syntax",
+          "status": "passed",
+          "ms": 3.8686670000000163
+        }
+      ],
+      "reasons": []
+    },
+    {
+      "variant": "shift",
+      "codec_sha256": "c84932ea257975585aec997f0af3c4a3a31800f819abbc0e350d7429b44d0d43",
+      "wall_seconds": 0.8804,
+      "deselected": 74,
+      "tests": [
+        {
+          "name": "replaces a source range while preserving adjacent text and emphasis",
+          "status": "failed",
+          "ms": 19.40500000000003
+        },
+        {
+          "name": "maps slash-token offsets through list and emphasis syntax",
+          "status": "passed",
+          "ms": 3.915040999999974
+        }
+      ],
+      "reasons": [
+        "AssertionError: expected '- **hello** /compacto later' to be '- **hello** /compact later' // Object.is equality"
+      ]
+    },
+    {
+      "variant": "restored",
+      "codec_sha256": "e59339f076ad73ed6da6eb282655366886fcb92323fe9530404ab25d520d267b",
+      "wall_seconds": 0.8791,
+      "deselected": 74,
+      "tests": [
+        {
+          "name": "replaces a source range while preserving adjacent text and emphasis",
+          "status": "passed",
+          "ms": 19.24433300000004
+        },
+        {
+          "name": "maps slash-token offsets through list and emphasis syntax",
+          "status": "passed",
+          "ms": 3.8677920000000086
+        }
+      ],
+      "reasons": []
+    }
+  ]
+}

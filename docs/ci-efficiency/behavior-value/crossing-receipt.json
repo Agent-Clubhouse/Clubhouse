@@ -1,0 +1,679 @@
+{
+  "base": "f5c566f89e093f4cb9322cc59b37de7ee2798331",
+  "rows": [
+    {
+      "variant": "original",
+      "wall_seconds": 0.6964,
+      "sha256": "e59339f076ad73ed6da6eb282655366886fcb92323fe9530404ab25d520d267b",
+      "tests": [
+        {
+          "identity": "restricted prompt codec is stable for subset source \"\"",
+          "ms": 1.2121250000000146,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"plain\"",
+          "ms": 1.1483749999999873,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"  leading and trailing  \\n\\n\"",
+          "ms": 0.36350000000004457,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"**bold** and *italic*\"",
+          "ms": 1.6180410000000052,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"***both***\"",
+          "ms": 0.11841599999996788,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"- first  \\n  continuation\\n- next\"",
+          "ms": 0.3565409999999929,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"- first\\n- second\\n  * nested\\n  * next\\n- last\"",
+          "ms": 0.13145799999995234,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"7. first\\n8. second\\n   3. nested\\n9. last\"",
+          "ms": 0.11312500000002501,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"before\\n\\n* bullet\\n\\nafter\"",
+          "ms": 0.10433399999999438,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"# heading\\n## other\"",
+          "ms": 0.07041599999996606,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"```js\\n**literal**\\n- code\\n```\"",
+          "ms": 0.09395799999998644,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"~~~html\\n<div>\\n~~~\"",
+          "ms": 0.05141699999995808,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"    **indented code**\\n    a_b_c\"",
+          "ms": 0.05150000000003274,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"<b>literal</b>\\n<script>no()</script>\"",
+          "ms": 0.3024169999999913,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"[link](https://example.com)\\n![image](file.png)\"",
+          "ms": 0.2143750000000182,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"C:\\\\Users\\\\user_name\\\\file.ts\\n/dir_with_underscores/file_name\"",
+          "ms": 0.2650830000000042,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"a*b*c file_*name*\"",
+          "ms": 0.0494160000000079,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"| a | b |\\n| - | - |\"",
+          "ms": 0.033124999999984084,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"> quote\\n---\"",
+          "ms": 0.03125,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"a\\r\\nb\\r\\n\"",
+          "ms": 0.032083000000000084,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"tabs\\tand spaces  \\n\\n\"",
+          "ms": 0.04424999999997681,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"\\\\*escaped\\\\* and \\\\- item\"",
+          "ms": 0.055625000000020464,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec creates only schema-supported semantic lists and marks",
+          "ms": 0.11862500000000864,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "ms": 0.09825000000000728,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "ms": 0.11312500000002501,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec maps slash-token offsets through list and emphasis syntax",
+          "ms": 0.19254100000000562,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"C:\\\\repo\\\\.env\"",
+          "ms": 0.07116700000000264,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"C:\\\\a\\\\-b\"",
+          "ms": 0.03833300000002282,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"C:\\\\path\\\\\\\\name\\\\*glob*\"",
+          "ms": 0.051375000000007276,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"```diff\\n- old\\n+ **Note**\\n```\"",
+          "ms": 0.1052090000000021,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"`- old **Note**`\"",
+          "ms": 0.07962500000002137,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"    - code\\n    **Note**\"",
+          "ms": 0.08012500000000955,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "leaves four-space list-looking code literal",
+          "ms": 0.06295800000003737,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "uses parent marker widths for nesting and continuation, compatible with marked",
+          "ms": 11.993415999999968,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "ms": 53.16316699999999,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "property: arbitrary crossing marks serialize without added literal asterisks or altered text",
+          "ms": 75.37712499999998,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[2,\"a\"],[3,\"b\"],[1,\"c\"]]",
+          "ms": 0.21608299999996916,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[1,\"a\"],[3,\"b\"],[2,\"c\"]]",
+          "ms": 0.08258299999999963,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[2,\"a\"],[3,\"b\"]]",
+          "ms": 0.06641700000000128,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[3,\"a\"],[2,\"b\"]]",
+          "ms": 0.06758300000001327,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[0,\"prefix\"],[1,\"word\"],[0,\"suffix\"]]",
+          "ms": 0.05516600000004246,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[0,\"\\\"\"],[2,\"word \"],[0,\"\\\"\"]]",
+          "ms": 0.055041999999957625,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[2,\"one \"],[3,\"two \"],[1,\"three\"]]",
+          "ms": 0.06883300000004056,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps paths, URLs, globs and intraword markers literal: src/*foo*/x",
+          "ms": 0.08100000000001728,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps paths, URLs, globs and intraword markers literal: file_*name*",
+          "ms": 0.04233299999998508,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps paths, URLs, globs and intraword markers literal: http://x/*a*/b",
+          "ms": 0.03962500000000091,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps paths, URLs, globs and intraword markers literal: /path/**glob**/name",
+          "ms": 0.03912500000001273,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps paths, URLs, globs and intraword markers literal: foo*bar*baz",
+          "ms": 0.04424999999997681,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "drops intraword italic that cannot honestly round-trip with the parser boundary rule",
+          "ms": 0.05658300000004601,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "ms": 0.07541699999995899,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "ms": 0.04574999999999818,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "ms": 0.04095799999998917,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"- a\\n* b\"",
+          "ms": 0.03999999999996362,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "ms": 0.0710409999999797,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "ms": 0.06670800000000554,
+          "status": "passed",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "variant": "first_render",
+      "wall_seconds": 0.6345,
+      "sha256": "d0f4b48062a4f758a36dccaf2a4232b15024ed53ba8bc9c0530a134ecd4849c6",
+      "tests": [
+        {
+          "identity": "restricted prompt codec is stable for subset source \"\"",
+          "ms": 1.2323339999999803,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"plain\"",
+          "ms": 1.1350830000000087,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"  leading and trailing  \\n\\n\"",
+          "ms": 0.32541700000001583,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"**bold** and *italic*\"",
+          "ms": 1.6746669999999995,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"***both***\"",
+          "ms": 0.13570799999996552,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"- first  \\n  continuation\\n- next\"",
+          "ms": 0.35058399999996936,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"- first\\n- second\\n  * nested\\n  * next\\n- last\"",
+          "ms": 0.14433300000001736,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"7. first\\n8. second\\n   3. nested\\n9. last\"",
+          "ms": 0.12816700000001902,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec is stable for subset source \"before\\n\\n* bullet\\n\\nafter\"",
+          "ms": 0.10870799999997871,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"# heading\\n## other\"",
+          "ms": 0.07158300000003237,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"```js\\n**literal**\\n- code\\n```\"",
+          "ms": 0.08991600000001654,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"~~~html\\n<div>\\n~~~\"",
+          "ms": 0.05945800000000645,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"    **indented code**\\n    a_b_c\"",
+          "ms": 0.050707999999985987,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"<b>literal</b>\\n<script>no()</script>\"",
+          "ms": 0.29854199999999764,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"[link](https://example.com)\\n![image](file.png)\"",
+          "ms": 0.2037920000000213,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"C:\\\\Users\\\\user_name\\\\file.ts\\n/dir_with_underscores/file_name\"",
+          "ms": 0.252791000000002,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"a*b*c file_*name*\"",
+          "ms": 0.049666000000001986,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"| a | b |\\n| - | - |\"",
+          "ms": 0.03249999999997044,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"> quote\\n---\"",
+          "ms": 0.03100000000000591,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"a\\r\\nb\\r\\n\"",
+          "ms": 0.031084000000021206,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"tabs\\tand spaces  \\n\\n\"",
+          "ms": 0.037499999999965894,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec preserves non-subset bytes \"\\\\*escaped\\\\* and \\\\- item\"",
+          "ms": 0.05249999999995225,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec creates only schema-supported semantic lists and marks",
+          "ms": 0.11770899999999074,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "ms": 0.09904100000005656,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "ms": 0.11187499999999773,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restricted prompt codec maps slash-token offsets through list and emphasis syntax",
+          "ms": 0.19558299999999917,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"C:\\\\repo\\\\.env\"",
+          "ms": 0.06820900000002439,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"C:\\\\a\\\\-b\"",
+          "ms": 0.0342080000000351,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"C:\\\\path\\\\\\\\name\\\\*glob*\"",
+          "ms": 0.042083999999988464,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"```diff\\n- old\\n+ **Note**\\n```\"",
+          "ms": 0.050208999999995285,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"`- old **Note**`\"",
+          "ms": 0.05512500000003229,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "preserves edited source without cached source attributes: \"    - code\\n    **Note**\"",
+          "ms": 0.03541699999999537,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "leaves four-space list-looking code literal",
+          "ms": 0.04837500000002137,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "uses parent marker widths for nesting and continuation, compatible with marked",
+          "ms": 11.968082999999979,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "ms": 43.78362499999997,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "property: arbitrary crossing marks serialize without added literal asterisks or altered text",
+          "ms": 5.070375000000013,
+          "status": "failed",
+          "reason": "AssertionError: arbitrary sample 1:  ***beta**** 'word'****intraword****tail ****alpha****alpha****\"quote\"***: expected ' beta* \\'word\\'intrawordtail alphaalp\u2026' to be ' beta \\'word\\'intrawordtail alphaalph\u2026' // Object.is equality"
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[2,\"a\"],[3,\"b\"],[1,\"c\"]]",
+          "ms": 0.5440409999999929,
+          "status": "failed",
+          "reason": "AssertionError: expected '**ab**c' to be 'abc' // Object.is equality"
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[1,\"a\"],[3,\"b\"],[2,\"c\"]]",
+          "ms": 0.29587500000002365,
+          "status": "failed",
+          "reason": "AssertionError: expected 'a***b*c**' to be 'abc' // Object.is equality"
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[2,\"a\"],[3,\"b\"]]",
+          "ms": 0.3129999999999882,
+          "status": "failed",
+          "reason": "AssertionError: expected 'a*b*' to be 'ab' // Object.is equality"
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[3,\"a\"],[2,\"b\"]]",
+          "ms": 0.15054100000003245,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[0,\"prefix\"],[1,\"word\"],[0,\"suffix\"]]",
+          "ms": 0.3251250000000141,
+          "status": "failed",
+          "reason": "AssertionError: expected 'prefix*word*suffix' to be 'prefixwordsuffix' // Object.is equality"
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[0,\"\\\"\"],[2,\"word \"],[0,\"\\\"\"]]",
+          "ms": 0.32533300000000054,
+          "status": "failed",
+          "reason": "AssertionError: expected '\"**word** \"' to be '\"word \"' // Object.is equality"
+        },
+        {
+          "identity": "keeps targeted crossing/adjacent/whitespace text clean: [[2,\"one \"],[3,\"two \"],[1,\"three\"]]",
+          "ms": 0.31575000000003683,
+          "status": "failed",
+          "reason": "AssertionError: expected 'one two* three*' to be 'one two three' // Object.is equality"
+        },
+        {
+          "identity": "keeps paths, URLs, globs and intraword markers literal: src/*foo*/x",
+          "ms": 0.078583999999978,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps paths, URLs, globs and intraword markers literal: file_*name*",
+          "ms": 0.05237500000004047,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps paths, URLs, globs and intraword markers literal: http://x/*a*/b",
+          "ms": 0.05299999999999727,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps paths, URLs, globs and intraword markers literal: /path/**glob**/name",
+          "ms": 0.0594159999999988,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "keeps paths, URLs, globs and intraword markers literal: foo*bar*baz",
+          "ms": 0.04979100000002745,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "drops intraword italic that cannot honestly round-trip with the parser boundary rule",
+          "ms": 0.14662500000002865,
+          "status": "failed",
+          "reason": "AssertionError: expected 'foo*bar*baz' to be 'foobarbaz' // Object.is equality"
+        },
+        {
+          "identity": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "ms": 0.10262499999998909,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "ms": 0.058457999999973254,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "ms": 0.06387499999999591,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"- a\\n* b\"",
+          "ms": 0.053625000000010914,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "ms": 0.08562499999999318,
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "identity": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "ms": 0.08104200000002493,
+          "status": "passed",
+          "reason": null
+        }
+      ]
+    }
+  ]
+}

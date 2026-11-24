@@ -12,8 +12,7 @@ from pathlib import Path
 import platform
 import subprocess
 import sys
-import tarfile
-import tempfile
+from probe_tree import source_tree
 import time
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -88,19 +87,7 @@ def main():
     expected = {CHAT + name for name in [*PRODUCTION, *SUITES, 'prompt-editor.testing.ts']}
     if set(git('diff', '--name-only', PARENT, FIX).decode().splitlines()) != expected:
         raise ValueError('Historical diff differs from the audited seven files')
-    with tempfile.TemporaryDirectory(prefix='codec-history-') as directory:
-        tree = Path(directory)
-        archive = tree / 'source.tar'
-        with archive.open('wb') as out:
-            subprocess.run(['git', 'archive', FIX, 'src', 'test', 'scripts', 'vitest.config.ts',
-                            'package.json', 'package-lock.json', 'tsconfig.json'], cwd=ROOT,
-                           stdout=out, check=True)
-        with tarfile.open(archive) as source:
-            for member in source:
-                if member.isfile() or member.isdir():
-                    source.extract(member, tree)
-        archive.unlink()
-        (tree / 'node_modules').symlink_to(modules, target_is_directory=True)
+    with source_tree(ROOT, FIX, modules) as tree:
         inputs = [CHAT + n for n in [*SUITES, 'prompt-editor.testing.ts']]
         inputs += ['test/setup-renderer.ts', 'vitest.config.ts', 'package-lock.json']
         receipt = {'historical_parent': PARENT, 'historical_fix': FIX,
