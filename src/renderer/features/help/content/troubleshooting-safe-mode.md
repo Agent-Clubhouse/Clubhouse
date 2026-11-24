@@ -29,7 +29,7 @@ The dialog lists plugins that were enabled at the time of the last crash.
 
 Deletes the `.clubhouse/` directory for a project — all agent definitions, skills, templates, and plugin config are removed. Source code is unaffected.
 
-**Project Settings > Danger Zone > Reset Project**
+**Project Settings > General > Remove Project > Reset Project**
 
 Use as a last resort when project configuration is corrupted.
 

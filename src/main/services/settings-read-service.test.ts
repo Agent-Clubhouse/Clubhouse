@@ -604,6 +604,18 @@ describe('values and sources', () => {
     expect(project?.settings['project.defaults.persona']).toEqual({ stored: null, effective: null, source: 'default' });
   });
 
+  it('reads the retired project free agent default as null, keeping the key and leaving live fields alone (#3245)', async () => {
+    writeProjectSettings(one, { orchestrator: 'codex-cli', agentDefaults: { freeAgentMode: true, sourceControlProvider: 'azure-devops' } });
+    const listed = (await listSettings(ordinary())).sections.find((s) => s.section === 'project.defaults');
+    expect(listed?.keys).toContain('project.defaults.free_agent_mode');
+    const project = (await read(ordinary(), { select: ['project.defaults'], detail: true })).targets.find((t) => t.target === 'project');
+    expect(project?.settings).toMatchObject({
+      'project.defaults.free_agent_mode': { stored: null, effective: null, source: 'default' },
+      'project.defaults.orchestrator': { stored: 'codex-cli', effective: 'codex-cli', source: 'project' },
+      'project.defaults.source_control_provider': { stored: 'azure-devops', effective: 'azure-devops', source: 'project' },
+    });
+  });
+
   it('reads a removed provider profile id as null, keeping the key (#2749)', async () => {
     writeProjectSettings(one, { agentDefaults: { profileId: 'work' } });
     const project = (await read(ordinary(), { select: ['project.defaults.profile_id'], detail: true })).targets.find((t) => t.target === 'project');
