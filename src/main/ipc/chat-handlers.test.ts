@@ -10,6 +10,7 @@ const runtime = vi.hoisted(() => ({
   caps: undefined as unknown,
   sendMessage: vi.fn(async () => ({ delivery: 'prompt', messageId: 'm1' })),
   setModel: vi.fn(async () => {}),
+  setEffort: vi.fn(async () => {}),
   clearContext: vi.fn(async () => {}),
   compact: vi.fn(async () => {}),
   removeQueued: vi.fn(async (ids?: readonly string[]) => [...(ids ?? ['all'])]),
@@ -235,6 +236,22 @@ describe('chat handlers: set model (#2136)', () => {
   });
 });
 
+
+describe('chat handlers: set effort alone (#3797 gate 3)', () => {
+  it('passes the effort through, and null for the default', async () => {
+    await call(IPC.CHAT.SET_EFFORT, 'agent-1', 'high');
+    await call(IPC.CHAT.SET_EFFORT, 'agent-1', null);
+    expect(runtime.setEffort.mock.calls).toEqual([['high'], [null]]);
+    expect(runtime.setModel).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing or malformed effort', async () => {
+    await expect(call(IPC.CHAT.SET_EFFORT, 'agent-1')).rejects.toThrow();
+    await expect(call(IPC.CHAT.SET_EFFORT, 'agent-1', '')).rejects.toThrow();
+    await expect(call(IPC.CHAT.SET_EFFORT, 'agent-1', 3)).rejects.toThrow();
+    expect(runtime.setEffort).not.toHaveBeenCalled();
+  });
+});
 
 describe('chat handlers: queue editing (#2413)', () => {
   it('removes queued messages by id, or all of them with no ids', async () => {

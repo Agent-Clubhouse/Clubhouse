@@ -248,3 +248,40 @@ describe('without claims or policy (unchanged)', () => {
     expect(err).not.toHaveProperty('needsLogin');
   });
 });
+
+describe('effort without a model choice (gate 3)', () => {
+  const THINKING: SessionConfigOption = {
+    id: 'thinking', name: 'Thinking', category: 'thought_level', type: 'select', currentValue: 'low',
+    options: [{ value: 'low', name: 'Low' }, { value: 'high', name: 'High' }],
+  };
+
+  it('reports the effort in session_info when there is no model id, and changes it alone', async () => {
+    const { session, agent, of } = await open(BASE, { configOptions: [THINKING] });
+    await tick();
+    expect(of('session_info')[0].data).toMatchObject({ model: null, models: [], efforts: ['low', 'high'], effort: 'low' });
+    await session.setEffort!('high');
+    expect(agent.sentRequests('session/set_config_option')).toEqual([{ sessionId: 'session-1', configId: 'thinking', value: 'high' }]);
+    await tick();
+    expect(of('session_info').at(-1)?.data).toEqual({ effort: 'high' });
+    expect(of('model_changed')).toEqual([]);
+  });
+
+  it('refuses an effort it does not offer, null, and a session without effort', async () => {
+    const { session, agent } = await open(BASE, { configOptions: [THINKING] });
+    await expect(session.setEffort!('max')).rejects.toThrow(/doesn't offer effort "max"/);
+    await expect(session.setEffort!(null)).rejects.toThrow(/default/);
+    expect(agent.sentRequests('session/set_config_option')).toEqual([]);
+    const bare = await open(BASE);
+    await expect(bare.session.setEffort!('low')).rejects.toThrow(/no effort choice/);
+  });
+
+  it('with a model option, effort changes still come as model_changed', async () => {
+    const model: SessionConfigOption = { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'm', options: [{ value: 'm', name: 'M' }] };
+    const { session, of } = await open(BASE, { configOptions: [model, THINKING] });
+    await tick();
+    expect(of('session_info')[0].data).not.toHaveProperty('effort');
+    await session.setEffort!('high');
+    await tick();
+    expect(of('model_changed').map((d) => d.data)).toEqual([{ modelId: 'm', effort: 'high' }]);
+  });
+});

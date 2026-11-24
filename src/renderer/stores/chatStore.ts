@@ -655,6 +655,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         // Picker lists: present replaces (empty clears), absent leaves unchanged.
         models: d.models ?? state.models,
         efforts: d.efforts ?? state.efforts,
+        // Effort reported without a model id (an agent with no model choice).
+        ...(d.effort !== undefined && { effort: d.effort, effortIsDefault: false, effortReported: true }),
         levelNames: d.levelNames ?? state.levelNames,
         mcpServers: d.mcpServers ?? state.mcpServers,
         providerSkills: d.providerSkills !== undefined
@@ -1082,6 +1084,8 @@ interface ChatStoreState {
   answerQuestion: (agentId: string, requestId: string, answers: ChatQuestionAnswers) => Promise<void>;
   setLevel: (agentId: string, level: PermissionLevel) => Promise<void>;
   setModel: (agentId: string, modelId: string, effort?: string | null) => Promise<void>;
+  /** Effort alone, for an agent that offers no model choice. */
+  setEffort: (agentId: string, effort: string | null) => Promise<void>;
 }
 
 /**
@@ -1351,6 +1355,9 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     setModel: (agentId, modelId, effort) => (remoteChatTarget(agentId)
       ? remoteChat.setModel(agentId, get().agents[agentId]?.sessionId, modelId, effort)
       : window.clubhouse.chat.setModel(agentId, modelId, effort)),
+    setEffort: (agentId, effort) => (remoteChatTarget(agentId)
+      ? remoteChat.setEffort(agentId, get().agents[agentId]?.sessionId, effort)
+      : window.clubhouse.chat.setEffort(agentId, effort)),
   };
 });
 

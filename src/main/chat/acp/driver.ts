@@ -333,6 +333,8 @@ class AcpDriverSession implements ChatDriverSession {
         model: model.modelId ?? null,
         models: choices.models,
         efforts: choices.efforts,
+        // With no model id, model_changed can't carry the effort, so it goes here.
+        ...(!model.modelId && model.effort && { effort: model.effort }),
       },
     });
     for (const draft of this.heldDrafts.splice(0)) this.push(draft);
@@ -590,6 +592,15 @@ class AcpDriverSession implements ChatDriverSession {
     if (effort) await this.setConfig('thought_level', effort);
   }
 
+  /** Effort alone, for a session with a thought_level option and no model choice (gate 3). */
+  async setEffort(effort: string | null): Promise<void> {
+    if (effort === null) throw new Error("This agent can't return effort to its default");
+    const option = selectOption(this.facts.configOptions, 'thought_level');
+    if (!option) throw new Error('This agent offers no effort choice');
+    if (!flatValues(option).includes(effort)) throw new Error(`This agent doesn't offer effort "${effort}"`);
+    if (option.currentValue !== effort) await this.setConfig('thought_level', effort);
+  }
+
   /** ACP v1 has no compaction method. */
   async compact(): Promise<void> {
     throw new Error('ACP has no compaction request');
@@ -780,6 +791,8 @@ class AcpDriverSession implements ChatDriverSession {
     if (JSON.stringify(choices) !== beforeChoices) this.push({ type: 'session_info', data: { models: choices.models, efforts: choices.efforts } });
     if (after.modelId && (after.modelId !== before.modelId || after.effort !== before.effort)) {
       this.push({ type: 'model_changed', data: { modelId: after.modelId, ...(after.effort && { effort: after.effort }) } });
+    } else if (!after.modelId && after.effort !== before.effort) {
+      this.push({ type: 'session_info', data: { effort: after.effort ?? null } });
     }
   }
 
