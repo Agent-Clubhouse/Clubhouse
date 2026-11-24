@@ -988,6 +988,9 @@ function runAcp() {
     if (msg.id === undefined || msg.id === null) {
       if (msg.method === 'session/cancel') {
         state.cancels++;
+        // Recorded before the turn is answered, so a client that sees the
+        // turn end can already read the cancel in the report.
+        writeReport();
         const s = sessions.get(msg.params?.sessionId);
         if (s?.turn) {
           // "Cancelling a turn ends open tool calls and abandons pending permission requests."
