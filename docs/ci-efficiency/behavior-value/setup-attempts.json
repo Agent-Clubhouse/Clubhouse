@@ -1,0 +1,51 @@
+{
+  "description": "Two initial setup attempts before task-private cache overlay; invalid, not kills.",
+  "runs": [
+    {
+      "id": "original",
+      "mode": "baseline",
+      "omitted": null,
+      "elapsedMs": 1212.373458,
+      "exitCode": 1,
+      "outcome": "invalid",
+      "identityCheck": true,
+      "activeCount": 0,
+      "codecCount": 0,
+      "tests": [],
+      "diagnostic": "Both esbuild and oxc options were set. oxc options will be used and esbuild options will be ignored. The following esbuild options were set: `{ jsx: 'automatic' }`\nJSON report written to /var/folders/gc/njdn7vz54s7bcppxdlnpf51m0000gn/T/codec-value-Uyo1Ez/result.json\n"
+    },
+    {
+      "id": "original",
+      "mode": "baseline",
+      "omitted": null,
+      "elapsedMs": 858.110625,
+      "exitCode": 1,
+      "outcome": "invalid",
+      "identityCheck": true,
+      "activeCount": 0,
+      "codecCount": 0,
+      "tests": [],
+      "diagnostic": {
+        "output": "JSON report written to /var/folders/gc/njdn7vz54s7bcppxdlnpf51m0000gn/T/codec-value-ePlora/result.json\n",
+        "suites": [
+          {
+            "assertionResults": [],
+            "startTime": 1795486718331,
+            "endTime": 1795486718331,
+            "status": "failed",
+            "message": "Failed to resolve import \"prosemirror-model\" from \"src/renderer/features/agents/chat/prompt-codec.ts\". Does the file exist?",
+            "name": "/private/var/folders/gc/njdn7vz54s7bcppxdlnpf51m0000gn/T/codec-value-ePlora/src/renderer/features/agents/chat/behavior-witness.test.ts"
+          },
+          {
+            "assertionResults": [],
+            "startTime": 1795486718331,
+            "endTime": 1795486718331,
+            "status": "failed",
+            "message": "Failed to resolve import \"prosemirror-model\" from \"src/renderer/features/agents/chat/prompt-codec.ts\". Does the file exist?",
+            "name": "/private/var/folders/gc/njdn7vz54s7bcppxdlnpf51m0000gn/T/codec-value-ePlora/src/renderer/features/agents/chat/prompt-codec.test.ts"
+          }
+        ]
+      }
+    }
+  ]
+}

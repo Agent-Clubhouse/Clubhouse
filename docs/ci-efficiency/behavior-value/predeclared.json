@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "base": "f5c566f89e093f4cb9322cc59b37de7ee2798331",
+  "createdAt": "2026-11-24T02:20:23.346Z",
+  "runtime": {
+    "node": "v25.8.1",
+    "platform": "darwin",
+    "arch": "arm64",
+    "vitest": "4.1.12"
+  },
+  "hashes": {
+    "original": "e59339f076ad73ed6da6eb282655366886fcb92323fe9530404ab25d520d267b",
+    "baselineTests": "303b37416a23bdf88f169ca67aa022e9a6a51a3c79889994ee56331189a93b1c",
+    "stronger": "0fbd6b440f00df7cfa6e62095f37c87b995208f7ca8e8190b0e39893104b5383",
+    "runner": "9556963f3c42dbad6cb488da387c1ad04e6f132c3a35f4820a5406c6d9fe96b4"
+  },
+  "limits": {
+    "mutants": 8,
+    "subprocesses": 90,
+    "executionMs": 180000,
+    "workers": 1
+  },
+  "groups": {
+    "preservation": [
+      "is stable for subset source",
+      "preserves non-subset bytes",
+      "preserves edited source",
+      "leaves four-space",
+      "keeps paths, URLs"
+    ],
+    "structure": [
+      "creates only schema-supported",
+      "normalizes numbered",
+      "uses parent marker widths",
+      "property: normalized non-crossing"
+    ],
+    "exact": [
+      "keeps irregular numbering",
+      "restores pasted text exactly"
+    ],
+    "marks": [
+      "property: arbitrary crossing",
+      "keeps targeted crossing",
+      "drops intraword italic"
+    ],
+    "mapping": [
+      "maps slash-token offsets"
+    ]
+  },
+  "faults": [
+    {
+      "id": "exact-gate",
+      "from": "if (exact && serializePrompt",
+      "to": "if (false && serializePrompt"
+    },
+    {
+      "id": "default-exact",
+      "from": "{ exact = false }",
+      "to": "{ exact = true }"
+    },
+    {
+      "id": "dropped-marks",
+      "from": "nodes.push(promptSchema.text(text, marks));",
+      "to": "nodes.push(promptSchema.text(text));"
+    },
+    {
+      "id": "cached-position",
+      "from": "positions[pos + 1 + i] = base + offset;",
+      "to": "positions[pos + 1 + i] = base + offset + 1;"
+    },
+    {
+      "id": "boundary-tie",
+      "from": "if (delta < distance)",
+      "to": "if (delta <= distance)"
+    },
+    {
+      "id": "numbering",
+      "from": "${number++}. ",
+      "to": "${++number}. "
+    },
+    {
+      "id": "fence-literal",
+      "from": "const literal = !!fence || /^ {4}/.test(line);",
+      "to": "const literal = /^ {4}/.test(line);"
+    }
+  ]
+}

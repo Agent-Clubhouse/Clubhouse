@@ -1,0 +1,22 @@
+{
+  "overlay": "/tmp/codec-audit-VUZtL9/node_modules",
+  "packages": {
+    "vitest": "4.1.12",
+    "vite": "8.3.5",
+    "marked": "18.1.2",
+    "jsdom": "28.1.0",
+    "prosemirror-model": "1.25.13",
+    "prosemirror-schema-list": "1.6.0",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-view": "1.42.9",
+    "prosemirror-transform": "1.12.5",
+    "prosemirror-commands": "1.7.2",
+    "prosemirror-history": "1.5.1",
+    "prosemirror-inputrules": "1.6.0",
+    "prosemirror-keymap": "1.2.3",
+    "orderedmap": "2.1.1",
+    "rope-sequence": "1.3.4",
+    "w3c-keyname": "2.2.8"
+  },
+  "source": "Existing tooling plus orchestrator-provided lockfile-integrity-verified private cache overlay; no package-manager install"
+}
