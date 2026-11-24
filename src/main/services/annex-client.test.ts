@@ -502,26 +502,37 @@ describe('annex-client', () => {
       } finally { off(); }
     });
 
-    it('re-drives listeners when a direct route drops, returns or the reverse link is replaced while still reachable (#3613)', () => {
+    it('re-drives listeners when a route that dropped while the machine stayed reachable opens again (#3613)', () => {
+      // Already reachable over the reverse link since startClient.
+      expect(annexClient.canReachMachine(fingerprint)).toBe(true);
       const heard: string[] = [];
       const off = annexClient.onMachineReachable((machine) => heard.push(machine));
       try {
+        // The direct route's first opening in this reachable period tells no one again.
+        annexClient._addConnectedSatelliteForTesting(fingerprint);
+        devicesChanged();
+        expect(heard).toEqual([]);
+        // The direct socket drops mid-send; the reverse link keeps the machine reachable, and nothing opened.
+        annexClient._receiveSatelliteDisconnectForTesting(fingerprint);
+        expect(annexClient.canReachMachine(fingerprint)).toBe(true);
+        expect(heard).toEqual([]);
+        // The direct connection comes back: consumers hear it, as onSatelliteConnected told them.
         annexClient._addConnectedSatelliteForTesting(fingerprint);
         devicesChanged();
         expect(heard).toEqual([fingerprint]);
-        // The direct socket drops mid-send; the reverse link stays ready, so the machine stays reachable.
-        annexClient._receiveSatelliteDisconnectForTesting(fingerprint);
-        expect(annexClient.canReachMachine(fingerprint)).toBe(true);
-        expect(heard).toEqual([fingerprint, fingerprint]);
-        // The direct connection comes back: consumers hear it again, as onSatelliteConnected told them.
-        annexClient._addConnectedSatelliteForTesting(fingerprint);
         devicesChanged();
-        expect(heard).toEqual([fingerprint, fingerprint, fingerprint]);
-        devicesChanged();
-        expect(heard).toHaveLength(3);
+        expect(heard).toHaveLength(1);
+        // A replaced accepted link with no drop tells no one.
         epoch++;
         devicesChanged();
-        expect(heard).toHaveLength(4);
+        expect(heard).toHaveLength(1);
+        // The reverse link drops and returns while direct holds: heard once more.
+        accepted = false;
+        devicesChanged();
+        expect(heard).toHaveLength(1);
+        accepted = true;
+        devicesChanged();
+        expect(heard).toHaveLength(2);
       } finally { off(); }
     });
 
