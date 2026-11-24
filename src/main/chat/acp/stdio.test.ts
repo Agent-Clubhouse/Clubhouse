@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as path from 'path';
 import type { ChatDriverId } from '../../../shared/chat/capabilities';
 import type { ChatEventDraft } from '../../../shared/chat/events';
@@ -39,6 +39,22 @@ describe('ACP over stdio', () => {
     const drafts = await collect(session.events, () => false);
     expect(drafts.map((d) => d.type)).toEqual(['session_info', 'turn_started', 'error']);
     expect(drafts[2].data).toMatchObject({ code: 'process_exited', fatal: true, message: expect.stringContaining('code 3') });
+  }, 20_000);
+
+  it('ends the session when the agent stops reading stdin: no false acceptance, nothing left pending, no resend', async () => {
+    const session = await driver.start({ agentId: 'a', provider: 'acp-test', cwd: __dirname, binaryPath: process.execPath, level: 'ask' });
+    await session.send([{ type: 'text', text: 'stop-reading' }], 'prompt');
+    const drafts: ChatEventDraft[] = [];
+    const ended = (async () => { for await (const d of session.events) drafts.push(d); })();
+    await vi.waitFor(() => expect(drafts.some((d) => d.type === 'agent_message_chunk')).toBe(true), { timeout: 5_000 });
+    // The agent's stdin is closed while it still runs. session/cancel hits the closed pipe.
+    await session.interrupt();
+    await ended;
+    expect(drafts.map((d) => d.type)).toEqual(['session_info', 'turn_started', 'agent_message_chunk', 'error']);
+    expect(drafts[3].data).toMatchObject({ code: 'process_exited', fatal: true, message: expect.stringContaining('unknown') });
+    // Not accepted and not resent: a later send is refused locally.
+    await expect(session.send([{ type: 'text', text: 'again' }], 'prompt')).rejects.toThrow(/not open/);
+    await session.close();
   }, 20_000);
 
   it('reports a binary that cannot start', async () => {
