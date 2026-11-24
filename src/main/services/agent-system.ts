@@ -831,7 +831,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           beforeCreate: p.beforeCreate,
           ...(quickRun && { observeStarted: (runtime: NonNullable<ReturnType<typeof getAgentRuntime>>) => observeQuickRuntime(() => getAgentRuntime(p.agentId) === runtime) }),
         }, provider, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
-        recordChatStart(chatStartMs, result, chatFacts, chatContext);
+        recordChatStart(chatStartMs, result, chatFacts, result === 'failed' ? { ...chatContext, noTerminalFallback: true } : chatContext);
         return result;
       } catch (err) {
         recordChatStart(chatStartMs, 'failed', chatFacts, chatContext);

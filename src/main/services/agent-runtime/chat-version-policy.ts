@@ -79,7 +79,7 @@ export const TESTED_CLI_VERSIONS: Readonly<Partial<Record<ChatDriverId, CliVersi
   // a second permission approval hanging a turn 1.5.4, context usage 1.5.8, and 1.5.10 delivers
   // post-turn permission requests and stops subagents on cancel. No `testedMax`: nothing has run
   // against a real agy (#3802), so a newer version gets no note.
-  [ANTIGRAVITY_CHAT_DRIVER_ID as ChatDriverId]: { minVersion: '1.5.10' },
+  [ANTIGRAVITY_CHAT_DRIVER_ID]: { minVersion: '1.5.10' },
 };
 
 /** Known-bad versions shipped with the app. The update manifest can add more. */
