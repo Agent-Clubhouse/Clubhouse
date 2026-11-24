@@ -16,10 +16,11 @@ vi.mock('../../services/log-service', () => ({ appLog: vi.fn() }));
 import {
   addAntigravityTemplateMcpServers, antigravityWorkspaceMcpPath, awaitAuthenticatedBridge, AntigravityMcpConfigError,
   bridgeMemberText, buildAntigravityAcpBridgeServer, checkClubhouseCollisions, CREATED_SKELETON, fileReceiptStore,
-  findClubhouseCollision, insertLines, isAntigravityWorkspaceMcpPath, managedMemberText, memoryReceiptStore,
+  findClubhouseCollision, isAntigravityWorkspaceMcpPath, managedMemberText, memoryReceiptStore,
   mergeAntigravityMcpServers, mergeAntigravityWorkspaceMcp, planAntigravityAcpMcpServers, restoreAntigravityWorkspaceMcp,
-  setAntigravityReceiptStore, stripOwned, type BridgeIdentityDeps, type ReceiptStore,
+  setAntigravityReceiptStore, type BridgeIdentityDeps, type ReceiptStore,
 } from './mcp-config';
+import { emptyOwnership, insertLines, slotOf, stripOwned } from './workspace-json';
 import * as configPipeline from '../../services/config-pipeline';
 import { injectClubhouseMcp, getBridgeScriptPath } from '../../services/clubhouse-mcp/injection';
 
@@ -30,7 +31,12 @@ const OLD_BRIDGE = '/old/build/bridge/clubhouse-mcp-bridge.js';
 const USER_FILE = '﻿{\n  // my servers\n  "mcpServers": {\n    "github": { "command": "gh-mcp", "env": { "TOKEN": "${GH_TOKEN}" } }, /* keep */\n    "docs": {"serverUrl": "https://example.test/mcp", "headers": {"X-Key": "abc"}},\n  },\n  "extra": [1, 2, 3]\n}\n';
 
 describe('text primitives', () => {
-  const owned = (text: string, original = '') => ({ created: false, createdDir: false, bridge: [createHash('sha256').update(text).digest('hex')], managed: {}, container: !original.includes('mcpServers') });
+  const owned = (text: string, original = '') => ({
+    created: false, createdDir: false,
+    members: { [slotOf('mcpServers', 'clubhouse')]: [createHash('sha256').update(text).digest('hex')] },
+    containers: original.includes('mcpServers') ? [] : ['mcpServers'],
+  });
+  const all = () => true;
   const line = bridgeMemberText(BRIDGE);
 
   it.each([
@@ -41,25 +47,25 @@ describe('text primitives', () => {
     ['one-line servers', '{"mcpServers":{"a":{"command":"x"}}}'],
     ['CRLF file', '{\r\n  "mcpServers": {\r\n    "a": {"command": "x"}\r\n  }\r\n}\r\n'],
   ])('insert then owned strip restores %s byte for byte', (_label, original) => {
-    const ins = insertLines(original, [line]) as { ok: true; text: string };
+    const ins = insertLines(original, 'mcpServers', [line]) as { ok: true; text: string };
     expect(ins.ok).toBe(true);
-    expect(stripOwned(ins.text, owned(line, original), { bridge: true, managed: false })).toMatchObject({ ok: true, text: original, removedBridge: 1 });
+    expect(stripOwned(ins.text, owned(line, original), all)).toMatchObject({ ok: true, text: original, removed: [slotOf('mcpServers', 'clubhouse')] });
   });
 
   it('never matches nested values or comments that look like the line', () => {
     const lookalike = `{\n  // ${line}\n  "nested": {${line}},\n  "mcpServers": {"x": {"inner": {${line}}}}\n}`;
-    expect(stripOwned(lookalike, owned(line), { bridge: true, managed: true })).toMatchObject({ ok: true, text: lookalike, removedBridge: 0 });
+    expect(stripOwned(lookalike, owned(line), all)).toMatchObject({ ok: true, text: lookalike, removed: [] });
   });
 
   it('drops the separator before the line when it was the last member', () => {
     const text = `{"mcpServers": {\n    "x": {"command": "x"},\n    ${line}}}`;
-    const r = stripOwned(text, owned(line), { bridge: true, managed: false }) as { text: string };
+    const r = stripOwned(text, owned(line), all) as { text: string };
     expect(JSON.parse(r.text)).toEqual({ mcpServers: { x: { command: 'x' } } });
   });
 
   it('an exact-form line with no committed hash is not removed', () => {
-    const ins = insertLines(USER_FILE, [line]) as { text: string };
-    expect(stripOwned(ins.text, { created: false, createdDir: false, bridge: [], managed: {} }, { bridge: true, managed: true })).toMatchObject({ removedBridge: 0, text: ins.text });
+    const ins = insertLines(USER_FILE, 'mcpServers', [line]) as { text: string };
+    expect(stripOwned(ins.text, emptyOwnership(), all)).toMatchObject({ removed: [], text: ins.text });
   });
 });
 
@@ -163,7 +169,7 @@ describe('workspace files on disk', () => {
 
   it('crash between pending record and write: nothing is owned, the file is untouched', async () => {
     await writeUserFile();
-    await store.set(file, { committed: { created: false, createdDir: false, bridge: [], managed: {} }, pending: { txid: 't', beforeHash: null, afterHash: 'x' } });
+    await store.set(file, { committed: emptyOwnership(), pending: { txid: 't', beforeHash: null, afterHash: 'x' } });
     await mergeAntigravityWorkspaceMcp(worktree, opts());
     await restoreAntigravityWorkspaceMcp(file, opts());
     expect(await read()).toBe(USER_FILE);
@@ -175,7 +181,7 @@ describe('workspace files on disk', () => {
     const committed = await store.get(file);
     const written = await read();
     // Roll the receipt back to "pending, nothing committed", as a crash before commit leaves it.
-    await store.set(file, { committed: { ...committed!.committed, bridge: [] }, pending: { txid: 't', beforeHash: 'b', afterHash: 'a' } });
+    await store.set(file, { committed: { ...committed!.committed, members: {} }, pending: { txid: 't', beforeHash: 'b', afterHash: 'a' } });
     const err = await mergeAntigravityWorkspaceMcp(worktree, opts()).catch((e: unknown) => e);
     expect(err).toMatchObject({ code: 'collision' });
     expect(await read()).toBe(written);
@@ -184,7 +190,7 @@ describe('workspace files on disk', () => {
   });
 
   it('identical bytes created by someone else confer no ownership', async () => {
-    await writeUserFile((insertLines(USER_FILE, [bridgeMemberText(BRIDGE)]) as { text: string }).text);
+    await writeUserFile((insertLines(USER_FILE, 'mcpServers', [bridgeMemberText(BRIDGE)]) as { text: string }).text);
     const before = await read();
     await expect(mergeAntigravityWorkspaceMcp(worktree, opts())).rejects.toMatchObject({ code: 'collision' });
     expect(await restoreAntigravityWorkspaceMcp(file, opts())).toMatchObject({ repair: expect.any(String) });
@@ -300,7 +306,7 @@ describe('workspace files on disk', () => {
     });
 
     it('refuses a managed name the person already uses, even in Clubhouse\'s exact form', async () => {
-      await writeUserFile((insertLines(USER_FILE, [managedMemberText('a', A)]) as { text: string }).text);
+      await writeUserFile((insertLines(USER_FILE, 'mcpServers', [managedMemberText('a', A)]) as { text: string }).text);
       const before = await read();
       await expect(mergeAntigravityMcpServers(worktree, { a: A }, opts())).rejects.toMatchObject({ code: 'ambiguous_ownership' });
       await expect(mergeAntigravityMcpServers(worktree, { github: B }, opts())).rejects.toMatchObject({ code: 'ambiguous_ownership' });
