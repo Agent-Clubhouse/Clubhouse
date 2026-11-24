@@ -6,7 +6,7 @@ const self = Array(16).fill('aa').join(':');
 const other = Array(16).fill('bb').join(':');
 const GIB = 1024 ** 3;
 const counts = { running: 2, sleeping: 3, idleDurable: 4 };
-const providers = { 'claude-code': 'unknown', 'copilot-cli': 'available', 'codex-cli': 'limited' } as const;
+const providers = { 'claude-code': 'unknown', 'copilot-cli': 'available', 'codex-cli': 'limited', 'antigravity-cli': 'unknown' } as const;
 const online = (machine = self): OnlineHandoffCapacity => ({
   machine, online: true, lastSeen: 100, sampledAt: 100, agents: counts, load: 'low', disk: 'ample', providers, accepting_handoffs: true,
 });

@@ -1177,6 +1177,18 @@ export function getAcceptedLinkEpoch(fingerprint: string): number {
   return link && requestReady(link) ? link.requestEpoch : 0;
 }
 
+/**
+ * Whether an open control connection with that computer, in either direction,
+ * agreed to `feature` in its current hello. Read per call: a reconnect
+ * renegotiates, and a closed or unagreed link answers false.
+ */
+export function peerAgreedFeature(fingerprint: string, feature: ControlFeature): boolean {
+  return (['in', 'out'] as const).some((direction) => {
+    const link = linkFor(fingerprint, direction);
+    return !!link && !link.closed && !!link.features?.has(feature) && link.ws.readyState === WebSocket.OPEN;
+  });
+}
+
 /** Whether `request()` can reach that computer now: it opened a control connection here that agreed to `feature`. */
 export function hasReverseLink(fingerprint: string, feature: ControlFeature = 'request'): boolean {
   const link = linkFor(fingerprint, 'in');

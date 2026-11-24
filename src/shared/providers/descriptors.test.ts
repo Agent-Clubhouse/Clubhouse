@@ -46,15 +46,15 @@ describe('descriptors reproduce the former lists exactly', () => {
     expect(defaultAutoBudgetPolicy()).toEqual({ version: 1, enabled: true, reserves: { 'claude-code': 10, 'codex-cli': 10 } });
   });
 
-  it('handoff capacity keys (handoff-capacity.ts); peers check the set, not the order', () => {
-    expect(CAPACITY_PROVIDERS).toEqual(['claude-code', 'copilot-cli', 'codex-cli']);
+  it('handoff capacity keys (handoff-capacity.ts); the legacy three keep their wire order', () => {
+    expect(CAPACITY_PROVIDERS.slice(0, 3)).toEqual(['claude-code', 'copilot-cli', 'codex-cli']);
     expect([...CAPACITY_WIRE_ORDER].sort()).toEqual([...providerIdsWhere((d) => d.capacityTracked)].sort());
     const parsed = parseHandoffCapacity({
       machine: Array(32).fill('ab').join(':'), online: true, sampledAt: 1, lastSeen: null,
       agents: { running: 0, sleeping: 0, idleDurable: 0 }, load: 'low', disk: 'ample',
       providers: { 'claude-code': 'available', 'copilot-cli': 'limited', 'codex-cli': 'unknown' }, accepting_handoffs: true,
     });
-    expect(JSON.stringify(parsed.online && parsed.providers)).toBe('{"claude-code":"available","copilot-cli":"limited","codex-cli":"unknown"}');
+    expect(JSON.stringify(parsed.online && parsed.providers)).toBe('{"claude-code":"available","copilot-cli":"limited","codex-cli":"unknown","antigravity-cli":"unknown"}');
   });
 
   it('display strings per surface', () => {
@@ -125,9 +125,9 @@ describe('Antigravity descriptor', () => {
     expect(PRESET_PROVIDERS).not.toContain('antigravity-cli');
   });
 
-  it('has its reviewed telemetry value, and stays out of capacity until a peer-compatible wire change', () => {
+  it('has its reviewed telemetry value, and is capacity-tracked behind the capacity-providers feature', () => {
     expect(d.telemetryCode).toBe('antigravity-cli');
-    expect(CAPACITY_PROVIDERS).not.toContain('antigravity-cli');
+    expect(CAPACITY_PROVIDERS).toContain('antigravity-cli');
     expect(AUTO_RESERVE_PROVIDERS).not.toContain('antigravity-cli');
   });
 

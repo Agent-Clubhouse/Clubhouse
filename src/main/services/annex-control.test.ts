@@ -1899,3 +1899,24 @@ it.each(['unknown', 'wrong-operation'])('P6 late cancel %s cannot alter UUID own
   targetWs.deliver({ ...transfer.start, op: 'cancel', id: 'foreign' });
   expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
 });
+
+describe('capacity-providers feature (#3799)', () => {
+  it('is agreed when both sides offer it, and read from the current link', async () => {
+    const { requesterWs } = await connected(['request', 'capacity-providers']);
+    expect(control.peerAgreedFeature(TARGET, 'capacity-providers')).toBe(true);
+    expect(control.peerAgreedFeature(REQUESTER, 'capacity-providers')).toBe(true);
+    requesterWs.close(1000);
+    await flush();
+    expect(control.peerAgreedFeature(TARGET, 'capacity-providers')).toBe(false);
+  });
+
+  it('is not agreed with an older peer that never offers it', async () => {
+    await connected(['request', 'subscribe', 'ws-control', 'bulk']);
+    expect(control.peerAgreedFeature(TARGET, 'capacity-providers')).toBe(false);
+    expect(control.peerAgreedFeature(REQUESTER, 'capacity-providers')).toBe(false);
+  });
+
+  it('is not agreed with a machine that has no link at all', () => {
+    expect(control.peerAgreedFeature(Array(32).fill('ef').join(':'), 'capacity-providers')).toBe(false);
+  });
+});
