@@ -21,9 +21,13 @@ export interface HeadlessTranscriptSummary {
   toolsUsed: string[];
   /** Number of tool calls (tool_use blocks, de-duplicated by id). */
   toolCalls: number;
-  /** Input tokens, including cache reads and cache writes. */
-  inputTokens: number;
-  outputTokens: number;
+  /**
+   * Input tokens, including cache reads and cache writes. Absent when no event
+   * reported input: a run that reported no usage is not a zero-token run.
+   */
+  inputTokens?: number;
+  /** Output tokens. Absent when no event reported them. */
+  outputTokens?: number;
 }
 
 type Rec = Record<string, unknown>;
@@ -144,14 +148,27 @@ export function extractModifiedFiles(events: unknown[]): string[] {
   return files;
 }
 
-interface Usage { input: number; output: number }
+/** Token figures; a side no event reported is absent, and a reported 0 stays 0. */
+interface Usage { input?: number; output?: number }
+
+const count = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
 
 function readUsage(usage: unknown): Usage | null {
   if (!isRec(usage)) return null;
-  return {
-    input: num(usage.input_tokens) + num(usage.cache_read_input_tokens) + num(usage.cache_creation_input_tokens),
-    output: num(usage.output_tokens),
-  };
+  const parts = [count(usage.input_tokens), count(usage.cache_read_input_tokens), count(usage.cache_creation_input_tokens)];
+  const out: Usage = {};
+  if (parts.some((p) => p !== undefined)) out.input = parts.reduce<number>((a, p) => a + (p ?? 0), 0);
+  const output = count(usage.output_tokens);
+  if (output !== undefined) out.output = output;
+  return out.input === undefined && out.output === undefined ? null : out;
+}
+
+/** Sum per side: a side is present when either addend reported it. */
+function addUsage(a: Usage, b: Usage): Usage {
+  const out: Usage = {};
+  if (a.input !== undefined || b.input !== undefined) out.input = (a.input ?? 0) + (b.input ?? 0);
+  if (a.output !== undefined || b.output !== undefined) out.output = (a.output ?? 0) + (b.output ?? 0);
+  return out;
 }
 
 /**
@@ -179,8 +196,8 @@ export function summarizeHeadlessTranscript(events: unknown[]): HeadlessTranscri
   let anonymousToolCalls = 0;
 
   const usageByMessage = new Map<string, Usage>();
-  let anonymousUsage: Usage = { input: 0, output: 0 };
-  let resultMessageUsage: Usage = { input: 0, output: 0 };
+  let anonymousUsage: Usage = {};
+  let resultMessageUsage: Usage = {};
   let sawMessageUsage = false;
   let resultTotalUsage: Usage | null = null;
 
@@ -204,10 +221,7 @@ export function summarizeHeadlessTranscript(events: unknown[]): HeadlessTranscri
       const usage = isRec(message) ? readUsage(message.usage) : null;
       if (usage) {
         sawMessageUsage = true;
-        resultMessageUsage = {
-          input: resultMessageUsage.input + usage.input,
-          output: resultMessageUsage.output + usage.output,
-        };
+        resultMessageUsage = addUsage(resultMessageUsage, usage);
       }
       const total = readUsage(event.usage);
       if (total) resultTotalUsage = total;
@@ -222,7 +236,7 @@ export function summarizeHeadlessTranscript(events: unknown[]): HeadlessTranscri
           if (typeof message.id === 'string' && message.id) {
             usageByMessage.set(message.id, usage);
           } else {
-            anonymousUsage = { input: anonymousUsage.input + usage.input, output: anonymousUsage.output + usage.output };
+            anonymousUsage = addUsage(anonymousUsage, usage);
           }
         }
       }
@@ -262,25 +276,18 @@ export function summarizeHeadlessTranscript(events: unknown[]): HeadlessTranscri
     summary = text.length > SUMMARY_FALLBACK_MAX ? text.slice(0, SUMMARY_FALLBACK_MAX - 3) + '...' : text;
   }
 
-  let inputTokens = anonymousUsage.input + resultMessageUsage.input;
-  let outputTokens = anonymousUsage.output + resultMessageUsage.output;
-  for (const usage of usageByMessage.values()) {
-    inputTokens += usage.input;
-    outputTokens += usage.output;
-  }
-  if (!sawMessageUsage && resultTotalUsage) {
-    inputTokens = resultTotalUsage.input;
-    outputTokens = resultTotalUsage.output;
-  }
+  let tokens = addUsage(anonymousUsage, resultMessageUsage);
+  for (const usage of usageByMessage.values()) tokens = addUsage(tokens, usage);
+  if (!sawMessageUsage && resultTotalUsage) tokens = resultTotalUsage;
 
   const result: HeadlessTranscriptSummary = {
     summary,
     filesModified: extractModifiedFiles(events),
     toolsUsed,
     toolCalls: toolIds.size + anonymousToolCalls,
-    inputTokens,
-    outputTokens,
   };
+  if (tokens.input !== undefined) result.inputTokens = tokens.input;
+  if (tokens.output !== undefined) result.outputTokens = tokens.output;
   if (costUsd !== undefined) result.costUsd = costUsd;
   if (durationMs !== undefined) result.durationMs = durationMs;
   return result;

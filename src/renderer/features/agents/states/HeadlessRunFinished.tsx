@@ -53,8 +53,9 @@ export function HeadlessRunFinished({ completed, onDismiss, onDelete, onRetried,
   const totals: RunTotals = {
     ...parsed,
     toolCalls: parsed.toolCalls || completed.toolCalls || 0,
-    inputTokens: parsed.inputTokens || completed.inputTokens || 0,
-    outputTokens: parsed.outputTokens || completed.outputTokens || 0,
+    // Not reported stays absent (shown as unknown); a reported 0 stays 0.
+    inputTokens: parsed.inputTokens || completed.inputTokens || (parsed.inputTokens ?? completed.inputTokens),
+    outputTokens: parsed.outputTokens || completed.outputTokens || (parsed.outputTokens ?? completed.outputTokens),
     costUsd: completed.costUsd ?? parsed.costUsd,
   };
 

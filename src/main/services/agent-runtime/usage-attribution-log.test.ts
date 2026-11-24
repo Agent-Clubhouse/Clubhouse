@@ -119,13 +119,13 @@ describe('usage attribution log', () => {
     expect(turnLines().map((l) => l.role)).toEqual(['helper', 'helper']);
   });
 
-  it('keeps the effort through a Codex server reroute, which names only the model', () => {
+  it('says unknown, not the earlier effort, after a Codex server reroute that names only the model', () => {
     start('orch');
     emit('orch', 'model_changed', { modelId: 'a', effort: 'high' });
     emit('orch', 'model_changed', { modelId: 'rerouted' });
     emit('orch', 'turn_started', {}, 't1');
     emit('orch', 'turn_ended', { stopReason: 'end_turn' }, 't1');
-    expect(turnLines()[0]).toMatchObject({ model: 'rerouted', effort: 'high' });
+    expect(turnLines()[0]).toMatchObject({ model: 'rerouted', effort: 'unknown' });
   });
 
   it('drops an earlier effort when another driver changes to a model without one', () => {

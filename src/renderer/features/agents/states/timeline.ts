@@ -64,8 +64,9 @@ export type TimelineRow = TextStep | ToolStep | ResultStep | FoldStep;
 
 export interface RunTotals {
   toolCalls: number;
-  inputTokens: number;
-  outputTokens: number;
+  /** Absent until an event reports it: a run that reported no usage is not a zero-token run. */
+  inputTokens?: number;
+  outputTokens?: number;
   costUsd?: number;
   durationMs?: number;
   summary: string | null;
@@ -88,7 +89,7 @@ interface ContentBlock {
  */
 export class TimelineBuilder {
   readonly steps: Step[] = [];
-  readonly totals: RunTotals = { toolCalls: 0, inputTokens: 0, outputTokens: 0, summary: null, resultIsError: false };
+  readonly totals: RunTotals = { toolCalls: 0, summary: null, resultIsError: false };
   /** Every event seen, including ones that make no step: a CLI whose events aren't understood is still running. */
   eventCount = 0;
   private byToolUseId = new Map<string, ToolStep>();
@@ -98,12 +99,12 @@ export class TimelineBuilder {
   private seq = 0;
   private lastAssistantText = '';
   /** Claude repeats a message's usage on every event of it: keep the latest per message id. */
-  private usageByMessage = new Map<string, [number, number]>();
-  private anonymousUsage: [number, number] = [0, 0];
+  private usageByMessage = new Map<string, Usage>();
+  private anonymousUsage: Usage = {};
   /** Codex reports per-turn usage on its result events. */
-  private resultUsage: [number, number] = [0, 0];
+  private resultUsage: Usage = {};
   /** A result event's own total, used only when nothing else reported usage. */
-  private resultTotal: [number, number] | null = null;
+  private resultTotal: Usage | null = null;
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -216,20 +217,33 @@ export class TimelineBuilder {
   private updateTokens(): void {
     let sum = add(this.anonymousUsage, this.resultUsage);
     for (const u of this.usageByMessage.values()) sum = add(sum, u);
-    if (sum[0] === 0 && sum[1] === 0 && this.resultTotal) sum = this.resultTotal;
-    this.totals.inputTokens = sum[0];
-    this.totals.outputTokens = sum[1];
+    if (sum.input === undefined && sum.output === undefined && this.resultTotal) sum = this.resultTotal;
+    if (sum.input === undefined) delete this.totals.inputTokens;
+    else this.totals.inputTokens = sum.input;
+    if (sum.output === undefined) delete this.totals.outputTokens;
+    else this.totals.outputTokens = sum.output;
   }
 }
 
-function readUsage(usage: Record<string, unknown> | undefined): [number, number] | null {
+/** Token figures; a side no event reported is absent, and a reported 0 stays 0. */
+interface Usage { input?: number; output?: number }
+
+function readUsage(usage: Record<string, unknown> | undefined): Usage | null {
   if (!usage || typeof usage !== 'object') return null;
-  const n = (k: string) => (typeof usage[k] === 'number' ? (usage[k] as number) : 0);
-  return [n('input_tokens') + n('cache_read_input_tokens') + n('cache_creation_input_tokens'), n('output_tokens')];
+  const n = (k: string) => (typeof usage[k] === 'number' && Number.isFinite(usage[k]) && (usage[k] as number) >= 0 ? (usage[k] as number) : undefined);
+  const inputs = [n('input_tokens'), n('cache_read_input_tokens'), n('cache_creation_input_tokens')];
+  const out: Usage = {};
+  if (inputs.some((v) => v !== undefined)) out.input = inputs.reduce<number>((a, v) => a + (v ?? 0), 0);
+  const output = n('output_tokens');
+  if (output !== undefined) out.output = output;
+  return out.input === undefined && out.output === undefined ? null : out;
 }
 
-function add(a: [number, number], b: [number, number]): [number, number] {
-  return [a[0] + b[0], a[1] + b[1]];
+function add(a: Usage, b: Usage): Usage {
+  const out: Usage = {};
+  if (a.input !== undefined || b.input !== undefined) out.input = (a.input ?? 0) + (b.input ?? 0);
+  if (a.output !== undefined || b.output !== undefined) out.output = (a.output ?? 0) + (b.output ?? 0);
+  return out;
 }
 
 /* ── Describing a tool step ───────────────────────────────────────── */

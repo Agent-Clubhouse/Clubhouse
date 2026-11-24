@@ -126,7 +126,7 @@ export function useRunTranscript(agentId: string, live: boolean): RunTranscript 
 }
 
 function emptyTotals(): RunTotals {
-  return { toolCalls: 0, inputTokens: 0, outputTokens: 0, summary: null, resultIsError: false };
+  return { toolCalls: 0, summary: null, resultIsError: false };
 }
 
 /** Re-render every `intervalMs` while `active`, for elapsed and relative times. */
