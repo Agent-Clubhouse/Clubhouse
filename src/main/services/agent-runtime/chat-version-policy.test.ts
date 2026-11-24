@@ -194,3 +194,38 @@ describe('remote denylist from the update manifest', () => {
     expect(store.save).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Antigravity ACP version policy (#3800)', () => {
+  const AGY = 'antigravity_acp' as Parameters<typeof evaluateCliVersion>[0];
+  const live: CliVersionPolicy = { tested: TESTED_CLI_VERSIONS, denylist: [] };
+
+  it('has a floor of 1.5.10 and no tested maximum, because nothing has run against a real agy yet', () => {
+    expect(TESTED_CLI_VERSIONS[AGY]).toEqual({ minVersion: '1.5.10' });
+  });
+
+  it('refuses versions below the floor with the version and the floor, and no fallback instruction', () => {
+    for (const v of ['1.5.0', '1.5.1', '1.5.8', '1.5.9', '1.4.12']) {
+      const verdict = evaluateCliVersion(AGY, 'antigravity-cli', `agy ${v}`, live);
+      expect(verdict.status, v).toBe('below_min');
+      expect(verdict.message).toContain(`Antigravity CLI ${v}`);
+      expect(verdict.message).toContain('1.5.10 or newer');
+      expect(verdict.message).not.toMatch(/terminal|fall ?back/i);
+    }
+  });
+
+  it('accepts the floor and anything newer without a note', () => {
+    for (const v of ['1.5.10', '1.5.13', '1.6.0', '2.0.0']) expect(evaluateCliVersion(AGY, 'antigravity-cli', v, live)).toEqual({ status: 'ok', version: v });
+  });
+
+  it('gives no verdict for an unreported version', () => {
+    expect(evaluateCliVersion(AGY, 'antigravity-cli', undefined, live)).toEqual({ status: 'unknown' });
+    expect(evaluateCliVersion(AGY, 'antigravity-cli', 'agy dev build', live)).toEqual({ status: 'unknown' });
+  });
+
+  it('leaves the other drivers\' ranges as they were', () => {
+    expect(TESTED_CLI_VERSIONS.claude_agent_sdk).toEqual({ testedMax: '2.1.316' });
+    expect(TESTED_CLI_VERSIONS.claude_stream_json).toEqual({ testedMax: '2.1.316' });
+    expect(TESTED_CLI_VERSIONS.codex_app_server).toEqual({ testedMax: '0.166.0' });
+    expect(TESTED_CLI_VERSIONS.copilot_sdk).toEqual({ minVersion: '1.0.113', testedMax: '1.0.113' });
+  });
+});

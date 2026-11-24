@@ -32,6 +32,7 @@
 import type { ChatDriverId } from '../../../shared/chat';
 import { createSettingsStore } from '../settings-store';
 import { providerDescriptor } from '../../../shared/providers/descriptors';
+import { ANTIGRAVITY_CHAT_DRIVER_ID } from '../../../shared/providers/antigravity';
 
 export interface CliVersionRange {
   /** Oldest version the driver works with. Unset when no hard floor is known. */
@@ -73,6 +74,12 @@ export const TESTED_CLI_VERSIONS: Readonly<Partial<Record<ChatDriverId, CliVersi
   // CLI 1.0.113. Deterministic boundary fixtures cover this pair and reject v3.
   // Older protocol-3 feature-probe evidence is historical, not v2 coverage.
   copilot_sdk: { minVersion: '1.0.113', testedMax: '1.0.113' },
+  // Antigravity CLI (#3800). Floor 1.5.10 from the CLI changelog, verbatim entries in
+  // docs/antigravity-version-policy.md: `agy acp` is 1.5.0, cancel and update ordering 1.5.1,
+  // a second permission approval hanging a turn 1.5.4, context usage 1.5.8, and 1.5.10 delivers
+  // post-turn permission requests and stops subagents on cancel. No `testedMax`: nothing has run
+  // against a real agy (#3802), so a newer version gets no note.
+  [ANTIGRAVITY_CHAT_DRIVER_ID]: { minVersion: '1.5.10' },
 };
 
 /** Known-bad versions shipped with the app. The update manifest can add more. */

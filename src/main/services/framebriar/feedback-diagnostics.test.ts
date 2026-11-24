@@ -466,3 +466,42 @@ describe('toDiagnosticsV1', () => {
     expect(toDiagnosticsV1(d, { status: 'queued', lines: d.lines.length }).entries).toHaveLength(d.lines.length);
   });
 });
+
+describe('Antigravity chat lines (#3800)', () => {
+  const ring = () => createDiagnosticsRing({ now: () => START, salt: Buffer.alloc(32, 3) });
+  const LOG_PATH = '/Users/somebody/.gemini/antigravity-cli/log/acp-20261123-101500.log';
+  const WINDOWS_LOG = 'C:\\Users\\somebody\\.gemini\\antigravity-cli\\log\\acp-1.log';
+
+  it('names the provider and driver as the reviewed closed words, and nothing else about Antigravity', () => {
+    expect(DIAGNOSTICS_WORDS.cli.has('antigravity-cli')).toBe(true);
+    expect(DIAGNOSTICS_WORDS.cli.has('antigravity_acp')).toBe(true);
+    const r = ring();
+    r.note({ ns: 'core:chat', level: 'info', msg: 'Starting chat agent', meta: { agentId: 'agent-1', driver: 'antigravity_acp', provider: 'antigravity-cli', model: 'gemini-secret-model', authType: 'oauth-personal', version: '1.5.13' } });
+    const { lines } = r.collect();
+    expect(lines).toHaveLength(1);
+    expect(lines[0].attrs).toEqual({ agentRef: expect.stringMatching(/^[0-9a-f]{16}$/), driver: 'antigravity_acp', provider: 'antigravity-cli' });
+  });
+
+  it('never carries a log path, a home folder or error text, only the failure word', () => {
+    const r = ring();
+    r.note({ ns: 'core:chat', level: 'error', msg: 'Chat start failed', meta: { agentId: 'agent-1', driver: 'antigravity_acp', error: new Error(`spawn agy ENOENT, see ${LOG_PATH}`) } });
+    r.note({ ns: 'core:chat', level: 'error', msg: 'Chat start failed', meta: { agentId: 'agent-1', driver: 'antigravity_acp', error: `acp failed: ${WINDOWS_LOG}`, logFile: LOG_PATH, cliVersion: '1.5.13' } });
+    r.note({ ns: 'core:chat', level: 'warn', msg: `Antigravity ACP server wrote ${LOG_PATH}`, meta: { path: LOG_PATH } });
+    const json = JSON.stringify(r.collect());
+    for (const text of ['/Users', 'somebody', '.gemini', 'antigravity-cli/log', 'acp-2026', 'C:\\\\', 'ENOENT', '1.5.13', 'logFile']) expect(json, text).not.toContain(text);
+    expect(r.collect().lines.map((l) => l.attrs)).toEqual([
+      { agentRef: expect.any(String), driver: 'antigravity_acp', failure: 'unknown' },
+      { agentRef: expect.any(String), driver: 'antigravity_acp', failure: 'unknown' },
+      undefined,
+    ]);
+  });
+
+  it('reaches the v1 report as the same words, which the SDK accepts unchanged', () => {
+    const r = ring();
+    r.note({ ns: 'core:chat', level: 'info', msg: 'Starting chat agent', meta: { agentId: 'agent-1', driver: 'antigravity_acp', provider: 'antigravity-cli' } });
+    const d = r.collect();
+    const v1 = toDiagnosticsV1(d, { status: 'queued', lines: d.lines.length });
+    expect(v1.entries[0].attrs).toMatchObject({ driver: 'antigravity_acp', provider: 'antigravity-cli' });
+    expect(normalizeDiagnostics(v1)).toEqual(v1);
+  });
+});

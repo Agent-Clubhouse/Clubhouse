@@ -31,7 +31,7 @@ export type BuiltinProviderId = (typeof BUILTIN_PROVIDER_IDS)[number];
  * The closed `clubhouse.orchestrator` telemetry values, other than `other`.
  * A new provider gets a reviewed addition here; until then it reports `other`.
  */
-export const PROVIDER_TELEMETRY_CODES = ['claude-code', 'codex-cli', 'copilot-cli'] as const;
+export const PROVIDER_TELEMETRY_CODES = ['claude-code', 'codex-cli', 'copilot-cli', ANTIGRAVITY_PROVIDER_ID] as const;
 export type ProviderTelemetryCode = (typeof PROVIDER_TELEMETRY_CODES)[number];
 
 export type ProviderRuntime = 'chat' | 'terminal';
@@ -245,7 +245,7 @@ const ANTIGRAVITY_DOCS = 'https://antigravity.google/docs';
  *   Clubhouse has evidence for yet (#3791).
  * - No presets, so Auto never considers it; the declared policy is `opt_in`
  *   (#3803), off unless a later change adds presets and an allow setting.
- * - Telemetry reports `other` until the enum addition is reviewed (#3800).
+ * - Telemetry value `antigravity-cli`, reviewed with #3800.
  * - Capacity-tracked, sent only to peers whose control link agreed to
  *   `capacity-providers`; others get the frozen legacy keys (#3799). With no
  *   quota reader its value is `unknown`.
@@ -259,7 +259,7 @@ const ANTIGRAVITY_CLI = {
   command: 'agy',
   glyph: 'A',
   badgeColor: 'indigo',
-  telemetryCode: 'other',
+  telemetryCode: ANTIGRAVITY_PROVIDER_ID,
   install: { docsUrl: `${ANTIGRAVITY_DOCS}/getting-started/` },
   access: {
     chat: ['plan', 'ask', 'auto_edit', 'full_access'],
