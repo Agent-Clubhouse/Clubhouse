@@ -164,7 +164,8 @@ describe('workspace files on disk', () => {
     expect(await read()).toBe(USER_FILE);
     const receipts = await fsp.readFile(path.join(tmp, 'userData', 'receipts.json'), 'utf-8');
     expect(receipts).not.toContain('gh-mcp');
-    expect((fs.statSync(path.join(tmp, 'userData', 'receipts.json')).mode & 0o077)).toBe(0);
+    // Permission bits are POSIX-only; Windows reports them as 0o666.
+    if (process.platform !== 'win32') expect((fs.statSync(path.join(tmp, 'userData', 'receipts.json')).mode & 0o077)).toBe(0);
   });
 
   it('crash between pending record and write: nothing is owned, the file is untouched', async () => {

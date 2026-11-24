@@ -330,7 +330,8 @@ describe('receipt store (QA B1)', () => {
     await Promise.all(trees.map((wt) => removeOwnedMember(wt, REL, HOOK, opts())));
     for (const wt of trees) expect(await fsp.readFile(path.join(wt, REL), 'utf-8')).toBe(USER_HOOKS);
     expect(JSON.parse(await fsp.readFile(storeFile, 'utf-8'))).toEqual({});
-    expect(fs.statSync(storeFile).mode & 0o077).toBe(0);
+    // Permission bits are POSIX-only; Windows reports them as 0o666.
+    if (process.platform !== 'win32') expect(fs.statSync(storeFile).mode & 0o077).toBe(0);
   });
 
   it('a malformed store entry refuses rather than being trusted', async () => {
