@@ -84,7 +84,7 @@ these chat events. The contract is in `src/shared/chat/events.ts`
 
 | Driver | Turn figure | Running total | Source |
 | --- | --- | --- | --- |
-| Claude Agent SDK, stream-json | Result `usage` (main loop) | Per-model totals | `provider_turn` |
+| Claude Agent SDK, stream-json | Result `usage` (main loop, `scope: main` only when the driver has measured coverage, else `unscoped`) | Per-model totals | `provider_turn` |
 | Codex app-server | Difference of `thread/tokenUsage/updated` totals | Per thread | `cumulative_delta` |
 | Copilot SDK | Sum of `assistant.usage` calls | Sum over the session | `summed_calls` |
 | ACP (provider-neutral) | None in the pinned schema | None (context and cost only) | `unknown`, `completeness: none` |

@@ -49,12 +49,12 @@ describe('usage contract across providers', () => {
     session('claude_agent_sdk');
     const t = { input: 1200, cachedInput: 1000, cacheWrite: 50, output: 40 };
     feed([
-      { type: 'turn_started', data: { trigger: 'immediate' } },
+      { type: 'turn_started', data: { trigger: 'prompt' } },
       { type: 'usage', data: { scope: 'turn', coverage: 'main', tokens: t, costUsd: 0.01, costIsEstimate: true } },
       { type: 'usage', data: { scope: 'session', coverage: 'inclusive', tokens: { input: 5000, output: 400 }, costUsd: 0.2 } },
       { type: 'turn_ended', data: { stopReason: 'end_turn', usage: t, costUsd: 0.01 } },
     ], 't1');
-    feed([{ type: 'session_ended', data: { reason: 'exited' } }]);
+    feed([{ type: 'session_ended', data: { reason: 'stopped' } }]);
     expect(turns()).toEqual([expect.objectContaining({ source: 'provider_turn', scope: 'main', completeness: 'complete', ...t })]);
     // No reasoning figure from Claude: absent, not zero.
     expect(turns()[0]).not.toHaveProperty('reasoning');
@@ -73,7 +73,7 @@ describe('usage contract across providers', () => {
     feed(update(breakdown(10_000, 8_000, 500, 100), breakdown(1_000, 800, 50, 10)), 't1');
     feed(update(breakdown(12_000, 9_500, 600, 120), breakdown(2_000, 1_500, 100, 20)), 't1');
     feed(mapper.mapNotification({ method: 'turn/completed', params: { threadId: 'th', turn: { id: 'n1', status: 'completed', error: null, items: [] } } } as never), 't1');
-    feed([{ type: 'session_ended', data: { reason: 'exited' } }]);
+    feed([{ type: 'session_ended', data: { reason: 'stopped' } }]);
     expect(turns()).toEqual([expect.objectContaining({ source: 'cumulative_delta', scope: 'unscoped', input: 3_000, cachedInput: 2_300, output: 150, reasoning: 30 })]);
     expect(finals()).toEqual([expect.objectContaining({ baseline: 'lifetime', input: 12_000, dedup: 'thread_cumulative' })]);
   });
@@ -82,7 +82,7 @@ describe('usage contract across providers', () => {
     session('copilot_sdk');
     const usage = { input: 300, cachedInput: 100, output: 20 };
     feed([
-      { type: 'turn_started', data: { trigger: 'immediate' } },
+      { type: 'turn_started', data: { trigger: 'prompt' } },
       { type: 'usage', data: { scope: 'turn', coverage: 'inclusive', tokens: usage } },
       { type: 'usage', data: { scope: 'session', coverage: 'inclusive', tokens: usage } },
       { type: 'turn_ended', data: { stopReason: 'end_turn', usage } },
@@ -93,11 +93,11 @@ describe('usage contract across providers', () => {
   it('ACP: context and cost only make no token figures, and an undeclared driver claims no source', () => {
     session('antigravity_acp');
     const mapper = new AcpUpdateMapper('antigravity_acp' as ChatDriverId);
-    feed([{ type: 'turn_started', data: { trigger: 'immediate' } }], 't1');
+    feed([{ type: 'turn_started', data: { trigger: 'prompt' } }], 't1');
     feed(mapper.map({ sessionUpdate: 'usage_update', used: 52_000, size: 200_000, cost: { amount: 0.5, currency: 'USD' } }).drafts, 't1');
     // What the ACP driver pushes at the end of a prompt: no usage.
     feed([{ type: 'turn_ended', data: { stopReason: 'end_turn', durationMs: 10 } }], 't1');
-    feed([{ type: 'session_ended', data: { reason: 'exited' } }]);
+    feed([{ type: 'session_ended', data: { reason: 'stopped' } }]);
     const [turn] = turns();
     expect(turn).toMatchObject({ source: 'unknown', completeness: 'none' });
     for (const k of FIGURES) expect(turn).not.toHaveProperty(k);
@@ -107,11 +107,11 @@ describe('usage contract across providers', () => {
   it('a new adapter that declares its source is believed; one that reports figures without it is unknown', () => {
     session('future_driver');
     feed([
-      { type: 'turn_started', data: { trigger: 'immediate' } },
+      { type: 'turn_started', data: { trigger: 'prompt' } },
       { type: 'turn_ended', data: { stopReason: 'end_turn', usage: { input: 10, output: 2 }, usageSource: 'cumulative_delta' } },
     ], 't1');
     feed([
-      { type: 'turn_started', data: { trigger: 'immediate' } },
+      { type: 'turn_started', data: { trigger: 'prompt' } },
       { type: 'turn_ended', data: { stopReason: 'end_turn', usage: { input: 10, output: 2 } } },
     ], 't2');
     expect(turns().map((t) => t.source)).toEqual(['cumulative_delta', 'unknown']);
@@ -123,7 +123,7 @@ describe('usage contract across providers', () => {
       _setUsageAttributionDepsForTesting({ agentInfo: () => ({ role: 'agent' }), log: (msg, meta) => lines.push({ msg, meta }), now: () => 0 });
       lines = [];
       session(driver);
-      feed([{ type: 'turn_started', data: { trigger: 'immediate' } }, { type: 'turn_ended', data: { stopReason: 'end_turn' } }], 't1');
+      feed([{ type: 'turn_started', data: { trigger: 'prompt' } }, { type: 'turn_ended', data: { stopReason: 'end_turn' } }], 't1');
       const [turn] = turns();
       expect(turn.completeness, driver).toBe('none');
       for (const k of FIGURES) expect(turn, driver).not.toHaveProperty(k);

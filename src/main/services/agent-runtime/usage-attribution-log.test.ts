@@ -55,7 +55,7 @@ describe('usage attribution log', () => {
   it('logs each turn with role, parent, provider, model, effort and its own figures', () => {
     start('helper', { nativeSessionId: 'thread-1' });
     emit('helper', 'model_changed', { modelId: 'gpt-y', effort: 'high' });
-    emit('helper', 'turn_started', { trigger: 'immediate' }, 't1');
+    emit('helper', 'turn_started', { trigger: 'prompt' }, 't1');
     // Codex: the thread's running total is not the turn's figure.
     emit('helper', 'usage', { scope: 'session', threadId: 'thread-1', tokens: { input: 900, output: 90 } }, 't1');
     emit('helper', 'turn_ended', { stopReason: 'end_turn', usage: { input: 100, cachedInput: 80, output: 10 } }, 't1');
@@ -94,7 +94,7 @@ describe('usage attribution log', () => {
     emit('orch', 'turn_started', {}, 't1');
     emit('orch', 'usage', { scope: 'session', threadId: 'th', tokens: { input: 5000, output: 500 } }, 't1');
     emit('orch', 'turn_ended', { stopReason: 'end_turn', usage: { input: 50, output: 5 } }, 't1');
-    emit('orch', 'session_ended', { reason: 'exited' });
+    emit('orch', 'session_ended', { reason: 'stopped' });
     const total = lines.find((l) => l.msg === 'Usage session total')!.meta;
     expect(total).toMatchObject({ kind: 'final', baseline: 'lifetime', resumed: true, input: 5000 });
     expect(turnLines()[0]).toMatchObject({ kind: 'turn', input: 50 });
@@ -181,7 +181,7 @@ describe('usage attribution log', () => {
     start('helper', { nativeSessionId: 'thread-1' });
     emit('helper', 'turn_started', {}, 't1');
     emit('helper', 'turn_ended', { stopReason: 'end_turn', usage: { input: 3, output: 1 } }, 't1');
-    emit('helper', 'session_ended', { reason: 'exited' });
+    emit('helper', 'session_ended', { reason: 'stopped' });
     const ring = createDiagnosticsRing({ now: () => now });
     for (const { msg, meta } of lines) ring.note({ ns: USAGE_LOG_NS, level: 'info', msg, meta });
     expect(ring.collect().lines).toEqual([]);
