@@ -1,4 +1,5 @@
 import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
+import { takeHookSessionId } from './hook-session-ids';
 import { assertExecutionPolicy, validateStoredExecutionPolicy, helperExecutionPolicy, type ExecutionPolicy } from '../../shared/execution-policy';
 import { activateLocalCausalInput, withLocalCausalInput } from './dispatcher-federation-local-work';
 import { captureFederationInputs, prepareFederationInputs } from './dispatcher-federation-context';
@@ -1337,7 +1338,18 @@ async function spawnPtyAgent(
     rollbackAssignment = await activateLocalCausalInput(params.agentId, inputs);
     federation = prepareFederationInputs(params.agentId, inputs);
     await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(...spawnArgs)));
-    if (provider.id === ANTIGRAVITY_PROVIDER_ID) void enforceAntigravityBridgeIdentity(params.agentId, nonce, spawnedAt);
+    if (provider.id === ANTIGRAVITY_PROVIDER_ID) {
+      void enforceAntigravityBridgeIdentity(params.agentId, nonce, spawnedAt).catch((err: unknown) => {
+        // The check itself failed: fail closed, as if the bridge never authenticated,
+        // unless a newer run (new nonce) has replaced this one.
+        appLog('core:mcp', 'error', 'Antigravity bridge identity check failed; stopping the run', {
+          meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+        });
+        if (agentRegistry.get(params.agentId)?.nonce !== nonce) return;
+        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, 'Clubhouse could not check this agent\'s Clubhouse MCP connection, so it was stopped.');
+        ptyManager.kill(params.agentId);
+      });
+    }
     for (const context of federation) context?.accepted('prompt');
   } catch (err) {
     for (const context of federation) context?.refused();
@@ -1448,6 +1460,12 @@ async function captureSession(
     // run's own; it's checked too, as the CLI may have quit before creating it.
     let sessionId: string | null = assignedId ? await exists(assignedId, true) : null;
     if (sessionId) source = 'assigned';
+    // An id the CLI's own hooks reported during this run (Antigravity, #3795).
+    const hooked = takeHookSessionId(agentId, provider.id, Date.now() - runMs);
+    if (!sessionId && hooked) {
+      sessionId = await exists(hooked);
+      if (sessionId) source = 'provider_reported';
+    }
     if (!sessionId && buffer && isSessionCapable(provider)) {
       sessionId = await scraped(provider.extractSessionId(buffer));
       if (sessionId) source = 'output_scrape';

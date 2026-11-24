@@ -490,6 +490,20 @@ describe('identity fence', () => {
     expect(f.connected.size + f.auth.size).toBe(0);
   });
 
+  it('a dependency that throws, at start or from a later event, rejects and releases its listeners', async () => {
+    const f = fakeDeps('n-1');
+    f.deps.getCurrentAgentConnection = () => { throw new Error('first'); };
+    await expect(awaitAuthenticatedBridge({ agentId: 'a', expectedNonce: 'n-1', launchedAt: 1000, deadlineMs: 5000 }, f.deps)).rejects.toThrow('first');
+    expect(f.connected.size + f.auth.size).toBe(0);
+
+    const g = fakeDeps('n-1');
+    const p = awaitAuthenticatedBridge({ agentId: 'a', expectedNonce: 'n-1', launchedAt: 1000, deadlineMs: 5000 }, g.deps);
+    g.deps.getCurrentAgentConnection = () => { throw new Error('later'); };
+    expect(() => g.emitConnected('a')).not.toThrow();
+    await expect(p).rejects.toThrow('later');
+    expect(g.connected.size + g.auth.size).toBe(0);
+  });
+
   it('an impostor server that answers as clubhouse but never authenticates times out', async () => {
     const f = fakeDeps('n-1');
     const p = awaitAuthenticatedBridge({ agentId: 'a', expectedNonce: 'n-1', launchedAt: 1000, deadlineMs: 5000 }, f.deps);

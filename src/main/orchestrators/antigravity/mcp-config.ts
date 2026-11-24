@@ -359,7 +359,7 @@ export function awaitAuthenticatedBridge(
   input: { agentId: string; expectedNonce: string; launchedAt: number; deadlineMs: number; signal?: AbortSignal },
   deps: BridgeIdentityDeps,
 ): Promise<FenceResult> {
-  return new Promise<FenceResult>((resolve) => {
+  return new Promise<FenceResult>((resolve, reject) => {
     let settled = false;
     const cleanups: Array<() => void> = [];
     const finish = (result: FenceResult): void => {
@@ -368,20 +368,31 @@ export function awaitAuthenticatedBridge(
       for (const c of cleanups) c();
       resolve(result);
     };
+    // A dependency that throws, now or from a later bridge event, rejects the
+    // fence, so the caller fails closed instead of the error going unhandled.
+    const fail = (err: unknown): void => {
+      if (settled) return;
+      settled = true;
+      for (const c of cleanups) c();
+      reject(err);
+    };
     const check = (): void => {
       if (deps.getAgentNonce(input.agentId) !== input.expectedNonce) return finish({ ok: false, reason: 'nonce_changed' });
       const conn = deps.getCurrentAgentConnection(input.agentId);
       if (conn && conn.connectedAt >= input.launchedAt) finish({ ok: true, connectedAt: conn.connectedAt });
+    };
+    const guarded = (): void => {
+      try { check(); } catch (err) { fail(err); }
     };
     if (!input.expectedNonce) return finish({ ok: false, reason: 'nonce_changed' });
     if (input.signal?.aborted) return finish({ ok: false, reason: 'aborted' });
     const onAbort = () => finish({ ok: false, reason: 'aborted' });
     input.signal?.addEventListener('abort', onAbort, { once: true });
     cleanups.push(() => input.signal?.removeEventListener('abort', onAbort));
-    cleanups.push(deps.onAgentMcpConnected((id) => { if (id === input.agentId) check(); }));
-    cleanups.push(deps.onAuthChange((id) => { if (id === input.agentId) check(); }));
+    cleanups.push(deps.onAgentMcpConnected((id) => { if (id === input.agentId) guarded(); }));
+    cleanups.push(deps.onAuthChange((id) => { if (id === input.agentId) guarded(); }));
     const timer = setTimeout(() => finish({ ok: false, reason: 'timeout' }), Math.max(0, input.deadlineMs));
     cleanups.push(() => clearTimeout(timer));
-    check();
+    guarded();
   });
 }
