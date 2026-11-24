@@ -5,6 +5,7 @@
 //   sends one chunk, closes its own stdin and stays alive without answering;
 //   any other prompt streams its text back in two chunks, split across
 //   writes, then end_turn.
+import { closeSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 const write = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
@@ -21,6 +22,8 @@ rl.on('line', (line) => {
       write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'stdio-1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'reading stopped' } } } });
       rl.close();
       process.stdin.destroy();
+      // destroy() leaves fd 0 open; closing it is what breaks the pipe.
+      closeSync(0);
       setTimeout(() => process.exit(0), 20_000);
       return;
     }
