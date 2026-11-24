@@ -1,0 +1,1 @@
+TMPDIR=<fresh> npx vitest run --no-cache --maxWorkers=3 <scope.txt: 42 files>
