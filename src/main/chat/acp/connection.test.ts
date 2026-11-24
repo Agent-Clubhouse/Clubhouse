@@ -82,6 +82,27 @@ describe('AcpConnection', () => {
     ]);
   });
 
+  it('leaves the first request intact when the agent reuses an active id (QA A-5)', async () => {
+    const { sent, deliver, onRequest } = pair();
+    const first = { resolve: (_v: unknown) => undefined as void, aborted: false };
+    onRequest.mockImplementationOnce((_m, _p, signal) => new Promise((resolve) => {
+      first.resolve = resolve;
+      signal.addEventListener('abort', () => { first.aborted = true; });
+    }));
+    deliver({ jsonrpc: '2.0', id: 'dup', method: 'x', params: {} });
+    deliver({ jsonrpc: '2.0', id: 'dup', method: 'x', params: {} });
+    await tick();
+    // The duplicate gets no answer (any answer would read as the first one's) and no handler.
+    expect(onRequest).toHaveBeenCalledTimes(1);
+    expect(sent).toEqual([]);
+    // The first is still withdrawable, then answered exactly once.
+    deliver({ jsonrpc: '2.0', method: '$/cancel_request', params: { requestId: 'dup' } });
+    expect(first.aborted).toBe(true);
+    first.resolve('late');
+    await tick();
+    expect(sent).toEqual([{ jsonrpc: '2.0', id: 'dup', error: { code: -32800, message: 'Request cancelled' } }]);
+  });
+
   it('rejects pending requests as disconnected when the transport ends, and sends nothing after', async () => {
     const { conn, sent, end, deliver, onNotification } = pair();
     const a = conn.request('a', {}, { timeoutMs: null });
