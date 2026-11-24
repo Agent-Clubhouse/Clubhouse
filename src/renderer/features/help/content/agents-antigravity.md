@@ -2,7 +2,7 @@
 
 Antigravity CLI is Google's `agy` command line agent. Clubhouse can run it in a terminal and, through its Agent Client Protocol (ACP) server, in chat. It is experimental and off by default. It never becomes your default agent provider, and the Dispatcher does not offer it.
 
-This page quotes or paraphrases Google's documentation as read on 2026-11-23. Google changes these pages without dated notes, so follow the links when a detail matters to you.
+This page paraphrases Google's documentation as read on 2026-11-23. Google changes these pages without dated notes, so follow the links when a detail matters to you.
 
 ## Set it up
 
@@ -18,29 +18,20 @@ Clubhouse does not change Antigravity's trust list. The first time `agy` opens a
 |------|-------|-------|
 | CLI view | `agy` installed and signed in | The `agy` terminal app runs as it does in your own terminal. |
 | Chat | `agy` with ACP support and a cached sign-in | Google's changelog shows `agy acp` added in 1.5.0. Clubhouse checks the version before it opens chat. |
-| Headless (quick agents, Actions) | Not available | See below. |
+| Headless | Not offered | See **Why headless is not offered**. |
 
 Chat and the CLI view never stand in for each other. If chat can't start, the agent says so and you choose whether to retry or open it in the CLI view. Clubhouse does not replay a message into a different view.
 
 ## Why headless is not offered
 
-Antigravity has a headless mode, `agy -p`. Google's [FAQ](https://antigravity.google/docs/faq/) says:
-
-> Antigravity CLI headless mode (`agy -p`) is intended for direct scripting and CI workflows. Wrapping `agy` inside third-party coding agents or applications, or automating account rotation, is not supported under consumer plans.
-
-No page we found says what is allowed on other plans. Clubhouse therefore does not use headless mode for Antigravity. Anything that needs it, such as quick agents and Actions, is not available with this provider.
+Antigravity has a headless mode, `agy -p`. Google's [FAQ](https://antigravity.google/docs/faq/) says it is for direct scripting and CI, and that wrapping `agy` in third-party coding agents or applications is "not supported under consumer plans". No page we found says what other plans allow. Clubhouse does not use headless mode with Antigravity, so features that run a provider headless, such as a headless quick agent, do not run on it.
 
 ## Terms and plans
 
-Google's pages say different things about third-party clients, and Clubhouse does not decide which one covers you. Read on 2026-11-23, the [FAQ](https://antigravity.google/docs/faq/) says:
+Google's pages say different things about third-party clients, and Clubhouse does not decide which one covers you. Read on 2026-11-23:
 
-> Using third-party software, tools, or services to access Antigravity is a violation of our Terms of Service and severely degrades the experience for legitimate product users. Such actions can result in suspension or termination of your account. To use a third-party coding agent with Gemini, we recommend using a Gemini Enterprise or Google AI Studio API key.
-
-Google's [ACP guide](https://antigravity.google/docs/ide/extensions/acp/) says:
-
-> Any ACP client can launch Antigravity CLI. Configure it to run this command with the project directory as the working directory: `agy acp`
-
-and that `agy acp` reuses the credentials cached by an interactive `agy` sign-in.
+- The [FAQ](https://antigravity.google/docs/faq/) says using third-party software to access Antigravity breaks Google's Terms of Service and can lead to account suspension or termination, and recommends a Gemini Enterprise or Google AI Studio API key for third-party coding agents.
+- The [ACP guide](https://antigravity.google/docs/ide/extensions/acp/) says any ACP client can launch `agy acp` in the project folder, and that it reuses the sign-in cached by an interactive `agy` session.
 
 Clubhouse makes no promise about which plans, models or quotas you can use here. Read both pages and decide for yourself. Clubhouse does not rotate or switch accounts.
 
@@ -67,7 +58,7 @@ Clubhouse shows the models the `agy` server offers your account. Google's pages 
 
 Antigravity agents offer Plan, Ask first, Auto-accept edits and Full access, in chat and in the CLI view. There is no Auto level. Antigravity has its own Auto mode, which Google's [CLI reference](https://antigravity.google/docs/cli/reference/) says is not available for business or enterprise accounts, and Clubhouse does not map an Access level to it.
 
-Helper Auto does not pick Antigravity today, because Clubhouse has no way to read its quota. Ask for it by name when an orchestrator starts a helper.
+Antigravity is opt-in for helper Auto and is not picked today. Ask for it by name when an orchestrator starts a helper.
 
 ## Using an API key
 

@@ -455,7 +455,7 @@ export const ATTR = {
   // closed enums only; never message text, tool inputs or paths.
   /** The chat transport, from the driver's `session_started` (research §7). */
   chatDriver: enumAttr('clubhouse.chat.driver', [
-    'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_sdk',
+    'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_sdk', 'antigravity_acp',
   ]),
   turnEndReason: enumAttr('clubhouse.turn.end_reason', ['complete', 'error', 'cancelled', 'timeout']),
   turnToolCalls: intAttr('clubhouse.turn.tool_calls'),

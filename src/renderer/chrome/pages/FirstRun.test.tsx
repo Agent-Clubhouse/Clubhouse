@@ -44,6 +44,25 @@ describe('FirstRun', () => {
     expect(window.clubhouse.agent.checkOrchestrator).toHaveBeenCalledWith(undefined, 'copilot-cli');
   });
 
+  it('links a missing Antigravity CLI to the install page named by its descriptor (#3801)', async () => {
+    useOrchestratorStore.setState({
+      allOrchestrators: [
+        { id: 'claude-code', displayName: 'Claude Code' },
+        { id: 'antigravity-cli', displayName: 'Antigravity CLI' },
+      ] as never,
+      availability: {},
+    });
+    window.clubhouse.app.openExternalUrl = vi.fn().mockResolvedValue(undefined);
+    render(<FirstRun />);
+    const clis = screen.getByTestId('first-run-clis');
+    await waitFor(() => expect(clis.textContent).toContain('Antigravity CLI'));
+    const row = within(clis).getAllByRole('listitem').find((li) => li.textContent?.includes('Antigravity CLI'))!;
+    await waitFor(() => expect(within(row).getByRole('button', { name: 'Install' })).toBeTruthy());
+    fireEvent.click(within(row).getByRole('button', { name: 'Install' }));
+    expect(window.clubhouse.app.openExternalUrl).toHaveBeenCalledWith('https://antigravity.google/docs/getting-started/');
+    expect(window.clubhouse.agent.checkOrchestrator).toHaveBeenCalledWith(undefined, 'antigravity-cli');
+  });
+
   it('shows the three provider mascots, awake, above the title', () => {
     render(<FirstRun />);
     const mascots = screen.getByTestId('first-run-mascots');

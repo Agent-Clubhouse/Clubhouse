@@ -171,6 +171,10 @@ describe('Antigravity CLI help (#3801)', () => {
     expect(content).toContain('https://antigravity.google/docs/ide/extensions/acp/');
     expect(content).toContain('2026-11-23');
     expect(content).toContain('Clubhouse does not decide which one covers you');
+    // Paraphrase, not copied passages: at most one short quoted phrase.
+    expect(content).not.toMatch(/^>/m);
+    const quoted = [...content.replace(/`[^`]*`/g, '').matchAll(/"([^"]+)"/g)].map((m) => m[1]).join(' ');
+    expect(quoted.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(25);
     expect(content).toContain('1.5.1 changelog');
     // No promise about plans, models or quotas.
     expect(content).not.toMatch(/\b(is|are) (allowed|permitted|supported on)\b|guarantee/i);
