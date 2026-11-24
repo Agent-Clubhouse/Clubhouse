@@ -137,16 +137,29 @@ export function SleepingAgent({ agent, details = false }: {
   // that's known rather than starting a fresh session by mistake.
   const ready = isRemote || !agentProject || last !== null;
 
-  const wake = useCallback(async (mode: WakeMode, sessionId?: string, opts: { withoutTask?: boolean } = {}) => {
+  /**
+   * Runs one wake (or switch-and-wake) as the only one in flight, from its
+   * first step to its last: a second click meanwhile is ignored, not queued.
+   */
+  const reserve = useCallback(async (run: () => Promise<void>) => {
     if (wakingRef.current) return;
+    wakingRef.current = true;
+    setWaking(true);
+    try {
+      await run();
+    } finally {
+      wakingRef.current = false;
+      setWaking(false);
+    }
+  }, []);
+
+  /** The wake itself; callers hold the reservation. */
+  const startWake = useCallback(async (mode: WakeMode, sessionId?: string, opts: { withoutTask?: boolean } = {}) => {
     // An explicit failure's retry starts chat with nothing sent: the draft waits in the composer.
     const withoutTask = opts.withoutTask || explicitFailure;
     const mission = withoutTask ? undefined : task.trim() || undefined;
     setWakeMenu(null);
-    setWakeError(null);
     if (!isRemote && !agentProject) return;
-    wakingRef.current = true;
-    setWaking(true);
     try {
       if (isRemote && remoteParts) {
         await window.clubhouse.annexClient.agentWake(remoteParts.satelliteId, remoteParts.agentId, { resume: mode === 'resume', mission });
@@ -166,11 +179,13 @@ export function SleepingAgent({ agent, details = false }: {
       tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_wake'), ATTR.errorType('unknown')]);
       tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_wake')] });
       setWakeError(`Couldn't wake ${agent.name}: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      wakingRef.current = false;
-      setWaking(false);
     }
   }, [task, setTask, explicitFailure, isRemote, remoteParts, agentProject, agent.id, agent.name, spawnDurableAgent]);
+
+  const wake = useCallback((mode: WakeMode, sessionId?: string) => reserve(async () => {
+    setWakeError(null);
+    await startWake(mode, sessionId);
+  }), [reserve, startWake]);
 
   // Wake picks up the last session when there is one (#2019).
   // A satellite says whether it has a session; older ones don't, and start fresh.
@@ -182,16 +197,18 @@ export function SleepingAgent({ agent, details = false }: {
   // starts with no first message; the draft stays in the chat composer, and
   // Copy message is there for pasting it into the terminal.
   const offerTerminal = explicitFailure && !!agentProject;
-  const openInTerminal = useCallback(async () => {
-    if (!agentProject || wakingRef.current) return;
+  // One reservation covers both steps, so no Retry or second click can start in between.
+  const openInTerminal = useCallback(() => reserve(async () => {
+    if (!agentProject) return;
+    setWakeError(null);
     try {
       await window.clubhouse.agent.updateDurableConfig(agentProject.path, agent.id, { runtimeMode: 'terminal' });
     } catch (err) {
       setWakeError(`Couldn't switch ${agent.name} to the terminal: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
-    await wake(defaultMode, undefined, { withoutTask: true });
-  }, [agentProject, agent.id, agent.name, wake, defaultMode]);
+    await startWake(defaultMode, undefined, { withoutTask: true });
+  }), [reserve, startWake, agentProject, agent.id, agent.name, defaultMode]);
   const copyMessage = useCallback(() => {
     void navigator.clipboard.writeText(task.trim()).then(
       () => useToastStore.getState().addToast('Message copied', 'info'),
