@@ -504,6 +504,14 @@ describe('identity fence', () => {
     expect(g.connected.size + g.auth.size).toBe(0);
   });
 
+  it('a listener registration that throws rejects and releases the registrations made before it', async () => {
+    const f = fakeDeps('n-1');
+    f.deps.onAuthChange = () => { throw new Error('registry closed'); };
+    await expect(awaitAuthenticatedBridge({ agentId: 'a', expectedNonce: 'n-1', launchedAt: 1000, deadlineMs: 5000 }, f.deps)).rejects.toThrow('registry closed');
+    expect(f.connected.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('an impostor server that answers as clubhouse but never authenticates times out', async () => {
     const f = fakeDeps('n-1');
     const p = awaitAuthenticatedBridge({ agentId: 'a', expectedNonce: 'n-1', launchedAt: 1000, deadlineMs: 5000 }, f.deps);
