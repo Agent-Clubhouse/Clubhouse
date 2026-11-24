@@ -60,6 +60,35 @@ public docs. A claim never enables something `initialize` left off, and
 `mergesPrompts: false`, `steersRunningTurn: false`, `interruptReport:
 'provider_reports'`, `permissions: true`, `questions`: per claim,
 `nativeResolution: true` (`$/cancel_request`), `disconnectClosure: 'none'`.
+`acp.conformance.test.ts` runs the shared suite against the scripted agent.
+
+## What the tests prove
+
+- The protocol, lifecycle and conformance tests run against an in-memory
+  scripted agent built from the schema. `stdio.test.ts` runs a real child
+  process (`testing/stdio-agent.mjs`). Neither is a real ACP agent, and
+  nothing has run on Windows yet.
+- A write that fails after it was made (the agent stopped reading, EPIPE)
+  is proven with the real process: the session ends, the turn stays unknown
+  and nothing is resent.
+- The stdio transport's direct guard (refusing to write once the transport
+  has ended or stdin isn't writable) is checked by reading the source, plus
+  connection and scripted-agent tests of what happens when a transport
+  refuses. No test drives the stdio connector's own guard.
+- Prompts have no timeout: an agent that never answers keeps its turn
+  running until the session ends.
+
+## Before registration
+
+A provider driver built on this layer isn't registered until both are done:
+
+1. A deterministic test of the stdio connector's direct guard: with a
+   stubbed child whose stdin isn't writable, or whose transport has ended,
+   `send` throws and nothing is written.
+2. A caller contract for changing effort when the agent offers no model
+   choice. `setModel` now refuses any model id there, and current callers
+   (the composer's effort menu, Annex) always pass a model id, so effort
+   can't be changed for such an agent.
 
 ## Not covered
 
